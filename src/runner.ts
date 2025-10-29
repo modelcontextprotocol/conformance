@@ -1,19 +1,4 @@
-import { createClientInitializationCheck, createServerInfoCheck } from './checks.ts';
+import { runConformanceTest } from './runner/index.js';
 
-const initializeRequest = {
-  protocolVersion: '2025-06-18',
-  clientInfo: {
-    name: 'ExampleClient',
-    version: '1.0.0'
-  }
-};
-
-const checks = [
-  createClientInitializationCheck(initializeRequest),
-  createServerInfoCheck({
-    name: 'ExampleMCPServer',
-    version: '1.0.0'
-  })
-];
-
-console.log(JSON.stringify(checks, null, 2));
+export { runConformanceTest };
+export type { ScenarioConfig } from './runner/index.js';
