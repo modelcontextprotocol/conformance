@@ -47,6 +47,7 @@ A scenario represents a specific test case that validates one or more aspects of
 - Validates both client behavior and server responses
 
 Example scenarios:
+
 - `initialize` - Tests client initialization handshake
 - `list-tools` - Tests tool discovery
 - `call-tool` - Tests tool invocation
@@ -57,6 +58,7 @@ Example scenarios:
 Results are written to: `results/<scenario>-<timestamp>/`
 
 Files:
+
 - `checks.json` - Array of ConformanceCheck objects with validation results
 - `stdout.txt` - Complete stdout from the client process
 - `stderr.txt` - Complete stderr from the client process

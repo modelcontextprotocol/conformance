@@ -12,6 +12,7 @@ npm run start -- --command "tsx examples/clients/typescript/test1.ts" --scenario
 ## Overview
 
 The conformance test framework validates MCP client implementations by:
+
 1. Starting a test server for the specified scenario
 2. Running the client implementation with the test server URL
 3. Capturing MCP protocol interactions
@@ -32,6 +33,7 @@ The framework appends the server URL as the final argument to your command.
 ## Test Results
 
 Results are saved to `results/<scenario>-<timestamp>/`:
+
 - `checks.json` - Array of conformance check results with pass/fail status
 - `stdout.txt` - Client stdout output
 - `stderr.txt` - Client stderr output
@@ -44,9 +46,9 @@ Results are saved to `results/<scenario>-<timestamp>/`:
 ## Available Scenarios
 
 - **initialize** - Tests MCP client initialization handshake
-  - Validates protocol version
-  - Validates clientInfo (name and version)
-  - Validates server response handling
+    - Validates protocol version
+    - Validates clientInfo (name and version)
+    - Validates server response handling
 
 ## Architecture
 
