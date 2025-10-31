@@ -1,9 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from './types.js';
+import type { Scenario, ConformanceCheck } from '../../types.js';
 import express from 'express';
-import { ScenarioUrls } from '../types.js';
+import { ScenarioUrls } from '../../types.js';
 
 function createServer(checks: ConformanceCheck[]): express.Application {
     const server = new Server(

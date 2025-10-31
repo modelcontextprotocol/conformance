@@ -1,6 +1,6 @@
 import http from 'http';
-import { Scenario, ScenarioUrls, ConformanceCheck } from '../types.js';
-import { createClientInitializationCheck, createServerInfoCheck } from '../checks.js';
+import { Scenario, ScenarioUrls, ConformanceCheck } from '../../types.js';
+import { createClientInitializationCheck, createServerInfoCheck } from '../../checks.js';
 
 export class InitializeScenario implements Scenario {
     name = 'initialize';

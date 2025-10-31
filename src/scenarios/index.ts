@@ -1,6 +1,6 @@
 import { Scenario } from '../types.js';
-import { InitializeScenario } from './initialize.js';
-import { ToolsCallScenario } from './tools_call.js';
+import { InitializeScenario } from './client/initialize.js';
+import { ToolsCallScenario } from './client/tools_call.js';
 
 export const scenarios = new Map<string, Scenario>([
     ['initialize', new InitializeScenario()],
