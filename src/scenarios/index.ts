@@ -9,7 +9,7 @@ export const scenarios = new Map<string, Scenario>([
 ]);
 
 export const clientScenarios = new Map<string, ClientScenario>([
-    ['server-initialize', new ServerInitializeClientScenario()]
+    ['initialize', new ServerInitializeClientScenario()]
 ]);
 
 export function registerScenario(name: string, scenario: Scenario): void {

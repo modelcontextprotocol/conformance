@@ -28,7 +28,7 @@ export function createServerInitializationCheck(initializeResponse: any, expecte
         specReferences: [{ id: 'MCP-Lifecycle', url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle' }],
         details: {
             expectedSpecVersion,
-            ...initializeResponse
+            response: initializeResponse
         },
         errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
         logs: errors.length > 0 ? errors : undefined
