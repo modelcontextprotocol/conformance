@@ -30,3 +30,9 @@ export interface Scenario {
     stop(): Promise<void>;
     getChecks(): ConformanceCheck[];
 }
+
+export interface ClientScenario {
+    name: string;
+    description: string;
+    run(serverUrl: string): Promise<ConformanceCheck[]>;
+}
