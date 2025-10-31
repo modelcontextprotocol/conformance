@@ -1,4 +1,4 @@
-import { createClientInitializationCheck } from './checks';
+import { createClientInitializationCheck } from './client';
 
 describe('createClientInitializationCheck', () => {
     it('should return SUCCESS for a valid initialize request', () => {
