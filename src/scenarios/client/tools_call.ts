@@ -105,8 +105,8 @@ function createServer(checks: ConformanceCheck[]): express.Application {
             status: 'INFO',
             timestamp: new Date().toISOString(),
             details: {
-                // TODO: this isn't working
-                body: JSON.stringify(res.body)
+                // TODO: Response body not available in express middleware
+                statusCode: res.statusCode
             }
         });
     });
@@ -125,6 +125,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
 
 export class ToolsCallScenario implements Scenario {
     name = 'tools_call';
+    description = 'Tests calling tools with various parameter types';
     private app: express.Application | null = null;
     private httpServer: any = null;
     private checks: ConformanceCheck[] = [];
