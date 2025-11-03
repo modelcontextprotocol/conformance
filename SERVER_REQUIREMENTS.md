@@ -5,6 +5,7 @@ This document specifies the requirements for building an MCP "Everything Server"
 ## Purpose
 
 The Everything Server is a reference implementation that:
+
 - Demonstrates all MCP server features in a single, testable server
 - Uses standardized naming conventions for tools, resources, and prompts
 - Enables automated conformance testing across different SDK implementations
@@ -13,6 +14,7 @@ The Everything Server is a reference implementation that:
 ## Protocol Version
 
 <!-- TODO: need to change to the new version before the official release, probaby worth havign separate tests for new and old version? -->
+
 **Target MCP Specification**: `2025-06-18`
 
 ## Transport
@@ -30,6 +32,7 @@ This document specifies requirements based on the MCP specification. All feature
 ### Server Identity
 
 Your server MUST provide:
+
 ```typescript
 {
   name: "mcp-conformance-test-server",  // Or your SDK-specific name
@@ -71,19 +74,23 @@ Your server MUST declare these capabilities during initialization:
 **Endpoint**: `initialize`
 
 **Requirements**:
+
 - Accept `initialize` request with client info and capabilities
 - Return server info, protocol version, and capabilities
 - Protocol version MUST be `"2025-06-18"`
 
 **Example Response**:
+
 ```json
 {
-  "protocolVersion": "2025-06-18",
-  "serverInfo": {
-    "name": "mcp-conformance-test-server",
-    "version": "1.0.0"
-  },
-  "capabilities": { /* as above */ }
+    "protocolVersion": "2025-06-18",
+    "serverInfo": {
+        "name": "mcp-conformance-test-server",
+        "version": "1.0.0"
+    },
+    "capabilities": {
+        /* as above */
+    }
 }
 ```
 
@@ -92,6 +99,7 @@ Your server MUST declare these capabilities during initialization:
 **Notification**: `initialized`
 
 **Requirements**:
+
 - Accept `initialized` notification from client after handshake
 - No response required (it's a notification)
 - Server should be ready for requests after receiving this
@@ -105,17 +113,19 @@ Your server MUST declare these capabilities during initialization:
 **Endpoint**: `tools/list`
 
 **Requirements**:
+
 - Return array of all available tools
 - Each tool MUST have:
-  - `name` (string)
-  - `description` (string)
-  - `inputSchema` (valid JSON Schema object)
+    - `name` (string)
+    - `description` (string)
+    - `inputSchema` (valid JSON Schema object)
 
 ### 2.2. Call Tool
 
 **Endpoint**: `tools/call`
 
 **Requirements**:
+
 - Accept tool name and arguments
 - Execute tool and return result
 - Result MUST have `content` array
@@ -130,11 +140,10 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Returns**: Text content
+
 ```typescript
 {
-  content: [
-    { type: "text", text: "This is a simple text response for testing." }
-  ]
+    content: [{ type: 'text', text: 'This is a simple text response for testing.' }];
 }
 ```
 
@@ -143,15 +152,16 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Returns**: Image content with base64 data
+
 ```typescript
 {
-  content: [
-    {
-      type: "image",
-      data: "<base64-encoded-png>",
-      mimeType: "image/png"
-    }
-  ]
+    content: [
+        {
+            type: 'image',
+            data: '<base64-encoded-png>',
+            mimeType: 'image/png'
+        }
+    ];
 }
 ```
 
@@ -162,15 +172,16 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Returns**: Audio content with base64 data
+
 ```typescript
 {
-  content: [
-    {
-      type: "audio",
-      data: "<base64-encoded-wav>",
-      mimeType: "audio/wav"
-    }
-  ]
+    content: [
+        {
+            type: 'audio',
+            data: '<base64-encoded-wav>',
+            mimeType: 'audio/wav'
+        }
+    ];
 }
 ```
 
@@ -181,18 +192,19 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Returns**: Embedded resource content
+
 ```typescript
 {
-  content: [
-    {
-      type: "resource",
-      resource: {
-        uri: "test://embedded-resource",
-        mimeType: "text/plain",
-        text: "This is an embedded resource content."
-      }
-    }
-  ]
+    content: [
+        {
+            type: 'resource',
+            resource: {
+                uri: 'test://embedded-resource',
+                mimeType: 'text/plain',
+                text: 'This is an embedded resource content.'
+            }
+        }
+    ];
 }
 ```
 
@@ -201,20 +213,21 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Returns**: Multiple content items (text + image + resource)
+
 ```typescript
 {
-  content: [
-    { type: "text", text: "Multiple content types test:" },
-    { type: "image", data: "<base64>", mimeType: "image/png" },
-    {
-      type: "resource",
-      resource: {
-        uri: "test://mixed-content-resource",
-        mimeType: "application/json",
-        text: "{\"test\":\"data\",\"value\":123}"
-      }
-    }
-  ]
+    content: [
+        { type: 'text', text: 'Multiple content types test:' },
+        { type: 'image', data: '<base64>', mimeType: 'image/png' },
+        {
+            type: 'resource',
+            resource: {
+                uri: 'test://mixed-content-resource',
+                mimeType: 'application/json',
+                text: '{"test":"data","value":123}'
+            }
+        }
+    ];
 }
 ```
 
@@ -223,6 +236,7 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Behavior**: During execution, send 3 log notifications at info level:
+
 1. "Tool execution started"
 2. "Tool processing data" (after ~50ms delay)
 3. "Tool execution completed" (after another ~50ms delay)
@@ -236,6 +250,7 @@ Implement these tools with exact names:
 **Arguments**: None
 
 **Behavior**: If `_meta.progressToken` is provided in request:
+
 - Send progress notification: `0/100`
 - Wait ~50ms
 - Send progress notification: `50/100`
@@ -247,6 +262,7 @@ If no progress token provided, just execute with delays.
 **Returns**: Text content confirming execution
 
 **Progress Notification Format**:
+
 ```typescript
 {
   method: "notifications/progress",
@@ -265,23 +281,26 @@ If no progress token provided, just execute with delays.
 **Behavior**: Always throw an error
 
 **Returns**: JSON-RPC error
+
 ```json
 {
-  "error": {
-    "code": -32000,
-    "message": "This tool intentionally returns an error for testing"
-  }
+    "error": {
+        "code": -32000,
+        "message": "This tool intentionally returns an error for testing"
+    }
 }
 ```
 
 #### `test_sampling`
 
 **Arguments**:
+
 - `prompt` (string, required) - The prompt to send to the LLM
 
 **Behavior**: Request LLM sampling from the client using `sampling/createMessage`
 
 **Sampling Request**:
+
 ```typescript
 {
   "method": "sampling/createMessage",
@@ -298,6 +317,7 @@ If no progress token provided, just execute with delays.
 ```
 
 **Returns**: Text content with the LLM's response
+
 ```typescript
 {
   "content": [
@@ -314,11 +334,13 @@ If no progress token provided, just execute with delays.
 #### `test_elicitation`
 
 **Arguments**:
+
 - `message` (string, required) - The message to show the user
 
 **Behavior**: Request user input from the client using `elicitation/create`
 
 **Elicitation Request**:
+
 ```typescript
 {
   "method": "elicitation/create",
@@ -339,6 +361,7 @@ If no progress token provided, just execute with delays.
 ```
 
 **Returns**: Text content with the user's response
+
 ```typescript
 {
   "content": [
@@ -361,13 +384,14 @@ If no progress token provided, just execute with delays.
 **Endpoint**: `resources/list`
 
 **Requirements**:
+
 - Return array of all available **direct resources** (not templates)
 - Support optional cursor-based pagination (see Section 6.1)
 - Each resource MUST have:
-  - `uri` (string)
-  - `name` (string)
-  - `description` (string)
-  - `mimeType` (string, optional)
+    - `uri` (string)
+    - `name` (string)
+    - `description` (string)
+    - `mimeType` (string, optional)
 
 **Note**: Resource templates are listed via separate `resources/templates/list` endpoint (see 3.1a)
 
@@ -376,19 +400,21 @@ If no progress token provided, just execute with delays.
 **Endpoint**: `resources/templates/list`
 
 **Requirements**:
+
 - Return array of all available **resource templates**
 - Support optional cursor-based pagination (see Section 6.1)
 - Each template MUST have:
-  - `uriTemplate` (string) - RFC 6570 URI template
-  - `name` (string)
-  - `description` (string)
-  - `mimeType` (string, optional)
+    - `uriTemplate` (string) - RFC 6570 URI template
+    - `name` (string)
+    - `description` (string)
+    - `mimeType` (string, optional)
 
 ### 3.2. Read Resource
 
 **Endpoint**: `resources/read`
 
 **Requirements**:
+
 - Accept resource URI
 - Return resource contents
 - Response MUST have `contents` array
@@ -403,6 +429,7 @@ Implement these resources with exact URIs:
 **Type**: Static text resource
 
 **Metadata** (for `resources/list`):
+
 ```typescript
 {
   uri: "test://static-text",
@@ -413,15 +440,16 @@ Implement these resources with exact URIs:
 ```
 
 **Content** (for `resources/read`):
+
 ```typescript
 {
-  contents: [
-    {
-      uri: "test://static-text",
-      mimeType: "text/plain",
-      text: "This is the content of the static text resource."
-    }
-  ]
+    contents: [
+        {
+            uri: 'test://static-text',
+            mimeType: 'text/plain',
+            text: 'This is the content of the static text resource.'
+        }
+    ];
 }
 ```
 
@@ -430,6 +458,7 @@ Implement these resources with exact URIs:
 **Type**: Static binary resource (image)
 
 **Metadata**:
+
 ```typescript
 {
   uri: "test://static-binary",
@@ -440,15 +469,16 @@ Implement these resources with exact URIs:
 ```
 
 **Content**:
+
 ```typescript
 {
-  contents: [
-    {
-      uri: "test://static-binary",
-      mimeType: "image/png",
-      blob: "<base64-encoded-png>"
-    }
-  ]
+    contents: [
+        {
+            uri: 'test://static-binary',
+            mimeType: 'image/png',
+            blob: '<base64-encoded-png>'
+        }
+    ];
 }
 ```
 
@@ -457,6 +487,7 @@ Implement these resources with exact URIs:
 **Type**: Resource template with parameter
 
 **Metadata** (for `resources/list`):
+
 ```typescript
 {
   uriTemplate: "test://template/{id}/data",
@@ -469,15 +500,16 @@ Implement these resources with exact URIs:
 **Behavior**: When client requests `test://template/123/data`, substitute `{id}` with `123`
 
 **Content** (for `resources/read` with `uri: "test://template/123/data"`):
+
 ```typescript
 {
-  contents: [
-    {
-      uri: "test://template/123/data",
-      mimeType: "application/json",
-      text: "{\"id\":\"123\",\"templateTest\":true,\"data\":\"Data for ID: 123\"}"
-    }
-  ]
+    contents: [
+        {
+            uri: 'test://template/123/data',
+            mimeType: 'application/json',
+            text: '{"id":"123","templateTest":true,"data":"Data for ID: 123"}'
+        }
+    ];
 }
 ```
 
@@ -488,6 +520,7 @@ Implement these resources with exact URIs:
 **Type**: Subscribable resource
 
 **Metadata**:
+
 ```typescript
 {
   uri: "test://watched-resource",
@@ -498,15 +531,16 @@ Implement these resources with exact URIs:
 ```
 
 **Content**:
+
 ```typescript
 {
-  contents: [
-    {
-      uri: "test://watched-resource",
-      mimeType: "text/plain",
-      text: "Watched resource content"
-    }
-  ]
+    contents: [
+        {
+            uri: 'test://watched-resource',
+            mimeType: 'text/plain',
+            text: 'Watched resource content'
+        }
+    ];
 }
 ```
 
@@ -515,24 +549,27 @@ Implement these resources with exact URIs:
 **Endpoint**: `resources/subscribe`
 
 **Requirements**:
+
 - Accept subscription request with URI
 - Track subscribed URIs
 - Send `notifications/resources/updated` when subscribed resources change
 - Return empty object `{}`
 
 **Example Request**:
+
 ```json
 {
-  "method": "resources/subscribe",
-  "params": {
-    "uri": "test://watched-resource"
-  }
+    "method": "resources/subscribe",
+    "params": {
+        "uri": "test://watched-resource"
+    }
 }
 ```
 
 **Endpoint**: `resources/unsubscribe`
 
 **Requirements**:
+
 - Accept unsubscribe request with URI
 - Remove URI from subscriptions
 - Stop sending update notifications for that URI
@@ -547,17 +584,19 @@ Implement these resources with exact URIs:
 **Endpoint**: `prompts/list`
 
 **Requirements**:
+
 - Return array of all available prompts
 - Each prompt MUST have:
-  - `name` (string)
-  - `description` (string)
-  - `arguments` (array, optional) - list of required arguments
+    - `name` (string)
+    - `description` (string)
+    - `arguments` (array, optional) - list of required arguments
 
 ### 4.2. Get Prompt
 
 **Endpoint**: `prompts/get`
 
 **Requirements**:
+
 - Accept prompt name and arguments
 - Return prompt messages
 - Response MUST have `messages` array
@@ -572,27 +611,30 @@ Implement these prompts with exact names:
 **Arguments**: None
 
 **Returns**:
+
 ```typescript
 {
-  messages: [
-    {
-      role: "user",
-      content: {
-        type: "text",
-        text: "This is a simple prompt for testing."
-      }
-    }
-  ]
+    messages: [
+        {
+            role: 'user',
+            content: {
+                type: 'text',
+                text: 'This is a simple prompt for testing.'
+            }
+        }
+    ];
 }
 ```
 
 #### `test_prompt_with_arguments`
 
 **Arguments**:
+
 - `arg1` (string, required) - First test argument
 - `arg2` (string, required) - Second test argument
 
 **Metadata** (for `prompts/list`):
+
 ```typescript
 {
   name: "test_prompt_with_arguments",
@@ -605,48 +647,51 @@ Implement these prompts with exact names:
 ```
 
 **Returns** (with args `{arg1: "hello", arg2: "world"}`):
+
 ```typescript
 {
-  messages: [
-    {
-      role: "user",
-      content: {
-        type: "text",
-        text: "Prompt with arguments: arg1='hello', arg2='world'"
-      }
-    }
-  ]
+    messages: [
+        {
+            role: 'user',
+            content: {
+                type: 'text',
+                text: "Prompt with arguments: arg1='hello', arg2='world'"
+            }
+        }
+    ];
 }
 ```
 
 #### `test_prompt_with_embedded_resource`
 
 **Arguments**:
+
 - `resourceUri` (string, required) - URI of the resource to embed
 
 **Returns**:
+
 ```typescript
 {
-  messages: [
-    {
-      role: "user",
-      content: {
-        type: "resource",
-        resource: {
-          uri: "<resourceUri from arguments>",
-          mimeType: "text/plain",
-          text: "Embedded resource content for testing."
+    messages: [
+        {
+            role: 'user',
+            content: {
+                type: 'resource',
+                resource: {
+                    uri: '<resourceUri from arguments>',
+                    mimeType: 'text/plain',
+                    text: 'Embedded resource content for testing.'
+                }
+            }
+        },
+        {
+            role: 'user',
+            content: {
+                type: 'text',
+                text: 'Please process the embedded resource above.'
+            }
         }
-      }
-    },
-    {
-      role: "user",
-      content: {
-        type: "text",
-        text: "Please process the embedded resource above."
-      }
-    }
-  ]
+    ];
 }
 ```
 
@@ -655,25 +700,26 @@ Implement these prompts with exact names:
 **Arguments**: None
 
 **Returns**:
+
 ```typescript
 {
-  messages: [
-    {
-      role: "user",
-      content: {
-        type: "image",
-        data: "<base64-encoded-png>",
-        mimeType: "image/png"
-      }
-    },
-    {
-      role: "user",
-      content: {
-        type: "text",
-        text: "Please analyze the image above."
-      }
-    }
-  ]
+    messages: [
+        {
+            role: 'user',
+            content: {
+                type: 'image',
+                data: '<base64-encoded-png>',
+                mimeType: 'image/png'
+            }
+        },
+        {
+            role: 'user',
+            content: {
+                type: 'text',
+                text: 'Please analyze the image above.'
+            }
+        }
+    ];
 }
 ```
 
@@ -686,11 +732,13 @@ Implement these prompts with exact names:
 **Endpoint**: `logging/setLevel`
 
 **Requirements**:
+
 - Accept log level setting
 - Filter subsequent log notifications based on level
 - Return empty object `{}`
 
 **Log Levels** (in order of severity):
+
 - `debug`
 - `info`
 - `notice`
@@ -705,13 +753,15 @@ Implement these prompts with exact names:
 **Notification**: `notifications/message`
 
 **Requirements**:
+
 - Send log notifications during operations
 - Each log MUST have:
-  - `level` (string) - one of the log levels above
-  - `data` (any) - log message or structured data
-  - `logger` (string, optional) - logger name
+    - `level` (string) - one of the log levels above
+    - `data` (any) - log message or structured data
+    - `logger` (string, optional) - logger name
 
 **Example**:
+
 ```typescript
 {
   method: "notifications/message",
@@ -726,12 +776,14 @@ Implement these prompts with exact names:
 **Implementation Note**: When no client is connected, log notifications may fail. Handle this gracefully by catching promise rejections:
 
 ```typescript
-mcpServer.server.notification({
-  method: "notifications/message",
-  params: { level, logger, data }
-}).catch(() => {
-  // Ignore error if no client is connected
-});
+mcpServer.server
+    .notification({
+        method: 'notifications/message',
+        params: { level, logger, data }
+    })
+    .catch(() => {
+        // Ignore error if no client is connected
+    });
 ```
 
 ---
@@ -743,6 +795,7 @@ mcpServer.server.notification({
 **Purpose**: Allow servers to return large result sets in manageable chunks.
 
 **Applies To**:
+
 - `tools/list`
 - `resources/list`
 - `resources/templates/list`
@@ -751,6 +804,7 @@ mcpServer.server.notification({
 **Requirements**:
 
 **Request Format**:
+
 ```typescript
 {
   "method": "tools/list",  // or resources/list, prompts/list, etc.
@@ -761,6 +815,7 @@ mcpServer.server.notification({
 ```
 
 **Response Format**:
+
 ```typescript
 {
   "tools": [ /* array of tools */ ],  // or resources, prompts, etc.
@@ -769,6 +824,7 @@ mcpServer.server.notification({
 ```
 
 **Implementation Requirements**:
+
 - If `cursor` parameter is provided, return results starting after that position
 - If more results are available, include `nextCursor` in response
 - Cursor tokens MUST be opaque strings (format is server-defined)
@@ -776,6 +832,7 @@ mcpServer.server.notification({
 - For conformance testing, pagination is optional (all items can be returned in single response)
 
 **Example**:
+
 ```typescript
 // First request (no cursor)
 Request: { "method": "tools/list" }
@@ -808,11 +865,13 @@ Response: {
 **Endpoint**: `completion/complete`
 
 **Requirements**:
+
 - Accept completion requests for prompt or resource template arguments
 - Provide contextual suggestions based on partial input
 - Return array of completion values ranked by relevance
 
 **Request Format**:
+
 ```typescript
 {
   "method": "completion/complete",
@@ -830,6 +889,7 @@ Response: {
 ```
 
 **Response Format**:
+
 ```typescript
 {
   "completion": {
@@ -856,6 +916,7 @@ npm start
 ```
 
 Server should output:
+
 ```
 MCP Conformance Test Server running on http://localhost:3000
   - MCP endpoint: http://localhost:3000/mcp
@@ -870,5 +931,3 @@ npm run test:server -- --server-url http://localhost:3000/mcp --scenario server-
 # All tests
 npm run test:server -- --server-url http://localhost:3000/mcp --all
 ```
-
-

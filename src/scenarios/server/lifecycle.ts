@@ -23,10 +23,12 @@ export class ServerInitializeScenario implements ClientScenario {
                 description: 'Server responds to initialize request with valid structure',
                 status: 'SUCCESS',
                 timestamp: new Date().toISOString(),
-                specReferences: [{
-                    id: 'MCP-Initialize',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Initialize',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
+                    }
+                ],
                 details: {
                     serverUrl,
                     connected: true
@@ -42,10 +44,12 @@ export class ServerInitializeScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed to initialize: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Initialize',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Initialize',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
+                    }
+                ]
             });
         }
 

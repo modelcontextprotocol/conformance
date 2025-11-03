@@ -4,15 +4,7 @@
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServer, NotificationCollector } from './client-helper.js';
-import {
-    ListToolsResultSchema,
-    CallToolResultSchema,
-    LoggingMessageNotificationSchema,
-    ProgressNotificationSchema,
-    CreateMessageRequestSchema,
-    ElicitRequestSchema,
-    Progress
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema, CreateMessageRequestSchema, ElicitRequestSchema, Progress } from '@modelcontextprotocol/sdk/types.js';
 
 export class ToolsListScenario implements ClientScenario {
     name = 'tools-list';
@@ -49,10 +41,12 @@ export class ToolsListScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#listing-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#listing-tools'
+                    }
+                ],
                 details: {
                     toolCount: result.tools?.length || 0,
                     tools: result.tools?.map(t => t.name)
@@ -68,10 +62,12 @@ export class ToolsListScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#listing-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#listing-tools'
+                    }
+                ]
             });
         }
 
@@ -112,10 +108,12 @@ export class ToolsCallSimpleTextScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ],
                 details: {
                     result
                 }
@@ -130,10 +128,12 @@ export class ToolsCallSimpleTextScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ]
             });
         }
 
@@ -173,10 +173,12 @@ export class ToolsCallImageScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ],
                 details: {
                     mimeType: imageContent?.mimeType,
                     hasData: !!imageContent?.data
@@ -192,10 +194,12 @@ export class ToolsCallImageScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ]
             });
         }
 
@@ -239,10 +243,12 @@ export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ],
                 details: {
                     contentCount: content ? content.length : 0,
                     contentTypes: content ? content.map((c: any) => c.type) : []
@@ -258,10 +264,12 @@ export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ]
             });
         }
 
@@ -280,7 +288,7 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
             const connection = await connectToServer(serverUrl);
             const notifications = new NotificationCollector(connection.client);
 
-            const result = await connection.client.callTool({
+            await connection.client.callTool({
                 name: 'test_tool_with_logging',
                 arguments: {}
             });
@@ -305,10 +313,12 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Logging',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Logging',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
+                    }
+                ],
                 details: {
                     logCount: logNotifications.length,
                     logs: logNotifications.map((n: any) => n.params)
@@ -324,10 +334,12 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Logging',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Logging',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
+                    }
+                ]
             });
         }
 
@@ -359,14 +371,19 @@ export class ToolsCallErrorScenario implements ClientScenario {
                 id: 'tools-call-error',
                 name: 'ToolsCallError',
                 description: 'Tool returns error correctly',
-                status: (hasIsError && hasErrorMessage) ? 'SUCCESS' : 'FAILURE',
+                status: hasIsError && hasErrorMessage ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
-                errorMessage: !hasIsError ? 'Tool did not return isError: true' :
-                    !hasErrorMessage ? 'Error result missing error message' : undefined,
-                specReferences: [{
-                    id: 'MCP-Error-Handling',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle'
-                }],
+                errorMessage: !hasIsError
+                    ? 'Tool did not return isError: true'
+                    : !hasErrorMessage
+                      ? 'Error result missing error message'
+                      : undefined,
+                specReferences: [
+                    {
+                        id: 'MCP-Error-Handling',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle'
+                    }
+                ],
                 details: {
                     result
                 }
@@ -381,10 +398,12 @@ export class ToolsCallErrorScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Error-Handling',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Error-Handling',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle'
+                    }
+                ]
             });
         }
 
@@ -446,10 +465,12 @@ export class ToolsCallWithProgressScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Progress',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/progress'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Progress',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/progress'
+                    }
+                ],
                 details: {
                     progressCount: progressUpdates.length,
                     progressNotifications: progressUpdates.map((n: Progress) => n),
@@ -466,10 +487,12 @@ export class ToolsCallWithProgressScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Progress',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/progress'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Progress',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/progress'
+                    }
+                ]
             });
         }
 
@@ -488,21 +511,18 @@ export class ToolsCallSamplingScenario implements ClientScenario {
             const connection = await connectToServer(serverUrl);
 
             let samplingRequested = false;
-            connection.client.setRequestHandler(
-                CreateMessageRequestSchema,
-                async (_request) => {
-                    samplingRequested = true;
-                    return {
-                        role: 'assistant',
-                        content: {
-                            type: 'text',
-                            text: 'This is a test response from the client'
-                        },
-                        model: 'test-model',
-                        stopReason: 'endTurn'
-                    };
-                }
-            );
+            connection.client.setRequestHandler(CreateMessageRequestSchema, async _request => {
+                samplingRequested = true;
+                return {
+                    role: 'assistant',
+                    content: {
+                        type: 'text',
+                        text: 'This is a test response from the client'
+                    },
+                    model: 'test-model',
+                    stopReason: 'endTurn'
+                };
+            });
 
             const result = await connection.client.callTool({
                 name: 'test_sampling',
@@ -528,10 +548,12 @@ export class ToolsCallSamplingScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Sampling',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/sampling'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Sampling',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/sampling'
+                    }
+                ],
                 details: {
                     samplingRequested,
                     result
@@ -547,10 +569,12 @@ export class ToolsCallSamplingScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Sampling',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/sampling'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Sampling',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/sampling'
+                    }
+                ]
             });
         }
 
@@ -569,19 +593,16 @@ export class ToolsCallElicitationScenario implements ClientScenario {
             const connection = await connectToServer(serverUrl);
 
             let elicitationRequested = false;
-            connection.client.setRequestHandler(
-                ElicitRequestSchema,
-                async (_request) => {
-                    elicitationRequested = true;
-                    return {
-                        action: 'accept',
-                        content: {
-                            username: 'testuser',
-                            email: 'test@example.com'
-                        }
-                    };
-                }
-            );
+            connection.client.setRequestHandler(ElicitRequestSchema, async _request => {
+                elicitationRequested = true;
+                return {
+                    action: 'accept',
+                    content: {
+                        username: 'testuser',
+                        email: 'test@example.com'
+                    }
+                };
+            });
 
             const result = await connection.client.callTool({
                 name: 'test_elicitation',
@@ -607,10 +628,12 @@ export class ToolsCallElicitationScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Elicitation',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/elicitation'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Elicitation',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/elicitation'
+                    }
+                ],
                 details: {
                     elicitationRequested,
                     result
@@ -626,10 +649,12 @@ export class ToolsCallElicitationScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Elicitation',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/elicitation'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Elicitation',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/elicitation'
+                    }
+                ]
             });
         }
 
@@ -663,7 +688,8 @@ export class ToolsCallAudioScenario implements ClientScenario {
             if (!audioContent) errors.push('No audio content found');
             if (audioContent && !audioContent.data) errors.push('Audio content missing data field');
             if (audioContent && !audioContent.mimeType) errors.push('Audio content missing mimeType field');
-            if (audioContent && audioContent.mimeType !== 'audio/wav') errors.push(`Expected mimeType 'audio/wav', got '${audioContent.mimeType}'`);
+            if (audioContent && audioContent.mimeType !== 'audio/wav')
+                errors.push(`Expected mimeType 'audio/wav', got '${audioContent.mimeType}'`);
 
             checks.push({
                 id: 'tools-call-audio',
@@ -672,10 +698,12 @@ export class ToolsCallAudioScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ],
                 details: {
                     hasAudioContent: !!audioContent,
                     audioDataLength: audioContent?.data?.length || 0
@@ -691,10 +719,12 @@ export class ToolsCallAudioScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ]
             });
         }
 
@@ -742,10 +772,12 @@ export class ToolsCallEmbeddedResourceScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ],
                 details: {
                     hasResourceContent: !!resourceContent,
                     resourceUri: resourceContent?.resource?.uri
@@ -761,10 +793,12 @@ export class ToolsCallEmbeddedResourceScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Tools-Call',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Tools-Call',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
+                    }
+                ]
             });
         }
 

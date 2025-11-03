@@ -7,12 +7,14 @@ A framework for testing MCP (Model Context Protocol) client implementations agai
 ## Quick Start
 
 ### Testing Clients
+
 ```bash
 npm install
 npm run start -- --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
 ```
 
 ### Testing Servers
+
 ```bash
 npm run test:server -- --server-url http://localhost:3000/mcp --all
 ```

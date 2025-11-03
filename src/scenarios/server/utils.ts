@@ -31,10 +31,12 @@ export class LoggingSetLevelScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Logging',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Logging',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
+                    }
+                ],
                 details: {
                     result
                 }
@@ -49,10 +51,12 @@ export class LoggingSetLevelScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Logging',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Logging',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
+                    }
+                ]
             });
         }
 
@@ -71,18 +75,16 @@ export class CompletionCompleteScenario implements ClientScenario {
             const connection = await connectToServer(serverUrl);
 
             // Send completion/complete request
-            const result = await connection.client.complete(
-                {
-                    ref: {
-                        type: 'ref/prompt',
-                        name: 'test_prompt_with_arguments'
-                    },
-                    argument: {
-                        name: 'arg1',
-                        value: 'test'
-                    }
+            const result = await connection.client.complete({
+                ref: {
+                    type: 'ref/prompt',
+                    name: 'test_prompt_with_arguments'
+                },
+                argument: {
+                    name: 'arg1',
+                    value: 'test'
                 }
-            );
+            });
 
             // Validate response structure
             const errors: string[] = [];
@@ -100,10 +102,12 @@ export class CompletionCompleteScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Completion',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/completion'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Completion',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/completion'
+                    }
+                ],
                 details: {
                     result
                 }
@@ -118,10 +122,12 @@ export class CompletionCompleteScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Completion',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/completion'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Completion',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/completion'
+                    }
+                ]
             });
         }
 

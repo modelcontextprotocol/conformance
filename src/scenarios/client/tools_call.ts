@@ -2,6 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types.js';
+// @ts-expect-error - express has incomplete type definitions
 import express, { Request, Response, NextFunction } from 'express';
 import { ScenarioUrls } from '../../types.js';
 

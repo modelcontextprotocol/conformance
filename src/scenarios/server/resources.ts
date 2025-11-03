@@ -39,10 +39,12 @@ export class ResourcesListScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Resources-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#listing-resources'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#listing-resources'
+                    }
+                ],
                 details: {
                     resourceCount: result.resources?.length || 0,
                     resources: result.resources?.map(r => r.uri)
@@ -58,10 +60,12 @@ export class ResourcesListScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#listing-resources'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#listing-resources'
+                    }
+                ]
             });
         }
 
@@ -103,10 +107,12 @@ export class ResourcesReadTextScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Resources-Read',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Read',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
+                    }
+                ],
                 details: {
                     uri: content?.uri,
                     mimeType: content?.mimeType,
@@ -123,10 +129,12 @@ export class ResourcesReadTextScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-Read',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Read',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
+                    }
+                ]
             });
         }
 
@@ -167,10 +175,12 @@ export class ResourcesReadBinaryScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Resources-Read',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Read',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
+                    }
+                ],
                 details: {
                     uri: content?.uri,
                     mimeType: content?.mimeType,
@@ -187,10 +197,12 @@ export class ResourcesReadBinaryScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-Read',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Read',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#reading-resources'
+                    }
+                ]
             });
         }
 
@@ -236,10 +248,12 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Resources-Templates',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-templates'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Templates',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-templates'
+                    }
+                ],
                 details: {
                     uri: content?.uri,
                     content: content?.text || content?.blob
@@ -255,10 +269,12 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-Templates',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-templates'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Templates',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-templates'
+                    }
+                ]
             });
         }
 
@@ -286,10 +302,12 @@ export class ResourcesSubscribeScenario implements ClientScenario {
                 description: 'Subscribe to resource successfully',
                 status: 'SUCCESS',
                 timestamp: new Date().toISOString(),
-                specReferences: [{
-                    id: 'MCP-Resources-Subscribe',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Subscribe',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
+                    }
+                ]
             });
 
             await connection.close();
@@ -301,10 +319,12 @@ export class ResourcesSubscribeScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-Subscribe',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Subscribe',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
+                    }
+                ]
             });
         }
 
@@ -338,10 +358,12 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
                 description: 'Unsubscribe from resource successfully',
                 status: 'SUCCESS',
                 timestamp: new Date().toISOString(),
-                specReferences: [{
-                    id: 'MCP-Resources-Subscribe',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Subscribe',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
+                    }
+                ]
             });
 
             await connection.close();
@@ -353,10 +375,12 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Resources-Subscribe',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Resources-Subscribe',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
+                    }
+                ]
             });
         }
 

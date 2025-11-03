@@ -7,6 +7,7 @@ A reference implementation of an MCP server that implements all features require
 This server implements:
 
 ### Tools
+
 - `test_simple_text` - Returns simple text content
 - `test_image_content` - Returns image content (base64 PNG)
 - `test_audio_content` - Returns audio content (base64 WAV)
@@ -20,18 +21,21 @@ This server implements:
 - `test_dynamic_tool` - Dynamically added/removed tool
 
 ### Resources
+
 - `test://static-text` - Static text resource
 - `test://static-binary` - Static binary resource (image)
 - `test://template/{id}/data` - Resource template with parameter
 - `test://watched-resource` - Subscribable resource with updates
 
 ### Prompts
+
 - `test_simple_prompt` - Simple prompt without arguments
 - `test_prompt_with_arguments(arg1, arg2)` - Parameterized prompt
 - `test_prompt_with_embedded_resource(resourceUri)` - Prompt with embedded resource
 - `test_prompt_with_image` - Prompt with image content
 
 ### Other Capabilities
+
 - Logging at all levels (debug, info, notice, warning, error, critical, alert, emergency)
 - Completion support for prompt and resource arguments
 - List changed notifications for tools, resources, and prompts
@@ -54,9 +58,11 @@ The server will start on `http://localhost:3000` (or the port specified in `PORT
 ## Endpoints
 
 ### MCP Endpoint
+
 - `POST /mcp` - Main MCP protocol endpoint
 
 ### Health Check
+
 - `GET /health` - Server health check
 
 ## Automatic Behaviors
@@ -73,11 +79,13 @@ These behaviors allow testing of MCP notifications without requiring manual trig
 ## Example Usage
 
 ### Starting the Server
+
 ```bash
 npm start
 ```
 
 ### Testing with MCP Inspector
+
 ```bash
 npx @modelcontextprotocol/inspector http://localhost:3000/mcp
 ```
@@ -85,6 +93,7 @@ npx @modelcontextprotocol/inspector http://localhost:3000/mcp
 ### Testing with curl
 
 #### Initialize
+
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
@@ -104,6 +113,7 @@ curl -X POST http://localhost:3000/mcp \
 ```
 
 #### List Tools
+
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \
@@ -115,6 +125,7 @@ curl -X POST http://localhost:3000/mcp \
 ```
 
 #### Call Tool
+
 ```bash
 curl -X POST http://localhost:3000/mcp \
   -H "Content-Type: application/json" \

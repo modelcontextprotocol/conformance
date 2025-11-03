@@ -55,32 +55,33 @@ function createMcpServer() {
     );
 
     // Helper to send log messages using the underlying server
-    function sendLog(level: 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency', message: string, data?: any) {
-        mcpServer.server.notification({
-            method: 'notifications/message',
-            params: {
-                level,
-                logger: 'conformance-test-server',
-                data: data || message
-            }
-        }).catch(() => {
-            // Ignore error if no client is connected
-        });
+    function sendLog(
+        level: 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency',
+        message: string,
+        data?: any
+    ) {
+        mcpServer.server
+            .notification({
+                method: 'notifications/message',
+                params: {
+                    level,
+                    logger: 'conformance-test-server',
+                    data: data || message
+                }
+            })
+            .catch(() => {
+                // Ignore error if no client is connected
+            });
     }
 
     // ===== TOOLS =====
 
     // Simple text tool
-    mcpServer.tool(
-        'test_simple_text',
-        'Tests simple text content response',
-        {},
-        async () => {
-            return {
-                content: [{ type: 'text', text: 'This is a simple text response for testing.' }]
-            };
-        }
-    );
+    mcpServer.tool('test_simple_text', 'Tests simple text content response', {}, async () => {
+        return {
+            content: [{ type: 'text', text: 'This is a simple text response for testing.' }]
+        };
+    });
 
     // Image content tool
     mcpServer.registerTool(
@@ -116,14 +117,16 @@ function createMcpServer() {
         },
         async () => {
             return {
-                content: [{
-                    type: 'resource',
-                    resource: {
-                        uri: 'test://embedded-resource',
-                        mimeType: 'text/plain',
-                        text: 'This is an embedded resource content.'
+                content: [
+                    {
+                        type: 'resource',
+                        resource: {
+                            uri: 'test://embedded-resource',
+                            mimeType: 'text/plain',
+                            text: 'This is an embedded resource content.'
+                        }
                     }
-                }]
+                ]
             };
         }
     );
@@ -157,7 +160,7 @@ function createMcpServer() {
         'test_tool_with_logging',
         {
             description: 'Tests tool that emits log messages during execution',
-            inputSchema: {}  // Empty schema so callback gets (args, extra) instead of just (extra)
+            inputSchema: {} // Empty schema so callback gets (args, extra) instead of just (extra)
         },
         async (_args, { sendNotification }) => {
             await sendNotification({
@@ -191,17 +194,16 @@ function createMcpServer() {
         }
     );
 
-
     // Tool with progress - registerTool with empty inputSchema to get (args, extra) signature
     mcpServer.registerTool(
         'test_tool_with_progress',
         {
             description: 'Tests tool that reports progress notifications',
-            inputSchema: {}  // Empty schema so callback gets (args, extra) instead of just (extra)
+            inputSchema: {} // Empty schema so callback gets (args, extra) instead of just (extra)
         },
         async (_args, { sendNotification, _meta }) => {
             const progressToken = _meta?.progressToken ?? 0;
-            console.log("???? Progress token:", progressToken);
+            console.log('???? Progress token:', progressToken);
             await sendNotification({
                 method: 'notifications/progress',
                 params: {
@@ -279,24 +281,28 @@ function createMcpServer() {
                             maxTokens: 100
                         }
                     },
-                    (z.object({ method: z.literal('sampling/createMessage') }).passthrough() as any)
+                    z.object({ method: z.literal('sampling/createMessage') }).passthrough() as any
                 );
 
                 const samplingResult = result as any;
                 const modelResponse = samplingResult.content?.text || samplingResult.message?.content?.text || 'No response';
 
                 return {
-                    content: [{
-                        type: 'text',
-                        text: `LLM response: ${modelResponse}`
-                    }]
+                    content: [
+                        {
+                            type: 'text',
+                            text: `LLM response: ${modelResponse}`
+                        }
+                    ]
                 };
             } catch (error: any) {
                 return {
-                    content: [{
-                        type: 'text',
-                        text: `Sampling not supported or error: ${error.message}`
-                    }]
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Sampling not supported or error: ${error.message}`
+                        }
+                    ]
                 };
             }
         }
@@ -324,29 +330,33 @@ function createMcpServer() {
                                 properties: {
                                     response: {
                                         type: 'string',
-                                        description: 'User\'s response'
+                                        description: "User's response"
                                     }
                                 },
                                 required: ['response']
                             }
                         }
                     },
-                    (z.object({ method: z.literal('elicitation/create') }).passthrough() as any)
+                    z.object({ method: z.literal('elicitation/create') }).passthrough() as any
                 );
 
                 const elicitResult = result as any;
                 return {
-                    content: [{
-                        type: 'text',
-                        text: `User response: action=${elicitResult.action}, content=${JSON.stringify(elicitResult.content || {})}`
-                    }]
+                    content: [
+                        {
+                            type: 'text',
+                            text: `User response: action=${elicitResult.action}, content=${JSON.stringify(elicitResult.content || {})}`
+                        }
+                    ]
                 };
             } catch (error: any) {
                 return {
-                    content: [{
-                        type: 'text',
-                        text: `Elicitation not supported or error: ${error.message}`
-                    }]
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Elicitation not supported or error: ${error.message}`
+                        }
+                    ]
                 };
             }
         }
@@ -367,11 +377,13 @@ function createMcpServer() {
         },
         async () => {
             return {
-                contents: [{
-                    uri: 'test://static-text',
-                    mimeType: 'text/plain',
-                    text: 'This is the content of the static text resource.'
-                }]
+                contents: [
+                    {
+                        uri: 'test://static-text',
+                        mimeType: 'text/plain',
+                        text: 'This is the content of the static text resource.'
+                    }
+                ]
             };
         }
     );
@@ -387,11 +399,13 @@ function createMcpServer() {
         },
         async () => {
             return {
-                contents: [{
-                    uri: 'test://static-binary',
-                    mimeType: 'image/png',
-                    blob: TEST_IMAGE_BASE64
-                }]
+                contents: [
+                    {
+                        uri: 'test://static-binary',
+                        mimeType: 'image/png',
+                        blob: TEST_IMAGE_BASE64
+                    }
+                ]
             };
         }
     );
@@ -410,15 +424,17 @@ function createMcpServer() {
         async (uri, variables) => {
             const id = variables.id;
             return {
-                contents: [{
-                    uri: uri.toString(),
-                    mimeType: 'application/json',
-                    text: JSON.stringify({
-                        id,
-                        templateTest: true,
-                        data: `Data for ID: ${id}`
-                    })
-                }]
+                contents: [
+                    {
+                        uri: uri.toString(),
+                        mimeType: 'application/json',
+                        text: JSON.stringify({
+                            id,
+                            templateTest: true,
+                            data: `Data for ID: ${id}`
+                        })
+                    }
+                ]
             };
         }
     );
@@ -434,35 +450,31 @@ function createMcpServer() {
         },
         async () => {
             return {
-                contents: [{
-                    uri: 'test://watched-resource',
-                    mimeType: 'text/plain',
-                    text: watchedResourceContent
-                }]
+                contents: [
+                    {
+                        uri: 'test://watched-resource',
+                        mimeType: 'text/plain',
+                        text: watchedResourceContent
+                    }
+                ]
             };
         }
     );
 
     // Subscribe/Unsubscribe handlers
-    mcpServer.server.setRequestHandler(
-        z.object({ method: z.literal('resources/subscribe') }).passthrough(),
-        async (request: any) => {
-            const uri = request.params.uri;
-            resourceSubscriptions.add(uri);
-            sendLog('info', `Subscribed to resource: ${uri}`);
-            return {};
-        }
-    );
+    mcpServer.server.setRequestHandler(z.object({ method: z.literal('resources/subscribe') }).passthrough(), async (request: any) => {
+        const uri = request.params.uri;
+        resourceSubscriptions.add(uri);
+        sendLog('info', `Subscribed to resource: ${uri}`);
+        return {};
+    });
 
-    mcpServer.server.setRequestHandler(
-        z.object({ method: z.literal('resources/unsubscribe') }).passthrough(),
-        async (request: any) => {
-            const uri = request.params.uri;
-            resourceSubscriptions.delete(uri);
-            sendLog('info', `Unsubscribed from resource: ${uri}`);
-            return {};
-        }
-    );
+    mcpServer.server.setRequestHandler(z.object({ method: z.literal('resources/unsubscribe') }).passthrough(), async (request: any) => {
+        const uri = request.params.uri;
+        resourceSubscriptions.delete(uri);
+        sendLog('info', `Unsubscribed from resource: ${uri}`);
+        return {};
+    });
 
     // ===== PROMPTS =====
 
@@ -475,10 +487,12 @@ function createMcpServer() {
         },
         async () => {
             return {
-                messages: [{
-                    role: 'user',
-                    content: { type: 'text', text: 'This is a simple prompt for testing.' }
-                }]
+                messages: [
+                    {
+                        role: 'user',
+                        content: { type: 'text', text: 'This is a simple prompt for testing.' }
+                    }
+                ]
             };
         }
     );
@@ -494,16 +508,18 @@ function createMcpServer() {
                 arg2: z.string().describe('Second test argument')
             }
         },
-        async (args) => {
+        async args => {
             const { arg1, arg2 } = args;
             return {
-                messages: [{
-                    role: 'user',
-                    content: {
-                        type: 'text',
-                        text: `Prompt with arguments: arg1='${arg1}', arg2='${arg2}'`
+                messages: [
+                    {
+                        role: 'user',
+                        content: {
+                            type: 'text',
+                            text: `Prompt with arguments: arg1='${arg1}', arg2='${arg2}'`
+                        }
                     }
-                }]
+                ]
             };
         }
     );
@@ -518,7 +534,7 @@ function createMcpServer() {
                 resourceUri: z.string().describe('URI of the resource to embed')
             }
         },
-        async (args) => {
+        async args => {
             const uri = args.resourceUri;
             return {
                 messages: [
@@ -567,31 +583,25 @@ function createMcpServer() {
 
     // ===== LOGGING =====
 
-    mcpServer.server.setRequestHandler(
-        z.object({ method: z.literal('logging/setLevel') }).passthrough(),
-        async (request: any) => {
-            const level = request.params.level;
-            sendLog('info', `Log level set to: ${level}`);
-            return {};
-        }
-    );
+    mcpServer.server.setRequestHandler(z.object({ method: z.literal('logging/setLevel') }).passthrough(), async (request: any) => {
+        const level = request.params.level;
+        sendLog('info', `Log level set to: ${level}`);
+        return {};
+    });
 
     // ===== COMPLETION =====
 
-    mcpServer.server.setRequestHandler(
-        z.object({ method: z.literal('completion/complete') }).passthrough(),
-        async (_request: any) => {
-            // Basic completion support - returns empty array for conformance
-            // Real implementations would provide contextual suggestions
-            return {
-                completion: {
-                    values: [],
-                    total: 0,
-                    hasMore: false
-                }
-            };
-        }
-    );
+    mcpServer.server.setRequestHandler(z.object({ method: z.literal('completion/complete') }).passthrough(), async (_request: any) => {
+        // Basic completion support - returns empty array for conformance
+        // Real implementations would provide contextual suggestions
+        return {
+            completion: {
+                values: [],
+                total: 0,
+                hasMore: false
+            }
+        };
+    });
 
     return mcpServer;
 }
@@ -607,11 +617,13 @@ const app = express();
 app.use(express.json());
 
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
-app.use(cors({
-    origin: '*', // Allow all origins
-    exposedHeaders: ['Mcp-Session-Id'],
-    allowedHeaders: ['Content-Type', 'mcp-session-id', 'last-event-id']
-}));
+app.use(
+    cors({
+        origin: '*', // Allow all origins
+        exposedHeaders: ['Mcp-Session-Id'],
+        allowedHeaders: ['Content-Type', 'mcp-session-id', 'last-event-id']
+    })
+);
 
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
@@ -629,7 +641,7 @@ app.post('/mcp', async (req, res) => {
 
             transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
-                onsessioninitialized: (newSessionId) => {
+                onsessioninitialized: newSessionId => {
                     transports[newSessionId] = transport;
                     servers[newSessionId] = mcpServer;
                     console.log(`Session initialized with ID: ${newSessionId}`);

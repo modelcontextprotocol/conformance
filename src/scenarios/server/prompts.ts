@@ -39,10 +39,12 @@ export class PromptsListScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Prompts-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#listing-prompts'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#listing-prompts'
+                    }
+                ],
                 details: {
                     promptCount: result.prompts?.length || 0,
                     prompts: result.prompts?.map(p => p.name)
@@ -58,10 +60,12 @@ export class PromptsListScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Prompts-List',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#listing-prompts'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-List',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#listing-prompts'
+                    }
+                ]
             });
         }
 
@@ -101,10 +105,12 @@ export class PromptsGetSimpleScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Prompts-Get',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Get',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
+                    }
+                ],
                 details: {
                     messageCount: result.messages?.length || 0
                 }
@@ -119,10 +125,12 @@ export class PromptsGetSimpleScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Prompts-Get',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Get',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
+                    }
+                ]
             });
         }
 
@@ -169,10 +177,12 @@ export class PromptsGetWithArgsScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Prompts-Get',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Get',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
+                    }
+                ],
                 details: {
                     messageCount: result.messages?.length || 0,
                     messages: result.messages
@@ -188,10 +198,12 @@ export class PromptsGetWithArgsScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Prompts-Get',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Get',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#getting-prompts'
+                    }
+                ]
             });
         }
 
@@ -221,9 +233,8 @@ export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
             if (!result.messages) errors.push('Missing messages array');
 
             // Look for resource content
-            const hasResourceContent = result.messages.some((msg: any) =>
-                msg.content?.type === 'resource' ||
-                (msg.content?.resource !== undefined)
+            const hasResourceContent = result.messages.some(
+                (msg: any) => msg.content?.type === 'resource' || msg.content?.resource !== undefined
             );
 
             if (!hasResourceContent) {
@@ -237,10 +248,12 @@ export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Prompts-Embedded-Resources',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#embedded-resources'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Embedded-Resources',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#embedded-resources'
+                    }
+                ],
                 details: {
                     messageCount: result.messages?.length || 0,
                     messages: result.messages
@@ -256,10 +269,12 @@ export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Prompts-Embedded-Resources',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#embedded-resources'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Embedded-Resources',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#embedded-resources'
+                    }
+                ]
             });
         }
 
@@ -286,10 +301,8 @@ export class PromptsGetWithImageScenario implements ClientScenario {
             if (!result.messages) errors.push('Missing messages array');
 
             // Look for image content
-            const hasImageContent = result.messages.some((msg: any) =>
-                msg.content?.type === 'image' &&
-                msg.content?.data &&
-                msg.content?.mimeType
+            const hasImageContent = result.messages.some(
+                (msg: any) => msg.content?.type === 'image' && msg.content?.data && msg.content?.mimeType
             );
 
             if (!hasImageContent) {
@@ -303,10 +316,12 @@ export class PromptsGetWithImageScenario implements ClientScenario {
                 status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-                specReferences: [{
-                    id: 'MCP-Prompts-Image',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#image-content'
-                }],
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Image',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#image-content'
+                    }
+                ],
                 details: {
                     messageCount: result.messages?.length || 0
                 }
@@ -321,10 +336,12 @@ export class PromptsGetWithImageScenario implements ClientScenario {
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),
                 errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-                specReferences: [{
-                    id: 'MCP-Prompts-Image',
-                    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#image-content'
-                }]
+                specReferences: [
+                    {
+                        id: 'MCP-Prompts-Image',
+                        url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/prompts#image-content'
+                    }
+                ]
             });
         }
 

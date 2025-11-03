@@ -3,14 +3,9 @@ import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
 
 // Import all new server test scenarios
-import {
-    ServerInitializeScenario
-} from './server/lifecycle.js';
+import { ServerInitializeScenario } from './server/lifecycle.js';
 
-import {
-    LoggingSetLevelScenario,
-    CompletionCompleteScenario
-} from './server/utils.js';
+import { LoggingSetLevelScenario, CompletionCompleteScenario } from './server/utils.js';
 
 import {
     ToolsListScenario,

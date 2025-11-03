@@ -75,7 +75,7 @@ async function main(): Promise<void> {
     }
 
     try {
-        let allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+        const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
 
         if (runAll) {
             // Get all server scenarios
@@ -93,14 +93,16 @@ async function main(): Promise<void> {
                     console.error(`Failed to run scenario ${scenarioName}:`, error);
                     allResults.push({
                         scenario: scenarioName,
-                        checks: [{
-                            id: scenarioName,
-                            name: scenarioName,
-                            description: `Failed to run scenario`,
-                            status: 'FAILURE',
-                            timestamp: new Date().toISOString(),
-                            errorMessage: error instanceof Error ? error.message : String(error)
-                        }]
+                        checks: [
+                            {
+                                id: scenarioName,
+                                name: scenarioName,
+                                description: `Failed to run scenario`,
+                                status: 'FAILURE',
+                                timestamp: new Date().toISOString(),
+                                errorMessage: error instanceof Error ? error.message : String(error)
+                            }
+                        ]
                     });
                 }
             }

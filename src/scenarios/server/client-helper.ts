@@ -50,20 +50,14 @@ export class NotificationCollector {
 
     constructor(client: Client) {
         // Set up notification handler for logging messages
-        client.setNotificationHandler(
-            LoggingMessageNotificationSchema,
-            (notification) => {
-                this.loggingNotifications.push(notification);
-            }
-        );
+        client.setNotificationHandler(LoggingMessageNotificationSchema, notification => {
+            this.loggingNotifications.push(notification);
+        });
 
         // Set up notification handler for progress notifications
-        client.setNotificationHandler(
-            ProgressNotificationSchema,
-            (notification) => {
-                this.progressNotifications.push(notification);
-            }
-        );
+        client.setNotificationHandler(ProgressNotificationSchema, notification => {
+            this.progressNotifications.push(notification);
+        });
     }
 
     /**
