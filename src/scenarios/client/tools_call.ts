@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types.js';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { ScenarioUrls } from '../../types.js';
 
 function createServer(checks: ConformanceCheck[]): express.Application {
@@ -83,7 +83,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
     const app = express();
     app.use(express.json());
 
-    app.use((req, res, next) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
         // Log incoming requests for debugging
         // console.log(`Incoming request: ${req.method} ${req.url}`);
         checks.push({
@@ -111,7 +111,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
         });
     });
 
-    app.post('/mcp', async (req, res) => {
+    app.post('/mcp', async (req: Request, res: Response) => {
         const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined
         });

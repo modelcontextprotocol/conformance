@@ -1,12 +1,10 @@
 import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
-import { ServerInitializeClientScenario } from './server/server_initialize.js';
 
 // Import all new server test scenarios
 import {
-    ServerInitializeScenario,
-    ServerInitializeCapabilitiesScenario
+    ServerInitializeScenario
 } from './server/lifecycle.js';
 
 import {
@@ -51,12 +49,8 @@ export const scenarios = new Map<string, Scenario>([
 ]);
 
 export const clientScenarios = new Map<string, ClientScenario>([
-    // Legacy
-    ['initialize', new ServerInitializeClientScenario()],
-
     // Lifecycle scenarios
     ['server-initialize', new ServerInitializeScenario()],
-    ['server-initialize-capabilities', new ServerInitializeCapabilitiesScenario()],
 
     // Utilities scenarios
     ['logging-set-level', new LoggingSetLevelScenario()],
