@@ -22,14 +22,17 @@ pre-push:
           run: npm run lint:fix
           stage_fixed: true
           fail_text: |
-            💡 To catch linting issues earlier, enable the pre-commit hook:
-            Edit lefthook-local.yml and uncomment the pre-commit section
+              💡 To catch linting issues earlier, enable the pre-commit hook:
+              Edit lefthook-local.yml and uncomment the pre-commit section
 
 
 
 
         - name: 'Test'
           run: npm run test
+
+
+
 
 post-checkout:
     jobs:
