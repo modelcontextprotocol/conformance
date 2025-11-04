@@ -23,7 +23,7 @@ pre-push:
           stage_fixed: true
           fail_text: |
               💡 To catch linting issues earlier, enable the pre-commit hook:
-              Edit lefthook-local.yml and uncomment the pre-commit section
+              cp lefthook-local.example.yml lefthook-local.yml
 
         - name: 'Test'
           run: npm run test
