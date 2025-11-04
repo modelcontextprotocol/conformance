@@ -2,6 +2,5 @@
 import * as client from './client.js';
 import * as server from './server.js';
 
-
 export const clientChecks = client;
 export const serverChecks = server;

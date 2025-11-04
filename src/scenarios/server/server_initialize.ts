@@ -13,7 +13,7 @@ export class ServerInitializeClientScenario implements ClientScenario {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
+                    Accept: 'application/json, text/event-stream'
                 },
                 body: JSON.stringify({
                     jsonrpc: '2.0',
@@ -36,7 +36,7 @@ export class ServerInitializeClientScenario implements ClientScenario {
             }
 
             const responseText = await response.text();
-            
+
             // Handle SSE format
             let result;
             if (responseText.startsWith('event:') || responseText.includes('\ndata:')) {
@@ -53,13 +53,13 @@ export class ServerInitializeClientScenario implements ClientScenario {
                 // Regular JSON response
                 result = JSON.parse(responseText);
             }
-            
+
             const check = serverChecks.createServerInitializationCheck(result);
             checks.push(check);
         } catch (error) {
             checks.push({
                 id: 'server-initialize-request',
-                name: 'ServerInitializeRequest', 
+                name: 'ServerInitializeRequest',
                 description: 'Tests server response to initialize request',
                 status: 'FAILURE',
                 timestamp: new Date().toISOString(),

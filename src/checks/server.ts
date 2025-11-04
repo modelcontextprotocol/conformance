@@ -5,13 +5,14 @@ export function createServerInitializationCheck(initializeResponse: any, expecte
     const protocolVersion = result?.protocolVersion;
     const serverInfo = result?.serverInfo;
     const capabilities = result?.capabilities;
-    
+
     const errors: string[] = [];
     if (!initializeResponse?.jsonrpc) errors.push('Missing jsonrpc field');
     if (!initializeResponse?.id) errors.push('Missing id field');
     if (!result) errors.push('Missing result field');
     if (!protocolVersion) errors.push('Missing protocolVersion in result');
-    if (protocolVersion !== expectedSpecVersion) errors.push(`Protocol version mismatch: expected ${expectedSpecVersion}, got ${protocolVersion}`);
+    if (protocolVersion !== expectedSpecVersion)
+        errors.push(`Protocol version mismatch: expected ${expectedSpecVersion}, got ${protocolVersion}`);
     if (!serverInfo) errors.push('Missing serverInfo in result');
     if (!serverInfo?.name) errors.push('Missing server name in serverInfo');
     if (!serverInfo?.version) errors.push('Missing server version in serverInfo');

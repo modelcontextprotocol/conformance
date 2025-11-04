@@ -8,9 +8,7 @@ export const scenarios = new Map<string, Scenario>([
     ['tools-call', new ToolsCallScenario()]
 ]);
 
-export const clientScenarios = new Map<string, ClientScenario>([
-    ['initialize', new ServerInitializeClientScenario()]
-]);
+export const clientScenarios = new Map<string, ClientScenario>([['initialize', new ServerInitializeClientScenario()]]);
 
 export function registerScenario(name: string, scenario: Scenario): void {
     scenarios.set(name, scenario);
