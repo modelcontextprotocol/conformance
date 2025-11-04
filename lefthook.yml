@@ -22,7 +22,6 @@ pre-push:
           run: npm run lint:fix
           stage_fixed: true
 
-
         - name: 'Test'
           run: npm run test
 
