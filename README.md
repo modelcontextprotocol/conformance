@@ -56,9 +56,9 @@ Results are saved to `results/<scenario>-<timestamp>/`:
 ## Available Scenarios
 
 - **initialize** - Tests MCP client initialization handshake
-    - Validates protocol version
-    - Validates clientInfo (name and version)
-    - Validates server response handling
+  - Validates protocol version
+  - Validates clientInfo (name and version)
+  - Validates server response handling
 
 ## Architecture
 

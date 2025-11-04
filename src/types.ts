@@ -1,38 +1,43 @@
-export type CheckStatus = 'SUCCESS' | 'FAILURE' | 'WARNING' | 'SKIPPED' | 'INFO';
+export type CheckStatus =
+  | 'SUCCESS'
+  | 'FAILURE'
+  | 'WARNING'
+  | 'SKIPPED'
+  | 'INFO';
 
 export interface SpecReference {
-    id: string;
-    url?: string;
+  id: string;
+  url?: string;
 }
 
 export interface ConformanceCheck {
-    id: string;
-    name: string;
-    description: string;
-    status: CheckStatus;
-    timestamp: string;
-    specReferences?: SpecReference[];
-    details?: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-    errorMessage?: string;
-    logs?: string[];
+  id: string;
+  name: string;
+  description: string;
+  status: CheckStatus;
+  timestamp: string;
+  specReferences?: SpecReference[];
+  details?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  errorMessage?: string;
+  logs?: string[];
 }
 
 export interface ScenarioUrls {
-    serverUrl: string;
-    authUrl?: string;
+  serverUrl: string;
+  authUrl?: string;
 }
 
 export interface Scenario {
-    name: string;
-    description: string;
-    start(): Promise<ScenarioUrls>;
-    stop(): Promise<void>;
-    getChecks(): ConformanceCheck[];
+  name: string;
+  description: string;
+  start(): Promise<ScenarioUrls>;
+  stop(): Promise<void>;
+  getChecks(): ConformanceCheck[];
 }
 
 export interface ClientScenario {
-    name: string;
-    description: string;
-    run(serverUrl: string): Promise<ConformanceCheck[]>;
+  name: string;
+  description: string;
+  run(serverUrl: string): Promise<ConformanceCheck[]>;
 }

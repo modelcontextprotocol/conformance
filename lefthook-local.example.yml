@@ -4,7 +4,7 @@
 
 # Uncomment to add pre-commit hook for automatic linting on staged files:
 pre-commit:
-    commands:
-        lint:
-            run: npm run lint:fix {staged_files}
-            stage_fixed: true
+  commands:
+    lint:
+      run: npm run lint:fix {staged_files}
+      stage_fixed: true

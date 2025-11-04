@@ -1,27 +1,27 @@
 {
-    "name": "mcp-conformance-test-server",
-    "version": "1.0.0",
-    "description": "Reference implementation of MCP server for conformance testing",
-    "type": "module",
-    "main": "everything-server.ts",
-    "scripts": {
-        "start": "tsx everything-server.ts",
-        "dev": "tsx watch everything-server.ts"
-    },
-    "keywords": [
-        "mcp",
-        "model-context-protocol",
-        "conformance",
-        "testing"
-    ],
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.20.1",
-        "@types/cors": "^2.8.19",
-        "cors": "^2.8.5",
-        "express": "^5.1.0"
-    },
-    "devDependencies": {
-        "tsx": "^4.7.0",
-        "typescript": "^5.5.4"
-    }
+  "name": "mcp-conformance-test-server",
+  "version": "1.0.0",
+  "description": "Reference implementation of MCP server for conformance testing",
+  "type": "module",
+  "main": "everything-server.ts",
+  "scripts": {
+    "start": "tsx everything-server.ts",
+    "dev": "tsx watch everything-server.ts"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "conformance",
+    "testing"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.1",
+    "@types/cors": "^2.8.19",
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.4"
+  }
 }

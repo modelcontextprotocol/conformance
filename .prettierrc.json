@@ -1,12 +1,12 @@
 {
-    "singleQuote": true,
-    "trailingComma": "none",
-    "overrides": [
-        {
-            "files": "**/*.md",
-            "options": {
-                "printWidth": 280
-            }
-        }
-    ]
+  "singleQuote": true,
+  "trailingComma": "none",
+  "overrides": [
+    {
+      "files": "**/*.md",
+      "options": {
+        "printWidth": 280
+      }
+    }
+  ]
 }
