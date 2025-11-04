@@ -6,7 +6,7 @@
         "start": "tsx src/runner.ts",
         "test": "jest",
         "lint": "eslint src/ && prettier --check .",
-        "lint:fix": "eslint src/ --fix && prettier --write ."
+        "lint:fix": "eslint src/ --fix && prettier --write . && git diff --exit-code --quiet"
     },
     "devDependencies": {
         "@eslint/js": "^9.8.0",
