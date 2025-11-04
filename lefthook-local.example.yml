@@ -1,0 +1,10 @@
+# Optional local lefthook configuration
+# To enable this:
+#  cp lefthook-local.example.yml lefthook-local.yml
+
+# Uncomment to add pre-commit hook for automatic linting on staged files:
+pre-commit:
+    commands:
+        lint:
+            run: npm run lint:fix {staged_files}
+            stage_fixed: true

@@ -2,14 +2,21 @@
 
 A framework for testing MCP (Model Context Protocol) client implementations against the specification.
 
-> [!WARNING]
-> This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
+> [!WARNING] This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
 
 ## Quick Start
+
+### Testing Clients
 
 ```bash
 npm install
 npm run start -- --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
+```
+
+### Testing Servers
+
+```bash
+npm run test:server -- --server-url http://localhost:3000/mcp --all
 ```
 
 ## Overview

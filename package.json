@@ -4,13 +4,16 @@
     "type": "module",
     "scripts": {
         "start": "tsx src/runner.ts",
+        "test:server": "tsx src/server-runner.ts",
         "test": "jest",
         "lint": "eslint src/ && prettier --check .",
-        "lint:fix": "eslint src/ --fix && prettier --write ."
+        "lint:fix": "eslint src/ --fix && prettier --write .",
+        "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet"
     },
     "devDependencies": {
         "@eslint/js": "^9.8.0",
         "@jest/globals": "^29.7.0",
+        "@types/express": "^5.0.3",
         "@types/jest": "^29.5.8",
         "eslint": "^9.8.0",
         "eslint-config-prettier": "^10.1.8",
@@ -24,6 +27,7 @@
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.20.1",
         "express": "^5.1.0",
+        "lefthook": "^2.0.2",
         "zod": "^3.25.76"
     }
 }

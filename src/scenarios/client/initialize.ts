@@ -1,6 +1,6 @@
 import http from 'http';
 import { Scenario, ScenarioUrls, ConformanceCheck } from '../../types.js';
-import { createClientInitializationCheck, createServerInfoCheck } from '../../checks.js';
+import { clientChecks } from '../../checks/index.js';
 
 export class InitializeScenario implements Scenario {
     name = 'initialize';
@@ -96,7 +96,7 @@ export class InitializeScenario implements Scenario {
     private handleInitialize(request: any, res: http.ServerResponse): void {
         const initializeRequest = request.params;
 
-        const check = createClientInitializationCheck(initializeRequest);
+        const check = clientChecks.createClientInitializationCheck(initializeRequest);
         this.checks.push(check);
 
         const serverInfo = {
@@ -104,8 +104,7 @@ export class InitializeScenario implements Scenario {
             version: '1.0.0'
         };
 
-        const serverInfoCheck = createServerInfoCheck(serverInfo);
-        this.checks.push(serverInfoCheck);
+        this.checks.push(clientChecks.createServerInfoCheck(serverInfo));
 
         const response = {
             jsonrpc: '2.0',

@@ -2,7 +2,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types.js';
-import express from 'express';
+// @ts-expect-error - express has incomplete type definitions
+import express, { Request, Response, NextFunction } from 'express';
 import { ScenarioUrls } from '../../types.js';
 
 function createServer(checks: ConformanceCheck[]): express.Application {
@@ -83,7 +84,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
     const app = express();
     app.use(express.json());
 
-    app.use((req, res, next) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
         // Log incoming requests for debugging
         // console.log(`Incoming request: ${req.method} ${req.url}`);
         checks.push({
@@ -105,13 +106,13 @@ function createServer(checks: ConformanceCheck[]): express.Application {
             status: 'INFO',
             timestamp: new Date().toISOString(),
             details: {
-                // TODO: this isn't working
-                body: JSON.stringify(res.body)
+                // TODO: Response body not available in express middleware
+                statusCode: res.statusCode
             }
         });
     });
 
-    app.post('/mcp', async (req, res) => {
+    app.post('/mcp', async (req: Request, res: Response) => {
         const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined
         });
@@ -125,6 +126,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
 
 export class ToolsCallScenario implements Scenario {
     name = 'tools_call';
+    description = 'Tests calling tools with various parameter types';
     private app: express.Application | null = null;
     private httpServer: any = null;
     private checks: ConformanceCheck[] = [];

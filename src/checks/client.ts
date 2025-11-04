@@ -1,4 +1,19 @@
-import { ConformanceCheck, CheckStatus } from './types.js';
+import { ConformanceCheck, CheckStatus } from '../types.js';
+
+export function createServerInfoCheck(serverInfo: { name: string; version: string }): ConformanceCheck {
+    return {
+        id: 'server-info',
+        name: 'ServerInfo',
+        description: 'Test server info returned to client',
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        specReferences: [{ id: 'MCP-Lifecycle', url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle' }],
+        details: {
+            serverName: serverInfo.name,
+            serverVersion: serverInfo.version
+        }
+    };
+}
 
 export function createClientInitializationCheck(initializeRequest: any, expectedSpecVersion: string = '2025-06-18'): ConformanceCheck {
     const protocolVersionSent = initializeRequest?.protocolVersion;
@@ -28,20 +43,5 @@ export function createClientInitializationCheck(initializeRequest: any, expected
         },
         errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
         logs: errors.length > 0 ? errors : undefined
-    };
-}
-
-export function createServerInfoCheck(serverInfo: { name: string; version: string }): ConformanceCheck {
-    return {
-        id: 'server-info',
-        name: 'ServerInfo',
-        description: 'Test server info returned to client',
-        status: 'INFO',
-        timestamp: new Date().toISOString(),
-        specReferences: [{ id: 'MCP-Lifecycle', url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle' }],
-        details: {
-            serverName: serverInfo.name,
-            serverVersion: serverInfo.version
-        }
     };
 }
