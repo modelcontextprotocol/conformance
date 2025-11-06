@@ -33,10 +33,10 @@ This document specifies requirements based on the MCP specification. All feature
 
 Your server MUST provide:
 
-```typescript
+```json
 {
-  name: "mcp-conformance-test-server",  // Or your SDK-specific name
-  version: "1.0.0"
+  "name": "mcp-conformance-test-server",
+  "version": "1.0.0"
 }
 ```
 
@@ -44,21 +44,21 @@ Your server MUST provide:
 
 Your server MUST declare these capabilities during initialization:
 
-```typescript
+```json
 {
-  capabilities: {
-    tools: {
-      listChanged: true
+  "capabilities": {
+    "tools": {
+      "listChanged": true
     },
-    resources: {
-      subscribe: true,
-      listChanged: true
+    "resources": {
+      "subscribe": true,
+      "listChanged": true
     },
-    prompts: {
-      listChanged: true
+    "prompts": {
+      "listChanged": true
     },
-    logging: {},
-    completions: {}
+    "logging": {},
+    "completions": {}
   }
 }
 ```
@@ -141,9 +141,14 @@ Implement these tools with exact names:
 
 **Returns**: Text content
 
-```typescript
+```json
 {
-  content: [{ type: 'text', text: 'This is a simple text response for testing.' }];
+  "content": [
+    {
+      "type": "text",
+      "text": "This is a simple text response for testing."
+    }
+  ]
 }
 ```
 
@@ -153,15 +158,15 @@ Implement these tools with exact names:
 
 **Returns**: Image content with base64 data
 
-```typescript
+```json
 {
-  content: [
+  "content": [
     {
-      type: 'image',
-      data: '<base64-encoded-png>',
-      mimeType: 'image/png'
+      "type": "image",
+      "data": "<base64-encoded-png>",
+      "mimeType": "image/png"
     }
-  ];
+  ]
 }
 ```
 
@@ -173,15 +178,15 @@ Implement these tools with exact names:
 
 **Returns**: Audio content with base64 data
 
-```typescript
+```json
 {
-  content: [
+  "content": [
     {
-      type: 'audio',
-      data: '<base64-encoded-wav>',
-      mimeType: 'audio/wav'
+      "type": "audio",
+      "data": "<base64-encoded-wav>",
+      "mimeType": "audio/wav"
     }
-  ];
+  ]
 }
 ```
 
@@ -193,18 +198,18 @@ Implement these tools with exact names:
 
 **Returns**: Embedded resource content
 
-```typescript
+```json
 {
-  content: [
+  "content": [
     {
-      type: 'resource',
-      resource: {
-        uri: 'test://embedded-resource',
-        mimeType: 'text/plain',
-        text: 'This is an embedded resource content.'
+      "type": "resource",
+      "resource": {
+        "uri": "test://embedded-resource",
+        "mimeType": "text/plain",
+        "text": "This is an embedded resource content."
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -214,20 +219,27 @@ Implement these tools with exact names:
 
 **Returns**: Multiple content items (text + image + resource)
 
-```typescript
+```json
 {
-  content: [
-    { type: 'text', text: 'Multiple content types test:' },
-    { type: 'image', data: '<base64>', mimeType: 'image/png' },
+  "content": [
     {
-      type: 'resource',
-      resource: {
-        uri: 'test://mixed-content-resource',
-        mimeType: 'application/json',
-        text: '{"test":"data","value":123}'
+      "type": "text",
+      "text": "Multiple content types test:"
+    },
+    {
+      "type": "image",
+      "data": "<base64>",
+      "mimeType": "image/png"
+    },
+    {
+      "type": "resource",
+      "resource": {
+        "uri": "test://mixed-content-resource",
+        "mimeType": "application/json",
+        "text": "{\"test\":\"data\",\"value\":123}"
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -263,13 +275,13 @@ If no progress token provided, just execute with delays.
 
 **Progress Notification Format**:
 
-```typescript
+```json
 {
-  method: "notifications/progress",
-  params: {
-    progressToken: <from request._meta.progressToken>,
-    progress: 50,
-    total: 100
+  "method": "notifications/progress",
+  "params": {
+    "progressToken": "<from request._meta.progressToken>",
+    "progress": 50,
+    "total": 100
   }
 }
 ```
@@ -280,14 +292,17 @@ If no progress token provided, just execute with delays.
 
 **Behavior**: Always throw an error
 
-**Returns**: JSON-RPC error
+**Returns**: JSON-RPC response with `isError: true`
 
 ```json
 {
-  "error": {
-    "code": -32000,
-    "message": "This tool intentionally returns an error for testing"
-  }
+  "isError": true,
+  "content": [
+    {
+      "type": "text",
+      "text": "This tool intentionally returns an error for testing"
+    }
+  ]
 }
 ```
 
@@ -301,14 +316,17 @@ If no progress token provided, just execute with delays.
 
 **Sampling Request**:
 
-```typescript
+```json
 {
   "method": "sampling/createMessage",
   "params": {
     "messages": [
       {
         "role": "user",
-        "content": { "type": "text", "text": "<prompt from arguments>" }
+        "content": {
+          "type": "text",
+          "text": "<prompt from arguments>"
+        }
       }
     ],
     "maxTokens": 100
@@ -318,7 +336,7 @@ If no progress token provided, just execute with delays.
 
 **Returns**: Text content with the LLM's response
 
-```typescript
+```json
 {
   "content": [
     {
@@ -341,7 +359,7 @@ If no progress token provided, just execute with delays.
 
 **Elicitation Request**:
 
-```typescript
+```json
 {
   "method": "elicitation/create",
   "params": {
@@ -349,12 +367,16 @@ If no progress token provided, just execute with delays.
     "requestedSchema": {
       "type": "object",
       "properties": {
-        "response": {
+        "username": {
           "type": "string",
           "description": "User's response"
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address"
         }
       },
-      "required": ["response"]
+      "required": ["username", "email"]
     }
   }
 }
@@ -362,7 +384,7 @@ If no progress token provided, just execute with delays.
 
 **Returns**: Text content with the user's response
 
-```typescript
+```json
 {
   "content": [
     {
@@ -430,26 +452,26 @@ Implement these resources with exact URIs:
 
 **Metadata** (for `resources/list`):
 
-```typescript
+```json
 {
-  uri: "test://static-text",
-  name: "Static Text Resource",
-  description: "A static text resource for testing",
-  mimeType: "text/plain"
+  "uri": "test://static-text",
+  "name": "Static Text Resource",
+  "description": "A static text resource for testing",
+  "mimeType": "text/plain"
 }
 ```
 
 **Content** (for `resources/read`):
 
-```typescript
+```json
 {
-  contents: [
+  "contents": [
     {
-      uri: 'test://static-text',
-      mimeType: 'text/plain',
-      text: 'This is the content of the static text resource.'
+      "uri": "test://static-text",
+      "mimeType": "text/plain",
+      "text": "This is the content of the static text resource."
     }
-  ];
+  ]
 }
 ```
 
@@ -459,26 +481,26 @@ Implement these resources with exact URIs:
 
 **Metadata**:
 
-```typescript
+```json
 {
-  uri: "test://static-binary",
-  name: "Static Binary Resource",
-  description: "A static binary resource (image) for testing",
-  mimeType: "image/png"
+  "uri": "test://static-binary",
+  "name": "Static Binary Resource",
+  "description": "A static binary resource (image) for testing",
+  "mimeType": "image/png"
 }
 ```
 
 **Content**:
 
-```typescript
+```json
 {
-  contents: [
+  "contents": [
     {
-      uri: 'test://static-binary',
-      mimeType: 'image/png',
-      blob: '<base64-encoded-png>'
+      "uri": "test://static-binary",
+      "mimeType": "image/png",
+      "blob": "<base64-encoded-png>"
     }
-  ];
+  ]
 }
 ```
 
@@ -488,12 +510,12 @@ Implement these resources with exact URIs:
 
 **Metadata** (for `resources/list`):
 
-```typescript
+```json
 {
-  uriTemplate: "test://template/{id}/data",
-  name: "Resource Template",
-  description: "A resource template with parameter substitution",
-  mimeType: "application/json"
+  "uriTemplate": "test://template/{id}/data",
+  "name": "Resource Template",
+  "description": "A resource template with parameter substitution",
+  "mimeType": "application/json"
 }
 ```
 
@@ -501,15 +523,15 @@ Implement these resources with exact URIs:
 
 **Content** (for `resources/read` with `uri: "test://template/123/data"`):
 
-```typescript
+```json
 {
-  contents: [
+  "contents": [
     {
-      uri: 'test://template/123/data',
-      mimeType: 'application/json',
-      text: '{"id":"123","templateTest":true,"data":"Data for ID: 123"}'
+      "uri": "test://template/123/data",
+      "mimeType": "application/json",
+      "text": "{\"id\":\"123\",\"templateTest\":true,\"data\":\"Data for ID: 123\"}"
     }
-  ];
+  ]
 }
 ```
 
@@ -521,26 +543,26 @@ Implement these resources with exact URIs:
 
 **Metadata**:
 
-```typescript
+```json
 {
-  uri: "test://watched-resource",
-  name: "Watched Resource",
-  description: "A resource that can be subscribed to",
-  mimeType: "text/plain"
+  "uri": "test://watched-resource",
+  "name": "Watched Resource",
+  "description": "A resource that can be subscribed to",
+  "mimeType": "text/plain"
 }
 ```
 
 **Content**:
 
-```typescript
+```json
 {
-  contents: [
+  "contents": [
     {
-      uri: 'test://watched-resource',
-      mimeType: 'text/plain',
-      text: 'Watched resource content'
+      "uri": "test://watched-resource",
+      "mimeType": "text/plain",
+      "text": "Watched resource content"
     }
-  ];
+  ]
 }
 ```
 
@@ -612,17 +634,17 @@ Implement these prompts with exact names:
 
 **Returns**:
 
-```typescript
+```json
 {
-  messages: [
+  "messages": [
     {
-      role: 'user',
-      content: {
-        type: 'text',
-        text: 'This is a simple prompt for testing.'
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "This is a simple prompt for testing."
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -635,30 +657,38 @@ Implement these prompts with exact names:
 
 **Metadata** (for `prompts/list`):
 
-```typescript
+```json
 {
-  name: "test_prompt_with_arguments",
-  description: "A prompt with required arguments",
-  arguments: [
-    { name: "arg1", description: "First test argument", required: true },
-    { name: "arg2", description: "Second test argument", required: true }
+  "name": "test_prompt_with_arguments",
+  "description": "A prompt with required arguments",
+  "arguments": [
+    {
+      "name": "arg1",
+      "description": "First test argument",
+      "required": true
+    },
+    {
+      "name": "arg2",
+      "description": "Second test argument",
+      "required": true
+    }
   ]
 }
 ```
 
 **Returns** (with args `{arg1: "hello", arg2: "world"}`):
 
-```typescript
+```json
 {
-  messages: [
+  "messages": [
     {
-      role: 'user',
-      content: {
-        type: 'text',
-        text: "Prompt with arguments: arg1='hello', arg2='world'"
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Prompt with arguments: arg1='hello', arg2='world'"
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -670,28 +700,28 @@ Implement these prompts with exact names:
 
 **Returns**:
 
-```typescript
+```json
 {
-  messages: [
+  "messages": [
     {
-      role: 'user',
-      content: {
-        type: 'resource',
-        resource: {
-          uri: '<resourceUri from arguments>',
-          mimeType: 'text/plain',
-          text: 'Embedded resource content for testing.'
+      "role": "user",
+      "content": {
+        "type": "resource",
+        "resource": {
+          "uri": "<resourceUri from arguments>",
+          "mimeType": "text/plain",
+          "text": "Embedded resource content for testing."
         }
       }
     },
     {
-      role: 'user',
-      content: {
-        type: 'text',
-        text: 'Please process the embedded resource above.'
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please process the embedded resource above."
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -701,25 +731,25 @@ Implement these prompts with exact names:
 
 **Returns**:
 
-```typescript
+```json
 {
-  messages: [
+  "messages": [
     {
-      role: 'user',
-      content: {
-        type: 'image',
-        data: '<base64-encoded-png>',
-        mimeType: 'image/png'
+      "role": "user",
+      "content": {
+        "type": "image",
+        "data": "<base64-encoded-png>",
+        "mimeType": "image/png"
       }
     },
     {
-      role: 'user',
-      content: {
-        type: 'text',
-        text: 'Please analyze the image above.'
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please analyze the image above."
       }
     }
-  ];
+  ]
 }
 ```
 
@@ -762,13 +792,13 @@ Implement these prompts with exact names:
 
 **Example**:
 
-```typescript
+```json
 {
-  method: "notifications/message",
-  params: {
-    level: "info",
-    logger: "conformance-test-server",
-    data: "Tool execution started"
+  "method": "notifications/message",
+  "params": {
+    "level": "info",
+    "logger": "conformance-test-server",
+    "data": "Tool execution started"
   }
 }
 ```
@@ -805,21 +835,21 @@ mcpServer.server
 
 **Request Format**:
 
-```typescript
+```json
 {
-  "method": "tools/list",  // or resources/list, prompts/list, etc.
+  "method": "tools/list",
   "params": {
-    "cursor": "optional-opaque-token"  // Optional: for subsequent pages
+    "cursor": "optional-opaque-token"
   }
 }
 ```
 
 **Response Format**:
 
-```typescript
+```json
 {
-  "tools": [ /* array of tools */ ],  // or resources, prompts, etc.
-  "nextCursor": "optional-opaque-token"  // Optional: indicates more results available
+  "tools": [],
+  "nextCursor": "optional-opaque-token"
 }
 ```
 
@@ -833,7 +863,7 @@ mcpServer.server
 
 **Example**:
 
-```typescript
+```ts
 // First request (no cursor)
 Request: { "method": "tools/list" }
 Response: {
@@ -872,17 +902,17 @@ Response: {
 
 **Request Format**:
 
-```typescript
+```json
 {
   "method": "completion/complete",
   "params": {
     "ref": {
-      "type": "ref/prompt",  // or "ref/resource"
-      "name": "test_prompt_with_arguments"  // or uri for resources
+      "type": "ref/prompt",
+      "name": "test_prompt_with_arguments"
     },
     "argument": {
       "name": "arg1",
-      "value": "par"  // partial value to complete
+      "value": "par"
     }
   }
 }
@@ -890,12 +920,12 @@ Response: {
 
 **Response Format**:
 
-```typescript
+```json
 {
   "completion": {
-    "values": ["paris", "park", "party"],  // Up to 100 items
-    "total": 150,  // Optional: total available matches
-    "hasMore": true  // Optional: indicates more results exist
+    "values": ["paris", "park", "party"],
+    "total": 150,
+    "hasMore": true
   }
 }
 ```
