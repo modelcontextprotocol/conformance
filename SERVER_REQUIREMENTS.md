@@ -31,7 +31,7 @@ This document specifies requirements based on the MCP specification. All feature
 
 ### Server Identity
 
-Your server MUST provide:
+Your server MUST provide (can substitute your SDK name as the server name):
 
 ```json
 {
