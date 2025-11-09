@@ -8,6 +8,112 @@ import type { Scenario, ConformanceCheck } from '../../../types.js';
 import express, { Request, Response, NextFunction } from 'express';
 import { ScenarioUrls } from '../../../types.js';
 
+interface LoggerOptions {
+  incomingId: string;
+  outgoingId: string;
+  mcpRoute?: string;
+}
+
+function createRequestLogger(
+  checks: ConformanceCheck[],
+  options: LoggerOptions
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Log incoming request
+    let requestDescription = `Received ${req.method} request for ${req.path}`;
+    const requestDetails: any = {
+      method: req.method,
+      path: req.path
+    };
+
+    // Add query parameters to details if they exist
+    if (Object.keys(req.query).length > 0) {
+      requestDetails.query = req.query;
+    }
+
+    // Extract MCP method if this is the MCP route
+    if (
+      options.mcpRoute &&
+      req.path === options.mcpRoute &&
+      req.get('content-type')?.includes('application/json') &&
+      req.body &&
+      req.body.method
+    ) {
+      const mcpMethod = req.body.method;
+      requestDescription += ` (method: ${mcpMethod})`;
+      requestDetails.mcpMethod = mcpMethod;
+    }
+
+    checks.push({
+      id: options.incomingId,
+      name:
+        options.incomingId.charAt(0).toUpperCase() +
+        options.incomingId.slice(1),
+      description: requestDescription,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: requestDetails
+    });
+
+    // Capture response body
+    const oldWrite = res.write;
+    const oldEnd = res.end;
+    const chunks: (Buffer | string)[] = [];
+
+    res.write = function (chunk: any, ...args: any[]) {
+      chunks.push(chunk);
+      return oldWrite.call(res, chunk, ...args);
+    };
+
+    res.end = function (chunk?: any, ...args: any[]) {
+      if (chunk) {
+        chunks.push(chunk);
+      }
+
+      const buffers = chunks.map((c) =>
+        typeof c === 'string' ? Buffer.from(c) : c
+      );
+      const body = Buffer.concat(buffers).toString('utf8');
+      let responseDescription = `Sent ${res.statusCode} response for ${req.method} ${req.path}`;
+      const responseDetails: any = {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode
+      };
+
+      // Include MCP method in response log if present
+      if (requestDetails.mcpMethod) {
+        responseDescription += ` (method: ${requestDetails.mcpMethod})`;
+        responseDetails.mcpMethod = requestDetails.mcpMethod;
+      }
+
+      // Add response body if available
+      if (body) {
+        try {
+          responseDetails.body = JSON.parse(body);
+        } catch {
+          responseDetails.body = body;
+        }
+      }
+
+      checks.push({
+        id: options.outgoingId,
+        name:
+          options.outgoingId.charAt(0).toUpperCase() +
+          options.outgoingId.slice(1),
+        description: responseDescription,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: responseDetails
+      });
+
+      return oldEnd.call(res, chunk, ...args);
+    };
+
+    next();
+  };
+}
+
 class MockTokenVerifier implements OAuthTokenVerifier {
   constructor(private checks: ConformanceCheck[]) {}
 
@@ -66,45 +172,12 @@ function createAuthServer(
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Log incoming request
-    const requestDetails: any = {
-      method: req.method,
-      path: req.path
-    };
-
-    // Add query parameters to details if they exist
-    if (Object.keys(req.query).length > 0) {
-      requestDetails.query = req.query;
-    }
-
-    checks.push({
-      id: 'incoming-auth-request',
-      name: 'IncomingAuthRequest',
-      description: `Received ${req.method} request for ${req.path}`,
-      status: 'INFO',
-      timestamp: new Date().toISOString(),
-      details: requestDetails
-    });
-
-    // Log response when it finishes
-    res.on('finish', () => {
-      checks.push({
-        id: 'outgoing-auth-response',
-        name: 'OutgoingAuthResponse',
-        description: `Sent ${res.statusCode} response for ${req.method} ${req.path}`,
-        status: 'INFO',
-        timestamp: new Date().toISOString(),
-        details: {
-          method: req.method,
-          path: req.path,
-          statusCode: res.statusCode
-        }
-      });
-    });
-
-    next();
-  });
+  app.use(
+    createRequestLogger(checks, {
+      incomingId: 'incoming-auth-request',
+      outgoingId: 'outgoing-auth-response'
+    })
+  );
 
   app.get(
     '/.well-known/oauth-authorization-server',
@@ -256,67 +329,13 @@ function createServer(
   const app = express();
   app.use(express.json());
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Log incoming request
-    let requestDescription = `Received ${req.method} request for ${req.path}`;
-    const requestDetails: any = {
-      method: req.method,
-      path: req.path
-    };
-
-    // Add query parameters to details if they exist
-    if (Object.keys(req.query).length > 0) {
-      requestDetails.query = req.query;
-    }
-
-    // Extract MCP method if this is the /mcp endpoint
-    if (
-      req.path === '/mcp' &&
-      req.body &&
-      typeof req.body === 'object' &&
-      req.body.method
-    ) {
-      const mcpMethod = req.body.method;
-      requestDescription += ` (method: ${mcpMethod})`;
-      requestDetails.mcpMethod = mcpMethod;
-    }
-
-    checks.push({
-      id: 'incoming-request',
-      name: 'IncomingRequest',
-      description: requestDescription,
-      status: 'INFO',
-      timestamp: new Date().toISOString(),
-      details: requestDetails
-    });
-
-    // Log response when it finishes
-    res.on('finish', () => {
-      let responseDescription = `Sent ${res.statusCode} response for ${req.method} ${req.path}`;
-      const responseDetails: any = {
-        method: req.method,
-        path: req.path,
-        statusCode: res.statusCode
-      };
-
-      // Include MCP method in response log if present
-      if (requestDetails.mcpMethod) {
-        responseDescription += ` (method: ${requestDetails.mcpMethod})`;
-        responseDetails.mcpMethod = requestDetails.mcpMethod;
-      }
-
-      checks.push({
-        id: 'outgoing-response',
-        name: 'OutgoingResponse',
-        description: responseDescription,
-        status: 'INFO',
-        timestamp: new Date().toISOString(),
-        details: responseDetails
-      });
-    });
-
-    next();
-  });
+  app.use(
+    createRequestLogger(checks, {
+      incomingId: 'incoming-request',
+      outgoingId: 'outgoing-response',
+      mcpRoute: '/mcp'
+    })
+  );
 
   app.get(
     '/.well-known/oauth-protected-resource',
