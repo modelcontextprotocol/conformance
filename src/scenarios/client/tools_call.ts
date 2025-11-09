@@ -5,8 +5,9 @@ import {
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types.js';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import { ScenarioUrls } from '../../types.js';
+import { createRequestLogger } from '../request-logger.js';
 
 function createServer(checks: ConformanceCheck[]): express.Application {
   const server = new Server(
@@ -86,33 +87,13 @@ function createServer(checks: ConformanceCheck[]): express.Application {
   const app = express();
   app.use(express.json());
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Log incoming requests for debugging
-    // console.log(`Incoming request: ${req.method} ${req.url}`);
-    checks.push({
-      id: 'incoming-request',
-      name: 'IncomingRequest',
-      description: `Received ${req.method} request for ${req.url}`,
-      status: 'INFO',
-      timestamp: new Date().toISOString(),
-      details: {
-        body: JSON.stringify(req.body)
-      }
-    });
-    next();
-    checks.push({
-      id: 'outgoing-response',
-      name: 'OutgoingResponse',
-      // TODO: include MCP method?
-      description: `Sent ${res.statusCode} response`,
-      status: 'INFO',
-      timestamp: new Date().toISOString(),
-      details: {
-        // TODO: Response body not available in express middleware
-        statusCode: res.statusCode
-      }
-    });
-  });
+  app.use(
+    createRequestLogger(checks, {
+      incomingId: 'incoming-request',
+      outgoingId: 'outgoing-response',
+      mcpRoute: '/mcp'
+    })
+  );
 
   app.post('/mcp', async (req: Request, res: Response) => {
     const transport = new StreamableHTTPServerTransport({
