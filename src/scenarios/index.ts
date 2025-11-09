@@ -1,6 +1,7 @@
 import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
+import { PRMPathBasedScenario } from './client/auth/prm-pathbased.js';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle.js';
@@ -43,7 +44,8 @@ import {
 
 export const scenarios = new Map<string, Scenario>([
   ['initialize', new InitializeScenario()],
-  ['tools-call', new ToolsCallScenario()]
+  ['tools-call', new ToolsCallScenario()],
+  ['auth-prm-pathbased', new PRMPathBasedScenario()]
 ]);
 
 export const clientScenarios = new Map<string, ClientScenario>([
