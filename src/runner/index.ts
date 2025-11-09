@@ -39,7 +39,14 @@ function formatPrettyChecks(checks: ConformanceCheck[]): string {
       const statusColor = getStatusColor(check.status);
       const status = `${statusColor}${check.status.padEnd(maxStatusLength)}${COLORS.RESET}`;
       const description = check.description;
-      return `${timestamp} [${id}] ${status} ${description}`;
+      const line = `${timestamp} [${id}] ${status} ${description}`;
+      // Add newline after outgoing responses for better visual separation
+      return (
+        line +
+        (check.id.includes('outgoing') && check.id.includes('response')
+          ? '\n'
+          : '')
+      );
     })
     .join('\n');
 }

@@ -67,18 +67,42 @@ function createAuthServer(
   app.use(express.urlencoded({ extended: true }));
 
   app.use((req: Request, res: Response, next: NextFunction) => {
+    // Log incoming request
+    const requestDetails: any = {
+      method: req.method,
+      path: req.path
+    };
+
+    // Add query parameters to details if they exist
+    if (Object.keys(req.query).length > 0) {
+      requestDetails.query = req.query;
+    }
+
     checks.push({
       id: 'incoming-auth-request',
       name: 'IncomingAuthRequest',
-      description: `Received ${req.method} request for ${req.url}`,
+      description: `Received ${req.method} request for ${req.path}`,
       status: 'INFO',
       timestamp: new Date().toISOString(),
-      details: {
-        method: req.method,
-        url: req.url,
-        path: req.path
-      }
+      details: requestDetails
     });
+
+    // Log response when it finishes
+    res.on('finish', () => {
+      checks.push({
+        id: 'outgoing-auth-response',
+        name: 'OutgoingAuthResponse',
+        description: `Sent ${res.statusCode} response for ${req.method} ${req.path}`,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          method: req.method,
+          path: req.path,
+          statusCode: res.statusCode
+        }
+      });
+    });
+
     next();
   });
 
@@ -151,6 +175,24 @@ function createAuthServer(
   });
 
   app.post('/token', (req: Request, res: Response) => {
+    checks.push({
+      id: 'token-request',
+      name: 'TokenRequest',
+      description: 'Client requested access token',
+      status: 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'RFC-6749-4.1.3',
+          url: 'https://tools.ietf.org/html/rfc6749#section-4.1.3'
+        }
+      ],
+      details: {
+        endpoint: '/token',
+        grantType: req.body.grant_type
+      }
+    });
+
     res.json({
       access_token: 'test-token',
       token_type: 'Bearer',
@@ -159,6 +201,24 @@ function createAuthServer(
   });
 
   app.post('/register', (req: Request, res: Response) => {
+    checks.push({
+      id: 'client-registration',
+      name: 'ClientRegistration',
+      description: 'Client registered with authorization server',
+      status: 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'RFC-7591-2',
+          url: 'https://tools.ietf.org/html/rfc7591#section-2'
+        }
+      ],
+      details: {
+        endpoint: '/register',
+        clientName: req.body.client_name
+      }
+    });
+
     res.status(201).json({
       client_id: 'test-client-id',
       client_secret: 'test-client-secret',
@@ -197,12 +257,17 @@ function createServer(
   app.use(express.json());
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    let description = `Received ${req.method} request for ${req.url}`;
-    const details: any = {
+    // Log incoming request
+    let requestDescription = `Received ${req.method} request for ${req.path}`;
+    const requestDetails: any = {
       method: req.method,
-      url: req.url,
       path: req.path
     };
+
+    // Add query parameters to details if they exist
+    if (Object.keys(req.query).length > 0) {
+      requestDetails.query = req.query;
+    }
 
     // Extract MCP method if this is the /mcp endpoint
     if (
@@ -212,18 +277,44 @@ function createServer(
       req.body.method
     ) {
       const mcpMethod = req.body.method;
-      description += ` (method: ${mcpMethod})`;
-      details.mcpMethod = mcpMethod;
+      requestDescription += ` (method: ${mcpMethod})`;
+      requestDetails.mcpMethod = mcpMethod;
     }
 
     checks.push({
       id: 'incoming-request',
       name: 'IncomingRequest',
-      description: description,
+      description: requestDescription,
       status: 'INFO',
       timestamp: new Date().toISOString(),
-      details: details
+      details: requestDetails
     });
+
+    // Log response when it finishes
+    res.on('finish', () => {
+      let responseDescription = `Sent ${res.statusCode} response for ${req.method} ${req.path}`;
+      const responseDetails: any = {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode
+      };
+
+      // Include MCP method in response log if present
+      if (requestDetails.mcpMethod) {
+        responseDescription += ` (method: ${requestDetails.mcpMethod})`;
+        responseDetails.mcpMethod = requestDetails.mcpMethod;
+      }
+
+      checks.push({
+        id: 'outgoing-response',
+        name: 'OutgoingResponse',
+        description: responseDescription,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: responseDetails
+      });
+    });
+
     next();
   });
 
@@ -376,7 +467,9 @@ export class PRMPathBasedScenario implements Scenario {
       'prm-pathbased-requested',
       // 'prm-root-not-checked-first'
       'authorization-server-metadata',
-      'authorization-request'
+      'client-registration',
+      'authorization-request',
+      'token-request'
     ];
 
     for (const slug of expectedSlugs) {
