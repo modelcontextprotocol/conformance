@@ -303,10 +303,10 @@ function createServer(
   return app;
 }
 
-export class PRMPathBasedScenario implements Scenario {
-  name = 'auth-prm-pathbased';
+export class AuthBasicDCRScenario implements Scenario {
+  name = 'auth-basic-dcr';
   description =
-    'Tests PRM discovery at path-based location (/mcp/.well-known/oauth-protected-resource)';
+    'Tests Basic OAuth flow with DCR, PRM at path-based location, OAuth metadata at root location, and no scopes required';
   private app: express.Application | null = null;
   private httpServer: any = null;
   private authApp: express.Application | null = null;
