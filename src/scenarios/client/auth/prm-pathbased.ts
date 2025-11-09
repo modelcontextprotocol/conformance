@@ -233,29 +233,7 @@ function createServer(
   );
 
   app.get(
-    '/.well-known/oauth-protected-resource',
-    (req: Request, res: Response) => {
-      checks.push({
-        id: 'prm-root-requested',
-        name: 'PRMRootRequested',
-        description: 'Client requested PRM metadata at root location',
-        status: 'INFO',
-        timestamp: new Date().toISOString(),
-        details: {
-          url: req.url,
-          path: req.path
-        }
-      });
-
-      res.json({
-        resource: getBaseUrl(),
-        authorization_servers: [getAuthServerUrl()]
-      });
-    }
-  );
-
-  app.get(
-    '/mcp/.well-known/oauth-protected-resource',
+    '/.well-known/oauth-protected-resource/mcp',
     (req: Request, res: Response) => {
       checks.push({
         id: 'prm-pathbased-requested',
@@ -289,7 +267,7 @@ function createServer(
     const authMiddleware = requireBearerAuth({
       verifier: new MockTokenVerifier(checks),
       requiredScopes: [],
-      resourceMetadataUrl: `${getBaseUrl()}/mcp/.well-known/oauth-protected-resource`
+      resourceMetadataUrl: `${getBaseUrl()}/.well-known/oauth-protected-resource/mcp`
     });
 
     authMiddleware(req, res, async (err?: any) => {
@@ -379,7 +357,6 @@ export class PRMPathBasedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = [
       'prm-pathbased-requested',
-      // 'prm-root-not-checked-first'
       'authorization-server-metadata',
       'client-registration',
       'authorization-request',

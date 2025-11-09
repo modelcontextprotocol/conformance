@@ -81,6 +81,12 @@ export function createRequestLogger(
         responseDetails.mcpMethod = requestDetails.mcpMethod;
       }
 
+      // Add response headers
+      const headers = res.getHeaders();
+      if (Object.keys(headers).length > 0) {
+        responseDetails.headers = headers;
+      }
+
       // Add response body if available
       if (body) {
         try {
