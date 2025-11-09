@@ -1,78 +1,123 @@
 import { describe, test, expect } from '@jest/globals';
-import { PRMPathBasedScenario } from './prm-pathbased.js';
+import { getScenario } from '../../index.js';
 import { spawn } from 'child_process';
 import path from 'path';
 
-async function runClient(
-  serverUrl: string
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const clientPath = path.join(
-    process.cwd(),
-    'examples/clients/typescript/auth-test.ts'
-  );
+const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn('tsx', [clientPath, serverUrl], {
-      stdio: ['ignore', 'pipe', 'pipe']
+async function runClientAgainstScenario(
+  clientPath: string,
+  scenarioName: string,
+  expectedFailureSlugs: string[] = []
+): Promise<void> {
+  const scenario = getScenario(scenarioName);
+  expect(scenario).toBeDefined();
+
+  if (!scenario) {
+    throw new Error(`Scenario ${scenarioName} not found`);
+  }
+
+  // Start the scenario server
+  const urls = await scenario.start();
+  const serverUrl = urls.serverUrl;
+
+  try {
+    // Run the client
+    await new Promise<void>((resolve, reject) => {
+      const clientProcess = spawn('npx', ['tsx', clientPath, serverUrl], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      clientProcess.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      clientProcess.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      const timeout = setTimeout(() => {
+        clientProcess.kill('SIGTERM');
+        reject(
+          new Error(
+            `Client failed to complete within ${CLIENT_TIMEOUT}ms\nStdout: ${stdout}\nStderr: ${stderr}`
+          )
+        );
+      }, CLIENT_TIMEOUT);
+
+      clientProcess.on('exit', (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(
+            new Error(
+              `Client exited with code ${code}\nStdout: ${stdout}\nStderr: ${stderr}`
+            )
+          );
+        }
+      });
+
+      clientProcess.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(
+          new Error(
+            `Failed to start client: ${error.message}\nStdout: ${stdout}\nStderr: ${stderr}`
+          )
+        );
+      });
     });
 
-    let stdout = '';
-    let stderr = '';
+    // Get checks from the scenario
+    const checks = scenario.getChecks();
 
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
+    // Verify checks were returned
+    expect(checks.length).toBeGreaterThan(0);
 
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
+    // Filter out INFO checks
+    const nonInfoChecks = checks.filter((c) => c.status !== 'INFO');
 
-    proc.on('close', (code) => {
-      resolve({ exitCode: code || 0, stdout, stderr });
-    });
+    // Check for expected failures
+    if (expectedFailureSlugs.length > 0) {
+      // Verify that the expected failures are present
+      for (const slug of expectedFailureSlugs) {
+        const check = checks.find((c) => c.id === slug);
+        expect(check).toMatchSnapshot();
+      }
 
-    proc.on('error', (err) => {
-      reject(err);
-    });
+      // Verify that only the expected checks failed
+      const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
+      const failureSlugs = failures.map((c) => c.id);
+      expect(failureSlugs.sort()).toEqual(expectedFailureSlugs.sort());
+    } else {
+      // Default: expect all checks to pass
+      const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
+      if (failures.length > 0) {
+        const failureMessages = failures
+          .map((c) => `${c.name}: ${c.errorMessage || c.description}`)
+          .join('\n  ');
+        throw new Error(`Scenario failed with checks:\n  ${failureMessages}`);
+      }
 
-    setTimeout(() => {
-      proc.kill();
-      reject(new Error('Test timeout'));
-    }, 30000);
-  });
+      // All non-INFO checks should be SUCCESS
+      const successes = nonInfoChecks.filter((c) => c.status === 'SUCCESS');
+      expect(successes.length).toBe(nonInfoChecks.length);
+    }
+  } finally {
+    // Stop the scenario server
+    await scenario.stop();
+  }
 }
 
 describe('PRM Path-Based Discovery', () => {
   test('client discovers PRM at path-based location before root', async () => {
-    jest.setTimeout(10000);
-    const scenario = new PRMPathBasedScenario();
-
-    const urls = await scenario.start();
-
-    try {
-      const result = await runClient(urls.serverUrl);
-
-      console.log('Client stdout:', result.stdout);
-      console.log('Client stderr:', result.stderr);
-      console.log('Client exit code:', result.exitCode);
-
-      const checks = scenario.getChecks();
-      console.log(
-        'Checks:',
-        JSON.stringify(
-          checks.filter((c) => c.status !== 'INFO'),
-          null,
-          2
-        )
-      );
-
-      const pathBasedCheck = checks.find(
-        (c) => c.id === 'prm-pathbased-requested'
-      );
-      expect(pathBasedCheck).toBeDefined();
-      expect(pathBasedCheck?.status).toBe('SUCCESS');
-    } finally {
-      await scenario.stop();
-    }
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test.ts'
+    );
+    await runClientAgainstScenario(clientPath, 'auth-prm-pathbased');
   });
 });
