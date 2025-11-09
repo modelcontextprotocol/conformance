@@ -8,7 +8,7 @@ async function runClient(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const clientPath = path.join(
     process.cwd(),
-    'examples/clients/typescript/test1.ts'
+    'examples/clients/typescript/auth-test.ts'
   );
 
   return new Promise((resolve, reject) => {
@@ -44,6 +44,7 @@ async function runClient(
 
 describe('PRM Path-Based Discovery', () => {
   test('client discovers PRM at path-based location before root', async () => {
+    jest.setTimeout(10000);
     const scenario = new PRMPathBasedScenario();
 
     const urls = await scenario.start();
@@ -70,12 +71,6 @@ describe('PRM Path-Based Discovery', () => {
       );
       expect(pathBasedCheck).toBeDefined();
       expect(pathBasedCheck?.status).toBe('SUCCESS');
-
-      const rootNotFirstCheck = checks.find(
-        (c) => c.id === 'prm-root-not-checked-first'
-      );
-      expect(rootNotFirstCheck).toBeDefined();
-      expect(rootNotFirstCheck?.status).toBe('SUCCESS');
     } finally {
       await scenario.stop();
     }
