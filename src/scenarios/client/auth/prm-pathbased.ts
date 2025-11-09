@@ -197,17 +197,32 @@ function createServer(
   app.use(express.json());
 
   app.use((req: Request, res: Response, next: NextFunction) => {
+    let description = `Received ${req.method} request for ${req.url}`;
+    const details: any = {
+      method: req.method,
+      url: req.url,
+      path: req.path
+    };
+
+    // Extract MCP method if this is the /mcp endpoint
+    if (
+      req.path === '/mcp' &&
+      req.body &&
+      typeof req.body === 'object' &&
+      req.body.method
+    ) {
+      const mcpMethod = req.body.method;
+      description += ` (method: ${mcpMethod})`;
+      details.mcpMethod = mcpMethod;
+    }
+
     checks.push({
       id: 'incoming-request',
       name: 'IncomingRequest',
-      description: `Received ${req.method} request for ${req.url}`,
+      description: description,
       status: 'INFO',
       timestamp: new Date().toISOString(),
-      details: {
-        method: req.method,
-        url: req.url,
-        path: req.path
-      }
+      details: details
     });
     next();
   });
