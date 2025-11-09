@@ -3,6 +3,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 
 async function main(): Promise<void> {
   const serverUrl = process.argv[2];
@@ -33,12 +34,39 @@ async function main(): Promise<void> {
       }
     );
 
-    const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    let transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
       authProvider
     });
 
-    await client.connect(transport);
-    console.log('✅ Successfully connected to MCP server');
+    // Try to connect - handle OAuth if needed
+    try {
+      await client.connect(transport);
+      console.log('✅ Successfully connected to MCP server');
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        console.log('🔐 OAuth required - handling authorization...');
+
+        // The provider will automatically fetch the auth code
+        const authCode = await authProvider.getAuthCode();
+
+        // Complete the auth flow
+        await transport.finishAuth(authCode);
+
+        // Close the old transport
+        await transport.close();
+
+        // Create a new transport with the authenticated provider
+        transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+          authProvider: authProvider
+        });
+
+        // Connect with the new transport
+        await client.connect(transport);
+        console.log('✅ Successfully connected with authentication');
+      } else {
+        throw error;
+      }
+    }
 
     await client.listTools();
     console.log('✅ Successfully listed tools');
