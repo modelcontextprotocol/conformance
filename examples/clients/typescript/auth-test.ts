@@ -15,73 +15,65 @@ async function main(): Promise<void> {
 
   console.log(`Connecting to MCP server at: ${serverUrl}`);
 
-  try {
-    const client = new Client(
-      {
-        name: 'test-auth-client',
-        version: '1.0.0'
-      },
-      {
-        capabilities: {}
-      }
-    );
-
-    const authProvider = new ConformanceOAuthProvider(
-      'http://localhost:3000/callback',
-      {
-        client_name: 'test-auth-client',
-        redirect_uris: ['http://localhost:3000/callback']
-      }
-    );
-
-    let transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-      authProvider
-    });
-
-    // Try to connect - handle OAuth if needed
-    try {
-      await client.connect(transport);
-      console.log('✅ Successfully connected to MCP server');
-    } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        console.log('🔐 OAuth required - handling authorization...');
-
-        // The provider will automatically fetch the auth code
-        const authCode = await authProvider.getAuthCode();
-
-        // Complete the auth flow
-        await transport.finishAuth(authCode);
-
-        // Close the old transport
-        await transport.close();
-
-        // Create a new transport with the authenticated provider
-        transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-          authProvider: authProvider
-        });
-
-        // Connect with the new transport
-        await client.connect(transport);
-        console.log('✅ Successfully connected with authentication');
-      } else {
-        throw error;
-      }
+  const client = new Client(
+    {
+      name: 'test-auth-client',
+      version: '1.0.0'
+    },
+    {
+      capabilities: {}
     }
+  );
 
-    await client.listTools();
-    console.log('✅ Successfully listed tools');
+  const authProvider = new ConformanceOAuthProvider(
+    'http://localhost:3000/callback',
+    {
+      client_name: 'test-auth-client',
+      redirect_uris: ['http://localhost:3000/callback']
+    }
+  );
 
-    await transport.close();
-    console.log('✅ Connection closed successfully');
+  let transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider
+  });
 
-    process.exit(0);
+  // Try to connect - handle OAuth if needed
+  try {
+    await client.connect(transport);
+    console.log('✅ Successfully connected to MCP server');
   } catch (error) {
-    console.error('❌ Failed to connect to MCP server:', error);
-    process.exit(1);
+    if (error instanceof UnauthorizedError) {
+      console.log('🔐 OAuth required - handling authorization...');
+
+      // The provider will automatically fetch the auth code
+      const authCode = await authProvider.getAuthCode();
+
+      // Complete the auth flow
+      await transport.finishAuth(authCode);
+
+      // Close the old transport
+      await transport.close();
+
+      // Create a new transport with the authenticated provider
+      transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+        authProvider: authProvider
+      });
+
+      // Connect with the new transport
+      await client.connect(transport);
+      console.log('✅ Successfully connected with authentication');
+    } else {
+      throw error;
+    }
   }
+
+  await client.listTools();
+  console.log('✅ Successfully listed tools');
+
+  await transport.close();
+  console.log('✅ Connection closed successfully');
+
+  process.exit(0);
 }
 
-main().catch((error) => {
-  console.error('Unhandled error:', error);
-  process.exit(1);
-});
+main();

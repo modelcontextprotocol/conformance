@@ -4,10 +4,11 @@ import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 
-export class AuthBasicDCRScenario implements Scenario {
-  name = 'auth-basic-dcr';
+export class AuthBasicMetadataVar1Scenario implements Scenario {
+  // TODO: name should match what we put in the scenario map
+  name = 'auth-basic-metadata-var1';
   description =
-    'Tests Basic OAuth flow with DCR, PRM at path-based location, OAuth metadata at root location, and no scopes required';
+    'Tests Basic OAuth flow with DCR, PRM at root location, OAuth metadata at OpenID discovery path, and no scopes required';
   private authServer = new ServerLifecycle(() => this.authBaseUrl);
   private server = new ServerLifecycle(() => this.baseUrl);
   private checks: ConformanceCheck[] = [];
@@ -17,13 +18,19 @@ export class AuthBasicDCRScenario implements Scenario {
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, () => this.authBaseUrl);
+    const authApp = createAuthServer(this.checks, () => this.authBaseUrl, {
+      metadataPath: '/.well-known/openid-configuration',
+      isOpenIdConfiguration: true
+    });
     this.authBaseUrl = await this.authServer.start(authApp);
 
     const app = createServer(
       this.checks,
       () => this.baseUrl,
-      () => this.authBaseUrl
+      () => this.authBaseUrl,
+      {
+        prmPath: '/.well-known/oauth-protected-resource'
+      }
     );
     this.baseUrl = await this.server.start(app);
 
@@ -37,7 +44,6 @@ export class AuthBasicDCRScenario implements Scenario {
 
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = [
-      'prm-pathbased-requested',
       'authorization-server-metadata',
       'client-registration',
       'authorization-request',
@@ -48,12 +54,10 @@ export class AuthBasicDCRScenario implements Scenario {
       if (!this.checks.find((c) => c.id === slug)) {
         this.checks.push({
           id: slug,
-          // TODO: these are redundant...
           name: `Expected Check Missing: ${slug}`,
           description: `Expected Check Missing: ${slug}`,
           status: 'FAILURE',
           timestamp: new Date().toISOString()
-          // TODO: ideally we'd add the spec references
         });
       }
     }

@@ -2,6 +2,7 @@ import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
 import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
+import { AuthBasicMetadataVar1Scenario } from './client/auth/basic-metadata-var1.js';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle.js';
@@ -45,7 +46,8 @@ import {
 export const scenarios = new Map<string, Scenario>([
   ['initialize', new InitializeScenario()],
   ['tools-call', new ToolsCallScenario()],
-  ['auth/basic-dcr', new AuthBasicDCRScenario()]
+  ['auth/basic-dcr', new AuthBasicDCRScenario()],
+  ['auth/basic-metadata-var1', new AuthBasicMetadataVar1Scenario()]
 ]);
 
 export const clientScenarios = new Map<string, ClientScenario>([

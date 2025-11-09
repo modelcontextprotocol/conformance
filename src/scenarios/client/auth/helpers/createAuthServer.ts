@@ -2,10 +2,20 @@ import express, { Request, Response } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 
+export interface AuthServerOptions {
+  metadataPath?: string;
+  isOpenIdConfiguration?: boolean;
+}
+
 export function createAuthServer(
   checks: ConformanceCheck[],
-  getAuthBaseUrl: () => string
+  getAuthBaseUrl: () => string,
+  options: AuthServerOptions = {}
 ): express.Application {
+  const {
+    metadataPath = '/.well-known/oauth-authorization-server',
+    isOpenIdConfiguration = false
+  } = options;
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -17,39 +27,45 @@ export function createAuthServer(
     })
   );
 
-  app.get(
-    '/.well-known/oauth-authorization-server',
-    (req: Request, res: Response) => {
-      checks.push({
-        id: 'authorization-server-metadata',
-        name: 'AuthorizationServerMetadata',
-        description: 'Client requested authorization server metadata',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'RFC-8414',
-            url: 'https://tools.ietf.org/html/rfc8414'
-          }
-        ],
-        details: {
-          url: req.url,
-          path: req.path
+  app.get(metadataPath, (req: Request, res: Response) => {
+    checks.push({
+      id: 'authorization-server-metadata',
+      name: 'AuthorizationServerMetadata',
+      description: 'Client requested authorization server metadata',
+      status: 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'RFC-8414',
+          url: 'https://tools.ietf.org/html/rfc8414'
         }
-      });
+      ],
+      details: {
+        url: req.url,
+        path: req.path
+      }
+    });
 
-      res.json({
-        issuer: getAuthBaseUrl(),
-        authorization_endpoint: `${getAuthBaseUrl()}/authorize`,
-        token_endpoint: `${getAuthBaseUrl()}/token`,
-        registration_endpoint: `${getAuthBaseUrl()}/register`,
-        response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-        code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['none']
-      });
+    const metadata: any = {
+      issuer: getAuthBaseUrl(),
+      authorization_endpoint: `${getAuthBaseUrl()}/authorize`,
+      token_endpoint: `${getAuthBaseUrl()}/token`,
+      registration_endpoint: `${getAuthBaseUrl()}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none']
+    };
+
+    // Add OpenID Configuration specific fields
+    if (isOpenIdConfiguration) {
+      metadata.jwks_uri = `${getAuthBaseUrl()}/.well-known/jwks.json`;
+      metadata.subject_types_supported = ['public'];
+      metadata.id_token_signing_alg_values_supported = ['RS256'];
     }
-  );
+
+    res.json(metadata);
+  });
 
   app.get('/authorize', (req: Request, res: Response) => {
     checks.push({

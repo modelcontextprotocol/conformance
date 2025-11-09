@@ -7,11 +7,17 @@ import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
 
+export interface ServerOptions {
+  prmPath?: string;
+}
+
 export function createServer(
   checks: ConformanceCheck[],
   getBaseUrl: () => string,
-  getAuthServerUrl: () => string
+  getAuthServerUrl: () => string,
+  options: ServerOptions = {}
 ): express.Application {
+  const { prmPath = '/.well-known/oauth-protected-resource/mcp' } = options;
   const server = new Server(
     {
       name: 'auth-prm-pathbased-server',
@@ -41,33 +47,30 @@ export function createServer(
     })
   );
 
-  app.get(
-    '/.well-known/oauth-protected-resource/mcp',
-    (req: Request, res: Response) => {
-      checks.push({
-        id: 'prm-pathbased-requested',
-        name: 'PRMPathBasedRequested',
-        description: 'Client requested PRM metadata at path-based location',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'RFC-9728-3',
-            url: 'https://tools.ietf.org/html/rfc9728#section-3'
-          }
-        ],
-        details: {
-          url: req.url,
-          path: req.path
+  app.get(prmPath, (req: Request, res: Response) => {
+    checks.push({
+      id: 'prm-pathbased-requested',
+      name: 'PRMPathBasedRequested',
+      description: 'Client requested PRM metadata at path-based location',
+      status: 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'RFC-9728-3',
+          url: 'https://tools.ietf.org/html/rfc9728#section-3'
         }
-      });
+      ],
+      details: {
+        url: req.url,
+        path: req.path
+      }
+    });
 
-      res.json({
-        resource: getBaseUrl(),
-        authorization_servers: [getAuthServerUrl()]
-      });
-    }
-  );
+    res.json({
+      resource: getBaseUrl(),
+      authorization_servers: [getAuthServerUrl()]
+    });
+  });
 
   app.post('/mcp', async (req: Request, res: Response, next: NextFunction) => {
     // Apply bearer token auth per-request in order to delay setting PRM URL
@@ -76,7 +79,7 @@ export function createServer(
     const authMiddleware = requireBearerAuth({
       verifier: new MockTokenVerifier(checks),
       requiredScopes: [],
-      resourceMetadataUrl: `${getBaseUrl()}/.well-known/oauth-protected-resource/mcp`
+      resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
     });
 
     authMiddleware(req, res, async (err?: any) => {
