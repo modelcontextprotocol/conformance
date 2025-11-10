@@ -105,7 +105,14 @@ export async function runClientAgainstScenario(
 
   try {
     // Run the client
-    await runner.run(serverUrl);
+    try {
+      await runner.run(serverUrl);
+    } catch (err) {
+      if (expectedFailureSlugs.length === 0) {
+        throw err; // Unexpected failure
+      }
+      // Otherwise, expected failure - continue to checks verification
+    }
 
     // Get checks from the scenario
     const checks = scenario.getChecks();
@@ -131,13 +138,7 @@ export async function runClientAgainstScenario(
       // Verify that only the expected checks failed
       const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
       const failureSlugs = failures.map((c) => c.id);
-      if (
-        failureSlugs.sort().join(',') !== expectedFailureSlugs.sort().join(',')
-      ) {
-        throw new Error(
-          `Expected failures ${expectedFailureSlugs.sort().join(', ')} but got ${failureSlugs.sort().join(', ')}`
-        );
-      }
+      expect(failureSlugs.sort()).toEqual(expectedFailureSlugs.sort());
     } else {
       // Default: expect all checks to pass
       const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');

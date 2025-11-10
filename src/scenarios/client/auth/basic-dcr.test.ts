@@ -25,6 +25,13 @@ describe('PRM Path-Based Discovery', () => {
       'examples/clients/typescript/auth-test-broken1.ts'
     );
     const runner = new SpawnedClientRunner(clientPath);
-    await runClientAgainstScenario(runner, 'auth/basic-dcr');
+    await runClientAgainstScenario(runner, 'auth/basic-dcr', [
+      'authorization-request',
+      'authorization-server-metadata',
+      'client-registration',
+      'prm-pathbased-requested',
+      'prm-priority-order',
+      'token-request'
+    ]);
   });
 });
