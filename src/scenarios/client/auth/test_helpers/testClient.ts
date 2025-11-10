@@ -1,26 +1,29 @@
-import { getScenario } from '../../../../scenarios/index.js';
+import { getScenario } from '../../../index.js';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
 
-export async function runClientAgainstScenario(
-  clientPath: string,
-  scenarioName: string,
-  expectedFailureSlugs: string[] = []
-): Promise<void> {
-  const scenario = getScenario(scenarioName);
-  if (!scenario) {
-    throw new Error(`Scenario ${scenarioName} not found`);
-  }
+/**
+ * Represents a client that can be executed against a scenario.
+ * Implementations can run client code inline or by spawning a process.
+ */
+export interface ClientRunner {
+  /**
+   * Run the client against the given server URL.
+   * Should reject if the client fails.
+   */
+  run(serverUrl: string): Promise<void>;
+}
 
-  // Start the scenario server
-  const urls = await scenario.start();
-  const serverUrl = urls.serverUrl;
+/**
+ * Client runner that spawns a shell process to execute a client file.
+ */
+export class SpawnedClientRunner implements ClientRunner {
+  constructor(private clientPath: string) {}
 
-  try {
-    // Run the client
+  async run(serverUrl: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const clientProcess = spawn('npx', ['tsx', clientPath, serverUrl], {
+      const clientProcess = spawn('npx', ['tsx', this.clientPath, serverUrl], {
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
@@ -66,6 +69,43 @@ export async function runClientAgainstScenario(
         );
       });
     });
+  }
+}
+
+/**
+ * Client runner that executes a client function inline without spawning a shell.
+ */
+export class InlineClientRunner implements ClientRunner {
+  constructor(private clientFn: (serverUrl: string) => Promise<void>) {}
+
+  async run(serverUrl: string): Promise<void> {
+    await this.clientFn(serverUrl);
+  }
+}
+
+export async function runClientAgainstScenario(
+  clientRunner: ClientRunner | string,
+  scenarioName: string,
+  expectedFailureSlugs: string[] = []
+): Promise<void> {
+  // Handle backward compatibility: if string is passed, treat as file path
+  const runner =
+    typeof clientRunner === 'string'
+      ? new SpawnedClientRunner(clientRunner)
+      : clientRunner;
+
+  const scenario = getScenario(scenarioName);
+  if (!scenario) {
+    throw new Error(`Scenario ${scenarioName} not found`);
+  }
+
+  // Start the scenario server
+  const urls = await scenario.start();
+  const serverUrl = urls.serverUrl;
+
+  try {
+    // Run the client
+    await runner.run(serverUrl);
 
     // Get checks from the scenario
     const checks = scenario.getChecks();
