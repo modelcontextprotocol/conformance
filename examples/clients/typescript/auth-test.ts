@@ -2,7 +2,6 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { withOAuthRetry } from './helpers/withOAuthRetry.js';
 
 async function main(): Promise<void> {

@@ -34,7 +34,8 @@ export class AuthBasicDCRScenario implements Scenario {
         this.checks.push({
           id: 'prm-priority-order',
           name: 'PRM Priority Order',
-          description: 'Client requested PRM metadata at root location, ',
+          description:
+            'Client requested PRM metadata at root location on a server with path-based PRM',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
           specReferences: [

@@ -7,6 +7,43 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Middleware } from '@modelcontextprotocol/sdk/client/middleware.js';
 import { ConformanceOAuthProvider } from './ConformanceOAuthProvider';
 
+export const handle401 = async (
+  response: Response,
+  provider: ConformanceOAuthProvider,
+  next: FetchLike,
+  serverUrl: string | URL
+): Promise<void> => {
+  const resourceMetadataUrl = extractResourceMetadataUrl(response);
+
+  let result = await auth(provider, {
+    serverUrl,
+    resourceMetadataUrl,
+    fetchFn: next
+  });
+
+  if (result === 'REDIRECT') {
+    // Ordinarily, we'd wait for the callback to be handled here,
+    // but in our conformance provider, we get the authorization code
+    // during the redirect handling, so we can go straight to
+    // retrying the auth step.
+    // await provider.waitForCallback();
+
+    const authorizationCode = await provider.getAuthCode();
+
+    // TODO: this retry logic should be incorporated into the typescript SDK
+    result = await auth(provider, {
+      serverUrl,
+      resourceMetadataUrl,
+      authorizationCode,
+      fetchFn: next
+    });
+    if (result !== 'AUTHORIZED') {
+      throw new UnauthorizedError(
+        `Authentication failed with result: ${result}`
+      );
+    }
+  }
+};
 /**
  * Creates a fetch wrapper that handles OAuth authentication with retry logic.
  *
@@ -21,7 +58,8 @@ import { ConformanceOAuthProvider } from './ConformanceOAuthProvider';
  */
 export const withOAuthRetry = (
   clientName: string,
-  baseUrl?: string | URL
+  baseUrl?: string | URL,
+  handle401Fn: typeof handle401 = handle401
 ): Middleware => {
   const provider = new ConformanceOAuthProvider(
     'http://localhost:3000/callback',
@@ -51,41 +89,10 @@ export const withOAuthRetry = (
 
       // Handle 401 responses by attempting re-authentication
       if (response.status === 401) {
-        const resourceMetadataUrl = extractResourceMetadataUrl(response);
-
-        // Use provided baseUrl or extract from request URL
         const serverUrl =
           baseUrl ||
           (typeof input === 'string' ? new URL(input).origin : input.origin);
-
-        let result = await auth(provider, {
-          serverUrl,
-          resourceMetadataUrl,
-          fetchFn: next
-        });
-
-        if (result === 'REDIRECT') {
-          // Ordinarily, we'd wait for the callback to be handled here,
-          // but in our conformance provider, we get the authorization code
-          // during the redirect handling, so we can go straight to
-          // retrying the auth step.
-          // await provider.waitForCallback();
-
-          const authorizationCode = await provider.getAuthCode();
-
-          // TODO: this retry logic should be incorporated into the typescript SDK
-          result = await auth(provider, {
-            serverUrl,
-            resourceMetadataUrl,
-            authorizationCode,
-            fetchFn: next
-          });
-          if (result !== 'AUTHORIZED') {
-            throw new UnauthorizedError(
-              `Authentication failed with result: ${result}`
-            );
-          }
-        }
+        await handle401Fn(response, provider, next, serverUrl);
 
         response = await makeRequest();
       }
