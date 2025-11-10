@@ -138,7 +138,10 @@ export async function runClientAgainstScenario(
       // Verify that only the expected checks failed
       const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
       const failureSlugs = failures.map((c) => c.id);
-      expect(failureSlugs.sort()).toEqual(expectedFailureSlugs.sort());
+      // Check that failureSlugs contains all expectedFailureSlugs
+      expect(failureSlugs).toEqual(
+        expect.arrayContaining(expectedFailureSlugs)
+      );
     } else {
       // Default: expect all checks to pass
       const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');

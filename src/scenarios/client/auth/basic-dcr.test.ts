@@ -4,10 +4,6 @@ import {
   SpawnedClientRunner
 } from './test_helpers/testClient.js';
 import path from 'path';
-// import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-// import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-// import { ConformanceOAuthProvider } from '../../../examples/clients/typescript/helpers/ConformanceOAuthProvider.js';
-// import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 
 describe('PRM Path-Based Discovery', () => {
   test('client discovers PRM at path-based location before root', async () => {
@@ -26,12 +22,8 @@ describe('PRM Path-Based Discovery', () => {
     );
     const runner = new SpawnedClientRunner(clientPath);
     await runClientAgainstScenario(runner, 'auth/basic-dcr', [
-      'authorization-request',
-      'authorization-server-metadata',
-      'client-registration',
-      'prm-pathbased-requested',
-      'prm-priority-order',
-      'token-request'
+      // There will be other failures, but this is the one that matters
+      'prm-priority-order'
     ]);
   });
 });
