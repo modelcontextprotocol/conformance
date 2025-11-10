@@ -396,6 +396,82 @@ function createMcpServer() {
     }
   );
 
+  // SEP-1034: Elicitation with default values for all primitive types
+  mcpServer.registerTool(
+    'test_elicitation_sep1034_defaults',
+    {
+      description: 'Tests elicitation with default values per SEP-1034',
+      inputSchema: {}
+    },
+    async () => {
+      try {
+        // Request user input with default values for all primitive types
+        const result = await mcpServer.server.request(
+          {
+            method: 'elicitation/create',
+            params: {
+              message: 'Please review and update the form fields with defaults',
+              requestedSchema: {
+                type: 'object',
+                properties: {
+                  name: {
+                    type: 'string',
+                    description: 'User name',
+                    default: 'John Doe'
+                  },
+                  age: {
+                    type: 'integer',
+                    description: 'User age',
+                    default: 30
+                  },
+                  score: {
+                    type: 'number',
+                    description: 'User score',
+                    default: 95.5
+                  },
+                  status: {
+                    type: 'string',
+                    description: 'User status',
+                    enum: ['active', 'inactive', 'pending'],
+                    default: 'active'
+                  },
+                  verified: {
+                    type: 'boolean',
+                    description: 'Verification status',
+                    default: true
+                  }
+                },
+                required: []
+              }
+            }
+          },
+          z
+            .object({ method: z.literal('elicitation/create') })
+            .passthrough() as any
+        );
+
+        const elicitResult = result as any;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Elicitation completed: action=${elicitResult.action}, content=${JSON.stringify(elicitResult.content || {})}`
+            }
+          ]
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Elicitation not supported or error: ${error.message}`
+            }
+          ]
+        };
+      }
+    }
+  );
+
   // Dynamic tool (registered later via timer)
 
   // ===== RESOURCES =====
