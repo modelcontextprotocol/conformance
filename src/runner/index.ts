@@ -4,6 +4,53 @@ import path from 'path';
 import { ConformanceCheck } from '../types.js';
 import { getScenario } from '../scenarios/index.js';
 
+// ANSI color codes
+const COLORS = {
+  RESET: '\x1b[0m',
+  GRAY: '\x1b[90m',
+  GREEN: '\x1b[32m',
+  YELLOW: '\x1b[33m',
+  RED: '\x1b[31m',
+  BLUE: '\x1b[36m'
+};
+
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'SUCCESS':
+      return COLORS.GREEN;
+    case 'FAILURE':
+      return COLORS.RED;
+    case 'INFO':
+      return COLORS.BLUE;
+    default:
+      return COLORS.RESET;
+  }
+}
+
+function formatPrettyChecks(checks: ConformanceCheck[]): string {
+  // Find the longest id and status for column alignment
+  const maxIdLength = Math.max(...checks.map((c) => c.id.length));
+  const maxStatusLength = Math.max(...checks.map((c) => c.status.length));
+
+  return checks
+    .map((check) => {
+      const timestamp = `${COLORS.GRAY}${check.timestamp}${COLORS.RESET}`;
+      const id = check.id.padEnd(maxIdLength);
+      const statusColor = getStatusColor(check.status);
+      const status = `${statusColor}${check.status.padEnd(maxStatusLength)}${COLORS.RESET}`;
+      const description = check.description;
+      const line = `${timestamp} [${id}] ${status} ${description}`;
+      // Add newline after outgoing responses for better visual separation
+      return (
+        line +
+        (check.id.includes('outgoing') && check.id.includes('response')
+          ? '\n'
+          : '')
+      );
+    })
+    .join('\n');
+}
+
 export interface ClientExecutionResult {
   exitCode: number;
   stdout: string;
@@ -110,6 +157,21 @@ export async function runConformanceTest(
       timeout
     );
 
+    // Print stdout/stderr if client exited with nonzero code
+    if (clientOutput.exitCode !== 0) {
+      console.error(`\nClient exited with code ${clientOutput.exitCode}`);
+      if (clientOutput.stdout) {
+        console.error(`\nStdout:\n${clientOutput.stdout}`);
+      }
+      if (clientOutput.stderr) {
+        console.error(`\nStderr:\n${clientOutput.stderr}`);
+      }
+    }
+
+    if (clientOutput.timedOut) {
+      console.error(`\nClient timed out after ${timeout}ms`);
+    }
+
     const checks = scenario.getChecks();
 
     await fs.writeFile(
@@ -175,6 +237,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let command: string | null = null;
   let scenario: string | null = null;
+  let verbose = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--command' && i + 1 < args.length) {
@@ -183,12 +246,14 @@ async function main(): Promise<void> {
     } else if (args[i] === '--scenario' && i + 1 < args.length) {
       scenario = args[i + 1];
       i++;
+    } else if (args[i] === '--verbose') {
+      verbose = true;
     }
   }
 
   if (!scenario) {
     console.error(
-      'Usage: runner --scenario <scenario> [--command "<command>"]'
+      'Usage: runner --scenario <scenario> [--command "<command>"] [--verbose]'
     );
     console.error(
       'Example: runner --scenario initialize --command "tsx examples/clients/typescript/test1.ts"'
@@ -216,7 +281,11 @@ async function main(): Promise<void> {
     const passed = result.checks.filter((c) => c.status === 'SUCCESS').length;
     const failed = result.checks.filter((c) => c.status === 'FAILURE').length;
 
-    console.log(`Checks:\n${JSON.stringify(result.checks, null, 2)}`);
+    if (verbose) {
+      console.log(`Checks:\n${JSON.stringify(result.checks, null, 2)}`);
+    } else {
+      console.log(`Checks:\n${formatPrettyChecks(result.checks)}`);
+    }
 
     console.log(`\nTest Results:`);
     console.log(`Passed: ${passed}/${denominator}, ${failed} failed`);
