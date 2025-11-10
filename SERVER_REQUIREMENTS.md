@@ -397,6 +397,72 @@ If no progress token provided, just execute with delays.
 
 **Implementation Note**: If the client doesn't support elicitation (no `elicitation` capability), return an error.
 
+#### `test_elicitation_sep1034_defaults`
+
+**Arguments**: None
+
+**Behavior**: Request user input from the client using `elicitation/create` with default values for all primitive types (SEP-1034)
+
+**Elicitation Request**:
+
+```json
+{
+  "method": "elicitation/create",
+  "params": {
+    "message": "Please review and update the form fields with defaults",
+    "requestedSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "User name",
+          "default": "John Doe"
+        },
+        "age": {
+          "type": "integer",
+          "description": "User age",
+          "default": 30
+        },
+        "score": {
+          "type": "number",
+          "description": "User score",
+          "default": 95.5
+        },
+        "status": {
+          "type": "string",
+          "description": "User status",
+          "enum": ["active", "inactive", "pending"],
+          "default": "active"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Verification status",
+          "default": true
+        }
+      },
+      "required": []
+    }
+  }
+}
+```
+
+**Returns**: Text content with the elicitation result
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Elicitation completed: action=<accept/decline/cancel>, content={...}"
+    }
+  ]
+}
+```
+
+**Implementation Note**: This tool tests SEP-1034 support for default values across all primitive types (string, integer, number, enum, boolean). If the client doesn't support elicitation (no `elicitation` capability), return an error.
+
+**Reference**: [SEP-1034](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1034)
+
 ---
 
 ## 3. Resources Requirements
