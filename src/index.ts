@@ -12,13 +12,14 @@ import {
 import { listScenarios, listClientScenarios } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
+import packageJson from '../package.json';
 
 const program = new Command();
 
 program
   .name('conformance')
   .description('MCP Conformance Test Suite')
-  .version('0.1.0');
+  .version(packageJson.version);
 
 // Client command - tests a client implementation against scenarios
 program
