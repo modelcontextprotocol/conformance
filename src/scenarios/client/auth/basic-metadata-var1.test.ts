@@ -1,4 +1,7 @@
-import { runClientAgainstScenario } from './helpers/testClient.js';
+import {
+  runClientAgainstScenario,
+  SpawnedClientRunner
+} from './test_helpers/testClient.js';
 import path from 'path';
 
 describe('OAuth Metadata at OpenID Configuration Path', () => {
@@ -7,6 +10,7 @@ describe('OAuth Metadata at OpenID Configuration Path', () => {
       process.cwd(),
       'examples/clients/typescript/auth-test.ts'
     );
-    await runClientAgainstScenario(clientPath, 'auth/basic-metadata-var1');
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(runner, 'auth/basic-metadata-var1');
   });
 });

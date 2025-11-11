@@ -3,6 +3,7 @@ import { ScenarioUrls } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
+import { Request, Response } from 'express';
 
 export class AuthBasicDCRScenario implements Scenario {
   name = 'auth-basic-dcr';
@@ -25,6 +26,38 @@ export class AuthBasicDCRScenario implements Scenario {
       () => this.baseUrl,
       () => this.authBaseUrl
     );
+
+    // For this scenario, reject PRM requests at root location since we have the path-based PRM.
+    app.get(
+      '/.well-known/oauth-protected-resource',
+      (req: Request, res: Response) => {
+        this.checks.push({
+          id: 'prm-priority-order',
+          name: 'PRM Priority Order',
+          description:
+            'Client requested PRM metadata at root location on a server with path-based PRM',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'mcp-authorization-prm',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements'
+            }
+          ],
+          details: {
+            url: req.url,
+            path: req.path
+          }
+        });
+
+        // Return 404 to indicate PRM is not available at root location
+        res.status(404).json({
+          error: 'not_found',
+          error_description: 'PRM metadata not available at root location'
+        });
+      }
+    );
+
     this.baseUrl = await this.server.start(app);
 
     return { serverUrl: `${this.baseUrl}/mcp` };
