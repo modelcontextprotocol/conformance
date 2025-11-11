@@ -1,6 +1,6 @@
 # MCP Conformance Test Framework
 
-A framework for testing MCP (Model Context Protocol) client implementations against the specification.
+A framework for testing MCP (Model Context Protocol) client and server implementations against the specification.
 
 > [!WARNING] This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
 
@@ -9,19 +9,30 @@ A framework for testing MCP (Model Context Protocol) client implementations agai
 ### Testing Clients
 
 ```bash
-npm install
-npm run start -- --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
+npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
 ```
 
 ### Testing Servers
 
 ```bash
-npm run test:server -- --server-url http://localhost:3000/mcp --all
+# Run all server scenarios
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --all
+
+# Run a single scenario
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server-initialize
+```
+
+### List Available Scenarios
+
+```bash
+npx @modelcontextprotocol/conformance list
 ```
 
 ## Overview
 
-The conformance test framework validates MCP client implementations by:
+The conformance test framework validates MCP implementations by:
+
+**For Clients:**
 
 1. Starting a test server for the specified scenario
 2. Running the client implementation with the test server URL
@@ -29,24 +40,53 @@ The conformance test framework validates MCP client implementations by:
 4. Running conformance checks against the specification
 5. Generating detailed test results
 
+**For Servers:**
+
+1. Connecting to the running server as an MCP client
+2. Sending test requests and capturing responses
+3. Running conformance checks against server behavior
+4. Generating detailed test results
+
 ## Usage
 
+### Client Testing
+
 ```bash
-npm run start -- --command "<client-command>" --scenario <scenario-name>
+npx @modelcontextprotocol/conformance client --command "<client-command>" --scenario <scenario-name> [options]
 ```
+
+**Options:**
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
+- `--timeout` - Timeout in milliseconds (default: 30000)
+- `--verbose` - Show verbose output
 
 The framework appends the server URL as the final argument to your command.
 
+### Server Testing
+
+```bash
+npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario> | --all]
+```
+
+**Options:**
+
+- `--url` - URL of the server to test
+- `--scenario` - The test scenario to run (e.g., "server-initialize")
+- `--all` - Run all available server scenarios
+
 ## Test Results
 
-Results are saved to `results/<scenario>-<timestamp>/`:
+**Client Testing** - Results are saved to `results/<scenario>-<timestamp>/`:
 
 - `checks.json` - Array of conformance check results with pass/fail status
 - `stdout.txt` - Client stdout output
 - `stderr.txt` - Client stderr output
+
+**Server Testing** - Results are saved to `results/server-<scenario>-<timestamp>/`:
+
+- `checks.json` - Array of conformance check results with pass/fail status
 
 ## Example Clients
 
@@ -55,10 +95,25 @@ Results are saved to `results/<scenario>-<timestamp>/`:
 
 ## Available Scenarios
 
+### Client Scenarios
+
 - **initialize** - Tests MCP client initialization handshake
   - Validates protocol version
   - Validates clientInfo (name and version)
   - Validates server response handling
+- **tools-call** - Tests tool invocation
+- **auth/basic-dcr** - Tests OAuth Dynamic Client Registration flow
+- **auth/basic-metadata-var1** - Tests OAuth with authorization metadata
+
+### Server Scenarios
+
+Run `npx @modelcontextprotocol/conformance list --server` to see all available server scenarios, including:
+
+- **server-initialize** - Tests server initialization and capabilities
+- **tools-list** - Tests tool listing endpoint
+- **tools-call-\*** - Various tool invocation scenarios
+- **resources-\*** - Resource management scenarios
+- **prompts-\*** - Prompt management scenarios
 
 ## Architecture
 
@@ -67,8 +122,13 @@ See `src/runner/DESIGN.md` for detailed architecture documentation.
 ### Key Components
 
 - **Runner** (`src/runner/`) - Orchestrates test execution and result generation
-- **Scenarios** (`src/scenarios/`) - Test scenarios with custom server implementations
-- **Checks** (`src/checks.ts`) - Conformance validation functions
+  - `client.ts` - Client testing implementation
+  - `server.ts` - Server testing implementation
+  - `utils.ts` - Shared utilities
+  - `index.ts` - Public API exports
+- **CLI** (`src/index.ts`) - Command-line interface using Commander.js
+- **Scenarios** (`src/scenarios/`) - Test scenarios with expected behaviors
+- **Checks** (`src/checks/`) - Conformance validation functions
 - **Types** (`src/types.ts`) - Shared type definitions
 
 ## Adding New Scenarios

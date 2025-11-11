@@ -1022,8 +1022,8 @@ MCP Conformance Test Server running on http://localhost:3000
 
 ```bash
 # Single test
-npm run test:server -- --server-url http://localhost:3000/mcp --scenario server-initialize
+npm run conformance -- server --url http://localhost:3000/mcp --scenario server-initialize
 
 # All tests
-npm run test:server -- --server-url http://localhost:3000/mcp --all
+npm run conformance -- server --url http://localhost:3000/mcp --all
 ```

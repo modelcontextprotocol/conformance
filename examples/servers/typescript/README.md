@@ -148,7 +148,7 @@ To run conformance tests against this server:
 
 ```bash
 cd ../../../
-npm run test:server -- --server-url http://localhost:3000/mcp --all
+npm run conformance -- server --url http://localhost:3000/mcp --all
 ```
 
 ## Implementation Notes
