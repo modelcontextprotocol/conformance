@@ -3,6 +3,7 @@ import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
 import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
 import { AuthBasicMetadataVar1Scenario } from './client/auth/basic-metadata-var1.js';
+import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle.js';
@@ -49,7 +50,11 @@ export const scenarios = new Map<string, Scenario>([
   ['initialize', new InitializeScenario()],
   ['tools-call', new ToolsCallScenario()],
   ['auth/basic-dcr', new AuthBasicDCRScenario()],
-  ['auth/basic-metadata-var1', new AuthBasicMetadataVar1Scenario()]
+  ['auth/basic-metadata-var1', new AuthBasicMetadataVar1Scenario()],
+  [
+    'elicitation-sep1034-client-defaults',
+    new ElicitationClientDefaultsScenario()
+  ]
 ]);
 
 export const clientScenarios = new Map<string, ClientScenario>([
