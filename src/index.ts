@@ -39,7 +39,10 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario);
+        await runInteractiveMode(
+          validated.scenario,
+          validated.verbose ?? false
+        );
         process.exit(0);
       }
 
