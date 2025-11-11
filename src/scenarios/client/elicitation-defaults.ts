@@ -1,14 +1,15 @@
 /**
  * SEP-1034: Elicitation defaults test
- * Validates that servers properly apply default values for omitted fields
- * in elicitation responses using the elicitInput() helper
+ * Validates that clients properly apply default values for omitted fields
+ * in elicitation responses before sending them to the server
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema
+  ListToolsRequestSchema,
+  ElicitResultSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types.js';
 import express, { Request, Response } from 'express';
@@ -70,43 +71,49 @@ function createServer(checks: ConformanceCheck[]): {
       if (request.params.name === 'test_client_elicitation_defaults') {
         try {
           // Request elicitation with all optional fields having defaults
-          // Using elicitInput() which validates and applies defaults on server side
-          const elicitResult = await server.elicitInput({
-            message:
-              'Test client default value handling - please accept with defaults',
-            requestedSchema: {
-              type: 'object',
-              properties: {
-                name: {
-                  type: 'string',
-                  description: 'User name',
-                  default: 'John Doe'
-                },
-                age: {
-                  type: 'integer',
-                  description: 'User age',
-                  default: 30
-                },
-                score: {
-                  type: 'number',
-                  description: 'User score',
-                  default: 95.5
-                },
-                status: {
-                  type: 'string',
-                  description: 'User status',
-                  enum: ['active', 'inactive', 'pending'],
-                  default: 'active'
-                },
-                verified: {
-                  type: 'boolean',
-                  description: 'Verification status',
-                  default: true
+          // Using raw server.request() to verify client applies defaults before sending response
+          const elicitResult = await server.request(
+            {
+              method: 'elicitation/create',
+              params: {
+                message:
+                  'Test client default value handling - please accept with defaults',
+                requestedSchema: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      description: 'User name',
+                      default: 'John Doe'
+                    },
+                    age: {
+                      type: 'integer',
+                      description: 'User age',
+                      default: 30
+                    },
+                    score: {
+                      type: 'number',
+                      description: 'User score',
+                      default: 95.5
+                    },
+                    status: {
+                      type: 'string',
+                      description: 'User status',
+                      enum: ['active', 'inactive', 'pending'],
+                      default: 'active'
+                    },
+                    verified: {
+                      type: 'boolean',
+                      description: 'Verification status',
+                      default: true
+                    }
+                  },
+                  required: [] // All fields optional, so defaults should apply
                 }
-              },
-              required: [] // All fields optional, so defaults should apply
-            }
-          });
+              }
+            },
+            ElicitResultSchema
+          );
 
           // Check if elicitation was accepted
           if (elicitResult.action !== 'accept') {
@@ -146,7 +153,7 @@ function createServer(checks: ConformanceCheck[]): {
           checks.push({
             id: 'client-elicitation-sep1034-string-default',
             name: 'ClientElicitationSEP1034StringDefault',
-            description: 'Server applies string default value for elicitation',
+            description: 'Client applies string default value for elicitation',
             status: stringErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
@@ -177,7 +184,7 @@ function createServer(checks: ConformanceCheck[]): {
           checks.push({
             id: 'client-elicitation-sep1034-integer-default',
             name: 'ClientElicitationSEP1034IntegerDefault',
-            description: 'Server applies integer default value for elicitation',
+            description: 'Client applies integer default value for elicitation',
             status: integerErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
@@ -210,7 +217,7 @@ function createServer(checks: ConformanceCheck[]): {
           checks.push({
             id: 'client-elicitation-sep1034-number-default',
             name: 'ClientElicitationSEP1034NumberDefault',
-            description: 'Server applies number default value for elicitation',
+            description: 'Client applies number default value for elicitation',
             status: numberErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
@@ -249,7 +256,7 @@ function createServer(checks: ConformanceCheck[]): {
           checks.push({
             id: 'client-elicitation-sep1034-enum-default',
             name: 'ClientElicitationSEP1034EnumDefault',
-            description: 'Server applies enum default value for elicitation',
+            description: 'Client applies enum default value for elicitation',
             status: enumErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
@@ -282,7 +289,7 @@ function createServer(checks: ConformanceCheck[]): {
           checks.push({
             id: 'client-elicitation-sep1034-boolean-default',
             name: 'ClientElicitationSEP1034BooleanDefault',
-            description: 'Server applies boolean default value for elicitation',
+            description: 'Client applies boolean default value for elicitation',
             status: booleanErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
@@ -468,7 +475,7 @@ function createServer(checks: ConformanceCheck[]): {
 export class ElicitationClientDefaultsScenario implements Scenario {
   name = 'elicitation-sep1034-client-defaults';
   description =
-    'Tests server applies default values for omitted elicitation fields (SEP-1034)';
+    'Tests client applies default values for omitted elicitation fields (SEP-1034)';
   private app: express.Application | null = null;
   private httpServer: any = null;
   private checks: ConformanceCheck[] = [];
