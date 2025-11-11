@@ -14,13 +14,8 @@
     "lint:fix": "eslint src/ --fix && prettier --write .",
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
     "check": "npm run typecheck && npm run lint",
-    "typecheck": "tsgo --noEmit"
-  },
-  "files": [
-    "dist"
-  ],
-  "bin": {
-    "conformance": "dist/index.mjs"
+    "typecheck": "tsgo --noEmit",
+    "prepack": "npm run build"
   },
   "files": [
     "dist"
