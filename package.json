@@ -1,6 +1,6 @@
 {
   "name": "@modelcontextprotocol/conformance",
-  "version": "0.1.0",
+  "version": "0.1.1-beta.0",
   "type": "module",
   "license": "MIT",
   "author": "Anthropic, PBC (https://anthropic.com)",
