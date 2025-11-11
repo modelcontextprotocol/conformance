@@ -543,6 +543,7 @@ If no progress token provided, just execute with delays.
 ```
 
 **Implementation Note**: This tool tests SEP-1330 support for enum schema improvements including:
+
 - Untitled single-select enums (type: string with enum array)
 - Titled single-select enums (using oneOf with const/title objects)
 - Legacy titled enums (using deprecated enumNames array)
