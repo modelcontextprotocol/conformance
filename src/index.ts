@@ -66,27 +66,34 @@ program
   .description('Run conformance tests against a server implementation')
   .requiredOption('--url <url>', 'URL of the server to test')
   .option(
-    '--scenario <scenarios...>',
-    'Scenario(s) to test (defaults to all scenarios if not specified)'
+    '--scenario <scenario>',
+    'Scenario to test (defaults to all scenarios if not specified)'
   )
   .action(async (options) => {
     try {
       // Validate options with Zod
       const validated = ServerOptionsSchema.parse(options);
 
-      // Determine which scenarios to run
-      const scenariosToRun = validated.scenario || listClientScenarios();
+      // If a single scenario is specified, run just that one
+      if (validated.scenario) {
+        const result = await runServerConformanceTest(
+          validated.url,
+          validated.scenario
+        );
 
-      // Run multiple scenarios
-      if (scenariosToRun.length > 1) {
+        const { failed } = printServerResults(result.checks);
+        process.exit(failed > 0 ? 1 : 0);
+      } else {
+        // Run all scenarios
+        const scenarios = listClientScenarios();
         console.log(
-          `Running ${scenariosToRun.length} scenarios against ${validated.url}\n`
+          `Running ${scenarios.length} scenarios against ${validated.url}\n`
         );
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
           [];
 
-        for (const scenarioName of scenariosToRun) {
+        for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
             const result = await runServerConformanceTest(
@@ -115,15 +122,6 @@ program
 
         const { totalFailed } = printServerSummary(allResults);
         process.exit(totalFailed > 0 ? 1 : 0);
-      } else {
-        // Run single scenario
-        const result = await runServerConformanceTest(
-          validated.url,
-          scenariosToRun[0]
-        );
-
-        const { failed } = printServerResults(result.checks);
-        process.exit(failed > 0 ? 1 : 0);
       }
     } catch (error) {
       if (error instanceof ZodError) {
