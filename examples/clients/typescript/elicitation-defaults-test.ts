@@ -28,7 +28,9 @@ async function main(): Promise<void> {
       },
       {
         capabilities: {
-          elicitation: {}
+          elicitation: {
+            applyDefaults: true
+          }
         }
       }
     );
