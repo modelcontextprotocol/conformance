@@ -26,6 +26,8 @@ import {
   ToolsCallEmbeddedResourceScenario
 } from './server/tools.js';
 
+import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
+
 import {
   ResourcesListScenario,
   ResourcesReadTextScenario,
@@ -70,6 +72,9 @@ export const clientScenarios = new Map<string, ClientScenario>([
   ['tools-call-with-progress', new ToolsCallWithProgressScenario()],
   ['tools-call-sampling', new ToolsCallSamplingScenario()],
   ['tools-call-elicitation', new ToolsCallElicitationScenario()],
+
+  // Elicitation scenarios (SEP-1034)
+  ['elicitation-sep1034-defaults', new ElicitationDefaultsScenario()],
 
   // Resources scenarios
   ['resources-list', new ResourcesListScenario()],
