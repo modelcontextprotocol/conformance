@@ -3,6 +3,8 @@ on:
     branches:
       - main
   pull_request:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -31,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     environment: release
-    needs: [build, test]
+    needs: [test]
 
     permissions:
       contents: read
