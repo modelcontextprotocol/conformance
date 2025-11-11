@@ -31,10 +31,7 @@ export type ClientOptions = z.infer<typeof ClientOptionsSchema>;
 export const ServerOptionsSchema = z.object({
   url: z.string().url('Invalid server URL'),
   scenario: z
-    .union([
-      z.string(),
-      z.array(z.string())
-    ])
+    .union([z.string(), z.array(z.string())])
     .optional()
     .transform((val) => {
       // Normalize to array for easier handling
@@ -44,11 +41,13 @@ export const ServerOptionsSchema = z.object({
     .refine(
       (scenarios) => {
         if (!scenarios) return true; // No scenario means run all
-        return scenarios.every(s => getClientScenario(s) !== undefined);
+        return scenarios.every((s) => getClientScenario(s) !== undefined);
       },
       (scenarios) => {
         if (!scenarios) return { message: '' };
-        const invalid = scenarios.find(s => getClientScenario(s) === undefined);
+        const invalid = scenarios.find(
+          (s) => getClientScenario(s) === undefined
+        );
         return { message: `Unknown scenario '${invalid}'` };
       }
     )
