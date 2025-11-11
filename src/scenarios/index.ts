@@ -47,8 +47,14 @@ import {
   PromptsGetWithImageScenario
 } from './server/prompts.js';
 
-// Client scenarios
-const clientScenariosList: ClientScenario[] = [
+// Pending client scenarios (not yet fully tested/implemented)
+const pendingClientScenariosList: ClientScenario[] = [
+  // Elicitation scenarios (SEP-1330)
+  new ElicitationEnumsScenario()
+];
+
+// All client scenarios
+const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
 
@@ -72,8 +78,8 @@ const clientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
-  // Elicitation scenarios (SEP-1330)
-  new ElicitationEnumsScenario(),
+  // Elicitation scenarios (SEP-1330) - pending
+  ...pendingClientScenariosList,
 
   // Resources scenarios
   new ResourcesListScenario(),
@@ -91,9 +97,18 @@ const clientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario()
 ];
 
+// Active client scenarios (excludes pending)
+const activeClientScenariosList: ClientScenario[] =
+  allClientScenariosList.filter(
+    (scenario) =>
+      !pendingClientScenariosList.some(
+        (pending) => pending.name === scenario.name
+      )
+  );
+
 // Client scenarios map - built from list
 export const clientScenarios = new Map<string, ClientScenario>(
-  clientScenariosList.map((scenario) => [scenario.name, scenario])
+  allClientScenariosList.map((scenario) => [scenario.name, scenario])
 );
 
 // Scenario scenarios
@@ -128,4 +143,8 @@ export function listScenarios(): string[] {
 
 export function listClientScenarios(): string[] {
   return Array.from(clientScenarios.keys());
+}
+
+export function listActiveClientScenarios(): string[] {
+  return activeClientScenariosList.map((scenario) => scenario.name);
 }
