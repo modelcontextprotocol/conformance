@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
-import { listClientScenarios, getClientScenario } from '../index.js';
+import { getClientScenario, listActiveClientScenarios } from '../index.js';
 import path from 'path';
 
 describe('Server Scenarios', () => {
@@ -76,7 +76,7 @@ describe('Server Scenarios', () => {
   });
 
   // Generate individual test for each scenario
-  const scenarios = listClientScenarios();
+  const scenarios = listActiveClientScenarios();
 
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {
