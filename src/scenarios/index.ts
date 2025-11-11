@@ -47,59 +47,68 @@ import {
   PromptsGetWithImageScenario
 } from './server/prompts.js';
 
-export const scenarios = new Map<string, Scenario>([
-  ['initialize', new InitializeScenario()],
-  ['tools-call', new ToolsCallScenario()],
-  ['auth/basic-dcr', new AuthBasicDCRScenario()],
-  ['auth/basic-metadata-var1', new AuthBasicMetadataVar1Scenario()],
-  [
-    'elicitation-sep1034-client-defaults',
-    new ElicitationClientDefaultsScenario()
-  ]
-]);
-
-export const clientScenarios = new Map<string, ClientScenario>([
+// Client scenarios
+const clientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
-  ['server-initialize', new ServerInitializeScenario()],
+  new ServerInitializeScenario(),
 
   // Utilities scenarios
-  ['logging-set-level', new LoggingSetLevelScenario()],
-  ['completion-complete', new CompletionCompleteScenario()],
+  new LoggingSetLevelScenario(),
+  new CompletionCompleteScenario(),
 
   // Tools scenarios
-  ['tools-list', new ToolsListScenario()],
-  ['tools-call-simple-text', new ToolsCallSimpleTextScenario()],
-  ['tools-call-image', new ToolsCallImageScenario()],
-  ['tools-call-audio', new ToolsCallAudioScenario()],
-  ['tools-call-embedded-resource', new ToolsCallEmbeddedResourceScenario()],
-  ['tools-call-mixed-content', new ToolsCallMultipleContentTypesScenario()],
-  ['tools-call-with-logging', new ToolsCallWithLoggingScenario()],
-  ['tools-call-error', new ToolsCallErrorScenario()],
-  ['tools-call-with-progress', new ToolsCallWithProgressScenario()],
-  ['tools-call-sampling', new ToolsCallSamplingScenario()],
-  ['tools-call-elicitation', new ToolsCallElicitationScenario()],
+  new ToolsListScenario(),
+  new ToolsCallSimpleTextScenario(),
+  new ToolsCallImageScenario(),
+  new ToolsCallAudioScenario(),
+  new ToolsCallEmbeddedResourceScenario(),
+  new ToolsCallMultipleContentTypesScenario(),
+  new ToolsCallWithLoggingScenario(),
+  new ToolsCallErrorScenario(),
+  new ToolsCallWithProgressScenario(),
+  new ToolsCallSamplingScenario(),
+  new ToolsCallElicitationScenario(),
 
   // Elicitation scenarios (SEP-1034)
-  ['elicitation-sep1034-defaults', new ElicitationDefaultsScenario()],
+  new ElicitationDefaultsScenario(),
 
   // Elicitation scenarios (SEP-1330)
-  ['elicitation-sep1330-enums', new ElicitationEnumsScenario()],
+  new ElicitationEnumsScenario(),
 
   // Resources scenarios
-  ['resources-list', new ResourcesListScenario()],
-  ['resources-read-text', new ResourcesReadTextScenario()],
-  ['resources-read-binary', new ResourcesReadBinaryScenario()],
-  ['resources-templates-read', new ResourcesTemplateReadScenario()],
-  ['resources-subscribe', new ResourcesSubscribeScenario()],
-  ['resources-unsubscribe', new ResourcesUnsubscribeScenario()],
+  new ResourcesListScenario(),
+  new ResourcesReadTextScenario(),
+  new ResourcesReadBinaryScenario(),
+  new ResourcesTemplateReadScenario(),
+  new ResourcesSubscribeScenario(),
+  new ResourcesUnsubscribeScenario(),
 
   // Prompts scenarios
-  ['prompts-list', new PromptsListScenario()],
-  ['prompts-get-simple', new PromptsGetSimpleScenario()],
-  ['prompts-get-with-args', new PromptsGetWithArgsScenario()],
-  ['prompts-get-embedded-resource', new PromptsGetEmbeddedResourceScenario()],
-  ['prompts-get-with-image', new PromptsGetWithImageScenario()]
-]);
+  new PromptsListScenario(),
+  new PromptsGetSimpleScenario(),
+  new PromptsGetWithArgsScenario(),
+  new PromptsGetEmbeddedResourceScenario(),
+  new PromptsGetWithImageScenario()
+];
+
+// Client scenarios map - built from list
+export const clientScenarios = new Map<string, ClientScenario>(
+  clientScenariosList.map((scenario) => [scenario.name, scenario])
+);
+
+// Scenario scenarios
+const scenariosList: Scenario[] = [
+  new InitializeScenario(),
+  new ToolsCallScenario(),
+  new AuthBasicDCRScenario(),
+  new AuthBasicMetadataVar1Scenario(),
+  new ElicitationClientDefaultsScenario()
+];
+
+// Scenarios map - built from list
+export const scenarios = new Map<string, Scenario>(
+  scenariosList.map((scenario) => [scenario.name, scenario])
+);
 
 export function registerScenario(name: string, scenario: Scenario): void {
   scenarios.set(name, scenario);
