@@ -1,4 +1,3 @@
-import { describe, test } from '@jest/globals';
 import { runClientAgainstScenario } from './helpers/testClient.js';
 import path from 'path';
 
