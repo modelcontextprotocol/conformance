@@ -463,6 +463,96 @@ If no progress token provided, just execute with delays.
 
 **Reference**: [SEP-1034](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1034)
 
+#### `test_elicitation_sep1330_enums`
+
+**Arguments**: None
+
+**Behavior**: Request user input from the client using `elicitation/create` with enum schema improvements (SEP-1330)
+
+**Elicitation Request**:
+
+```json
+{
+  "method": "elicitation/create",
+  "params": {
+    "message": "Please select options from the enum fields",
+    "requestedSchema": {
+      "type": "object",
+      "properties": {
+        "untitledSingle": {
+          "type": "string",
+          "description": "Select one option",
+          "enum": ["option1", "option2", "option3"]
+        },
+        "titledSingle": {
+          "type": "string",
+          "description": "Select one option with titles",
+          "oneOf": [
+            { "const": "value1", "title": "First Option" },
+            { "const": "value2", "title": "Second Option" },
+            { "const": "value3", "title": "Third Option" }
+          ]
+        },
+        "legacyEnum": {
+          "type": "string",
+          "description": "Select one option (legacy)",
+          "enum": ["opt1", "opt2", "opt3"],
+          "enumNames": ["Option One", "Option Two", "Option Three"]
+        },
+        "untitledMulti": {
+          "type": "array",
+          "description": "Select multiple options",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "string",
+            "enum": ["option1", "option2", "option3"]
+          }
+        },
+        "titledMulti": {
+          "type": "array",
+          "description": "Select multiple options with titles",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "anyOf": [
+              { "const": "value1", "title": "First Choice" },
+              { "const": "value2", "title": "Second Choice" },
+              { "const": "value3", "title": "Third Choice" }
+            ]
+          }
+        }
+      },
+      "required": []
+    }
+  }
+}
+```
+
+**Returns**: Text content with the elicitation result
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Elicitation completed: action=<accept/decline/cancel>, content={...}"
+    }
+  ]
+}
+```
+
+**Implementation Note**: This tool tests SEP-1330 support for enum schema improvements including:
+- Untitled single-select enums (type: string with enum array)
+- Titled single-select enums (using oneOf with const/title objects)
+- Legacy titled enums (using deprecated enumNames array)
+- Untitled multi-select enums (type: array with items.enum)
+- Titled multi-select enums (using items.anyOf with const/title objects)
+
+If the client doesn't support elicitation (no `elicitation` capability), return an error.
+
+**Reference**: [SEP-1330](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1330)
+
 ---
 
 ## 3. Resources Requirements

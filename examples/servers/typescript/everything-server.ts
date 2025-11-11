@@ -472,6 +472,105 @@ function createMcpServer() {
     }
   );
 
+  // SEP-1330: Elicitation with enum schema improvements
+  mcpServer.registerTool(
+    'test_elicitation_sep1330_enums',
+    {
+      description:
+        'Tests elicitation with enum schema improvements per SEP-1330',
+      inputSchema: {}
+    },
+    async () => {
+      try {
+        // Request user input with all 5 enum schema variants
+        const result = await mcpServer.server.request(
+          {
+            method: 'elicitation/create',
+            params: {
+              message: 'Please select options from the enum fields',
+              requestedSchema: {
+                type: 'object',
+                properties: {
+                  // Untitled single-select enum (basic)
+                  untitledSingle: {
+                    type: 'string',
+                    description: 'Select one option',
+                    enum: ['option1', 'option2', 'option3']
+                  },
+                  // Titled single-select enum (using oneOf with const/title)
+                  titledSingle: {
+                    type: 'string',
+                    description: 'Select one option with titles',
+                    oneOf: [
+                      { const: 'value1', title: 'First Option' },
+                      { const: 'value2', title: 'Second Option' },
+                      { const: 'value3', title: 'Third Option' }
+                    ]
+                  },
+                  // Legacy titled enum (using enumNames - deprecated)
+                  legacyEnum: {
+                    type: 'string',
+                    description: 'Select one option (legacy)',
+                    enum: ['opt1', 'opt2', 'opt3'],
+                    enumNames: ['Option One', 'Option Two', 'Option Three']
+                  },
+                  // Untitled multi-select enum
+                  untitledMulti: {
+                    type: 'array',
+                    description: 'Select multiple options',
+                    minItems: 1,
+                    maxItems: 3,
+                    items: {
+                      type: 'string',
+                      enum: ['option1', 'option2', 'option3']
+                    }
+                  },
+                  // Titled multi-select enum (using anyOf with const/title)
+                  titledMulti: {
+                    type: 'array',
+                    description: 'Select multiple options with titles',
+                    minItems: 1,
+                    maxItems: 3,
+                    items: {
+                      anyOf: [
+                        { const: 'value1', title: 'First Choice' },
+                        { const: 'value2', title: 'Second Choice' },
+                        { const: 'value3', title: 'Third Choice' }
+                      ]
+                    }
+                  }
+                },
+                required: []
+              }
+            }
+          },
+          z
+            .object({ method: z.literal('elicitation/create') })
+            .passthrough() as any
+        );
+
+        const elicitResult = result as any;
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Elicitation completed: action=${elicitResult.action}, content=${JSON.stringify(elicitResult.content || {})}`
+            }
+          ]
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Elicitation not supported or error: ${error.message}`
+            }
+          ]
+        };
+      }
+    }
+  );
+
   // Dynamic tool (registered later via timer)
 
   // ===== RESOURCES =====
