@@ -170,7 +170,10 @@ export function printClientResults(
   return { passed, failed, denominator };
 }
 
-export async function runInteractiveMode(scenarioName: string): Promise<void> {
+export async function runInteractiveMode(
+  scenarioName: string,
+  verbose: boolean = false
+): Promise<void> {
   await ensureResultsDir();
   const resultDir = createResultDir(scenarioName);
   await fs.mkdir(resultDir, { recursive: true });
@@ -193,7 +196,11 @@ export async function runInteractiveMode(scenarioName: string): Promise<void> {
       JSON.stringify(checks, null, 2)
     );
 
-    console.log(`\nChecks:\n${JSON.stringify(checks, null, 2)}`);
+    if (verbose) {
+      console.log(`\nChecks:\n${JSON.stringify(checks, null, 2)}`);
+    } else {
+      console.log(`\nChecks:\n${formatPrettyChecks(checks)}`);
+    }
     console.log(`\nChecks saved to ${resultDir}/checks.json`);
 
     await scenario.stop();

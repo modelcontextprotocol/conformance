@@ -6,7 +6,7 @@ import { ServerLifecycle } from './helpers/serverLifecycle.js';
 
 export class AuthBasicMetadataVar1Scenario implements Scenario {
   // TODO: name should match what we put in the scenario map
-  name = 'auth-basic-metadata-var1';
+  name = 'auth/basic-metadata-var1';
   description =
     'Tests Basic OAuth flow with DCR, PRM at root location, OAuth metadata at OpenID discovery path, and no scopes required';
   private authServer = new ServerLifecycle(() => this.authBaseUrl);

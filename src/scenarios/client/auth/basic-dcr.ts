@@ -6,7 +6,7 @@ import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { Request, Response } from 'express';
 
 export class AuthBasicDCRScenario implements Scenario {
-  name = 'auth-basic-dcr';
+  name = 'auth/basic-dcr';
   description =
     'Tests Basic OAuth flow with DCR, PRM at path-based location, OAuth metadata at root location, and no scopes required';
   private authServer = new ServerLifecycle(() => this.authBaseUrl);
