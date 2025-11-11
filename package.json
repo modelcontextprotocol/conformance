@@ -1,11 +1,15 @@
 {
   "name": "@modelcontextprotocol/conformance",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "type": "module",
   "license": "MIT",
   "author": "Anthropic, PBC (https://anthropic.com)",
   "homepage": "https://modelcontextprotocol.io",
   "bugs": "https://github.com/modelcontextprotocol/conformance/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/modelcontextprotocol/conformance.git"
+  },
   "scripts": {
     "start": "tsx src/index.ts",
     "test": "jest",
