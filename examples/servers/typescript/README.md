@@ -147,8 +147,7 @@ This server implements the MCP Server Conformance Requirements specified in `../
 To run conformance tests against this server:
 
 ```bash
-cd ../../../
-npm run conformance -- server --url http://localhost:3000/mcp --all
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp
 ```
 
 ## Implementation Notes

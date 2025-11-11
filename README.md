@@ -15,8 +15,8 @@ npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typ
 ### Testing Servers
 
 ```bash
-# Run all server scenarios
-npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --all
+# Run all server scenarios (default)
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp
 
 # Run a single scenario
 npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server-initialize
@@ -67,14 +67,13 @@ The framework appends the server URL as the final argument to your command.
 ### Server Testing
 
 ```bash
-npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario> | --all]
+npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 ```
 
 **Options:**
 
 - `--url` - URL of the server to test
-- `--scenario` - The test scenario to run (e.g., "server-initialize")
-- `--all` - Run all available server scenarios
+- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize". Runs all available scenarios by default
 
 ## Test Results
 

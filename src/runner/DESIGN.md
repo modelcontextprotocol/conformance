@@ -68,13 +68,13 @@ The conformance suite provides a unified CLI with two main commands:
 
 ```bash
 # Run a single client scenario
-npm run conformance -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
+npm run start -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
 
 # With verbose output
-npm run conformance -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize --verbose
+npm run start -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize --verbose
 
 # With custom timeout
-npm run conformance -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize --timeout 60000
+npm run start -- client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize --timeout 60000
 ```
 
 **Arguments:**
@@ -90,29 +90,28 @@ The runner will append the server URL as the final argument to the command.
 
 ```bash
 # Run a single server scenario
-npm run conformance -- server --url http://localhost:3000/mcp --scenario server-initialize
+npm run start -- server --url http://localhost:3000/mcp --scenario server-initialize
 
-# Run all server scenarios
-npm run conformance -- server --url http://localhost:3000/mcp --all
+# Run all server scenarios (default when no --scenario specified)
+npm run start -- server --url http://localhost:3000/mcp
 ```
 
 **Arguments:**
 
 - `--url` - URL of the server to test
-- `--scenario` - The scenario to test (e.g., "server-initialize", "tools-list")
-- `--all` - Run all available server scenarios
+- `--scenario <scenario>` - Scenario to test (optional, defaults to all scenarios if not specified)
 
 ### List Available Scenarios
 
 ```bash
 # List all scenarios
-npm run conformance -- list
+npm run start -- list
 
 # List only client scenarios
-npm run conformance -- list --client
+npm run start -- list --client
 
 # List only server scenarios
-npm run conformance -- list --server
+npm run start -- list --server
 ```
 
 ## Validation
@@ -128,8 +127,8 @@ All CLI arguments are validated using Zod schemas (`src/schemas.ts`) before bein
 **Server Validation:**
 
 - URL is a valid HTTP/HTTPS URL
-- Scenario exists (if specified)
-- Either `--scenario` or `--all` is specified (but not both)
+- All specified scenarios exist (if provided)
+- Defaults to all scenarios when no `--scenario` is specified
 
 ## Scenarios
 
