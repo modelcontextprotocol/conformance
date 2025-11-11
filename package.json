@@ -2,6 +2,9 @@
   "name": "conformance",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
+  "author": "Anthropic, PBC (https://anthropic.com)",
+  "homepage": "https://modelcontextprotocol.io",
   "scripts": {
     "start": "tsx src/index.ts",
     "test": "jest",
