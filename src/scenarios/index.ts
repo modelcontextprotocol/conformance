@@ -28,6 +28,7 @@ import {
 } from './server/tools.js';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
+import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
 
 import {
   ResourcesListScenario,
@@ -80,6 +81,9 @@ export const clientScenarios = new Map<string, ClientScenario>([
 
   // Elicitation scenarios (SEP-1034)
   ['elicitation-sep1034-defaults', new ElicitationDefaultsScenario()],
+
+  // Elicitation scenarios (SEP-1330)
+  ['elicitation-sep1330-enums', new ElicitationEnumsScenario()],
 
   // Resources scenarios
   ['resources-list', new ResourcesListScenario()],
