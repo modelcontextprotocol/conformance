@@ -7,7 +7,8 @@ import {
   printClientResults,
   runServerConformanceTest,
   printServerResults,
-  printServerSummary
+  printServerSummary,
+  runInteractiveMode
 } from './runner';
 import { listScenarios, listClientScenarios } from './scenarios';
 import { ConformanceCheck } from './types';
@@ -24,8 +25,10 @@ program
 // Client command - tests a client implementation against scenarios
 program
   .command('client')
-  .description('Run conformance tests against a client implementation')
-  .requiredOption('--command <command>', 'Command to run the client')
+  .description(
+    'Run conformance tests against a client implementation or start interactive mode'
+  )
+  .option('--command <command>', 'Command to run the client')
   .requiredOption('--scenario <scenario>', 'Scenario to test')
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output')
@@ -34,10 +37,17 @@ program
       // Validate options with Zod
       const validated = ClientOptionsSchema.parse(options);
 
+      // If no command provided, run in interactive mode
+      if (!validated.command) {
+        await runInteractiveMode(validated.scenario);
+        process.exit(0);
+      }
+
+      // Otherwise run conformance test
       const result = await runConformanceTest(
         validated.command,
         validated.scenario,
-        validated.timeout
+        validated.timeout ?? 30000
       );
 
       const { failed } = printClientResults(

@@ -3,7 +3,7 @@ import { getScenario, getClientScenario } from './scenarios';
 
 // Client command options schema
 export const ClientOptionsSchema = z.object({
-  command: z.string().min(1, 'Command cannot be empty'),
+  command: z.string().min(1, 'Command cannot be empty').optional(),
   scenario: z
     .string()
     .min(1, 'Scenario cannot be empty')
@@ -21,7 +21,8 @@ export const ClientOptionsSchema = z.object({
         .number()
         .positive('Timeout must be a positive number')
         .int('Timeout must be an integer')
-    ),
+    )
+    .optional(),
   verbose: z.boolean().optional()
 });
 
@@ -42,3 +43,18 @@ export const ServerOptionsSchema = z.object({
 });
 
 export type ServerOptions = z.infer<typeof ServerOptionsSchema>;
+
+// Interactive command options schema
+export const InteractiveOptionsSchema = z.object({
+  scenario: z
+    .string()
+    .min(1, 'Scenario cannot be empty')
+    .refine(
+      (scenario) => getScenario(scenario) !== undefined,
+      (scenario) => ({
+        message: `Unknown scenario '${scenario}'`
+      })
+    )
+});
+
+export type InteractiveOptions = z.infer<typeof InteractiveOptionsSchema>;
