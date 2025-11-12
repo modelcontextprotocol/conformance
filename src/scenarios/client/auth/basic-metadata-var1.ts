@@ -9,25 +9,23 @@ export class AuthBasicMetadataVar1Scenario implements Scenario {
   name = 'auth/basic-metadata-var1';
   description =
     'Tests Basic OAuth flow with DCR, PRM at root location, OAuth metadata at OpenID discovery path, and no scopes required';
-  private authServer = new ServerLifecycle(() => this.authBaseUrl);
-  private server = new ServerLifecycle(() => this.baseUrl);
+  private authServer = new ServerLifecycle();
+  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private baseUrl: string = '';
-  private authBaseUrl: string = '';
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, () => this.authBaseUrl, {
+    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       metadataPath: '/.well-known/openid-configuration',
       isOpenIdConfiguration: true
     });
-    this.authBaseUrl = await this.authServer.start(authApp);
+    await this.authServer.start(authApp);
 
     const app = createServer(
       this.checks,
-      () => this.baseUrl,
-      () => this.authBaseUrl,
+      this.server.getUrl,
+      this.authServer.getUrl,
       {
         // TODO: this will put this path in the WWW-Authenticate header
         // but RFC 9728 states that in that case, the resource in the PRM
@@ -38,9 +36,9 @@ export class AuthBasicMetadataVar1Scenario implements Scenario {
         prmPath: '/.well-known/oauth-protected-resource'
       }
     );
-    this.baseUrl = await this.server.start(app);
+    await this.server.start(app);
 
-    return { serverUrl: `${this.baseUrl}/mcp` };
+    return { serverUrl: `${this.server.getUrl()}/mcp` };
   }
 
   async stop() {

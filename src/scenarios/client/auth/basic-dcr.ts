@@ -9,22 +9,20 @@ export class AuthBasicDCRScenario implements Scenario {
   name = 'auth/basic-dcr';
   description =
     'Tests Basic OAuth flow with DCR, PRM at path-based location, OAuth metadata at root location, and no scopes required';
-  private authServer = new ServerLifecycle(() => this.authBaseUrl);
-  private server = new ServerLifecycle(() => this.baseUrl);
+  private authServer = new ServerLifecycle();
+  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private baseUrl: string = '';
-  private authBaseUrl: string = '';
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, () => this.authBaseUrl);
-    this.authBaseUrl = await this.authServer.start(authApp);
+    const authApp = createAuthServer(this.checks, this.authServer.getUrl);
+    await this.authServer.start(authApp);
 
     const app = createServer(
       this.checks,
-      () => this.baseUrl,
-      () => this.authBaseUrl
+      this.server.getUrl,
+      this.authServer.getUrl
     );
 
     // For this scenario, reject PRM requests at root location since we have the path-based PRM.
@@ -58,9 +56,9 @@ export class AuthBasicDCRScenario implements Scenario {
       }
     );
 
-    this.baseUrl = await this.server.start(app);
+    await this.server.start(app);
 
-    return { serverUrl: `${this.baseUrl}/mcp` };
+    return { serverUrl: `${this.server.getUrl()}/mcp` };
   }
 
   async stop() {

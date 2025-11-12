@@ -5,8 +5,6 @@ export class ServerLifecycle {
   private httpServer: any = null;
   private baseUrl: string = '';
 
-  constructor(private getBaseUrl: () => string) {}
-
   async start(app: express.Application): Promise<string> {
     this.app = app;
     this.httpServer = this.app.listen(0);
