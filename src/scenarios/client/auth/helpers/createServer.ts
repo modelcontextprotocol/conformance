@@ -8,7 +8,7 @@ import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
 
 export interface ServerOptions {
-  prmPath?: string;
+  prmPath?: string | null;
 }
 
 export function createServer(
@@ -47,30 +47,32 @@ export function createServer(
     })
   );
 
-  app.get(prmPath, (req: Request, res: Response) => {
-    checks.push({
-      id: 'prm-pathbased-requested',
-      name: 'PRMPathBasedRequested',
-      description: 'Client requested PRM metadata at path-based location',
-      status: 'SUCCESS',
-      timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'RFC-9728-3',
-          url: 'https://tools.ietf.org/html/rfc9728#section-3'
+  if (prmPath !== null) {
+    app.get(prmPath, (req: Request, res: Response) => {
+      checks.push({
+        id: 'prm-pathbased-requested',
+        name: 'PRMPathBasedRequested',
+        description: 'Client requested PRM metadata at path-based location',
+        status: 'SUCCESS',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'RFC-9728-3',
+            url: 'https://tools.ietf.org/html/rfc9728#section-3'
+          }
+        ],
+        details: {
+          url: req.url,
+          path: req.path
         }
-      ],
-      details: {
-        url: req.url,
-        path: req.path
-      }
-    });
+      });
 
-    res.json({
-      resource: getBaseUrl(),
-      authorization_servers: [getAuthServerUrl()]
+      res.json({
+        resource: getBaseUrl(),
+        authorization_servers: [getAuthServerUrl()]
+      });
     });
-  });
+  }
 
   app.post('/mcp', async (req: Request, res: Response, next: NextFunction) => {
     // Apply bearer token auth per-request in order to delay setting PRM URL

@@ -17,11 +17,16 @@ export class AuthMarchSpecBackcompatScenario implements Scenario {
 
     // Legacy server, so we create the auth server endpoints on the
     // same URL as the main server (rather than separating AS / RS).
-    const authApp = createAuthServer(this.checks, this.server.getUrl);
+    const authApp = createAuthServer(this.checks, this.server.getUrl, {
+      // Disable logging since the main server will already have logging enabled
+      loggingEnabled: false
+    });
     const app = createServer(
       this.checks,
       this.server.getUrl,
-      this.server.getUrl
+      this.server.getUrl,
+      // Explicitly set to null to indicate no PRM available
+      { prmPath: null }
     );
     app.use(authApp);
 

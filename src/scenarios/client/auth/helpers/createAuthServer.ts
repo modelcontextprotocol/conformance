@@ -5,6 +5,7 @@ import { createRequestLogger } from '../../../request-logger.js';
 export interface AuthServerOptions {
   metadataPath?: string;
   isOpenIdConfiguration?: boolean;
+  loggingEnabled?: boolean;
 }
 
 export function createAuthServer(
@@ -14,18 +15,21 @@ export function createAuthServer(
 ): express.Application {
   const {
     metadataPath = '/.well-known/oauth-authorization-server',
-    isOpenIdConfiguration = false
+    isOpenIdConfiguration = false,
+    loggingEnabled = true
   } = options;
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  app.use(
-    createRequestLogger(checks, {
-      incomingId: 'incoming-auth-request',
-      outgoingId: 'outgoing-auth-response'
-    })
-  );
+  if (loggingEnabled) {
+    app.use(
+      createRequestLogger(checks, {
+        incomingId: 'incoming-auth-request',
+        outgoingId: 'outgoing-auth-response'
+      })
+    );
+  }
 
   app.get(metadataPath, (req: Request, res: Response) => {
     checks.push({
