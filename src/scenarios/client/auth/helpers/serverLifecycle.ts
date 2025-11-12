@@ -5,6 +5,11 @@ export class ServerLifecycle {
   private httpServer: any = null;
   private baseUrl: string = '';
 
+  // Arrow function to avoid needing lots of .bind(this)
+  getUrl = (): string => {
+    return this.baseUrl;
+  };
+
   async start(app: express.Application): Promise<string> {
     this.app = app;
     this.httpServer = this.app.listen(0);
@@ -22,9 +27,5 @@ export class ServerLifecycle {
       this.httpServer = null;
     }
     this.app = null;
-  }
-
-  getUrl(): string {
-    return this.baseUrl;
   }
 }

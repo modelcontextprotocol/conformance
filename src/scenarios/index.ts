@@ -3,6 +3,7 @@ import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
 import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
 import { AuthBasicMetadataVar1Scenario } from './client/auth/basic-metadata-var1.js';
+import { AuthMarchSpecBackcompatScenario } from './client/auth/march-spec-backcompat.js';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
 
 // Import all new server test scenarios
@@ -117,6 +118,7 @@ const scenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new AuthBasicDCRScenario(),
   new AuthBasicMetadataVar1Scenario(),
+  new AuthMarchSpecBackcompatScenario(),
   new ElicitationClientDefaultsScenario()
 ];
 
