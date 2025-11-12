@@ -3,13 +3,13 @@ import { getClientScenario, listActiveClientScenarios } from '../index.js';
 import path from 'path';
 
 describe('Server Scenarios', () => {
-  let serverProcess: ChildProcess;
+  let serverProcess: ChildProcess | null = null;
   const TEST_PORT = 3001;
   const SERVER_URL = `http://localhost:${TEST_PORT}/mcp`;
-  const SERVER_STARTUP_TIMEOUT = 10000; // 10 seconds to start
+  const SERVER_STARTUP_TIMEOUT = 30000; // 30 seconds for CI
 
   beforeAll(async () => {
-    // Start the everything-server once for all scenarios
+    // Start the everything-server once for all scenarios in this file
     const serverPath = path.join(
       process.cwd(),
       'examples/servers/typescript/everything-server.ts'
@@ -17,61 +17,85 @@ describe('Server Scenarios', () => {
 
     serverProcess = spawn('npx', ['tsx', serverPath], {
       env: { ...process.env, PORT: TEST_PORT.toString() },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false
+    });
+
+    // Capture output for debugging
+    let stdoutData = '';
+    let stderrData = '';
+
+    serverProcess.stdout?.on('data', (data) => {
+      stdoutData += data.toString();
+    });
+
+    serverProcess.stderr?.on('data', (data) => {
+      stderrData += data.toString();
     });
 
     // Wait for server to be ready
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        if (serverProcess) {
+          serverProcess.kill('SIGKILL');
+        }
         reject(
           new Error(`Server failed to start within ${SERVER_STARTUP_TIMEOUT}ms`)
         );
       }, SERVER_STARTUP_TIMEOUT);
 
-      serverProcess.stdout?.on('data', (data) => {
+      let resolved = false;
+
+      serverProcess!.stdout?.on('data', (data) => {
         const output = data.toString();
         if (output.includes('running on')) {
           clearTimeout(timeout);
+          resolved = true;
           resolve();
         }
       });
 
-      serverProcess.on('error', (error) => {
+      serverProcess!.on('error', (error) => {
         clearTimeout(timeout);
         reject(new Error(`Failed to start server: ${error.message}`));
       });
 
-      serverProcess.on('exit', (code) => {
-        if (code !== null && code !== 0) {
+      serverProcess!.on('exit', (code) => {
+        // Only reject if server exits unexpectedly during startup
+        if (!resolved && code !== null && code !== 0) {
           clearTimeout(timeout);
-          reject(new Error(`Server exited prematurely with code ${code}`));
+          reject(
+            new Error(
+              `Server exited prematurely with code ${code}. STDOUT: ${stdoutData}, STDERR: ${stderrData}`
+            )
+          );
         }
       });
     });
   }, SERVER_STARTUP_TIMEOUT + 5000);
 
   afterAll(async () => {
-    // Stop the server
-    if (serverProcess) {
+    // Stop the server and clean up
+    if (serverProcess && !serverProcess.killed) {
+      // Try graceful shutdown first
       serverProcess.kill('SIGTERM');
 
-      // Wait for graceful shutdown
+      // Wait for graceful shutdown with timeout
       await new Promise<void>((resolve) => {
-        const timeoutHandle = setTimeout(() => {
-          if (!serverProcess.killed) {
+        const killTimeout = setTimeout(() => {
+          if (serverProcess && !serverProcess.killed) {
             serverProcess.kill('SIGKILL');
           }
           resolve();
         }, 5000);
 
-        const cleanUp = () => {
-          clearTimeout(timeoutHandle);
-          serverProcess.removeListener('exit', cleanUp);
+        serverProcess!.once('exit', () => {
+          clearTimeout(killTimeout);
           resolve();
-        };
-
-        serverProcess.on('exit', cleanUp);
+        });
       });
+
+      serverProcess = null;
     }
   });
 
