@@ -14,12 +14,15 @@ export class AuthMarchSpecBackcompatScenario implements Scenario {
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    // TODO: I want to move the Auth URL's below a path.
 
     // Legacy server, so we create the auth server endpoints on the
     // same URL as the main server (rather than separating AS / RS).
     const authApp = createAuthServer(this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
-      loggingEnabled: false
+      loggingEnabled: false,
+      // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
+      routePrefix: '/oauth'
     });
     const app = createServer(
       this.checks,

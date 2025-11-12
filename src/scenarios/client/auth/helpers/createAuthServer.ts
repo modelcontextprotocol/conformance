@@ -6,6 +6,7 @@ export interface AuthServerOptions {
   metadataPath?: string;
   isOpenIdConfiguration?: boolean;
   loggingEnabled?: boolean;
+  routePrefix?: string;
 }
 
 export function createAuthServer(
@@ -16,8 +17,16 @@ export function createAuthServer(
   const {
     metadataPath = '/.well-known/oauth-authorization-server',
     isOpenIdConfiguration = false,
-    loggingEnabled = true
+    loggingEnabled = true,
+    routePrefix = ''
   } = options;
+
+  const authRoutes = {
+    authorization_endpoint: `${routePrefix}/authorize`,
+    token_endpoint: `${routePrefix}/token`,
+    registration_endpoint: `${routePrefix}/register`
+  };
+
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -52,9 +61,9 @@ export function createAuthServer(
 
     const metadata: any = {
       issuer: getAuthBaseUrl(),
-      authorization_endpoint: `${getAuthBaseUrl()}/authorize`,
-      token_endpoint: `${getAuthBaseUrl()}/token`,
-      registration_endpoint: `${getAuthBaseUrl()}/register`,
+      authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
+      token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
+      registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
@@ -71,7 +80,7 @@ export function createAuthServer(
     res.json(metadata);
   });
 
-  app.get('/authorize', (req: Request, res: Response) => {
+  app.get(authRoutes.authorization_endpoint, (req: Request, res: Response) => {
     checks.push({
       id: 'authorization-request',
       name: 'AuthorizationRequest',
@@ -105,7 +114,7 @@ export function createAuthServer(
     res.redirect(redirectUrl.toString());
   });
 
-  app.post('/token', (req: Request, res: Response) => {
+  app.post(authRoutes.token_endpoint, (req: Request, res: Response) => {
     checks.push({
       id: 'token-request',
       name: 'TokenRequest',
@@ -131,7 +140,7 @@ export function createAuthServer(
     });
   });
 
-  app.post('/register', (req: Request, res: Response) => {
+  app.post(authRoutes.registration_endpoint, (req: Request, res: Response) => {
     checks.push({
       id: 'client-registration',
       name: 'ClientRegistration',
