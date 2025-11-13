@@ -10,6 +10,6 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "examples/clients/typescript/**/*"],
   "exclude": ["node_modules"]
 }

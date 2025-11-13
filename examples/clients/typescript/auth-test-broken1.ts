@@ -2,7 +2,7 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { handle401, withOAuthRetry } from './helpers/withOAuthRetry.js';
+import { withOAuthRetry } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
