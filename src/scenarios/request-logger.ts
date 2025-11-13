@@ -16,7 +16,8 @@ export function createRequestLogger(
     let requestDescription = `Received ${req.method} request for ${req.path}`;
     const requestDetails: any = {
       method: req.method,
-      path: req.path
+      path: req.path,
+      body: req.body
     };
 
     // Add query parameters to details if they exist
