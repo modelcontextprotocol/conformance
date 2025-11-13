@@ -20,7 +20,7 @@
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
-    "prepack": "npm run build"
+    "prepare": "npm run build"
   },
   "files": [
     "dist"
