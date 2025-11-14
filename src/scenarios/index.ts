@@ -2,6 +2,7 @@ import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
+import { SSERetryScenario } from './client/sse-retry.js';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle.js';
@@ -27,6 +28,7 @@ import {
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
 import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
+import { ServerSSEPollingScenario } from './server/sse-polling.js';
 
 import {
   ResourcesListScenario,
@@ -78,6 +80,9 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
+  // SSE Polling scenarios (SEP-1699)
+  new ServerSSEPollingScenario(),
+
   // Elicitation scenarios (SEP-1330) - pending
   ...pendingClientScenariosList,
 
@@ -116,6 +121,7 @@ const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
+  new SSERetryScenario(),
   ...authScenariosList
 ];
 
