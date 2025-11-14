@@ -24,3 +24,19 @@ describe('Client Auth Scenarios', () => {
     });
   }
 });
+
+describe('Negative tests', () => {
+  test('bad client requests root PRM location', async () => {
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test-broken1.ts'
+    );
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(runner, 'auth/basic-dcr', [
+      // There will be other failures, but this is the one that matters
+      'prm-priority-order'
+    ]);
+  });
+
+  // TODO: Add more negative tests here
+});
