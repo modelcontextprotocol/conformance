@@ -1,0 +1,28 @@
+import { SpecReference } from '../../../types';
+
+export const SpecReferences: { [key: string]: SpecReference } = {
+  RFC_PRM_DISCOVERY: {
+    id: 'RFC-9728',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.1'
+  },
+  RFC_AUTH_SERVER_METADATA: {
+    id: 'RFC-8414',
+    url: 'https://tools.ietf.org/html/rfc8414'
+  },
+  LEGACY_2025_03_26_AUTH_DISCOVERY: {
+    id: 'MCP-2025-03-26-Authorization-metadata-discovery',
+    url: 'https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization#server-metadata-discovery'
+  },
+  LEGACY_2025_03_26_AUTH_URL_FALLBACK: {
+    id: 'MCP-2025-03-26-Authorization-metadata-url-fallback',
+    url: 'https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization#fallbacks-for-servers-without-metadata-discovery'
+  },
+  MCP_PRM_DISCOVERY: {
+    id: 'MCP-2025-06-18-PRM-discovery',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements'
+  },
+  MCP_AUTH_DISCOVERY: {
+    id: 'MCP-Authorization-metadata-discovery',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery'
+  }
+};

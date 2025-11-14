@@ -4,6 +4,7 @@ import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import express, { Request, Response } from 'express';
+import { SpecReferences } from './spec-references.js';
 
 export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
   name = 'auth/2025-03-26-oauth-metadata-backcompat';
@@ -69,7 +70,12 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
             url: req.url,
             path: req.path,
             note: 'March spec behavior: no PRM available'
-          }
+          },
+          specReferences: [
+            SpecReferences.RFC_PRM_DISCOVERY,
+            SpecReferences.MCP_PRM_DISCOVERY,
+            SpecReferences.LEGACY_2025_03_26_AUTH_DISCOVERY
+          ]
         });
 
         res.status(404).json({
@@ -103,7 +109,8 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
           name: `Expected Check Missing: ${slug}`,
           description: `Expected Check Missing: ${slug}`,
           status: 'FAILURE',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          specReferences: [SpecReferences.LEGACY_2025_03_26_AUTH_DISCOVERY]
         });
       }
     }
@@ -156,54 +163,6 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
       }
     );
 
-    app.get(
-      '/.well-known/oauth-protected-resource',
-      (req: Request, res: Response) => {
-        this.checks.push({
-          id: 'no-prm-root',
-          name: 'No PRM at Root',
-          description:
-            'Client attempted to fetch PRM at root location, but March spec does not have PRM',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          details: {
-            url: req.url,
-            path: req.path,
-            note: '2025-03-26 spec behavior: no PRM available'
-          }
-        });
-
-        res.status(404).json({
-          error: 'not_found',
-          error_description: 'PRM not available (March spec behavior)'
-        });
-      }
-    );
-
-    app.get(
-      '/.well-known/oauth-protected-resource/mcp',
-      (req: Request, res: Response) => {
-        this.checks.push({
-          id: 'no-prm-path',
-          name: 'No PRM at Path',
-          description:
-            'Client attempted to fetch PRM at path-based location, but March spec behavior does not have PRM',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          details: {
-            url: req.url,
-            path: req.path,
-            note: '2025-03-26 spec behavior: no PRM available'
-          }
-        });
-
-        res.status(404).json({
-          error: 'not_found',
-          error_description: 'PRM not available (March spec behavior)'
-        });
-      }
-    );
-
     app.get('/authorize', (req: Request, res: Response) => {
       this.checks.push({
         id: 'authorization-request',
@@ -211,12 +170,7 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
         description: 'Client made authorization request to fallback endpoint',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'MCP-2025-03-26-Authorization',
-            url: 'https://modelcontextprotocol.io/specification/2025-03-26/authorization'
-          }
-        ],
+        specReferences: [SpecReferences.LEGACY_2025_03_26_AUTH_URL_FALLBACK],
         details: {
           response_type: req.query.response_type,
           client_id: req.query.client_id,
@@ -245,12 +199,7 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
         description: 'Client requested access token from fallback endpoint',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'MCP-2025-03-26-Authorization',
-            url: 'https://modelcontextprotocol.io/specification/2025-03-26/authorization'
-          }
-        ],
+        specReferences: [SpecReferences.LEGACY_2025_03_26_AUTH_URL_FALLBACK],
         details: {
           endpoint: '/token',
           grantType: req.body.grant_type
@@ -272,12 +221,7 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
           'Client registered with authorization server at fallback endpoint',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'MCP-2025-03-26-Authorization',
-            url: 'https://modelcontextprotocol.io/specification/2025-03-26/authorization'
-          }
-        ],
+        specReferences: [SpecReferences.LEGACY_2025_03_26_AUTH_URL_FALLBACK],
         details: {
           endpoint: '/register',
           clientName: req.body.client_name
