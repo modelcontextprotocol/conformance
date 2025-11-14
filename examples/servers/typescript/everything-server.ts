@@ -54,8 +54,7 @@ function createMcpServer() {
           listChanged: true
         },
         logging: {},
-        completions: {},
-        elicitation: {}
+        completions: {}
       }
     }
   );
