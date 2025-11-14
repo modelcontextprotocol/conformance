@@ -7,7 +7,26 @@ import { connectToServer } from './client-helper.js';
 
 export class LoggingSetLevelScenario implements ClientScenario {
   name = 'logging-set-level';
-  description = 'Test setting logging level';
+  description = `Test setting logging level.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`logging/setLevel\`
+
+**Requirements**:
+- Accept log level setting
+- Filter subsequent log notifications based on level
+- Return empty object \`{}\`
+
+**Log Levels** (in order of severity):
+- \`debug\`
+- \`info\`
+- \`notice\`
+- \`warning\`
+- \`error\`
+- \`critical\`
+- \`alert\`
+- \`emergency\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -66,7 +85,48 @@ export class LoggingSetLevelScenario implements ClientScenario {
 
 export class CompletionCompleteScenario implements ClientScenario {
   name = 'completion-complete';
-  description = 'Test completion endpoint';
+  description = `Test completion endpoint.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`completion/complete\`
+
+**Requirements**:
+- Accept completion requests for prompt or resource template arguments
+- Provide contextual suggestions based on partial input
+- Return array of completion values ranked by relevance
+
+**Request Format**:
+
+\`\`\`json
+{
+  "method": "completion/complete",
+  "params": {
+    "ref": {
+      "type": "ref/prompt",
+      "name": "test_prompt_with_arguments"
+    },
+    "argument": {
+      "name": "arg1",
+      "value": "par"
+    }
+  }
+}
+\`\`\`
+
+**Response Format**:
+
+\`\`\`json
+{
+  "completion": {
+    "values": ["paris", "park", "party"],
+    "total": 150,
+    "hasMore": false
+  }
+}
+\`\`\`
+
+**Implementation Note**: For conformance testing, completion support can be minimal or return empty arrays. The capability just needs to be declared and the endpoint must respond correctly.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];

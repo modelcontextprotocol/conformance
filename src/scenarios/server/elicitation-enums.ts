@@ -8,7 +8,30 @@ import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationEnumsScenario implements ClientScenario {
   name = 'elicitation-sep1330-enums';
-  description = 'Test elicitation with enum schema improvements (SEP-1330)';
+  description = `Test elicitation with enum schema improvements (SEP-1330).
+
+**Server Implementation Requirements:**
+
+Implement a tool named \`test_elicitation_sep1330_enums\` (no arguments) that requests \`elicitation/create\` from the client with a schema containing all 5 enum variants:
+
+1. **Untitled single-select**: \`{ type: "string", enum: ["option1", "option2", "option3"] }\`
+2. **Titled single-select**: \`{ type: "string", oneOf: [{ const: "value1", title: "First Option" }, ...] }\`
+3. **Legacy titled (deprecated)**: \`{ type: "string", enum: ["opt1", "opt2", "opt3"], enumNames: ["Option One", "Option Two", "Option Three"] }\`
+4. **Untitled multi-select**: \`{ type: "array", items: { type: "string", enum: ["option1", "option2", "option3"] } }\`
+5. **Titled multi-select**: \`{ type: "array", items: { anyOf: [{ const: "value1", title: "First Choice" }, ...] } }\`
+
+**Returns**: Text content with the elicitation result
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Elicitation completed: action=<accept/decline/cancel>, content={...}"
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];

@@ -4,12 +4,26 @@ import { ConformanceCheck } from '../types';
 import { getClientScenario } from '../scenarios';
 import { ensureResultsDir, createResultDir } from './utils';
 
+/**
+ * Format markdown-style text for terminal output using ANSI codes
+ */
+function formatMarkdown(text: string): string {
+  return (
+    text
+      // Bold text: **text** -> bold
+      .replace(/\*\*([^*]+)\*\*/g, '\x1b[1m$1\x1b[0m')
+      // Inline code: `code` -> dim/gray
+      .replace(/`([^`]+)`/g, '\x1b[2m$1\x1b[0m')
+  );
+}
+
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir: string;
+  scenarioDescription: string;
 }> {
   await ensureResultsDir();
   const resultDir = createResultDir(scenarioName, 'server');
@@ -33,11 +47,15 @@ export async function runServerConformanceTest(
 
   return {
     checks,
-    resultDir
+    resultDir,
+    scenarioDescription: scenario.description
   };
 }
 
-export function printServerResults(checks: ConformanceCheck[]): {
+export function printServerResults(
+  checks: ConformanceCheck[],
+  scenarioDescription: string
+): {
   passed: number;
   failed: number;
   denominator: number;
@@ -54,14 +72,15 @@ export function printServerResults(checks: ConformanceCheck[]): {
   console.log(`Passed: ${passed}/${denominator}, ${failed} failed`);
 
   if (failed > 0) {
-    console.log('\nFailed Checks:');
+    console.log('\n=== Failed Checks ===');
     checks
       .filter((c) => c.status === 'FAILURE')
       .forEach((c) => {
-        console.log(`  - ${c.name}: ${c.description}`);
+        console.log(`\n  - ${c.name}: ${c.description}`);
         if (c.errorMessage) {
           console.log(`    Error: ${c.errorMessage}`);
         }
+        console.log(`\n${formatMarkdown(scenarioDescription)}`);
       });
   }
 
