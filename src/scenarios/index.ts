@@ -1,15 +1,6 @@
 import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
-import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
-import {
-  AuthBasicMetadataVar1Scenario,
-  AuthBasicMetadataVar2Scenario
-} from './client/auth/basic-metadata.js';
-import {
-  Auth20250326OAuthMetadataBackcompatScenario,
-  Auth20250326OEndpointFallbackScenario
-} from './client/auth/march-spec-backcompat.js';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
 
 // Import all new server test scenarios
@@ -53,6 +44,8 @@ import {
   PromptsGetEmbeddedResourceScenario,
   PromptsGetWithImageScenario
 } from './server/prompts.js';
+
+import { authScenariosList } from './client/auth/index.js';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -122,12 +115,8 @@ export const clientScenarios = new Map<string, ClientScenario>(
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
-  new AuthBasicDCRScenario(),
-  new AuthBasicMetadataVar1Scenario(),
-  new AuthBasicMetadataVar2Scenario(),
-  new Auth20250326OAuthMetadataBackcompatScenario(),
-  new Auth20250326OEndpointFallbackScenario(),
-  new ElicitationClientDefaultsScenario()
+  new ElicitationClientDefaultsScenario(),
+  ...authScenariosList
 ];
 
 // Scenarios map - built from list
