@@ -26,12 +26,6 @@ export class AuthBasicMetadataVar1Scenario implements Scenario {
       this.server.getUrl,
       this.authServer.getUrl,
       {
-        // TODO: this will put this path in the WWW-Authenticate header
-        // but RFC 9728 states that in that case, the resource in the PRM
-        // must match the URL used to make the request to the resource server.
-        // We'll need to establish an opinion on whether that means the
-        // URL for the metadata fetch, or the URL for the MCP endpoint,
-        // or more generally what are the valid scenarios / combos.
         prmPath: '/.well-known/oauth-protected-resource'
       }
     );
@@ -172,11 +166,14 @@ export class AuthBasicMetadataVar3Scenario implements Scenario {
     const app = createServer(
       this.checks,
       this.server.getUrl,
-      this.authServer.getUrl,
+      () => {
+        return `${this.authServer.getUrl()}/tenant1`;
+      },
       {
         // This is a custom path, so unable to get via probing, it's only available
         // via following the `resource_metadata_url` in the WWW-Authenticate header.
-        prmPath: '/.well-known/oauth-protected-resource'
+        // The resource must match the original request URL per RFC 9728.
+        prmPath: '/custom/metadata/location.json'
       }
     );
     await this.server.start(app);

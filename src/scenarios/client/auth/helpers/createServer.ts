@@ -67,8 +67,15 @@ export function createServer(
         }
       });
 
+      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
+      // the resource identifier is the root.
+      const resource =
+        prmPath === '/.well-known/oauth-protected-resource'
+          ? getBaseUrl()
+          : `${getBaseUrl()}/mcp`;
+
       res.json({
-        resource: getBaseUrl(),
+        resource,
         authorization_servers: [getAuthServerUrl()]
       });
     });

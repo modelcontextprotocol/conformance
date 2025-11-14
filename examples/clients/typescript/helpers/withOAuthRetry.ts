@@ -14,7 +14,6 @@ export const handle401 = async (
   serverUrl: string | URL
 ): Promise<void> => {
   const resourceMetadataUrl = extractResourceMetadataUrl(response);
-
   let result = await auth(provider, {
     serverUrl,
     resourceMetadataUrl,
