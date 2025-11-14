@@ -26,7 +26,7 @@
     "dist"
   ],
   "bin": {
-    "conformance": "dist/index.mjs"
+    "conformance": "dist/index.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.8.0",
