@@ -5,7 +5,7 @@ import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
 import {
   AuthBasicMetadataVar1Scenario,
   AuthBasicMetadataVar2Scenario
-} from './client/auth/basic-metadata-var1.js';
+} from './client/auth/basic-metadata.js';
 import {
   Auth20250326OAuthMetadataBackcompatScenario,
   Auth20250326OEndpointFallbackScenario
