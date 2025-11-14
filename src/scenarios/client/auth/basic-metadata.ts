@@ -71,7 +71,6 @@ export class AuthBasicMetadataVar1Scenario implements Scenario {
 }
 
 export class AuthBasicMetadataVar2Scenario implements Scenario {
-  // TODO: name should match what we put in the scenario map
   name = 'auth/basic-metadata-var2';
   description =
     'Tests Basic OAuth flow with DCR, PRM at root location, OAuth metadata at path-based OAuth discovery path';
@@ -116,12 +115,6 @@ export class AuthBasicMetadataVar2Scenario implements Scenario {
       this.server.getUrl,
       () => `${this.authServer.getUrl()}/tenant1`,
       {
-        // TODO: this will put this path in the WWW-Authenticate header
-        // but RFC 9728 states that in that case, the resource in the PRM
-        // must match the URL used to make the request to the resource server.
-        // We'll need to establish an opinion on whether that means the
-        // URL for the metadata fetch, or the URL for the MCP endpoint,
-        // or more generally what are the valid scenarios / combos.
         prmPath: '/.well-known/oauth-protected-resource'
       }
     );
