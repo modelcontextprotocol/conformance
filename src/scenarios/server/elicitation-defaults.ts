@@ -8,8 +8,29 @@ import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationDefaultsScenario implements ClientScenario {
   name = 'elicitation-sep1034-defaults';
-  description =
-    'Test elicitation with default values for all primitive types (SEP-1034)';
+  description = `Test elicitation with default values for all primitive types (SEP-1034).
+
+**Server Implementation Requirements:**
+
+Implement a tool named \`test_elicitation_sep1034_defaults\` (no arguments) that requests \`elicitation/create\` from the client with a schema containing default values for all primitive types:
+- \`name\` (string): default "John Doe"
+- \`age\` (integer): default 30
+- \`score\` (number): default 95.5
+- \`status\` (string enum: ["active", "inactive", "pending"]): default "active"
+- \`verified\` (boolean): default true
+
+**Returns**: Text content with the elicitation result
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Elicitation completed: action=<accept/decline/cancel>, content={...}"
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];

@@ -98,7 +98,10 @@ program
           validated.scenario
         );
 
-        const { failed } = printServerResults(result.checks);
+        const { failed } = printServerResults(
+          result.checks,
+          result.scenarioDescription
+        );
         process.exit(failed > 0 ? 1 : 0);
       } else {
         // Run all active scenarios
