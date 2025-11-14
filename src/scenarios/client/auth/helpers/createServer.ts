@@ -81,7 +81,9 @@ export function createServer(
     const authMiddleware = requireBearerAuth({
       verifier: new MockTokenVerifier(checks),
       requiredScopes: [],
-      resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+      ...(prmPath !== null && {
+        resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+      })
     });
 
     authMiddleware(req, res, async (err?: any) => {
