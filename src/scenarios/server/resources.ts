@@ -4,6 +4,10 @@
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServer } from './client-helper.js';
+import {
+  TextResourceContents,
+  BlobResourceContents
+} from '@modelcontextprotocol/sdk/types.js';
 
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
@@ -94,7 +98,7 @@ export class ResourcesReadTextScenario implements ClientScenario {
         errors.push('contents is not an array');
       if (result.contents.length === 0) errors.push('contents array is empty');
 
-      const content = result.contents[0];
+      const content = result.contents[0] as TextResourceContents | undefined;
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
         if (!content.mimeType) errors.push('Content missing mimeType');
@@ -162,7 +166,7 @@ export class ResourcesReadBinaryScenario implements ClientScenario {
       if (!result.contents) errors.push('Missing contents array');
       if (result.contents.length === 0) errors.push('contents array is empty');
 
-      const content = result.contents[0];
+      const content = result.contents[0] as BlobResourceContents | undefined;
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
         if (!content.mimeType) errors.push('Content missing mimeType');
@@ -233,11 +237,15 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
       const content = result.contents[0];
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
-        if (!content.text && !content.blob)
-          errors.push('Content missing text or blob');
+        const hasText = 'text' in content;
+        const hasBlob = 'blob' in content;
+        if (!hasText && !hasBlob) errors.push('Content missing text or blob');
 
-        // Check if parameter was substituted
-        const text = content.text || (content.blob ? '[binary]' : '');
+        const text = hasText
+          ? (content as TextResourceContents).text
+          : hasBlob
+            ? '[binary]'
+            : '';
         if (typeof text === 'string' && !text.includes('123')) {
           errors.push('Parameter substitution not reflected in content');
         }
@@ -258,7 +266,11 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
         ],
         details: {
           uri: content?.uri,
-          content: content?.text || content?.blob
+          content: content
+            ? 'text' in content
+              ? (content as TextResourceContents).text
+              : (content as BlobResourceContents).blob
+            : undefined
         }
       });
 
