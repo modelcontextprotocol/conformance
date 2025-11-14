@@ -5,9 +5,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-9728',
     url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.1'
   },
-  RFC_AUTH_SERVER_METADATA: {
-    id: 'RFC-8414',
-    url: 'https://tools.ietf.org/html/rfc8414'
+  RFC_AUTH_SERVER_METADATA_REQUEST: {
+    id: 'RFC-8414-metadata-request',
+    url: 'https://www.rfc-editor.org/rfc/rfc8414.html#section-3.1'
   },
   LEGACY_2025_03_26_AUTH_DISCOVERY: {
     id: 'MCP-2025-03-26-Authorization-metadata-discovery',
@@ -24,5 +24,17 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_AUTH_DISCOVERY: {
     id: 'MCP-Authorization-metadata-discovery',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery'
+  },
+  MCP_DCR: {
+    id: 'MCP-Dynamic-client-registration',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/client#dynamic-client-registration'
+  },
+  OAUTH_2_1_AUTHORIZATION_ENDPOINT: {
+    id: 'OAUTH-2.1-authorization-endpoint',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#name-authorization-endpoint'
+  },
+  OAUTH_2_1_TOKEN: {
+    id: 'OAUTH-2.1-token-request',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#name-token-request'
   }
 };
