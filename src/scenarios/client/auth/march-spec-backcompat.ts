@@ -32,59 +32,6 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
     );
     app.use(authApp);
 
-    app.get(
-      '/.well-known/oauth-protected-resource',
-      (req: Request, res: Response) => {
-        this.checks.push({
-          id: 'no-prm-root',
-          name: 'No PRM at Root',
-          description:
-            'Client attempted to fetch PRM at root location, but March spec does not have PRM',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          details: {
-            url: req.url,
-            path: req.path,
-            note: 'March spec behavior: no PRM available'
-          }
-        });
-
-        res.status(404).json({
-          error: 'not_found',
-          error_description: 'PRM not available (March spec behavior)'
-        });
-      }
-    );
-
-    app.get(
-      '/.well-known/oauth-protected-resource/mcp',
-      (req: Request, res: Response) => {
-        this.checks.push({
-          id: 'no-prm-path',
-          name: 'No PRM at Path',
-          description:
-            'Client attempted to fetch PRM at path-based location, but March spec behavior does not have PRM',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          details: {
-            url: req.url,
-            path: req.path,
-            note: 'March spec behavior: no PRM available'
-          },
-          specReferences: [
-            SpecReferences.RFC_PRM_DISCOVERY,
-            SpecReferences.MCP_PRM_DISCOVERY,
-            SpecReferences.LEGACY_2025_03_26_AUTH_DISCOVERY
-          ]
-        });
-
-        res.status(404).json({
-          error: 'not_found',
-          error_description: 'PRM not available (March spec behavior)'
-        });
-      }
-    );
-
     await this.server.start(app);
 
     return { serverUrl: `${this.server.getUrl()}/mcp` };
@@ -138,30 +85,6 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
 
     // needed for /token endpoint
     app.use(express.urlencoded({ extended: true }));
-
-    app.get(
-      '/.well-known/oauth-authorization-server',
-      (req: Request, res: Response) => {
-        this.checks.push({
-          id: 'no-oauth-metadata',
-          name: 'No OAuth Metadata',
-          description:
-            'Client attempted to fetch OAuth metadata, but fallback scenario does not provide it',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          details: {
-            url: req.url,
-            path: req.path,
-            note: '2025-03-26 spec behavior: fallback to direct endpoints'
-          }
-        });
-
-        res.status(404).json({
-          error: 'not_found',
-          error_description: 'OAuth metadata not available (fallback behavior)'
-        });
-      }
-    );
 
     app.get('/authorize', (req: Request, res: Response) => {
       this.checks.push({

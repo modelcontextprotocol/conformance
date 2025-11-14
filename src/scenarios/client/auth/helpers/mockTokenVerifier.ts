@@ -1,6 +1,7 @@
 import { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { ConformanceCheck } from '../../../../types.js';
+import { SpecReferences } from '../spec-references.js';
 
 export class MockTokenVerifier implements OAuthTokenVerifier {
   constructor(private checks: ConformanceCheck[]) {}
@@ -13,12 +14,7 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
         description: 'Client provided valid bearer token',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'MCP-Authorization',
-            url: 'https://spec.modelcontextprotocol.io/specification/architecture/#authorization'
-          }
-        ],
+        specReferences: [SpecReferences.MCP_ACCESS_TOKEN_USAGE],
         details: {
           token: token.substring(0, 10) + '...'
         }
@@ -37,12 +33,7 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
       description: 'Client provided invalid bearer token',
       status: 'FAILURE',
       timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'MCP-Authorization',
-          url: 'https://spec.modelcontextprotocol.io/specification/architecture/#authorization'
-        }
-      ],
+      specReferences: [SpecReferences.MCP_ACCESS_TOKEN_USAGE],
       details: {
         message: 'Token verification failed',
         token: token ? token.substring(0, 10) + '...' : 'missing'

@@ -6,6 +6,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
+import { SpecReferences } from '../spec-references.js';
 
 export interface ServerOptions {
   prmPath?: string | null;
@@ -56,10 +57,8 @@ export function createServer(
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
         specReferences: [
-          {
-            id: 'RFC-9728-3',
-            url: 'https://tools.ietf.org/html/rfc9728#section-3'
-          }
+          SpecReferences.RFC_PRM_DISCOVERY,
+          SpecReferences.MCP_PRM_DISCOVERY
         ],
         details: {
           url: req.url,

@@ -4,6 +4,7 @@ import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { Request, Response } from 'express';
+import { SpecReferences } from './spec-references.js';
 
 export class AuthBasicDCRScenario implements Scenario {
   name = 'auth/basic-dcr';
@@ -37,10 +38,8 @@ export class AuthBasicDCRScenario implements Scenario {
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
           specReferences: [
-            {
-              id: 'mcp-authorization-prm',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements'
-            }
+            SpecReferences.RFC_PRM_DISCOVERY,
+            SpecReferences.MCP_PRM_DISCOVERY
           ],
           details: {
             url: req.url,

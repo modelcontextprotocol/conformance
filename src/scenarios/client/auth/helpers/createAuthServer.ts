@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
+import { SpecReferences } from '../spec-references.js';
 
 export interface AuthServerOptions {
   metadataPath?: string;
@@ -48,10 +49,8 @@ export function createAuthServer(
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
       specReferences: [
-        {
-          id: 'RFC-8414',
-          url: 'https://tools.ietf.org/html/rfc8414'
-        }
+        SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
+        SpecReferences.MCP_AUTH_DISCOVERY
       ],
       details: {
         url: req.url,
@@ -87,12 +86,7 @@ export function createAuthServer(
       description: 'Client made authorization request',
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'RFC-6749-4.1.1',
-          url: 'https://tools.ietf.org/html/rfc6749#section-4.1.1'
-        }
-      ],
+      specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
       details: {
         response_type: req.query.response_type,
         client_id: req.query.client_id,
@@ -121,12 +115,7 @@ export function createAuthServer(
       description: 'Client requested access token',
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'RFC-6749-4.1.3',
-          url: 'https://tools.ietf.org/html/rfc6749#section-4.1.3'
-        }
-      ],
+      specReferences: [SpecReferences.OAUTH_2_1_TOKEN],
       details: {
         endpoint: '/token',
         grantType: req.body.grant_type
@@ -147,12 +136,7 @@ export function createAuthServer(
       description: 'Client registered with authorization server',
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'RFC-7591-2',
-          url: 'https://tools.ietf.org/html/rfc7591#section-2'
-        }
-      ],
+      specReferences: [SpecReferences.MCP_DCR],
       details: {
         endpoint: '/register',
         clientName: req.body.client_name

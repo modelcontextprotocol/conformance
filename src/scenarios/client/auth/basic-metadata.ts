@@ -3,6 +3,7 @@ import { ScenarioUrls } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
+import { SpecReferences } from './spec-references.js';
 
 export class AuthBasicMetadataVar1Scenario implements Scenario {
   name = 'auth/basic-metadata-var1';
@@ -89,10 +90,8 @@ export class AuthBasicMetadataVar2Scenario implements Scenario {
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [
-          {
-            id: 'RFC-8414',
-            url: 'https://tools.ietf.org/html/rfc8414'
-          }
+          SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
+          SpecReferences.MCP_AUTH_DISCOVERY
         ],
         details: {
           url: req.url

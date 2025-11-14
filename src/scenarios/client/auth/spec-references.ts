@@ -36,5 +36,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   OAUTH_2_1_TOKEN: {
     id: 'OAUTH-2.1-token-request',
     url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#name-token-request'
+  },
+  MCP_ACCESS_TOKEN_USAGE: {
+    id: 'MCP-Access-token-usage',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#access-token-usage'
   }
 };
