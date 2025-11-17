@@ -98,7 +98,12 @@ export class ServerSSEPollingScenario implements ClientScenario {
 
       const reader = response.body
         .pipeThrough(new TextDecoderStream())
-        .pipeThrough(new EventSourceParserStream())
+        .pipeThrough(new EventSourceParserStream({
+          onRetry: (retryMs: number) => {
+            hasRetryField = true;
+            retryValue = retryMs;
+          }
+        }))
         .getReader();
 
       // Read events with timeout
@@ -136,12 +141,6 @@ export class ServerSSEPollingScenario implements ClientScenario {
                 primingEventIsFirst = true;
               }
             }
-          }
-
-          // Check for retry field
-          if (event.retry !== undefined) {
-            hasRetryField = true;
-            retryValue = event.retry;
           }
         }
       } finally {
