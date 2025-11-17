@@ -76,14 +76,15 @@ export class SSERetryScenario implements Scenario {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
-    const timestamp = performance.now();
-    this.connectionTimestamps.push(timestamp);
-
-    // Track Last-Event-ID header
-    const lastEventId = req.headers['last-event-id'] as string | undefined;
-    this.lastEventIds.push(lastEventId);
-
     if (req.method === 'GET') {
+      // Track timing and Last-Event-ID only for GET requests
+      // since retry field only applies to SSE stream reconnections
+      const timestamp = performance.now();
+      this.connectionTimestamps.push(timestamp);
+
+      const lastEventId = req.headers['last-event-id'] as string | undefined;
+      this.lastEventIds.push(lastEventId);
+
       // Handle SSE stream request
       this.handleSSEStream(req, res);
     } else if (req.method === 'POST') {
@@ -174,6 +175,11 @@ export class SSERetryScenario implements Scenario {
           setTimeout(() => {
             res.end();
           }, 100);
+        } else if (request.id === undefined) {
+          // Notifications (no id) - return 202 Accepted
+          // This triggers the client to start a GET SSE stream
+          res.writeHead(202);
+          res.end();
         } else {
           // For other requests, send a simple JSON response
           res.writeHead(200, { 'Content-Type': 'application/json' });
