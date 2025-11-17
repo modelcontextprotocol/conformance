@@ -239,8 +239,7 @@ export class SSERetryScenario implements Scenario {
 
     const tooEarly = actualDelay < minExpected;
     const slightlyLate = actualDelay > maxExpected;
-    const veryLate =
-      actualDelay > this.retryValue * this.VERY_LATE_MULTIPLIER;
+    const veryLate = actualDelay > this.retryValue * this.VERY_LATE_MULTIPLIER;
     const withinTolerance = !tooEarly && !slightlyLate;
 
     let status: 'SUCCESS' | 'FAILURE' | 'WARNING' = 'SUCCESS';

@@ -98,12 +98,14 @@ export class ServerSSEPollingScenario implements ClientScenario {
 
       const reader = response.body
         .pipeThrough(new TextDecoderStream())
-        .pipeThrough(new EventSourceParserStream({
-          onRetry: (retryMs: number) => {
-            hasRetryField = true;
-            retryValue = retryMs;
-          }
-        }))
+        .pipeThrough(
+          new EventSourceParserStream({
+            onRetry: (retryMs: number) => {
+              hasRetryField = true;
+              retryValue = retryMs;
+            }
+          })
+        )
         .getReader();
 
       // Read events with timeout
