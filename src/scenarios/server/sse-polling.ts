@@ -50,6 +50,30 @@ export class ServerSSEPollingScenario implements ClientScenario {
         return checks;
       }
 
+      // Server may require session context for standalone SSE GET
+      if (response.status === 400) {
+        checks.push({
+          id: 'server-sse-polling-endpoint',
+          name: 'ServerSSEPollingEndpoint',
+          description: 'Server supports SSE GET endpoint',
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ],
+          details: {
+            serverUrl,
+            statusCode: response.status,
+            message:
+              'Server requires session context for standalone SSE GET endpoint (400 Bad Request)'
+          }
+        });
+        return checks;
+      }
+
       if (!response.ok) {
         checks.push({
           id: 'server-sse-polling-connection',
