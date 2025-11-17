@@ -26,6 +26,7 @@ export class SSERetryScenario implements Scenario {
   // Tolerances for timing validation
   private readonly EARLY_TOLERANCE = 50; // Allow 50ms early for scheduler variance
   private readonly LATE_TOLERANCE = 200; // Allow 200ms late for network/event loop
+  private readonly VERY_LATE_MULTIPLIER = 2; // If >2x retry value, client is likely ignoring it
 
   async start(): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
@@ -237,8 +238,10 @@ export class SSERetryScenario implements Scenario {
     const maxExpected = this.retryValue + this.LATE_TOLERANCE;
 
     const tooEarly = actualDelay < minExpected;
-    const tooLate = actualDelay > maxExpected;
-    const withinTolerance = !tooEarly && !tooLate;
+    const slightlyLate = actualDelay > maxExpected;
+    const veryLate =
+      actualDelay > this.retryValue * this.VERY_LATE_MULTIPLIER;
+    const withinTolerance = !tooEarly && !slightlyLate;
 
     let status: 'SUCCESS' | 'FAILURE' | 'WARNING' = 'SUCCESS';
     let errorMessage: string | undefined;
@@ -247,10 +250,14 @@ export class SSERetryScenario implements Scenario {
       // Client reconnected too soon - MUST violation
       status = 'FAILURE';
       errorMessage = `Client reconnected too early (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client MUST respect the retry field and wait the specified time.`;
-    } else if (tooLate) {
-      // Client reconnected too late - not a spec violation but suspicious
+    } else if (veryLate) {
+      // Client reconnected way too late - likely ignoring retry field entirely
+      status = 'FAILURE';
+      errorMessage = `Client reconnected very late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client appears to be ignoring the retry field and using its own backoff strategy.`;
+    } else if (slightlyLate) {
+      // Client reconnected slightly late - not a spec violation but suspicious
       status = 'WARNING';
-      errorMessage = `Client reconnected late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). This is acceptable but may indicate the client is ignoring the retry field and using its own backoff.`;
+      errorMessage = `Client reconnected slightly late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). This is acceptable but may indicate network delays.`;
     }
 
     this.checks.push({
@@ -272,11 +279,13 @@ export class SSERetryScenario implements Scenario {
         actualDelayMs: Math.round(actualDelay),
         minAcceptableMs: minExpected,
         maxAcceptableMs: maxExpected,
+        veryLateThresholdMs: this.retryValue * this.VERY_LATE_MULTIPLIER,
         earlyToleranceMs: this.EARLY_TOLERANCE,
         lateToleranceMs: this.LATE_TOLERANCE,
         withinTolerance,
         tooEarly,
-        tooLate,
+        slightlyLate,
+        veryLate,
         connectionCount: this.connectionTimestamps.length
       }
     });

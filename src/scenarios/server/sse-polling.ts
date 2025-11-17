@@ -71,6 +71,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
       // Parse SSE stream
       let hasEventId = false;
       let hasPrimingEvent = false;
+      let primingEventIsFirst = false;
       let hasRetryField = false;
       let retryValue: number | undefined;
       let firstEventId: string | undefined;
@@ -130,6 +131,10 @@ export class ServerSSEPollingScenario implements ClientScenario {
               event.data.trim() === ''
             ) {
               hasPrimingEvent = true;
+              // Check if priming event is the first event (SEP-1699 says "immediately")
+              if (eventCount === 1) {
+                primingEventIsFirst = true;
+              }
             }
           }
 
@@ -143,13 +148,26 @@ export class ServerSSEPollingScenario implements ClientScenario {
         clearTimeout(timeout);
       }
 
-      // Check 1: Server SHOULD send priming event with ID
+      // Check 1: Server SHOULD send priming event with ID immediately
+      let primingStatus: 'SUCCESS' | 'WARNING' = 'SUCCESS';
+      let primingErrorMessage: string | undefined;
+
+      if (!hasPrimingEvent) {
+        primingStatus = 'WARNING';
+        primingErrorMessage =
+          'Server did not send priming event with id and empty data. This is a SHOULD requirement for SEP-1699.';
+      } else if (!primingEventIsFirst) {
+        primingStatus = 'WARNING';
+        primingErrorMessage =
+          'Priming event was not sent immediately (not the first event). SEP-1699 says server SHOULD immediately send the priming event.';
+      }
+
       checks.push({
         id: 'server-sse-priming-event',
         name: 'ServerSendsPrimingEvent',
         description:
-          'Server SHOULD send SSE event with id and empty data to prime client for reconnection',
-        status: hasPrimingEvent ? 'SUCCESS' : 'WARNING',
+          'Server SHOULD immediately send SSE event with id and empty data to prime client for reconnection',
+        status: primingStatus,
         timestamp: new Date().toISOString(),
         specReferences: [
           {
@@ -159,13 +177,12 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ],
         details: {
           hasPrimingEvent,
+          primingEventIsFirst,
           hasEventId,
           firstEventId,
           eventCount
         },
-        errorMessage: !hasPrimingEvent
-          ? 'Server did not send priming event with id and empty data. This is a SHOULD requirement for SEP-1699.'
-          : undefined
+        errorMessage: primingErrorMessage
       });
 
       // Check 2: Server SHOULD send retry field before disconnect
@@ -191,13 +208,23 @@ export class ServerSSEPollingScenario implements ClientScenario {
           : undefined
       });
 
-      // Check 3: Server MAY close connection (informational)
+      // Check 3: Server MAY close connection after sending event ID
+      // Per SEP-1699, server can only close "if it has sent an SSE event with an event ID"
+      let disconnectStatus: 'SUCCESS' | 'WARNING' | 'INFO' = 'INFO';
+      let disconnectMessage: string | undefined;
+
+      if (disconnected && !hasEventId) {
+        disconnectStatus = 'WARNING';
+        disconnectMessage =
+          'Server closed connection without sending an event ID first. SEP-1699 allows disconnect only after sending event ID.';
+      }
+
       checks.push({
         id: 'server-sse-disconnect',
         name: 'ServerDisconnectBehavior',
         description:
           'Server MAY close connection after sending event ID (informational)',
-        status: 'INFO',
+        status: disconnectStatus,
         timestamp: new Date().toISOString(),
         specReferences: [
           {
@@ -207,10 +234,12 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ],
         details: {
           disconnected,
+          hasEventId,
           eventCount,
           hasRetryField,
           retryValue
-        }
+        },
+        errorMessage: disconnectMessage
       });
     } catch (error) {
       checks.push({
