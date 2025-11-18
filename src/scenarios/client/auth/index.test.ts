@@ -1,10 +1,8 @@
 import { authScenariosList } from './index.js';
 import {
   runClientAgainstScenario,
-  SpawnedClientRunner,
   InlineClientRunner
 } from './test_helpers/testClient.js';
-import path from 'path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
@@ -16,16 +14,33 @@ import { withOAuthRetry } from '../../../../examples/clients/typescript/helpers/
 import { ConformanceOAuthProvider } from '../../../../examples/clients/typescript/helpers/ConformanceOAuthProvider.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-describe('Client Auth Scenarios', () => {
-  const clientPath = path.join(
-    process.cwd(),
-    'examples/clients/typescript/auth-test.ts'
+// Well-behaved client that follows all auth protocols correctly
+const goodClient = async (serverUrl: string) => {
+  const client = new Client(
+    { name: 'test-auth-client', version: '1.0.0' },
+    { capabilities: {} }
   );
 
+  const oauthFetch = withOAuthRetry(
+    'test-auth-client',
+    new URL(serverUrl)
+  )(fetch);
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+
+  await client.connect(transport);
+  await client.listTools();
+  await client.callTool({ name: 'test-tool', arguments: {} });
+  await transport.close();
+};
+
+describe('Client Auth Scenarios', () => {
   // Generate individual test for each auth scenario
   for (const scenario of authScenariosList) {
     test(`${scenario.name} passes`, async () => {
-      const runner = new SpawnedClientRunner(clientPath);
+      const runner = new InlineClientRunner(goodClient);
       await runClientAgainstScenario(runner, scenario.name);
     });
   }
