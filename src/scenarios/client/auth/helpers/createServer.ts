@@ -13,7 +13,6 @@ import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
 import { SpecReferences } from '../spec-references.js';
-import { scopeAwareAuthMiddleware } from './scopeAwareAuthMiddleware.js';
 
 export interface ServerOptions {
   prmPath?: string | null;
@@ -131,26 +130,16 @@ export function createServer(
     const verifier =
       tokenVerifier || new MockTokenVerifier(checks, requiredScopes);
 
-    let authMiddleware = includeScopeInWwwAuth
-      ? scopeAwareAuthMiddleware({
-          verifier,
-          requiredScopes,
-          ...(prmPath !== null && {
-            resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
-          }),
-          includeScopeInWwwAuth: true
+    const authMiddleware =
+      options.authMiddleware ??
+      requireBearerAuth({
+        verifier,
+        // Only pass requiredScopes if we want them in the WWW-Authenticate header
+        requiredScopes: includeScopeInWwwAuth ? requiredScopes : [],
+        ...(prmPath !== null && {
+          resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
         })
-      : requireBearerAuth({
-          verifier,
-          requiredScopes,
-          ...(prmPath !== null && {
-            resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
-          })
-        });
-
-    if (options.authMiddleware) {
-      authMiddleware = options.authMiddleware;
-    }
+      });
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);
