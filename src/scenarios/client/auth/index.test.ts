@@ -40,7 +40,7 @@ describe('Negative tests', () => {
     );
     const runner = new SpawnedClientRunner(clientPath);
     await runClientAgainstScenario(runner, 'auth/scope-from-www-authenticate', [
-      'scope-from-header-incorrect'
+      'scope-from-www-authenticate'
     ]);
   });
 

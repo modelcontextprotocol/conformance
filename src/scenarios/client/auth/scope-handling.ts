@@ -40,6 +40,24 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
         });
         // Remember the scopes from authorization for token issuance
         authorizedScopes = data.scope ? data.scope.split(' ') : [];
+
+        // Check if client used the scope from WWW-Authenticate header
+        const requestedScopes = data.scope ? data.scope.split(' ') : [];
+        const usedCorrectScope = requestedScopes.includes(expectedScope);
+        this.checks.push({
+          id: 'scope-from-www-authenticate',
+          name: 'Client scope selection from WWW-Authenticate header',
+          description: usedCorrectScope
+            ? 'Client correctly used the scope parameter from the WWW-Authenticate header'
+            : 'Client SHOULD use the scope parameter from the WWW-Authenticate header when provided',
+          status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
+          timestamp: data.timestamp,
+          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          details: {
+            expectedScope,
+            requestedScope: data.scope || 'none'
+          }
+        });
       },
       onTokenRequest: (_data) => {
         // Use scopes from authorization, not from token request
@@ -75,54 +93,15 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    const expectedScope = 'mcp:basic';
-
     // Check if client made at least one authorization request
     if (this.authorizationRequests.length === 0) {
       this.checks.push({
-        id: 'scope-from-header-no-auth-request',
-        name: 'No authorization request made',
+        id: 'scope-from-www-authenticate',
+        name: 'Client scope selection from WWW-Authenticate header',
         description: 'Client did not make an authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-      return this.checks;
-    }
-
-    // Check if client used the scope from WWW-Authenticate header
-    const firstRequest = this.authorizationRequests[0];
-    const requestedScopes = firstRequest.scope
-      ? firstRequest.scope.split(' ')
-      : [];
-
-    if (requestedScopes.includes(expectedScope)) {
-      this.checks.push({
-        id: 'scope-from-header-correct',
-        name: 'Client used scope from WWW-Authenticate header',
-        description:
-          'Client correctly used the scope parameter from the WWW-Authenticate header',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          expectedScope,
-          requestedScope: firstRequest.scope
-        }
-      });
-    } else {
-      this.checks.push({
-        id: 'scope-from-header-incorrect',
-        name: 'Client did not use scope from WWW-Authenticate header',
-        description:
-          'Client SHOULD use the scope parameter from the WWW-Authenticate header when provided',
-        status: 'WARNING',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          expectedScope,
-          requestedScope: firstRequest.scope || 'none'
-        }
       });
     }
 
