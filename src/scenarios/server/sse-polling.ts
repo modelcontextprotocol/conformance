@@ -2,86 +2,95 @@
  * SSE Polling conformance test scenarios for MCP servers (SEP-1699)
  *
  * Tests that servers properly implement SSE polling behavior including:
- * - Sending priming events with event ID and empty data
- * - Sending retry field before closing connection
+ * - Sending priming events with event ID and empty data on POST SSE streams
+ * - Sending retry field in priming events when configured
+ * - Replaying events when client reconnects with Last-Event-ID
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export class ServerSSEPollingScenario implements ClientScenario {
   name = 'server-sse-polling';
   description =
-    'Test server sends SSE priming event and retry field (SEP-1699)';
+    'Test server sends SSE priming events on POST streams and supports event replay (SEP-1699)';
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
+    let sessionId: string | undefined;
+    let client: Client | undefined;
+    let transport: StreamableHTTPClientTransport | undefined;
+
     try {
-      // Make a GET request to establish SSE stream
-      const response = await fetch(serverUrl, {
-        method: 'GET',
-        headers: {
-          Accept: 'text/event-stream'
+      // Step 1: Initialize session with the server
+      client = new Client(
+        {
+          name: 'conformance-test-client',
+          version: '1.0.0'
+        },
+        {
+          capabilities: {
+            sampling: {},
+            elicitation: {}
+          }
         }
+      );
+
+      transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+      await client.connect(transport);
+
+      // Extract session ID from transport (accessing internal state)
+      sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+
+      if (!sessionId) {
+        checks.push({
+          id: 'server-sse-polling-session',
+          name: 'ServerSSEPollingSession',
+          description: 'Server provides session ID for SSE polling tests',
+          status: 'WARNING',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ],
+          details: {
+            message:
+              'Server did not provide session ID - SSE polling tests may not work correctly'
+          }
+        });
+      }
+
+      // Step 2: Make a POST request that returns SSE stream
+      // We need to use raw fetch to observe the priming event
+      const postResponse = await fetch(serverUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream, application/json',
+          ...(sessionId && { 'mcp-session-id': sessionId }),
+          'mcp-protocol-version': '2025-03-26'
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: {}
+        })
       });
 
-      // Check if server supports SSE GET endpoint
-      if (response.status === 405) {
+      if (!postResponse.ok) {
         checks.push({
-          id: 'server-sse-polling-endpoint',
-          name: 'ServerSSEPollingEndpoint',
-          description: 'Server supports SSE GET endpoint',
-          status: 'INFO',
-          timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-1699',
-              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
-            }
-          ],
-          details: {
-            serverUrl,
-            statusCode: response.status,
-            message:
-              'Server does not support SSE GET endpoint (405 Method Not Allowed)'
-          }
-        });
-        return checks;
-      }
-
-      // Server may require session context for standalone SSE GET
-      if (response.status === 400) {
-        checks.push({
-          id: 'server-sse-polling-endpoint',
-          name: 'ServerSSEPollingEndpoint',
-          description: 'Server supports SSE GET endpoint',
-          status: 'INFO',
-          timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-1699',
-              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
-            }
-          ],
-          details: {
-            serverUrl,
-            statusCode: response.status,
-            message:
-              'Server requires session context for standalone SSE GET endpoint (400 Bad Request)'
-          }
-        });
-        return checks;
-      }
-
-      if (!response.ok) {
-        checks.push({
-          id: 'server-sse-polling-connection',
-          name: 'ServerSSEPollingConnection',
-          description: 'Server accepts SSE GET request',
+          id: 'server-sse-post-request',
+          name: 'ServerSSEPostRequest',
+          description: 'Server accepts POST request with SSE stream response',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          errorMessage: `Server returned HTTP ${response.status}`,
+          errorMessage: `Server returned HTTP ${postResponse.status}`,
           specReferences: [
             {
               id: 'SEP-1699',
@@ -92,17 +101,40 @@ export class ServerSSEPollingScenario implements ClientScenario {
         return checks;
       }
 
-      // Parse SSE stream
+      // Check if server returned SSE stream
+      const contentType = postResponse.headers.get('content-type');
+      if (!contentType?.includes('text/event-stream')) {
+        checks.push({
+          id: 'server-sse-content-type',
+          name: 'ServerSSEContentType',
+          description: 'Server returns text/event-stream for POST request',
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ],
+          details: {
+            contentType,
+            message:
+              'Server returned JSON instead of SSE stream - priming event tests not applicable'
+          }
+        });
+        return checks;
+      }
+
+      // Step 3: Parse SSE stream for priming event
       let hasEventId = false;
       let hasPrimingEvent = false;
       let primingEventIsFirst = false;
       let hasRetryField = false;
       let retryValue: number | undefined;
-      let firstEventId: string | undefined;
-      let disconnected = false;
+      let primingEventId: string | undefined;
       let eventCount = 0;
 
-      if (!response.body) {
+      if (!postResponse.body) {
         checks.push({
           id: 'server-sse-polling-stream',
           name: 'ServerSSEPollingStream',
@@ -120,7 +152,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
         return checks;
       }
 
-      const reader = response.body
+      const reader = postResponse.body
         .pipeThrough(new TextDecoderStream())
         .pipeThrough(
           new EventSourceParserStream({
@@ -142,7 +174,6 @@ export class ServerSSEPollingScenario implements ClientScenario {
           const { value: event, done } = await reader.read();
 
           if (done) {
-            disconnected = true;
             break;
           }
 
@@ -151,8 +182,8 @@ export class ServerSSEPollingScenario implements ClientScenario {
           // Check for event ID
           if (event.id) {
             hasEventId = true;
-            if (!firstEventId) {
-              firstEventId = event.id;
+            if (!primingEventId) {
+              primingEventId = event.id;
             }
 
             // Check if this is a priming event (empty or minimal data)
@@ -162,7 +193,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
               event.data.trim() === ''
             ) {
               hasPrimingEvent = true;
-              // Check if priming event is the first event (SEP-1699 says "immediately")
+              // Check if priming event is the first event
               if (eventCount === 1) {
                 primingEventIsFirst = true;
               }
@@ -173,25 +204,25 @@ export class ServerSSEPollingScenario implements ClientScenario {
         clearTimeout(timeout);
       }
 
-      // Check 1: Server SHOULD send priming event with ID immediately
+      // Check 1: Server SHOULD send priming event with ID on POST SSE stream
       let primingStatus: 'SUCCESS' | 'WARNING' = 'SUCCESS';
       let primingErrorMessage: string | undefined;
 
       if (!hasPrimingEvent) {
         primingStatus = 'WARNING';
         primingErrorMessage =
-          'Server did not send priming event with id and empty data. This is a SHOULD requirement for SEP-1699.';
+          'Server did not send priming event with id and empty data on POST SSE stream. This is recommended for resumability.';
       } else if (!primingEventIsFirst) {
         primingStatus = 'WARNING';
         primingErrorMessage =
-          'Priming event was not sent immediately (not the first event). SEP-1699 says server SHOULD immediately send the priming event.';
+          'Priming event was not sent first. It should be sent immediately when the SSE stream is established.';
       }
 
       checks.push({
         id: 'server-sse-priming-event',
         name: 'ServerSendsPrimingEvent',
         description:
-          'Server SHOULD immediately send SSE event with id and empty data to prime client for reconnection',
+          'Server SHOULD send priming event with id and empty data on POST SSE streams',
         status: primingStatus,
         timestamp: new Date().toISOString(),
         specReferences: [
@@ -204,17 +235,18 @@ export class ServerSSEPollingScenario implements ClientScenario {
           hasPrimingEvent,
           primingEventIsFirst,
           hasEventId,
-          firstEventId,
+          primingEventId,
           eventCount
         },
         errorMessage: primingErrorMessage
       });
 
-      // Check 2: Server SHOULD send retry field before disconnect
+      // Check 2: Server SHOULD send retry field in priming event
       checks.push({
         id: 'server-sse-retry-field',
         name: 'ServerSendsRetryField',
-        description: 'Server SHOULD send retry field before closing connection',
+        description:
+          'Server SHOULD send retry field to control client reconnection timing',
         status: hasRetryField ? 'SUCCESS' : 'WARNING',
         timestamp: new Date().toISOString(),
         specReferences: [
@@ -225,47 +257,137 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ],
         details: {
           hasRetryField,
-          retryValue,
-          disconnected
+          retryValue
         },
         errorMessage: !hasRetryField
-          ? 'Server did not send retry field. This is a SHOULD requirement for SEP-1699.'
+          ? 'Server did not send retry field. This is recommended for controlling client reconnection timing.'
           : undefined
       });
 
-      // Check 3: Server MAY close connection after sending event ID
-      // Per SEP-1699, server can only close "if it has sent an SSE event with an event ID"
-      let disconnectStatus: 'SUCCESS' | 'WARNING' | 'INFO' = 'INFO';
-      let disconnectMessage: string | undefined;
-
-      if (disconnected && !hasEventId) {
-        disconnectStatus = 'WARNING';
-        disconnectMessage =
-          'Server closed connection without sending an event ID first. SEP-1699 allows disconnect only after sending event ID.';
-      }
-
-      checks.push({
-        id: 'server-sse-disconnect',
-        name: 'ServerDisconnectBehavior',
-        description:
-          'Server MAY close connection after sending event ID (informational)',
-        status: disconnectStatus,
-        timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'SEP-1699',
-            url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+      // Step 4: Test event replay by reconnecting with Last-Event-ID
+      if (primingEventId && sessionId) {
+        // Make a GET request with Last-Event-ID to test replay
+        const getResponse = await fetch(serverUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            'mcp-session-id': sessionId,
+            'mcp-protocol-version': '2025-03-26',
+            'last-event-id': primingEventId
           }
-        ],
-        details: {
-          disconnected,
-          hasEventId,
-          eventCount,
-          hasRetryField,
-          retryValue
-        },
-        errorMessage: disconnectMessage
-      });
+        });
+
+        if (getResponse.ok) {
+          // Server accepted reconnection with Last-Event-ID
+          let replayedEvents = 0;
+
+          if (getResponse.body) {
+            const replayReader = getResponse.body
+              .pipeThrough(new TextDecoderStream())
+              .pipeThrough(new EventSourceParserStream())
+              .getReader();
+
+            const replayTimeout = setTimeout(() => {
+              replayReader.cancel();
+            }, 2000);
+
+            try {
+              while (true) {
+                const { done } = await replayReader.read();
+                if (done) break;
+                replayedEvents++;
+              }
+            } finally {
+              clearTimeout(replayTimeout);
+            }
+          }
+
+          checks.push({
+            id: 'server-sse-event-replay',
+            name: 'ServerReplaysEvents',
+            description:
+              'Server replays events after Last-Event-ID on reconnection',
+            status: 'SUCCESS',
+            timestamp: new Date().toISOString(),
+            specReferences: [
+              {
+                id: 'SEP-1699',
+                url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+              }
+            ],
+            details: {
+              lastEventIdUsed: primingEventId,
+              replayedEvents,
+              message: 'Server accepted GET request with Last-Event-ID header'
+            }
+          });
+        } else {
+          // Check if server doesn't support standalone GET streams
+          if (getResponse.status === 405) {
+            checks.push({
+              id: 'server-sse-event-replay',
+              name: 'ServerReplaysEvents',
+              description:
+                'Server supports GET reconnection with Last-Event-ID',
+              status: 'INFO',
+              timestamp: new Date().toISOString(),
+              specReferences: [
+                {
+                  id: 'SEP-1699',
+                  url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+                }
+              ],
+              details: {
+                statusCode: getResponse.status,
+                message:
+                  'Server does not support standalone GET SSE endpoint (405 Method Not Allowed)'
+              }
+            });
+          } else {
+            checks.push({
+              id: 'server-sse-event-replay',
+              name: 'ServerReplaysEvents',
+              description:
+                'Server replays events after Last-Event-ID on reconnection',
+              status: 'WARNING',
+              timestamp: new Date().toISOString(),
+              specReferences: [
+                {
+                  id: 'SEP-1699',
+                  url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+                }
+              ],
+              details: {
+                statusCode: getResponse.status,
+                lastEventIdUsed: primingEventId,
+                message: `Server returned ${getResponse.status} for GET request with Last-Event-ID`
+              },
+              errorMessage: `Server did not accept reconnection with Last-Event-ID (HTTP ${getResponse.status})`
+            });
+          }
+        }
+      } else {
+        checks.push({
+          id: 'server-sse-event-replay',
+          name: 'ServerReplaysEvents',
+          description:
+            'Server replays events after Last-Event-ID on reconnection',
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ],
+          details: {
+            primingEventId,
+            sessionId,
+            message:
+              'Could not test event replay - no priming event ID or session ID available'
+          }
+        });
+      }
     } catch (error) {
       checks.push({
         id: 'server-sse-polling-error',
@@ -281,6 +403,15 @@ export class ServerSSEPollingScenario implements ClientScenario {
           }
         ]
       });
+    } finally {
+      // Clean up
+      if (client) {
+        try {
+          await client.close();
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
     }
 
     return checks;

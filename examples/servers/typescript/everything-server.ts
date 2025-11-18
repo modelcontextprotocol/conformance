@@ -12,7 +12,12 @@ import {
   McpServer,
   ResourceTemplate
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  StreamableHTTPServerTransport,
+  EventStore,
+  EventId,
+  StreamId
+} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import express from 'express';
 import cors from 'cors';
@@ -25,6 +30,41 @@ const watchedResourceContent = 'Watched resource content';
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory event store for SEP-1699 resumability
+const eventStoreData = new Map<
+  string,
+  { eventId: string; message: any; streamId: string }
+>();
+
+function createEventStore(): EventStore {
+  return {
+    async storeEvent(streamId: StreamId, message: any): Promise<EventId> {
+      const eventId = `${streamId}::${Date.now()}_${randomUUID()}`;
+      eventStoreData.set(eventId, { eventId, message, streamId });
+      return eventId;
+    },
+    async replayEventsAfter(
+      lastEventId: EventId,
+      { send }: { send: (eventId: EventId, message: any) => Promise<void> }
+    ): Promise<StreamId> {
+      const streamId = lastEventId.split('::')[0];
+      const eventsToReplay: Array<[string, { message: any }]> = [];
+      for (const [eventId, data] of eventStoreData.entries()) {
+        if (data.streamId === streamId && eventId > lastEventId) {
+          eventsToReplay.push([eventId, data]);
+        }
+      }
+      eventsToReplay.sort(([a], [b]) => a.localeCompare(b));
+      for (const [eventId, { message }] of eventsToReplay) {
+        if (Object.keys(message).length > 0) {
+          await send(eventId, message);
+        }
+      }
+      return streamId;
+    }
+  };
+}
 
 // Sample base64 encoded 1x1 red PNG pixel for testing
 const TEST_IMAGE_BASE64 =
@@ -872,6 +912,8 @@ app.post('/mcp', async (req, res) => {
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
+        eventStore: createEventStore(),
+        retryInterval: 5000, // 5 second retry interval for SEP-1699
         onsessioninitialized: (newSessionId) => {
           transports[newSessionId] = transport;
           servers[newSessionId] = mcpServer;
