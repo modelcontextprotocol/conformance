@@ -388,6 +388,9 @@ Implement tool \`test_tool_with_logging\` with no arguments.
       const connection = await connectToServer(serverUrl);
       const notifications = new NotificationCollector(connection.client);
 
+      // Set logging level to debug
+      await connection.client.setLoggingLevel('debug');
+
       await connection.client.callTool({
         name: 'test_tool_with_logging',
         arguments: {}
