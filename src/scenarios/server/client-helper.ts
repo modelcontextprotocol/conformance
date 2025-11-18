@@ -47,6 +47,40 @@ export async function connectToServer(
 }
 
 /**
+ * Create and connect an MCP client with URL elicitation capability (SEP-1036)
+ */
+export async function connectToServerWithUrlElicitation(
+  serverUrl: string
+): Promise<MCPClientConnection> {
+  const client = new Client(
+    {
+      name: 'conformance-test-client',
+      version: '1.0.0'
+    },
+    {
+      capabilities: {
+        // Client capabilities
+        sampling: {},
+        elicitation: {
+          url: {}
+        }
+      }
+    }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  await client.connect(transport);
+
+  return {
+    client,
+    close: async () => {
+      await client.close();
+    }
+  };
+}
+
+/**
  * Helper to collect notifications (logging and progress)
  */
 export class NotificationCollector {

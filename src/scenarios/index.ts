@@ -27,6 +27,7 @@ import {
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
 import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
+import { ElicitationUrlModeScenario } from './server/elicitation-url.js';
 
 import {
   ResourcesListScenario,
@@ -78,6 +79,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
+
+  // Elicitation scenarios (SEP-1036) - URL mode
+  new ElicitationUrlModeScenario(),
 
   // Elicitation scenarios (SEP-1330) - pending
   ...pendingClientScenariosList,
