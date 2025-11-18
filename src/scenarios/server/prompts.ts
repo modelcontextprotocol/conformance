@@ -7,7 +7,18 @@ import { connectToServer } from './client-helper.js';
 
 export class PromptsListScenario implements ClientScenario {
   name = 'prompts-list';
-  description = 'Test listing available prompts';
+  description = `Test listing available prompts.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`prompts/list\`
+
+**Requirements**:
+- Return array of all available prompts
+- Each prompt MUST have:
+  - \`name\` (string)
+  - \`description\` (string)
+  - \`arguments\` (array, optional) - list of required arguments`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -76,7 +87,25 @@ export class PromptsListScenario implements ClientScenario {
 
 export class PromptsGetSimpleScenario implements ClientScenario {
   name = 'prompts-get-simple';
-  description = 'Test getting a simple prompt without arguments';
+  description = `Test getting a simple prompt without arguments.
+
+**Server Implementation Requirements:**
+
+Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
+
+\`\`\`json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "This is a simple prompt for testing."
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -142,7 +171,29 @@ export class PromptsGetSimpleScenario implements ClientScenario {
 
 export class PromptsGetWithArgsScenario implements ClientScenario {
   name = 'prompts-get-with-args';
-  description = 'Test parameterized prompt';
+  description = `Test parameterized prompt.
+
+**Server Implementation Requirements:**
+
+Implement a prompt named \`test_prompt_with_arguments\` with arguments:
+- \`arg1\` (string, required) - First test argument
+- \`arg2\` (string, required) - Second test argument
+
+Returns (with args \`{arg1: "hello", arg2: "world"}\`):
+
+\`\`\`json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Prompt with arguments: arg1='hello', arg2='world'"
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -215,7 +266,39 @@ export class PromptsGetWithArgsScenario implements ClientScenario {
 
 export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
   name = 'prompts-get-embedded-resource';
-  description = 'Test prompt with embedded resource content';
+  description = `Test prompt with embedded resource content.
+
+**Server Implementation Requirements:**
+
+Implement a prompt named \`test_prompt_with_embedded_resource\` with argument:
+- \`resourceUri\` (string, required) - URI of the resource to embed
+
+Returns:
+
+\`\`\`json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "resource",
+        "resource": {
+          "uri": "<resourceUri from arguments>",
+          "mimeType": "text/plain",
+          "text": "Embedded resource content for testing."
+        }
+      }
+    },
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please process the embedded resource above."
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -288,7 +371,33 @@ export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
 
 export class PromptsGetWithImageScenario implements ClientScenario {
   name = 'prompts-get-with-image';
-  description = 'Test prompt with image content';
+  description = `Test prompt with image content.
+
+**Server Implementation Requirements:**
+
+Implement a prompt named \`test_prompt_with_image\` with no arguments that returns:
+
+\`\`\`json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "image",
+        "data": "<base64-encoded-png>",
+        "mimeType": "image/png"
+      }
+    },
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Please analyze the image above."
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];

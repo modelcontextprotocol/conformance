@@ -4,12 +4,26 @@ import { ConformanceCheck } from '../types';
 import { getClientScenario } from '../scenarios';
 import { ensureResultsDir, createResultDir } from './utils';
 
+/**
+ * Format markdown-style text for terminal output using ANSI codes
+ */
+function formatMarkdown(text: string): string {
+  return (
+    text
+      // Bold text: **text** -> bold
+      .replace(/\*\*([^*]+)\*\*/g, '\x1b[1m$1\x1b[0m')
+      // Inline code: `code` -> dim/gray
+      .replace(/`([^`]+)`/g, '\x1b[2m$1\x1b[0m')
+  );
+}
+
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir: string;
+  scenarioDescription: string;
 }> {
   await ensureResultsDir();
   const resultDir = createResultDir(scenarioName, 'server');
@@ -33,39 +47,48 @@ export async function runServerConformanceTest(
 
   return {
     checks,
-    resultDir
+    resultDir,
+    scenarioDescription: scenario.description
   };
 }
 
-export function printServerResults(checks: ConformanceCheck[]): {
+export function printServerResults(
+  checks: ConformanceCheck[],
+  scenarioDescription: string
+): {
   passed: number;
   failed: number;
   denominator: number;
+  warnings: number;
 } {
   const denominator = checks.filter(
     (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
   ).length;
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
   console.log(`Checks:\n${JSON.stringify(checks, null, 2)}`);
 
   console.log(`\nTest Results:`);
-  console.log(`Passed: ${passed}/${denominator}, ${failed} failed`);
+  console.log(
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+  );
 
   if (failed > 0) {
-    console.log('\nFailed Checks:');
+    console.log('\n=== Failed Checks ===');
     checks
       .filter((c) => c.status === 'FAILURE')
       .forEach((c) => {
-        console.log(`  - ${c.name}: ${c.description}`);
+        console.log(`\n  - ${c.name}: ${c.description}`);
         if (c.errorMessage) {
           console.log(`    Error: ${c.errorMessage}`);
         }
+        console.log(`\n${formatMarkdown(scenarioDescription)}`);
       });
   }
 
-  return { passed, failed, denominator };
+  return { passed, failed, denominator, warnings };
 }
 
 export function printServerSummary(

@@ -1,8 +1,6 @@
 import { Scenario, ClientScenario } from '../types.js';
 import { InitializeScenario } from './client/initialize.js';
 import { ToolsCallScenario } from './client/tools_call.js';
-import { AuthBasicDCRScenario } from './client/auth/basic-dcr.js';
-import { AuthBasicMetadataVar1Scenario } from './client/auth/basic-metadata-var1.js';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
 
 // Import all new server test scenarios
@@ -46,6 +44,8 @@ import {
   PromptsGetEmbeddedResourceScenario,
   PromptsGetWithImageScenario
 } from './server/prompts.js';
+
+import { authScenariosList } from './client/auth/index.js';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -115,9 +115,8 @@ export const clientScenarios = new Map<string, ClientScenario>(
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
-  new AuthBasicDCRScenario(),
-  new AuthBasicMetadataVar1Scenario(),
-  new ElicitationClientDefaultsScenario()
+  new ElicitationClientDefaultsScenario(),
+  ...authScenariosList
 ];
 
 // Scenarios map - built from list

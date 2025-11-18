@@ -1,14 +1,26 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  CallToolResult,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError
+} from '@modelcontextprotocol/sdk/types.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
+import { SpecReferences } from '../spec-references.js';
 
 export interface ServerOptions {
-  prmPath?: string;
+  prmPath?: string | null;
+  requiredScopes?: string[];
+  scopesSupported?: string[];
+  includeScopeInWwwAuth?: boolean;
+  authMiddleware?: express.RequestHandler;
+  tokenVerifier?: MockTokenVerifier;
 }
 
 export function createServer(
@@ -17,7 +29,13 @@ export function createServer(
   getAuthServerUrl: () => string,
   options: ServerOptions = {}
 ): express.Application {
-  const { prmPath = '/.well-known/oauth-protected-resource/mcp' } = options;
+  const {
+    prmPath = '/.well-known/oauth-protected-resource/mcp',
+    requiredScopes = [],
+    scopesSupported,
+    includeScopeInWwwAuth = false,
+    tokenVerifier
+  } = options;
   const server = new Server(
     {
       name: 'auth-prm-pathbased-server',
@@ -32,9 +50,29 @@ export function createServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: []
+      tools: [
+        {
+          name: 'test-tool',
+          inputSchema: { type: 'object' }
+        }
+      ]
     };
   });
+
+  server.setRequestHandler(
+    CallToolRequestSchema,
+    async (request): Promise<CallToolResult> => {
+      if (request.params.name === 'test-tool') {
+        return {
+          content: [{ type: 'text', text: 'test' }]
+        };
+      }
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Tool ${request.params.name} not found`
+      );
+    }
+  );
 
   const app = express();
   app.use(express.json());
@@ -47,40 +85,61 @@ export function createServer(
     })
   );
 
-  app.get(prmPath, (req: Request, res: Response) => {
-    checks.push({
-      id: 'prm-pathbased-requested',
-      name: 'PRMPathBasedRequested',
-      description: 'Client requested PRM metadata at path-based location',
-      status: 'SUCCESS',
-      timestamp: new Date().toISOString(),
-      specReferences: [
-        {
-          id: 'RFC-9728-3',
-          url: 'https://tools.ietf.org/html/rfc9728#section-3'
+  if (prmPath !== null) {
+    app.get(prmPath, (req: Request, res: Response) => {
+      checks.push({
+        id: 'prm-pathbased-requested',
+        name: 'PRMPathBasedRequested',
+        description: 'Client requested PRM metadata at path-based location',
+        status: 'SUCCESS',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          SpecReferences.RFC_PRM_DISCOVERY,
+          SpecReferences.MCP_PRM_DISCOVERY
+        ],
+        details: {
+          url: req.url,
+          path: req.path
         }
-      ],
-      details: {
-        url: req.url,
-        path: req.path
-      }
-    });
+      });
 
-    res.json({
-      resource: getBaseUrl(),
-      authorization_servers: [getAuthServerUrl()]
+      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
+      // the resource identifier is the root.
+      const resource =
+        prmPath === '/.well-known/oauth-protected-resource'
+          ? getBaseUrl()
+          : `${getBaseUrl()}/mcp`;
+
+      const prmResponse: any = {
+        resource,
+        authorization_servers: [getAuthServerUrl()]
+      };
+
+      if (scopesSupported !== undefined) {
+        prmResponse.scopes_supported = scopesSupported;
+      }
+
+      res.json(prmResponse);
     });
-  });
+  }
 
   app.post('/mcp', async (req: Request, res: Response, next: NextFunction) => {
     // Apply bearer token auth per-request in order to delay setting PRM URL
     // until after the server has started
     // TODO: Find a way to do this w/ pre-applying middleware.
-    const authMiddleware = requireBearerAuth({
-      verifier: new MockTokenVerifier(checks),
-      requiredScopes: [],
-      resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
-    });
+    const verifier =
+      tokenVerifier || new MockTokenVerifier(checks, requiredScopes);
+
+    const authMiddleware =
+      options.authMiddleware ??
+      requireBearerAuth({
+        verifier,
+        // Only pass requiredScopes if we want them in the WWW-Authenticate header
+        requiredScopes: includeScopeInWwwAuth ? requiredScopes : [],
+        ...(prmPath !== null && {
+          resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+        })
+      });
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);

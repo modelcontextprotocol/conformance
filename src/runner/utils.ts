@@ -18,6 +18,8 @@ export function getStatusColor(status: string): string {
       return COLORS.GREEN;
     case 'FAILURE':
       return COLORS.RED;
+    case 'WARNING':
+      return COLORS.YELLOW;
     case 'INFO':
       return COLORS.BLUE;
     default:

@@ -1,6 +1,6 @@
 import {
   auth,
-  extractResourceMetadataUrl,
+  extractWWWAuthenticateParams,
   UnauthorizedError
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -13,11 +13,11 @@ export const handle401 = async (
   next: FetchLike,
   serverUrl: string | URL
 ): Promise<void> => {
-  const resourceMetadataUrl = extractResourceMetadataUrl(response);
-
+  const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
   let result = await auth(provider, {
     serverUrl,
     resourceMetadataUrl,
+    scope,
     fetchFn: next
   });
 
@@ -34,6 +34,7 @@ export const handle401 = async (
     result = await auth(provider, {
       serverUrl,
       resourceMetadataUrl,
+      scope,
       authorizationCode,
       fetchFn: next
     });
@@ -88,7 +89,7 @@ export const withOAuthRetry = (
       let response = await makeRequest();
 
       // Handle 401 responses by attempting re-authentication
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         const serverUrl =
           baseUrl ||
           (typeof input === 'string' ? new URL(input).origin : input.origin);
@@ -98,7 +99,7 @@ export const withOAuthRetry = (
       }
 
       // If we still have a 401 after re-auth attempt, throw an error
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         const url = typeof input === 'string' ? input : input.toString();
         throw new UnauthorizedError(`Authentication failed for ${url}`);
       }

@@ -4,10 +4,26 @@
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServer } from './client-helper.js';
+import {
+  TextResourceContents,
+  BlobResourceContents
+} from '@modelcontextprotocol/sdk/types.js';
 
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
-  description = 'Test listing available resources';
+  description = `Test listing available resources.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`resources/list\`
+
+**Requirements**:
+- Return array of all available **direct resources** (not templates)
+- Each resource MUST have:
+  - \`uri\` (string)
+  - \`name\` (string)
+  - \`description\` (string)
+  - \`mimeType\` (string, optional)`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -75,7 +91,23 @@ export class ResourcesListScenario implements ClientScenario {
 
 export class ResourcesReadTextScenario implements ClientScenario {
   name = 'resources-read-text';
-  description = 'Test reading text resource';
+  description = `Test reading text resource.
+
+**Server Implementation Requirements:**
+
+Implement resource \`test://static-text\` that returns:
+
+\`\`\`json
+{
+  "contents": [
+    {
+      "uri": "test://static-text",
+      "mimeType": "text/plain",
+      "text": "This is the content of the static text resource."
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -94,7 +126,7 @@ export class ResourcesReadTextScenario implements ClientScenario {
         errors.push('contents is not an array');
       if (result.contents.length === 0) errors.push('contents array is empty');
 
-      const content = result.contents[0];
+      const content = result.contents[0] as TextResourceContents | undefined;
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
         if (!content.mimeType) errors.push('Content missing mimeType');
@@ -145,7 +177,23 @@ export class ResourcesReadTextScenario implements ClientScenario {
 
 export class ResourcesReadBinaryScenario implements ClientScenario {
   name = 'resources-read-binary';
-  description = 'Test reading binary resource';
+  description = `Test reading binary resource.
+
+**Server Implementation Requirements:**
+
+Implement resource \`test://static-binary\` that returns:
+
+\`\`\`json
+{
+  "contents": [
+    {
+      "uri": "test://static-binary",
+      "mimeType": "image/png",
+      "blob": "<base64-encoded-png>"
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -162,7 +210,7 @@ export class ResourcesReadBinaryScenario implements ClientScenario {
       if (!result.contents) errors.push('Missing contents array');
       if (result.contents.length === 0) errors.push('contents array is empty');
 
-      const content = result.contents[0];
+      const content = result.contents[0] as BlobResourceContents | undefined;
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
         if (!content.mimeType) errors.push('Content missing mimeType');
@@ -213,7 +261,27 @@ export class ResourcesReadBinaryScenario implements ClientScenario {
 
 export class ResourcesTemplateReadScenario implements ClientScenario {
   name = 'resources-templates-read';
-  description = 'Test reading resource from template';
+  description = `Test reading resource from template.
+
+**Server Implementation Requirements:**
+
+Implement resource template \`test://template/{id}/data\` that substitutes parameters.
+
+**Behavior**: When client requests \`test://template/123/data\`, substitute \`{id}\` with \`123\`
+
+Returns (for \`uri: "test://template/123/data"\`):
+
+\`\`\`json
+{
+  "contents": [
+    {
+      "uri": "test://template/123/data",
+      "mimeType": "application/json",
+      "text": "{"id":"123","templateTest":true,"data":"Data for ID: 123"}"
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -233,11 +301,15 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
       const content = result.contents[0];
       if (content) {
         if (!content.uri) errors.push('Content missing uri');
-        if (!content.text && !content.blob)
-          errors.push('Content missing text or blob');
+        const hasText = 'text' in content;
+        const hasBlob = 'blob' in content;
+        if (!hasText && !hasBlob) errors.push('Content missing text or blob');
 
-        // Check if parameter was substituted
-        const text = content.text || (content.blob ? '[binary]' : '');
+        const text = hasText
+          ? (content as TextResourceContents).text
+          : hasBlob
+            ? '[binary]'
+            : '';
         if (typeof text === 'string' && !text.includes('123')) {
           errors.push('Parameter substitution not reflected in content');
         }
@@ -258,7 +330,11 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
         ],
         details: {
           uri: content?.uri,
-          content: content?.text || content?.blob
+          content: content
+            ? 'text' in content
+              ? (content as TextResourceContents).text
+              : (content as BlobResourceContents).blob
+            : undefined
         }
       });
 
@@ -286,7 +362,27 @@ export class ResourcesTemplateReadScenario implements ClientScenario {
 
 export class ResourcesSubscribeScenario implements ClientScenario {
   name = 'resources-subscribe';
-  description = 'Test subscribing to resource updates';
+  description = `Test subscribing to resource updates.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`resources/subscribe\`
+
+**Requirements**:
+- Accept subscription request with URI
+- Track subscribed URIs
+- Return empty object \`{}\`
+
+Example request:
+
+\`\`\`json
+{
+  "method": "resources/subscribe",
+  "params": {
+    "uri": "test://watched-resource"
+  }
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -336,7 +432,17 @@ export class ResourcesSubscribeScenario implements ClientScenario {
 
 export class ResourcesUnsubscribeScenario implements ClientScenario {
   name = 'resources-unsubscribe';
-  description = 'Test unsubscribing from resource';
+  description = `Test unsubscribing from resource.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`resources/unsubscribe\`
+
+**Requirements**:
+- Accept unsubscribe request with URI
+- Remove URI from subscriptions
+- Stop sending update notifications for that URI
+- Return empty object \`{}\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -363,7 +469,7 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
         specReferences: [
           {
             id: 'MCP-Resources-Subscribe',
-            url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/resources#resource-subscriptions'
+            url: 'https://modelcontextprotocol.io/specification/2025-06-18/schema#unsubscriberequest'
           }
         ]
       });

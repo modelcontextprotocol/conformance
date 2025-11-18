@@ -67,7 +67,9 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
           throw new Error('No auth code in redirect URL');
         }
       } else {
-        throw new Error('No redirect location received');
+        throw new Error(
+          `No redirect location received, from '${authorizationUrl.toString()}'`
+        );
       }
     } catch (error) {
       console.error('Failed to fetch authorization URL:', error);

@@ -13,7 +13,18 @@ import {
 
 export class ToolsListScenario implements ClientScenario {
   name = 'tools-list';
-  description = 'Test listing available tools';
+  description = `Test listing available tools.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`tools/list\`
+
+**Requirements**:
+- Return array of all available tools
+- Each tool MUST have:
+  - \`name\` (string)
+  - \`description\` (string)
+  - \`inputSchema\` (valid JSON Schema object)`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -84,7 +95,22 @@ export class ToolsListScenario implements ClientScenario {
 
 export class ToolsCallSimpleTextScenario implements ClientScenario {
   name = 'tools-call-simple-text';
-  description = 'Test calling a tool that returns simple text';
+  description = `Test calling a tool that returns simple text.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_simple_text\` with no arguments that returns:
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "This is a simple text response for testing."
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -153,7 +179,25 @@ export class ToolsCallSimpleTextScenario implements ClientScenario {
 
 export class ToolsCallImageScenario implements ClientScenario {
   name = 'tools-call-image';
-  description = 'Test calling a tool that returns image content';
+  description = `Test calling a tool that returns image content.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_image_content\` with no arguments that returns:
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "image",
+      "data": "<base64-encoded-png>",
+      "mimeType": "image/png"
+    }
+  ]
+}
+\`\`\`
+
+**Implementation Note**: Use a minimal test image (e.g., 1x1 red pixel PNG)`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -222,7 +266,35 @@ export class ToolsCallImageScenario implements ClientScenario {
 
 export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
   name = 'tools-call-mixed-content';
-  description = 'Test tool returning multiple content types';
+  description = `Test tool returning multiple content types.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_multiple_content_types\` with no arguments that returns:
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Multiple content types test:"
+    },
+    {
+      "type": "image",
+      "data": "<base64>",
+      "mimeType": "image/png"
+    },
+    {
+      "type": "resource",
+      "resource": {
+        "uri": "test://mixed-content-resource",
+        "mimeType": "application/json",
+        "text": "{"test":"data","value":123}"
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -294,7 +366,20 @@ export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
 
 export class ToolsCallWithLoggingScenario implements ClientScenario {
   name = 'tools-call-with-logging';
-  description = 'Test tool that sends log messages during execution';
+  description = `Test tool that sends log messages during execution.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_tool_with_logging\` with no arguments.
+
+**Behavior**: During execution, send 3 log notifications at info level:
+1. "Tool execution started"
+2. "Tool processing data" (after ~50ms delay)
+3. "Tool execution completed" (after another ~50ms delay)
+
+**Returns**: Text content confirming execution
+
+**Implementation Note**: The delays are important to test that clients can receive multiple log notifications during tool execution`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -366,7 +451,27 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
 
 export class ToolsCallErrorScenario implements ClientScenario {
   name = 'tools-call-error';
-  description = 'Test tool error reporting';
+  description = `Test tool error reporting.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_error_handling\` with no arguments.
+
+**Behavior**: Always throw an error
+
+**Returns**: JSON-RPC response with \`isError: true\`
+
+\`\`\`json
+{
+  "isError": true,
+  "content": [
+    {
+      "type": "text",
+      "text": "This tool intentionally returns an error for testing"
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -430,7 +535,35 @@ export class ToolsCallErrorScenario implements ClientScenario {
 
 export class ToolsCallWithProgressScenario implements ClientScenario {
   name = 'tools-call-with-progress';
-  description = 'Test tool that reports progress notifications';
+  description = `Test tool that reports progress notifications.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_tool_with_progress\` with no arguments.
+
+**Behavior**: If \`_meta.progressToken\` is provided in request:
+- Send progress notification: \`0/100\`
+- Wait ~50ms
+- Send progress notification: \`50/100\`
+- Wait ~50ms
+- Send progress notification: \`100/100\`
+
+If no progress token provided, just execute with delays.
+
+**Returns**: Text content confirming execution
+
+**Progress Notification Format**:
+
+\`\`\`json
+{
+  "method": "notifications/progress",
+  "params": {
+    "progressToken": "<from request._meta.progressToken>",
+    "progress": 50,
+    "total": 100
+  }
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -521,7 +654,49 @@ export class ToolsCallWithProgressScenario implements ClientScenario {
 
 export class ToolsCallSamplingScenario implements ClientScenario {
   name = 'tools-call-sampling';
-  description = 'Test tool that requests LLM sampling from client';
+  description = `Test tool that requests LLM sampling from client.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_sampling\` with argument:
+- \`prompt\` (string, required) - The prompt to send to the LLM
+
+**Behavior**: Request LLM sampling from the client using \`sampling/createMessage\`
+
+**Sampling Request**:
+
+\`\`\`json
+{
+  "method": "sampling/createMessage",
+  "params": {
+    "messages": [
+      {
+        "role": "user",
+        "content": {
+          "type": "text",
+          "text": "<prompt from arguments>"
+        }
+      }
+    ],
+    "maxTokens": 100
+  }
+}
+\`\`\`
+
+**Returns**: Text content with the LLM's response
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "LLM response: <response from sampling>"
+    }
+  ]
+}
+\`\`\`
+
+**Implementation Note**: If the client doesn't support sampling (no \`sampling\` capability), return an error.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -606,7 +781,54 @@ export class ToolsCallSamplingScenario implements ClientScenario {
 
 export class ToolsCallElicitationScenario implements ClientScenario {
   name = 'tools-call-elicitation';
-  description = 'Test tool that requests user input (elicitation) from client';
+  description = `Test tool that requests user input (elicitation) from client.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_elicitation\` with argument:
+- \`message\` (string, required) - The message to show the user
+
+**Behavior**: Request user input from the client using \`elicitation/create\`
+
+**Elicitation Request**:
+
+\`\`\`json
+{
+  "method": "elicitation/create",
+  "params": {
+    "message": "<message from arguments>",
+    "requestedSchema": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "User's response"
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address"
+        }
+      },
+      "required": ["username", "email"]
+    }
+  }
+}
+\`\`\`
+
+**Returns**: Text content with the user's response
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "User response: <action: accept/decline/cancel, content: {...}>"
+    }
+  ]
+}
+\`\`\`
+
+**Implementation Note**: If the client doesn't support elicitation (no \`elicitation\` capability), return an error.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -689,7 +911,25 @@ export class ToolsCallElicitationScenario implements ClientScenario {
 
 export class ToolsCallAudioScenario implements ClientScenario {
   name = 'tools-call-audio';
-  description = 'Test calling a tool that returns audio content';
+  description = `Test calling a tool that returns audio content.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_audio_content\` with no arguments that returns:
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "audio",
+      "data": "<base64-encoded-wav>",
+      "mimeType": "audio/wav"
+    }
+  ]
+}
+\`\`\`
+
+**Implementation Note**: Use a minimal test audio file`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -765,7 +1005,26 @@ export class ToolsCallAudioScenario implements ClientScenario {
 
 export class ToolsCallEmbeddedResourceScenario implements ClientScenario {
   name = 'tools-call-embedded-resource';
-  description = 'Test calling a tool that returns embedded resource content';
+  description = `Test calling a tool that returns embedded resource content.
+
+**Server Implementation Requirements:**
+
+Implement tool \`test_embedded_resource\` with no arguments that returns:
+
+\`\`\`json
+{
+  "content": [
+    {
+      "type": "resource",
+      "resource": {
+        "uri": "test://embedded-resource",
+        "mimeType": "text/plain",
+        "text": "This is an embedded resource content."
+      }
+    }
+  ]
+}
+\`\`\``;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];

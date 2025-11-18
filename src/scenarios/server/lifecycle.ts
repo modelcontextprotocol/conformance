@@ -7,7 +7,18 @@ import { connectToServer } from './client-helper.js';
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';
-  description = 'Test basic server initialization handshake';
+  description = `Test basic server initialization handshake.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`initialize\`
+
+**Requirements**:
+- Accept \`initialize\` request with client info and capabilities
+- Return valid initialize response with server info, protocol version, and capabilities
+- Accept \`initialized\` notification from client after handshake
+
+This test verifies the server can complete the two-phase initialization handshake successfully.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
