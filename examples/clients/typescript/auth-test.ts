@@ -3,28 +3,18 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { withOAuthRetry } from './helpers/withOAuthRetry.js';
+import { runAsCli } from './helpers/cliRunner.js';
+import { logger } from './helpers/logger.js';
 
-async function main(): Promise<void> {
-  const serverUrl = process.argv[2];
-
-  if (!serverUrl) {
-    console.error('Usage: auth-test <server-url>');
-    process.exit(1);
-  }
-
-  console.log(`Connecting to MCP server at: ${serverUrl}`);
-
+/**
+ * Well-behaved auth client that follows all OAuth protocols correctly.
+ */
+export async function runClient(serverUrl: string): Promise<void> {
   const client = new Client(
-    {
-      name: 'test-auth-client',
-      version: '1.0.0'
-    },
-    {
-      capabilities: {}
-    }
+    { name: 'test-auth-client', version: '1.0.0' },
+    { capabilities: {} }
   );
 
-  // Create a custom fetch that uses the OAuth middleware with retry logic
   const oauthFetch = withOAuthRetry(
     'test-auth-client',
     new URL(serverUrl)
@@ -34,24 +24,17 @@ async function main(): Promise<void> {
     fetch: oauthFetch
   });
 
-  // Connect to the server - OAuth is handled automatically by the middleware
   await client.connect(transport);
-  console.log('✅ Successfully connected to MCP server');
+  logger.debug('✅ Successfully connected to MCP server');
 
   await client.listTools();
-  console.log('✅ Successfully listed tools');
+  logger.debug('✅ Successfully listed tools');
 
-  // Call a tool to test step-up auth scenarios
-  await client.callTool({
-    name: 'test-tool',
-    arguments: {}
-  });
-  console.log('✅ Successfully called tool');
+  await client.callTool({ name: 'test-tool', arguments: {} });
+  logger.debug('✅ Successfully called tool');
 
   await transport.close();
-  console.log('✅ Connection closed successfully');
-
-  process.exit(0);
+  logger.debug('✅ Connection closed successfully');
 }
 
-main();
+runAsCli(runClient, import.meta.url, 'auth-test <server-url>');
