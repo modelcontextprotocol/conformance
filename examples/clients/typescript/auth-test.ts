@@ -41,6 +41,13 @@ async function main(): Promise<void> {
   await client.listTools();
   console.log('✅ Successfully listed tools');
 
+  // Call a tool to test step-up auth scenarios
+  await client.callTool({
+    name: 'test-tool',
+    arguments: {}
+  });
+  console.log('✅ Successfully called tool');
+
   await transport.close();
   console.log('✅ Connection closed successfully');
 

@@ -12,7 +12,8 @@ import {
 import {
   ScopeFromWwwAuthenticateScenario,
   ScopeFromScopesSupportedScenario,
-  ScopeOmittedWhenUndefinedScenario
+  ScopeOmittedWhenUndefinedScenario,
+  ScopeStepUpAuthScenario
 } from './scope-handling.js';
 
 export const authScenariosList: Scenario[] = [
@@ -24,5 +25,6 @@ export const authScenariosList: Scenario[] = [
   new Auth20250326OEndpointFallbackScenario(),
   new ScopeFromWwwAuthenticateScenario(),
   new ScopeFromScopesSupportedScenario(),
-  new ScopeOmittedWhenUndefinedScenario()
+  new ScopeOmittedWhenUndefinedScenario(),
+  new ScopeStepUpAuthScenario()
 ];
