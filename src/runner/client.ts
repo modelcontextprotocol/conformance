@@ -139,12 +139,13 @@ export async function runConformanceTest(
 export function printClientResults(
   checks: ConformanceCheck[],
   verbose: boolean = false
-): { passed: number; failed: number; denominator: number } {
+): { passed: number; failed: number; denominator: number; warnings: number } {
   const denominator = checks.filter(
     (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
   ).length;
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
@@ -156,7 +157,9 @@ export function printClientResults(
 
   // Test results summary goes to stderr
   console.error(`\nTest Results:`);
-  console.error(`Passed: ${passed}/${denominator}, ${failed} failed`);
+  console.error(
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+  );
 
   if (failed > 0) {
     console.error('\nFailed Checks:');
@@ -170,7 +173,7 @@ export function printClientResults(
       });
   }
 
-  return { passed, failed, denominator };
+  return { passed, failed, denominator, warnings };
 }
 
 export async function runInteractiveMode(

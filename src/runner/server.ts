@@ -59,17 +59,21 @@ export function printServerResults(
   passed: number;
   failed: number;
   denominator: number;
+  warnings: number;
 } {
   const denominator = checks.filter(
     (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
   ).length;
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
   console.log(`Checks:\n${JSON.stringify(checks, null, 2)}`);
 
   console.log(`\nTest Results:`);
-  console.log(`Passed: ${passed}/${denominator}, ${failed} failed`);
+  console.log(
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+  );
 
   if (failed > 0) {
     console.log('\n=== Failed Checks ===');
@@ -84,7 +88,7 @@ export function printServerResults(
       });
   }
 
-  return { passed, failed, denominator };
+  return { passed, failed, denominator, warnings };
 }
 
 export function printServerSummary(
