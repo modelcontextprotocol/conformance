@@ -45,7 +45,7 @@ export function stepUpAuthMiddleware(options: {
 
       if (!hasRequiredScopes) {
         // Token exists but doesn't have required scopes
-        return sendUnauthorized(res, resourceMetadataUrl, requiredScopes);
+        return sendForbidden(res, resourceMetadataUrl, requiredScopes);
       }
 
       // Authorization successful
@@ -57,6 +57,33 @@ export function stepUpAuthMiddleware(options: {
       return sendUnauthorized(res, resourceMetadataUrl, initialScopes);
     }
   };
+}
+
+function sendForbidden(
+  res: Response,
+  resourceMetadataUrl?: string,
+  scopes: string[] = []
+): void {
+  let wwwAuthenticateHeader = 'Bearer';
+
+  if (resourceMetadataUrl) {
+    wwwAuthenticateHeader += ` realm="${resourceMetadataUrl}"`;
+  }
+
+  if (scopes.length > 0) {
+    wwwAuthenticateHeader += `, scope="${scopes.join(' ')}"`;
+  }
+
+  res
+    .status(403)
+    .set('WWW-Authenticate', wwwAuthenticateHeader)
+    .json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: 'Insufficient scope'
+      }
+    });
 }
 
 function sendUnauthorized(

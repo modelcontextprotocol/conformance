@@ -89,7 +89,7 @@ export const withOAuthRetry = (
       let response = await makeRequest();
 
       // Handle 401 responses by attempting re-authentication
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         const serverUrl =
           baseUrl ||
           (typeof input === 'string' ? new URL(input).origin : input.origin);
@@ -99,7 +99,7 @@ export const withOAuthRetry = (
       }
 
       // If we still have a 401 after re-auth attempt, throw an error
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         const url = typeof input === 'string' ? input : input.toString();
         throw new UnauthorizedError(`Authentication failed for ${url}`);
       }

@@ -5,6 +5,7 @@ import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
+import { stepUpAuthMiddleware } from './helpers/stepUpAuthMiddleware.js';
 
 /**
  * Scenario 1: Client uses scope from WWW-Authenticate header
@@ -411,9 +412,12 @@ export class ScopeStepUpAuthScenario implements Scenario {
     });
     await this.authServer.start(authApp);
 
-    const { stepUpAuthMiddleware } = await import(
-      './helpers/stepUpAuthMiddleware.js'
-    );
+    const stepUpMiddleware = stepUpAuthMiddleware({
+      verifier: tokenVerifier,
+      resourceMetadataUrl: `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`,
+      initialScopes: [initialScope],
+      toolCallScopes: [initialScope, toolCallScope]
+    });
 
     const baseApp = createServer(
       this.checks,
@@ -424,19 +428,9 @@ export class ScopeStepUpAuthScenario implements Scenario {
         requiredScopes: scopesSupported,
         scopesSupported: scopesSupported,
         includeScopeInWwwAuth: true,
+        authMiddleware: stepUpMiddleware,
         tokenVerifier
       }
-    );
-
-    baseApp.post(
-      '/mcp',
-      stepUpAuthMiddleware({
-        verifier: tokenVerifier,
-        resourceMetadataUrl: `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`,
-        initialScopes: [initialScope],
-        toolCallScopes: [initialScope, toolCallScope]
-      }),
-      baseApp._router
     );
 
     await this.server.start(baseApp);

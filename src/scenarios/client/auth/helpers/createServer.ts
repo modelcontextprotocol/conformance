@@ -1,6 +1,12 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  CallToolResult,
+  ErrorCode,
+  ListToolsRequestSchema,
+  McpError
+} from '@modelcontextprotocol/sdk/types.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
@@ -14,6 +20,7 @@ export interface ServerOptions {
   requiredScopes?: string[];
   scopesSupported?: string[];
   includeScopeInWwwAuth?: boolean;
+  authMiddleware?: express.RequestHandler;
   tokenVerifier?: MockTokenVerifier;
 }
 
@@ -44,9 +51,29 @@ export function createServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: []
+      tools: [
+        {
+          name: 'test-tool',
+          inputSchema: { type: 'object' }
+        }
+      ]
     };
   });
+
+  server.setRequestHandler(
+    CallToolRequestSchema,
+    async (request): Promise<CallToolResult> => {
+      if (request.params.name === 'test-tool') {
+        return {
+          content: [{ type: 'text', text: 'test' }]
+        };
+      }
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Tool ${request.params.name} not found`
+      );
+    }
+  );
 
   const app = express();
   app.use(express.json());
@@ -104,7 +131,7 @@ export function createServer(
     const verifier =
       tokenVerifier || new MockTokenVerifier(checks, requiredScopes);
 
-    const authMiddleware = includeScopeInWwwAuth
+    let authMiddleware = includeScopeInWwwAuth
       ? scopeAwareAuthMiddleware({
           verifier,
           requiredScopes,
@@ -120,6 +147,10 @@ export function createServer(
             resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
           })
         });
+
+    if (options.authMiddleware) {
+      authMiddleware = options.authMiddleware;
+    }
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);

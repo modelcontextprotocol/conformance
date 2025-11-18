@@ -67,4 +67,15 @@ describe('Negative tests', () => {
       ['scope-omitted-incorrect']
     );
   });
+
+  test('client only responds to 401, not 403', async () => {
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test-scope-stepup-broken.ts'
+    );
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(runner, 'auth/scope-step-up', [
+      'stepup-no-scope-escalation'
+    ]);
+  });
 });
