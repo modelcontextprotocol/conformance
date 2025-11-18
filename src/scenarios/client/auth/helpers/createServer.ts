@@ -7,9 +7,14 @@ import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { MockTokenVerifier } from './mockTokenVerifier.js';
 import { SpecReferences } from '../spec-references.js';
+import { scopeAwareAuthMiddleware } from './scopeAwareAuthMiddleware.js';
 
 export interface ServerOptions {
   prmPath?: string | null;
+  requiredScopes?: string[];
+  scopesSupported?: string[];
+  includeScopeInWwwAuth?: boolean;
+  tokenVerifier?: MockTokenVerifier;
 }
 
 export function createServer(
@@ -18,7 +23,13 @@ export function createServer(
   getAuthServerUrl: () => string,
   options: ServerOptions = {}
 ): express.Application {
-  const { prmPath = '/.well-known/oauth-protected-resource/mcp' } = options;
+  const {
+    prmPath = '/.well-known/oauth-protected-resource/mcp',
+    requiredScopes = [],
+    scopesSupported,
+    includeScopeInWwwAuth = false,
+    tokenVerifier
+  } = options;
   const server = new Server(
     {
       name: 'auth-prm-pathbased-server',
@@ -73,10 +84,16 @@ export function createServer(
           ? getBaseUrl()
           : `${getBaseUrl()}/mcp`;
 
-      res.json({
+      const prmResponse: any = {
         resource,
         authorization_servers: [getAuthServerUrl()]
-      });
+      };
+
+      if (scopesSupported !== undefined) {
+        prmResponse.scopes_supported = scopesSupported;
+      }
+
+      res.json(prmResponse);
     });
   }
 
@@ -84,13 +101,25 @@ export function createServer(
     // Apply bearer token auth per-request in order to delay setting PRM URL
     // until after the server has started
     // TODO: Find a way to do this w/ pre-applying middleware.
-    const authMiddleware = requireBearerAuth({
-      verifier: new MockTokenVerifier(checks),
-      requiredScopes: [],
-      ...(prmPath !== null && {
-        resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
-      })
-    });
+    const verifier =
+      tokenVerifier || new MockTokenVerifier(checks, requiredScopes);
+
+    const authMiddleware = includeScopeInWwwAuth
+      ? scopeAwareAuthMiddleware({
+          verifier,
+          requiredScopes,
+          ...(prmPath !== null && {
+            resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+          }),
+          includeScopeInWwwAuth: true
+        })
+      : requireBearerAuth({
+          verifier,
+          requiredScopes,
+          ...(prmPath !== null && {
+            resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+          })
+        });
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);

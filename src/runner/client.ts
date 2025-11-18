@@ -86,10 +86,10 @@ export async function runConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
-  console.log(`Starting scenario: ${scenarioName}`);
+  console.error(`Starting scenario: ${scenarioName}`);
   const urls = await scenario.start();
 
-  console.log(`Executing client: ${clientCommand} ${urls.serverUrl}`);
+  console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
 
   try {
     const clientOutput = await executeClient(
@@ -124,7 +124,7 @@ export async function runConformanceTest(
 
     await fs.writeFile(path.join(resultDir, 'stderr.txt'), clientOutput.stderr);
 
-    console.log(`Results saved to ${resultDir}`);
+    console.error(`Results saved to ${resultDir}`);
 
     return {
       checks,
@@ -147,22 +147,25 @@ export function printClientResults(
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
 
   if (verbose) {
-    console.log(`Checks:\n${JSON.stringify(checks, null, 2)}`);
+    // Verbose mode: JSON goes to stdout for piping to jq/jless
+    console.log(JSON.stringify(checks, null, 2));
   } else {
-    console.log(`Checks:\n${formatPrettyChecks(checks)}`);
+    // Non-verbose: Pretty checks go to stderr
+    console.error(`Checks:\n${formatPrettyChecks(checks)}`);
   }
 
-  console.log(`\nTest Results:`);
-  console.log(`Passed: ${passed}/${denominator}, ${failed} failed`);
+  // Test results summary goes to stderr
+  console.error(`\nTest Results:`);
+  console.error(`Passed: ${passed}/${denominator}, ${failed} failed`);
 
   if (failed > 0) {
-    console.log('\nFailed Checks:');
+    console.error('\nFailed Checks:');
     checks
       .filter((c) => c.status === 'FAILURE')
       .forEach((c) => {
-        console.log(`  - ${c.name}: ${c.description}`);
+        console.error(`  - ${c.name}: ${c.description}`);
         if (c.errorMessage) {
-          console.log(`    Error: ${c.errorMessage}`);
+          console.error(`    Error: ${c.errorMessage}`);
         }
       });
   }

@@ -9,6 +9,11 @@ import {
   Auth20250326OAuthMetadataBackcompatScenario,
   Auth20250326OEndpointFallbackScenario
 } from './march-spec-backcompat.js';
+import {
+  ScopeFromWwwAuthenticateScenario,
+  ScopeFromScopesSupportedScenario,
+  ScopeOmittedWhenUndefinedScenario
+} from './scope-handling.js';
 
 export const authScenariosList: Scenario[] = [
   new AuthBasicDCRScenario(),
@@ -16,5 +21,8 @@ export const authScenariosList: Scenario[] = [
   new AuthBasicMetadataVar2Scenario(),
   new AuthBasicMetadataVar3Scenario(),
   new Auth20250326OAuthMetadataBackcompatScenario(),
-  new Auth20250326OEndpointFallbackScenario()
+  new Auth20250326OEndpointFallbackScenario(),
+  new ScopeFromWwwAuthenticateScenario(),
+  new ScopeFromScopesSupportedScenario(),
+  new ScopeOmittedWhenUndefinedScenario()
 ];

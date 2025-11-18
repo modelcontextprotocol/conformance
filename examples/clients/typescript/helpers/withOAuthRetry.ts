@@ -1,6 +1,6 @@
 import {
   auth,
-  extractResourceMetadataUrl,
+  extractWWWAuthenticateParams,
   UnauthorizedError
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -13,10 +13,11 @@ export const handle401 = async (
   next: FetchLike,
   serverUrl: string | URL
 ): Promise<void> => {
-  const resourceMetadataUrl = extractResourceMetadataUrl(response);
+  const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
   let result = await auth(provider, {
     serverUrl,
     resourceMetadataUrl,
+    scope,
     fetchFn: next
   });
 
@@ -33,6 +34,7 @@ export const handle401 = async (
     result = await auth(provider, {
       serverUrl,
       resourceMetadataUrl,
+      scope,
       authorizationCode,
       fetchFn: next
     });

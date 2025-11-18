@@ -2,12 +2,25 @@ import express, { Request, Response } from 'express';
 import type { ConformanceCheck } from '../../../../types.js';
 import { createRequestLogger } from '../../../request-logger.js';
 import { SpecReferences } from '../spec-references.js';
+import { MockTokenVerifier } from './mockTokenVerifier.js';
 
 export interface AuthServerOptions {
   metadataPath?: string;
   isOpenIdConfiguration?: boolean;
   loggingEnabled?: boolean;
   routePrefix?: string;
+  scopesSupported?: string[];
+  trackTokenRequests?: boolean;
+  tokenVerifier?: MockTokenVerifier;
+  onTokenRequest?: (requestData: {
+    scope?: string;
+    grantType: string;
+    timestamp: string;
+  }) => { token: string; scopes: string[] };
+  onAuthorizationRequest?: (requestData: {
+    scope?: string;
+    timestamp: string;
+  }) => void;
 }
 
 export function createAuthServer(
@@ -19,7 +32,12 @@ export function createAuthServer(
     metadataPath = '/.well-known/oauth-authorization-server',
     isOpenIdConfiguration = false,
     loggingEnabled = true,
-    routePrefix = ''
+    routePrefix = '',
+    scopesSupported,
+    trackTokenRequests = false,
+    tokenVerifier,
+    onTokenRequest,
+    onAuthorizationRequest
   } = options;
 
   const authRoutes = {
@@ -69,6 +87,11 @@ export function createAuthServer(
       token_endpoint_auth_methods_supported: ['none']
     };
 
+    // Add scopes_supported if provided
+    if (scopesSupported !== undefined) {
+      metadata.scopes_supported = scopesSupported;
+    }
+
     // Add OpenID Configuration specific fields
     if (isOpenIdConfiguration) {
       metadata.jwks_uri = `${getAuthBaseUrl()}/.well-known/jwks.json`;
@@ -80,22 +103,25 @@ export function createAuthServer(
   });
 
   app.get(authRoutes.authorization_endpoint, (req: Request, res: Response) => {
+    const timestamp = new Date().toISOString();
     checks.push({
       id: 'authorization-request',
       name: 'AuthorizationRequest',
       description: 'Client made authorization request',
       status: 'SUCCESS',
-      timestamp: new Date().toISOString(),
+      timestamp,
       specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
       details: {
-        response_type: req.query.response_type,
-        client_id: req.query.client_id,
-        redirect_uri: req.query.redirect_uri,
-        state: req.query.state,
-        code_challenge: req.query.code_challenge ? 'present' : 'missing',
-        code_challenge_method: req.query.code_challenge_method
+        query: req.query
       }
     });
+
+    if (onAuthorizationRequest) {
+      onAuthorizationRequest({
+        scope: req.query.scope as string | undefined,
+        timestamp
+      });
+    }
 
     const redirectUri = req.query.redirect_uri as string;
     const state = req.query.state as string;
@@ -109,23 +135,46 @@ export function createAuthServer(
   });
 
   app.post(authRoutes.token_endpoint, (req: Request, res: Response) => {
+    const timestamp = new Date().toISOString();
+    const requestedScope = req.body.scope;
+
     checks.push({
       id: 'token-request',
       name: 'TokenRequest',
       description: 'Client requested access token',
       status: 'SUCCESS',
-      timestamp: new Date().toISOString(),
+      timestamp,
       specReferences: [SpecReferences.OAUTH_2_1_TOKEN],
       details: {
         endpoint: '/token',
-        grantType: req.body.grant_type
+        grantType: req.body.grant_type,
+        ...(trackTokenRequests && { scope: requestedScope || 'not provided' })
       }
     });
 
+    let token = 'test-token';
+    let scopes: string[] = [];
+
+    if (onTokenRequest) {
+      const result = onTokenRequest({
+        scope: requestedScope,
+        grantType: req.body.grant_type,
+        timestamp
+      });
+      token = result.token;
+      scopes = result.scopes;
+
+      // Register token with verifier if provided
+      if (tokenVerifier) {
+        tokenVerifier.registerToken(token, scopes);
+      }
+    }
+
     res.json({
-      access_token: 'test-token',
+      access_token: token,
       token_type: 'Bearer',
-      expires_in: 3600
+      expires_in: 3600,
+      ...(scopes.length > 0 && { scope: scopes.join(' ') })
     });
   });
 
