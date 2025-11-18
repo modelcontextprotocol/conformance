@@ -10,6 +10,7 @@ export interface AuthServerOptions {
   loggingEnabled?: boolean;
   routePrefix?: string;
   scopesSupported?: string[];
+  clientIdMetadataDocumentSupported?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -17,6 +18,7 @@ export interface AuthServerOptions {
     timestamp: string;
   }) => { token: string; scopes: string[] };
   onAuthorizationRequest?: (requestData: {
+    clientId?: string;
     scope?: string;
     timestamp: string;
   }) => void;
@@ -33,6 +35,7 @@ export function createAuthServer(
     loggingEnabled = true,
     routePrefix = '',
     scopesSupported,
+    clientIdMetadataDocumentSupported,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest
@@ -93,6 +96,12 @@ export function createAuthServer(
       metadata.scopes_supported = scopesSupported;
     }
 
+    // Add client_id_metadata_document_supported if provided
+    if (clientIdMetadataDocumentSupported !== undefined) {
+      metadata.client_id_metadata_document_supported =
+        clientIdMetadataDocumentSupported;
+    }
+
     // Add OpenID Configuration specific fields
     if (isOpenIdConfiguration) {
       metadata.jwks_uri = `${getAuthBaseUrl()}/.well-known/jwks.json`;
@@ -123,6 +132,7 @@ export function createAuthServer(
 
     if (onAuthorizationRequest) {
       onAuthorizationRequest({
+        clientId: req.query.client_id as string | undefined,
         scope: scopeParam,
         timestamp
       });

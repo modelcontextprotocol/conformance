@@ -1,5 +1,6 @@
 import { Scenario } from '../../../types';
 import { AuthBasicDCRScenario } from './basic-dcr.js';
+import { AuthBasicCIMDScenario } from './basic-cimd.js';
 import {
   AuthBasicMetadataVar1Scenario,
   AuthBasicMetadataVar2Scenario,
@@ -18,6 +19,7 @@ import {
 
 export const authScenariosList: Scenario[] = [
   new AuthBasicDCRScenario(),
+  new AuthBasicCIMDScenario(),
   new AuthBasicMetadataVar1Scenario(),
   new AuthBasicMetadataVar2Scenario(),
   new AuthBasicMetadataVar3Scenario(),

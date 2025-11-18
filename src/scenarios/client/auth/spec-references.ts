@@ -52,5 +52,13 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_AUTH_ERROR_HANDLING: {
     id: 'MCP-Auth-error-handling',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#error-handling'
+  },
+  MCP_CLIENT_ID_METADATA_DOCUMENTS: {
+    id: 'MCP-Client-ID-Metadata-Documents',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#client-id-metadata-documents'
+  },
+  IETF_CIMD: {
+    id: 'IETF-OAuth-Client-ID-Metadata-Document',
+    url: 'https://datatracker.ietf.org/doc/html/draft-ietf-oauth-client-id-metadata-document-00'
   }
 };

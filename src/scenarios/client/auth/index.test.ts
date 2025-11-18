@@ -5,6 +5,7 @@ import {
 } from './test_helpers/testClient.js';
 import { runClient as goodClient } from '../../../../examples/clients/typescript/auth-test.js';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm.js';
+import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd.js';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope.js';
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes.js';
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403.js';
@@ -74,6 +75,13 @@ describe('Negative tests', () => {
     const runner = new InlineClientRunner(ignore403Client);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', [
       'scope-step-up-escalation'
+    ]);
+  });
+
+  test('client uses DCR instead of CIMD when server supports it', async () => {
+    const runner = new InlineClientRunner(noCimdClient);
+    await runClientAgainstScenario(runner, 'auth/basic-cimd', [
+      'cimd-client-id-used'
     ]);
   });
 });
