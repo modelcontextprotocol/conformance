@@ -10,7 +10,6 @@ export interface AuthServerOptions {
   loggingEnabled?: boolean;
   routePrefix?: string;
   scopesSupported?: string[];
-  trackTokenRequests?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -34,7 +33,6 @@ export function createAuthServer(
     loggingEnabled = true,
     routePrefix = '',
     scopesSupported,
-    trackTokenRequests = false,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest
@@ -147,8 +145,7 @@ export function createAuthServer(
       specReferences: [SpecReferences.OAUTH_2_1_TOKEN],
       details: {
         endpoint: '/token',
-        grantType: req.body.grant_type,
-        ...(trackTokenRequests && { scope: requestedScope || 'not provided' })
+        grantType: req.body.grant_type
       }
     });
 

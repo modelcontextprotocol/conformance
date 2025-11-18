@@ -31,7 +31,6 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
     let authorizedScopes: string[] = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
-      trackTokenRequests: true,
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         this.authorizationRequests.push({
@@ -154,7 +153,6 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
     let authorizedScopes: string[] = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
-      trackTokenRequests: true,
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         this.authorizationRequests.push({
@@ -281,7 +279,6 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
-      trackTokenRequests: true,
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         this.authorizationRequests.push({
