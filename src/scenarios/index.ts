@@ -29,6 +29,7 @@ import {
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
 import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
 import { ServerSSEPollingScenario } from './server/sse-polling.js';
+import { ServerSSEMultipleStreamsScenario } from './server/sse-multiple-streams.js';
 
 import {
   ResourcesListScenario,
@@ -82,6 +83,7 @@ const allClientScenariosList: ClientScenario[] = [
 
   // SSE Polling scenarios (SEP-1699)
   new ServerSSEPollingScenario(),
+  new ServerSSEMultipleStreamsScenario(),
 
   // Elicitation scenarios (SEP-1330) - pending
   ...pendingClientScenariosList,
