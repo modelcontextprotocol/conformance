@@ -5,7 +5,7 @@ import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
-import { stepUpAuthMiddleware } from './helpers/stepUpAuthMiddleware.js';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Scenario 1: Client uses scope from WWW-Authenticate header
@@ -315,9 +315,10 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
  * Scenario 4: Client performs step-up authentication
  *
  * Tests that clients handle step-up authentication where:
- * - Initial request (listTools) requires mcp:basic scope
- * - Subsequent tool calls require mcp:write scope
- * Client must handle 401 responses with different scope requirements
+ * - initialize/notifications do not require auth
+ * - listTools requires mcp:basic scope (401 if missing)
+ * - tools/call requires mcp:basic + mcp:write scopes (403 if insufficient)
+ * Client must handle both 401 and 403 responses with different scope requirements
  */
 export class ScopeStepUpAuthScenario implements Scenario {
   name = 'auth/scope-step-up';
@@ -334,43 +335,56 @@ export class ScopeStepUpAuthScenario implements Scenario {
     this.authorizationRequests = [];
 
     const initialScope = 'mcp:basic';
-    const toolCallScope = 'mcp:write';
-    const scopesSupported = [initialScope, toolCallScope];
-    const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
+    const escalatedScopes = ['mcp:basic', 'mcp:write'];
+    const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
     let authorizedScopes: string[] = [];
-
-    const uniqueScopes = new Set<string>();
-    let stepUpCheckEmitted = false;
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
+        const requestNumber = this.authorizationRequests.length + 1;
         this.authorizationRequests.push({
           scope: data.scope,
           timestamp: data.timestamp
         });
-        authorizedScopes = data.scope ? data.scope.split(' ') : [];
+        const requestedScopes = data.scope ? data.scope.split(' ') : [];
 
-        // Track unique scopes across all requests
-        if (data.scope) {
-          data.scope.split(' ').forEach((s) => uniqueScopes.add(s));
-        }
+        authorizedScopes = requestedScopes;
 
-        // Only emit check once we've seen escalation (2+ unique scopes)
-        // This happens on the second authorization request if client properly escalates
-        if (uniqueScopes.size >= 2 && !stepUpCheckEmitted) {
-          stepUpCheckEmitted = true;
+        if (requestNumber === 1) {
+          // First auth request - should request mcp:basic from WWW-Authenticate
+          const usedCorrectScope = requestedScopes.includes(initialScope);
           this.checks.push({
-            id: 'scope-step-up',
-            name: 'Client scope escalation for step-up auth',
-            description:
-              'Client correctly escalated scopes for step-up authentication',
-            status: 'SUCCESS',
+            id: 'scope-step-up-initial',
+            name: 'Client initial scope selection for step-up auth',
+            description: usedCorrectScope
+              ? 'Client correctly used scope from WWW-Authenticate header for initial auth'
+              : 'Client SHOULD use the scope parameter from the WWW-Authenticate header',
+            status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
             timestamp: data.timestamp,
             specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
             details: {
-              requestedScopes: Array.from(uniqueScopes).join(' '),
-              requestCount: this.authorizationRequests.length
+              expectedScope: initialScope,
+              requestedScope: data.scope || 'none'
+            }
+          });
+        } else if (requestNumber === 2) {
+          // Second auth request - should escalate to mcp:basic + mcp:write
+          const hasAllScopes = escalatedScopes.every((s) =>
+            requestedScopes.includes(s)
+          );
+          this.checks.push({
+            id: 'scope-step-up-escalation',
+            name: 'Client scope escalation for step-up auth',
+            description: hasAllScopes
+              ? 'Client correctly escalated scopes for step-up authentication'
+              : 'Client SHOULD request additional scopes when receiving 403 with new scope requirements',
+            status: hasAllScopes ? 'SUCCESS' : 'WARNING',
+            timestamp: data.timestamp,
+            specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+            details: {
+              expectedScopes: escalatedScopes.join(' '),
+              requestedScope: data.scope || 'none'
             }
           });
         }
@@ -384,12 +398,70 @@ export class ScopeStepUpAuthScenario implements Scenario {
     });
     await this.authServer.start(authApp);
 
-    const stepUpMiddleware = stepUpAuthMiddleware({
-      verifier: tokenVerifier,
-      resourceMetadataUrl: `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`,
-      initialScopes: [initialScope],
-      toolCallScopes: [initialScope, toolCallScope]
-    });
+    // Inline step-up auth middleware
+    const resourceMetadataUrl = () =>
+      `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`;
+
+    const stepUpMiddleware = async (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ) => {
+      // Parse body to check method
+      let body = req.body;
+      if (typeof body === 'string') {
+        body = JSON.parse(body);
+      }
+      const method = body?.method;
+
+      // Allow initialize and notifications without auth
+      if (method === 'initialize' || method?.startsWith('notifications/')) {
+        return next();
+      }
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        // No auth - return 401 with initial scope
+        return res
+          .status(401)
+          .set(
+            'WWW-Authenticate',
+            `Bearer scope="${initialScope}", resource_metadata="${resourceMetadataUrl()}"`
+          )
+          .json({
+            error: 'invalid_token',
+            error_description: 'Missing Authorization header'
+          });
+      }
+
+      const token = authHeader.substring('Bearer '.length);
+      const authInfo = await tokenVerifier.verifyAccessToken(token);
+      const tokenScopes = authInfo.scopes || [];
+
+      // Determine required scopes based on method
+      const isToolCall = method === 'tools/call';
+      const requiredScopes = isToolCall ? escalatedScopes : [initialScope];
+
+      const hasRequiredScopes = requiredScopes.every((s) =>
+        tokenScopes.includes(s)
+      );
+
+      if (!hasRequiredScopes) {
+        // Has token but insufficient scopes - return 403
+        return res
+          .status(403)
+          .set(
+            'WWW-Authenticate',
+            `Bearer scope="${requiredScopes.join(' ')}", resource_metadata="${resourceMetadataUrl()}"`
+          )
+          .json({
+            error: 'insufficient_scope',
+            error_description: 'Token has insufficient scope'
+          });
+      }
+
+      next();
+    };
 
     const baseApp = createServer(
       this.checks,
@@ -397,8 +469,8 @@ export class ScopeStepUpAuthScenario implements Scenario {
       this.authServer.getUrl,
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: scopesSupported,
-        scopesSupported: scopesSupported,
+        requiredScopes: escalatedScopes,
+        scopesSupported: escalatedScopes,
         includeScopeInWwwAuth: true,
         authMiddleware: stepUpMiddleware,
         tokenVerifier
@@ -416,37 +488,34 @@ export class ScopeStepUpAuthScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    // Check if we already emitted a step-up check (success case)
-    const hasStepUpCheck = this.checks.some((c) => c.id === 'scope-step-up');
+    // Emit failure checks if expected auth requests didn't happen
+    const hasInitialCheck = this.checks.some(
+      (c) => c.id === 'scope-step-up-initial'
+    );
+    const hasEscalationCheck = this.checks.some(
+      (c) => c.id === 'scope-step-up-escalation'
+    );
 
-    if (this.authorizationRequests.length === 0) {
+    if (!hasInitialCheck) {
       this.checks.push({
-        id: 'scope-step-up',
-        name: 'Client scope escalation for step-up auth',
-        description: 'Client did not make an authorization request',
+        id: 'scope-step-up-initial',
+        name: 'Client initial scope selection for step-up auth',
+        description: 'Client did not make an initial authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
-    } else if (!hasStepUpCheck) {
-      // Client made auth requests but didn't escalate scopes
-      const uniqueScopes = new Set<string>();
-      this.authorizationRequests.forEach((req) => {
-        if (req.scope) {
-          req.scope.split(' ').forEach((s) => uniqueScopes.add(s));
-        }
-      });
+    }
+
+    if (!hasEscalationCheck) {
       this.checks.push({
-        id: 'scope-step-up',
+        id: 'scope-step-up-escalation',
         name: 'Client scope escalation for step-up auth',
-        description: 'Client SHOULD request additional scopes for tool calls',
-        status: 'WARNING',
+        description:
+          'Client did not make a second authorization request for scope escalation',
+        status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          requestedScopes: Array.from(uniqueScopes).join(' ') || 'none',
-          requestCount: this.authorizationRequests.length
-        }
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
     }
 

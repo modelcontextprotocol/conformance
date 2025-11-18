@@ -75,7 +75,7 @@ describe('Negative tests', () => {
     );
     const runner = new SpawnedClientRunner(clientPath);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', [
-      'scope-step-up'
+      'scope-step-up-escalation'
     ]);
   });
 });
