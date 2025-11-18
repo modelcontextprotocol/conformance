@@ -142,6 +142,33 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
         });
         // Remember the scopes from authorization for token issuance
         authorizedScopes = data.scope ? data.scope.split(' ') : [];
+
+        // Check if client requested all scopes from scopes_supported
+        const requestedScopes = data.scope ? data.scope.split(' ') : [];
+        const hasAllScopes = scopesSupported.every((scope) =>
+          requestedScopes.includes(scope)
+        );
+        this.checks.push({
+          id: 'scope-from-scopes-supported',
+          name: 'Client scope selection from scopes_supported',
+          description: hasAllScopes
+            ? 'Client correctly used all scopes from scopes_supported in PRM when scope not in WWW-Authenticate'
+            : 'Client SHOULD use all scopes from scopes_supported when scope not available in WWW-Authenticate header',
+          status: hasAllScopes ? 'SUCCESS' : 'WARNING',
+          timestamp: data.timestamp,
+          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          details: {
+            scopesSupported: scopesSupported.join(' '),
+            requestedScope: data.scope || 'none',
+            ...(hasAllScopes
+              ? {}
+              : {
+                  missingScopes: scopesSupported
+                    .filter((s) => !requestedScopes.includes(s))
+                    .join(' ')
+                })
+          }
+        });
       },
       onTokenRequest: (_data) => {
         // Use scopes from authorization, not from token request
@@ -176,60 +203,14 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
-
     if (this.authorizationRequests.length === 0) {
       this.checks.push({
-        id: 'scopes-supported-no-auth-request',
-        name: 'No authorization request made',
+        id: 'scope-from-scopes-supported',
+        name: 'Client scope selection from scopes_supported',
         description: 'Client did not make an authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-      return this.checks;
-    }
-
-    const firstRequest = this.authorizationRequests[0];
-    const requestedScopes = firstRequest.scope
-      ? firstRequest.scope.split(' ')
-      : [];
-
-    // Check if client requested all scopes from scopes_supported
-    const hasAllScopes = scopesSupported.every((scope) =>
-      requestedScopes.includes(scope)
-    );
-
-    if (hasAllScopes) {
-      this.checks.push({
-        id: 'scopes-supported-all-requested',
-        name: 'Client requested all scopes from scopes_supported',
-        description:
-          'Client correctly used all scopes from scopes_supported in PRM when scope not in WWW-Authenticate',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          scopesSupported: scopesSupported.join(' '),
-          requestedScope: firstRequest.scope
-        }
-      });
-    } else {
-      this.checks.push({
-        id: 'scopes-supported-not-all-requested',
-        name: 'Client did not request all scopes from scopes_supported',
-        description:
-          'Client SHOULD use all scopes from scopes_supported when scope not available in WWW-Authenticate header',
-        status: 'WARNING',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          scopesSupported: scopesSupported.join(' '),
-          requestedScope: firstRequest.scope || 'none',
-          missingScopes: scopesSupported
-            .filter((s) => !requestedScopes.includes(s))
-            .join(' ')
-        }
       });
     }
 
@@ -266,6 +247,22 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
           scope: data.scope,
           timestamp: data.timestamp
         });
+
+        // Check if client omitted scope parameter
+        const scopeOmitted = !data.scope || data.scope.trim() === '';
+        this.checks.push({
+          id: 'scope-omitted-when-undefined',
+          name: 'Client scope omission when scopes_supported undefined',
+          description: scopeOmitted
+            ? 'Client correctly omitted scope parameter when scopes_supported is undefined'
+            : 'Client SHOULD omit scope parameter when scopes_supported is undefined and scope not in WWW-Authenticate',
+          status: scopeOmitted ? 'SUCCESS' : 'WARNING',
+          timestamp: data.timestamp,
+          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          details: {
+            scopeParameter: scopeOmitted ? 'omitted' : data.scope
+          }
+        });
       },
       onTokenRequest: (_data) => {
         return {
@@ -301,43 +298,12 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     if (this.authorizationRequests.length === 0) {
       this.checks.push({
-        id: 'scope-omitted-no-auth-request',
-        name: 'No authorization request made',
+        id: 'scope-omitted-when-undefined',
+        name: 'Client scope omission when scopes_supported undefined',
         description: 'Client did not make an authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-      return this.checks;
-    }
-
-    const firstRequest = this.authorizationRequests[0];
-
-    if (!firstRequest.scope || firstRequest.scope.trim() === '') {
-      this.checks.push({
-        id: 'scope-omitted-correct',
-        name: 'Client correctly omitted scope parameter',
-        description:
-          'Client correctly omitted scope parameter when scopes_supported is undefined',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          scopeParameter: 'omitted'
-        }
-      });
-    } else {
-      this.checks.push({
-        id: 'scope-omitted-incorrect',
-        name: 'Client included scope parameter when it should be omitted',
-        description:
-          'Client SHOULD omit scope parameter when scopes_supported is undefined and scope not in WWW-Authenticate',
-        status: 'WARNING',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          requestedScope: firstRequest.scope
-        }
       });
     }
 
@@ -373,6 +339,9 @@ export class ScopeStepUpAuthScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
     let authorizedScopes: string[] = [];
 
+    const uniqueScopes = new Set<string>();
+    let stepUpCheckEmitted = false;
+
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
@@ -381,6 +350,30 @@ export class ScopeStepUpAuthScenario implements Scenario {
           timestamp: data.timestamp
         });
         authorizedScopes = data.scope ? data.scope.split(' ') : [];
+
+        // Track unique scopes across all requests
+        if (data.scope) {
+          data.scope.split(' ').forEach((s) => uniqueScopes.add(s));
+        }
+
+        // Only emit check once we've seen escalation (2+ unique scopes)
+        // This happens on the second authorization request if client properly escalates
+        if (uniqueScopes.size >= 2 && !stepUpCheckEmitted) {
+          stepUpCheckEmitted = true;
+          this.checks.push({
+            id: 'scope-step-up',
+            name: 'Client scope escalation for step-up auth',
+            description:
+              'Client correctly escalated scopes for step-up authentication',
+            status: 'SUCCESS',
+            timestamp: data.timestamp,
+            specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+            details: {
+              requestedScopes: Array.from(uniqueScopes).join(' '),
+              requestCount: this.authorizationRequests.length
+            }
+          });
+        }
       },
       onTokenRequest: (_data) => {
         return {
@@ -423,43 +416,29 @@ export class ScopeStepUpAuthScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Check if we already emitted a step-up check (success case)
+    const hasStepUpCheck = this.checks.some((c) => c.id === 'scope-step-up');
+
     if (this.authorizationRequests.length === 0) {
       this.checks.push({
-        id: 'stepup-no-auth-request',
-        name: 'No authorization request made',
+        id: 'scope-step-up',
+        name: 'Client scope escalation for step-up auth',
         description: 'Client did not make an authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
-      return this.checks;
-    }
-
-    const uniqueScopes = new Set<string>();
-    this.authorizationRequests.forEach((req) => {
-      if (req.scope) {
-        req.scope.split(' ').forEach((s) => uniqueScopes.add(s));
-      }
-    });
-
-    if (uniqueScopes.size >= 2) {
-      this.checks.push({
-        id: 'stepup-scope-escalation',
-        name: 'Client performed scope escalation',
-        description:
-          'Client correctly escalated scopes for step-up authentication',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-        details: {
-          requestedScopes: Array.from(uniqueScopes).join(' '),
-          requestCount: this.authorizationRequests.length
+    } else if (!hasStepUpCheck) {
+      // Client made auth requests but didn't escalate scopes
+      const uniqueScopes = new Set<string>();
+      this.authorizationRequests.forEach((req) => {
+        if (req.scope) {
+          req.scope.split(' ').forEach((s) => uniqueScopes.add(s));
         }
       });
-    } else {
       this.checks.push({
-        id: 'stepup-no-scope-escalation',
-        name: 'Client did not escalate scopes',
+        id: 'scope-step-up',
+        name: 'Client scope escalation for step-up auth',
         description: 'Client SHOULD request additional scopes for tool calls',
         status: 'WARNING',
         timestamp: new Date().toISOString(),

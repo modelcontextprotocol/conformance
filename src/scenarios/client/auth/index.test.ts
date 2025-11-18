@@ -51,7 +51,7 @@ describe('Negative tests', () => {
     );
     const runner = new SpawnedClientRunner(clientPath);
     await runClientAgainstScenario(runner, 'auth/scope-from-scopes-supported', [
-      'scopes-supported-not-all-requested'
+      'scope-from-scopes-supported'
     ]);
   });
 
@@ -64,7 +64,7 @@ describe('Negative tests', () => {
     await runClientAgainstScenario(
       runner,
       'auth/scope-omitted-when-undefined',
-      ['scope-omitted-incorrect']
+      ['scope-omitted-when-undefined']
     );
   });
 
@@ -75,7 +75,7 @@ describe('Negative tests', () => {
     );
     const runner = new SpawnedClientRunner(clientPath);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', [
-      'stepup-no-scope-escalation'
+      'scope-step-up'
     ]);
   });
 });
