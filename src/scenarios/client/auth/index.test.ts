@@ -43,4 +43,28 @@ describe('Negative tests', () => {
       'scope-from-header-incorrect'
     ]);
   });
+
+  test('client only requests subset of scopes_supported', async () => {
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test-scopes-supported-broken.ts'
+    );
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(runner, 'auth/scope-from-scopes-supported', [
+      'scopes-supported-not-all-requested'
+    ]);
+  });
+
+  test('client requests scope even if scopes_supported is empty', async () => {
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test-scopes-supported-broken.ts'
+    );
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(
+      runner,
+      'auth/scope-omitted-when-undefined',
+      ['scope-omitted-incorrect']
+    );
+  });
 });
