@@ -33,5 +33,14 @@ describe('Negative tests', () => {
     ]);
   });
 
-  // TODO: Add more negative tests here
+  test('client ignores scope from WWW-Authenticate header', async () => {
+    const clientPath = path.join(
+      process.cwd(),
+      'examples/clients/typescript/auth-test-scope-broken.ts'
+    );
+    const runner = new SpawnedClientRunner(clientPath);
+    await runClientAgainstScenario(runner, 'auth/scope-from-www-authenticate', [
+      'scope-from-header-incorrect'
+    ]);
+  });
 });

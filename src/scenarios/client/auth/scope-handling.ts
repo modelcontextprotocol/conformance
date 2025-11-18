@@ -57,7 +57,8 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
         requiredScopes: [expectedScope],
-        scopesSupported: [expectedScope],
+        // Don't add to supported scopes to ensure client uses scope from header
+        // scopesSupported: [expectedScope],
         includeScopeInWwwAuth: true,
         tokenVerifier
       }
