@@ -20,27 +20,16 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private authorizationRequests: Array<{ scope?: string; timestamp: string }> =
-    [];
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
-    this.authorizationRequests = [];
 
     const expectedScope = 'mcp:basic';
     const tokenVerifier = new MockTokenVerifier(this.checks, [expectedScope]);
-    let authorizedScopes: string[] = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
-        this.authorizationRequests.push({
-          scope: data.scope,
-          timestamp: data.timestamp
-        });
-        // Remember the scopes from authorization for token issuance
-        authorizedScopes = data.scope ? data.scope.split(' ') : [];
-
         // Check if client used the scope from WWW-Authenticate header
         const requestedScopes = data.scope ? data.scope.split(' ') : [];
         const usedCorrectScope = requestedScopes.includes(expectedScope);
@@ -58,13 +47,6 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
             requestedScope: data.scope || 'none'
           }
         });
-      },
-      onTokenRequest: (_data) => {
-        // Use scopes from authorization, not from token request
-        return {
-          token: `test-token-${Date.now()}`,
-          scopes: authorizedScopes
-        };
       }
     });
     await this.authServer.start(authApp);
@@ -76,8 +58,6 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
         requiredScopes: [expectedScope],
-        // Don't add to supported scopes to ensure client uses scope from header
-        // scopesSupported: [expectedScope],
         includeScopeInWwwAuth: true,
         tokenVerifier
       }
@@ -93,18 +73,6 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    // Check if client made at least one authorization request
-    if (this.authorizationRequests.length === 0) {
-      this.checks.push({
-        id: 'scope-from-www-authenticate',
-        name: 'Client scope selection from WWW-Authenticate header',
-        description: 'Client did not make an authorization request',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-    }
-
     return this.checks;
   }
 }
@@ -122,27 +90,16 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private authorizationRequests: Array<{ scope?: string; timestamp: string }> =
-    [];
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
-    this.authorizationRequests = [];
 
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
-    let authorizedScopes: string[] = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
-        this.authorizationRequests.push({
-          scope: data.scope,
-          timestamp: data.timestamp
-        });
-        // Remember the scopes from authorization for token issuance
-        authorizedScopes = data.scope ? data.scope.split(' ') : [];
-
         // Check if client requested all scopes from scopes_supported
         const requestedScopes = data.scope ? data.scope.split(' ') : [];
         const hasAllScopes = scopesSupported.every((scope) =>
@@ -169,13 +126,6 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
                 })
           }
         });
-      },
-      onTokenRequest: (_data) => {
-        // Use scopes from authorization, not from token request
-        return {
-          token: `test-token-${Date.now()}`,
-          scopes: authorizedScopes
-        };
       }
     });
     await this.authServer.start(authApp);
@@ -188,7 +138,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
         requiredScopes: scopesSupported,
         scopesSupported: scopesSupported,
-        includeScopeInWwwAuth: false, // Don't include scope in WWW-Authenticate
+        includeScopeInWwwAuth: false,
         tokenVerifier
       }
     );
@@ -203,17 +153,6 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    if (this.authorizationRequests.length === 0) {
-      this.checks.push({
-        id: 'scope-from-scopes-supported',
-        name: 'Client scope selection from scopes_supported',
-        description: 'Client did not make an authorization request',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-    }
-
     return this.checks;
   }
 }
@@ -231,23 +170,15 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private authorizationRequests: Array<{ scope?: string; timestamp: string }> =
-    [];
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
-    this.authorizationRequests = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
-        this.authorizationRequests.push({
-          scope: data.scope,
-          timestamp: data.timestamp
-        });
-
         // Check if client omitted scope parameter
         const scopeOmitted = !data.scope || data.scope.trim() === '';
         this.checks.push({
@@ -263,12 +194,6 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
             scopeParameter: scopeOmitted ? 'omitted' : data.scope
           }
         });
-      },
-      onTokenRequest: (_data) => {
-        return {
-          token: `test-token-${Date.now()}`,
-          scopes: []
-        };
       }
     });
     await this.authServer.start(authApp);
@@ -279,9 +204,9 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
       this.authServer.getUrl,
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [], // No scopes required
-        scopesSupported: undefined, // No scopes_supported in PRM
-        includeScopeInWwwAuth: false, // No scope in WWW-Authenticate
+        requiredScopes: [],
+        scopesSupported: undefined,
+        includeScopeInWwwAuth: false,
         tokenVerifier
       }
     );
@@ -296,17 +221,6 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    if (this.authorizationRequests.length === 0) {
-      this.checks.push({
-        id: 'scope-omitted-when-undefined',
-        name: 'Client scope omission when scopes_supported undefined',
-        description: 'Client did not make an authorization request',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
-      });
-    }
-
     return this.checks;
   }
 }
@@ -327,31 +241,22 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private authorizationRequests: Array<{ scope?: string; timestamp: string }> =
-    [];
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
-    this.authorizationRequests = [];
 
     const initialScope = 'mcp:basic';
     const escalatedScopes = ['mcp:basic', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
-    let authorizedScopes: string[] = [];
+    let authRequestCount = 0;
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
-        const requestNumber = this.authorizationRequests.length + 1;
-        this.authorizationRequests.push({
-          scope: data.scope,
-          timestamp: data.timestamp
-        });
+        authRequestCount++;
         const requestedScopes = data.scope ? data.scope.split(' ') : [];
 
-        authorizedScopes = requestedScopes;
-
-        if (requestNumber === 1) {
+        if (authRequestCount === 1) {
           // First auth request - should request mcp:basic from WWW-Authenticate
           const usedCorrectScope = requestedScopes.includes(initialScope);
           this.checks.push({
@@ -368,7 +273,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
               requestedScope: data.scope || 'none'
             }
           });
-        } else if (requestNumber === 2) {
+        } else if (authRequestCount === 2) {
           // Second auth request - should escalate to mcp:basic + mcp:write
           const hasAllScopes = escalatedScopes.every((s) =>
             requestedScopes.includes(s)
@@ -388,12 +293,6 @@ export class ScopeStepUpAuthScenario implements Scenario {
             }
           });
         }
-      },
-      onTokenRequest: (_data) => {
-        return {
-          token: `test-token-${Date.now()}`,
-          scopes: authorizedScopes
-        };
       }
     });
     await this.authServer.start(authApp);

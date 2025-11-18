@@ -38,6 +38,9 @@ export function createAuthServer(
     onAuthorizationRequest
   } = options;
 
+  // Track scopes from the most recent authorization request
+  let lastAuthorizationScopes: string[] = [];
+
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
     token_endpoint: `${routePrefix}/token`,
@@ -114,9 +117,13 @@ export function createAuthServer(
       }
     });
 
+    // Track scopes from authorization request for token issuance
+    const scopeParam = req.query.scope as string | undefined;
+    lastAuthorizationScopes = scopeParam ? scopeParam.split(' ') : [];
+
     if (onAuthorizationRequest) {
       onAuthorizationRequest({
-        scope: req.query.scope as string | undefined,
+        scope: scopeParam,
         timestamp
       });
     }
@@ -149,8 +156,8 @@ export function createAuthServer(
       }
     });
 
-    let token = 'test-token';
-    let scopes: string[] = [];
+    let token = `test-token-${Date.now()}`;
+    let scopes: string[] = lastAuthorizationScopes;
 
     if (onTokenRequest) {
       const result = onTokenRequest({
@@ -160,11 +167,11 @@ export function createAuthServer(
       });
       token = result.token;
       scopes = result.scopes;
+    }
 
-      // Register token with verifier if provided
-      if (tokenVerifier) {
-        tokenVerifier.registerToken(token, scopes);
-      }
+    // Register token with verifier if provided
+    if (tokenVerifier) {
+      tokenVerifier.registerToken(token, scopes);
     }
 
     res.json({
