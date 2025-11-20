@@ -13,7 +13,9 @@ import {
 import {
   listScenarios,
   listClientScenarios,
-  listActiveClientScenarios
+  listActiveClientScenarios,
+  listAuthScenarios,
+  listMetadataScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -33,20 +35,130 @@ program
     'Run conformance tests against a client implementation or start interactive mode'
   )
   .option('--command <command>', 'Command to run the client')
-  .requiredOption('--scenario <scenario>', 'Scenario to test')
+  .option('--scenario <scenario>', 'Scenario to test')
+  .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
-      // Validate options with Zod
+      const timeout = parseInt(options.timeout, 10);
+      const verbose = options.verbose ?? false;
+
+      // Handle suite mode
+      if (options.suite) {
+        if (!options.command) {
+          console.error('--command is required when using --suite');
+          process.exit(1);
+        }
+
+        const suites: Record<string, () => string[]> = {
+          auth: listAuthScenarios,
+          metadata: listMetadataScenarios
+        };
+
+        const suiteName = options.suite.toLowerCase();
+        if (!suites[suiteName]) {
+          console.error(`Unknown suite: ${suiteName}`);
+          console.error(`Available suites: ${Object.keys(suites).join(', ')}`);
+          process.exit(1);
+        }
+
+        const scenarios = suites[suiteName]();
+        console.log(
+          `Running ${suiteName} suite (${scenarios.length} scenarios) in parallel...\n`
+        );
+
+        const results = await Promise.all(
+          scenarios.map(async (scenarioName) => {
+            try {
+              const result = await runConformanceTest(
+                options.command,
+                scenarioName,
+                timeout
+              );
+              return {
+                scenario: scenarioName,
+                checks: result.checks,
+                error: null
+              };
+            } catch (error) {
+              return {
+                scenario: scenarioName,
+                checks: [
+                  {
+                    id: scenarioName,
+                    name: scenarioName,
+                    description: 'Failed to run scenario',
+                    status: 'FAILURE' as const,
+                    timestamp: new Date().toISOString(),
+                    errorMessage:
+                      error instanceof Error ? error.message : String(error)
+                  }
+                ],
+                error
+              };
+            }
+          })
+        );
+
+        console.log('\n=== SUITE SUMMARY ===\n');
+
+        let totalPassed = 0;
+        let totalFailed = 0;
+        let totalWarnings = 0;
+
+        for (const result of results) {
+          const passed = result.checks.filter(
+            (c) => c.status === 'SUCCESS'
+          ).length;
+          const failed = result.checks.filter(
+            (c) => c.status === 'FAILURE'
+          ).length;
+          const warnings = result.checks.filter(
+            (c) => c.status === 'WARNING'
+          ).length;
+
+          totalPassed += passed;
+          totalFailed += failed;
+          totalWarnings += warnings;
+
+          const status = failed === 0 ? '✓' : '✗';
+          console.log(
+            `${status} ${result.scenario}: ${passed} passed, ${failed} failed`
+          );
+
+          if (verbose && failed > 0) {
+            result.checks
+              .filter((c) => c.status === 'FAILURE')
+              .forEach((c) => {
+                console.log(
+                  `    - ${c.name}: ${c.errorMessage || c.description}`
+                );
+              });
+          }
+        }
+
+        console.log(
+          `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
+        );
+        process.exit(totalFailed > 0 ? 1 : 0);
+      }
+
+      // Require either --scenario or --suite
+      if (!options.scenario) {
+        console.error('Either --scenario or --suite is required');
+        console.error('\nAvailable client scenarios:');
+        listScenarios().forEach((s) => console.error(`  - ${s}`));
+        console.error('\nAvailable suites: auth, metadata');
+        process.exit(1);
+      }
+
+      // Validate options with Zod for single scenario mode
       const validated = ClientOptionsSchema.parse(options);
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(
-          validated.scenario,
-          validated.verbose ?? false
-        );
+        await runInteractiveMode(validated.scenario, verbose);
         process.exit(0);
       }
 
@@ -54,13 +166,10 @@ program
       const result = await runConformanceTest(
         validated.command,
         validated.scenario,
-        validated.timeout ?? 30000
+        timeout
       );
 
-      const { failed } = printClientResults(
-        result.checks,
-        validated.verbose ?? false
-      );
+      const { failed } = printClientResults(result.checks, verbose);
       process.exit(failed > 0 ? 1 : 0);
     } catch (error) {
       if (error instanceof ZodError) {
