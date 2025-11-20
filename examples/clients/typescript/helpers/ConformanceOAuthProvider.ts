@@ -27,13 +27,11 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
     return this._clientMetadata;
   }
 
+  get clientMetadataUrl(): string | undefined {
+    return this._clientMetadataUrl?.toString();
+  }
+
   clientInformation(): OAuthClientInformation | undefined {
-    if (this._clientMetadataUrl) {
-      console.log('Using client ID metadata URL');
-      return {
-        client_id: this._clientMetadataUrl.toString()
-      };
-    }
     return this._clientInformation;
   }
 

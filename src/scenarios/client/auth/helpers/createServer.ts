@@ -9,10 +9,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
-import type { ConformanceCheck } from '../../../../types.js';
-import { createRequestLogger } from '../../../request-logger.js';
-import { MockTokenVerifier } from './mockTokenVerifier.js';
-import { SpecReferences } from '../spec-references.js';
+import type { ConformanceCheck } from '../../../../types';
+import { createRequestLogger } from '../../../request-logger';
+import { MockTokenVerifier } from './mockTokenVerifier';
+import { SpecReferences } from '../spec-references';
 
 export interface ServerOptions {
   prmPath?: string | null;

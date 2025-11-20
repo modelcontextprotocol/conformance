@@ -60,14 +60,16 @@ export const handle401 = async (
 export const withOAuthRetry = (
   clientName: string,
   baseUrl?: string | URL,
-  handle401Fn: typeof handle401 = handle401
+  handle401Fn: typeof handle401 = handle401,
+  clientMetadataUrl?: string
 ): Middleware => {
   const provider = new ConformanceOAuthProvider(
     'http://localhost:3000/callback',
     {
       client_name: clientName,
       redirect_uris: ['http://localhost:3000/callback']
-    }
+    },
+    clientMetadataUrl
   );
   return (next: FetchLike) => {
     return async (

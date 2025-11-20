@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
-import { getClientScenario, listActiveClientScenarios } from '../index.js';
+import { getClientScenario, listActiveClientScenarios } from '../index';
 import path from 'path';
 
 describe('Server Scenarios', () => {
