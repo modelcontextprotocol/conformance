@@ -1,21 +1,21 @@
 import { Scenario } from '../../../types';
-import { AuthBasicDCRScenario } from './basic-dcr.js';
-import { AuthBasicCIMDScenario } from './basic-cimd.js';
+import { AuthBasicDCRScenario } from './basic-dcr';
+import { AuthBasicCIMDScenario } from './basic-cimd';
 import {
   AuthBasicMetadataVar1Scenario,
   AuthBasicMetadataVar2Scenario,
   AuthBasicMetadataVar3Scenario
-} from './basic-metadata.js';
+} from './basic-metadata';
 import {
   Auth20250326OAuthMetadataBackcompatScenario,
   Auth20250326OEndpointFallbackScenario
-} from './march-spec-backcompat.js';
+} from './march-spec-backcompat';
 import {
   ScopeFromWwwAuthenticateScenario,
   ScopeFromScopesSupportedScenario,
   ScopeOmittedWhenUndefinedScenario,
   ScopeStepUpAuthScenario
-} from './scope-handling.js';
+} from './scope-handling';
 
 export const authScenariosList: Scenario[] = [
   new AuthBasicDCRScenario(),

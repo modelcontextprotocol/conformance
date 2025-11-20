@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ConformanceCheck } from '../types.js';
+import { ConformanceCheck } from '../types';
 
 export interface LoggerOptions {
   incomingId: string;

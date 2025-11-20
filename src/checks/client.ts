@@ -1,4 +1,4 @@
-import { ConformanceCheck, CheckStatus } from '../types.js';
+import { ConformanceCheck, CheckStatus } from '../types';
 
 export function createServerInfoCheck(serverInfo: {
   name: string;

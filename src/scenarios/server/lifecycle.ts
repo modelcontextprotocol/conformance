@@ -2,8 +2,8 @@
  * Lifecycle test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
-import { connectToServer } from './client-helper.js';
+import { ClientScenario, ConformanceCheck } from '../../types';
+import { connectToServer } from './client-helper';
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';

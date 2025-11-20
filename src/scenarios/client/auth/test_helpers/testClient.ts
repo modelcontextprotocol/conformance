@@ -1,4 +1,4 @@
-import { getScenario } from '../../../index.js';
+import { getScenario } from '../../../index';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete

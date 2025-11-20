@@ -1,9 +1,9 @@
-import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls } from '../../../types.js';
-import { createAuthServer } from './helpers/createAuthServer.js';
-import { createServer } from './helpers/createServer.js';
-import { ServerLifecycle } from './helpers/serverLifecycle.js';
-import { SpecReferences } from './spec-references.js';
+import type { Scenario, ConformanceCheck } from '../../../types';
+import { ScenarioUrls } from '../../../types';
+import { createAuthServer } from './helpers/createAuthServer';
+import { createServer } from './helpers/createServer';
+import { ServerLifecycle } from './helpers/serverLifecycle';
+import { SpecReferences } from './spec-references';
 
 /**
  * Fixed client metadata URL that clients should use for CIMD tests.

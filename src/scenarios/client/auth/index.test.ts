@@ -1,15 +1,15 @@
-import { authScenariosList } from './index.js';
+import { authScenariosList } from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
-} from './test_helpers/testClient.js';
-import { runClient as goodClient } from '../../../../examples/clients/typescript/auth-test.js';
-import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm.js';
-import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd.js';
-import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope.js';
-import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes.js';
-import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403.js';
-import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger.js';
+} from './test_helpers/testClient';
+import { runClient as goodClient } from '../../../../examples/clients/typescript/auth-test';
+import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
+import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
+import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
+import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
+import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
+import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
 beforeAll(() => {
   setLogLevel('error');

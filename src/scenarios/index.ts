@@ -1,15 +1,15 @@
-import { Scenario, ClientScenario } from '../types.js';
-import { InitializeScenario } from './client/initialize.js';
-import { ToolsCallScenario } from './client/tools_call.js';
-import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults.js';
+import { Scenario, ClientScenario } from '../types';
+import { InitializeScenario } from './client/initialize';
+import { ToolsCallScenario } from './client/tools_call';
+import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 
 // Import all new server test scenarios
-import { ServerInitializeScenario } from './server/lifecycle.js';
+import { ServerInitializeScenario } from './server/lifecycle';
 
 import {
   LoggingSetLevelScenario,
   CompletionCompleteScenario
-} from './server/utils.js';
+} from './server/utils';
 
 import {
   ToolsListScenario,
@@ -23,10 +23,10 @@ import {
   ToolsCallElicitationScenario,
   ToolsCallAudioScenario,
   ToolsCallEmbeddedResourceScenario
-} from './server/tools.js';
+} from './server/tools';
 
-import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
-import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
+import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
+import { ElicitationEnumsScenario } from './server/elicitation-enums';
 
 import {
   ResourcesListScenario,
@@ -35,7 +35,7 @@ import {
   ResourcesTemplateReadScenario,
   ResourcesSubscribeScenario,
   ResourcesUnsubscribeScenario
-} from './server/resources.js';
+} from './server/resources';
 
 import {
   PromptsListScenario,
@@ -43,9 +43,9 @@ import {
   PromptsGetWithArgsScenario,
   PromptsGetEmbeddedResourceScenario,
   PromptsGetWithImageScenario
-} from './server/prompts.js';
+} from './server/prompts';
 
-import { authScenariosList } from './client/auth/index.js';
+import { authScenariosList } from './client/auth/index';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [

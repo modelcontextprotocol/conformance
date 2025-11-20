@@ -8,10 +8,10 @@ import {
   UnauthorizedError
 } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { withOAuthRetry } from './helpers/withOAuthRetry.js';
-import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
-import { runAsCli } from './helpers/cliRunner.js';
-import { logger } from './helpers/logger.js';
+import { withOAuthRetry } from './helpers/withOAuthRetry';
+import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider';
+import { runAsCli } from './helpers/cliRunner';
+import { logger } from './helpers/logger';
 
 /**
  * Broken client that ignores the scope from WWW-Authenticate header.

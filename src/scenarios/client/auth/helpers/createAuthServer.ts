@@ -1,8 +1,8 @@
 import express, { Request, Response } from 'express';
-import type { ConformanceCheck } from '../../../../types.js';
-import { createRequestLogger } from '../../../request-logger.js';
-import { SpecReferences } from '../spec-references.js';
-import { MockTokenVerifier } from './mockTokenVerifier.js';
+import type { ConformanceCheck } from '../../../../types';
+import { createRequestLogger } from '../../../request-logger';
+import { SpecReferences } from '../spec-references';
+import { MockTokenVerifier } from './mockTokenVerifier';
 
 export interface AuthServerOptions {
   metadataPath?: string;

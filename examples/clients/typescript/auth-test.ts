@@ -2,9 +2,9 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry.js';
-import { runAsCli } from './helpers/cliRunner.js';
-import { logger } from './helpers/logger.js';
+import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry';
+import { runAsCli } from './helpers/cliRunner';
+import { logger } from './helpers/logger';
 
 /**
  * Fixed client metadata URL for CIMD conformance tests.
