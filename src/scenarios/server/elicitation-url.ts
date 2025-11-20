@@ -6,13 +6,14 @@ import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServerWithUrlElicitation } from './client-helper.js';
 import {
   ElicitRequestSchema,
-  ErrorCode,
   McpError,
   NotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
-// Define locally until SDK releases this schema
+// Define locally until SDK releases these
+const URL_ELICITATION_REQUIRED_CODE = -32042;
+
 const ElicitationCompleteNotificationSchema = NotificationSchema.extend({
   method: z.literal('notifications/elicitation/complete'),
   params: z.object({
@@ -20,6 +21,14 @@ const ElicitationCompleteNotificationSchema = NotificationSchema.extend({
     elicitationId: z.string()
   })
 });
+
+// Extended params type for URL mode elicitation (not yet in SDK)
+interface UrlModeElicitParams {
+  message: string;
+  mode?: string;
+  url?: string;
+  elicitationId?: string;
+}
 
 export class ElicitationUrlModeScenario implements ClientScenario {
   name = 'elicitation-sep1036-url-mode';
@@ -304,9 +313,9 @@ Implement three tools:
         const errorCodeErrors: string[] = [];
         if (!errorReceived) {
           errorCodeErrors.push('Did not receive an MCP error');
-        } else if (errorReceived.code !== ErrorCode.UrlElicitationRequired) {
+        } else if (errorReceived.code !== URL_ELICITATION_REQUIRED_CODE) {
           errorCodeErrors.push(
-            `Expected error code ${ErrorCode.UrlElicitationRequired} (-32042), got ${errorReceived.code}`
+            `Expected error code ${URL_ELICITATION_REQUIRED_CODE} (-32042), got ${errorReceived.code}`
           );
         }
 
@@ -433,7 +442,8 @@ Implement three tools:
       connection.client.setRequestHandler(
         ElicitRequestSchema,
         async (request) => {
-          capturedElicitationIdFromRequest = request.params.elicitationId;
+          const params = request.params as UrlModeElicitParams;
+          capturedElicitationIdFromRequest = params.elicitationId ?? null;
           return { action: 'accept' };
         }
       );
