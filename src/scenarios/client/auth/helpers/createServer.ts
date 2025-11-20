@@ -18,6 +18,7 @@ export interface ServerOptions {
   prmPath?: string | null;
   requiredScopes?: string[];
   scopesSupported?: string[];
+  includePrmInWwwAuth?: boolean;
   includeScopeInWwwAuth?: boolean;
   authMiddleware?: express.RequestHandler;
   tokenVerifier?: MockTokenVerifier;
@@ -33,6 +34,7 @@ export function createServer(
     prmPath = '/.well-known/oauth-protected-resource/mcp',
     requiredScopes = [],
     scopesSupported,
+    includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier
   } = options;
@@ -136,9 +138,10 @@ export function createServer(
         verifier,
         // Only pass requiredScopes if we want them in the WWW-Authenticate header
         requiredScopes: includeScopeInWwwAuth ? requiredScopes : [],
-        ...(prmPath !== null && {
-          resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
-        })
+        ...(includePrmInWwwAuth &&
+          prmPath !== null && {
+            resourceMetadataUrl: `${getBaseUrl()}${prmPath}`
+          })
       });
 
     authMiddleware(req, res, async (err?: any) => {

@@ -24,4 +24,4 @@ jobs:
       - name: Build
         run: npm run build
       - name: Publish
-        run: npx pkg-pr-new publish
+        run: npx pkg-pr-new publish --bin

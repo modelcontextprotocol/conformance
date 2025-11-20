@@ -46,7 +46,7 @@ describe('Client Auth Scenarios', () => {
 describe('Negative tests', () => {
   test('bad client requests root PRM location', async () => {
     const runner = new InlineClientRunner(badPrmClient);
-    await runClientAgainstScenario(runner, 'auth/basic-dcr', [
+    await runClientAgainstScenario(runner, 'auth/metadata-default', [
       'prm-priority-order'
     ]);
   });
