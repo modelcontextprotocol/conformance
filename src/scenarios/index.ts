@@ -26,6 +26,8 @@ import {
   ToolsCallEmbeddedResourceScenario
 } from './server/tools.js';
 
+import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12.js';
+
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
 import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
 import { ServerSSEPollingScenario } from './server/sse-polling.js';
@@ -49,11 +51,17 @@ import {
 } from './server/prompts.js';
 
 import { authScenariosList } from './client/auth/index.js';
+import { listMetadataScenarios } from './client/auth/discovery-metadata.js';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
-  new ElicitationEnumsScenario()
+  new ElicitationEnumsScenario(),
+
+  // JSON Schema 2020-12 (SEP-1613)
+  // This test is pending until the SDK includes PR #1135 which preserves
+  // $schema, $defs, and additionalProperties fields in tool schemas.
+  new JsonSchema2020_12Scenario()
 ];
 
 // All client scenarios
@@ -77,6 +85,9 @@ const allClientScenariosList: ClientScenario[] = [
   new ToolsCallWithProgressScenario(),
   new ToolsCallSamplingScenario(),
   new ToolsCallElicitationScenario(),
+
+  // JSON Schema 2020-12 support (SEP-1613)
+  new JsonSchema2020_12Scenario(),
 
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
@@ -155,3 +166,9 @@ export function listClientScenarios(): string[] {
 export function listActiveClientScenarios(): string[] {
   return activeClientScenariosList.map((scenario) => scenario.name);
 }
+
+export function listAuthScenarios(): string[] {
+  return authScenariosList.map((scenario) => scenario.name);
+}
+
+export { listMetadataScenarios };

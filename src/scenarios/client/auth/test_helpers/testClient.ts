@@ -136,7 +136,9 @@ export async function runClientAgainstScenario(
       }
 
       // Verify that only the expected checks failed
-      const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
+      const failures = nonInfoChecks.filter(
+        (c) => c.status === 'FAILURE' || c.status === 'WARNING'
+      );
       const failureSlugs = failures.map((c) => c.id);
       // Check that failureSlugs contains all expectedFailureSlugs
       expect(failureSlugs).toEqual(

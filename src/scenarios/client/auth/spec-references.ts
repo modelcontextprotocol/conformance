@@ -40,5 +40,17 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_ACCESS_TOKEN_USAGE: {
     id: 'MCP-Access-token-usage',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#access-token-usage'
+  },
+  MCP_SCOPE_SELECTION_STRATEGY: {
+    id: 'MCP-Scope-selection-strategy',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#scope-selection-strategy'
+  },
+  MCP_SCOPE_CHALLENGE_HANDLING: {
+    id: 'MCP-Scope-challenge-handling',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#scope-challenge-handling'
+  },
+  MCP_AUTH_ERROR_HANDLING: {
+    id: 'MCP-Auth-error-handling',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#error-handling'
   }
 };

@@ -4,10 +4,23 @@ import type { ConformanceCheck } from '../../../../types.js';
 import { SpecReferences } from '../spec-references.js';
 
 export class MockTokenVerifier implements OAuthTokenVerifier {
-  constructor(private checks: ConformanceCheck[]) {}
+  private tokenScopes: Map<string, string[]> = new Map();
+
+  constructor(
+    private checks: ConformanceCheck[],
+    private expectedScopes: string[] = []
+  ) {}
+
+  registerToken(token: string, scopes: string[]) {
+    this.tokenScopes.set(token, scopes);
+  }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    if (token === 'test-token') {
+    // Accept tokens that start with 'test-token'
+    if (token.startsWith('test-token')) {
+      // Get scopes for this token, or use empty array
+      const scopes = this.tokenScopes.get(token) || [];
+
       this.checks.push({
         id: 'valid-bearer-token',
         name: 'ValidBearerToken',
@@ -16,13 +29,14 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_ACCESS_TOKEN_USAGE],
         details: {
-          token: token.substring(0, 10) + '...'
+          token: token.substring(0, 15) + '...',
+          scopes
         }
       });
       return {
         token,
         clientId: 'test-client',
-        scopes: [],
+        scopes,
         expiresAt: Math.floor(Date.now() / 1000) + 3600
       };
     }
