@@ -14,7 +14,8 @@ import {
   listScenarios,
   listClientScenarios,
   listActiveClientScenarios,
-  listAuthScenarios
+  listAuthScenarios,
+  listMetadataScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -51,7 +52,8 @@ program
         }
 
         const suites: Record<string, () => string[]> = {
-          auth: listAuthScenarios
+          auth: listAuthScenarios,
+          metadata: listMetadataScenarios
         };
 
         const suiteName = options.suite.toLowerCase();
@@ -147,7 +149,7 @@ program
         console.error('Either --scenario or --suite is required');
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
-        console.error('\nAvailable suites: auth');
+        console.error('\nAvailable suites: auth, metadata');
         process.exit(1);
       }
 

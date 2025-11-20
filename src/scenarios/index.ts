@@ -46,6 +46,7 @@ import {
 } from './server/prompts.js';
 
 import { authScenariosList } from './client/auth/index.js';
+import { listMetadataScenarios } from './client/auth/discovery-metadata.js';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -151,3 +152,5 @@ export function listActiveClientScenarios(): string[] {
 export function listAuthScenarios(): string[] {
   return authScenariosList.map((scenario) => scenario.name);
 }
+
+export { listMetadataScenarios };
