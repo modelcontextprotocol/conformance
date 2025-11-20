@@ -10,6 +10,11 @@ import {
   ScopeOmittedWhenUndefinedScenario,
   ScopeStepUpAuthScenario
 } from './scope-handling.js';
+import {
+  ClientSecretBasicAuthScenario,
+  ClientSecretPostAuthScenario,
+  PublicClientAuthScenario
+} from './token-endpoint-auth.js';
 
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
@@ -18,5 +23,8 @@ export const authScenariosList: Scenario[] = [
   new ScopeFromWwwAuthenticateScenario(),
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
-  new ScopeStepUpAuthScenario()
+  new ScopeStepUpAuthScenario(),
+  new ClientSecretBasicAuthScenario(),
+  new ClientSecretPostAuthScenario(),
+  new PublicClientAuthScenario()
 ];

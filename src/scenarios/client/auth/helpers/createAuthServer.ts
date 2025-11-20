@@ -10,16 +10,21 @@ export interface AuthServerOptions {
   loggingEnabled?: boolean;
   routePrefix?: string;
   scopesSupported?: string[];
+  tokenEndpointAuthMethodsSupported?: string[];
   tokenVerifier?: MockTokenVerifier;
-  onTokenRequest?: (requestData: {
-    scope?: string;
-    grantType: string;
-    timestamp: string;
-  }) => { token: string; scopes: string[] };
+  onTokenRequest?: (
+    req: Request,
+    timestamp: string
+  ) => { token: string; scopes: string[] } | void;
   onAuthorizationRequest?: (requestData: {
     scope?: string;
     timestamp: string;
   }) => void;
+  onRegistrationRequest?: (req: Request) => {
+    clientId: string;
+    clientSecret?: string;
+    tokenEndpointAuthMethod?: string;
+  };
 }
 
 export function createAuthServer(
@@ -33,9 +38,11 @@ export function createAuthServer(
     loggingEnabled = true,
     routePrefix = '',
     scopesSupported,
+    tokenEndpointAuthMethodsSupported = ['none'],
     tokenVerifier,
     onTokenRequest,
-    onAuthorizationRequest
+    onAuthorizationRequest,
+    onRegistrationRequest
   } = options;
 
   // Track scopes from the most recent authorization request
@@ -85,7 +92,7 @@ export function createAuthServer(
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: ['none']
+      token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported
     };
 
     // Add scopes_supported if provided
@@ -141,7 +148,6 @@ export function createAuthServer(
 
   app.post(authRoutes.token_endpoint, (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
-    const requestedScope = req.body.scope;
 
     checks.push({
       id: 'token-request',
@@ -160,13 +166,11 @@ export function createAuthServer(
     let scopes: string[] = lastAuthorizationScopes;
 
     if (onTokenRequest) {
-      const result = onTokenRequest({
-        scope: requestedScope,
-        grantType: req.body.grant_type,
-        timestamp
-      });
-      token = result.token;
-      scopes = result.scopes;
+      const result = onTokenRequest(req, timestamp);
+      if (result) {
+        token = result.token;
+        scopes = result.scopes;
+      }
     }
 
     // Register token with verifier if provided
@@ -183,6 +187,17 @@ export function createAuthServer(
   });
 
   app.post(authRoutes.registration_endpoint, (req: Request, res: Response) => {
+    let clientId = 'test-client-id';
+    let clientSecret: string | undefined = 'test-client-secret';
+    let tokenEndpointAuthMethod: string | undefined;
+
+    if (onRegistrationRequest) {
+      const result = onRegistrationRequest(req);
+      clientId = result.clientId;
+      clientSecret = result.clientSecret;
+      tokenEndpointAuthMethod = result.tokenEndpointAuthMethod;
+    }
+
     checks.push({
       id: 'client-registration',
       name: 'ClientRegistration',
@@ -192,15 +207,19 @@ export function createAuthServer(
       specReferences: [SpecReferences.MCP_DCR],
       details: {
         endpoint: '/register',
-        clientName: req.body.client_name
+        clientName: req.body.client_name,
+        ...(tokenEndpointAuthMethod && { tokenEndpointAuthMethod })
       }
     });
 
     res.status(201).json({
-      client_id: 'test-client-id',
-      client_secret: 'test-client-secret',
+      client_id: clientId,
+      ...(clientSecret && { client_secret: clientSecret }),
       client_name: req.body.client_name || 'test-client',
-      redirect_uris: req.body.redirect_uris || []
+      redirect_uris: req.body.redirect_uris || [],
+      ...(tokenEndpointAuthMethod && {
+        token_endpoint_auth_method: tokenEndpointAuthMethod
+      })
     });
   });
 
