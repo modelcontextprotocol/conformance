@@ -147,3 +147,7 @@ export function listClientScenarios(): string[] {
 export function listActiveClientScenarios(): string[] {
   return activeClientScenariosList.map((scenario) => scenario.name);
 }
+
+export function listAuthScenarios(): string[] {
+  return authScenariosList.map((scenario) => scenario.name);
+}
