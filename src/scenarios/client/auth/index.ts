@@ -4,7 +4,7 @@ import {
   AuthBasicMetadataVar1Scenario,
   AuthBasicMetadataVar2Scenario,
   AuthBasicMetadataVar3Scenario
-} from './basic-metadata.js';
+} from './discovery-metadata.js';
 import {
   Auth20250326OAuthMetadataBackcompatScenario,
   Auth20250326OEndpointFallbackScenario
