@@ -107,8 +107,8 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
       );
 
       // Count how many returned SSE streams vs JSON
-      const sseStreams = contentTypes.filter(
-        (ct) => ct?.includes('text/event-stream')
+      const sseStreams = contentTypes.filter((ct) =>
+        ct?.includes('text/event-stream')
       ).length;
 
       checks.push({
