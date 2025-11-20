@@ -2,9 +2,17 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { withOAuthRetry } from './helpers/withOAuthRetry.js';
-import { runAsCli } from './helpers/cliRunner.js';
-import { logger } from './helpers/logger.js';
+import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry';
+import { runAsCli } from './helpers/cliRunner';
+import { logger } from './helpers/logger';
+
+/**
+ * Fixed client metadata URL for CIMD conformance tests.
+ * When server supports client_id_metadata_document_supported, this URL
+ * will be used as the client_id instead of doing dynamic registration.
+ */
+const CIMD_CLIENT_METADATA_URL =
+  'https://conformance-test.local/client-metadata.json';
 
 /**
  * Well-behaved auth client that follows all OAuth protocols correctly.
@@ -17,7 +25,9 @@ export async function runClient(serverUrl: string): Promise<void> {
 
   const oauthFetch = withOAuthRetry(
     'test-auth-client',
-    new URL(serverUrl)
+    new URL(serverUrl),
+    handle401,
+    CIMD_CLIENT_METADATA_URL
   )(fetch);
 
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {

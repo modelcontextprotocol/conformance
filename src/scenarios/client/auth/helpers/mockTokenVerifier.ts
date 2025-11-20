@@ -1,7 +1,7 @@
 import { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import type { ConformanceCheck } from '../../../../types.js';
-import { SpecReferences } from '../spec-references.js';
+import type { ConformanceCheck } from '../../../../types';
+import { SpecReferences } from '../spec-references';
 
 export class MockTokenVerifier implements OAuthTokenVerifier {
   private tokenScopes: Map<string, string[]> = new Map();

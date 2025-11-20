@@ -2,8 +2,8 @@
  * SEP-1034: Elicitation default values test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
-import { connectToServer } from './client-helper.js';
+import { ClientScenario, ConformanceCheck } from '../../types';
+import { connectToServer } from './client-helper';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationDefaultsScenario implements ClientScenario {

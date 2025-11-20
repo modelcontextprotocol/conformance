@@ -1,10 +1,10 @@
-import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls } from '../../../types.js';
-import { createAuthServer } from './helpers/createAuthServer.js';
-import { createServer } from './helpers/createServer.js';
-import { ServerLifecycle } from './helpers/serverLifecycle.js';
-import { SpecReferences } from './spec-references.js';
-import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
+import type { Scenario, ConformanceCheck } from '../../../types';
+import { ScenarioUrls } from '../../../types';
+import { createAuthServer } from './helpers/createAuthServer';
+import { createServer } from './helpers/createServer';
+import { ServerLifecycle } from './helpers/serverLifecycle';
+import { SpecReferences } from './spec-references';
+import { MockTokenVerifier } from './helpers/mockTokenVerifier';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
