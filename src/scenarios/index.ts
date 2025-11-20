@@ -52,7 +52,9 @@ import { listMetadataScenarios } from './client/auth/discovery-metadata.js';
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
-  new ElicitationEnumsScenario()
+  new ElicitationEnumsScenario(),
+  // Elicitation scenarios (SEP-1036) - URL mode (pending SDK release)
+  new ElicitationUrlModeScenario()
 ];
 
 // All client scenarios
@@ -80,10 +82,7 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
-  // Elicitation scenarios (SEP-1036) - URL mode
-  new ElicitationUrlModeScenario(),
-
-  // Elicitation scenarios (SEP-1330) - pending
+  // Elicitation scenarios (SEP-1330, SEP-1036) - pending
   ...pendingClientScenariosList,
 
   // Resources scenarios

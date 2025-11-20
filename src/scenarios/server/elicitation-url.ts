@@ -6,10 +6,20 @@ import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServerWithUrlElicitation } from './client-helper.js';
 import {
   ElicitRequestSchema,
-  ElicitationCompleteNotificationSchema,
   ErrorCode,
-  McpError
+  McpError,
+  NotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
+
+// Define locally until SDK releases this schema
+const ElicitationCompleteNotificationSchema = NotificationSchema.extend({
+  method: z.literal('notifications/elicitation/complete'),
+  params: z.object({
+    _meta: z.object({}).passthrough().optional(),
+    elicitationId: z.string()
+  })
+});
 
 export class ElicitationUrlModeScenario implements ClientScenario {
   name = 'elicitation-sep1036-url-mode';
