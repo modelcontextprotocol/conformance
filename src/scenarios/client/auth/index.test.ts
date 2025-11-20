@@ -1,20 +1,39 @@
 import { authScenariosList } from './index.js';
 import {
   runClientAgainstScenario,
-  SpawnedClientRunner
+  InlineClientRunner
 } from './test_helpers/testClient.js';
-import path from 'path';
+import { runClient as goodClient } from '../../../../examples/clients/typescript/auth-test.js';
+import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm.js';
+import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope.js';
+import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes.js';
+import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403.js';
+import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger.js';
+
+beforeAll(() => {
+  setLogLevel('error');
+});
+
+const skipScenarios = new Set<string>([
+  // Waiting on typescript-sdk support in bearerAuth middleware to include
+  // scope in WWW-Authenticate header
+  // https://github.com/modelcontextprotocol/typescript-sdk/pull/1133
+  'auth/scope-from-www-authenticate',
+  // Waiting on typescript-sdk support for using scopes_supported from PRM
+  // to request scopes.
+  // https://github.com/modelcontextprotocol/typescript-sdk/pull/1133
+  'auth/scope-from-scopes-supported'
+]);
 
 describe('Client Auth Scenarios', () => {
-  const clientPath = path.join(
-    process.cwd(),
-    'examples/clients/typescript/auth-test.ts'
-  );
-
   // Generate individual test for each auth scenario
   for (const scenario of authScenariosList) {
     test(`${scenario.name} passes`, async () => {
-      const runner = new SpawnedClientRunner(clientPath);
+      if (skipScenarios.has(scenario.name)) {
+        // TODO: skip in a native way?
+        return;
+      }
+      const runner = new InlineClientRunner(goodClient);
       await runClientAgainstScenario(runner, scenario.name);
     });
   }
@@ -22,16 +41,39 @@ describe('Client Auth Scenarios', () => {
 
 describe('Negative tests', () => {
   test('bad client requests root PRM location', async () => {
-    const clientPath = path.join(
-      process.cwd(),
-      'examples/clients/typescript/auth-test-broken1.ts'
-    );
-    const runner = new SpawnedClientRunner(clientPath);
+    const runner = new InlineClientRunner(badPrmClient);
     await runClientAgainstScenario(runner, 'auth/basic-dcr', [
-      // There will be other failures, but this is the one that matters
       'prm-priority-order'
     ]);
   });
 
-  // TODO: Add more negative tests here
+  test('client ignores scope from WWW-Authenticate header', async () => {
+    const runner = new InlineClientRunner(ignoreScopeClient);
+    await runClientAgainstScenario(runner, 'auth/scope-from-www-authenticate', [
+      'scope-from-www-authenticate'
+    ]);
+  });
+
+  test('client only requests subset of scopes_supported', async () => {
+    const runner = new InlineClientRunner(partialScopesClient);
+    await runClientAgainstScenario(runner, 'auth/scope-from-scopes-supported', [
+      'scope-from-scopes-supported'
+    ]);
+  });
+
+  test('client requests scope even if scopes_supported is empty', async () => {
+    const runner = new InlineClientRunner(partialScopesClient);
+    await runClientAgainstScenario(
+      runner,
+      'auth/scope-omitted-when-undefined',
+      ['scope-omitted-when-undefined']
+    );
+  });
+
+  test('client only responds to 401, not 403', async () => {
+    const runner = new InlineClientRunner(ignore403Client);
+    await runClientAgainstScenario(runner, 'auth/scope-step-up', [
+      'scope-step-up-escalation'
+    ]);
+  });
 });
