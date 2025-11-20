@@ -6,6 +6,7 @@ import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { connectToServerWithUrlElicitation } from './client-helper.js';
 import {
   ElicitRequestSchema,
+  ElicitationCompleteNotificationSchema,
   ErrorCode,
   McpError
 } from '@modelcontextprotocol/sdk/types.js';
@@ -16,7 +17,7 @@ export class ElicitationUrlModeScenario implements ClientScenario {
 
 **Server Implementation Requirements:**
 
-Implement two tools:
+Implement three tools:
 
 1. \`test_elicitation_sep1036_url\` (no arguments) - Requests URL mode elicitation from client with:
    - \`mode\`: "url"
@@ -29,6 +30,11 @@ Implement two tools:
 2. \`test_elicitation_sep1036_error\` (no arguments) - Throws URLElicitationRequiredError:
    - Error code: -32042
    - Error data contains \`elicitations\` array with URL mode elicitation objects
+
+3. \`test_elicitation_sep1036_complete\` (no arguments) - Tests completion notification flow:
+   - Requests URL mode elicitation
+   - When client accepts, sends \`notifications/elicitation/complete\` notification
+   - The notification must include the matching \`elicitationId\`
 
 **Example elicitation request:**
 \`\`\`json
@@ -396,6 +402,126 @@ Implement two tools:
           details: {
             elicitations: errorData?.elicitations
           }
+        });
+      }
+
+      // Part 3: Test completion notification flow
+      let completionNotificationReceived = false;
+      let receivedElicitationId: string | null = null;
+      let capturedElicitationIdFromRequest: string | null = null;
+
+      // Set up notification handler for completion
+      connection.client.setNotificationHandler(
+        ElicitationCompleteNotificationSchema,
+        (notification) => {
+          completionNotificationReceived = true;
+          receivedElicitationId = notification.params.elicitationId;
+        }
+      );
+
+      // Update the request handler to capture the elicitationId
+      connection.client.setRequestHandler(
+        ElicitRequestSchema,
+        async (request) => {
+          capturedElicitationIdFromRequest = request.params.elicitationId;
+          return { action: 'accept' };
+        }
+      );
+
+      try {
+        await connection.client.callTool({
+          name: 'test_elicitation_sep1036_complete',
+          arguments: {}
+        });
+
+        // Small delay to allow notification to be received
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Check 10: Verify completion notification was received
+        const notificationErrors: string[] = [];
+        if (!completionNotificationReceived) {
+          notificationErrors.push(
+            'Server did not send notifications/elicitation/complete notification'
+          );
+        }
+
+        checks.push({
+          id: 'sep1036-url-completion-notification',
+          name: 'URLCompletionNotification',
+          description:
+            'Server sends notifications/elicitation/complete after out-of-band completion',
+          status: notificationErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            notificationErrors.length > 0
+              ? notificationErrors.join('; ')
+              : undefined,
+          specReferences: [
+            {
+              id: 'SEP-1036',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/887'
+            }
+          ],
+          details: {
+            notificationReceived: completionNotificationReceived
+          }
+        });
+
+        // Check 11: Verify elicitationId matches
+        const idMatchErrors: string[] = [];
+        if (completionNotificationReceived) {
+          if (!receivedElicitationId) {
+            idMatchErrors.push('Completion notification missing elicitationId');
+          } else if (
+            capturedElicitationIdFromRequest &&
+            receivedElicitationId !== capturedElicitationIdFromRequest
+          ) {
+            idMatchErrors.push(
+              `elicitationId mismatch: request had "${capturedElicitationIdFromRequest}", notification had "${receivedElicitationId}"`
+            );
+          }
+        }
+
+        checks.push({
+          id: 'sep1036-url-completion-id-match',
+          name: 'URLCompletionIdMatch',
+          description:
+            'Completion notification elicitationId matches the original request',
+          status:
+            completionNotificationReceived && idMatchErrors.length === 0
+              ? 'SUCCESS'
+              : completionNotificationReceived
+                ? 'FAILURE'
+                : 'SKIPPED',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            idMatchErrors.length > 0 ? idMatchErrors.join('; ') : undefined,
+          specReferences: [
+            {
+              id: 'SEP-1036',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/887'
+            }
+          ],
+          details: {
+            requestElicitationId: capturedElicitationIdFromRequest,
+            notificationElicitationId: receivedElicitationId
+          }
+        });
+      } catch (error) {
+        checks.push({
+          id: 'sep1036-url-completion-notification',
+          name: 'URLCompletionNotification',
+          description:
+            'Server sends notifications/elicitation/complete after out-of-band completion',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: `Tool call failed: ${error instanceof Error ? error.message : String(error)}`,
+          specReferences: [
+            {
+              id: 'SEP-1036',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/887'
+            }
+          ]
         });
       }
 

@@ -13,7 +13,11 @@ import {
   ResourceTemplate
 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ElicitResultSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ElicitResultSchema,
+  McpError,
+  ErrorCode
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import express from 'express';
 import cors from 'cors';
@@ -579,27 +583,18 @@ function createMcpServer() {
     async () => {
       try {
         const elicitationId = `sep1036-test-${randomUUID()}`;
-        const result = await mcpServer.server.request(
-          {
-            method: 'elicitation/create',
-            params: {
-              mode: 'url',
-              message: 'Please complete authorization to continue',
-              url: 'https://mcp.example.com/authorize',
-              elicitationId
-            }
-          },
-          z
-            .object({ method: z.literal('elicitation/create') })
-            .passthrough() as any
-        );
+        const result = await mcpServer.server.elicitInput({
+          mode: 'url',
+          message: 'Please complete authorization to continue',
+          url: 'https://mcp.example.com/authorize',
+          elicitationId
+        });
 
-        const elicitResult = result as any;
         return {
           content: [
             {
               type: 'text',
-              text: `URL elicitation completed: action=${elicitResult.action}`
+              text: `URL elicitation completed: action=${result.action}`
             }
           ]
         };
@@ -640,6 +635,42 @@ function createMcpServer() {
           ]
         }
       );
+    }
+  );
+
+  // SEP-1036: URL mode elicitation with completion notification
+  mcpServer.registerTool(
+    'test_elicitation_sep1036_complete',
+    {
+      description:
+        'Tests URL mode elicitation with completion notification per SEP-1036',
+      inputSchema: {}
+    },
+    async () => {
+      const elicitationId = `sep1036-complete-${randomUUID()}`;
+      const result = await mcpServer.server.elicitInput({
+        mode: 'url',
+        message: 'Please complete the authorization flow',
+        url: 'https://mcp.example.com/authorize-with-completion',
+        elicitationId
+      });
+
+      // Send completion notification after client accepts
+      if (result.action === 'accept') {
+        // Create a notifier for this elicitationId and send the notification
+        const notifier =
+          mcpServer.server.createElicitationCompletionNotifier(elicitationId);
+        await notifier();
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `URL elicitation with completion: action=${result.action}, notification sent`
+          }
+        ]
+      };
     }
   );
 
