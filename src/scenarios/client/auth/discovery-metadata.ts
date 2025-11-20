@@ -217,3 +217,8 @@ export const AuthMetadataVar3Scenario = createMetadataScenario(
 
 // Export all scenarios as an array for convenience
 export const metadataScenarios = SCENARIO_CONFIGS.map(createMetadataScenario);
+
+// Export function to list metadata scenario names (for suite support)
+export function listMetadataScenarios(): string[] {
+  return metadataScenarios.map((s) => s.name);
+}
