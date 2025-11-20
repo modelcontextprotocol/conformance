@@ -29,6 +29,7 @@ import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12.js';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults.js';
 import { ElicitationEnumsScenario } from './server/elicitation-enums.js';
+import { ElicitationUrlModeScenario } from './server/elicitation-url.js';
 
 import {
   ResourcesListScenario,
@@ -54,6 +55,8 @@ import { listMetadataScenarios } from './client/auth/discovery-metadata.js';
 const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
   new ElicitationEnumsScenario(),
+  // Elicitation scenarios (SEP-1036) - URL mode (pending SDK release)
+  new ElicitationUrlModeScenario(),
 
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
@@ -89,7 +92,7 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
-  // Elicitation scenarios (SEP-1330) - pending
+  // Elicitation scenarios (SEP-1330, SEP-1036) - pending
   ...pendingClientScenariosList,
 
   // Resources scenarios
