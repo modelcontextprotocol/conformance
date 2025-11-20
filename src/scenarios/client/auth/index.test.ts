@@ -23,7 +23,10 @@ const skipScenarios = new Set<string>([
   // Waiting on typescript-sdk support for using scopes_supported from PRM
   // to request scopes.
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1133
-  'auth/scope-from-scopes-supported'
+  'auth/scope-from-scopes-supported',
+  // Waiting on typescript-sdk support for CIMD
+  // https://github.com/modelcontextprotocol/typescript-sdk/pull/1127
+  'auth/basic-cimd'
 ]);
 
 describe('Client Auth Scenarios', () => {
