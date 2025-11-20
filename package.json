@@ -36,6 +36,7 @@
     "cors": "^2.8.5",
     "eslint": "^9.8.0",
     "eslint-config-prettier": "^10.1.8",
+    "lefthook": "^2.0.2",
     "prettier": "3.6.2",
     "tsdown": "^0.15.12",
     "tsx": "^4.7.0",
@@ -47,7 +48,6 @@
     "@modelcontextprotocol/sdk": "^1.22.0",
     "commander": "^14.0.2",
     "express": "^5.1.0",
-    "lefthook": "^2.0.2",
     "zod": "^3.25.76"
   }
 }
