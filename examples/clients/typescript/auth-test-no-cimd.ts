@@ -8,12 +8,12 @@ import { logger } from './helpers/logger';
 
 /**
  * Non-compliant client that doesn't use CIMD (Client ID Metadata Document).
- * 
+ *
  * This client intentionally omits the clientMetadataUrl parameter when the server
  * advertises client_id_metadata_document_supported=true. A compliant client should
  * use CIMD when the server supports it, but this client falls back to DCR (Dynamic
  * Client Registration) instead.
- * 
+ *
  * Used to test that conformance checks detect clients that don't properly
  * implement CIMD support.
  */
