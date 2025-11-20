@@ -1,7 +1,7 @@
 # lefthook.yml
 # Configuration reference: https://lefthook.dev/configuration/
 
-assert_lefthook_installed: true
+assert_lefthook_installed: false
 
 output:
   - meta # Print lefthook version
