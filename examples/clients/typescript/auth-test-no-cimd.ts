@@ -2,13 +2,20 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { withOAuthRetry } from './helpers/withOAuthRetry.js';
-import { runAsCli } from './helpers/cliRunner.js';
-import { logger } from './helpers/logger.js';
+import { withOAuthRetry } from './helpers/withOAuthRetry';
+import { runAsCli } from './helpers/cliRunner';
+import { logger } from './helpers/logger';
 
 /**
- * Client that doesn't use CIMD even when server supports it.
- * BUG: Doesn't provide clientMetadataUrl, so falls back to DCR.
+ * Non-compliant client that doesn't use CIMD (Client ID Metadata Document).
+ * 
+ * This client intentionally omits the clientMetadataUrl parameter when the server
+ * advertises client_id_metadata_document_supported=true. A compliant client should
+ * use CIMD when the server supports it, but this client falls back to DCR (Dynamic
+ * Client Registration) instead.
+ * 
+ * Used to test that conformance checks detect clients that don't properly
+ * implement CIMD support.
  */
 export async function runClient(serverUrl: string): Promise<void> {
   const client = new Client(
@@ -16,12 +23,12 @@ export async function runClient(serverUrl: string): Promise<void> {
     { capabilities: {} }
   );
 
-  // BUG: Not passing clientMetadataUrl, so client will use DCR
-  // even when server supports client_id_metadata_document_supported
+  // Non-compliant: omitting clientMetadataUrl causes fallback to DCR
+  // A compliant client would pass a clientMetadataUrl here when the server
+  // advertises client_id_metadata_document_supported=true
   const oauthFetch = withOAuthRetry(
     'test-auth-client-no-cimd',
     new URL(serverUrl)
-    // Missing: handle401, clientMetadataUrl
   )(fetch);
 
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
