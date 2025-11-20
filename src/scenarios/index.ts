@@ -56,7 +56,7 @@ const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
   new ElicitationEnumsScenario(),
   // Elicitation scenarios (SEP-1036) - URL mode (pending SDK release)
-  new ElicitationUrlModeScenario()
+  new ElicitationUrlModeScenario(),
 
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
