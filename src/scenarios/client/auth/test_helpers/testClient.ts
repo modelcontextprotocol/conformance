@@ -83,16 +83,19 @@ export class InlineClientRunner implements ClientRunner {
   }
 }
 
+export interface RunClientOptions {
+  expectedFailureSlugs?: string[];
+  allowClientError?: boolean;
+}
+
 export async function runClientAgainstScenario(
-  clientRunner: ClientRunner | string,
+  clientRunner: ClientRunner,
   scenarioName: string,
-  expectedFailureSlugs: string[] = []
+  options: RunClientOptions = {}
 ): Promise<void> {
-  // Handle backward compatibility: if string is passed, treat as file path
-  const runner =
-    typeof clientRunner === 'string'
-      ? new SpawnedClientRunner(clientRunner)
-      : clientRunner;
+  const { expectedFailureSlugs = [], allowClientError = false } = options;
+
+  const runner = clientRunner;
 
   const scenario = getScenario(scenarioName);
   if (!scenario) {
@@ -108,10 +111,10 @@ export async function runClientAgainstScenario(
     try {
       await runner.run(serverUrl);
     } catch (err) {
-      if (expectedFailureSlugs.length === 0) {
+      if (expectedFailureSlugs.length === 0 && !allowClientError) {
         throw err; // Unexpected failure
       }
-      // Otherwise, expected failure - continue to checks verification
+      // Otherwise, expected failure or allowed error - continue to checks verification
     }
 
     // Get checks from the scenario

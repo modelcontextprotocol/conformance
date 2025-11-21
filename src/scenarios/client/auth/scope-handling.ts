@@ -421,3 +421,173 @@ export class ScopeStepUpAuthScenario implements Scenario {
     return this.checks;
   }
 }
+
+/**
+ * Scenario 5: Client implements retry limits for scope escalation
+ *
+ * Tests that clients SHOULD implement retry limits to avoid infinite
+ * authorization loops when receiving repeated 403 insufficient_scope errors.
+ * The server always returns 403 with the same scope requirement, and clients
+ * should stop retrying after a reasonable number of attempts (3 or fewer).
+ */
+export class ScopeRetryLimitScenario implements Scenario {
+  name = 'auth/scope-retry-limit';
+  description =
+    'Tests that client implements retry limits to prevent infinite authorization loops on repeated 403 responses';
+  private authServer = new ServerLifecycle();
+  private server = new ServerLifecycle();
+  private checks: ConformanceCheck[] = [];
+
+  async start(): Promise<ScenarioUrls> {
+    this.checks = [];
+
+    const requiredScope = 'mcp:admin';
+    const tokenVerifier = new MockTokenVerifier(this.checks, []);
+    let authRequestCount = 0;
+
+    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+      tokenVerifier,
+      onAuthorizationRequest: (data) => {
+        authRequestCount++;
+        this.checks.push({
+          id: 'scope-retry-auth-attempt',
+          name: `Authorization attempt ${authRequestCount}`,
+          description: `Client made authorization request attempt ${authRequestCount}`,
+          status: 'INFO',
+          timestamp: data.timestamp,
+          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+          details: {
+            attemptNumber: authRequestCount,
+            requestedScope: data.scope || 'none'
+          }
+        });
+      }
+    });
+    await this.authServer.start(authApp);
+
+    const resourceMetadataUrl = () =>
+      `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`;
+
+    const maxAttempts = 3;
+    let mcpRequestWithTokenCount = 0;
+
+    const alwaysDeny403Middleware = async (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ) => {
+      let body = req.body;
+      if (typeof body === 'string') {
+        body = JSON.parse(body);
+      }
+      const method = body?.method;
+
+      if (method === 'initialize' || method?.startsWith('notifications/')) {
+        return next();
+      }
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res
+          .status(401)
+          .set(
+            'WWW-Authenticate',
+            `Bearer scope="${requiredScope}", resource_metadata="${resourceMetadataUrl()}"`
+          )
+          .json({
+            error: 'invalid_token',
+            error_description: 'Missing Authorization header'
+          });
+      }
+
+      mcpRequestWithTokenCount++;
+
+      if (mcpRequestWithTokenCount > maxAttempts) {
+        return res.status(410).json({
+          error: 'test_complete',
+          error_description:
+            'Test is over - client exceeded maximum retry attempts'
+        });
+      }
+
+      return res
+        .status(403)
+        .set(
+          'WWW-Authenticate',
+          `Bearer error="insufficient_scope", scope="${requiredScope}", resource_metadata="${resourceMetadataUrl()}", error_description="Scope upgrade will never succeed"`
+        )
+        .json({
+          error: 'insufficient_scope',
+          error_description: 'Scope upgrade will never succeed'
+        });
+    };
+
+    const baseApp = createServer(
+      this.checks,
+      this.server.getUrl,
+      this.authServer.getUrl,
+      {
+        prmPath: '/.well-known/oauth-protected-resource/mcp',
+        requiredScopes: [requiredScope],
+        scopesSupported: [requiredScope],
+        includeScopeInWwwAuth: true,
+        authMiddleware: alwaysDeny403Middleware,
+        tokenVerifier
+      }
+    );
+
+    await this.server.start(baseApp);
+
+    return { serverUrl: `${this.server.getUrl()}/mcp` };
+  }
+
+  async stop() {
+    await this.authServer.stop();
+    await this.server.stop();
+  }
+
+  getChecks(): ConformanceCheck[] {
+    const authAttempts = this.checks.filter(
+      (c) => c.id === 'scope-retry-auth-attempt'
+    ).length;
+
+    if (authAttempts === 0) {
+      this.checks.push({
+        id: 'scope-retry-limit',
+        name: 'Client retry limit for scope escalation',
+        description: 'Client did not make any authorization requests',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
+      });
+    } else if (authAttempts <= 3) {
+      this.checks.push({
+        id: 'scope-retry-limit',
+        name: 'Client retry limit for scope escalation',
+        description: `Client correctly limited retry attempts to ${authAttempts} (3 or fewer)`,
+        status: 'SUCCESS',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        details: {
+          authorizationAttempts: authAttempts,
+          maxAllowed: 3
+        }
+      });
+    } else {
+      this.checks.push({
+        id: 'scope-retry-limit',
+        name: 'Client retry limit for scope escalation',
+        description: `Client made ${authAttempts} authorization attempts (more than 3). Clients SHOULD implement retry limits to avoid infinite loops.`,
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        details: {
+          authorizationAttempts: authAttempts,
+          maxAllowed: 3
+        }
+      });
+    }
+
+    return this.checks;
+  }
+}
