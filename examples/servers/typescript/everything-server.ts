@@ -385,6 +385,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: args.message,
               requestedSchema: {
                 type: 'object',
@@ -437,6 +438,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: 'Please review and update the form fields with defaults',
               requestedSchema: {
                 type: 'object',
@@ -512,6 +514,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: 'Please select options from the enum fields',
               requestedSchema: {
                 type: 'object',
