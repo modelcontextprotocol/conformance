@@ -16,8 +16,7 @@ beforeAll(() => {
   setLogLevel('error');
 });
 
-const skipScenarios = new Set<string>([
-]);
+const skipScenarios = new Set<string>([]);
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass

@@ -63,7 +63,7 @@ const pendingClientScenariosList: ClientScenario[] = [
   // On hold until elicitation schema types are fixed
   // https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1863
   new ToolsCallElicitationScenario(),
-  new ElicitationDefaultsScenario(),
+  new ElicitationDefaultsScenario()
 ];
 
 // All client scenarios
