@@ -27,13 +27,3 @@ pre-push:
 
     - name: 'Test'
       run: npm run test
-
-post-checkout:
-  jobs:
-    - name: 'Install Dependencies'
-      run: npm install
-
-post-merge:
-  jobs:
-    - name: 'Install Dependencies'
-      run: npm install

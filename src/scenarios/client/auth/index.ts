@@ -9,7 +9,8 @@ import {
   ScopeFromWwwAuthenticateScenario,
   ScopeFromScopesSupportedScenario,
   ScopeOmittedWhenUndefinedScenario,
-  ScopeStepUpAuthScenario
+  ScopeStepUpAuthScenario,
+  ScopeRetryLimitScenario
 } from './scope-handling';
 
 export const authScenariosList: Scenario[] = [
@@ -20,5 +21,6 @@ export const authScenariosList: Scenario[] = [
   new ScopeFromWwwAuthenticateScenario(),
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
-  new ScopeStepUpAuthScenario()
+  new ScopeStepUpAuthScenario(),
+  new ScopeRetryLimitScenario()
 ];

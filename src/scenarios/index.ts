@@ -61,7 +61,12 @@ const pendingClientScenariosList: ClientScenario[] = [
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
   // $schema, $defs, and additionalProperties fields in tool schemas.
-  new JsonSchema2020_12Scenario()
+  new JsonSchema2020_12Scenario(),
+
+  // On hold until elicitation schema types are fixed
+  // https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1863
+  new ToolsCallElicitationScenario(),
+  new ElicitationDefaultsScenario()
 ];
 
 // All client scenarios
@@ -97,7 +102,7 @@ const allClientScenariosList: ClientScenario[] = [
   new ServerSSEMultipleStreamsScenario(),
 
   // Elicitation scenarios (SEP-1330) - pending
-  ...pendingClientScenariosList,
+  new ElicitationEnumsScenario(),
 
   // Resources scenarios
   new ResourcesListScenario(),
@@ -165,6 +170,10 @@ export function listClientScenarios(): string[] {
 
 export function listActiveClientScenarios(): string[] {
   return activeClientScenariosList.map((scenario) => scenario.name);
+}
+
+export function listPendingClientScenarios(): string[] {
+  return pendingClientScenariosList.map((scenario) => scenario.name);
 }
 
 export function listAuthScenarios(): string[] {
