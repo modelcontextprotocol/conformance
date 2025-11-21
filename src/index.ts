@@ -14,6 +14,7 @@ import {
   listScenarios,
   listClientScenarios,
   listActiveClientScenarios,
+  listPendingClientScenarios,
   listAuthScenarios,
   listMetadataScenarios
 } from './scenarios';
@@ -53,7 +54,9 @@ program
 
         const suites: Record<string, () => string[]> = {
           auth: listAuthScenarios,
-          metadata: listMetadataScenarios
+          metadata: listMetadataScenarios,
+          'sep-835': () =>
+            listAuthScenarios().filter((name) => name.startsWith('auth/scope-'))
         };
 
         const suiteName = options.suite.toLowerCase();
@@ -123,8 +126,9 @@ program
           totalWarnings += warnings;
 
           const status = failed === 0 ? '✓' : '✗';
+          const warningStr = warnings > 0 ? `, ${warnings} warnings` : '';
           console.log(
-            `${status} ${result.scenario}: ${passed} passed, ${failed} failed`
+            `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}`
           );
 
           if (verbose && failed > 0) {
@@ -149,7 +153,7 @@ program
         console.error('Either --scenario or --suite is required');
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
-        console.error('\nAvailable suites: auth, metadata');
+        console.error('\nAvailable suites: auth, metadata, sep-835');
         process.exit(1);
       }
 
@@ -193,7 +197,12 @@ program
   .requiredOption('--url <url>', 'URL of the server to test')
   .option(
     '--scenario <scenario>',
-    'Scenario to test (defaults to all scenarios if not specified)'
+    'Scenario to test (defaults to active suite if not specified)'
+  )
+  .option(
+    '--suite <suite>',
+    'Suite to run: "active" (default, excludes pending), "all", or "pending"',
+    'active'
   )
   .action(async (options) => {
     try {
@@ -213,10 +222,24 @@ program
         );
         process.exit(failed > 0 ? 1 : 0);
       } else {
-        // Run all active scenarios
-        const scenarios = listActiveClientScenarios();
+        // Run scenarios based on suite
+        const suite = options.suite?.toLowerCase() || 'active';
+        let scenarios: string[];
+
+        if (suite === 'all') {
+          scenarios = listClientScenarios();
+        } else if (suite === 'active') {
+          scenarios = listActiveClientScenarios();
+        } else if (suite === 'pending') {
+          scenarios = listPendingClientScenarios();
+        } else {
+          console.error(`Unknown suite: ${suite}`);
+          console.error('Available suites: active, all, pending');
+          process.exit(1);
+        }
+
         console.log(
-          `Running ${scenarios.length} scenarios against ${validated.url}\n`
+          `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
         );
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
