@@ -351,7 +351,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
           .status(403)
           .set(
             'WWW-Authenticate',
-            `Bearer scope="${requiredScopes.join(' ')}", resource_metadata="${resourceMetadataUrl()}"`
+            `Bearer scope="${requiredScopes.join(' ')}", resource_metadata="${resourceMetadataUrl()}", error="insufficient_scope"`
           )
           .json({
             error: 'insufficient_scope',
