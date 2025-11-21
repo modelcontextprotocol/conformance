@@ -2,6 +2,7 @@ import { Scenario, ClientScenario } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
+import { SSERetryScenario } from './client/sse-retry';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
@@ -29,6 +30,8 @@ import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
+import { ServerSSEPollingScenario } from './server/sse-polling';
+import { ServerSSEMultipleStreamsScenario } from './server/sse-multiple-streams';
 
 import {
   ResourcesListScenario,
@@ -94,6 +97,10 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
+  // SSE Polling scenarios (SEP-1699)
+  new ServerSSEPollingScenario(),
+  new ServerSSEMultipleStreamsScenario(),
+
   // Elicitation scenarios (SEP-1330) - pending
   new ElicitationEnumsScenario(),
 
@@ -132,6 +139,7 @@ const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
+  new SSERetryScenario(),
   ...authScenariosList
 ];
 
