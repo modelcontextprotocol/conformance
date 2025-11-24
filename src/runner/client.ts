@@ -14,12 +14,13 @@ export interface ClientExecutionResult {
 
 async function executeClient(
   command: string,
+  scenarioName: string,
   serverUrl: string,
   timeout: number = 30000
 ): Promise<ClientExecutionResult> {
   const commandParts = command.split(' ');
   const executable = commandParts[0];
-  const args = [...commandParts.slice(1), serverUrl];
+  const args = [...commandParts.slice(1), scenarioName, serverUrl];
 
   let stdout = '';
   let stderr = '';
@@ -89,11 +90,14 @@ export async function runConformanceTest(
   console.error(`Starting scenario: ${scenarioName}`);
   const urls = await scenario.start();
 
-  console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
+  console.error(
+    `Executing client: ${clientCommand} ${scenarioName} ${urls.serverUrl}`
+  );
 
   try {
     const clientOutput = await executeClient(
       clientCommand,
+      scenarioName,
       urls.serverUrl,
       timeout
     );
