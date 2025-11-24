@@ -89,7 +89,26 @@ export class SSERetryScenario implements Scenario {
       this.getReconnectionTime = performance.now();
 
       const lastEventId = req.headers['last-event-id'] as string | undefined;
-      this.lastEventIds.push(lastEventId);
+      const description = lastEventId
+        ? `Received GET request for ${req.url} (Last-Event-ID: ${lastEventId})`
+        : `Received GET request for ${req.url}`;
+      this.checks.push({
+        id: 'incoming-request',
+        name: 'IncomingRequest',
+        description,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          method: 'GET',
+          url: req.url,
+          headers: req.headers,
+          connectionCount: this.getConnectionCount
+        }
+      });
+
+      if (lastEventId) {
+        this.lastEventIds.push(lastEventId);
+      }
 
       // Handle GET SSE stream request (reconnection)
       this.handleGetSSEStream(req, res);
@@ -119,9 +138,22 @@ export class SSERetryScenario implements Scenario {
     const eventId = `event-${this.eventIdCounter}`;
 
     // Send priming event with ID and retry field
-    res.write(`id: ${eventId}\n`);
-    res.write(`retry: ${this.retryValue}\n`);
-    res.write(`data: \n\n`);
+    const primingContent = `id: ${eventId}\nretry: ${this.retryValue}\ndata: \n\n`;
+    res.write(primingContent);
+
+    this.checks.push({
+      id: 'outgoing-sse-event',
+      name: 'OutgoingSseEvent',
+      description: `Sent SSE priming event on GET stream (id: ${eventId}, retry: ${this.retryValue}ms)`,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        eventId,
+        retryMs: this.retryValue,
+        eventType: 'priming',
+        raw: primingContent
+      }
+    });
 
     // Keep connection open for now (don't close immediately to avoid infinite reconnection loop)
     // The test will stop the server when done
@@ -141,6 +173,20 @@ export class SSERetryScenario implements Scenario {
       try {
         const request = JSON.parse(body);
 
+        this.checks.push({
+          id: 'incoming-request',
+          name: 'IncomingRequest',
+          description: `Received POST request for ${req.url} (method: ${request.method})`,
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          details: {
+            method: 'POST',
+            url: req.url,
+            jsonrpcMethod: request.method,
+            jsonrpcId: request.id
+          }
+        });
+
         if (request.method === 'initialize') {
           // Respond to initialize request with SSE stream containing priming event
           res.writeHead(200, {
@@ -155,9 +201,22 @@ export class SSERetryScenario implements Scenario {
           this.primingEventId = `event-${this.eventIdCounter}`;
 
           // Send priming event with retry field
-          res.write(`id: ${this.primingEventId}\n`);
-          res.write(`retry: ${this.retryValue}\n`);
-          res.write(`data: \n\n`);
+          const postPrimingContent = `id: ${this.primingEventId}\nretry: ${this.retryValue}\ndata: \n\n`;
+          res.write(postPrimingContent);
+
+          this.checks.push({
+            id: 'outgoing-sse-event',
+            name: 'OutgoingSseEvent',
+            description: `Sent SSE priming event (id: ${this.primingEventId}, retry: ${this.retryValue}ms)`,
+            status: 'INFO',
+            timestamp: new Date().toISOString(),
+            details: {
+              eventId: this.primingEventId,
+              retryMs: this.retryValue,
+              eventType: 'priming',
+              raw: postPrimingContent
+            }
+          });
 
           // Send initialize response
           const response = {
@@ -173,14 +232,40 @@ export class SSERetryScenario implements Scenario {
             }
           };
 
-          res.write(`event: message\n`);
-          res.write(`id: event-${++this.eventIdCounter}\n`);
-          res.write(`data: ${JSON.stringify(response)}\n\n`);
+          const messageEventId = `event-${++this.eventIdCounter}`;
+          const messageContent = `event: message\nid: ${messageEventId}\ndata: ${JSON.stringify(response)}\n\n`;
+          res.write(messageContent);
+
+          this.checks.push({
+            id: 'outgoing-sse-event',
+            name: 'OutgoingSseEvent',
+            description: `Sent SSE message event (id: ${messageEventId}, method: initialize response)`,
+            status: 'INFO',
+            timestamp: new Date().toISOString(),
+            details: {
+              eventId: messageEventId,
+              eventType: 'message',
+              jsonrpcId: request.id,
+              body: response,
+              raw: messageContent
+            }
+          });
 
           // Close connection after sending response to trigger reconnection
           // Record the time when we close the stream
           setTimeout(() => {
             this.postStreamCloseTime = performance.now();
+            this.checks.push({
+              id: 'outgoing-stream-close',
+              name: 'OutgoingStreamClose',
+              description:
+                'Closed POST SSE stream to trigger client reconnection',
+              status: 'INFO',
+              timestamp: new Date().toISOString(),
+              details: {
+                retryMs: this.retryValue
+              }
+            });
             res.end();
           }, 100);
         } else if (request.id === undefined) {
