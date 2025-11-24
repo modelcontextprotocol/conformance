@@ -302,16 +302,18 @@ export class ServerSSEPollingScenario implements ClientScenario {
               const parsed = JSON.parse(event.data);
               if (parsed.id === 1 && parsed.result) {
                 receivedToolResponse = true;
+                const isError = parsed.result?.isError === true;
                 checks.push({
                   id: 'incoming-sse-event',
                   name: 'IncomingSseEvent',
                   description: `Received tool response on POST stream`,
-                  status: 'INFO',
+                  status: isError ? 'FAILURE' : 'INFO',
                   timestamp: new Date().toISOString(),
                   details: {
                     eventId: event.id,
                     body: parsed
-                  }
+                  },
+                  ...(isError && { errorMessage: `Tool call failed` })
                 });
               }
             } catch {
