@@ -349,6 +349,46 @@ function createMcpServer() {
     }
   );
 
+  // SEP-1699: Reconnection test tool - closes SSE stream mid-call to test client reconnection
+  mcpServer.registerTool(
+    'test_reconnection',
+    {
+      description:
+        'Tests SSE stream disconnection and client reconnection (SEP-1699). Server will close the stream mid-call and send the result after client reconnects.',
+      inputSchema: {}
+    },
+    async (_args, { sessionId, requestId }) => {
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      console.log(`[${sessionId}] Starting test_reconnection tool...`);
+
+      // Get the transport for this session
+      const transport = sessionId ? transports[sessionId] : undefined;
+      if (transport && requestId) {
+        // Close the SSE stream to trigger client reconnection
+        console.log(
+          `[${sessionId}] Closing SSE stream to trigger client polling...`
+        );
+        transport.closeSSEStream(requestId);
+      }
+
+      // Wait for client to reconnect (should respect retry field)
+      await sleep(100);
+
+      console.log(`[${sessionId}] test_reconnection tool complete`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure.'
+          }
+        ]
+      };
+    }
+  );
+
   // Sampling tool - requests LLM completion from client
   mcpServer.registerTool(
     'test_sampling',

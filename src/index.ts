@@ -204,10 +204,13 @@ program
     'Suite to run: "active" (default, excludes pending), "all", or "pending"',
     'active'
   )
+  .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
       // Validate options with Zod
       const validated = ServerOptionsSchema.parse(options);
+
+      const verbose = options.verbose ?? false;
 
       // If a single scenario is specified, run just that one
       if (validated.scenario) {
@@ -218,7 +221,8 @@ program
 
         const { failed } = printServerResults(
           result.checks,
-          result.scenarioDescription
+          result.scenarioDescription,
+          verbose
         );
         process.exit(failed > 0 ? 1 : 0);
       } else {

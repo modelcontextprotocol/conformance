@@ -4,6 +4,7 @@
  * Tests that servers properly implement SSE polling behavior including:
  * - Sending priming events with event ID and empty data on POST SSE streams
  * - Sending retry field in priming events when configured
+ * - Closing SSE stream mid-operation and resuming after client reconnects
  * - Replaying events when client reconnects with Last-Event-ID
  */
 
@@ -12,10 +13,62 @@ import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
+function createLoggingFetch(checks: ConformanceCheck[]) {
+  return async (url: string, options: RequestInit): Promise<Response> => {
+    const method = options.method || 'GET';
+    let description = `Sending ${method} request`;
+    if (options.body) {
+      try {
+        const body = JSON.parse(options.body as string);
+        if (body.method) {
+          description = `Sending ${method} ${body.method}`;
+        }
+      } catch {
+        // Not JSON
+      }
+    }
+
+    checks.push({
+      id: 'outgoing-request',
+      name: 'OutgoingRequest',
+      description,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        method,
+        url,
+        headers: options.headers,
+        body: options.body ? JSON.parse(options.body as string) : undefined
+      }
+    });
+
+    const response = await fetch(url, options);
+
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      responseHeaders[key] = value;
+    });
+
+    checks.push({
+      id: 'incoming-response',
+      name: 'IncomingResponse',
+      description: `Received ${response.status} response for ${method}`,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        statusCode: response.status,
+        headers: responseHeaders
+      }
+    });
+
+    return response;
+  };
+}
+
 export class ServerSSEPollingScenario implements ClientScenario {
   name = 'server-sse-polling';
   description =
-    'Test server sends SSE priming events on POST streams and supports event replay (SEP-1699)';
+    'Test server SSE polling via test_reconnection tool that closes stream mid-call (SEP-1699)';
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -65,9 +118,11 @@ export class ServerSSEPollingScenario implements ClientScenario {
         });
       }
 
-      // Step 2: Make a POST request that returns SSE stream
-      // We need to use raw fetch to observe the priming event
-      const postResponse = await fetch(serverUrl, {
+      // Step 2: Call test_reconnection tool via raw fetch to observe SSE behavior
+      // This tool should close the stream mid-call, requiring reconnection
+      const loggingFetch = createLoggingFetch(checks);
+
+      const postResponse = await loggingFetch(serverUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,12 +133,35 @@ export class ServerSSEPollingScenario implements ClientScenario {
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
-          method: 'tools/list',
-          params: {}
+          method: 'tools/call',
+          params: {
+            name: 'test_reconnection',
+            arguments: {}
+          }
         })
       });
 
       if (!postResponse.ok) {
+        // Check if tool doesn't exist (method not found or similar)
+        if (postResponse.status === 400 || postResponse.status === 404) {
+          checks.push({
+            id: 'server-sse-test-reconnection-tool',
+            name: 'ServerTestReconnectionTool',
+            description:
+              'Server implements test_reconnection tool for SSE polling tests',
+            status: 'WARNING',
+            timestamp: new Date().toISOString(),
+            errorMessage: `Server does not implement test_reconnection tool (HTTP ${postResponse.status}). This tool is recommended for testing SSE polling behavior.`,
+            specReferences: [
+              {
+                id: 'SEP-1699',
+                url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+              }
+            ]
+          });
+          return checks;
+        }
+
         checks.push({
           id: 'server-sse-post-request',
           name: 'ServerSSEPostRequest',
@@ -125,14 +203,15 @@ export class ServerSSEPollingScenario implements ClientScenario {
         return checks;
       }
 
-      // Step 3: Parse SSE stream for priming event
+      // Step 3: Parse SSE stream for priming event and tool response
       let hasEventId = false;
       let hasPrimingEvent = false;
       let primingEventIsFirst = false;
       let hasRetryField = false;
       let retryValue: number | undefined;
-      let primingEventId: string | undefined;
+      let lastEventId: string | undefined;
       let eventCount = 0;
+      let receivedToolResponse = false;
 
       if (!postResponse.body) {
         checks.push({
@@ -164,10 +243,10 @@ export class ServerSSEPollingScenario implements ClientScenario {
         )
         .getReader();
 
-      // Read events with timeout
+      // Read events with timeout - expect stream to close before we get the response
       const timeout = setTimeout(() => {
         reader.cancel();
-      }, 5000);
+      }, 10000);
 
       try {
         while (true) {
@@ -179,30 +258,84 @@ export class ServerSSEPollingScenario implements ClientScenario {
 
           eventCount++;
 
-          // Check for event ID
+          // Track the last event ID for reconnection
           if (event.id) {
             hasEventId = true;
-            if (!primingEventId) {
-              primingEventId = event.id;
-            }
+            lastEventId = event.id;
 
             // Check if this is a priming event (empty or minimal data)
-            if (
+            const isPriming =
               event.data === '' ||
               event.data === '{}' ||
-              event.data.trim() === ''
-            ) {
+              event.data.trim() === '';
+            if (isPriming) {
               hasPrimingEvent = true;
               // Check if priming event is the first event
               if (eventCount === 1) {
                 primingEventIsFirst = true;
               }
             }
+
+            // Log the SSE event
+            checks.push({
+              id: 'incoming-sse-event',
+              name: 'IncomingSseEvent',
+              description: isPriming
+                ? `Received SSE priming event (id: ${event.id})`
+                : `Received SSE event (id: ${event.id})`,
+              status: 'INFO',
+              timestamp: new Date().toISOString(),
+              details: {
+                eventId: event.id,
+                eventType: event.event || 'message',
+                isPriming,
+                hasRetryField,
+                retryValue,
+                data: event.data
+              }
+            });
+          }
+
+          // Check if this is the tool response
+          if (event.data) {
+            try {
+              const parsed = JSON.parse(event.data);
+              if (parsed.id === 1 && parsed.result) {
+                receivedToolResponse = true;
+                checks.push({
+                  id: 'incoming-sse-event',
+                  name: 'IncomingSseEvent',
+                  description: `Received tool response on POST stream`,
+                  status: 'INFO',
+                  timestamp: new Date().toISOString(),
+                  details: {
+                    eventId: event.id,
+                    body: parsed
+                  }
+                });
+              }
+            } catch {
+              // Not JSON, ignore
+            }
           }
         }
       } finally {
         clearTimeout(timeout);
       }
+
+      // Log stream closure
+      checks.push({
+        id: 'stream-closed',
+        name: 'StreamClosed',
+        description: `POST SSE stream closed after ${eventCount} event(s)`,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          eventCount,
+          lastEventId,
+          receivedToolResponse
+        }
+      });
 
       // Check 1: Server SHOULD send priming event with ID on POST SSE stream
       let primingStatus: 'SUCCESS' | 'WARNING' = 'SUCCESS';
@@ -235,7 +368,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           hasPrimingEvent,
           primingEventIsFirst,
           hasEventId,
-          primingEventId,
+          lastEventId,
           eventCount
         },
         errorMessage: primingErrorMessage
@@ -264,50 +397,71 @@ export class ServerSSEPollingScenario implements ClientScenario {
           : undefined
       });
 
-      // Step 4: Test event replay by reconnecting with Last-Event-ID
-      if (primingEventId && sessionId) {
-        // Make a GET request with Last-Event-ID to test replay
-        const getResponse = await fetch(serverUrl, {
+      // Step 4: If tool response wasn't received, reconnect with Last-Event-ID
+      if (!receivedToolResponse && lastEventId && sessionId) {
+        // Make a GET request with Last-Event-ID to get the tool response
+        const getResponse = await loggingFetch(serverUrl, {
           method: 'GET',
           headers: {
             Accept: 'text/event-stream',
             'mcp-session-id': sessionId,
             'mcp-protocol-version': '2025-03-26',
-            'last-event-id': primingEventId
+            'last-event-id': lastEventId
           }
         });
 
-        if (getResponse.ok) {
-          // Server accepted reconnection with Last-Event-ID
-          let replayedEvents = 0;
+        if (getResponse.ok && getResponse.body) {
+          const reconnectReader = getResponse.body
+            .pipeThrough(new TextDecoderStream())
+            .pipeThrough(new EventSourceParserStream())
+            .getReader();
 
-          if (getResponse.body) {
-            const replayReader = getResponse.body
-              .pipeThrough(new TextDecoderStream())
-              .pipeThrough(new EventSourceParserStream())
-              .getReader();
+          const reconnectTimeout = setTimeout(() => {
+            reconnectReader.cancel();
+          }, 5000);
 
-            const replayTimeout = setTimeout(() => {
-              replayReader.cancel();
-            }, 2000);
+          try {
+            while (true) {
+              const { value: event, done } = await reconnectReader.read();
+              if (done) break;
 
-            try {
-              while (true) {
-                const { done } = await replayReader.read();
-                if (done) break;
-                replayedEvents++;
+              // Log each event received on GET stream
+              checks.push({
+                id: 'incoming-sse-event',
+                name: 'IncomingSseEvent',
+                description: `Received SSE event on GET reconnection stream (id: ${event.id || 'none'})`,
+                status: 'INFO',
+                timestamp: new Date().toISOString(),
+                details: {
+                  eventId: event.id,
+                  eventType: event.event || 'message',
+                  data: event.data
+                }
+              });
+
+              // Check if this is the tool response
+              if (event.data) {
+                try {
+                  const parsed = JSON.parse(event.data);
+                  if (parsed.id === 1 && parsed.result) {
+                    receivedToolResponse = true;
+                    break;
+                  }
+                } catch {
+                  // Not JSON, ignore
+                }
               }
-            } finally {
-              clearTimeout(replayTimeout);
             }
+          } finally {
+            clearTimeout(reconnectTimeout);
           }
 
           checks.push({
-            id: 'server-sse-event-replay',
-            name: 'ServerReplaysEvents',
+            id: 'server-sse-disconnect-resume',
+            name: 'ServerDisconnectResume',
             description:
-              'Server replays events after Last-Event-ID on reconnection',
-            status: 'SUCCESS',
+              'Server closes SSE stream mid-call and resumes after client reconnects with Last-Event-ID',
+            status: receivedToolResponse ? 'SUCCESS' : 'WARNING',
             timestamp: new Date().toISOString(),
             specReferences: [
               {
@@ -316,17 +470,22 @@ export class ServerSSEPollingScenario implements ClientScenario {
               }
             ],
             details: {
-              lastEventIdUsed: primingEventId,
-              replayedEvents,
-              message: 'Server accepted GET request with Last-Event-ID header'
-            }
+              lastEventIdUsed: lastEventId,
+              receivedToolResponse,
+              message: receivedToolResponse
+                ? 'Successfully received tool response after reconnection'
+                : 'Tool response not received after reconnection'
+            },
+            errorMessage: !receivedToolResponse
+              ? 'Server did not send tool response after client reconnected with Last-Event-ID'
+              : undefined
           });
         } else {
           // Check if server doesn't support standalone GET streams
           if (getResponse.status === 405) {
             checks.push({
-              id: 'server-sse-event-replay',
-              name: 'ServerReplaysEvents',
+              id: 'server-sse-disconnect-resume',
+              name: 'ServerDisconnectResume',
               description:
                 'Server supports GET reconnection with Last-Event-ID',
               status: 'INFO',
@@ -345,10 +504,10 @@ export class ServerSSEPollingScenario implements ClientScenario {
             });
           } else {
             checks.push({
-              id: 'server-sse-event-replay',
-              name: 'ServerReplaysEvents',
+              id: 'server-sse-disconnect-resume',
+              name: 'ServerDisconnectResume',
               description:
-                'Server replays events after Last-Event-ID on reconnection',
+                'Server supports GET reconnection with Last-Event-ID',
               status: 'WARNING',
               timestamp: new Date().toISOString(),
               specReferences: [
@@ -359,19 +518,20 @@ export class ServerSSEPollingScenario implements ClientScenario {
               ],
               details: {
                 statusCode: getResponse.status,
-                lastEventIdUsed: primingEventId,
+                lastEventIdUsed: lastEventId,
                 message: `Server returned ${getResponse.status} for GET request with Last-Event-ID`
               },
               errorMessage: `Server did not accept reconnection with Last-Event-ID (HTTP ${getResponse.status})`
             });
           }
         }
-      } else {
+      } else if (receivedToolResponse) {
+        // Tool response was received on the initial POST stream (server didn't disconnect)
         checks.push({
-          id: 'server-sse-event-replay',
-          name: 'ServerReplaysEvents',
+          id: 'server-sse-disconnect-resume',
+          name: 'ServerDisconnectResume',
           description:
-            'Server replays events after Last-Event-ID on reconnection',
+            'Server closes SSE stream mid-call and resumes after reconnection',
           status: 'INFO',
           timestamp: new Date().toISOString(),
           specReferences: [
@@ -381,10 +541,30 @@ export class ServerSSEPollingScenario implements ClientScenario {
             }
           ],
           details: {
-            primingEventId,
+            receivedToolResponse: true,
+            message:
+              'Tool response received on initial POST stream - server did not disconnect mid-call. The test_reconnection tool should close the stream before sending the result.'
+          }
+        });
+      } else {
+        checks.push({
+          id: 'server-sse-disconnect-resume',
+          name: 'ServerDisconnectResume',
+          description:
+            'Server closes SSE stream mid-call and resumes after reconnection',
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ],
+          details: {
+            lastEventId,
             sessionId,
             message:
-              'Could not test event replay - no priming event ID or session ID available'
+              'Could not test disconnect/resume - no last event ID or session ID available'
           }
         });
       }
