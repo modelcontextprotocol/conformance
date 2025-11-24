@@ -20,14 +20,17 @@ export class SSERetryScenario implements Scenario {
   private port: number = 0;
 
   // Timing tracking
-  private postStreamCloseTime: number | null = null;
+  private toolStreamCloseTime: number | null = null;
   private getReconnectionTime: number | null = null;
   private getConnectionCount: number = 0;
   private lastEventIds: (string | undefined)[] = [];
-  private retryValue: number = 2000; // 2 seconds
+  private retryValue: number = 500; // 500ms
   private eventIdCounter: number = 0;
   private sessionId: string = `session-${Date.now()}`;
-  private primingEventId: string | null = null;
+
+  // Pending tool call to respond to after reconnection
+  private pendingToolCallId: number | string | null = null;
+  private getResponseStream: http.ServerResponse | null = null;
 
   // Tolerances for timing validation
   private readonly EARLY_TOLERANCE = 50; // Allow 50ms early for scheduler variance
@@ -155,8 +158,45 @@ export class SSERetryScenario implements Scenario {
       }
     });
 
-    // Keep connection open for now (don't close immediately to avoid infinite reconnection loop)
-    // The test will stop the server when done
+    // Store the GET stream to send pending tool response
+    this.getResponseStream = res;
+
+    // If we have a pending tool call, send the response now
+    if (this.pendingToolCallId !== null) {
+      const toolResponse = {
+        jsonrpc: '2.0',
+        id: this.pendingToolCallId,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: 'Reconnection test completed successfully'
+            }
+          ]
+        }
+      };
+
+      const responseEventId = `event-${++this.eventIdCounter}`;
+      const responseContent = `event: message\nid: ${responseEventId}\ndata: ${JSON.stringify(toolResponse)}\n\n`;
+      res.write(responseContent);
+
+      this.checks.push({
+        id: 'outgoing-sse-event',
+        name: 'OutgoingSseEvent',
+        description: `Sent tool response on GET stream after reconnection (id: ${responseEventId})`,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          eventId: responseEventId,
+          eventType: 'message',
+          jsonrpcId: this.pendingToolCallId,
+          body: toolResponse,
+          raw: responseContent
+        }
+      });
+
+      this.pendingToolCallId = null;
+    }
   }
 
   private handlePostRequest(
@@ -188,86 +228,11 @@ export class SSERetryScenario implements Scenario {
         });
 
         if (request.method === 'initialize') {
-          // Respond to initialize request with SSE stream containing priming event
-          res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-            'mcp-session-id': this.sessionId
-          });
-
-          // Generate priming event ID
-          this.eventIdCounter++;
-          this.primingEventId = `event-${this.eventIdCounter}`;
-
-          // Send priming event with retry field
-          const postPrimingContent = `id: ${this.primingEventId}\nretry: ${this.retryValue}\ndata: \n\n`;
-          res.write(postPrimingContent);
-
-          this.checks.push({
-            id: 'outgoing-sse-event',
-            name: 'OutgoingSseEvent',
-            description: `Sent SSE priming event (id: ${this.primingEventId}, retry: ${this.retryValue}ms)`,
-            status: 'INFO',
-            timestamp: new Date().toISOString(),
-            details: {
-              eventId: this.primingEventId,
-              retryMs: this.retryValue,
-              eventType: 'priming',
-              raw: postPrimingContent
-            }
-          });
-
-          // Send initialize response
-          const response = {
-            jsonrpc: '2.0',
-            id: request.id,
-            result: {
-              protocolVersion: '2025-03-26',
-              serverInfo: {
-                name: 'sse-retry-test-server',
-                version: '1.0.0'
-              },
-              capabilities: {}
-            }
-          };
-
-          const messageEventId = `event-${++this.eventIdCounter}`;
-          const messageContent = `event: message\nid: ${messageEventId}\ndata: ${JSON.stringify(response)}\n\n`;
-          res.write(messageContent);
-
-          this.checks.push({
-            id: 'outgoing-sse-event',
-            name: 'OutgoingSseEvent',
-            description: `Sent SSE message event (id: ${messageEventId}, method: initialize response)`,
-            status: 'INFO',
-            timestamp: new Date().toISOString(),
-            details: {
-              eventId: messageEventId,
-              eventType: 'message',
-              jsonrpcId: request.id,
-              body: response,
-              raw: messageContent
-            }
-          });
-
-          // Close connection after sending response to trigger reconnection
-          // Record the time when we close the stream
-          setTimeout(() => {
-            this.postStreamCloseTime = performance.now();
-            this.checks.push({
-              id: 'outgoing-stream-close',
-              name: 'OutgoingStreamClose',
-              description:
-                'Closed POST SSE stream to trigger client reconnection',
-              status: 'INFO',
-              timestamp: new Date().toISOString(),
-              details: {
-                retryMs: this.retryValue
-              }
-            });
-            res.end();
-          }, 100);
+          this.handleInitialize(req, res, request);
+        } else if (request.method === 'tools/list') {
+          this.handleToolsList(res, request);
+        } else if (request.method === 'tools/call') {
+          this.handleToolsCall(res, request);
         } else if (request.id === undefined) {
           // Notifications (no id) - return 202 Accepted
           res.writeHead(202);
@@ -301,17 +266,148 @@ export class SSERetryScenario implements Scenario {
     });
   }
 
+  private handleInitialize(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse,
+    request: any
+  ): void {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'mcp-session-id': this.sessionId
+    });
+
+    const response = {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        protocolVersion: '2025-03-26',
+        serverInfo: {
+          name: 'sse-retry-test-server',
+          version: '1.0.0'
+        },
+        capabilities: {
+          tools: {}
+        }
+      }
+    };
+
+    res.end(JSON.stringify(response));
+
+    this.checks.push({
+      id: 'outgoing-response',
+      name: 'OutgoingResponse',
+      description: `Sent initialize response`,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        jsonrpcId: request.id,
+        body: response
+      }
+    });
+  }
+
+  private handleToolsList(res: http.ServerResponse, request: any): void {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'mcp-session-id': this.sessionId
+    });
+
+    const response = {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        tools: [
+          {
+            name: 'test_reconnection',
+            description:
+              'A tool that triggers SSE stream closure to test client reconnection behavior',
+            inputSchema: {
+              type: 'object',
+              properties: {},
+              required: []
+            }
+          }
+        ]
+      }
+    };
+
+    res.end(JSON.stringify(response));
+
+    this.checks.push({
+      id: 'outgoing-response',
+      name: 'OutgoingResponse',
+      description: `Sent tools/list response`,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        jsonrpcId: request.id,
+        body: response
+      }
+    });
+  }
+
+  private handleToolsCall(res: http.ServerResponse, request: any): void {
+    // Store the request ID so we can respond after reconnection
+    this.pendingToolCallId = request.id;
+
+    // Start SSE stream
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'mcp-session-id': this.sessionId
+    });
+
+    // Send priming event with retry field
+    this.eventIdCounter++;
+    const primingEventId = `event-${this.eventIdCounter}`;
+    const primingContent = `id: ${primingEventId}\nretry: ${this.retryValue}\ndata: \n\n`;
+    res.write(primingContent);
+
+    this.checks.push({
+      id: 'outgoing-sse-event',
+      name: 'OutgoingSseEvent',
+      description: `Sent SSE priming event for tools/call (id: ${primingEventId}, retry: ${this.retryValue}ms)`,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: {
+        eventId: primingEventId,
+        retryMs: this.retryValue,
+        eventType: 'priming',
+        raw: primingContent
+      }
+    });
+
+    // Close the stream after a short delay to trigger reconnection
+    setTimeout(() => {
+      this.toolStreamCloseTime = performance.now();
+      this.checks.push({
+        id: 'outgoing-stream-close',
+        name: 'OutgoingStreamClose',
+        description:
+          'Closed tools/call SSE stream to trigger client reconnection',
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          retryMs: this.retryValue,
+          pendingToolCallId: this.pendingToolCallId
+        }
+      });
+      res.end();
+    }, 50);
+  }
+
   private generateChecks(): void {
-    // Check 1: Client should have reconnected via GET after POST stream close
+    // Check 1: Client should have reconnected via GET after tool call stream close
     if (this.getConnectionCount < 1) {
       this.checks.push({
         id: 'client-sse-graceful-reconnect',
         name: 'ClientGracefulReconnect',
         description:
-          'Client reconnects via GET after POST SSE stream is closed gracefully',
+          'Client reconnects via GET after SSE stream is closed gracefully',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: `Client did not attempt GET reconnection after POST stream closure. Client should treat graceful stream close as reconnectable.`,
+        errorMessage: `Client did not attempt GET reconnection after stream closure. Client should treat graceful stream close as reconnectable.`,
         specReferences: [
           {
             id: 'SEP-1699',
@@ -320,7 +416,7 @@ export class SSERetryScenario implements Scenario {
         ],
         details: {
           getConnectionCount: this.getConnectionCount,
-          postStreamCloseTime: this.postStreamCloseTime,
+          toolStreamCloseTime: this.toolStreamCloseTime,
           retryValue: this.retryValue
         }
       });
@@ -332,7 +428,7 @@ export class SSERetryScenario implements Scenario {
       id: 'client-sse-graceful-reconnect',
       name: 'ClientGracefulReconnect',
       description:
-        'Client reconnects via GET after POST SSE stream is closed gracefully',
+        'Client reconnects via GET after SSE stream is closed gracefully',
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
       specReferences: [
@@ -348,10 +444,10 @@ export class SSERetryScenario implements Scenario {
 
     // Check 2: Client MUST respect retry field timing
     if (
-      this.postStreamCloseTime !== null &&
+      this.toolStreamCloseTime !== null &&
       this.getReconnectionTime !== null
     ) {
-      const actualDelay = this.getReconnectionTime - this.postStreamCloseTime;
+      const actualDelay = this.getReconnectionTime - this.toolStreamCloseTime;
       const minExpected = this.retryValue - this.EARLY_TOLERANCE;
       const maxExpected = this.retryValue + this.LATE_TOLERANCE;
 
@@ -415,7 +511,7 @@ export class SSERetryScenario implements Scenario {
         status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage:
-          'Could not measure timing - POST stream close time or GET reconnection time not recorded',
+          'Could not measure timing - tool stream close time or GET reconnection time not recorded',
         specReferences: [
           {
             id: 'SEP-1699',
@@ -423,7 +519,7 @@ export class SSERetryScenario implements Scenario {
           }
         ],
         details: {
-          postStreamCloseTime: this.postStreamCloseTime,
+          toolStreamCloseTime: this.toolStreamCloseTime,
           getReconnectionTime: this.getReconnectionTime
         }
       });
@@ -449,7 +545,6 @@ export class SSERetryScenario implements Scenario {
       details: {
         hasLastEventId,
         lastEventIds: this.lastEventIds,
-        primingEventId: this.primingEventId,
         getConnectionCount: this.getConnectionCount
       },
       errorMessage: !hasLastEventId

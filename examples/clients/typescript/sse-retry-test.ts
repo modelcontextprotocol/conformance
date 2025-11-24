@@ -4,12 +4,13 @@
  * SSE Retry Test Client
  *
  * Tests that the MCP client respects the SSE retry field when reconnecting.
- * This client connects to a test server that sends retry: field and closes
- * the connection, then validates that the client waits the appropriate time.
+ * This client connects to a test server that closes the SSE stream mid-tool-call,
+ * then waits for the client to reconnect and sends the tool result.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
 async function main(): Promise<void> {
   const serverUrl = process.argv[2];
@@ -42,7 +43,6 @@ async function main(): Promise<void> {
       }
     });
 
-    // Track reconnection events
     transport.onerror = (error) => {
       console.log(`Transport error: ${error.message}`);
     };
@@ -55,24 +55,23 @@ async function main(): Promise<void> {
     await client.connect(transport);
     console.log('Connected to MCP server');
 
-    // Keep connection alive to observe reconnection behavior
-    // The server will close the POST SSE stream and the client should reconnect via GET
-    console.log('Waiting for reconnection cycle...');
+    console.log('Calling test_reconnection tool...');
     console.log(
-      'Server will send priming event with retry field, then close POST SSE stream'
-    );
-    console.log(
-      'Client should wait for retry period (2000ms) then reconnect via GET with Last-Event-ID'
+      'Server will close SSE stream mid-call and send result after reconnection'
     );
 
-    // Wait long enough for:
-    // 1. Server to send priming event with retry field on POST SSE stream (100ms)
-    // 2. Server closes POST stream to trigger reconnection
-    // 3. Client waits for retry period (2000ms expected)
-    // 4. Client reconnects via GET with Last-Event-ID header
-    await new Promise((resolve) => setTimeout(resolve, 6000));
+    const result = await client.request(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'test_reconnection',
+          arguments: {}
+        }
+      },
+      CallToolResultSchema
+    );
 
-    console.log('Test duration complete');
+    console.log('Tool call completed:', JSON.stringify(result, null, 2));
 
     await transport.close();
     console.log('Connection closed successfully');
