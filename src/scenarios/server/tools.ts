@@ -119,8 +119,8 @@ Implement tool \`test_simple_text\` with no arguments that returns:
       const connection = await connectToServer(serverUrl);
 
       const result = await connection.client.callTool({
-        name: 'test_simple_text',
-        arguments: {}
+        name: 'test_simple_text'
+        /* omit arguments as it is not required in the schema */
       });
 
       // Validate response
