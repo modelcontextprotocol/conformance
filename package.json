@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.8.0",
-    "@types/express": "^5.0.3",
+    "@types/express": "^5.0.5",
     "@types/node": "^22.10.2",
     "@typescript/native-preview": "^7.0.0-dev.20251030.1",
     "cors": "^2.8.5",
