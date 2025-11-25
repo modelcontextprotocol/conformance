@@ -1,4 +1,5 @@
 import * as jose from 'jose';
+import type { CryptoKey } from 'jose';
 import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
@@ -13,7 +14,7 @@ const CONFORMANCE_TEST_CLIENT_SECRET = 'conformance-test-secret';
  * Returns both public key (for server verification) and private key PEM (for client signing).
  */
 async function generateTestKeypair(): Promise<{
-  publicKey: jose.KeyLike;
+  publicKey: CryptoKey;
   privateKeyPem: string;
 }> {
   const { publicKey, privateKey } = await jose.generateKeyPair('ES256', {
