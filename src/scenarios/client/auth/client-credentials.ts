@@ -61,7 +61,10 @@ export class ClientCredentialsJwtScenario implements Scenario {
             description: `Expected grant_type=client_credentials, got ${grantType}`,
             status: 'FAILURE',
             timestamp,
-            specReferences: [SpecReferences.SEP_1046_CLIENT_CREDENTIALS]
+            specReferences: [
+              SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
+              SpecReferences.SEP_1046_CLIENT_CREDENTIALS
+            ]
           });
           return {
             error: 'unsupported_grant_type',
@@ -131,6 +134,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
             status: 'SUCCESS',
             timestamp,
             specReferences: [
+              SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
               SpecReferences.SEP_1046_CLIENT_CREDENTIALS,
               SpecReferences.RFC_JWT_CLIENT_AUTH
             ],
@@ -203,7 +207,10 @@ export class ClientCredentialsJwtScenario implements Scenario {
         description: 'Client did not make a client_credentials token request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.SEP_1046_CLIENT_CREDENTIALS]
+        specReferences: [
+          SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
+          SpecReferences.SEP_1046_CLIENT_CREDENTIALS
+        ]
       });
     }
 
@@ -244,7 +251,10 @@ export class ClientCredentialsBasicScenario implements Scenario {
             description: `Expected grant_type=client_credentials, got ${grantType}`,
             status: 'FAILURE',
             timestamp,
-            specReferences: [SpecReferences.SEP_1046_CLIENT_CREDENTIALS]
+            specReferences: [
+              SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
+              SpecReferences.SEP_1046_CLIENT_CREDENTIALS
+            ]
           });
           return {
             error: 'unsupported_grant_type',
@@ -305,7 +315,10 @@ export class ClientCredentialsBasicScenario implements Scenario {
             'Client successfully authenticated with client_secret_basic',
           status: 'SUCCESS',
           timestamp,
-          specReferences: [SpecReferences.SEP_1046_CLIENT_CREDENTIALS],
+          specReferences: [
+            SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
+            SpecReferences.SEP_1046_CLIENT_CREDENTIALS
+          ],
           details: { clientId }
         });
 
@@ -353,7 +366,10 @@ export class ClientCredentialsBasicScenario implements Scenario {
         description: 'Client did not make a client_credentials token request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.SEP_1046_CLIENT_CREDENTIALS]
+        specReferences: [
+          SpecReferences.OAUTH_2_1_CLIENT_CREDENTIALS,
+          SpecReferences.SEP_1046_CLIENT_CREDENTIALS
+        ]
       });
     }
 

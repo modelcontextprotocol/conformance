@@ -65,6 +65,10 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-7523-JWT-Client-Auth',
     url: 'https://datatracker.ietf.org/doc/html/rfc7523#section-2.2'
   },
+  OAUTH_2_1_CLIENT_CREDENTIALS: {
+    id: 'OAUTH-2.1-client-credentials-grant',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-4.2'
+  },
   SEP_1046_CLIENT_CREDENTIALS: {
     id: 'SEP-1046-Client-Credentials',
     url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/oauth-client-credentials.mdx'
