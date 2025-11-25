@@ -73,7 +73,30 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 **Options:**
 
 - `--url` - URL of the server to test
-- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize". Runs all available scenarios by default
+- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
+- `--suite <suite>` - Suite to run: "active" (default), "all", "pending", or "auth"
+- `--auth` - Include OAuth conformance tests when running active suite
+- `--verbose` - Show verbose output (JSON format)
+
+### Server OAuth Testing
+
+To test OAuth implementation on your server:
+
+```bash
+# Run only OAuth conformance tests
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --suite auth
+
+# Run active tests plus OAuth tests
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --auth
+
+# Run a specific OAuth scenario
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server/auth-prm-discovery
+```
+
+OAuth scenarios validate:
+- **server/auth-prm-discovery** - Protected Resource Metadata endpoint
+- **server/auth-401-unauthorized** - 401 response for unauthenticated requests
+- **server/auth-www-authenticate-header** - WWW-Authenticate header format
 
 ## Test Results
 
@@ -113,6 +136,16 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 - **tools-call-\*** - Various tool invocation scenarios
 - **resources-\*** - Resource management scenarios
 - **prompts-\*** - Prompt management scenarios
+
+### Server OAuth Scenarios
+
+Run `npx @modelcontextprotocol/conformance list --auth` to see OAuth scenarios:
+
+- **server/auth-prm-discovery** - Validates Protected Resource Metadata endpoint per RFC 9728
+- **server/auth-401-unauthorized** - Validates 401 response for unauthenticated requests
+- **server/auth-www-authenticate-header** - Validates WWW-Authenticate header format per RFC 6750
+
+These scenarios test OAuth compliance without requiring a valid access token, making them suitable for basic conformance testing of any OAuth-protected MCP server.
 
 ## Architecture
 

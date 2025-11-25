@@ -16,7 +16,8 @@ import {
   listActiveClientScenarios,
   listPendingClientScenarios,
   listAuthScenarios,
-  listMetadataScenarios
+  listMetadataScenarios,
+  listServerAuthScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -201,9 +202,10 @@ program
   )
   .option(
     '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending), "all", or "pending"',
+    'Suite to run: "active" (default), "all", "pending", or "auth"',
     'active'
   )
+  .option('--auth', 'Include OAuth conformance tests (server/auth-* scenarios)')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -228,22 +230,31 @@ program
       } else {
         // Run scenarios based on suite
         const suite = options.suite?.toLowerCase() || 'active';
+        const includeAuth = options.auth ?? false;
         let scenarios: string[];
 
         if (suite === 'all') {
           scenarios = listClientScenarios();
         } else if (suite === 'active') {
           scenarios = listActiveClientScenarios();
+          // Add auth scenarios if --auth flag is set
+          if (includeAuth) {
+            scenarios = [...scenarios, ...listServerAuthScenarios()];
+          }
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
+        } else if (suite === 'auth') {
+          // Run only auth scenarios
+          scenarios = listServerAuthScenarios();
         } else {
           console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, pending');
+          console.error('Available suites: active, all, pending, auth');
           process.exit(1);
         }
 
+        const authNote = includeAuth && suite !== 'auth' ? ' (with auth)' : '';
         console.log(
-          `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
+          `Running ${suite}${authNote} suite (${scenarios.length} scenarios) against ${validated.url}\n`
         );
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
@@ -300,15 +311,27 @@ program
   .description('List available test scenarios')
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
+  .option('--auth', 'List server OAuth auth scenarios')
   .action((options) => {
-    if (options.server || (!options.client && !options.server)) {
+    const showAll = !options.client && !options.server && !options.auth;
+
+    if (options.server || showAll) {
       console.log('Server scenarios (test against a server):');
       const serverScenarios = listClientScenarios();
       serverScenarios.forEach((s) => console.log(`  - ${s}`));
     }
 
-    if (options.client || (!options.client && !options.server)) {
-      if (options.server || (!options.client && !options.server)) {
+    if (options.auth || showAll) {
+      if (options.server || showAll) {
+        console.log('');
+      }
+      console.log('Server OAuth scenarios (use --auth or --suite auth):');
+      const authScenarios = listServerAuthScenarios();
+      authScenarios.forEach((s) => console.log(`  - ${s}`));
+    }
+
+    if (options.client || showAll) {
+      if (options.server || options.auth || showAll) {
         console.log('');
       }
       console.log('Client scenarios (test against a client):');

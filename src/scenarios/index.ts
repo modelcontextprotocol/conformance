@@ -53,6 +53,13 @@ import {
 import { authScenariosList } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 
+// Server auth scenarios (OAuth conformance testing)
+import {
+  serverAuthScenarios,
+  listServerAuthScenarios,
+  getServerAuthScenario
+} from './server/auth/index';
+
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
@@ -133,9 +140,12 @@ const activeClientScenariosList: ClientScenario[] =
       )
   );
 
-// Client scenarios map - built from list
+// Client scenarios map - built from list (includes server auth scenarios)
 export const clientScenarios = new Map<string, ClientScenario>(
-  allClientScenariosList.map((scenario) => [scenario.name, scenario])
+  [...allClientScenariosList, ...serverAuthScenarios].map((scenario) => [
+    scenario.name,
+    scenario
+  ])
 );
 
 // Scenario scenarios
@@ -185,3 +195,6 @@ export function listAuthScenarios(): string[] {
 }
 
 export { listMetadataScenarios };
+
+// Server auth scenario exports
+export { listServerAuthScenarios, getServerAuthScenario, serverAuthScenarios };
