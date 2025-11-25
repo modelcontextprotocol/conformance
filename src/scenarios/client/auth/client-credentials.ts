@@ -103,6 +103,28 @@ export class ClientCredentialsJwtScenario implements Scenario {
             clockTolerance: 30
           });
 
+          // Verify iss claim matches expected client_id
+          if (payload.iss !== CONFORMANCE_TEST_CLIENT_ID) {
+            this.checks.push({
+              id: 'client-credentials-jwt-iss',
+              name: 'ClientCredentialsJwtIss',
+              description: `JWT iss claim '${payload.iss}' does not match expected client_id '${CONFORMANCE_TEST_CLIENT_ID}'`,
+              status: 'FAILURE',
+              timestamp,
+              specReferences: [SpecReferences.RFC_JWT_CLIENT_AUTH],
+              details: {
+                expected: CONFORMANCE_TEST_CLIENT_ID,
+                actual: payload.iss
+              }
+            });
+            return {
+              error: 'invalid_client',
+              errorDescription:
+                'JWT iss claim does not match expected client_id',
+              statusCode: 401
+            };
+          }
+
           // Verify sub claim matches expected client_id
           if (payload.sub !== CONFORMANCE_TEST_CLIENT_ID) {
             this.checks.push({
