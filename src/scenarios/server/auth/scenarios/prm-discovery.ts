@@ -96,7 +96,7 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         errorMessage: `No PRM found at ${pathBasedUrl} or ${rootUrl}`,
         specReferences: [
           ServerAuthSpecReferences.RFC_9728_PRM_DISCOVERY,
-          ServerAuthSpecReferences.MCP_AUTH_PRM_DISCOVERY
+          ServerAuthSpecReferences.MCP_AUTH_SERVER_LOCATION
         ],
         details: {
           triedUrls: [pathBasedUrl, rootUrl]
