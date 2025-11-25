@@ -32,7 +32,7 @@
     "@eslint/js": "^9.8.0",
     "@types/express": "^5.0.3",
     "@types/node": "^22.10.2",
-    "@typescript/native-preview": "^7.0.0-dev.20251030.1",
+    "@typescript/native-preview": "^7.0.0-dev.20251118.1",
     "cors": "^2.8.5",
     "eslint": "^9.8.0",
     "eslint-config-prettier": "^10.1.8",
