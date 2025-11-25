@@ -16,7 +16,9 @@ async function generateTestKeypair(): Promise<{
   publicKey: jose.KeyLike;
   privateKeyPem: string;
 }> {
-  const { publicKey, privateKey } = await jose.generateKeyPair('ES256');
+  const { publicKey, privateKey } = await jose.generateKeyPair('ES256', {
+    extractable: true
+  });
   const privateKeyPem = await jose.exportPKCS8(privateKey);
   return { publicKey, privateKeyPem };
 }
@@ -228,7 +230,12 @@ export class ClientCredentialsBasicScenario implements Scenario {
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['client_credentials'],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
-      onTokenRequest: async ({ grantType, body, timestamp, headers }) => {
+      onTokenRequest: async ({
+        grantType,
+        body,
+        timestamp,
+        authorizationHeader
+      }) => {
         if (grantType !== 'client_credentials') {
           this.checks.push({
             id: 'client-credentials-grant-type',
@@ -245,7 +252,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
         }
 
         // Verify Basic auth header
-        const authHeader = headers.authorization;
+        const authHeader = authorizationHeader;
         if (!authHeader || !authHeader.startsWith('Basic ')) {
           this.checks.push({
             id: 'client-credentials-basic-auth',
