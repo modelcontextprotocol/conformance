@@ -26,6 +26,11 @@ export interface ConformanceCheck {
 export interface ScenarioUrls {
   serverUrl: string;
   authUrl?: string;
+  /**
+   * Optional context to pass to the client via MCP_CONFORMANCE_CONTEXT env var.
+   * This is a JSON-serializable object containing scenario-specific data like credentials.
+   */
+  context?: Record<string, unknown>;
 }
 
 export interface Scenario {
