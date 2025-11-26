@@ -85,7 +85,9 @@ export function listServerAuthScenarios(): string[] {
 /**
  * Get a server auth scenario by name.
  */
-export function getServerAuthScenario(name: string): ClientScenario | undefined {
+export function getServerAuthScenario(
+  name: string
+): ClientScenario | undefined {
   return serverAuthScenarios.find((s) => s.name === name);
 }
 

@@ -90,7 +90,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
       checks.push({
         id: 'auth-prm-endpoint-exists',
         name: 'PRM Endpoint Exists',
-        description: 'Server exposes Protected Resource Metadata at well-known endpoint',
+        description:
+          'Server exposes Protected Resource Metadata at well-known endpoint',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: `No PRM found at ${pathBasedUrl} or ${rootUrl}`,
@@ -108,7 +109,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
     checks.push({
       id: 'auth-prm-endpoint-exists',
       name: 'PRM Endpoint Exists',
-      description: 'Server exposes Protected Resource Metadata at well-known endpoint',
+      description:
+        'Server exposes Protected Resource Metadata at well-known endpoint',
       status: 'SUCCESS',
       timestamp: timestamp(),
       specReferences: [
@@ -158,7 +160,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         description: 'PRM contains required "resource" identifier',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'Missing or invalid "resource" field (must be non-empty string)',
+        errorMessage:
+          'Missing or invalid "resource" field (must be non-empty string)',
         specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
         details: {
           resource: prm.resource
@@ -179,14 +182,18 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
     }
 
     // Check 4: Required "authorization_servers" field
-    if (!Array.isArray(prm.authorization_servers) || prm.authorization_servers.length === 0) {
+    if (
+      !Array.isArray(prm.authorization_servers) ||
+      prm.authorization_servers.length === 0
+    ) {
       checks.push({
         id: 'auth-prm-has-authorization-servers',
         name: 'PRM Has Authorization Servers',
         description: 'PRM contains required "authorization_servers" array',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'Missing or invalid "authorization_servers" field (must be non-empty array)',
+        errorMessage:
+          'Missing or invalid "authorization_servers" field (must be non-empty array)',
         specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
         details: {
           authorization_servers: prm.authorization_servers
@@ -211,7 +218,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         checks.push({
           id: 'auth-prm-has-authorization-servers',
           name: 'PRM Has Authorization Servers',
-          description: 'PRM contains required "authorization_servers" array with valid URLs',
+          description:
+            'PRM contains required "authorization_servers" array with valid URLs',
           status: 'FAILURE',
           timestamp: timestamp(),
           errorMessage: `Invalid URLs in authorization_servers: ${invalidUrls.join(', ')}`,
@@ -225,7 +233,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         checks.push({
           id: 'auth-prm-has-authorization-servers',
           name: 'PRM Has Authorization Servers',
-          description: 'PRM contains required "authorization_servers" array with valid URLs',
+          description:
+            'PRM contains required "authorization_servers" array with valid URLs',
           status: 'SUCCESS',
           timestamp: timestamp(),
           specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
@@ -242,7 +251,8 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         checks.push({
           id: 'auth-prm-scopes-supported-valid',
           name: 'PRM Scopes Supported Valid',
-          description: 'PRM "scopes_supported" field is a valid array (if present)',
+          description:
+            'PRM "scopes_supported" field is a valid array (if present)',
           status: 'FAILURE',
           timestamp: timestamp(),
           errorMessage: '"scopes_supported" must be an array when present',
@@ -253,7 +263,9 @@ export class AuthPrmDiscoveryScenario implements ClientScenario {
         });
       } else {
         // Check all scopes are strings
-        const nonStringScopes = prm.scopes_supported.filter(s => typeof s !== 'string');
+        const nonStringScopes = prm.scopes_supported.filter(
+          (s) => typeof s !== 'string'
+        );
         if (nonStringScopes.length > 0) {
           checks.push({
             id: 'auth-prm-scopes-supported-valid',

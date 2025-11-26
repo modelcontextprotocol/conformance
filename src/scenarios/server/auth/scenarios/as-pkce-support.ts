@@ -49,7 +49,9 @@ S256 is the recommended method (SHA-256 hash of code verifier).
         description: 'Valid AS metadata required to check PKCE support',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: asResult.error || 'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
+        errorMessage:
+          asResult.error ||
+          'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY]
       });
       return checks;
@@ -73,10 +75,12 @@ S256 is the recommended method (SHA-256 hash of code verifier).
       checks.push({
         id: 'auth-pkce-field-present',
         name: 'PKCE Methods Field Present',
-        description: 'AS metadata contains code_challenge_methods_supported field',
+        description:
+          'AS metadata contains code_challenge_methods_supported field',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Field not present - PKCE support unknown (may still be supported)',
+        errorMessage:
+          'Field not present - PKCE support unknown (may still be supported)',
         specReferences: [
           ServerAuthSpecReferences.RFC_7636_CODE_CHALLENGE_METHODS,
           ServerAuthSpecReferences.RFC_8414_AS_FIELDS
@@ -91,7 +95,8 @@ S256 is the recommended method (SHA-256 hash of code verifier).
         description: 'Authorization Server supports S256 code challenge method',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: 'Cannot determine - code_challenge_methods_supported not advertised',
+        errorMessage:
+          'Cannot determine - code_challenge_methods_supported not advertised',
         specReferences: [ServerAuthSpecReferences.RFC_7636_CODE_CHALLENGE]
       });
 
@@ -103,7 +108,8 @@ S256 is the recommended method (SHA-256 hash of code verifier).
       checks.push({
         id: 'auth-pkce-field-present',
         name: 'PKCE Methods Field Present',
-        description: 'AS metadata contains code_challenge_methods_supported field',
+        description:
+          'AS metadata contains code_challenge_methods_supported field',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: `Invalid type: expected array, got ${typeof challengeMethods}`,
@@ -116,7 +122,8 @@ S256 is the recommended method (SHA-256 hash of code verifier).
     checks.push({
       id: 'auth-pkce-field-present',
       name: 'PKCE Methods Field Present',
-      description: 'AS metadata contains code_challenge_methods_supported field',
+      description:
+        'AS metadata contains code_challenge_methods_supported field',
       status: 'SUCCESS',
       timestamp: timestamp(),
       specReferences: [
@@ -153,7 +160,8 @@ S256 is the recommended method (SHA-256 hash of code verifier).
         description: 'Authorization Server supports S256 code challenge method',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'S256 not in code_challenge_methods_supported - required for secure PKCE',
+        errorMessage:
+          'S256 not in code_challenge_methods_supported - required for secure PKCE',
         specReferences: [
           ServerAuthSpecReferences.RFC_7636_CODE_CHALLENGE,
           ServerAuthSpecReferences.OAUTH_2_1_PKCE
@@ -170,10 +178,12 @@ S256 is the recommended method (SHA-256 hash of code verifier).
       checks.push({
         id: 'auth-pkce-plain-only',
         name: 'PKCE Plain Method Only',
-        description: 'Check if only "plain" method is supported (security risk)',
+        description:
+          'Check if only "plain" method is supported (security risk)',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Only "plain" PKCE method supported - S256 is recommended for security',
+        errorMessage:
+          'Only "plain" PKCE method supported - S256 is recommended for security',
         specReferences: [ServerAuthSpecReferences.RFC_7636_CODE_CHALLENGE],
         details: {
           code_challenge_methods_supported: challengeMethods,
@@ -184,7 +194,8 @@ S256 is the recommended method (SHA-256 hash of code verifier).
       checks.push({
         id: 'auth-pkce-plain-only',
         name: 'PKCE Plain Method Only',
-        description: 'Check if only "plain" method is supported (security risk)',
+        description:
+          'Check if only "plain" method is supported (security risk)',
         status: 'INFO',
         timestamp: timestamp(),
         specReferences: [ServerAuthSpecReferences.RFC_7636_CODE_CHALLENGE],

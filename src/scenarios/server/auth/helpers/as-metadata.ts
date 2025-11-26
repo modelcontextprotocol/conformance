@@ -66,7 +66,11 @@ export async function fetchPrm(serverUrl: string): Promise<PrmResult> {
   // Try path-based first
   try {
     const response = await authFetch(pathBasedUrl);
-    if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+    if (
+      response.status === 200 &&
+      typeof response.body === 'object' &&
+      response.body !== null
+    ) {
       return {
         success: true,
         prm: response.body as Record<string, unknown>,
@@ -82,7 +86,11 @@ export async function fetchPrm(serverUrl: string): Promise<PrmResult> {
   if (pathBasedUrl !== rootUrl) {
     try {
       const response = await authFetch(rootUrl);
-      if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+      if (
+        response.status === 200 &&
+        typeof response.body === 'object' &&
+        response.body !== null
+      ) {
         return {
           success: true,
           prm: response.body as Record<string, unknown>,
@@ -107,7 +115,9 @@ export async function fetchPrm(serverUrl: string): Promise<PrmResult> {
  * @param serverUrl - The MCP server URL
  * @returns AS metadata result
  */
-export async function fetchAsMetadata(serverUrl: string): Promise<AsMetadataResult> {
+export async function fetchAsMetadata(
+  serverUrl: string
+): Promise<AsMetadataResult> {
   // First fetch PRM
   const prmResult = await fetchPrm(serverUrl);
 
@@ -118,7 +128,9 @@ export async function fetchAsMetadata(serverUrl: string): Promise<AsMetadataResu
     };
   }
 
-  const authServers = prmResult.prm.authorization_servers as string[] | undefined;
+  const authServers = prmResult.prm.authorization_servers as
+    | string[]
+    | undefined;
 
   if (!Array.isArray(authServers) || authServers.length === 0) {
     return {
@@ -133,7 +145,11 @@ export async function fetchAsMetadata(serverUrl: string): Promise<AsMetadataResu
   const rfc8414Url = buildAsMetadataUrl(asUrl, false);
   try {
     const response = await authFetch(rfc8414Url);
-    if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+    if (
+      response.status === 200 &&
+      typeof response.body === 'object' &&
+      response.body !== null
+    ) {
       return {
         success: true,
         metadata: response.body as Record<string, unknown>,
@@ -151,7 +167,11 @@ export async function fetchAsMetadata(serverUrl: string): Promise<AsMetadataResu
   const oidcUrl = buildAsMetadataUrl(asUrl, true);
   try {
     const response = await authFetch(oidcUrl);
-    if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+    if (
+      response.status === 200 &&
+      typeof response.body === 'object' &&
+      response.body !== null
+    ) {
       return {
         success: true,
         metadata: response.body as Record<string, unknown>,

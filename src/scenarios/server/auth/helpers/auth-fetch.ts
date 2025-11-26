@@ -138,7 +138,13 @@ export async function authFetch(
   url: string,
   options: AuthFetchOptions = {}
 ): Promise<AuthTestResult> {
-  const { token, method = 'GET', body, headers = {}, timeout = 30000 } = options;
+  const {
+    token,
+    method = 'GET',
+    body,
+    headers = {},
+    timeout = 30000
+  } = options;
 
   // Build headers
   const requestHeaders: Record<string, string> = {

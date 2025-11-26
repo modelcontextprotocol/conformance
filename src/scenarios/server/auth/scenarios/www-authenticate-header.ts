@@ -229,10 +229,12 @@ WWW-Authenticate: Bearer error="invalid_token", error_description="Token expired
       checks.push({
         id: 'auth-www-auth-resource-metadata',
         name: 'Resource Metadata URL',
-        description: 'WWW-Authenticate includes resource_metadata URL (recommended)',
+        description:
+          'WWW-Authenticate includes resource_metadata URL (recommended)',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Missing resource_metadata parameter (recommended for MCP)',
+        errorMessage:
+          'Missing resource_metadata parameter (recommended for MCP)',
         specReferences: [ServerAuthSpecReferences.MCP_AUTH_SCOPE_SELECTION],
         details: {
           params: wwwAuth.params
@@ -273,7 +275,9 @@ WWW-Authenticate: Bearer error="invalid_token", error_description="Token expired
             status: 'WARNING',
             timestamp: timestamp(),
             errorMessage: `Some scope tokens may contain invalid characters: ${invalidScopes.join(', ')}`,
-            specReferences: [ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE],
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
+            ],
             details: {
               scope,
               scopes,
@@ -287,7 +291,9 @@ WWW-Authenticate: Bearer error="invalid_token", error_description="Token expired
             description: 'Scope parameter is properly formatted',
             status: 'SUCCESS',
             timestamp: timestamp(),
-            specReferences: [ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE],
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
+            ],
             details: {
               scope,
               scopes

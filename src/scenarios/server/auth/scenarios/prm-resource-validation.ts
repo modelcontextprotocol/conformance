@@ -53,7 +53,8 @@ The resource identifier is used for token audience binding.
         description: 'Valid PRM required to validate resource field',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: prmResult.error || 'Cannot fetch PRM - run auth-prm-discovery first',
+        errorMessage:
+          prmResult.error || 'Cannot fetch PRM - run auth-prm-discovery first',
         specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_DISCOVERY]
       });
       return checks;
@@ -79,7 +80,8 @@ The resource identifier is used for token audience binding.
         description: 'PRM contains "resource" field',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'Missing or invalid "resource" field (must be non-empty string)',
+        errorMessage:
+          'Missing or invalid "resource" field (must be non-empty string)',
         specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_FIELDS],
         details: { resource }
       });
@@ -156,7 +158,8 @@ The resource identifier is used for token audience binding.
         description: 'Resource URI does not contain fragment component',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'Resource URI contains fragment - not allowed per RFC 8707',
+        errorMessage:
+          'Resource URI contains fragment - not allowed per RFC 8707',
         specReferences: [ServerAuthSpecReferences.RFC_8707_RESOURCE_PARAMETER],
         details: { resource, fragment: resourceUrl.hash }
       });
@@ -198,7 +201,8 @@ The resource identifier is used for token audience binding.
     const resourceBase = `${resourceUrl.protocol}//${resourceUrl.host}`;
     const serverBase = `${serverUrlParsed.protocol}//${serverUrlParsed.host}`;
 
-    const exactMatch = resource === serverUrl ||
+    const exactMatch =
+      resource === serverUrl ||
       resource === serverUrl.replace(/\/$/, '') ||
       resource.replace(/\/$/, '') === serverUrl;
 
@@ -207,7 +211,8 @@ The resource identifier is used for token audience binding.
     const resourceIsPrefix = serverUrl.startsWith(resource.replace(/\/$/, ''));
     const serverIsPrefix = resource.startsWith(serverUrl.replace(/\/$/, ''));
 
-    const relatesTo = exactMatch || (sameHost && (resourceIsPrefix || serverIsPrefix));
+    const relatesTo =
+      exactMatch || (sameHost && (resourceIsPrefix || serverIsPrefix));
 
     if (relatesTo) {
       checks.push({
@@ -222,7 +227,11 @@ The resource identifier is used for token audience binding.
           serverUrl,
           exactMatch,
           sameHost,
-          relationship: exactMatch ? 'exact' : (resourceIsPrefix ? 'resource_is_prefix' : 'server_is_prefix')
+          relationship: exactMatch
+            ? 'exact'
+            : resourceIsPrefix
+              ? 'resource_is_prefix'
+              : 'server_is_prefix'
         }
       });
     } else if (sameHost) {
@@ -232,7 +241,8 @@ The resource identifier is used for token audience binding.
         description: 'Resource URI relates to the server URL',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Same host but paths differ significantly - verify this is intentional',
+        errorMessage:
+          'Same host but paths differ significantly - verify this is intentional',
         specReferences: [ServerAuthSpecReferences.MCP_AUTH_CANONICAL_URI],
         details: {
           resource,

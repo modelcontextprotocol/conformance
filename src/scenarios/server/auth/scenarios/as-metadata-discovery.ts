@@ -95,7 +95,11 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
     }
 
     // Check: Can fetch PRM (prerequisite)
-    if (!prmResponse || typeof prmResponse.body !== 'object' || prmResponse.body === null) {
+    if (
+      !prmResponse ||
+      typeof prmResponse.body !== 'object' ||
+      prmResponse.body === null
+    ) {
       checks.push({
         id: 'auth-as-prm-prerequisite',
         name: 'PRM Prerequisite',
@@ -175,7 +179,8 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
       checks.push({
         id: 'auth-as-endpoint-exists',
         name: 'AS Metadata Endpoint Exists',
-        description: 'Authorization Server exposes metadata at well-known endpoint',
+        description:
+          'Authorization Server exposes metadata at well-known endpoint',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: `No AS metadata found at ${rfc8414Url} or ${oidcUrl}`,
@@ -191,11 +196,14 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
     checks.push({
       id: 'auth-as-endpoint-exists',
       name: 'AS Metadata Endpoint Exists',
-      description: 'Authorization Server exposes metadata at well-known endpoint',
+      description:
+        'Authorization Server exposes metadata at well-known endpoint',
       status: 'SUCCESS',
       timestamp: timestamp(),
       specReferences: [
-        isOidc ? ServerAuthSpecReferences.OIDC_DISCOVERY : ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY
+        isOidc
+          ? ServerAuthSpecReferences.OIDC_DISCOVERY
+          : ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY
       ],
       details: { url: usedUrl, discoveryType: isOidc ? 'OIDC' : 'RFC8414' }
     });
@@ -235,13 +243,15 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
         description: 'AS metadata contains required "issuer" field',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'Missing or invalid "issuer" field (must be non-empty string)',
+        errorMessage:
+          'Missing or invalid "issuer" field (must be non-empty string)',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: { issuer: asMeta.issuer }
       });
     } else {
       // Validate issuer matches AS URL (per RFC 8414)
-      const issuerMatches = asMeta.issuer === asUrl ||
+      const issuerMatches =
+        asMeta.issuer === asUrl ||
         asMeta.issuer === asUrl.replace(/\/$/, '') ||
         asUrl.startsWith(asMeta.issuer as string);
 
@@ -251,18 +261,24 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
         description: 'AS metadata contains required "issuer" field',
         status: issuerMatches ? 'SUCCESS' : 'WARNING',
         timestamp: timestamp(),
-        errorMessage: issuerMatches ? undefined : `Issuer "${asMeta.issuer}" may not match AS URL "${asUrl}"`,
+        errorMessage: issuerMatches
+          ? undefined
+          : `Issuer "${asMeta.issuer}" may not match AS URL "${asUrl}"`,
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: { issuer: asMeta.issuer, asUrl, matches: issuerMatches }
       });
     }
 
     // Check: Required "authorization_endpoint" field
-    if (typeof asMeta.authorization_endpoint !== 'string' || asMeta.authorization_endpoint.length === 0) {
+    if (
+      typeof asMeta.authorization_endpoint !== 'string' ||
+      asMeta.authorization_endpoint.length === 0
+    ) {
       checks.push({
         id: 'auth-as-has-authorization-endpoint',
         name: 'AS Has Authorization Endpoint',
-        description: 'AS metadata contains required "authorization_endpoint" field',
+        description:
+          'AS metadata contains required "authorization_endpoint" field',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: 'Missing or invalid "authorization_endpoint" field',
@@ -282,17 +298,23 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
       checks.push({
         id: 'auth-as-has-authorization-endpoint',
         name: 'AS Has Authorization Endpoint',
-        description: 'AS metadata contains required "authorization_endpoint" field',
+        description:
+          'AS metadata contains required "authorization_endpoint" field',
         status: isValidUrl ? 'SUCCESS' : 'WARNING',
         timestamp: timestamp(),
-        errorMessage: isValidUrl ? undefined : 'authorization_endpoint is not a valid URL',
+        errorMessage: isValidUrl
+          ? undefined
+          : 'authorization_endpoint is not a valid URL',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: { authorization_endpoint: asMeta.authorization_endpoint }
       });
     }
 
     // Check: Required "token_endpoint" field
-    if (typeof asMeta.token_endpoint !== 'string' || asMeta.token_endpoint.length === 0) {
+    if (
+      typeof asMeta.token_endpoint !== 'string' ||
+      asMeta.token_endpoint.length === 0
+    ) {
       checks.push({
         id: 'auth-as-has-token-endpoint',
         name: 'AS Has Token Endpoint',
@@ -318,7 +340,9 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
         description: 'AS metadata contains required "token_endpoint" field',
         status: isValidUrl ? 'SUCCESS' : 'WARNING',
         timestamp: timestamp(),
-        errorMessage: isValidUrl ? undefined : 'token_endpoint is not a valid URL',
+        errorMessage: isValidUrl
+          ? undefined
+          : 'token_endpoint is not a valid URL',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: { token_endpoint: asMeta.token_endpoint }
       });
@@ -330,7 +354,8 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
       checks.push({
         id: 'auth-as-response-types-supported',
         name: 'AS Response Types Supported',
-        description: 'AS metadata contains "response_types_supported" with "code"',
+        description:
+          'AS metadata contains "response_types_supported" with "code"',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: 'Missing or invalid "response_types_supported" array',
@@ -342,10 +367,13 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
       checks.push({
         id: 'auth-as-response-types-supported',
         name: 'AS Response Types Supported',
-        description: 'AS metadata contains "response_types_supported" with "code"',
+        description:
+          'AS metadata contains "response_types_supported" with "code"',
         status: hasCode ? 'SUCCESS' : 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: hasCode ? undefined : '"response_types_supported" must include "code" for authorization code flow',
+        errorMessage: hasCode
+          ? undefined
+          : '"response_types_supported" must include "code" for authorization code flow',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: { response_types_supported: responseTypes, hasCode }
       });
@@ -370,7 +398,9 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
         description: 'AS metadata contains "registration_endpoint" for DCR',
         status: isValidUrl ? 'SUCCESS' : 'WARNING',
         timestamp: timestamp(),
-        errorMessage: isValidUrl ? undefined : 'registration_endpoint is not a valid URL',
+        errorMessage: isValidUrl
+          ? undefined
+          : 'registration_endpoint is not a valid URL',
         specReferences: [
           ServerAuthSpecReferences.RFC_8414_AS_FIELDS,
           ServerAuthSpecReferences.MCP_AUTH_DCR
@@ -384,7 +414,8 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
         description: 'AS metadata contains "registration_endpoint" for DCR',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'No registration_endpoint - DCR not supported (CIMD may be alternative)',
+        errorMessage:
+          'No registration_endpoint - DCR not supported (CIMD may be alternative)',
         specReferences: [
           ServerAuthSpecReferences.RFC_8414_AS_FIELDS,
           ServerAuthSpecReferences.MCP_AUTH_DCR

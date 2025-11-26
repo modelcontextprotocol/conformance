@@ -92,7 +92,8 @@ WWW-Authenticate: Bearer realm="mcp", scope="mcp:read mcp:write"
       checks.push({
         id: 'auth-401-status-code',
         name: '401 Status Code',
-        description: 'Server returns 401 Unauthorized for unauthenticated requests',
+        description:
+          'Server returns 401 Unauthorized for unauthenticated requests',
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [
@@ -109,10 +110,12 @@ WWW-Authenticate: Bearer realm="mcp", scope="mcp:read mcp:write"
       checks.push({
         id: 'auth-401-status-code',
         name: '401 Status Code',
-        description: 'Server returns 401 Unauthorized for unauthenticated requests',
+        description:
+          'Server returns 401 Unauthorized for unauthenticated requests',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Server allowed unauthenticated request (may use step-up auth)',
+        errorMessage:
+          'Server allowed unauthenticated request (may use step-up auth)',
         specReferences: [
           ServerAuthSpecReferences.RFC_7235_401_RESPONSE,
           ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN
@@ -141,7 +144,8 @@ WWW-Authenticate: Bearer realm="mcp", scope="mcp:read mcp:write"
           checks.push({
             id: 'auth-401-protected-method',
             name: '401 For Protected Method',
-            description: 'Server returns 401 for protected methods (step-up auth)',
+            description:
+              'Server returns 401 for protected methods (step-up auth)',
             status: 'SUCCESS',
             timestamp: timestamp(),
             specReferences: [ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN],
@@ -174,7 +178,8 @@ WWW-Authenticate: Bearer realm="mcp", scope="mcp:read mcp:write"
       checks.push({
         id: 'auth-401-status-code',
         name: '401 Status Code',
-        description: 'Server returns 401 Unauthorized for unauthenticated requests',
+        description:
+          'Server returns 401 Unauthorized for unauthenticated requests',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: `Expected 401, got ${response.status}`,

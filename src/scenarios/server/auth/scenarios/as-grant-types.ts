@@ -67,7 +67,9 @@ Grant types determine the OAuth flows a server supports:
         description: 'Valid AS metadata required to check grant types',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: asResult.error || 'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
+        errorMessage:
+          asResult.error ||
+          'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY]
       });
       return checks;
@@ -94,7 +96,8 @@ Grant types determine the OAuth flows a server supports:
         description: 'AS metadata contains grant_types_supported field',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Field not present - defaults to ["authorization_code", "implicit"] per RFC 8414',
+        errorMessage:
+          'Field not present - defaults to ["authorization_code", "implicit"] per RFC 8414',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
         details: {
           grant_types_supported: undefined,
@@ -274,7 +277,8 @@ Grant types determine the OAuth flows a server supports:
         description: 'Check for deprecated implicit grant type',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'implicit grant is deprecated in OAuth 2.1 - use authorization_code with PKCE instead',
+        errorMessage:
+          'implicit grant is deprecated in OAuth 2.1 - use authorization_code with PKCE instead',
         specReferences: [ServerAuthSpecReferences.OAUTH_2_1_GRANT_TYPES],
         details: {
           implicit: true,
@@ -294,7 +298,8 @@ Grant types determine the OAuth flows a server supports:
         description: 'Check for deprecated password grant type',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'password grant (Resource Owner Password Credentials) is removed in OAuth 2.1',
+        errorMessage:
+          'password grant (Resource Owner Password Credentials) is removed in OAuth 2.1',
         specReferences: [ServerAuthSpecReferences.OAUTH_2_1_GRANT_TYPES],
         details: {
           password: true,
@@ -305,9 +310,15 @@ Grant types determine the OAuth flows a server supports:
     }
 
     // Check: unknown/non-standard grant types
-    const unknownGrants = grantTypes.filter((g: unknown) => typeof g !== 'string' || !STANDARD_GRANT_TYPES.includes(g as string));
+    const unknownGrants = grantTypes.filter(
+      (g: unknown) =>
+        typeof g !== 'string' || !STANDARD_GRANT_TYPES.includes(g as string)
+    );
     const deprecatedGrants = ['implicit', 'password'];
-    const customGrants = unknownGrants.filter((g: unknown) => typeof g !== 'string' || !deprecatedGrants.includes(g as string));
+    const customGrants = unknownGrants.filter(
+      (g: unknown) =>
+        typeof g !== 'string' || !deprecatedGrants.includes(g as string)
+    );
 
     if (customGrants.length > 0) {
       checks.push({
@@ -330,7 +341,8 @@ Grant types determine the OAuth flows a server supports:
     checks.push({
       id: 'auth-grant-types-sep1046-ready',
       name: 'SEP-1046 Client Credentials Ready',
-      description: 'Authorization Server is ready for MCP client_credentials flow',
+      description:
+        'Authorization Server is ready for MCP client_credentials flow',
       status: sep1046Ready ? 'SUCCESS' : 'INFO',
       timestamp: timestamp(),
       specReferences: [

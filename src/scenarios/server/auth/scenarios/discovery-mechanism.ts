@@ -54,13 +54,16 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         description: 'Valid PRM required to discover Authorization Server',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: prmResult.error || 'Cannot fetch PRM - run auth-prm-discovery first',
+        errorMessage:
+          prmResult.error || 'Cannot fetch PRM - run auth-prm-discovery first',
         specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_DISCOVERY]
       });
       return checks;
     }
 
-    const authServers = prmResult.prm.authorization_servers as string[] | undefined;
+    const authServers = prmResult.prm.authorization_servers as
+      | string[]
+      | undefined;
 
     if (!Array.isArray(authServers) || authServers.length === 0) {
       checks.push({
@@ -94,7 +97,11 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
 
     try {
       const response = await authFetch(rfc8414Url);
-      if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+      if (
+        response.status === 200 &&
+        typeof response.body === 'object' &&
+        response.body !== null
+      ) {
         rfc8414Response = response;
         rfc8414Metadata = response.body as Record<string, unknown>;
       }
@@ -109,7 +116,11 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
 
     try {
       const response = await authFetch(oidcUrl);
-      if (response.status === 200 && typeof response.body === 'object' && response.body !== null) {
+      if (
+        response.status === 200 &&
+        typeof response.body === 'object' &&
+        response.body !== null
+      ) {
         oidcResponse = response;
         oidcMetadata = response.body as Record<string, unknown>;
       }
@@ -176,7 +187,8 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         description: 'At least one discovery mechanism is available',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: 'No discovery endpoint found - AS metadata not discoverable',
+        errorMessage:
+          'No discovery endpoint found - AS metadata not discoverable',
         specReferences: [
           ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY,
           ServerAuthSpecReferences.OIDC_DISCOVERY,
@@ -218,12 +230,19 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
 
       // Check issuer consistency
       if (rfc8414Metadata.issuer !== oidcMetadata.issuer) {
-        consistencyIssues.push(`issuer mismatch: RFC8414="${rfc8414Metadata.issuer}" vs OIDC="${oidcMetadata.issuer}"`);
+        consistencyIssues.push(
+          `issuer mismatch: RFC8414="${rfc8414Metadata.issuer}" vs OIDC="${oidcMetadata.issuer}"`
+        );
       }
 
       // Check authorization_endpoint consistency
-      if (rfc8414Metadata.authorization_endpoint !== oidcMetadata.authorization_endpoint) {
-        consistencyIssues.push('authorization_endpoint differs between endpoints');
+      if (
+        rfc8414Metadata.authorization_endpoint !==
+        oidcMetadata.authorization_endpoint
+      ) {
+        consistencyIssues.push(
+          'authorization_endpoint differs between endpoints'
+        );
       }
 
       // Check token_endpoint consistency

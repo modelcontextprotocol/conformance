@@ -46,7 +46,9 @@ pointing to a metadata document hosted by the client.
         description: 'Valid AS metadata required to check CIMD support',
         status: 'SKIPPED',
         timestamp: timestamp(),
-        errorMessage: asResult.error || 'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
+        errorMessage:
+          asResult.error ||
+          'Cannot fetch AS metadata - run auth-as-metadata-discovery first',
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY]
       });
       return checks;
@@ -71,10 +73,12 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-field-present',
         name: 'CIMD Support Field Present',
-        description: 'AS metadata contains client_id_metadata_document_supported field',
+        description:
+          'AS metadata contains client_id_metadata_document_supported field',
         status: 'INFO',
         timestamp: timestamp(),
-        errorMessage: 'Field not present - CIMD support unknown (DCR may be available)',
+        errorMessage:
+          'Field not present - CIMD support unknown (DCR may be available)',
         specReferences: [ServerAuthSpecReferences.IETF_CIMD_AS_METADATA],
         details: { client_id_metadata_document_supported: undefined }
       });
@@ -82,7 +86,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-supported',
         name: 'CIMD Supported',
-        description: 'Authorization Server supports Client ID Metadata Documents',
+        description:
+          'Authorization Server supports Client ID Metadata Documents',
         status: 'SKIPPED',
         timestamp: timestamp(),
         errorMessage: 'Cannot determine - field not present in AS metadata',
@@ -92,7 +97,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-field-present',
         name: 'CIMD Support Field Present',
-        description: 'AS metadata contains client_id_metadata_document_supported field',
+        description:
+          'AS metadata contains client_id_metadata_document_supported field',
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [ServerAuthSpecReferences.IETF_CIMD_AS_METADATA],
@@ -102,7 +108,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-supported',
         name: 'CIMD Supported',
-        description: 'Authorization Server supports Client ID Metadata Documents',
+        description:
+          'Authorization Server supports Client ID Metadata Documents',
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [
@@ -115,7 +122,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-field-present',
         name: 'CIMD Support Field Present',
-        description: 'AS metadata contains client_id_metadata_document_supported field',
+        description:
+          'AS metadata contains client_id_metadata_document_supported field',
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [ServerAuthSpecReferences.IETF_CIMD_AS_METADATA],
@@ -125,10 +133,12 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-supported',
         name: 'CIMD Supported',
-        description: 'Authorization Server supports Client ID Metadata Documents',
+        description:
+          'Authorization Server supports Client ID Metadata Documents',
         status: 'INFO',
         timestamp: timestamp(),
-        errorMessage: 'CIMD explicitly not supported - DCR or pre-registration required',
+        errorMessage:
+          'CIMD explicitly not supported - DCR or pre-registration required',
         specReferences: [ServerAuthSpecReferences.IETF_CIMD_AS_METADATA],
         details: { client_id_metadata_document_supported: false }
       });
@@ -137,7 +147,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-field-present',
         name: 'CIMD Support Field Present',
-        description: 'AS metadata contains client_id_metadata_document_supported field',
+        description:
+          'AS metadata contains client_id_metadata_document_supported field',
         status: 'WARNING',
         timestamp: timestamp(),
         errorMessage: `Invalid value type: expected boolean, got ${typeof cimdSupported}`,
@@ -148,7 +159,8 @@ pointing to a metadata document hosted by the client.
       checks.push({
         id: 'auth-cimd-supported',
         name: 'CIMD Supported',
-        description: 'Authorization Server supports Client ID Metadata Documents',
+        description:
+          'Authorization Server supports Client ID Metadata Documents',
         status: 'SKIPPED',
         timestamp: timestamp(),
         errorMessage: 'Invalid field value type',
@@ -157,7 +169,8 @@ pointing to a metadata document hosted by the client.
     }
 
     // Check registration options summary
-    const hasRegistrationEndpoint = typeof metadata.registration_endpoint === 'string';
+    const hasRegistrationEndpoint =
+      typeof metadata.registration_endpoint === 'string';
     const hasCimd = cimdSupported === true;
 
     if (!hasRegistrationEndpoint && !hasCimd) {
@@ -167,7 +180,8 @@ pointing to a metadata document hosted by the client.
         description: 'At least one client registration mechanism available',
         status: 'WARNING',
         timestamp: timestamp(),
-        errorMessage: 'Neither DCR (registration_endpoint) nor CIMD available - pre-registration may be required',
+        errorMessage:
+          'Neither DCR (registration_endpoint) nor CIMD available - pre-registration may be required',
         specReferences: [
           ServerAuthSpecReferences.MCP_AUTH_DCR,
           ServerAuthSpecReferences.IETF_CIMD

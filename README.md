@@ -94,6 +94,7 @@ npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --s
 ```
 
 OAuth scenarios validate:
+
 - **server/auth-prm-discovery** - Protected Resource Metadata endpoint
 - **server/auth-401-unauthorized** - 401 response for unauthenticated requests
 - **server/auth-www-authenticate-header** - WWW-Authenticate header format
