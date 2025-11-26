@@ -6,10 +6,13 @@
  * - RFC 8414 (Authorization Server Metadata)
  * - RFC 7591 (Dynamic Client Registration)
  * - RFC 7636 (PKCE)
+ * - RFC 7523 (JWT Client Authentication)
  * - RFC 6750 (Bearer Token Usage)
  * - RFC 7235 (HTTP Authentication)
  * - RFC 8707 (Resource Indicators)
+ * - OAuth 2.1 Draft (Client Credentials, Token Endpoint Auth)
  * - MCP Authorization Specification (2025-06-18)
+ * - MCP Extension SEP-1046 (Client Credentials)
  * - IETF CIMD Draft (Client ID Metadata Documents)
  */
 
@@ -210,5 +213,37 @@ export const ServerAuthSpecReferences: { [key: string]: SpecReference } = {
   OIDC_DISCOVERY: {
     id: 'OIDC-discovery',
     url: 'https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfig'
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RFC 7523: JWT Client Authentication
+  // ─────────────────────────────────────────────────────────────────────────
+  RFC_7523_JWT_CLIENT_AUTH: {
+    id: 'RFC-7523-jwt-client-auth',
+    url: 'https://datatracker.ietf.org/doc/html/rfc7523#section-2.2'
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // OAuth 2.1: Client Credentials Grant
+  // ─────────────────────────────────────────────────────────────────────────
+  OAUTH_2_1_CLIENT_CREDENTIALS: {
+    id: 'OAuth-2.1-client-credentials',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-4.2'
+  },
+  OAUTH_2_1_GRANT_TYPES: {
+    id: 'OAuth-2.1-grant-types',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-4'
+  },
+  OAUTH_2_1_TOKEN_ENDPOINT_AUTH: {
+    id: 'OAuth-2.1-token-endpoint-auth',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-2.4'
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MCP Extension: Client Credentials (SEP-1046)
+  // ─────────────────────────────────────────────────────────────────────────
+  SEP_1046_CLIENT_CREDENTIALS: {
+    id: 'SEP-1046-client-credentials',
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/oauth-client-credentials.mdx'
   }
 };
