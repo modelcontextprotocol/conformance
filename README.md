@@ -93,11 +93,7 @@ npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --a
 npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server/auth-prm-discovery
 ```
 
-OAuth scenarios validate:
-
-- **server/auth-prm-discovery** - Protected Resource Metadata endpoint
-- **server/auth-401-unauthorized** - 401 response for unauthenticated requests
-- **server/auth-www-authenticate-header** - WWW-Authenticate header format
+OAuth scenarios validate server OAuth infrastructure without requiring tokens.
 
 ## Test Results
 
@@ -140,13 +136,28 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 
 ### Server OAuth Scenarios
 
-Run `npx @modelcontextprotocol/conformance list --auth` to see OAuth scenarios:
+Run `npx @modelcontextprotocol/conformance list --auth` to see all OAuth scenarios.
 
-- **server/auth-prm-discovery** - Validates Protected Resource Metadata endpoint per RFC 9728
-- **server/auth-401-unauthorized** - Validates 401 response for unauthenticated requests
-- **server/auth-www-authenticate-header** - Validates WWW-Authenticate header format per RFC 6750
+**Discovery & Metadata:**
 
-These scenarios test OAuth compliance without requiring a valid access token, making them suitable for basic conformance testing of any OAuth-protected MCP server.
+- `server/auth-prm-discovery` - Protected Resource Metadata (RFC 9728)
+- `server/auth-as-metadata-discovery` - Authorization Server metadata (RFC 8414)
+- `server/auth-discovery-mechanism` - Discovery endpoint availability
+
+**OAuth Features:**
+
+- `server/auth-as-pkce-support` - PKCE S256 support (RFC 7636)
+- `server/auth-as-cimd-supported` - Client ID Metadata Document support
+- `server/auth-as-token-auth-methods` - Token endpoint auth methods
+- `server/auth-as-grant-types` - Grant types including client_credentials
+
+**HTTP Responses:**
+
+- `server/auth-401-unauthorized` - 401 response validation
+- `server/auth-www-authenticate-header` - WWW-Authenticate header (RFC 6750)
+- `server/auth-prm-resource-validation` - Resource URI validation
+
+These scenarios test OAuth compliance without requiring tokens.
 
 ## Architecture
 
