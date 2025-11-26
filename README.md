@@ -76,24 +76,17 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
 - `--suite <suite>` - Suite to run: "active" (default), "all", "pending", or "auth"
 - `--auth` - Include OAuth conformance tests when running active suite
-- `--verbose` - Show verbose output (JSON format)
 
-### Server OAuth Testing
+### Authorization Server OAuth Conformity Testing
 
-To test OAuth implementation on your server:
+To test the OAuth implementation protecting your server:
 
 ```bash
 # Run only OAuth conformance tests
 npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --suite auth
 
-# Run active tests plus OAuth tests
-npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --auth
-
 # Run a specific OAuth scenario
 npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server/auth-prm-discovery
-```
-
-OAuth scenarios validate server OAuth infrastructure without requiring tokens.
 
 ## Test Results
 
@@ -133,31 +126,6 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 - **tools-call-\*** - Various tool invocation scenarios
 - **resources-\*** - Resource management scenarios
 - **prompts-\*** - Prompt management scenarios
-
-### Server OAuth Scenarios
-
-Run `npx @modelcontextprotocol/conformance list --auth` to see all OAuth scenarios.
-
-**Discovery & Metadata:**
-
-- `server/auth-prm-discovery` - Protected Resource Metadata (RFC 9728)
-- `server/auth-as-metadata-discovery` - Authorization Server metadata (RFC 8414)
-- `server/auth-discovery-mechanism` - Discovery endpoint availability
-
-**OAuth Features:**
-
-- `server/auth-as-pkce-support` - PKCE S256 support (RFC 7636)
-- `server/auth-as-cimd-supported` - Client ID Metadata Document support
-- `server/auth-as-token-auth-methods` - Token endpoint auth methods
-- `server/auth-as-grant-types` - Grant types including client_credentials
-
-**HTTP Responses:**
-
-- `server/auth-401-unauthorized` - 401 response validation
-- `server/auth-www-authenticate-header` - WWW-Authenticate header (RFC 6750)
-- `server/auth-prm-resource-validation` - Resource URI validation
-
-These scenarios test OAuth compliance without requiring tokens.
 
 ## Architecture
 

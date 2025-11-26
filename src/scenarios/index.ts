@@ -140,7 +140,7 @@ const activeClientScenariosList: ClientScenario[] =
       )
   );
 
-// Client scenarios map - built from list (includes server auth scenarios)
+// Client scenarios map - built from list
 export const clientScenarios = new Map<string, ClientScenario>(
   [...allClientScenariosList, ...serverAuthScenarios].map((scenario) => [
     scenario.name,
