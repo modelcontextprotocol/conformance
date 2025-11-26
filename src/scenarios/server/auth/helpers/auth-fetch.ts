@@ -147,8 +147,9 @@ export async function authFetch(
   } = options;
 
   // Build headers
+  // MCP Streamable HTTP transport requires both application/json and text/event-stream
   const requestHeaders: Record<string, string> = {
-    Accept: 'application/json',
+    Accept: 'application/json, text/event-stream',
     ...headers
   };
 
