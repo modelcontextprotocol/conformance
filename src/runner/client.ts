@@ -97,17 +97,21 @@ export async function runConformanceTest(
   console.error(`Starting scenario: ${scenarioName}`);
   const urls = await scenario.start();
 
+  // Always include scenario name in context
+  const context = {
+    ...urls.context,
+    scenario: scenarioName
+  };
+
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
-  if (urls.context) {
-    console.error(`With context: ${JSON.stringify(urls.context)}`);
-  }
+  console.error(`With context: ${JSON.stringify(context)}`);
 
   try {
     const clientOutput = await executeClient(
       clientCommand,
       urls.serverUrl,
       timeout,
-      urls.context
+      context
     );
 
     // Print stdout/stderr if client exited with nonzero code
