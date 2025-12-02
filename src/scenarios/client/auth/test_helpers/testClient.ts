@@ -11,8 +11,10 @@ export interface ClientRunner {
   /**
    * Run the client against the given server URL.
    * Should reject if the client fails.
+   * @param serverUrl The MCP server URL to connect to
+   * @param context Optional context object passed via MCP_CONFORMANCE_CONTEXT env var
    */
-  run(serverUrl: string): Promise<void>;
+  run(serverUrl: string, context?: Record<string, unknown>): Promise<void>;
 }
 
 /**
@@ -21,10 +23,19 @@ export interface ClientRunner {
 export class SpawnedClientRunner implements ClientRunner {
   constructor(private clientPath: string) {}
 
-  async run(serverUrl: string): Promise<void> {
+  async run(
+    serverUrl: string,
+    context?: Record<string, unknown>
+  ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
+      const env = { ...process.env };
+      if (context) {
+        env.MCP_CONFORMANCE_CONTEXT = JSON.stringify(context);
+      }
+
       const clientProcess = spawn('npx', ['tsx', this.clientPath, serverUrl], {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env
       });
 
       let stdout = '';
@@ -76,10 +87,18 @@ export class SpawnedClientRunner implements ClientRunner {
  * Client runner that executes a client function inline without spawning a shell.
  */
 export class InlineClientRunner implements ClientRunner {
-  constructor(private clientFn: (serverUrl: string) => Promise<void>) {}
+  constructor(
+    private clientFn: (
+      serverUrl: string,
+      context?: Record<string, unknown>
+    ) => Promise<void>
+  ) {}
 
-  async run(serverUrl: string): Promise<void> {
-    await this.clientFn(serverUrl);
+  async run(
+    serverUrl: string,
+    context?: Record<string, unknown>
+  ): Promise<void> {
+    await this.clientFn(serverUrl, context);
   }
 }
 
@@ -106,10 +125,16 @@ export async function runClientAgainstScenario(
   const urls = await scenario.start();
   const serverUrl = urls.serverUrl;
 
+  // Build context with scenario name
+  const context = {
+    ...urls.context,
+    scenario: scenarioName
+  };
+
   try {
     // Run the client
     try {
-      await runner.run(serverUrl);
+      await runner.run(serverUrl, context);
     } catch (err) {
       if (expectedFailureSlugs.length === 0 && !allowClientError) {
         throw err; // Unexpected failure
