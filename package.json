@@ -41,7 +41,7 @@
     "tsdown": "^0.15.12",
     "tsx": "^4.7.0",
     "typescript": "^5.5.4",
-    "typescript-eslint": "8.46.2",
+    "typescript-eslint": "8.48.0",
     "vitest": "^4.0.5"
   },
   "dependencies": {
