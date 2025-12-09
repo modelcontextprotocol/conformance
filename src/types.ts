@@ -29,6 +29,14 @@ export interface ScenarioUrls {
   /**
    * Optional context to pass to the client via MCP_CONFORMANCE_CONTEXT env var.
    * This is a JSON-serializable object containing scenario-specific data like credentials.
+   *
+   * **WARNING: The context schema is unstable and subject to change.**
+   * Currently only used for client credentials scenarios (auth/client-credentials-jwt,
+   * auth/client-credentials-basic). The runner automatically adds a `scenario` field
+   * with the scenario name.
+   *
+   * If you have use cases that require additional context fields, please provide
+   * feedback at: https://github.com/modelcontextprotocol/conformance/issues/51
    */
   context?: Record<string, unknown>;
 }
