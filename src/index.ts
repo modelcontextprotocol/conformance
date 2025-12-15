@@ -125,7 +125,7 @@ program
           totalFailed += failed;
           totalWarnings += warnings;
 
-          const status = failed === 0 ? '✓' : '✗';
+          const status = failed === 0 && warnings === 0 ? '✓' : '✗';
           const warningStr = warnings > 0 ? `, ${warnings} warnings` : '';
           console.log(
             `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}`
@@ -145,7 +145,7 @@ program
         console.log(
           `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
         );
-        process.exit(totalFailed > 0 ? 1 : 0);
+        process.exit(totalFailed > 0 || totalWarnings > 0 ? 1 : 0);
       }
 
       // Require either --scenario or --suite
