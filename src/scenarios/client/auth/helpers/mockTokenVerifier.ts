@@ -1,7 +1,7 @@
 import { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import type { ConformanceCheck } from '../../../../types.js';
-import { SpecReferences } from '../spec-references.js';
+import type { ConformanceCheck } from '../../../../types';
+import { SpecReferences } from '../spec-references';
 
 export class MockTokenVerifier implements OAuthTokenVerifier {
   private tokenScopes: Map<string, string[]> = new Map();
@@ -16,8 +16,8 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    // Accept tokens that start with 'test-token'
-    if (token.startsWith('test-token')) {
+    // Accept tokens that start with known prefixes
+    if (token.startsWith('test-token') || token.startsWith('cc-token')) {
       // Get scopes for this token, or use empty array
       const scopes = this.tokenScopes.get(token) || [];
 

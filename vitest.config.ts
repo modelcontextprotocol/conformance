@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['node_modules', 'dist'],
+    exclude: ['**/node_modules/**', 'dist'],
     // Run test files sequentially to avoid port conflicts
     fileParallelism: false,
     // Increase timeout for server tests in CI

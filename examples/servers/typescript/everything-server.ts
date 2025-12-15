@@ -12,7 +12,19 @@ import {
   McpServer,
   ResourceTemplate
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  StreamableHTTPServerTransport,
+  EventStore,
+  EventId,
+  StreamId
+} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  ElicitResultSchema,
+  ListToolsRequestSchema,
+  type ListToolsResult,
+  type Tool
+} from '@modelcontextprotocol/sdk/types.js';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import { z } from 'zod';
 import express from 'express';
 import cors from 'cors';
@@ -26,6 +38,41 @@ const watchedResourceContent = 'Watched resource content';
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
 
+// In-memory event store for SEP-1699 resumability
+const eventStoreData = new Map<
+  string,
+  { eventId: string; message: any; streamId: string }
+>();
+
+function createEventStore(): EventStore {
+  return {
+    async storeEvent(streamId: StreamId, message: any): Promise<EventId> {
+      const eventId = `${streamId}::${Date.now()}_${randomUUID()}`;
+      eventStoreData.set(eventId, { eventId, message, streamId });
+      return eventId;
+    },
+    async replayEventsAfter(
+      lastEventId: EventId,
+      { send }: { send: (eventId: EventId, message: any) => Promise<void> }
+    ): Promise<StreamId> {
+      const streamId = lastEventId.split('::')[0];
+      const eventsToReplay: Array<[string, { message: any }]> = [];
+      for (const [eventId, data] of eventStoreData.entries()) {
+        if (data.streamId === streamId && eventId > lastEventId) {
+          eventsToReplay.push([eventId, data]);
+        }
+      }
+      eventsToReplay.sort(([a], [b]) => a.localeCompare(b));
+      for (const [eventId, { message }] of eventsToReplay) {
+        if (Object.keys(message).length > 0) {
+          await send(eventId, message);
+        }
+      }
+      return streamId;
+    }
+  };
+}
+
 // Sample base64 encoded 1x1 red PNG pixel for testing
 const TEST_IMAGE_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
@@ -33,6 +80,28 @@ const TEST_IMAGE_BASE64 =
 // Sample base64 encoded minimal WAV file for testing
 const TEST_AUDIO_BASE64 =
   'UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAA=';
+
+// SEP-1613: Raw JSON Schema 2020-12 definition for conformance testing
+// This schema includes $schema, $defs, and additionalProperties to test
+// that SDKs correctly preserve these fields
+const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object' as const,
+  $defs: {
+    address: {
+      type: 'object',
+      properties: {
+        street: { type: 'string' },
+        city: { type: 'string' }
+      }
+    }
+  },
+  properties: {
+    name: { type: 'string' },
+    address: { $ref: '#/$defs/address' }
+  },
+  additionalProperties: false
+};
 
 // Function to create a new MCP server instance (one per session)
 function createMcpServer() {
@@ -280,6 +349,46 @@ function createMcpServer() {
     }
   );
 
+  // SEP-1699: Reconnection test tool - closes SSE stream mid-call to test client reconnection
+  mcpServer.registerTool(
+    'test_reconnection',
+    {
+      description:
+        'Tests SSE stream disconnection and client reconnection (SEP-1699). Server will close the stream mid-call and send the result after client reconnects.',
+      inputSchema: {}
+    },
+    async (_args, { sessionId, requestId }) => {
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      console.log(`[${sessionId}] Starting test_reconnection tool...`);
+
+      // Get the transport for this session
+      const transport = sessionId ? transports[sessionId] : undefined;
+      if (transport && requestId) {
+        // Close the SSE stream to trigger client reconnection
+        console.log(
+          `[${sessionId}] Closing SSE stream to trigger client polling...`
+        );
+        transport.closeSSEStream(requestId);
+      }
+
+      // Wait for client to reconnect (should respect retry field)
+      await sleep(100);
+
+      console.log(`[${sessionId}] test_reconnection tool complete`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure.'
+          }
+        ]
+      };
+    }
+  );
+
   // Sampling tool - requests LLM completion from client
   mcpServer.registerTool(
     'test_sampling',
@@ -369,9 +478,7 @@ function createMcpServer() {
               }
             }
           },
-          z
-            .object({ method: z.literal('elicitation/create') })
-            .passthrough() as any
+          ElicitResultSchema
         );
 
         const elicitResult = result as any;
@@ -445,9 +552,7 @@ function createMcpServer() {
               }
             }
           },
-          z
-            .object({ method: z.literal('elicitation/create') })
-            .passthrough() as any
+          ElicitResultSchema
         );
 
         const elicitResult = result as any;
@@ -544,9 +649,7 @@ function createMcpServer() {
               }
             }
           },
-          z
-            .object({ method: z.literal('elicitation/create') })
-            .passthrough() as any
+          ElicitResultSchema
         );
 
         const elicitResult = result as any;
@@ -568,6 +671,40 @@ function createMcpServer() {
           ]
         };
       }
+    }
+  );
+
+  // SEP-1613: JSON Schema 2020-12 conformance test tool
+  // This tool is registered with a Zod schema for tools/call validation,
+  // but the tools/list handler (below) returns the raw JSON Schema 2020-12
+  // definition to test that SDKs preserve $schema, $defs, additionalProperties
+  mcpServer.registerTool(
+    'json_schema_2020_12_tool',
+    {
+      description:
+        'Tool with JSON Schema 2020-12 features for conformance testing (SEP-1613)',
+      inputSchema: {
+        name: z.string().optional(),
+        address: z
+          .object({
+            street: z.string().optional(),
+            city: z.string().optional()
+          })
+          .optional()
+      }
+    },
+    async (args: {
+      name?: string;
+      address?: { street?: string; city?: string };
+    }) => {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `JSON Schema 2020-12 tool called with: ${JSON.stringify(args)}`
+          }
+        ]
+      };
     }
   );
 
@@ -834,6 +971,80 @@ function createMcpServer() {
     }
   );
 
+  // ===== SEP-1613: Override tools/list to return raw JSON Schema 2020-12 =====
+  // This override is necessary because registerTool converts Zod schemas to
+  // JSON Schema without preserving $schema, $defs, and additionalProperties.
+  // We need to return the raw JSON Schema for our test tool while using the
+  // SDK's conversion for other tools.
+  mcpServer.server.setRequestHandler(
+    ListToolsRequestSchema,
+    (): ListToolsResult => {
+      // Access internal registered tools (this is internal SDK API but stable)
+      const registeredTools = (mcpServer as any)._registeredTools as Record<
+        string,
+        {
+          enabled: boolean;
+          title?: string;
+          description?: string;
+          inputSchema?: any;
+          outputSchema?: any;
+          annotations?: any;
+          _meta?: any;
+        }
+      >;
+
+      return {
+        tools: Object.entries(registeredTools)
+          .filter(([, tool]) => tool.enabled)
+          .map(([name, tool]): Tool => {
+            // For our SEP-1613 test tool, return raw JSON Schema 2020-12
+            if (name === 'json_schema_2020_12_tool') {
+              return {
+                name,
+                description: tool.description,
+                inputSchema: JSON_SCHEMA_2020_12_INPUT_SCHEMA
+              };
+            }
+
+            // For other tools, convert Zod to JSON Schema
+            // Handle different inputSchema formats:
+            // - undefined/null: use empty object schema
+            // - Zod schema (has _def): convert directly
+            // - Raw shape (object with Zod values): wrap in z.object first
+            let inputSchema: Tool['inputSchema'];
+            if (!tool.inputSchema) {
+              inputSchema = { type: 'object' as const, properties: {} };
+            } else if ('_def' in tool.inputSchema) {
+              // Already a Zod schema
+              inputSchema = zodToJsonSchema(tool.inputSchema, {
+                strictUnions: true
+              }) as Tool['inputSchema'];
+            } else if (
+              typeof tool.inputSchema === 'object' &&
+              Object.keys(tool.inputSchema).length > 0
+            ) {
+              // Raw shape with Zod values
+              inputSchema = zodToJsonSchema(z.object(tool.inputSchema), {
+                strictUnions: true
+              }) as Tool['inputSchema'];
+            } else {
+              // Empty object or unknown format
+              inputSchema = { type: 'object' as const, properties: {} };
+            }
+
+            return {
+              name,
+              title: tool.title,
+              description: tool.description,
+              inputSchema,
+              annotations: tool.annotations,
+              _meta: tool._meta
+            };
+          })
+      };
+    }
+  );
+
   return mcpServer;
 }
 
@@ -872,6 +1083,8 @@ app.post('/mcp', async (req, res) => {
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
+        eventStore: createEventStore(),
+        retryInterval: 5000, // 5 second retry interval for SEP-1699
         onsessioninitialized: (newSessionId) => {
           transports[newSessionId] = transport;
           servers[newSessionId] = mcpServer;
