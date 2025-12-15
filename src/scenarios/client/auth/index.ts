@@ -12,6 +12,10 @@ import {
   ScopeStepUpAuthScenario,
   ScopeRetryLimitScenario
 } from './scope-handling';
+import {
+  ClientCredentialsJwtScenario,
+  ClientCredentialsBasicScenario
+} from './client-credentials';
 
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
@@ -22,5 +26,7 @@ export const authScenariosList: Scenario[] = [
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
   new ScopeStepUpAuthScenario(),
-  new ScopeRetryLimitScenario()
+  new ScopeRetryLimitScenario(),
+  new ClientCredentialsJwtScenario(),
+  new ClientCredentialsBasicScenario()
 ];

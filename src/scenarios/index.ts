@@ -8,6 +8,7 @@ import { SSERetryScenario } from './client/sse-retry';
 import { ServerInitializeScenario } from './server/lifecycle';
 
 import {
+  PingScenario,
   LoggingSetLevelScenario,
   CompletionCompleteScenario
 } from './server/utils';
@@ -80,6 +81,7 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
+  new PingScenario(),
   new CompletionCompleteScenario(),
 
   // Tools scenarios

@@ -16,7 +16,12 @@ beforeAll(() => {
   setLogLevel('error');
 });
 
-const skipScenarios = new Set<string>([]);
+const skipScenarios = new Set<string>([
+  // Client credentials scenarios require SDK support for client_credentials grant
+  // Pending typescript-sdk implementation
+  'auth/client-credentials-jwt',
+  'auth/client-credentials-basic'
+]);
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass

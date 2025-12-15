@@ -16,8 +16,8 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    // Accept tokens that start with 'test-token'
-    if (token.startsWith('test-token')) {
+    // Accept tokens that start with known prefixes
+    if (token.startsWith('test-token') || token.startsWith('cc-token')) {
       // Get scopes for this token, or use empty array
       const scopes = this.tokenScopes.get(token) || [];
 

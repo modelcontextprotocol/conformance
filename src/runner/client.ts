@@ -16,7 +16,8 @@ async function executeClient(
   command: string,
   scenarioName: string,
   serverUrl: string,
-  timeout: number = 30000
+  timeout: number = 30000,
+  context?: Record<string, unknown>
 ): Promise<ClientExecutionResult> {
   const commandParts = command.split(' ');
   const executable = commandParts[0];
@@ -26,30 +27,37 @@ async function executeClient(
   let stderr = '';
   let timedOut = false;
 
+  // Build environment with optional context
+  const env = { ...process.env };
+  if (context) {
+    env.MCP_CONFORMANCE_CONTEXT = JSON.stringify(context);
+  }
+
   return new Promise((resolve) => {
-    const process = spawn(executable, args, {
+    const childProcess = spawn(executable, args, {
       shell: true,
-      stdio: 'pipe'
+      stdio: 'pipe',
+      env
     });
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
-      process.kill();
+      childProcess.kill();
     }, timeout);
 
-    if (process.stdout) {
-      process.stdout.on('data', (data) => {
+    if (childProcess.stdout) {
+      childProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
     }
 
-    if (process.stderr) {
-      process.stderr.on('data', (data) => {
+    if (childProcess.stderr) {
+      childProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
     }
 
-    process.on('close', (code) => {
+    childProcess.on('close', (code) => {
       clearTimeout(timeoutHandle);
       resolve({
         exitCode: code || 0,
@@ -59,7 +67,7 @@ async function executeClient(
       });
     });
 
-    process.on('error', (error) => {
+    childProcess.on('error', (error) => {
       clearTimeout(timeoutHandle);
       resolve({
         exitCode: -1,
@@ -93,13 +101,17 @@ export async function runConformanceTest(
   console.error(
     `Executing client: ${clientCommand} ${scenarioName} ${urls.serverUrl}`
   );
+  if (urls.context) {
+    console.error(`With context: ${JSON.stringify(urls.context)}`);
+  }
 
   try {
     const clientOutput = await executeClient(
       clientCommand,
       scenarioName,
       urls.serverUrl,
-      timeout
+      timeout,
+      urls.context
     );
 
     // Print stdout/stderr if client exited with nonzero code
