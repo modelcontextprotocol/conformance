@@ -2,8 +2,8 @@
  * Tools test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
-import { connectToServer, NotificationCollector } from './client-helper.js';
+import { ClientScenario, ConformanceCheck } from '../../types';
+import { connectToServer, NotificationCollector } from './client-helper';
 import {
   CallToolResultSchema,
   CreateMessageRequestSchema,
@@ -119,8 +119,8 @@ Implement tool \`test_simple_text\` with no arguments that returns:
       const connection = await connectToServer(serverUrl);
 
       const result = await connection.client.callTool({
-        name: 'test_simple_text',
-        arguments: {}
+        name: 'test_simple_text'
+        /* omit arguments as it is not required in the schema */
       });
 
       // Validate response

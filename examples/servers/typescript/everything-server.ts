@@ -12,7 +12,12 @@ import {
   McpServer,
   ResourceTemplate
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  StreamableHTTPServerTransport,
+  EventStore,
+  EventId,
+  StreamId
+} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   ElicitResultSchema,
   McpError,
@@ -34,6 +39,41 @@ const watchedResourceContent = 'Watched resource content';
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory event store for SEP-1699 resumability
+const eventStoreData = new Map<
+  string,
+  { eventId: string; message: any; streamId: string }
+>();
+
+function createEventStore(): EventStore {
+  return {
+    async storeEvent(streamId: StreamId, message: any): Promise<EventId> {
+      const eventId = `${streamId}::${Date.now()}_${randomUUID()}`;
+      eventStoreData.set(eventId, { eventId, message, streamId });
+      return eventId;
+    },
+    async replayEventsAfter(
+      lastEventId: EventId,
+      { send }: { send: (eventId: EventId, message: any) => Promise<void> }
+    ): Promise<StreamId> {
+      const streamId = lastEventId.split('::')[0];
+      const eventsToReplay: Array<[string, { message: any }]> = [];
+      for (const [eventId, data] of eventStoreData.entries()) {
+        if (data.streamId === streamId && eventId > lastEventId) {
+          eventsToReplay.push([eventId, data]);
+        }
+      }
+      eventsToReplay.sort(([a], [b]) => a.localeCompare(b));
+      for (const [eventId, { message }] of eventsToReplay) {
+        if (Object.keys(message).length > 0) {
+          await send(eventId, message);
+        }
+      }
+      return streamId;
+    }
+  };
+}
 
 // Sample base64 encoded 1x1 red PNG pixel for testing
 const TEST_IMAGE_BASE64 =
@@ -308,6 +348,46 @@ function createMcpServer() {
     },
     async () => {
       throw new Error('This tool intentionally returns an error for testing');
+    }
+  );
+
+  // SEP-1699: Reconnection test tool - closes SSE stream mid-call to test client reconnection
+  mcpServer.registerTool(
+    'test_reconnection',
+    {
+      description:
+        'Tests SSE stream disconnection and client reconnection (SEP-1699). Server will close the stream mid-call and send the result after client reconnects.',
+      inputSchema: {}
+    },
+    async (_args, { sessionId, requestId }) => {
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      console.log(`[${sessionId}] Starting test_reconnection tool...`);
+
+      // Get the transport for this session
+      const transport = sessionId ? transports[sessionId] : undefined;
+      if (transport && requestId) {
+        // Close the SSE stream to trigger client reconnection
+        console.log(
+          `[${sessionId}] Closing SSE stream to trigger client polling...`
+        );
+        transport.closeSSEStream(requestId);
+      }
+
+      // Wait for client to reconnect (should respect retry field)
+      await sleep(100);
+
+      console.log(`[${sessionId}] test_reconnection tool complete`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure.'
+          }
+        ]
+      };
     }
   );
 
@@ -1108,6 +1188,8 @@ app.post('/mcp', async (req, res) => {
 
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
+        eventStore: createEventStore(),
+        retryInterval: 5000, // 5 second retry interval for SEP-1699
         onsessioninitialized: (newSessionId) => {
           transports[newSessionId] = transport;
           servers[newSessionId] = mcpServer;

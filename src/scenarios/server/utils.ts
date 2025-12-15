@@ -2,8 +2,8 @@
  * Utilities test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
-import { connectToServer } from './client-helper.js';
+import { ClientScenario, ConformanceCheck } from '../../types';
+import { connectToServer } from './client-helper';
 
 export class LoggingSetLevelScenario implements ClientScenario {
   name = 'logging-set-level';
@@ -74,6 +74,95 @@ export class LoggingSetLevelScenario implements ClientScenario {
           {
             id: 'MCP-Logging',
             url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/utilities/logging'
+          }
+        ]
+      });
+    }
+
+    return checks;
+  }
+}
+
+export class PingScenario implements ClientScenario {
+  name = 'ping';
+  description = `Test ping utility for connection health check.
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`ping\`
+
+**Requirements**:
+- Accept ping request with no parameters
+- Respond promptly with empty object \`{}\`
+
+**Request Format**:
+
+\`\`\`json
+{
+  "jsonrpc": "2.0",
+  "id": "123",
+  "method": "ping"
+}
+\`\`\`
+
+**Response Format**:
+
+\`\`\`json
+{
+  "jsonrpc": "2.0",
+  "id": "123",
+  "result": {}
+}
+\`\`\`
+
+**Implementation Note**: The ping utility allows either party to verify that their counterpart is still responsive and the connection is alive.`;
+
+  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+    const checks: ConformanceCheck[] = [];
+
+    try {
+      const connection = await connectToServer(serverUrl);
+
+      // Send ping request
+      const result = await connection.client.ping();
+
+      // Validate response (should return empty object {})
+      const errors: string[] = [];
+      if (result && Object.keys(result).length > 0) {
+        errors.push('Expected empty object {} response');
+      }
+
+      checks.push({
+        id: 'ping',
+        name: 'Ping',
+        description: 'Server responds to ping requests',
+        status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
+        specReferences: [
+          {
+            id: 'MCP-Ping',
+            url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/ping'
+          }
+        ],
+        details: {
+          result
+        }
+      });
+
+      await connection.close();
+    } catch (error) {
+      checks.push({
+        id: 'ping',
+        name: 'Ping',
+        description: 'Server responds to ping requests',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences: [
+          {
+            id: 'MCP-Ping',
+            url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/ping'
           }
         ]
       });

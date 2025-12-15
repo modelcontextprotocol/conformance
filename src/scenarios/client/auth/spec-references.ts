@@ -52,5 +52,25 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_AUTH_ERROR_HANDLING: {
     id: 'MCP-Auth-error-handling',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#error-handling'
+  },
+  MCP_CLIENT_ID_METADATA_DOCUMENTS: {
+    id: 'MCP-Client-ID-Metadata-Documents',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#client-id-metadata-documents'
+  },
+  IETF_CIMD: {
+    id: 'IETF-OAuth-Client-ID-Metadata-Document',
+    url: 'https://datatracker.ietf.org/doc/html/draft-ietf-oauth-client-id-metadata-document-00'
+  },
+  RFC_JWT_CLIENT_AUTH: {
+    id: 'RFC-7523-JWT-Client-Auth',
+    url: 'https://datatracker.ietf.org/doc/html/rfc7523#section-2.2'
+  },
+  OAUTH_2_1_CLIENT_CREDENTIALS: {
+    id: 'OAUTH-2.1-client-credentials-grant',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-4.2'
+  },
+  SEP_1046_CLIENT_CREDENTIALS: {
+    id: 'SEP-1046-Client-Credentials',
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/oauth-client-credentials.mdx'
   }
 };
