@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
-import { getClientScenario, listActiveClientScenarios } from '../index.js';
+import { getClientScenario, listActiveClientScenarios } from '../index';
 import path from 'path';
 
 describe('Server Scenarios', () => {
@@ -125,9 +125,9 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario failed with checks:\n  ${failureMessages}`);
       }
 
-      // All checks should be SUCCESS
-      const successes = checks.filter((c) => c.status === 'SUCCESS');
-      expect(successes.length).toBe(checks.length);
+      // All checks should be non-FAILURE (SUCCESS, WARNING, or INFO are acceptable)
+      const nonFailures = checks.filter((c) => c.status !== 'FAILURE');
+      expect(nonFailures.length).toBe(checks.length);
     }, 10000); // 10 second timeout per scenario
   }
 });

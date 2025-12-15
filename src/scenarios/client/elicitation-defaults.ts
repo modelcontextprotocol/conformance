@@ -11,10 +11,10 @@ import {
   ListToolsRequestSchema,
   ElicitResultSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types.js';
+import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls } from '../../types.js';
-import { createRequestLogger } from '../request-logger.js';
+import { ScenarioUrls } from '../../types';
+import { createRequestLogger } from '../request-logger';
 import { randomUUID } from 'crypto';
 
 function isInitializeRequest(body: unknown): boolean {

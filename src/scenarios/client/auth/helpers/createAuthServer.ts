@@ -1,8 +1,19 @@
 import express, { Request, Response } from 'express';
-import type { ConformanceCheck } from '../../../../types.js';
-import { createRequestLogger } from '../../../request-logger.js';
-import { SpecReferences } from '../spec-references.js';
-import { MockTokenVerifier } from './mockTokenVerifier.js';
+import type { ConformanceCheck } from '../../../../types';
+import { createRequestLogger } from '../../../request-logger';
+import { SpecReferences } from '../spec-references';
+import { MockTokenVerifier } from './mockTokenVerifier';
+
+export interface TokenRequestResult {
+  token: string;
+  scopes: string[];
+}
+
+export interface TokenRequestError {
+  error: string;
+  errorDescription?: string;
+  statusCode?: number;
+}
 
 export interface AuthServerOptions {
   metadataPath?: string;
@@ -10,13 +21,25 @@ export interface AuthServerOptions {
   loggingEnabled?: boolean;
   routePrefix?: string;
   scopesSupported?: string[];
+  grantTypesSupported?: string[];
   tokenEndpointAuthMethodsSupported?: string[];
+  tokenEndpointAuthSigningAlgValuesSupported?: string[];
+  clientIdMetadataDocumentSupported?: boolean;
   tokenVerifier?: MockTokenVerifier;
-  onTokenRequest?: (
-    req: Request,
-    timestamp: string
-  ) => { token: string; scopes: string[] } | void;
+  onTokenRequest?: (requestData: {
+    scope?: string;
+    grantType: string;
+    timestamp: string;
+    body: Record<string, string>;
+    authBaseUrl: string;
+    tokenEndpoint: string;
+    authorizationHeader?: string;
+  }) =>
+    | TokenRequestResult
+    | TokenRequestError
+    | Promise<TokenRequestResult | TokenRequestError>;
   onAuthorizationRequest?: (requestData: {
+    clientId?: string;
     scope?: string;
     timestamp: string;
   }) => void;
@@ -38,7 +61,10 @@ export function createAuthServer(
     loggingEnabled = true,
     routePrefix = '',
     scopesSupported,
+    grantTypesSupported = ['authorization_code', 'refresh_token'],
     tokenEndpointAuthMethodsSupported = ['none'],
+    tokenEndpointAuthSigningAlgValuesSupported,
+    clientIdMetadataDocumentSupported,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -90,14 +116,24 @@ export function createAuthServer(
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`,
       response_types_supported: ['code'],
-      grant_types_supported: ['authorization_code', 'refresh_token'],
+      grant_types_supported: grantTypesSupported,
       code_challenge_methods_supported: ['S256'],
-      token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported
+      token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
+      ...(tokenEndpointAuthSigningAlgValuesSupported && {
+        token_endpoint_auth_signing_alg_values_supported:
+          tokenEndpointAuthSigningAlgValuesSupported
+      })
     };
 
     // Add scopes_supported if provided
     if (scopesSupported !== undefined) {
       metadata.scopes_supported = scopesSupported;
+    }
+
+    // Add client_id_metadata_document_supported if provided
+    if (clientIdMetadataDocumentSupported !== undefined) {
+      metadata.client_id_metadata_document_supported =
+        clientIdMetadataDocumentSupported;
     }
 
     // Add OpenID Configuration specific fields
@@ -130,6 +166,7 @@ export function createAuthServer(
 
     if (onAuthorizationRequest) {
       onAuthorizationRequest({
+        clientId: req.query.client_id as string | undefined,
         scope: scopeParam,
         timestamp
       });
@@ -146,8 +183,10 @@ export function createAuthServer(
     res.redirect(redirectUrl.toString());
   });
 
-  app.post(authRoutes.token_endpoint, (req: Request, res: Response) => {
+  app.post(authRoutes.token_endpoint, async (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
+    const requestedScope = req.body.scope;
+    const grantType = req.body.grant_type;
 
     checks.push({
       id: 'token-request',
@@ -158,7 +197,7 @@ export function createAuthServer(
       specReferences: [SpecReferences.OAUTH_2_1_TOKEN],
       details: {
         endpoint: '/token',
-        grantType: req.body.grant_type
+        grantType
       }
     });
 
@@ -166,11 +205,27 @@ export function createAuthServer(
     let scopes: string[] = lastAuthorizationScopes;
 
     if (onTokenRequest) {
-      const result = onTokenRequest(req, timestamp);
-      if (result) {
-        token = result.token;
-        scopes = result.scopes;
+      const result = await onTokenRequest({
+        scope: requestedScope,
+        grantType,
+        timestamp,
+        body: req.body,
+        authBaseUrl: getAuthBaseUrl(),
+        tokenEndpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
+        authorizationHeader: req.headers.authorization
+      });
+
+      // Check if result is an error
+      if ('error' in result) {
+        res.status(result.statusCode || 400).json({
+          error: result.error,
+          error_description: result.errorDescription
+        });
+        return;
       }
+
+      token = result.token;
+      scopes = result.scopes;
     }
 
     // Register token with verifier if provided
