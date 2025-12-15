@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck } from '../types';
 import { getClientScenario } from '../scenarios';
-import { ensureResultsDir, createResultDir } from './utils';
+import { ensureResultsDir, createResultDir, formatPrettyChecks } from './utils';
 
 /**
  * Format markdown-style text for terminal output using ANSI codes
@@ -54,7 +54,8 @@ export async function runServerConformanceTest(
 
 export function printServerResults(
   checks: ConformanceCheck[],
-  scenarioDescription: string
+  scenarioDescription: string,
+  verbose: boolean = false
 ): {
   passed: number;
   failed: number;
@@ -68,7 +69,11 @@ export function printServerResults(
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
   const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
-  console.log(`Checks:\n${JSON.stringify(checks, null, 2)}`);
+  if (verbose) {
+    console.log(JSON.stringify(checks, null, 2));
+  } else {
+    console.log(`Checks:\n${formatPrettyChecks(checks)}`);
+  }
 
   console.log(`\nTest Results:`);
   console.log(

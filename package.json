@@ -47,7 +47,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.23.0-beta.0",
     "commander": "^14.0.2",
+    "eventsource-parser": "^3.0.6",
     "express": "^5.1.0",
+    "jose": "^6.1.2",
     "zod": "^3.25.76"
   }
 }
