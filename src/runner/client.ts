@@ -166,12 +166,13 @@ export function printClientResults(
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
   const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
-  // Determine if there's an overall failure (client timeout or exit failure)
+  // Determine if there's an overall failure (failures, warnings, client timeout, or exit failure)
   const clientTimedOut = clientOutput?.timedOut ?? false;
   const clientExitedWithError = clientOutput
     ? clientOutput.exitCode !== 0
     : false;
-  const overallFailure = failed > 0 || clientTimedOut || clientExitedWithError;
+  const overallFailure =
+    failed > 0 || warnings > 0 || clientTimedOut || clientExitedWithError;
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
@@ -205,6 +206,18 @@ export function printClientResults(
         console.error(`  - ${c.name}: ${c.description}`);
         if (c.errorMessage) {
           console.error(`    Error: ${c.errorMessage}`);
+        }
+      });
+  }
+
+  if (warnings > 0) {
+    console.error('\nWarning Checks:');
+    checks
+      .filter((c) => c.status === 'WARNING')
+      .forEach((c) => {
+        console.error(`  - ${c.name}: ${c.description}`);
+        if (c.errorMessage) {
+          console.error(`    Warning: ${c.errorMessage}`);
         }
       });
   }
