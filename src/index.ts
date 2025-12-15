@@ -173,8 +173,12 @@ program
         timeout
       );
 
-      const { failed } = printClientResults(result.checks, verbose);
-      process.exit(failed > 0 ? 1 : 0);
+      const { overallFailure } = printClientResults(
+        result.checks,
+        verbose,
+        result.clientOutput
+      );
+      process.exit(overallFailure ? 1 : 0);
     } catch (error) {
       if (error instanceof ZodError) {
         console.error('Validation error:');
