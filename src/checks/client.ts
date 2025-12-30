@@ -23,12 +23,20 @@ export function createServerInfoCheck(serverInfo: {
   };
 }
 
+// Valid MCP protocol versions
+const VALID_PROTOCOL_VERSIONS = ['2025-06-18', '2025-11-25'];
+
 export function createClientInitializationCheck(
   initializeRequest: any,
-  expectedSpecVersion: string = '2025-06-18'
+  expectedSpecVersion: string = '2025-11-25'
 ): ConformanceCheck {
   const protocolVersionSent = initializeRequest?.protocolVersion;
-  const versionMatch = protocolVersionSent === expectedSpecVersion;
+
+  // Accept known valid versions OR custom expected version (for backward compatibility)
+  const validVersions = VALID_PROTOCOL_VERSIONS.includes(expectedSpecVersion)
+    ? VALID_PROTOCOL_VERSIONS
+    : [...VALID_PROTOCOL_VERSIONS, expectedSpecVersion];
+  const versionMatch = validVersions.includes(protocolVersionSent);
 
   const errors: string[] = [];
   if (!protocolVersionSent) errors.push('Protocol version not provided');
