@@ -67,7 +67,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
-The framework appends `<scenario-name> <server-url>` as arguments to your command. Your client should accept these two positional arguments.
+The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data.
 
 ### Server Testing
 

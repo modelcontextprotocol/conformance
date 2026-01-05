@@ -21,14 +21,15 @@ async function executeClient(
 ): Promise<ClientExecutionResult> {
   const commandParts = command.split(' ');
   const executable = commandParts[0];
-  const args = [...commandParts.slice(1), scenarioName, serverUrl];
+  const args = [...commandParts.slice(1), serverUrl];
 
   let stdout = '';
   let stderr = '';
   let timedOut = false;
 
-  // Build environment with optional context
+  // Build environment with scenario name and optional context
   const env = { ...process.env };
+  env.MCP_CONFORMANCE_SCENARIO = scenarioName;
   if (context) {
     env.MCP_CONFORMANCE_CONTEXT = JSON.stringify(context);
   }
@@ -98,9 +99,7 @@ export async function runConformanceTest(
   console.error(`Starting scenario: ${scenarioName}`);
   const urls = await scenario.start();
 
-  console.error(
-    `Executing client: ${clientCommand} ${scenarioName} ${urls.serverUrl}`
-  );
+  console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
   if (urls.context) {
     console.error(`With context: ${JSON.stringify(urls.context)}`);
   }

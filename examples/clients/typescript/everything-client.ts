@@ -3,7 +3,10 @@
 /**
  * Everything client - a single conformance test client that handles all scenarios.
  *
- * Usage: everything-client <scenario-name> <server-url>
+ * Usage: everything-client <server-url>
+ *
+ * The scenario name is read from the MCP_CONFORMANCE_SCENARIO environment variable,
+ * which is set by the conformance test runner.
  *
  * This client routes to the appropriate behavior based on the scenario name,
  * consolidating all the individual test clients into one.
@@ -177,11 +180,16 @@ registerScenario('elicitation-defaults', runElicitationDefaultsClient);
 // ============================================================================
 
 async function main(): Promise<void> {
-  const scenarioName = process.argv[2];
-  const serverUrl = process.argv[3];
+  const scenarioName = process.env.MCP_CONFORMANCE_SCENARIO;
+  const serverUrl = process.argv[2];
 
   if (!scenarioName || !serverUrl) {
-    console.error('Usage: everything-client <scenario-name> <server-url>');
+    console.error(
+      'Usage: MCP_CONFORMANCE_SCENARIO=<scenario> everything-client <server-url>'
+    );
+    console.error(
+      '\nThe MCP_CONFORMANCE_SCENARIO env var is set automatically by the conformance runner.'
+    );
     console.error('\nAvailable scenarios:');
     for (const name of Object.keys(scenarioHandlers).sort()) {
       console.error(`  - ${name}`);
