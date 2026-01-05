@@ -35,7 +35,11 @@ async function executeClient(
   const env = { ...process.env };
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
   if (context) {
-    env.MCP_CONFORMANCE_CONTEXT = JSON.stringify(context);
+    // Include scenario name in context for discriminated union parsing
+    env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
+      name: scenarioName,
+      ...context
+    });
   }
 
   return new Promise((resolve) => {

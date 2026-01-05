@@ -107,6 +107,16 @@ export async function runClientAgainstScenario(
   const serverUrl = urls.serverUrl;
 
   try {
+    // Set environment variables for inline clients
+    // These mirror what src/runner/client.ts does for spawned processes
+    process.env.MCP_CONFORMANCE_SCENARIO = scenarioName;
+    if (urls.context) {
+      process.env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
+        name: scenarioName,
+        ...urls.context
+      });
+    }
+
     // Run the client
     try {
       await runner.run(serverUrl);
@@ -166,6 +176,10 @@ export async function runClientAgainstScenario(
       }
     }
   } finally {
+    // Clean up environment variables
+    delete process.env.MCP_CONFORMANCE_SCENARIO;
+    delete process.env.MCP_CONFORMANCE_CONTEXT;
+
     // Stop the scenario server
     await scenario.stop();
   }

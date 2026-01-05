@@ -12,9 +12,15 @@
  * consolidating all the individual test clients into one.
  */
 
+import { fileURLToPath } from 'url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  ClientCredentialsProvider,
+  PrivateKeyJwtProvider
+} from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ConformanceContextSchema } from '../../../src/schemas/context.js';
 import { withOAuthRetry } from './helpers/withOAuthRetry.js';
 import { logger } from './helpers/logger.js';
 
@@ -176,6 +182,96 @@ async function runElicitationDefaultsClient(serverUrl: string): Promise<void> {
 registerScenario('elicitation-defaults', runElicitationDefaultsClient);
 
 // ============================================================================
+// Client Credentials scenarios
+// ============================================================================
+
+/**
+ * Parse the conformance context from MCP_CONFORMANCE_CONTEXT env var.
+ */
+function parseContext() {
+  const raw = process.env.MCP_CONFORMANCE_CONTEXT;
+  if (!raw) {
+    throw new Error('MCP_CONFORMANCE_CONTEXT not set');
+  }
+  return ConformanceContextSchema.parse(JSON.parse(raw));
+}
+
+/**
+ * Client credentials with private_key_jwt authentication.
+ */
+export async function runClientCredentialsJwt(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/client-credentials-jwt') {
+    throw new Error(`Expected jwt context, got ${ctx.name}`);
+  }
+
+  const provider = new PrivateKeyJwtProvider({
+    clientId: ctx.client_id,
+    privateKey: ctx.private_key_pem,
+    algorithm: ctx.signing_algorithm || 'ES256'
+  });
+
+  const client = new Client(
+    { name: 'conformance-client-credentials-jwt', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with private_key_jwt auth');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/client-credentials-jwt', runClientCredentialsJwt);
+
+/**
+ * Client credentials with client_secret_basic authentication.
+ */
+export async function runClientCredentialsBasic(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/client-credentials-basic') {
+    throw new Error(`Expected basic context, got ${ctx.name}`);
+  }
+
+  const provider = new ClientCredentialsProvider({
+    clientId: ctx.client_id,
+    clientSecret: ctx.client_secret
+  });
+
+  const client = new Client(
+    { name: 'conformance-client-credentials-basic', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with client_secret_basic auth');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/client-credentials-basic', runClientCredentialsBasic);
+
+// ============================================================================
 // Main entry point
 // ============================================================================
 
@@ -216,7 +312,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error('Unhandled error:', error);
-  process.exit(1);
-});
+// Only run main when this file is executed directly, not when imported as a module
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('Unhandled error:', error);
+    process.exit(1);
+  });
+}

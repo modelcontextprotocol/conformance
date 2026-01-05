@@ -51,9 +51,8 @@ export class ClientCredentialsJwtScenario implements Scenario {
       tokenEndpointAuthSigningAlgValuesSupported: ['ES256'],
       onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
         // Per RFC 7523bis, the audience MUST be the issuer identifier
-        const issuerUrl = authBaseUrl.endsWith('/')
-          ? authBaseUrl
-          : `${authBaseUrl}/`;
+        // The SDK uses metadata.issuer as audience, which matches authBaseUrl
+        const issuerUrl = authBaseUrl;
         if (grantType !== 'client_credentials') {
           this.checks.push({
             id: 'client-credentials-grant-type',
