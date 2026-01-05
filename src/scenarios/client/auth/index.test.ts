@@ -10,10 +10,7 @@ import { runClient as ignoreScopeClient } from '../../../../examples/clients/typ
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
-import {
-  runClientCredentialsJwt,
-  runClientCredentialsBasic
-} from '../../../../examples/clients/typescript/everything-client';
+import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
 beforeAll(() => {
@@ -29,13 +26,6 @@ const allowClientErrorScenarios = new Set<string>([
   'auth/scope-retry-limit'
 ]);
 
-// Map of scenario names to their specific client handlers
-const scenarioClientMap: Record<string, (serverUrl: string) => Promise<void>> =
-  {
-    'auth/client-credentials-jwt': runClientCredentialsJwt,
-    'auth/client-credentials-basic': runClientCredentialsBasic
-  };
-
 describe('Client Auth Scenarios', () => {
   // Generate individual test for each auth scenario
   for (const scenario of authScenariosList) {
@@ -44,8 +34,8 @@ describe('Client Auth Scenarios', () => {
         // TODO: skip in a native way?
         return;
       }
-      // Use scenario-specific client if available, otherwise use goodClient
-      const clientFn = scenarioClientMap[scenario.name] ?? goodClient;
+      // Use everything-client handler if available, otherwise use goodClient
+      const clientFn = getHandler(scenario.name) ?? goodClient;
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name, {
         allowClientError: allowClientErrorScenarios.has(scenario.name)

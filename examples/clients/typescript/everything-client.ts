@@ -42,6 +42,14 @@ function registerScenarios(names: string[], handler: ScenarioHandler): void {
   }
 }
 
+/**
+ * Get a scenario handler by name.
+ * Returns undefined if no handler is registered for the scenario.
+ */
+export function getHandler(scenarioName: string): ScenarioHandler | undefined {
+  return scenarioHandlers[scenarioName];
+}
+
 // ============================================================================
 // Basic scenarios (initialize, tools-call)
 // ============================================================================
