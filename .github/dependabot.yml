@@ -4,13 +4,26 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+      interval: monthly
+    groups:
+      all-dependencies:
+        patterns:
+          - '*'
+
+  - package-ecosystem: npm
+    directory: /examples/servers/typescript
+    schedule:
+      interval: monthly
+    groups:
+      all-dependencies:
+        patterns:
+          - '*'
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+      interval: monthly
+    groups:
+      all-actions:
+        patterns:
+          - '*'
