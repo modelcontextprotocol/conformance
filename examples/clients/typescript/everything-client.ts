@@ -52,20 +52,10 @@ function registerScenarios(names: string[], handler: ScenarioHandler): void {
 
 /**
  * Get a scenario handler by name.
- * For auth/* scenarios, falls back to the standard OAuth auth client if no
- * specific handler is registered.
- * Returns undefined only if no handler matches.
+ * Returns undefined if no handler is registered for the scenario.
  */
 export function getHandler(scenarioName: string): ScenarioHandler | undefined {
-  const handler = scenarioHandlers[scenarioName];
-  if (handler) return handler;
-
-  // Fall back to auth client for unregistered auth/* scenarios
-  if (scenarioName.startsWith('auth/')) {
-    return runAuthClient;
-  }
-
-  return undefined;
+  return scenarioHandlers[scenarioName];
 }
 
 // ============================================================================
@@ -126,23 +116,30 @@ async function runAuthClient(serverUrl: string): Promise<void> {
   logger.debug('Connection closed successfully');
 }
 
-// Register all auth scenarios that should use the well-behaved auth client
-// Note: getHandler() also falls back to runAuthClient for any auth/* scenario,
-// so this explicit registration is mainly for documentation purposes
+// Register all auth scenarios that use the well-behaved OAuth auth client
 registerScenarios(
   [
+    // Basic auth scenarios
     'auth/basic-cimd',
     'auth/basic-dcr',
-    'auth/basic-metadata-var1',
-    'auth/basic-metadata-var2',
-    'auth/basic-metadata-var3',
+    // Metadata discovery scenarios
+    'auth/metadata-default',
+    'auth/metadata-var1',
+    'auth/metadata-var2',
+    'auth/metadata-var3',
+    // Backcompat scenarios
     'auth/2025-03-26-oauth-metadata-backcompat',
     'auth/2025-03-26-oauth-endpoint-fallback',
+    // Scope handling scenarios
     'auth/scope-from-www-authenticate',
     'auth/scope-from-scopes-supported',
     'auth/scope-omitted-when-undefined',
     'auth/scope-step-up',
-    'auth/scope-retry-limit'
+    'auth/scope-retry-limit',
+    // Token endpoint auth method scenarios
+    'auth/token-endpoint-auth-basic',
+    'auth/token-endpoint-auth-post',
+    'auth/token-endpoint-auth-none'
   ],
   runAuthClient
 );
