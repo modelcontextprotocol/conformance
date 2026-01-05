@@ -13,6 +13,11 @@ import {
   ScopeRetryLimitScenario
 } from './scope-handling';
 import {
+  ClientSecretBasicAuthScenario,
+  ClientSecretPostAuthScenario,
+  PublicClientAuthScenario
+} from './token-endpoint-auth';
+import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
@@ -27,6 +32,9 @@ export const authScenariosList: Scenario[] = [
   new ScopeOmittedWhenUndefinedScenario(),
   new ScopeStepUpAuthScenario(),
   new ScopeRetryLimitScenario(),
+  new ClientSecretBasicAuthScenario(),
+  new ClientSecretPostAuthScenario(),
+  new PublicClientAuthScenario(),
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario()
 ];

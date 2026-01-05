@@ -43,6 +43,11 @@ export interface AuthServerOptions {
     scope?: string;
     timestamp: string;
   }) => void;
+  onRegistrationRequest?: (req: Request) => {
+    clientId: string;
+    clientSecret?: string;
+    tokenEndpointAuthMethod?: string;
+  };
 }
 
 export function createAuthServer(
@@ -62,7 +67,8 @@ export function createAuthServer(
     clientIdMetadataDocumentSupported,
     tokenVerifier,
     onTokenRequest,
-    onAuthorizationRequest
+    onAuthorizationRequest,
+    onRegistrationRequest
   } = options;
 
   // Track scopes from the most recent authorization request
@@ -236,6 +242,17 @@ export function createAuthServer(
   });
 
   app.post(authRoutes.registration_endpoint, (req: Request, res: Response) => {
+    let clientId = 'test-client-id';
+    let clientSecret: string | undefined = 'test-client-secret';
+    let tokenEndpointAuthMethod: string | undefined;
+
+    if (onRegistrationRequest) {
+      const result = onRegistrationRequest(req);
+      clientId = result.clientId;
+      clientSecret = result.clientSecret;
+      tokenEndpointAuthMethod = result.tokenEndpointAuthMethod;
+    }
+
     checks.push({
       id: 'client-registration',
       name: 'ClientRegistration',
@@ -245,15 +262,19 @@ export function createAuthServer(
       specReferences: [SpecReferences.MCP_DCR],
       details: {
         endpoint: '/register',
-        clientName: req.body.client_name
+        clientName: req.body.client_name,
+        ...(tokenEndpointAuthMethod && { tokenEndpointAuthMethod })
       }
     });
 
     res.status(201).json({
-      client_id: 'test-client-id',
-      client_secret: 'test-client-secret',
+      client_id: clientId,
+      ...(clientSecret && { client_secret: clientSecret }),
       client_name: req.body.client_name || 'test-client',
-      redirect_uris: req.body.redirect_uris || []
+      redirect_uris: req.body.redirect_uris || [],
+      ...(tokenEndpointAuthMethod && {
+        token_endpoint_auth_method: tokenEndpointAuthMethod
+      })
     });
   });
 
