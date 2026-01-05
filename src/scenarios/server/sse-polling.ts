@@ -6,6 +6,8 @@
  * - Sending retry field in priming events when configured
  * - Closing SSE stream mid-operation and resuming after client reconnects
  * - Replaying events when client reconnects with Last-Event-ID
+ * - Properly replaying events sent during disconnect (event store)
+ * - Handling multiple stream closures during a single tool call
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
@@ -121,6 +123,15 @@ export class ServerSSEPollingScenario implements ClientScenario {
       // Step 2: Call test_reconnection tool via raw fetch to observe SSE behavior
       // This tool should close the stream mid-call, requiring reconnection
       const loggingFetch = createLoggingFetch(checks);
+
+      checks.push({
+        id: 'test-phase',
+        name: 'TestPhase',
+        description:
+          '=== Phase 1: Basic Reconnection Test (test_reconnection) ===',
+        status: 'INFO',
+        timestamp: new Date().toISOString()
+      });
 
       const postResponse = await loggingFetch(serverUrl, {
         method: 'POST',
@@ -329,7 +340,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
       checks.push({
         id: 'stream-closed',
         name: 'StreamClosed',
-        description: `POST SSE stream closed after ${eventCount} event(s)`,
+        description: `POST SSE stream closed after ${eventCount} event(s) - server disconnected mid-call`,
         status: 'INFO',
         timestamp: new Date().toISOString(),
         details: {
@@ -338,6 +349,16 @@ export class ServerSSEPollingScenario implements ClientScenario {
           receivedToolResponse
         }
       });
+
+      if (!receivedToolResponse && lastEventId) {
+        checks.push({
+          id: 'client-action',
+          name: 'ClientAction',
+          description: `Client will reconnect via GET with Last-Event-ID: ${lastEventId}`,
+          status: 'INFO',
+          timestamp: new Date().toISOString()
+        });
+      }
 
       // Check 1: Server SHOULD send priming event with ID on POST SSE stream
       let primingStatus: 'SUCCESS' | 'WARNING' = 'SUCCESS';
@@ -570,6 +591,34 @@ export class ServerSSEPollingScenario implements ClientScenario {
           }
         });
       }
+
+      // ========== Phase 2: Event Replay Test ==========
+      // Test that server properly stores and replays events sent during disconnect
+      checks.push({
+        id: 'test-phase',
+        name: 'TestPhase',
+        description: '=== Phase 2: Event Replay Test (test_event_replay) ===',
+        status: 'INFO',
+        timestamp: new Date().toISOString()
+      });
+      await this.testEventReplay(serverUrl, sessionId, loggingFetch, checks);
+
+      // ========== Phase 3: Multiple Reconnections Test ==========
+      // Test that server can close stream multiple times during single tool call
+      checks.push({
+        id: 'test-phase',
+        name: 'TestPhase',
+        description:
+          '=== Phase 3: Multiple Reconnections Test (test_multiple_reconnections) ===',
+        status: 'INFO',
+        timestamp: new Date().toISOString()
+      });
+      await this.testMultipleReconnections(
+        serverUrl,
+        sessionId,
+        loggingFetch,
+        checks
+      );
     } catch (error) {
       checks.push({
         id: 'server-sse-polling-error',
@@ -597,5 +646,511 @@ export class ServerSSEPollingScenario implements ClientScenario {
     }
 
     return checks;
+  }
+
+  /**
+   * Test that server properly replays events sent during disconnect.
+   * Uses test_event_replay tool which:
+   * 1. Sends notification1
+   * 2. Closes stream
+   * 3. Sends notification2, notification3 (stored in event store)
+   * 4. Returns response
+   */
+  private async testEventReplay(
+    serverUrl: string,
+    sessionId: string | undefined,
+    loggingFetch: (url: string, options: RequestInit) => Promise<Response>,
+    checks: ConformanceCheck[]
+  ): Promise<void> {
+    if (!sessionId) return;
+
+    const postResponse = await loggingFetch(serverUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream, application/json',
+        'mcp-session-id': sessionId,
+        'mcp-protocol-version': '2025-03-26'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'test_event_replay',
+          arguments: {}
+        }
+      })
+    });
+
+    if (!postResponse.ok) {
+      if (postResponse.status === 400 || postResponse.status === 404) {
+        checks.push({
+          id: 'server-sse-event-replay',
+          name: 'ServerEventReplay',
+          description:
+            'Server implements test_event_replay tool for event replay tests',
+          status: 'WARNING',
+          timestamp: new Date().toISOString(),
+          errorMessage: `Server does not implement test_event_replay tool (HTTP ${postResponse.status}). This tool is recommended for testing event replay behavior.`,
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ]
+        });
+        return;
+      }
+      return;
+    }
+
+    const contentType = postResponse.headers.get('content-type');
+    if (!contentType?.includes('text/event-stream') || !postResponse.body) {
+      return;
+    }
+
+    // Collect notifications from initial stream
+    const receivedNotifications: string[] = [];
+    let lastEventId: string | undefined;
+    let receivedToolResponse = false;
+
+    const reader = postResponse.body
+      .pipeThrough(new TextDecoderStream())
+      .pipeThrough(new EventSourceParserStream())
+      .getReader();
+
+    const timeout = setTimeout(() => reader.cancel(), 10000);
+
+    try {
+      while (true) {
+        const { value: event, done } = await reader.read();
+        if (done) break;
+
+        if (event.id) lastEventId = event.id;
+
+        if (event.data) {
+          try {
+            const parsed = JSON.parse(event.data);
+            if (
+              parsed.method === 'notifications/message' &&
+              parsed.params?.data
+            ) {
+              receivedNotifications.push(String(parsed.params.data));
+            }
+            if (parsed.id === 2 && parsed.result) {
+              receivedToolResponse = true;
+            }
+          } catch {
+            // Not JSON
+          }
+        }
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // If tool response not received, reconnect to get replayed events
+    const replayedNotifications: string[] = [];
+    if (!receivedToolResponse && lastEventId) {
+      checks.push({
+        id: 'client-action',
+        name: 'ClientAction',
+        description: `Stream closed before tool response. Client reconnecting with Last-Event-ID: ${lastEventId}`,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        details: {
+          notificationsReceivedBeforeClose: receivedNotifications
+        }
+      });
+
+      const getResponse = await loggingFetch(serverUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          'mcp-session-id': sessionId,
+          'mcp-protocol-version': '2025-03-26',
+          'last-event-id': lastEventId
+        }
+      });
+
+      if (getResponse.ok && getResponse.body) {
+        const reconnectReader = getResponse.body
+          .pipeThrough(new TextDecoderStream())
+          .pipeThrough(new EventSourceParserStream())
+          .getReader();
+
+        const reconnectTimeout = setTimeout(
+          () => reconnectReader.cancel(),
+          5000
+        );
+
+        try {
+          while (true) {
+            const { value: event, done } = await reconnectReader.read();
+            if (done) break;
+
+            if (event.data) {
+              try {
+                const parsed = JSON.parse(event.data);
+                if (
+                  parsed.method === 'notifications/message' &&
+                  parsed.params?.data
+                ) {
+                  replayedNotifications.push(String(parsed.params.data));
+                }
+                if (parsed.id === 2 && parsed.result) {
+                  receivedToolResponse = true;
+                  break;
+                }
+              } catch {
+                // Not JSON
+              }
+            }
+          }
+        } finally {
+          clearTimeout(reconnectTimeout);
+        }
+      }
+    }
+
+    // Check that notification2 and notification3 were replayed
+    const allNotifications = [
+      ...receivedNotifications,
+      ...replayedNotifications
+    ];
+    const hasNotification1 = allNotifications.includes('notification1');
+    const hasNotification2 = allNotifications.includes('notification2');
+    const hasNotification3 = allNotifications.includes('notification3');
+    const allReceived =
+      hasNotification1 && hasNotification2 && hasNotification3;
+
+    checks.push({
+      id: 'server-sse-event-replay',
+      name: 'ServerEventReplay',
+      description:
+        'Server stores events during disconnect and replays them when client reconnects with Last-Event-ID',
+      status: allReceived
+        ? 'SUCCESS'
+        : allNotifications.length > 0
+          ? 'WARNING'
+          : 'INFO',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'SEP-1699',
+          url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+        }
+      ],
+      details: {
+        receivedBeforeClose: receivedNotifications,
+        replayedAfterReconnect: replayedNotifications,
+        hasNotification1,
+        hasNotification2,
+        hasNotification3,
+        allReceived,
+        receivedToolResponse
+      },
+      errorMessage: !allReceived
+        ? `Did not receive all expected notifications. Expected notification1, notification2, notification3. Got: ${allNotifications.join(', ')}`
+        : undefined
+    });
+
+    // Check event ordering if we have multiple notifications
+    if (allNotifications.length >= 2) {
+      const idx1 = allNotifications.indexOf('notification1');
+      const idx2 = allNotifications.indexOf('notification2');
+      const idx3 = allNotifications.indexOf('notification3');
+      const orderCorrect =
+        (idx1 < 0 || idx2 < 0 || idx1 < idx2) &&
+        (idx2 < 0 || idx3 < 0 || idx2 < idx3);
+
+      checks.push({
+        id: 'server-sse-event-order',
+        name: 'ServerEventOrder',
+        description: 'Server replays events in correct chronological order',
+        status: orderCorrect ? 'SUCCESS' : 'WARNING',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'SEP-1699',
+            url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+          }
+        ],
+        details: {
+          allNotifications,
+          notification1Index: idx1,
+          notification2Index: idx2,
+          notification3Index: idx3,
+          orderCorrect
+        },
+        errorMessage: !orderCorrect
+          ? 'Events were not replayed in the correct order'
+          : undefined
+      });
+    }
+  }
+
+  /**
+   * Test that server can close SSE stream multiple times during a single tool call.
+   * Uses test_multiple_reconnections tool which:
+   * For each checkpoint:
+   * 1. Sends checkpoint_N notification
+   * 2. Closes stream
+   * Then returns response
+   */
+  private async testMultipleReconnections(
+    serverUrl: string,
+    sessionId: string | undefined,
+    loggingFetch: (url: string, options: RequestInit) => Promise<Response>,
+    checks: ConformanceCheck[]
+  ): Promise<void> {
+    if (!sessionId) return;
+
+    const numCheckpoints = 3;
+
+    const postResponse = await loggingFetch(serverUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream, application/json',
+        'mcp-session-id': sessionId,
+        'mcp-protocol-version': '2025-03-26'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'test_multiple_reconnections',
+          arguments: { checkpoints: numCheckpoints }
+        }
+      })
+    });
+
+    if (!postResponse.ok) {
+      if (postResponse.status === 400 || postResponse.status === 404) {
+        checks.push({
+          id: 'server-sse-multiple-reconnections',
+          name: 'ServerMultipleReconnections',
+          description: 'Server implements test_multiple_reconnections tool',
+          status: 'WARNING',
+          timestamp: new Date().toISOString(),
+          errorMessage: `Server does not implement test_multiple_reconnections tool (HTTP ${postResponse.status}). This tool is recommended for testing multiple reconnection behavior.`,
+          specReferences: [
+            {
+              id: 'SEP-1699',
+              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+            }
+          ]
+        });
+        return;
+      }
+      return;
+    }
+
+    const contentType = postResponse.headers.get('content-type');
+    if (!contentType?.includes('text/event-stream') || !postResponse.body) {
+      return;
+    }
+
+    // Collect all checkpoints across multiple reconnections
+    const allCheckpoints: string[] = [];
+    let lastEventId: string | undefined;
+    let receivedToolResponse = false;
+    let reconnectionCount = 0;
+    const maxReconnections = 10;
+
+    // Helper to read events from a stream
+    async function readEvents(response: Response): Promise<{
+      checkpoints: string[];
+      lastEventId: string | undefined;
+      receivedResponse: boolean;
+    }> {
+      const checkpoints: string[] = [];
+      let eventId: string | undefined;
+      let gotResponse = false;
+
+      if (!response.body) {
+        return { checkpoints, lastEventId: eventId, receivedResponse: false };
+      }
+
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(new EventSourceParserStream())
+        .getReader();
+
+      const timeout = setTimeout(() => reader.cancel(), 5000);
+
+      try {
+        while (true) {
+          const { value: event, done } = await reader.read();
+          if (done) break;
+
+          if (event.id) eventId = event.id;
+
+          if (event.data) {
+            try {
+              const parsed = JSON.parse(event.data);
+              if (
+                parsed.method === 'notifications/message' &&
+                parsed.params?.data
+              ) {
+                const data = String(parsed.params.data);
+                if (data.startsWith('checkpoint_')) {
+                  checkpoints.push(data);
+                }
+              }
+              if (parsed.id === 3 && parsed.result) {
+                gotResponse = true;
+              }
+            } catch {
+              // Not JSON
+            }
+          }
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      return {
+        checkpoints,
+        lastEventId: eventId,
+        receivedResponse: gotResponse
+      };
+    }
+
+    // Read initial stream
+    let result = await readEvents(postResponse);
+    allCheckpoints.push(...result.checkpoints);
+    lastEventId = result.lastEventId || lastEventId;
+    receivedToolResponse = result.receivedResponse;
+
+    if (result.checkpoints.length > 0) {
+      checks.push({
+        id: 'client-action',
+        name: 'ClientAction',
+        description: `Initial stream: received ${result.checkpoints.join(', ')}. Stream closed.`,
+        status: 'INFO',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Keep reconnecting until we get the tool response
+    while (
+      !receivedToolResponse &&
+      lastEventId &&
+      reconnectionCount < maxReconnections
+    ) {
+      reconnectionCount++;
+
+      checks.push({
+        id: 'client-action',
+        name: 'ClientAction',
+        description: `Reconnection #${reconnectionCount}: connecting with Last-Event-ID: ${lastEventId}`,
+        status: 'INFO',
+        timestamp: new Date().toISOString()
+      });
+
+      const getResponse = await loggingFetch(serverUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/event-stream',
+          'mcp-session-id': sessionId,
+          'mcp-protocol-version': '2025-03-26',
+          'last-event-id': lastEventId
+        }
+      });
+
+      if (!getResponse.ok) break;
+
+      result = await readEvents(getResponse);
+      allCheckpoints.push(...result.checkpoints);
+      if (result.lastEventId) lastEventId = result.lastEventId;
+      if (result.receivedResponse) receivedToolResponse = true;
+
+      if (result.checkpoints.length > 0) {
+        checks.push({
+          id: 'client-action',
+          name: 'ClientAction',
+          description: `Reconnection #${reconnectionCount}: received ${result.checkpoints.join(', ')}${result.receivedResponse ? ' + tool response' : '. Stream closed again.'}`,
+          status: 'INFO',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // Check that all expected checkpoints were received
+    const expectedCheckpoints = Array.from(
+      { length: numCheckpoints },
+      (_, i) => `checkpoint_${i}`
+    );
+    const receivedAllCheckpoints = expectedCheckpoints.every((cp) =>
+      allCheckpoints.includes(cp)
+    );
+
+    checks.push({
+      id: 'server-sse-multiple-reconnections',
+      name: 'ServerMultipleReconnections',
+      description:
+        'Server can close SSE stream multiple times during single tool call and client receives all events',
+      status: receivedAllCheckpoints
+        ? 'SUCCESS'
+        : allCheckpoints.length > 0
+          ? 'WARNING'
+          : 'INFO',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'SEP-1699',
+          url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+        }
+      ],
+      details: {
+        expectedCheckpoints,
+        receivedCheckpoints: allCheckpoints,
+        receivedAllCheckpoints,
+        reconnectionCount,
+        receivedToolResponse
+      },
+      errorMessage: !receivedAllCheckpoints
+        ? `Did not receive all expected checkpoints. Expected: ${expectedCheckpoints.join(', ')}, Got: ${allCheckpoints.join(', ')}`
+        : undefined
+    });
+
+    // Check checkpoint ordering
+    if (allCheckpoints.length >= 2) {
+      let orderCorrect = true;
+      for (let i = 1; i < allCheckpoints.length; i++) {
+        const prevNum = parseInt(allCheckpoints[i - 1].split('_')[1]);
+        const currNum = parseInt(allCheckpoints[i].split('_')[1]);
+        if (currNum < prevNum) {
+          orderCorrect = false;
+          break;
+        }
+      }
+
+      checks.push({
+        id: 'server-sse-checkpoint-order',
+        name: 'ServerCheckpointOrder',
+        description:
+          'Checkpoints are received in correct order across multiple reconnections',
+        status: orderCorrect ? 'SUCCESS' : 'WARNING',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'SEP-1699',
+            url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+          }
+        ],
+        details: {
+          checkpointOrder: allCheckpoints,
+          orderCorrect
+        },
+        errorMessage: !orderCorrect
+          ? 'Checkpoints were not received in the correct order'
+          : undefined
+      });
+    }
   }
 }
