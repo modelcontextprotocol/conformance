@@ -157,14 +157,29 @@ export async function runConformanceTest(
 
 export function printClientResults(
   checks: ConformanceCheck[],
-  verbose: boolean = false
-): { passed: number; failed: number; denominator: number; warnings: number } {
+  verbose: boolean = false,
+  clientOutput?: ClientExecutionResult
+): {
+  passed: number;
+  failed: number;
+  denominator: number;
+  warnings: number;
+  overallFailure: boolean;
+} {
   const denominator = checks.filter(
     (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
   ).length;
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
   const warnings = checks.filter((c) => c.status === 'WARNING').length;
+
+  // Determine if there's an overall failure (failures, warnings, client timeout, or exit failure)
+  const clientTimedOut = clientOutput?.timedOut ?? false;
+  const clientExitedWithError = clientOutput
+    ? clientOutput.exitCode !== 0
+    : false;
+  const overallFailure =
+    failed > 0 || warnings > 0 || clientTimedOut || clientExitedWithError;
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
@@ -180,6 +195,16 @@ export function printClientResults(
     `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
   );
 
+  if (clientTimedOut) {
+    console.error(`\n⚠️  CLIENT TIMED OUT - Test incomplete`);
+  }
+
+  if (clientExitedWithError && !clientTimedOut) {
+    console.error(
+      `\n⚠️  CLIENT EXITED WITH ERROR (code ${clientOutput?.exitCode}) - Test may be incomplete`
+    );
+  }
+
   if (failed > 0) {
     console.error('\nFailed Checks:');
     checks
@@ -192,7 +217,25 @@ export function printClientResults(
       });
   }
 
-  return { passed, failed, denominator, warnings };
+  if (warnings > 0) {
+    console.error('\nWarning Checks:');
+    checks
+      .filter((c) => c.status === 'WARNING')
+      .forEach((c) => {
+        console.error(`  - ${c.name}: ${c.description}`);
+        if (c.errorMessage) {
+          console.error(`    Warning: ${c.errorMessage}`);
+        }
+      });
+  }
+
+  if (overallFailure) {
+    console.error('\n❌ OVERALL: FAILED');
+  } else {
+    console.error('\n✅ OVERALL: PASSED');
+  }
+
+  return { passed, failed, denominator, warnings, overallFailure };
 }
 
 export async function runInteractiveMode(

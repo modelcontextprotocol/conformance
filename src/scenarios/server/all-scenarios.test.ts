@@ -15,10 +15,13 @@ describe('Server Scenarios', () => {
       'examples/servers/typescript/everything-server.ts'
     );
 
+    // Use shell: true on Windows only (npx is npx.cmd on Windows)
+    const isWindows = process.platform === 'win32';
     serverProcess = spawn('npx', ['tsx', serverPath], {
       env: { ...process.env, PORT: TEST_PORT.toString() },
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false
+      detached: false,
+      shell: isWindows
     });
 
     // Capture output for debugging
