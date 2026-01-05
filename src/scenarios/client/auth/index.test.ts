@@ -3,7 +3,6 @@ import {
   runClientAgainstScenario,
   InlineClientRunner
 } from './test_helpers/testClient';
-import { runClient as goodClient } from '../../../../examples/clients/typescript/auth-test';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
@@ -34,8 +33,10 @@ describe('Client Auth Scenarios', () => {
         // TODO: skip in a native way?
         return;
       }
-      // Use everything-client handler if available, otherwise use goodClient
-      const clientFn = getHandler(scenario.name) ?? goodClient;
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name, {
         allowClientError: allowClientErrorScenarios.has(scenario.name)

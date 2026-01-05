@@ -21,8 +21,16 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
-import { withOAuthRetry } from './helpers/withOAuthRetry.js';
+import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry.js';
 import { logger } from './helpers/logger.js';
+
+/**
+ * Fixed client metadata URL for CIMD conformance tests.
+ * When server supports client_id_metadata_document_supported, this URL
+ * will be used as the client_id instead of doing dynamic registration.
+ */
+const CIMD_CLIENT_METADATA_URL =
+  'https://conformance-test.local/client-metadata.json';
 
 // Scenario handler type
 type ScenarioHandler = (serverUrl: string) => Promise<void>;
@@ -44,10 +52,20 @@ function registerScenarios(names: string[], handler: ScenarioHandler): void {
 
 /**
  * Get a scenario handler by name.
- * Returns undefined if no handler is registered for the scenario.
+ * For auth/* scenarios, falls back to the standard OAuth auth client if no
+ * specific handler is registered.
+ * Returns undefined only if no handler matches.
  */
 export function getHandler(scenarioName: string): ScenarioHandler | undefined {
-  return scenarioHandlers[scenarioName];
+  const handler = scenarioHandlers[scenarioName];
+  if (handler) return handler;
+
+  // Fall back to auth client for unregistered auth/* scenarios
+  if (scenarioName.startsWith('auth/')) {
+    return runAuthClient;
+  }
+
+  return undefined;
 }
 
 // ============================================================================
@@ -86,7 +104,9 @@ async function runAuthClient(serverUrl: string): Promise<void> {
 
   const oauthFetch = withOAuthRetry(
     'test-auth-client',
-    new URL(serverUrl)
+    new URL(serverUrl),
+    handle401,
+    CIMD_CLIENT_METADATA_URL
   )(fetch);
 
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
@@ -107,8 +127,11 @@ async function runAuthClient(serverUrl: string): Promise<void> {
 }
 
 // Register all auth scenarios that should use the well-behaved auth client
+// Note: getHandler() also falls back to runAuthClient for any auth/* scenario,
+// so this explicit registration is mainly for documentation purposes
 registerScenarios(
   [
+    'auth/basic-cimd',
     'auth/basic-dcr',
     'auth/basic-metadata-var1',
     'auth/basic-metadata-var2',
@@ -118,7 +141,8 @@ registerScenarios(
     'auth/scope-from-www-authenticate',
     'auth/scope-from-scopes-supported',
     'auth/scope-omitted-when-undefined',
-    'auth/scope-step-up'
+    'auth/scope-step-up',
+    'auth/scope-retry-limit'
   ],
   runAuthClient
 );
