@@ -20,7 +20,7 @@ import {
   PrivateKeyJwtProvider
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { ConformanceContextSchema } from '../../../src/schemas/context.js';
+import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import { withOAuthRetry } from './helpers/withOAuthRetry.js';
 import { logger } from './helpers/logger.js';
 
@@ -193,7 +193,7 @@ function parseContext() {
   if (!raw) {
     throw new Error('MCP_CONFORMANCE_CONTEXT not set');
   }
-  return ConformanceContextSchema.parse(JSON.parse(raw));
+  return ClientConformanceContextSchema.parse(JSON.parse(raw));
 }
 
 /**

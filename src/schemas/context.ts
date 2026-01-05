@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
 /**
- * Schema for conformance test context passed via MCP_CONFORMANCE_CONTEXT.
+ * Schema for client conformance test context passed via MCP_CONFORMANCE_CONTEXT.
  *
  * Each variant includes a `name` field matching the scenario name to enable
  * discriminated union parsing and type-safe access to scenario-specific fields.
  */
-export const ConformanceContextSchema = z.discriminatedUnion('name', [
+export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
   z.object({
     name: z.literal('auth/client-credentials-jwt'),
     client_id: z.string(),
@@ -20,4 +20,6 @@ export const ConformanceContextSchema = z.discriminatedUnion('name', [
   })
 ]);
 
-export type ConformanceContext = z.infer<typeof ConformanceContextSchema>;
+export type ClientConformanceContext = z.infer<
+  typeof ClientConformanceContextSchema
+>;
