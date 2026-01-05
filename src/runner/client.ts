@@ -27,7 +27,11 @@ async function executeClient(
   let stderr = '';
   let timedOut = false;
 
-  // Build environment with scenario name and optional context
+  // Build environment with scenario name and optional context.
+  // We use separate env vars rather than putting scenario in context because:
+  // 1. Scenario is always set, context is only set when there's scenario-specific data
+  // 2. Simpler to read a string vs parsing JSON just to get the scenario name
+  // 3. Semantic separation: scenario identifies "which test", context provides "test data"
   const env = { ...process.env };
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
   if (context) {
