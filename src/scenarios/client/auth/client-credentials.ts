@@ -97,8 +97,15 @@ export class ClientCredentialsJwtScenario implements Scenario {
         // Verify JWT signature and claims using the generated public key
         try {
           // Per RFC 7523bis, audience MUST be the issuer identifier
+          // Per RFC 3986, URLs with and without trailing slash are equivalent,
+          // so we normalize by removing trailing slashes for comparison
+          const normalizedIssuerUrl = issuerUrl.replace(/\/+$/, '');
           const { payload } = await jose.jwtVerify(clientAssertion, publicKey, {
-            audience: issuerUrl,
+            audience: [
+              issuerUrl,
+              normalizedIssuerUrl,
+              `${normalizedIssuerUrl}/`
+            ],
             clockTolerance: 30
           });
 
