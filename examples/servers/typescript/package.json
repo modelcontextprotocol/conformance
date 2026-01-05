@@ -15,14 +15,14 @@
     "testing"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@modelcontextprotocol/sdk": "^1.25.1",
     "@types/cors": "^2.8.19",
     "cors": "^2.8.5",
     "express": "^5.2.1",
-    "zod-to-json-schema": "^3.25.0"
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
-    "tsx": "^4.7.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.5.4"
   }
 }
