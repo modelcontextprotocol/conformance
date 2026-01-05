@@ -64,11 +64,8 @@ class TokenEndpointAuthScenario implements Scenario {
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
-      onTokenRequest: (req, timestamp) => {
-        const authorizationHeader = req.headers.authorization as
-          | string
-          | undefined;
-        const bodyClientSecret = req.body.client_secret;
+      onTokenRequest: ({ authorizationHeader, body, timestamp }) => {
+        const bodyClientSecret = body.client_secret;
         const actualMethod = detectAuthMethod(
           authorizationHeader,
           bodyClientSecret
@@ -110,6 +107,11 @@ class TokenEndpointAuthScenario implements Scenario {
             ...(formatError && { formatError })
           }
         });
+
+        return {
+          token: `test-token-${Date.now()}`,
+          scopes: []
+        };
       },
       onRegistrationRequest: () => ({
         clientId: `test-client-${Date.now()}`,
