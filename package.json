@@ -29,10 +29,10 @@
     "conformance": "dist/index.js"
   },
   "devDependencies": {
-    "@eslint/js": "^9.8.0",
+    "@eslint/js": "^9.39.1",
     "@types/express": "^5.0.3",
     "@types/node": "^22.10.2",
-    "@typescript/native-preview": "^7.0.0-dev.20251030.1",
+    "@typescript/native-preview": "^7.0.0-dev.20251201.1",
     "cors": "^2.8.5",
     "eslint": "^9.8.0",
     "eslint-config-prettier": "^10.1.8",
@@ -41,8 +41,8 @@
     "tsdown": "^0.15.12",
     "tsx": "^4.7.0",
     "typescript": "^5.5.4",
-    "typescript-eslint": "8.46.2",
-    "vitest": "^4.0.5"
+    "typescript-eslint": "8.48.0",
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",

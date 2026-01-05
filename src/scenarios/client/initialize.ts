@@ -110,11 +110,18 @@ export class InitializeScenario implements Scenario {
 
     this.checks.push(clientChecks.createServerInfoCheck(serverInfo));
 
+    // Echo back client's version if valid, otherwise use latest
+    const VALID_VERSIONS = ['2025-06-18', '2025-11-25'];
+    const clientVersion = initializeRequest?.protocolVersion;
+    const responseVersion = VALID_VERSIONS.includes(clientVersion)
+      ? clientVersion
+      : '2025-11-25';
+
     const response = {
       jsonrpc: '2.0',
       id: request.id,
       result: {
-        protocolVersion: '2025-06-18',
+        protocolVersion: responseVersion,
         serverInfo,
         capabilities: {}
       }

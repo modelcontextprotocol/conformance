@@ -73,6 +73,21 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Emit failure check if expected scope check didn't run
+    const hasScopeCheck = this.checks.some(
+      (c) => c.id === 'scope-from-www-authenticate'
+    );
+    if (!hasScopeCheck) {
+      this.checks.push({
+        id: 'scope-from-www-authenticate',
+        name: 'Client scope selection from WWW-Authenticate header',
+        description:
+          'Client did not complete authorization flow - scope check could not be performed',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+      });
+    }
     return this.checks;
   }
 }
@@ -153,6 +168,21 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Emit failure check if expected scope check didn't run
+    const hasScopeCheck = this.checks.some(
+      (c) => c.id === 'scope-from-scopes-supported'
+    );
+    if (!hasScopeCheck) {
+      this.checks.push({
+        id: 'scope-from-scopes-supported',
+        name: 'Client scope selection from scopes_supported',
+        description:
+          'Client did not complete authorization flow - scope check could not be performed',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+      });
+    }
     return this.checks;
   }
 }
@@ -221,6 +251,21 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Emit failure check if expected scope check didn't run
+    const hasScopeCheck = this.checks.some(
+      (c) => c.id === 'scope-omitted-when-undefined'
+    );
+    if (!hasScopeCheck) {
+      this.checks.push({
+        id: 'scope-omitted-when-undefined',
+        name: 'Client scope omission when scopes_supported undefined',
+        description:
+          'Client did not complete authorization flow - scope check could not be performed',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+      });
+    }
     return this.checks;
   }
 }
