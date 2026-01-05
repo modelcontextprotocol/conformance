@@ -9,7 +9,11 @@ A framework for testing MCP (Model Context Protocol) client and server implement
 ### Testing Clients
 
 ```bash
-npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/test1.ts" --scenario initialize
+# Using the everything-client (recommended)
+npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/everything-client.ts" --scenario initialize
+
+# Run an entire suite of tests
+npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/everything-client.ts" --suite auth
 ```
 
 ### Testing Servers
@@ -59,10 +63,11 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
+- `--suite` - Run a suite of tests in parallel (e.g., "auth")
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
-The framework appends the server URL as the final argument to your command.
+The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data.
 
 ### Server Testing
 
@@ -89,8 +94,9 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 ## Example Clients
 
-- `examples/clients/typescript/test1.ts` - Valid MCP client (passes all checks)
-- `examples/clients/typescript/test-broken.ts` - Invalid client missing required fields (fails checks)
+- `examples/clients/typescript/everything-client.ts` - Single client that handles all scenarios based on scenario name (recommended)
+- `examples/clients/typescript/test1.ts` - Simple MCP client (for reference)
+- `examples/clients/typescript/auth-test.ts` - Well-behaved OAuth client (for reference)
 
 ## Available Scenarios
 
