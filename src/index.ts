@@ -53,6 +53,7 @@ program
         }
 
         const suites: Record<string, () => string[]> = {
+          all: listScenarios,
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
           'sep-835': () =>
@@ -153,7 +154,7 @@ program
         console.error('Either --scenario or --suite is required');
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
-        console.error('\nAvailable suites: auth, metadata, sep-835');
+        console.error('\nAvailable suites: all, auth, metadata, sep-835');
         process.exit(1);
       }
 
