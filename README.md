@@ -78,7 +78,20 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 **Options:**
 
 - `--url` - URL of the server to test
-- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize". Runs all available scenarios by default
+- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
+- `--suite <suite>` - Suite to run: "active" (default), "all", "pending", or "auth"
+- `--auth` - Include OAuth conformance tests when running active suite
+
+### Authorization Server OAuth Conformity Testing
+
+To test the OAuth implementation protecting your server:
+
+```bash
+# Run only OAuth conformance tests
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --suite auth
+
+# Run a specific OAuth scenario
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --scenario server/auth-prm-discovery
 
 ## Test Results
 
