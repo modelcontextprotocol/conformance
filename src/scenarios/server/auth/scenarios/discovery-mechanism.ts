@@ -11,7 +11,10 @@
 
 import { ClientScenario, ConformanceCheck } from '../../../../types';
 import { authFetch } from '../helpers/auth-fetch';
-import { fetchPrm, buildAsMetadataUrl } from '../helpers/as-metadata';
+import {
+  fetchPrm,
+  buildAsMetadataDiscoveryAttempts
+} from '../helpers/as-metadata';
 import { ServerAuthSpecReferences } from '../spec-references';
 
 /**
@@ -90,42 +93,46 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
 
     const asUrl = authServers[0];
 
-    // Try RFC 8414 endpoint
-    const rfc8414Url = buildAsMetadataUrl(asUrl, false);
+    const attempts = buildAsMetadataDiscoveryAttempts(asUrl);
+    const triedUrls = attempts.map((a) => a.url);
+    const rfcAttempts = attempts.filter((a) => a.kind === 'RFC8414');
+    const oidcAttempts = attempts.filter((a) => a.kind === 'OIDC');
+
     let rfc8414Response: Awaited<ReturnType<typeof authFetch>> | null = null;
     let rfc8414Metadata: Record<string, unknown> | null = null;
+    let rfc8414Url: string | undefined;
 
-    try {
-      const response = await authFetch(rfc8414Url);
-      if (
-        response.status === 200 &&
-        typeof response.body === 'object' &&
-        response.body !== null
-      ) {
-        rfc8414Response = response;
-        rfc8414Metadata = response.body as Record<string, unknown>;
-      }
-    } catch {
-      // Will check OIDC
-    }
-
-    // Try OIDC endpoint
-    const oidcUrl = buildAsMetadataUrl(asUrl, true);
     let oidcResponse: Awaited<ReturnType<typeof authFetch>> | null = null;
     let oidcMetadata: Record<string, unknown> | null = null;
+    let oidcUrl: string | undefined;
 
-    try {
-      const response = await authFetch(oidcUrl);
-      if (
-        response.status === 200 &&
-        typeof response.body === 'object' &&
-        response.body !== null
-      ) {
-        oidcResponse = response;
-        oidcMetadata = response.body as Record<string, unknown>;
+    // Try attempts in spec-defined priority order, tracking the first success
+    // for each discovery mechanism type.
+    for (const attempt of attempts) {
+      try {
+        const response = await authFetch(attempt.url);
+        if (
+          response.status === 200 &&
+          typeof response.body === 'object' &&
+          response.body !== null
+        ) {
+          if (
+            attempt.kind === 'RFC8414' &&
+            rfc8414Metadata === null &&
+            rfc8414Response === null
+          ) {
+            rfc8414Url = attempt.url;
+            rfc8414Response = response;
+            rfc8414Metadata = response.body as Record<string, unknown>;
+          } else if (attempt.kind === 'OIDC' && oidcMetadata === null) {
+            oidcUrl = attempt.url;
+            oidcResponse = response;
+            oidcMetadata = response.body as Record<string, unknown>;
+          }
+        }
+      } catch {
+        // Try next
       }
-    } catch {
-      // May only have RFC 8414
     }
 
     const hasRfc8414 = rfc8414Metadata !== null;
@@ -140,7 +147,11 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY],
-        details: { url: rfc8414Url, status: rfc8414Response?.status }
+        details: {
+          url: rfc8414Url,
+          status: rfc8414Response?.status,
+          triedUrls: rfcAttempts.map((a) => a.url)
+        }
       });
     } else {
       checks.push({
@@ -149,9 +160,9 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         description: 'OAuth 2.0 AS Metadata endpoint available',
         status: 'INFO',
         timestamp: timestamp(),
-        errorMessage: `No response from ${rfc8414Url}`,
+        errorMessage: `No response from ${rfcAttempts.map((a) => a.url).join(' or ')}`,
         specReferences: [ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY],
-        details: { url: rfc8414Url }
+        details: { triedUrls: rfcAttempts.map((a) => a.url) }
       });
     }
 
@@ -164,7 +175,11 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         status: 'SUCCESS',
         timestamp: timestamp(),
         specReferences: [ServerAuthSpecReferences.OIDC_DISCOVERY],
-        details: { url: oidcUrl, status: oidcResponse?.status }
+        details: {
+          url: oidcUrl,
+          status: oidcResponse?.status,
+          triedUrls: oidcAttempts.map((a) => a.url)
+        }
       });
     } else {
       checks.push({
@@ -173,9 +188,9 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         description: 'OpenID Connect Discovery endpoint available',
         status: 'INFO',
         timestamp: timestamp(),
-        errorMessage: `No response from ${oidcUrl}`,
+        errorMessage: `No response from ${oidcAttempts.map((a) => a.url).join(' or ')}`,
         specReferences: [ServerAuthSpecReferences.OIDC_DISCOVERY],
-        details: { url: oidcUrl }
+        details: { triedUrls: oidcAttempts.map((a) => a.url) }
       });
     }
 
@@ -195,10 +210,11 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
           ServerAuthSpecReferences.MCP_AUTH_SERVER_METADATA
         ],
         details: {
-          rfc8414_url: rfc8414Url,
-          oidc_url: oidcUrl,
+          rfc8414_urls: rfcAttempts.map((a) => a.url),
+          oidc_urls: oidcAttempts.map((a) => a.url),
           rfc8414_available: false,
-          oidc_available: false
+          oidc_available: false,
+          triedUrls
         }
       });
       return checks;
@@ -217,6 +233,7 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
       details: {
         rfc8414_available: hasRfc8414,
         oidc_available: hasOidc,
+        triedUrls,
         mechanisms: [
           ...(hasRfc8414 ? ['RFC8414'] : []),
           ...(hasOidc ? ['OIDC'] : [])
@@ -300,11 +317,13 @@ export class AuthDiscoveryMechanismScenario implements ClientScenario {
         as_url: asUrl,
         rfc8414: {
           available: hasRfc8414,
-          url: rfc8414Url
+          url: rfc8414Url,
+          triedUrls: rfcAttempts.map((a) => a.url)
         },
         oidc: {
           available: hasOidc,
-          url: oidcUrl
+          url: oidcUrl,
+          triedUrls: oidcAttempts.map((a) => a.url)
         },
         recommended: hasRfc8414 ? 'RFC8414' : 'OIDC'
       }

@@ -10,24 +10,8 @@
 
 import { ClientScenario, ConformanceCheck } from '../../../../types';
 import { authFetch, buildPrmUrl } from '../helpers/auth-fetch';
+import { buildAsMetadataDiscoveryAttempts } from '../helpers/as-metadata';
 import { ServerAuthSpecReferences } from '../spec-references';
-
-/**
- * Build AS metadata discovery URL.
- *
- * Per RFC 8414, AS metadata is at:
- * - /.well-known/oauth-authorization-server (RFC 8414)
- * - /.well-known/openid-configuration (OIDC Discovery)
- */
-function buildAsMetadataUrl(asUrl: string, useOidc: boolean): string {
-  const parsed = new URL(asUrl);
-  const base = `${parsed.protocol}//${parsed.host}`;
-
-  if (useOidc) {
-    return `${base}/.well-known/openid-configuration`;
-  }
-  return `${base}/.well-known/oauth-authorization-server`;
-}
 
 /**
  * Validates Authorization Server Metadata endpoint.
@@ -141,36 +125,26 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
     // Use the first authorization server
     const asUrl = authServers[0];
 
-    // Try RFC 8414 endpoint first, then OIDC
-    const rfc8414Url = buildAsMetadataUrl(asUrl, false);
-    const oidcUrl = buildAsMetadataUrl(asUrl, true);
+    const attempts = buildAsMetadataDiscoveryAttempts(asUrl);
+    const triedUrls = attempts.map((a) => a.url);
 
     let asResponse: Awaited<ReturnType<typeof authFetch>> | null = null;
     let usedUrl = '';
     let isOidc = false;
+    let variant: string | undefined;
 
-    // Try RFC 8414 first
-    try {
-      const response = await authFetch(rfc8414Url);
-      if (response.status === 200) {
-        asResponse = response;
-        usedUrl = rfc8414Url;
-      }
-    } catch {
-      // Will try OIDC
-    }
-
-    // Try OIDC if RFC 8414 didn't work
-    if (!asResponse) {
+    for (const attempt of attempts) {
       try {
-        const response = await authFetch(oidcUrl);
+        const response = await authFetch(attempt.url);
         if (response.status === 200) {
           asResponse = response;
-          usedUrl = oidcUrl;
-          isOidc = true;
+          usedUrl = attempt.url;
+          isOidc = attempt.kind === 'OIDC';
+          variant = attempt.variant;
+          break;
         }
       } catch {
-        // Both failed
+        // Try next
       }
     }
 
@@ -183,12 +157,12 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
           'Authorization Server exposes metadata at well-known endpoint',
         status: 'FAILURE',
         timestamp: timestamp(),
-        errorMessage: `No AS metadata found at ${rfc8414Url} or ${oidcUrl}`,
+        errorMessage: `No AS metadata found at ${triedUrls.join(' or ')}`,
         specReferences: [
           ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY,
           ServerAuthSpecReferences.OIDC_DISCOVERY
         ],
-        details: { asUrl, triedUrls: [rfc8414Url, oidcUrl] }
+        details: { asUrl, triedUrls }
       });
       return checks;
     }
@@ -205,7 +179,12 @@ export class AuthAsMetadataDiscoveryScenario implements ClientScenario {
           ? ServerAuthSpecReferences.OIDC_DISCOVERY
           : ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY
       ],
-      details: { url: usedUrl, discoveryType: isOidc ? 'OIDC' : 'RFC8414' }
+      details: {
+        url: usedUrl,
+        discoveryType: isOidc ? 'OIDC' : 'RFC8414',
+        variant,
+        triedUrls
+      }
     });
 
     // Check: Response is valid JSON object
