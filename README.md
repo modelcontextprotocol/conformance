@@ -9,12 +9,14 @@ A framework for testing MCP (Model Context Protocol) client and server implement
 ### Testing Clients
 
 ```bash
-# Using the everything-client (recommended)
-npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/everything-client.ts" --scenario initialize
+# Test your client implementation
+npx @modelcontextprotocol/conformance client --command "<your-client-command>" --scenario initialize
 
 # Run an entire suite of tests
-npx @modelcontextprotocol/conformance client --command "tsx examples/clients/typescript/everything-client.ts" --suite auth
+npx @modelcontextprotocol/conformance client --command "<your-client-command>" --suite auth
 ```
+
+> **Note**: For TypeScript SDK development, see [examples/README.md](examples/README.md) for the recommended setup using the conformance client in the typescript-sdk repository.
 
 ### Testing Servers
 
@@ -92,11 +94,14 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `checks.json` - Array of conformance check results with pass/fail status
 
-## Example Clients
+## Example Implementations
 
-- `examples/clients/typescript/everything-client.ts` - Single client that handles all scenarios based on scenario name (recommended)
-- `examples/clients/typescript/test1.ts` - Simple MCP client (for reference)
-- `examples/clients/typescript/auth-test.ts` - Well-behaved OAuth client (for reference)
+TypeScript conformance client and server examples are maintained in the [typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) repository:
+
+- **Client**: `src/conformance/everything-client.ts` - Single client that handles all scenarios based on scenario name
+- **Server**: `examples/server/` - Various server implementations for testing
+
+See [examples/README.md](examples/README.md) for instructions on local development with the TypeScript SDK.
 
 ## Available Scenarios
 
