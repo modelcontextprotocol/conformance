@@ -152,14 +152,14 @@ async function waitForServerReady(
 /**
  * Run server auth conformance test
  *
- * For --auth-command mode: Spawns the fake AS, then spawns the server with
+ * For --command mode: Spawns the fake AS, then spawns the server with
  * MCP_CONFORMANCE_AUTH_SERVER_URL env var pointing to the fake AS.
  *
- * For --auth-url mode: Just runs the auth scenario against the provided URL.
+ * For --url mode: Just runs the auth scenario against the provided URL.
  */
 export async function runServerAuthConformanceTest(options: {
-  authUrl?: string;
-  authCommand?: string;
+  url?: string;
+  command?: string;
   scenarioName: string;
   timeout?: number;
 }): Promise<{
@@ -167,7 +167,7 @@ export async function runServerAuthConformanceTest(options: {
   resultDir: string;
   scenarioDescription: string;
 }> {
-  const { authUrl, authCommand, scenarioName, timeout = 30000 } = options;
+  const { url, command, scenarioName, timeout = 30000 } = options;
 
   await ensureResultsDir();
   const resultDir = createResultDir(scenarioName, 'server-auth');
@@ -184,8 +184,8 @@ export async function runServerAuthConformanceTest(options: {
   let authServerLifecycle: ServerLifecycle | null = null;
 
   try {
-    if (authCommand) {
-      // --auth-command mode: Start fake AS, then spawn server with env var
+    if (command) {
+      // --command mode: Start fake AS, then spawn server with env var
       console.log(`Starting fake authorization server...`);
 
       authServerLifecycle = new ServerLifecycle();
@@ -194,8 +194,8 @@ export async function runServerAuthConformanceTest(options: {
       console.log(`Fake AS running at ${authServerUrl}`);
 
       // Spawn the server command with the auth server URL env var
-      console.log(`Starting server with command: ${authCommand}`);
-      serverProcess = spawn(authCommand, {
+      console.log(`Starting server with command: ${command}`);
+      serverProcess = spawn(command, {
         shell: true,
         env: {
           ...process.env,
@@ -263,15 +263,15 @@ export async function runServerAuthConformanceTest(options: {
       );
       const scenarioChecks = await scenario.run(serverUrl);
       checks.push(...scenarioChecks);
-    } else if (authUrl) {
-      // --auth-url mode: Just run the scenario against the provided URL
+    } else if (url) {
+      // --url mode: Just run the scenario against the provided URL
       console.log(
-        `Running server auth scenario '${scenarioName}' against: ${authUrl}`
+        `Running server auth scenario '${scenarioName}' against: ${url}`
       );
-      checks = await scenario.run(authUrl);
+      checks = await scenario.run(url);
     } else {
       throw new Error(
-        'Either --auth-url or --auth-command must be provided for auth scenarios'
+        'Either --url or --command must be provided for auth scenarios'
       );
     }
 

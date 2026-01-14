@@ -202,14 +202,13 @@ program
 program
   .command('server')
   .description('Run conformance tests against a server implementation')
-  .option('--url <url>', 'URL of the server to test')
   .option(
-    '--auth-url <url>',
-    'URL for auth testing (when server is already running)'
+    '--url <url>',
+    'URL of the server to test (for already-running servers)'
   )
   .option(
-    '--auth-command <cmd>',
-    'Command to start the server (conformance will start fake AS and pass MCP_CONFORMANCE_AUTH_SERVER_URL)'
+    '--command <cmd>',
+    'Command to start the server (for auth suite: spawns fake AS and passes MCP_CONFORMANCE_AUTH_SERVER_URL)'
   )
   .option(
     '--scenario <scenario>',
@@ -230,22 +229,17 @@ program
 
       // Check if this is an auth test
       const isAuthTest =
-        suite === 'auth' ||
-        options.authUrl ||
-        options.authCommand ||
-        options.scenario?.startsWith('server-auth/');
+        suite === 'auth' || options.scenario?.startsWith('server-auth/');
 
       if (isAuthTest) {
-        // Auth testing mode
-        if (!options.authUrl && !options.authCommand) {
+        // Auth testing mode - requires --url or --command
+        if (!options.url && !options.command) {
           console.error(
-            'For auth testing, either --auth-url or --auth-command is required'
+            'For auth testing, either --url or --command is required'
           );
+          console.error('\n--url <url>     URL of already running server');
           console.error(
-            '\n--auth-url: URL of already running server to test auth against'
-          );
-          console.error(
-            '--auth-command: Command to start the server (conformance will provide MCP_CONFORMANCE_AUTH_SERVER_URL)'
+            '--command <cmd> Command to start the server (conformance spawns fake AS)'
           );
           process.exit(1);
         }
@@ -267,8 +261,8 @@ program
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
             const result = await runServerAuthConformanceTest({
-              authUrl: options.authUrl,
-              authCommand: options.authCommand,
+              url: options.url,
+              command: options.command,
               scenarioName,
               timeout
             });
