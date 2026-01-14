@@ -227,7 +227,10 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   readonly clientMetadataUrl?: string;
 
   constructor(
-    private readonly _clientMetadata: OAuthClientMetadata,
+    private readonly _clientMetadata: Omit<
+      OAuthClientMetadata,
+      'redirect_uris'
+    >,
     options?: { clientMetadataUrl?: string; interactive?: boolean }
   ) {
     this.clientMetadataUrl =
