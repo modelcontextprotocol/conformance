@@ -39,11 +39,13 @@ program
   .option('--scenario <scenario>', 'Scenario to test')
   .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+  .option('-o, --output-dir <path>', 'Save results to this directory')
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
       const timeout = parseInt(options.timeout, 10);
       const verbose = options.verbose ?? false;
+      const outputDir = options.outputDir;
 
       // Handle suite mode
       if (options.suite) {
@@ -78,7 +80,8 @@ program
               const result = await runConformanceTest(
                 options.command,
                 scenarioName,
-                timeout
+                timeout,
+                outputDir
               );
               return {
                 scenario: scenarioName,
@@ -163,7 +166,7 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario, verbose);
+        await runInteractiveMode(validated.scenario, verbose, outputDir);
         process.exit(0);
       }
 
@@ -171,7 +174,8 @@ program
       const result = await runConformanceTest(
         validated.command,
         validated.scenario,
-        timeout
+        timeout,
+        outputDir
       );
 
       const { overallFailure } = printClientResults(
@@ -209,6 +213,7 @@ program
     'Suite to run: "active" (default, excludes pending), "all", or "pending"',
     'active'
   )
+  .option('-o, --output-dir <path>', 'Save results to this directory')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -216,12 +221,14 @@ program
       const validated = ServerOptionsSchema.parse(options);
 
       const verbose = options.verbose ?? false;
+      const outputDir = options.outputDir;
 
       // If a single scenario is specified, run just that one
       if (validated.scenario) {
         const result = await runServerConformanceTest(
           validated.url,
-          validated.scenario
+          validated.scenario,
+          outputDir
         );
 
         const { failed } = printServerResults(
@@ -259,7 +266,8 @@ program
           try {
             const result = await runServerConformanceTest(
               validated.url,
-              scenarioName
+              scenarioName,
+              outputDir
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {

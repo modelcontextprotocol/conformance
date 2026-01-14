@@ -15,7 +15,6 @@ export {
 
 // Export utilities
 export {
-  ensureResultsDir,
   createResultDir,
   formatPrettyChecks,
   getStatusColor,
