@@ -4,8 +4,10 @@
  * This module provides:
  * 1. A conformance-aware OAuthClientProvider that handles auto-login for testing
  * 2. An observation middleware that records all HTTP requests for conformance checks
+ * 3. Interactive mode support for servers that require browser-based login
  */
 
+import http from 'http';
 import type {
   OAuthClientMetadata,
   OAuthClientInformationFull,
@@ -14,6 +16,10 @@ import type {
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Middleware } from '@modelcontextprotocol/sdk/client/middleware.js';
 import { createMiddleware } from '@modelcontextprotocol/sdk/client/middleware.js';
+
+/** Port for the OAuth callback server in interactive mode */
+const CALLBACK_PORT = 3333;
+const CALLBACK_URL = `http://localhost:${CALLBACK_PORT}/callback`;
 
 /**
  * Observed HTTP request/response for conformance checking.
@@ -204,12 +210,15 @@ const DEFAULT_CIMD_CLIENT_METADATA_URL =
  * - Stores client information and tokens in memory
  * - Handles auto-login by fetching the authorization URL and extracting the code from redirect
  * - Uses CIMD (URL-based client IDs) by default when server supports it
+ * - Supports interactive mode for servers requiring browser-based login
  */
 export class ConformanceOAuthProvider implements OAuthClientProvider {
   private _clientInformation?: OAuthClientInformationFull;
   private _tokens?: OAuthTokens;
   private _codeVerifier?: string;
   private _authCode?: string;
+  private _interactive: boolean;
+  private _callbackServer?: http.Server;
 
   /**
    * URL for Client ID Metadata Document (CIMD/SEP-991).
@@ -221,14 +230,23 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   constructor(
     private readonly _redirectUrl: string | URL,
     private readonly _clientMetadata: OAuthClientMetadata,
-    options?: { clientMetadataUrl?: string }
+    options?: { clientMetadataUrl?: string; interactive?: boolean }
   ) {
     this.clientMetadataUrl =
       options?.clientMetadataUrl ?? DEFAULT_CIMD_CLIENT_METADATA_URL;
+    this._interactive = options?.interactive ?? false;
+  }
+
+  /**
+   * Enable or disable interactive mode.
+   */
+  setInteractive(interactive: boolean): void {
+    this._interactive = interactive;
   }
 
   get redirectUrl(): string | URL {
-    return this._redirectUrl;
+    // In interactive mode, use the callback server URL
+    return this._interactive ? CALLBACK_URL : this._redirectUrl;
   }
 
   get clientMetadata(): OAuthClientMetadata {
@@ -253,9 +271,20 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
 
   /**
    * Handle authorization redirect by fetching the URL and extracting auth code.
-   * This works with auto-login servers that redirect immediately with the code.
+   * In auto mode: fetches URL and expects immediate redirect with code.
+   * In interactive mode: starts callback server and waits for user to complete login in browser.
    */
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
+    if (this._interactive) {
+      return this._interactiveAuthorization(authorizationUrl);
+    }
+    return this._autoAuthorization(authorizationUrl);
+  }
+
+  /**
+   * Auto-login mode: fetch URL and extract code from redirect.
+   */
+  private async _autoAuthorization(authorizationUrl: URL): Promise<void> {
     try {
       const response = await fetch(authorizationUrl.toString(), {
         redirect: 'manual' // Don't follow redirects automatically
@@ -264,7 +293,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
       // Get the Location header which contains the redirect with auth code
       const location = response.headers.get('location');
       if (location) {
-        const redirectUrl = new URL(location);
+        const redirectUrl = new URL(location, authorizationUrl);
         const code = redirectUrl.searchParams.get('code');
         if (code) {
           this._authCode = code;
@@ -278,6 +307,96 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
     } catch (error) {
       console.error('Failed to fetch authorization URL:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Interactive mode: start callback server and wait for user to complete login.
+   */
+  private async _interactiveAuthorization(
+    authorizationUrl: URL
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Start callback server
+      this._callbackServer = http.createServer((req, res) => {
+        const url = new URL(
+          req.url || '/',
+          `http://localhost:${CALLBACK_PORT}`
+        );
+
+        if (url.pathname === '/callback') {
+          const code = url.searchParams.get('code');
+          const error = url.searchParams.get('error');
+
+          if (error) {
+            res.writeHead(400, { 'Content-Type': 'text/html' });
+            res.end(
+              `<html><body><h1>Authorization Error</h1><p>${error}</p></body></html>`
+            );
+            this._stopCallbackServer();
+            reject(new Error(`Authorization error: ${error}`));
+            return;
+          }
+
+          if (code) {
+            this._authCode = code;
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(
+              `<html><body><h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p></body></html>`
+            );
+            this._stopCallbackServer();
+            resolve();
+            return;
+          }
+
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end(
+            `<html><body><h1>Missing Code</h1><p>No authorization code received.</p></body></html>`
+          );
+        } else {
+          res.writeHead(404);
+          res.end('Not found');
+        }
+      });
+
+      this._callbackServer.listen(CALLBACK_PORT, () => {
+        console.log(`\n${'='.repeat(70)}`);
+        console.log('INTERACTIVE AUTHORIZATION REQUIRED');
+        console.log('='.repeat(70));
+        console.log('\nOpen this URL in your browser to complete login:\n');
+        console.log(`  ${authorizationUrl.toString()}\n`);
+        console.log(
+          `Waiting for callback on http://localhost:${CALLBACK_PORT}/callback ...`
+        );
+        console.log('='.repeat(70) + '\n');
+      });
+
+      this._callbackServer.on('error', (err) => {
+        reject(new Error(`Callback server error: ${err.message}`));
+      });
+
+      // Timeout after 5 minutes
+      setTimeout(
+        () => {
+          this._stopCallbackServer();
+          reject(
+            new Error(
+              'Authorization timeout - no callback received within 5 minutes'
+            )
+          );
+        },
+        5 * 60 * 1000
+      );
+    });
+  }
+
+  /**
+   * Stop the callback server if running.
+   */
+  private _stopCallbackServer(): void {
+    if (this._callbackServer) {
+      this._callbackServer.close();
+      this._callbackServer = undefined;
     }
   }
 

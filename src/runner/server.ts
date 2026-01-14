@@ -162,12 +162,19 @@ export async function runServerAuthConformanceTest(options: {
   command?: string;
   scenarioName: string;
   timeout?: number;
+  interactive?: boolean;
 }): Promise<{
   checks: ConformanceCheck[];
   resultDir: string;
   scenarioDescription: string;
 }> {
-  const { url, command, scenarioName, timeout = 30000 } = options;
+  const {
+    url,
+    command,
+    scenarioName,
+    timeout = 30000,
+    interactive = false
+  } = options;
 
   await ensureResultsDir();
   const resultDir = createResultDir(scenarioName, 'server-auth');
@@ -261,14 +268,14 @@ export async function runServerAuthConformanceTest(options: {
       console.log(
         `Running server auth scenario '${scenarioName}' against server: ${serverUrl}`
       );
-      const scenarioChecks = await scenario.run(serverUrl);
+      const scenarioChecks = await scenario.run(serverUrl, { interactive });
       checks.push(...scenarioChecks);
     } else if (url) {
       // --url mode: Just run the scenario against the provided URL
       console.log(
         `Running server auth scenario '${scenarioName}' against: ${url}`
       );
-      checks = await scenario.run(url);
+      checks = await scenario.run(url, { interactive });
     } else {
       throw new Error(
         'Either --url or --command must be provided for auth scenarios'

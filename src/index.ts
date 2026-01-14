@@ -221,6 +221,10 @@ program
   )
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
+  .option(
+    '--interactive',
+    'Interactive auth mode: opens browser for login instead of auto-redirect'
+  )
   .action(async (options) => {
     try {
       const verbose = options.verbose ?? false;
@@ -264,7 +268,8 @@ program
               url: options.url,
               command: options.command,
               scenarioName,
-              timeout
+              timeout,
+              interactive: options.interactive
             });
             allResults.push({ scenario: scenarioName, checks: result.checks });
 
