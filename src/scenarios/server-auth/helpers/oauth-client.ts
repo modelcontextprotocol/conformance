@@ -17,10 +17,6 @@ import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.
 import type { Middleware } from '@modelcontextprotocol/sdk/client/middleware.js';
 import { createMiddleware } from '@modelcontextprotocol/sdk/client/middleware.js';
 
-/** Port for the OAuth callback server in interactive mode */
-const CALLBACK_PORT = 3333;
-const CALLBACK_URL = `http://localhost:${CALLBACK_PORT}/callback`;
-
 /**
  * Observed HTTP request/response for conformance checking.
  */
@@ -203,6 +199,9 @@ export function createObservationMiddleware(
 const DEFAULT_CIMD_CLIENT_METADATA_URL =
   'https://conformance-test.local/client-metadata.json';
 
+/** Callback URL for OAuth redirects */
+const CALLBACK_URL = 'http://localhost:3333/callback';
+
 /**
  * Conformance OAuth client provider for testing.
  *
@@ -228,7 +227,6 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   readonly clientMetadataUrl?: string;
 
   constructor(
-    private readonly _redirectUrl: string | URL,
     private readonly _clientMetadata: OAuthClientMetadata,
     options?: { clientMetadataUrl?: string; interactive?: boolean }
   ) {
@@ -237,20 +235,15 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
     this._interactive = options?.interactive ?? false;
   }
 
-  /**
-   * Enable or disable interactive mode.
-   */
-  setInteractive(interactive: boolean): void {
-    this._interactive = interactive;
-  }
-
-  get redirectUrl(): string | URL {
-    // In interactive mode, use the callback server URL
-    return this._interactive ? CALLBACK_URL : this._redirectUrl;
+  get redirectUrl(): string {
+    return CALLBACK_URL;
   }
 
   get clientMetadata(): OAuthClientMetadata {
-    return this._clientMetadata;
+    return {
+      ...this._clientMetadata,
+      redirect_uris: [CALLBACK_URL]
+    };
   }
 
   clientInformation(): OAuthClientInformationFull | undefined {
@@ -316,13 +309,13 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   private async _interactiveAuthorization(
     authorizationUrl: URL
   ): Promise<void> {
+    const callbackUrl = new URL(CALLBACK_URL);
+    const port = parseInt(callbackUrl.port, 10);
+
     return new Promise((resolve, reject) => {
       // Start callback server
       this._callbackServer = http.createServer((req, res) => {
-        const url = new URL(
-          req.url || '/',
-          `http://localhost:${CALLBACK_PORT}`
-        );
+        const url = new URL(req.url || '/', callbackUrl.origin);
 
         if (url.pathname === '/callback') {
           const code = url.searchParams.get('code');
@@ -359,15 +352,13 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
         }
       });
 
-      this._callbackServer.listen(CALLBACK_PORT, () => {
+      this._callbackServer.listen(port, () => {
         console.log(`\n${'='.repeat(70)}`);
         console.log('INTERACTIVE AUTHORIZATION REQUIRED');
         console.log('='.repeat(70));
         console.log('\nOpen this URL in your browser to complete login:\n');
         console.log(`  ${authorizationUrl.toString()}\n`);
-        console.log(
-          `Waiting for callback on http://localhost:${CALLBACK_PORT}/callback ...`
-        );
+        console.log(`Waiting for callback on ${CALLBACK_URL} ...`);
         console.log('='.repeat(70) + '\n');
       });
 

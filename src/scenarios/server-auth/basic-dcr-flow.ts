@@ -71,16 +71,9 @@ export class BasicDcrFlowScenario implements ClientScenario {
     });
 
     // Create OAuth provider for conformance testing
-    // In interactive mode, use port 3333 for the callback server
-    const callbackUrl = interactive
-      ? 'http://localhost:3333/callback'
-      : 'http://localhost:3000/callback';
-
     const provider = new ConformanceOAuthProvider(
-      callbackUrl,
       {
         client_name: 'MCP Conformance Test Client',
-        redirect_uris: [callbackUrl],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'client_secret_post'
