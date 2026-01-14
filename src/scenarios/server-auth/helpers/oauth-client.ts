@@ -325,10 +325,8 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
           const error = url.searchParams.get('error');
 
           if (error) {
-            res.writeHead(400, { 'Content-Type': 'text/html' });
-            res.end(
-              `<html><body><h1>Authorization Error</h1><p>${error}</p></body></html>`
-            );
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end(`Authorization Error: ${error}`);
             this._stopCallbackServer();
             reject(new Error(`Authorization error: ${error}`));
             return;
@@ -336,19 +334,17 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
 
           if (code) {
             this._authCode = code;
-            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end(
-              `<html><body><h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p></body></html>`
+              'Authorization successful! You can close this window and return to the terminal.'
             );
             this._stopCallbackServer();
             resolve();
             return;
           }
 
-          res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end(
-            `<html><body><h1>Missing Code</h1><p>No authorization code received.</p></body></html>`
-          );
+          res.writeHead(400, { 'Content-Type': 'text/plain' });
+          res.end('Missing authorization code');
         } else {
           res.writeHead(404);
           res.end('Not found');
