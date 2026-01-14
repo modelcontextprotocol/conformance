@@ -328,8 +328,31 @@ export class BasicDcrFlowScenario implements ClientScenario {
               authorizationServers: prm.authorization_servers
             }
           });
+        } else {
+          checks.push({
+            id: 'auth-prm-authorization-servers',
+            name: 'PRM Contains Authorization Servers',
+            description:
+              'Protected Resource Metadata must include authorization_servers array',
+            status: 'FAILURE',
+            timestamp: timestamp(),
+            specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE]
+          });
         }
       }
+    } else {
+      checks.push({
+        id: 'auth-prm-discovery',
+        name: 'Protected Resource Metadata Discovery',
+        description:
+          'No PRM discovery request observed - required for OAuth flow',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        specReferences: [
+          ServerAuthSpecReferences.RFC_9728_PRM_DISCOVERY,
+          ServerAuthSpecReferences.MCP_AUTH_PRM_DISCOVERY
+        ]
+      });
     }
 
     // Phase 3: AS Metadata Discovery
@@ -363,25 +386,62 @@ export class BasicDcrFlowScenario implements ClientScenario {
           string,
           unknown
         >;
+
+        // Required fields per RFC 8414 and MCP auth spec
+        const hasIssuer = !!metadata.issuer;
+        const hasAuthorizationEndpoint = !!metadata.authorization_endpoint;
         const hasTokenEndpoint = !!metadata.token_endpoint;
-        const hasRegistrationEndpoint = !!metadata.registration_endpoint;
+        const codeChallengeMethodsSupported =
+          metadata.code_challenge_methods_supported;
+        const supportsPkceS256 =
+          Array.isArray(codeChallengeMethodsSupported) &&
+          codeChallengeMethodsSupported.includes('S256');
+
+        // Build list of missing/invalid fields
+        const issues = [];
+        if (!hasIssuer) issues.push('missing issuer');
+        if (!hasAuthorizationEndpoint)
+          issues.push('missing authorization_endpoint');
+        if (!hasTokenEndpoint) issues.push('missing token_endpoint');
+        if (!supportsPkceS256)
+          issues.push('code_challenge_methods_supported must include S256');
+
+        const allValid = issues.length === 0;
 
         checks.push({
           id: 'auth-as-metadata-fields',
           name: 'AS Metadata Required Fields',
-          description:
-            'Authorization Server metadata includes required endpoints',
-          status: hasTokenEndpoint ? 'SUCCESS' : 'FAILURE',
+          description: allValid
+            ? 'Authorization Server metadata includes all required fields'
+            : `Authorization Server metadata issues: ${issues.join(', ')}`,
+          status: allValid ? 'SUCCESS' : 'FAILURE',
           timestamp: timestamp(),
-          specReferences: [ServerAuthSpecReferences.RFC_8414_AS_FIELDS],
+          specReferences: [
+            ServerAuthSpecReferences.RFC_8414_AS_FIELDS,
+            ServerAuthSpecReferences.MCP_AUTH_SERVER_METADATA
+          ],
           details: {
-            hasTokenEndpoint,
-            hasRegistrationEndpoint,
+            issuer: metadata.issuer,
+            authorizationEndpoint: metadata.authorization_endpoint,
             tokenEndpoint: metadata.token_endpoint,
+            codeChallengeMethodsSupported,
             registrationEndpoint: metadata.registration_endpoint
           }
         });
       }
+    } else {
+      checks.push({
+        id: 'auth-as-metadata-discovery',
+        name: 'Authorization Server Metadata Discovery',
+        description:
+          'No AS metadata discovery request observed - required for OAuth flow',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        specReferences: [
+          ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY,
+          ServerAuthSpecReferences.MCP_AUTH_SERVER_METADATA
+        ]
+      });
     }
 
     // Phase 4: DCR Registration
@@ -469,6 +529,19 @@ export class BasicDcrFlowScenario implements ClientScenario {
           }
         });
       }
+    } else {
+      checks.push({
+        id: 'auth-token-request',
+        name: 'Token Acquisition',
+        description:
+          'No token request observed - required to complete OAuth flow',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        specReferences: [
+          ServerAuthSpecReferences.OAUTH_2_1_TOKEN_REQUEST,
+          ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN
+        ]
+      });
     }
 
     // Phase 6: Authenticated MCP Request
