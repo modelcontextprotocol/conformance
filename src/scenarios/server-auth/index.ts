@@ -8,17 +8,20 @@
 
 import type { ClientScenario } from '../../types';
 import { BasicDcrFlowScenario } from './basic-dcr-flow';
+import { StepUpAuthScenario } from './step-up-auth';
 
 // Re-export helpers and spec references
 export * from './helpers/oauth-client';
 export * from './spec-references';
 export { BasicDcrFlowScenario } from './basic-dcr-flow';
+export { StepUpAuthScenario } from './step-up-auth';
 
 /**
  * All server authentication scenarios.
  */
 export const serverAuthScenarios: ClientScenario[] = [
-  new BasicDcrFlowScenario()
+  new BasicDcrFlowScenario(),
+  new StepUpAuthScenario()
 ];
 
 /**

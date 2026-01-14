@@ -68,6 +68,10 @@ export const ServerAuthSpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-6750-www-authenticate',
     url: 'https://www.rfc-editor.org/rfc/rfc6750.html#section-3'
   },
+  RFC_6750_INSUFFICIENT_SCOPE: {
+    id: 'RFC-6750-insufficient-scope',
+    url: 'https://www.rfc-editor.org/rfc/rfc6750.html#section-3.1'
+  },
 
   // ─────────────────────────────────────────────────────────────────────────
   // RFC 7235: HTTP Authentication
