@@ -9,6 +9,8 @@ export {
 // Export server functions
 export {
   runServerConformanceTest,
+  runServerAuthConformanceTest,
+  startFakeAuthServer,
   printServerResults,
   printServerSummary
 } from './server';

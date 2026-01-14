@@ -176,10 +176,14 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
     },
 
     getChecks(): ConformanceCheck[] {
+      // Check if CIMD was used (URL-based client ID)
+      const usedCimd = checks.some((c) => c.id === 'cimd-client-id');
+
       const expectedSlugs = [
         ...(isPathBasedPrm ? ['prm-pathbased-requested'] : []),
         'authorization-server-metadata',
-        'client-registration',
+        // Either CIMD or DCR should be used, not both
+        ...(usedCimd ? [] : ['client-registration']),
         'authorization-request',
         'token-request'
       ];

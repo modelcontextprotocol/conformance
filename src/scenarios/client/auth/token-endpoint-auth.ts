@@ -64,6 +64,8 @@ class TokenEndpointAuthScenario implements Scenario {
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
+      // Disable CIMD to force DCR - we need client_secret for auth method testing
+      clientIdMetadataDocumentSupported: false,
       onTokenRequest: ({ authorizationHeader, body, timestamp }) => {
         const bodyClientSecret = body.client_secret;
         const actualMethod = detectAuthMethod(

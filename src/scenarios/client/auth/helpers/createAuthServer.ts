@@ -24,6 +24,10 @@ export interface AuthServerOptions {
   grantTypesSupported?: string[];
   tokenEndpointAuthMethodsSupported?: string[];
   tokenEndpointAuthSigningAlgValuesSupported?: string[];
+  /**
+   * Whether to advertise support for Client ID Metadata Documents (CIMD/SEP-991).
+   * Defaults to true - CIMD is preferred over DCR when available.
+   */
   clientIdMetadataDocumentSupported?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
@@ -64,7 +68,8 @@ export function createAuthServer(
     grantTypesSupported = ['authorization_code', 'refresh_token'],
     tokenEndpointAuthMethodsSupported = ['none'],
     tokenEndpointAuthSigningAlgValuesSupported,
-    clientIdMetadataDocumentSupported,
+    // Default to true - CIMD is preferred over DCR
+    clientIdMetadataDocumentSupported = true,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -77,7 +82,8 @@ export function createAuthServer(
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
     token_endpoint: `${routePrefix}/token`,
-    registration_endpoint: `${routePrefix}/register`
+    registration_endpoint: `${routePrefix}/register`,
+    introspection_endpoint: `${routePrefix}/introspect`
   };
 
   const app = express();
@@ -115,6 +121,7 @@ export function createAuthServer(
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`,
+      introspection_endpoint: `${getAuthBaseUrl()}${authRoutes.introspection_endpoint}`,
       response_types_supported: ['code'],
       grant_types_supported: grantTypesSupported,
       code_challenge_methods_supported: ['S256'],
@@ -148,6 +155,28 @@ export function createAuthServer(
 
   app.get(authRoutes.authorization_endpoint, (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
+    const clientId = req.query.client_id as string | undefined;
+
+    // Check if client is using CIMD (URL-based client ID)
+    const isUrlBasedClientId =
+      clientId &&
+      (clientId.startsWith('https://') || clientId.startsWith('http://'));
+
+    if (isUrlBasedClientId) {
+      checks.push({
+        id: 'cimd-client-id',
+        name: 'CIMDClientId',
+        description:
+          'Client used URL-based client ID (CIMD/SEP-991) instead of DCR',
+        status: 'SUCCESS',
+        timestamp,
+        specReferences: [SpecReferences.MCP_DCR],
+        details: {
+          clientId
+        }
+      });
+    }
+
     checks.push({
       id: 'authorization-request',
       name: 'AuthorizationRequest',
@@ -166,7 +195,7 @@ export function createAuthServer(
 
     if (onAuthorizationRequest) {
       onAuthorizationRequest({
-        clientId: req.query.client_id as string | undefined,
+        clientId,
         scope: scopeParam,
         timestamp
       });
@@ -277,6 +306,49 @@ export function createAuthServer(
       })
     });
   });
+
+  // Token introspection endpoint (RFC 7662)
+  app.post(
+    authRoutes.introspection_endpoint,
+    async (req: Request, res: Response) => {
+      const { token } = req.body;
+
+      if (!token) {
+        res.status(400).json({ error: 'Token is required' });
+        return;
+      }
+
+      // If we have a tokenVerifier, use it to validate
+      if (tokenVerifier) {
+        try {
+          const tokenInfo = await tokenVerifier.verifyAccessToken(token);
+          res.json({
+            active: true,
+            client_id: tokenInfo.clientId,
+            scope: tokenInfo.scopes.join(' '),
+            exp: tokenInfo.expiresAt
+          });
+          return;
+        } catch {
+          res.json({ active: false });
+          return;
+        }
+      }
+
+      // Fallback: accept tokens with known prefixes
+      if (token.startsWith('test-token') || token.startsWith('cc-token')) {
+        res.json({
+          active: true,
+          client_id: 'test-client',
+          scope: '',
+          exp: Math.floor(Date.now() / 1000) + 3600
+        });
+        return;
+      }
+
+      res.json({ active: false });
+    }
+  );
 
   return app;
 }

@@ -41,8 +41,15 @@ export interface Scenario {
   getChecks(): ConformanceCheck[];
 }
 
+export interface ClientScenarioOptions {
+  interactive?: boolean;
+}
+
 export interface ClientScenario {
   name: string;
   description: string;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(
+    serverUrl: string,
+    options?: ClientScenarioOptions
+  ): Promise<ConformanceCheck[]>;
 }

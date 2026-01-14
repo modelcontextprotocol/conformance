@@ -6,6 +6,8 @@ import {
   runConformanceTest,
   printClientResults,
   runServerConformanceTest,
+  runServerAuthConformanceTest,
+  startFakeAuthServer,
   printServerResults,
   printServerSummary,
   runInteractiveMode
@@ -16,7 +18,8 @@ import {
   listActiveClientScenarios,
   listPendingClientScenarios,
   listAuthScenarios,
-  listMetadataScenarios
+  listMetadataScenarios,
+  listServerAuthScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -199,57 +202,61 @@ program
 program
   .command('server')
   .description('Run conformance tests against a server implementation')
-  .requiredOption('--url <url>', 'URL of the server to test')
+  .option(
+    '--url <url>',
+    'URL of the server to test (for already-running servers)'
+  )
+  .option(
+    '--command <cmd>',
+    'Command to start the server (for auth suite: spawns fake AS and passes MCP_CONFORMANCE_AUTH_SERVER_URL)'
+  )
   .option(
     '--scenario <scenario>',
     'Scenario to test (defaults to active suite if not specified)'
   )
   .option(
     '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending), "all", or "pending"',
+    'Suite to run: "active" (default, excludes pending), "all", "pending", or "auth"',
     'active'
   )
+  .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
+  .option(
+    '--interactive',
+    'Interactive auth mode: opens browser for login instead of auto-redirect'
+  )
   .action(async (options) => {
     try {
-      // Validate options with Zod
-      const validated = ServerOptionsSchema.parse(options);
-
       const verbose = options.verbose ?? false;
+      const timeout = parseInt(options.timeout, 10);
+      const suite = options.suite?.toLowerCase() || 'active';
 
-      // If a single scenario is specified, run just that one
-      if (validated.scenario) {
-        const result = await runServerConformanceTest(
-          validated.url,
-          validated.scenario
-        );
+      // Check if this is an auth test
+      const isAuthTest =
+        suite === 'auth' || options.scenario?.startsWith('server-auth/');
 
-        const { failed } = printServerResults(
-          result.checks,
-          result.scenarioDescription,
-          verbose
-        );
-        process.exit(failed > 0 ? 1 : 0);
-      } else {
-        // Run scenarios based on suite
-        const suite = options.suite?.toLowerCase() || 'active';
-        let scenarios: string[];
-
-        if (suite === 'all') {
-          scenarios = listClientScenarios();
-        } else if (suite === 'active') {
-          scenarios = listActiveClientScenarios();
-        } else if (suite === 'pending') {
-          scenarios = listPendingClientScenarios();
-        } else {
-          console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, pending');
+      if (isAuthTest) {
+        // Auth testing mode - requires --url or --command
+        if (!options.url && !options.command) {
+          console.error(
+            'For auth testing, either --url or --command is required'
+          );
+          console.error('\n--url <url>     URL of already running server');
+          console.error(
+            '--command <cmd> Command to start the server (conformance spawns fake AS)'
+          );
           process.exit(1);
         }
 
-        console.log(
-          `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
-        );
+        // Get scenarios to run
+        let scenarios: string[];
+        if (options.scenario) {
+          scenarios = [options.scenario];
+        } else {
+          scenarios = listServerAuthScenarios();
+        }
+
+        console.log(`Running auth suite (${scenarios.length} scenarios)...\n`);
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
           [];
@@ -257,11 +264,22 @@ program
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
-            const result = await runServerConformanceTest(
-              validated.url,
-              scenarioName
-            );
+            const result = await runServerAuthConformanceTest({
+              url: options.url,
+              command: options.command,
+              scenarioName,
+              timeout,
+              interactive: options.interactive
+            });
             allResults.push({ scenario: scenarioName, checks: result.checks });
+
+            if (verbose) {
+              printServerResults(
+                result.checks,
+                result.scenarioDescription,
+                verbose
+              );
+            }
           } catch (error) {
             console.error(`Failed to run scenario ${scenarioName}:`, error);
             allResults.push({
@@ -283,6 +301,85 @@ program
 
         const { totalFailed } = printServerSummary(allResults);
         process.exit(totalFailed > 0 ? 1 : 0);
+      } else {
+        // Standard server testing mode - requires --url
+        if (!options.url) {
+          console.error('--url is required for non-auth server testing');
+          process.exit(1);
+        }
+
+        // Validate options with Zod
+        const validated = ServerOptionsSchema.parse(options);
+
+        // If a single scenario is specified, run just that one
+        if (validated.scenario) {
+          const result = await runServerConformanceTest(
+            validated.url,
+            validated.scenario
+          );
+
+          const { failed } = printServerResults(
+            result.checks,
+            result.scenarioDescription,
+            verbose
+          );
+          process.exit(failed > 0 ? 1 : 0);
+        } else {
+          // Run scenarios based on suite
+          let scenarios: string[];
+
+          if (suite === 'all') {
+            scenarios = listClientScenarios();
+          } else if (suite === 'active') {
+            scenarios = listActiveClientScenarios();
+          } else if (suite === 'pending') {
+            scenarios = listPendingClientScenarios();
+          } else {
+            console.error(`Unknown suite: ${suite}`);
+            console.error('Available suites: active, all, pending, auth');
+            process.exit(1);
+          }
+
+          console.log(
+            `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
+          );
+
+          const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
+            [];
+
+          for (const scenarioName of scenarios) {
+            console.log(`\n=== Running scenario: ${scenarioName} ===`);
+            try {
+              const result = await runServerConformanceTest(
+                validated.url,
+                scenarioName
+              );
+              allResults.push({
+                scenario: scenarioName,
+                checks: result.checks
+              });
+            } catch (error) {
+              console.error(`Failed to run scenario ${scenarioName}:`, error);
+              allResults.push({
+                scenario: scenarioName,
+                checks: [
+                  {
+                    id: scenarioName,
+                    name: scenarioName,
+                    description: 'Failed to run scenario',
+                    status: 'FAILURE',
+                    timestamp: new Date().toISOString(),
+                    errorMessage:
+                      error instanceof Error ? error.message : String(error)
+                  }
+                ]
+              });
+            }
+          }
+
+          const { totalFailed } = printServerSummary(allResults);
+          process.exit(totalFailed > 0 ? 1 : 0);
+        }
       }
     } catch (error) {
       if (error instanceof ZodError) {
@@ -292,6 +389,8 @@ program
         });
         console.error('\nAvailable server scenarios:');
         listClientScenarios().forEach((s) => console.error(`  - ${s}`));
+        console.error('\nAvailable server auth scenarios:');
+        listServerAuthScenarios().forEach((s) => console.error(`  - ${s}`));
         process.exit(1);
       }
       console.error('Server test error:', error);
@@ -305,21 +404,72 @@ program
   .description('List available test scenarios')
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
+  .option('--server-auth', 'List server auth scenarios')
   .action((options) => {
-    if (options.server || (!options.client && !options.server)) {
+    const showAll = !options.client && !options.server && !options.serverAuth;
+
+    if (options.server || showAll) {
       console.log('Server scenarios (test against a server):');
       const serverScenarios = listClientScenarios();
       serverScenarios.forEach((s) => console.log(`  - ${s}`));
     }
 
-    if (options.client || (!options.client && !options.server)) {
-      if (options.server || (!options.client && !options.server)) {
+    if (options.serverAuth || showAll) {
+      if (options.server || showAll) {
+        console.log('');
+      }
+      console.log('Server auth scenarios (test server auth implementation):');
+      const authScenarios = listServerAuthScenarios();
+      authScenarios.forEach((s) => console.log(`  - ${s}`));
+    }
+
+    if (options.client || showAll) {
+      if (options.server || options.serverAuth || showAll) {
         console.log('');
       }
       console.log('Client scenarios (test against a client):');
       const clientScenarios = listScenarios();
       clientScenarios.forEach((s) => console.log(`  - ${s}`));
     }
+  });
+
+// Fake auth server command - starts a standalone fake authorization server
+program
+  .command('fake-auth-server')
+  .description(
+    'Start a standalone fake authorization server for manual testing'
+  )
+  .option('--port <port>', 'Port to listen on (default: random)')
+  .action(async (options) => {
+    const port = options.port ? parseInt(options.port, 10) : undefined;
+
+    console.log('Starting fake authorization server...');
+    const { url, stop } = await startFakeAuthServer(port);
+    console.log(`\nFake authorization server running at: ${url}`);
+    console.log('\nEndpoints:');
+    console.log(
+      `  Metadata:      ${url}/.well-known/oauth-authorization-server`
+    );
+    console.log(`  Authorization: ${url}/authorize`);
+    console.log(`  Token:         ${url}/token`);
+    console.log(`  Registration:  ${url}/register`);
+    console.log('\nPress Ctrl+C to stop.');
+
+    // Handle graceful shutdown
+    process.on('SIGINT', async () => {
+      console.log('\nShutting down...');
+      await stop();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log('\nShutting down...');
+      await stop();
+      process.exit(0);
+    });
+
+    // Keep the process running
+    await new Promise(() => {});
   });
 
 program.parse();
