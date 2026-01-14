@@ -297,8 +297,7 @@ app.delete(
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`MCP Auth Test Server running on http://localhost:${PORT}`);
-  console.log(`  - MCP endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`MCP Auth Test Server running at http://localhost:${PORT}/mcp`);
   console.log(
     `  - PRM endpoint: http://localhost:${PORT}/.well-known/oauth-protected-resource`
   );

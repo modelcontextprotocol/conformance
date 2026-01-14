@@ -227,7 +227,7 @@ export async function runServerAuthConformanceTest(options: {
 
         // Look for URL in server output
         const checkOutput = () => {
-          const urlMatch = serverOutput.match(/https?:\/\/localhost:\d+/);
+          const urlMatch = serverOutput.match(/https?:\/\/localhost:\d+\/mcp/);
           if (urlMatch) {
             clearTimeout(timeoutId);
             resolve(urlMatch[0]);
