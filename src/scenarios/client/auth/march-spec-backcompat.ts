@@ -42,9 +42,13 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Check if CIMD was used (URL-based client ID)
+    const usedCimd = this.checks.some((c) => c.id === 'cimd-client-id');
+
     const expectedSlugs = [
       'authorization-server-metadata',
-      'client-registration',
+      // Either CIMD or DCR should be used, not both
+      ...(usedCimd ? [] : ['client-registration']),
       'authorization-request',
       'token-request'
     ];
@@ -169,8 +173,12 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Check if CIMD was used (URL-based client ID)
+    const usedCimd = this.checks.some((c) => c.id === 'cimd-client-id');
+
     const expectedSlugs = [
-      'client-registration',
+      // Either CIMD or DCR should be used, not both
+      ...(usedCimd ? [] : ['client-registration']),
       'authorization-request',
       'token-request'
     ];

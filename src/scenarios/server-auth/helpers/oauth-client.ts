@@ -190,11 +190,20 @@ export function createObservationMiddleware(
 }
 
 /**
+ * Fixed client metadata URL for CIMD conformance tests.
+ * When server supports client_id_metadata_document_supported, this URL
+ * will be used as the client_id instead of doing dynamic registration.
+ */
+const DEFAULT_CIMD_CLIENT_METADATA_URL =
+  'https://conformance-test.local/client-metadata.json';
+
+/**
  * Conformance OAuth client provider for testing.
  *
  * This provider:
  * - Stores client information and tokens in memory
  * - Handles auto-login by fetching the authorization URL and extracting the code from redirect
+ * - Uses CIMD (URL-based client IDs) by default when server supports it
  */
 export class ConformanceOAuthProvider implements OAuthClientProvider {
   private _clientInformation?: OAuthClientInformationFull;
@@ -202,10 +211,21 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   private _codeVerifier?: string;
   private _authCode?: string;
 
+  /**
+   * URL for Client ID Metadata Document (CIMD/SEP-991).
+   * When provided and server advertises client_id_metadata_document_supported,
+   * this URL will be used as the client_id instead of DCR.
+   */
+  readonly clientMetadataUrl?: string;
+
   constructor(
     private readonly _redirectUrl: string | URL,
-    private readonly _clientMetadata: OAuthClientMetadata
-  ) {}
+    private readonly _clientMetadata: OAuthClientMetadata,
+    options?: { clientMetadataUrl?: string }
+  ) {
+    this.clientMetadataUrl =
+      options?.clientMetadataUrl ?? DEFAULT_CIMD_CLIENT_METADATA_URL;
+  }
 
   get redirectUrl(): string | URL {
     return this._redirectUrl;
