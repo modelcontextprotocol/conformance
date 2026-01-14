@@ -7,7 +7,7 @@
  * - RFC 7591 (Dynamic Client Registration)
  * - RFC 6750 (Bearer Token Usage)
  * - OAuth 2.1 Draft (Client Credentials, Token Endpoint Auth)
- * - MCP Authorization Specification (2025-06-18)
+ * - MCP Authorization Specification (2025-11-25)
  */
 
 import { SpecReference } from '../../types';
@@ -94,27 +94,27 @@ export const ServerAuthSpecReferences: { [key: string]: SpecReference } = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MCP Authorization Specification (2025-06-18)
+  // MCP Authorization Specification (2025-11-25)
   // ─────────────────────────────────────────────────────────────────────────
   MCP_AUTH_SERVER_LOCATION: {
-    id: 'MCP-2025-06-18-server-location',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#authorization-server-location'
+    id: 'MCP-2025-11-25-server-location',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-server-location'
   },
   MCP_AUTH_PRM_DISCOVERY: {
-    id: 'MCP-2025-06-18-prm-discovery',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#authorization-server-location'
+    id: 'MCP-2025-11-25-prm-discovery',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#protected-resource-metadata-discovery-requirements'
   },
   MCP_AUTH_SERVER_METADATA: {
-    id: 'MCP-2025-06-18-server-metadata',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#server-metadata-discovery'
+    id: 'MCP-2025-11-25-server-metadata',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-server-metadata-discovery'
   },
   MCP_AUTH_DCR: {
-    id: 'MCP-2025-06-18-dcr',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration'
+    id: 'MCP-2025-11-25-dcr',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#dynamic-client-registration'
   },
   MCP_AUTH_ACCESS_TOKEN: {
-    id: 'MCP-2025-06-18-access-token',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#access-token-usage'
+    id: 'MCP-2025-11-25-access-token',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#access-token-usage'
   },
 
   // ─────────────────────────────────────────────────────────────────────────

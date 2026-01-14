@@ -10,11 +10,11 @@ export class ServerLifecycle {
     return this.baseUrl;
   };
 
-  async start(app: express.Application): Promise<string> {
+  async start(app: express.Application, port?: number): Promise<string> {
     this.app = app;
-    this.httpServer = this.app.listen(0);
-    const port = this.httpServer.address().port;
-    this.baseUrl = `http://localhost:${port}`;
+    this.httpServer = this.app.listen(port ?? 0);
+    const actualPort = this.httpServer.address().port;
+    this.baseUrl = `http://localhost:${actualPort}`;
     return this.baseUrl;
   }
 
