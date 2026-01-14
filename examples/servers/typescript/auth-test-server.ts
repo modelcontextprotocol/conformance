@@ -15,8 +15,16 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import {
+  requireBearerAuth,
+  InvalidTokenError
+} from '@modelcontextprotocol/sdk/server/auth.js';
+import type {
+  OAuthTokenVerifier,
+  AuthInfo
+} from '@modelcontextprotocol/sdk/server/auth.js';
 import { z } from 'zod';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 
@@ -85,63 +93,58 @@ function createMcpServer(): McpServer {
 }
 
 /**
- * Validates a Bearer token.
- * Accepts tokens that start with 'test-token' or 'cc-token' (as issued by the fake auth server).
+ * Fetches the authorization server metadata to get the introspection endpoint.
  */
-function isValidToken(token: string): boolean {
-  return token.startsWith('test-token') || token.startsWith('cc-token');
+async function fetchAuthServerMetadata(): Promise<{
+  introspection_endpoint?: string;
+}> {
+  const metadataUrl = `${AUTH_SERVER_URL}/.well-known/oauth-authorization-server`;
+  const response = await fetch(metadataUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch AS metadata: ${response.status}`);
+  }
+  return response.json();
 }
 
 /**
- * Bearer authentication middleware.
- * Returns 401 with WWW-Authenticate header if token is missing or invalid.
+ * Creates a token verifier that uses the authorization server's introspection endpoint.
  */
-function bearerAuthMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
-  const authHeader = req.headers.authorization;
+function createIntrospectionVerifier(
+  introspectionEndpoint: string
+): OAuthTokenVerifier {
+  return {
+    async verifyAccessToken(token: string): Promise<AuthInfo> {
+      const response = await fetch(introspectionEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({ token }).toString()
+      });
 
-  // Check for Authorization header
-  if (!authHeader) {
-    sendUnauthorized(res, 'Missing authorization header');
-    return;
-  }
+      if (!response.ok) {
+        throw new InvalidTokenError('Token introspection failed');
+      }
 
-  // Check for Bearer scheme
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
-    sendUnauthorized(res, 'Invalid authorization scheme');
-    return;
-  }
+      const data = (await response.json()) as {
+        active: boolean;
+        client_id?: string;
+        scope?: string;
+        exp?: number;
+      };
 
-  const token = parts[1];
+      if (!data.active) {
+        throw new InvalidTokenError('Token is not active');
+      }
 
-  // Validate the token
-  if (!isValidToken(token)) {
-    sendUnauthorized(res, 'Invalid token');
-    return;
-  }
-
-  // Token is valid, proceed
-  next();
-}
-
-/**
- * Sends a 401 Unauthorized response with proper WWW-Authenticate header.
- */
-function sendUnauthorized(res: Response, error: string): void {
-  const prmUrl = `${getBaseUrl()}/.well-known/oauth-protected-resource`;
-
-  // Build WWW-Authenticate header with resource_metadata parameter
-  const wwwAuthenticate = `Bearer realm="mcp", error="invalid_token", error_description="${error}", resource_metadata="${prmUrl}"`;
-
-  res.setHeader('WWW-Authenticate', wwwAuthenticate);
-  res.status(401).json({
-    error: 'unauthorized',
-    error_description: error
-  });
+      return {
+        token,
+        clientId: data.client_id || 'unknown',
+        scopes: data.scope ? data.scope.split(' ') : [],
+        expiresAt: data.exp || Math.floor(Date.now() / 1000) + 3600
+      };
+    }
+  };
 }
 
 // Helper to check if request is an initialize request
@@ -151,127 +154,154 @@ function isInitializeRequest(body: any): boolean {
 
 // ===== EXPRESS APP =====
 
-const app = express();
-app.use(express.json());
+async function startServer() {
+  // Fetch AS metadata to get introspection endpoint
+  console.log(
+    `Fetching authorization server metadata from ${AUTH_SERVER_URL}...`
+  );
+  const asMetadata = await fetchAuthServerMetadata();
 
-// Configure CORS to expose Mcp-Session-Id header for browser-based clients
-app.use(
-  cors({
-    origin: '*',
-    exposedHeaders: ['Mcp-Session-Id'],
-    allowedHeaders: [
-      'Content-Type',
-      'mcp-session-id',
-      'last-event-id',
-      'Authorization'
-    ]
-  })
-);
-
-// Protected Resource Metadata endpoint (RFC 9728)
-app.get(
-  '/.well-known/oauth-protected-resource',
-  (_req: Request, res: Response) => {
-    res.json({
-      resource: getBaseUrl(),
-      authorization_servers: [AUTH_SERVER_URL]
-    });
+  if (!asMetadata.introspection_endpoint) {
+    console.error(
+      'Error: Authorization server does not provide introspection_endpoint'
+    );
+    process.exit(1);
   }
-);
 
-// Handle POST requests to /mcp with bearer auth
-app.post('/mcp', bearerAuthMiddleware, async (req: Request, res: Response) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
+  console.log(
+    `Using introspection endpoint: ${asMetadata.introspection_endpoint}`
+  );
 
-  try {
-    let transport: StreamableHTTPServerTransport;
+  // Create token verifier that calls the introspection endpoint
+  const tokenVerifier = createIntrospectionVerifier(
+    asMetadata.introspection_endpoint
+  );
 
-    if (sessionId && transports[sessionId]) {
-      // Reuse existing transport for established sessions
-      transport = transports[sessionId];
-    } else if (!sessionId && isInitializeRequest(req.body)) {
-      // Create new transport for initialization requests
-      const mcpServer = createMcpServer();
+  // Create bearer auth middleware using SDK
+  const prmUrl = `${getBaseUrl()}/.well-known/oauth-protected-resource`;
+  const bearerAuth = requireBearerAuth({
+    verifier: tokenVerifier,
+    resourceMetadataUrl: prmUrl
+  });
 
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (newSessionId) => {
-          transports[newSessionId] = transport;
-          servers[newSessionId] = mcpServer;
-          console.log(`Session initialized with ID: ${newSessionId}`);
-        }
+  const app = express();
+  app.use(express.json());
+
+  // Configure CORS to expose Mcp-Session-Id header for browser-based clients
+  app.use(
+    cors({
+      origin: '*',
+      exposedHeaders: ['Mcp-Session-Id'],
+      allowedHeaders: [
+        'Content-Type',
+        'mcp-session-id',
+        'last-event-id',
+        'Authorization'
+      ]
+    })
+  );
+
+  // Protected Resource Metadata endpoint (RFC 9728)
+  app.get(
+    '/.well-known/oauth-protected-resource',
+    (_req: Request, res: Response) => {
+      res.json({
+        resource: getBaseUrl(),
+        authorization_servers: [AUTH_SERVER_URL]
       });
+    }
+  );
 
-      transport.onclose = () => {
-        const sid = transport.sessionId;
-        if (sid && transports[sid]) {
-          delete transports[sid];
-          if (servers[sid]) {
-            servers[sid].close();
-            delete servers[sid];
+  // Handle POST requests to /mcp with bearer auth
+  app.post('/mcp', bearerAuth, async (req: Request, res: Response) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    try {
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        // Reuse existing transport for established sessions
+        transport = transports[sessionId];
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        // Create new transport for initialization requests
+        const mcpServer = createMcpServer();
+
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (newSessionId) => {
+            transports[newSessionId] = transport;
+            servers[newSessionId] = mcpServer;
+            console.log(`Session initialized with ID: ${newSessionId}`);
           }
-          console.log(`Session ${sid} closed`);
-        }
-      };
+        });
 
-      await mcpServer.connect(transport);
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid && transports[sid]) {
+            delete transports[sid];
+            if (servers[sid]) {
+              servers[sid].close();
+              delete servers[sid];
+            }
+            console.log(`Session ${sid} closed`);
+          }
+        };
+
+        await mcpServer.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+        return;
+      } else {
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32000,
+            message: 'Invalid or missing session ID'
+          },
+          id: null
+        });
+        return;
+      }
+
       await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error('Error handling MCP request:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Internal server error'
+          },
+          id: null
+        });
+      }
+    }
+  });
+
+  // Handle GET requests - SSE streams for sessions (also requires auth)
+  app.get('/mcp', bearerAuth, async (req: Request, res: Response) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+    if (!sessionId || !transports[sessionId]) {
+      res.status(400).send('Invalid or missing session ID');
       return;
-    } else {
-      res.status(400).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32000,
-          message: 'Invalid or missing session ID'
-        },
-        id: null
-      });
-      return;
     }
 
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error('Error handling MCP request:', error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: 'Internal server error'
-        },
-        id: null
-      });
+    console.log(`Establishing SSE stream for session ${sessionId}`);
+
+    try {
+      const transport = transports[sessionId];
+      await transport.handleRequest(req, res);
+    } catch (error) {
+      console.error('Error handling SSE stream:', error);
+      if (!res.headersSent) {
+        res.status(500).send('Error establishing SSE stream');
+      }
     }
-  }
-});
+  });
 
-// Handle GET requests - SSE streams for sessions (also requires auth)
-app.get('/mcp', bearerAuthMiddleware, async (req: Request, res: Response) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-
-  if (!sessionId || !transports[sessionId]) {
-    res.status(400).send('Invalid or missing session ID');
-    return;
-  }
-
-  console.log(`Establishing SSE stream for session ${sessionId}`);
-
-  try {
-    const transport = transports[sessionId];
-    await transport.handleRequest(req, res);
-  } catch (error) {
-    console.error('Error handling SSE stream:', error);
-    if (!res.headersSent) {
-      res.status(500).send('Error establishing SSE stream');
-    }
-  }
-});
-
-// Handle DELETE requests - session termination (also requires auth)
-app.delete(
-  '/mcp',
-  bearerAuthMiddleware,
-  async (req: Request, res: Response) => {
+  // Handle DELETE requests - session termination (also requires auth)
+  app.delete('/mcp', bearerAuth, async (req: Request, res: Response) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
     if (!sessionId || !transports[sessionId]) {
@@ -292,14 +322,21 @@ app.delete(
         res.status(500).send('Error processing session termination');
       }
     }
-  }
-);
+  });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`MCP Auth Test Server running at http://localhost:${PORT}/mcp`);
-  console.log(
-    `  - PRM endpoint: http://localhost:${PORT}/.well-known/oauth-protected-resource`
-  );
-  console.log(`  - Auth server: ${AUTH_SERVER_URL}`);
+  // Start server
+  app.listen(PORT, () => {
+    console.log(`MCP Auth Test Server running at http://localhost:${PORT}/mcp`);
+    console.log(
+      `  - PRM endpoint: http://localhost:${PORT}/.well-known/oauth-protected-resource`
+    );
+    console.log(`  - Auth server: ${AUTH_SERVER_URL}`);
+    console.log(`  - Introspection: ${asMetadata.introspection_endpoint}`);
+  });
+}
+
+// Start the server
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
 });
