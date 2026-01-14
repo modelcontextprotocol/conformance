@@ -14,7 +14,7 @@
     "start": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsdown src/index.ts --minify --clean --target node20",
+    "build": "tsdown src/index.ts src/fake-auth-server.ts --minify --clean --target node20",
     "lint": "eslint src/ examples/ && prettier --check .",
     "lint:fix": "eslint src/ examples/ --fix && prettier --write .",
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
@@ -26,7 +26,8 @@
     "dist"
   ],
   "bin": {
-    "conformance": "dist/index.js"
+    "conformance": "dist/index.js",
+    "fake-auth-server": "dist/fake-auth-server.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
