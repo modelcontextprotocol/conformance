@@ -15,7 +15,7 @@
     "testing"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@types/cors": "^2.8.19",
     "cors": "^2.8.5",
     "express": "^5.2.1",
