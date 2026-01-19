@@ -1,4 +1,3 @@
-import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck } from '../types';
 
@@ -51,14 +50,12 @@ export function formatPrettyChecks(checks: ConformanceCheck[]): string {
     .join('\n');
 }
 
-export async function ensureResultsDir(): Promise<string> {
-  const resultsDir = path.join(process.cwd(), 'results');
-  await fs.mkdir(resultsDir, { recursive: true });
-  return resultsDir;
-}
-
-export function createResultDir(scenario: string, prefix = ''): string {
+export function createResultDir(
+  baseDir: string,
+  scenario: string,
+  prefix = ''
+): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const dirName = prefix ? `${prefix}-${scenario}` : scenario;
-  return path.join('results', `${dirName}-${timestamp}`);
+  return path.join(baseDir, `${dirName}-${timestamp}`);
 }

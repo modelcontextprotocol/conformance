@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck } from '../types';
 import { getClientScenario } from '../scenarios';
-import { ensureResultsDir, createResultDir, formatPrettyChecks } from './utils';
+import { createResultDir, formatPrettyChecks } from './utils';
 
 /**
  * Format markdown-style text for terminal output using ANSI codes
@@ -19,15 +19,19 @@ function formatMarkdown(text: string): string {
 
 export async function runServerConformanceTest(
   serverUrl: string,
-  scenarioName: string
+  scenarioName: string,
+  outputDir?: string
 ): Promise<{
   checks: ConformanceCheck[];
-  resultDir: string;
+  resultDir?: string;
   scenarioDescription: string;
 }> {
-  await ensureResultsDir();
-  const resultDir = createResultDir(scenarioName, 'server');
-  await fs.mkdir(resultDir, { recursive: true });
+  let resultDir: string | undefined;
+
+  if (outputDir) {
+    resultDir = createResultDir(outputDir, scenarioName, 'server');
+    await fs.mkdir(resultDir, { recursive: true });
+  }
 
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
@@ -38,12 +42,14 @@ export async function runServerConformanceTest(
 
   const checks = await scenario.run(serverUrl);
 
-  await fs.writeFile(
-    path.join(resultDir, 'checks.json'),
-    JSON.stringify(checks, null, 2)
-  );
+  if (resultDir) {
+    await fs.writeFile(
+      path.join(resultDir, 'checks.json'),
+      JSON.stringify(checks, null, 2)
+    );
 
-  console.log(`Results saved to ${resultDir}`);
+    console.log(`Results saved to ${resultDir}`);
+  }
 
   return {
     checks,
