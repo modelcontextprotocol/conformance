@@ -21,6 +21,11 @@ import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
+import {
+  CrossAppAccessTokenExchangeScenario,
+  CrossAppAccessJwtBearerScenario,
+  CrossAppAccessCompleteFlowScenario
+} from './cross-app-access';
 
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
@@ -36,5 +41,8 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
   new ClientCredentialsJwtScenario(),
-  new ClientCredentialsBasicScenario()
+  new ClientCredentialsBasicScenario(),
+  new CrossAppAccessTokenExchangeScenario(),
+  new CrossAppAccessJwtBearerScenario(),
+  new CrossAppAccessCompleteFlowScenario()
 ];
