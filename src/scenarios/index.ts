@@ -31,6 +31,7 @@ import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
+import { ElicitationUrlModeScenario } from './server/elicitation-url.js';
 import { ServerSSEPollingScenario } from './server/sse-polling';
 import { ServerSSEMultipleStreamsScenario } from './server/sse-multiple-streams';
 
@@ -58,6 +59,8 @@ import { listMetadataScenarios } from './client/auth/discovery-metadata';
 const pendingClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1330)
   new ElicitationEnumsScenario(),
+  // Elicitation scenarios (SEP-1036) - URL mode (pending SDK release)
+  new ElicitationUrlModeScenario(),
 
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
@@ -103,12 +106,12 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
+  // Elicitation scenarios (SEP-1330, SEP-1036) - pending
+  ...pendingClientScenariosList,
+
   // SSE Polling scenarios (SEP-1699)
   new ServerSSEPollingScenario(),
   new ServerSSEMultipleStreamsScenario(),
-
-  // Elicitation scenarios (SEP-1330) - pending
-  new ElicitationEnumsScenario(),
 
   // Resources scenarios
   new ResourcesListScenario(),

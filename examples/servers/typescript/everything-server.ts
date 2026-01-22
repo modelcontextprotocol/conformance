@@ -20,6 +20,8 @@ import {
 } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   ElicitResultSchema,
+  McpError,
+  ErrorCode,
   ListToolsRequestSchema,
   type ListToolsResult,
   type Tool
@@ -465,6 +467,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: args.message,
               requestedSchema: {
                 type: 'object',
@@ -517,6 +520,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: 'Please review and update the form fields with defaults',
               requestedSchema: {
                 type: 'object',
@@ -592,6 +596,7 @@ function createMcpServer() {
           {
             method: 'elicitation/create',
             params: {
+              mode: 'form',
               message: 'Please select options from the enum fields',
               requestedSchema: {
                 type: 'object',
@@ -671,6 +676,106 @@ function createMcpServer() {
           ]
         };
       }
+    }
+  );
+
+  // SEP-1036: URL mode elicitation
+  mcpServer.registerTool(
+    'test_elicitation_sep1036_url',
+    {
+      description: 'Tests URL mode elicitation per SEP-1036',
+      inputSchema: {}
+    },
+    async () => {
+      try {
+        const elicitationId = `sep1036-test-${randomUUID()}`;
+        const result = await mcpServer.server.elicitInput({
+          mode: 'url',
+          message: 'Please complete authorization to continue',
+          url: 'https://mcp.example.com/authorize',
+          elicitationId
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `URL elicitation completed: action=${result.action}`
+            }
+          ]
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `URL elicitation not supported or error: ${error.message}`
+            }
+          ]
+        };
+      }
+    }
+  );
+
+  // SEP-1036: URL mode elicitation error flow
+  mcpServer.registerTool(
+    'test_elicitation_sep1036_error',
+    {
+      description:
+        'Tests URLElicitationRequiredError flow per SEP-1036 (throws error)',
+      inputSchema: {}
+    },
+    async () => {
+      const elicitationId = `sep1036-error-${randomUUID()}`;
+      throw new McpError(
+        ErrorCode.UrlElicitationRequired,
+        'Authorization required to access this resource',
+        {
+          elicitations: [
+            {
+              mode: 'url',
+              message: 'Please authorize access to continue',
+              url: 'https://mcp.example.com/authorize-error-test',
+              elicitationId
+            }
+          ]
+        }
+      );
+    }
+  );
+
+  // SEP-1036: URL mode elicitation with completion notification
+  mcpServer.registerTool(
+    'test_elicitation_sep1036_complete',
+    {
+      description:
+        'Tests URL mode elicitation with completion notification per SEP-1036',
+      inputSchema: {}
+    },
+    async () => {
+      const elicitationId = `sep1036-complete-${randomUUID()}`;
+      const result = await mcpServer.server.elicitInput({
+        mode: 'url',
+        message: 'Please complete the authorization flow',
+        url: 'https://mcp.example.com/authorize-with-completion',
+        elicitationId
+      });
+
+      // Send completion notification after client accepts
+      if (result.action === 'accept') {
+        // Create a notifier for this elicitationId and send the notification
+        const notifier =
+          mcpServer.server.createElicitationCompletionNotifier(elicitationId);
+        await notifier();
+      }
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `URL elicitation with completion: action=${result.action}, notification sent`
+          }
+        ]
+      };
     }
   );
 
