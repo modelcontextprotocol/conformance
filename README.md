@@ -2,7 +2,8 @@
 
 A framework for testing MCP (Model Context Protocol) client and server implementations against the specification.
 
-> [!WARNING] This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
+> [!WARNING]
+> This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
 
 ## Quick Start
 
