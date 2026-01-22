@@ -85,7 +85,7 @@ allowing malicious websites to interact with local MCP servers. To prevent this:
 
 **Requirements**:
 - Server **MUST** validate the Host header on incoming requests
-- Server **MUST** reject requests with non-localhost Host headers with HTTP 403
+- Server **MUST** reject requests with non-localhost Host headers (HTTP 4xx error)
 - Server **MUST** accept requests with valid localhost Host headers
 
 **Valid localhost hosts:**
@@ -136,16 +136,22 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
     const validHost = getHostFromUrl(serverUrl);
     const attackerHost = 'evil.example.com';
 
-    // Check 1: Invalid Host header should be rejected with 403
+    // Check 1: Invalid Host header should be rejected with a 4xx error
+    // Common responses:
+    // - 403 Forbidden: Per MCP spec, server refuses to authorize the request
+    // - 421 Misdirected Request: RFC 7540, request directed at wrong server
+    // Any 4xx is acceptable as long as the request is rejected (not 2xx/3xx)
     try {
       const response = await sendRequestWithHost(serverUrl, attackerHost);
 
-      if (response.statusCode === 403) {
+      const isRejected =
+        response.statusCode >= 400 && response.statusCode < 500;
+      if (isRejected) {
         checks.push({
           id: 'localhost-host-rebinding-rejected',
           name: 'DNSRebindingRejected',
           description:
-            'Server rejects requests with non-localhost Host headers (HTTP 403)',
+            'Server rejects requests with non-localhost Host headers',
           status: 'SUCCESS',
           timestamp,
           specReferences: [SPEC_REFERENCE],
@@ -160,10 +166,10 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
           id: 'localhost-host-rebinding-rejected',
           name: 'DNSRebindingRejected',
           description:
-            'Server rejects requests with non-localhost Host headers (HTTP 403)',
+            'Server rejects requests with non-localhost Host headers',
           status: 'FAILURE',
           timestamp,
-          errorMessage: `Expected HTTP 403 for invalid Host header, got ${response.statusCode}`,
+          errorMessage: `Expected HTTP 4xx for invalid Host header, got ${response.statusCode}`,
           specReferences: [SPEC_REFERENCE],
           details: {
             hostHeader: attackerHost,
@@ -176,8 +182,7 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       checks.push({
         id: 'localhost-host-rebinding-rejected',
         name: 'DNSRebindingRejected',
-        description:
-          'Server rejects requests with non-localhost Host headers (HTTP 403)',
+        description: 'Server rejects requests with non-localhost Host headers',
         status: 'FAILURE',
         timestamp,
         errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
