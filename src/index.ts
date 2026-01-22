@@ -20,6 +20,11 @@ import {
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
+import {
+  loadExpectedFailures,
+  evaluateBaseline,
+  printBaselineResults
+} from './expected-failures';
 import packageJson from '../package.json';
 
 const program = new Command();
@@ -39,6 +44,10 @@ program
   .option('--scenario <scenario>', 'Scenario to test')
   .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+  .option(
+    '--expected-failures <path>',
+    'Path to YAML file listing expected failures (baseline)'
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
@@ -149,6 +158,17 @@ program
         console.log(
           `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
         );
+
+        if (options.expectedFailures) {
+          const expectedFailuresConfig = await loadExpectedFailures(
+            options.expectedFailures
+          );
+          const baselineScenarios = expectedFailuresConfig.client ?? [];
+          const baselineResult = evaluateBaseline(results, baselineScenarios);
+          printBaselineResults(baselineResult);
+          process.exit(baselineResult.exitCode);
+        }
+
         process.exit(totalFailed > 0 || totalWarnings > 0 ? 1 : 0);
       }
 
@@ -183,6 +203,20 @@ program
         verbose,
         result.clientOutput
       );
+
+      if (options.expectedFailures) {
+        const expectedFailuresConfig = await loadExpectedFailures(
+          options.expectedFailures
+        );
+        const baselineScenarios = expectedFailuresConfig.client ?? [];
+        const baselineResult = evaluateBaseline(
+          [{ scenario: validated.scenario, checks: result.checks }],
+          baselineScenarios
+        );
+        printBaselineResults(baselineResult);
+        process.exit(baselineResult.exitCode);
+      }
+
       process.exit(overallFailure ? 1 : 0);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -213,6 +247,10 @@ program
     'Suite to run: "active" (default, excludes pending), "all", or "pending"',
     'active'
   )
+  .option(
+    '--expected-failures <path>',
+    'Path to YAML file listing expected failures (baseline)'
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
@@ -236,6 +274,20 @@ program
           result.scenarioDescription,
           verbose
         );
+
+        if (options.expectedFailures) {
+          const expectedFailuresConfig = await loadExpectedFailures(
+            options.expectedFailures
+          );
+          const baselineScenarios = expectedFailuresConfig.server ?? [];
+          const baselineResult = evaluateBaseline(
+            [{ scenario: validated.scenario!, checks: result.checks }],
+            baselineScenarios
+          );
+          printBaselineResults(baselineResult);
+          process.exit(baselineResult.exitCode);
+        }
+
         process.exit(failed > 0 ? 1 : 0);
       } else {
         // Run scenarios based on suite
@@ -290,6 +342,20 @@ program
         }
 
         const { totalFailed } = printServerSummary(allResults);
+
+        if (options.expectedFailures) {
+          const expectedFailuresConfig = await loadExpectedFailures(
+            options.expectedFailures
+          );
+          const baselineScenarios = expectedFailuresConfig.server ?? [];
+          const baselineResult = evaluateBaseline(
+            allResults,
+            baselineScenarios
+          );
+          printBaselineResults(baselineResult);
+          process.exit(baselineResult.exitCode);
+        }
+
         process.exit(totalFailed > 0 ? 1 : 0);
       }
     } catch (error) {
