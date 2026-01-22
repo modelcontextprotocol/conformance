@@ -10,7 +10,7 @@ import { request } from 'undici';
 
 const SPEC_REFERENCE = {
   id: 'MCP-DNS-Rebinding-Protection',
-  url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#security'
+  url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices#local-mcp-server-compromise'
 };
 
 /**
@@ -78,22 +78,24 @@ export class DNSRebindingProtectionScenario implements ClientScenario {
   name = 'dns-rebinding-protection';
   description = `Test DNS rebinding protection for localhost servers.
 
-**Server Implementation Requirements:**
+**Scope:** This test applies to localhost MCP servers running without HTTPS and without
+authentication. These servers are vulnerable to DNS rebinding attacks where a malicious
+website tricks a user's browser into making requests to the local server.
 
-DNS rebinding attacks occur when an attacker's domain resolves to a localhost IP,
-allowing malicious websites to interact with local MCP servers. To prevent this:
+**Attack scenario:**
+1. User visits malicious website (e.g., evil.com)
+2. evil.com's DNS is configured to resolve to 127.0.0.1
+3. Browser makes request to evil.com which actually goes to localhost
+4. Without Host header validation, the local MCP server processes the request
 
-**Requirements**:
+**Requirements:**
 - Server **MUST** validate the Host header on incoming requests
-- Server **MUST** reject requests with non-localhost Host headers (HTTP 4xx error)
+- Server **MUST** reject requests with non-localhost Host headers (HTTP 4xx)
 - Server **MUST** accept requests with valid localhost Host headers
 
-**Valid localhost hosts:**
-- \`localhost\` / \`localhost:PORT\`
-- \`127.0.0.1\` / \`127.0.0.1:PORT\`
-- \`[::1]\` / \`[::1]:PORT\` (IPv6)
+**Valid localhost hosts:** \`localhost\`, \`127.0.0.1\`, \`[::1]\` (with optional port)
 
-**Note:** This test only runs against localhost servers. Non-localhost server URLs will fail.
+**Note:** This test requires a localhost server URL. Non-localhost URLs will fail.
 
 See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w`;
 
@@ -101,35 +103,41 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
+    // Common check properties
+    const rejectedCheckBase = {
+      id: 'localhost-host-rebinding-rejected',
+      name: 'DNSRebindingRejected',
+      description: 'Server rejects requests with non-localhost Host headers',
+      timestamp,
+      specReferences: [SPEC_REFERENCE]
+    };
+
+    const acceptedCheckBase = {
+      id: 'localhost-host-valid-accepted',
+      name: 'LocalhostHostAccepted',
+      description: 'Server accepts requests with valid localhost Host headers',
+      timestamp,
+      specReferences: [SPEC_REFERENCE]
+    };
+
     // First check: Is this a localhost URL?
     if (!isLocalhostUrl(serverUrl)) {
-      // Return failure for both checks when server is not localhost
-      checks.push({
-        id: 'localhost-host-rebinding-rejected',
-        name: 'DNSRebindingRejected',
-        description:
-          'Server rejects requests with non-localhost Host headers (HTTP 403)',
-        status: 'FAILURE',
-        timestamp,
-        errorMessage:
-          'DNS rebinding tests require a localhost server URL (localhost, 127.0.0.1, or [::1])',
-        specReferences: [SPEC_REFERENCE],
-        details: { serverUrl, reason: 'non-localhost-url' }
-      });
+      const errorMessage =
+        'DNS rebinding tests require a localhost server URL (localhost, 127.0.0.1, or [::1])';
+      const details = { serverUrl, reason: 'non-localhost-url' };
 
       checks.push({
-        id: 'localhost-host-valid-accepted',
-        name: 'LocalhostHostAccepted',
-        description:
-          'Server accepts requests with valid localhost Host headers',
-        status: 'FAILURE',
-        timestamp,
-        errorMessage:
-          'DNS rebinding tests require a localhost server URL (localhost, 127.0.0.1, or [::1])',
-        specReferences: [SPEC_REFERENCE],
-        details: { serverUrl, reason: 'non-localhost-url' }
+        ...rejectedCheckBase,
+        status: 'FAILURE' as const,
+        errorMessage,
+        details
       });
-
+      checks.push({
+        ...acceptedCheckBase,
+        status: 'FAILURE' as const,
+        errorMessage,
+        details
+      });
       return checks;
     }
 
@@ -137,123 +145,71 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
     const attackerHost = 'evil.example.com';
 
     // Check 1: Invalid Host header should be rejected with a 4xx error
-    // Common responses:
-    // - 403 Forbidden: Per MCP spec, server refuses to authorize the request
-    // - 421 Misdirected Request: RFC 7540, request directed at wrong server
-    // Any 4xx is acceptable as long as the request is rejected (not 2xx/3xx)
     try {
       const response = await sendRequestWithHost(serverUrl, attackerHost);
-
       const isRejected =
         response.statusCode >= 400 && response.statusCode < 500;
+
+      const details = {
+        hostHeader: attackerHost,
+        statusCode: response.statusCode,
+        body: response.body
+      };
+
       if (isRejected) {
         checks.push({
-          id: 'localhost-host-rebinding-rejected',
-          name: 'DNSRebindingRejected',
-          description:
-            'Server rejects requests with non-localhost Host headers',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: [SPEC_REFERENCE],
-          details: {
-            hostHeader: attackerHost,
-            statusCode: response.statusCode,
-            body: response.body
-          }
+          ...rejectedCheckBase,
+          status: 'SUCCESS' as const,
+          details
         });
       } else {
         checks.push({
-          id: 'localhost-host-rebinding-rejected',
-          name: 'DNSRebindingRejected',
-          description:
-            'Server rejects requests with non-localhost Host headers',
-          status: 'FAILURE',
-          timestamp,
+          ...rejectedCheckBase,
+          status: 'FAILURE' as const,
           errorMessage: `Expected HTTP 4xx for invalid Host header, got ${response.statusCode}`,
-          specReferences: [SPEC_REFERENCE],
-          details: {
-            hostHeader: attackerHost,
-            statusCode: response.statusCode,
-            body: response.body
-          }
+          details
         });
       }
     } catch (error) {
       checks.push({
-        id: 'localhost-host-rebinding-rejected',
-        name: 'DNSRebindingRejected',
-        description: 'Server rejects requests with non-localhost Host headers',
-        status: 'FAILURE',
-        timestamp,
+        ...rejectedCheckBase,
+        status: 'FAILURE' as const,
         errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: [SPEC_REFERENCE],
         details: { hostHeader: attackerHost }
       });
     }
 
-    // Check 2: Valid localhost Host header should be accepted
+    // Check 2: Valid localhost Host header should be accepted (2xx response)
     try {
       const response = await sendRequestWithHost(serverUrl, validHost);
+      const isAccepted =
+        response.statusCode >= 200 && response.statusCode < 300;
 
-      // Accept any 2xx response (200, 201, etc.) as success
-      if (response.statusCode >= 200 && response.statusCode < 300) {
+      const details = {
+        hostHeader: validHost,
+        statusCode: response.statusCode,
+        body: response.body
+      };
+
+      if (isAccepted) {
         checks.push({
-          id: 'localhost-host-valid-accepted',
-          name: 'LocalhostHostAccepted',
-          description:
-            'Server accepts requests with valid localhost Host headers',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: [SPEC_REFERENCE],
-          details: {
-            hostHeader: validHost,
-            statusCode: response.statusCode
-          }
-        });
-      } else if (response.statusCode === 403) {
-        checks.push({
-          id: 'localhost-host-valid-accepted',
-          name: 'LocalhostHostAccepted',
-          description:
-            'Server accepts requests with valid localhost Host headers',
-          status: 'FAILURE',
-          timestamp,
-          errorMessage: `Server rejected valid localhost Host header with HTTP 403`,
-          specReferences: [SPEC_REFERENCE],
-          details: {
-            hostHeader: validHost,
-            statusCode: response.statusCode,
-            body: response.body
-          }
+          ...acceptedCheckBase,
+          status: 'SUCCESS' as const,
+          details
         });
       } else {
-        // Other status codes might still be acceptable (e.g., 401 for auth)
-        // but 403 specifically indicates Host rejection
         checks.push({
-          id: 'localhost-host-valid-accepted',
-          name: 'LocalhostHostAccepted',
-          description:
-            'Server accepts requests with valid localhost Host headers',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: [SPEC_REFERENCE],
-          details: {
-            hostHeader: validHost,
-            statusCode: response.statusCode,
-            note: 'Non-403 response indicates Host header was accepted'
-          }
+          ...acceptedCheckBase,
+          status: 'FAILURE' as const,
+          errorMessage: `Expected HTTP 2xx for valid localhost Host header, got ${response.statusCode}`,
+          details
         });
       }
     } catch (error) {
       checks.push({
-        id: 'localhost-host-valid-accepted',
-        name: 'LocalhostHostAccepted',
-        description:
-          'Server accepts requests with valid localhost Host headers',
-        status: 'FAILURE',
-        timestamp,
+        ...acceptedCheckBase,
+        status: 'FAILURE' as const,
         errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: [SPEC_REFERENCE],
         details: { hostHeader: validHost }
       });
     }
