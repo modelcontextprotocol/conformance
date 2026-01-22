@@ -16,7 +16,9 @@ import {
   listActiveClientScenarios,
   listPendingClientScenarios,
   listAuthScenarios,
-  listMetadataScenarios
+  listMetadataScenarios,
+  listCoreScenarios,
+  listExtensionScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -65,6 +67,8 @@ program
 
         const suites: Record<string, () => string[]> = {
           all: listScenarios,
+          core: listCoreScenarios,
+          extensions: listExtensionScenarios,
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
           'sep-835': () =>
@@ -177,7 +181,9 @@ program
         console.error('Either --scenario or --suite is required');
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
-        console.error('\nAvailable suites: all, auth, metadata, sep-835');
+        console.error(
+          '\nAvailable suites: all, core, extensions, auth, metadata, sep-835'
+        );
         process.exit(1);
       }
 
@@ -296,13 +302,14 @@ program
 
         if (suite === 'all') {
           scenarios = listClientScenarios();
-        } else if (suite === 'active') {
+        } else if (suite === 'active' || suite === 'core') {
+          // 'core' is an alias for 'active' - tier 1 requirements
           scenarios = listActiveClientScenarios();
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
         } else {
           console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, pending');
+          console.error('Available suites: active, all, core, pending');
           process.exit(1);
         }
 

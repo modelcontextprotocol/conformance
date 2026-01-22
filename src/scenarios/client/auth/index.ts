@@ -22,6 +22,7 @@ import {
   ClientCredentialsBasicScenario
 } from './client-credentials';
 
+// Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
   new AuthBasicCIMDScenario(),
@@ -34,7 +35,11 @@ export const authScenariosList: Scenario[] = [
   new ScopeRetryLimitScenario(),
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
-  new PublicClientAuthScenario(),
+  new PublicClientAuthScenario()
+];
+
+// Extension scenarios (optional for tier 1 - protocol extensions)
+export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario()
 ];
