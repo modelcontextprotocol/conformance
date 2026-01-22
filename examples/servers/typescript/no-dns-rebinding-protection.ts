@@ -12,7 +12,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
-import { randomUUID } from 'crypto';
 
 // Create minimal MCP server
 const server = new McpServer({
@@ -36,37 +35,14 @@ const app = express();
 app.use(express.json());
 // NO DNS rebinding protection middleware here!
 
-const transports: Record<string, StreamableHTTPServerTransport> = {};
-
 app.post('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-
   try {
-    if (sessionId && transports[sessionId]) {
-      await transports[sessionId].handleRequest(req, res, req.body);
-      return;
-    }
-
-    if (!sessionId && req.body?.method === 'initialize') {
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (id) => {
-          transports[id] = transport;
-        }
-      });
-      transport.onclose = () => {
-        if (transport.sessionId) delete transports[transport.sessionId];
-      };
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
-
-    res.status(400).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Bad Request: No valid session' },
-      id: null
+    // Stateless: no session ID
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined
     });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
   } catch (error) {
     if (!res.headersSent) {
       res.status(500).json({
