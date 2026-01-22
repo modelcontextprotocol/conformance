@@ -51,6 +51,8 @@ import {
   PromptsGetWithImageScenario
 } from './server/prompts';
 
+import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+
 import { authScenariosList } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 
@@ -123,7 +125,10 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetSimpleScenario(),
   new PromptsGetWithArgsScenario(),
   new PromptsGetEmbeddedResourceScenario(),
-  new PromptsGetWithImageScenario()
+  new PromptsGetWithImageScenario(),
+
+  // Security scenarios
+  new DNSRebindingProtectionScenario()
 ];
 
 // Active client scenarios (excludes pending)
