@@ -67,11 +67,14 @@ app.post('/mcp', async (req, res) => {
       error: { code: -32000, message: 'Bad Request: No valid session' },
       id: null
     });
-  } catch {
+  } catch (error) {
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: '2.0',
-        error: { code: -32603, message: 'Internal error' },
+        error: {
+          code: -32603,
+          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
+        },
         id: null
       });
     }
