@@ -76,5 +76,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_PREREGISTRATION: {
     id: 'MCP-Preregistration',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#preregistration'
+  },
+  MCP_PKCE: {
+    id: 'MCP-PKCE-requirement',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-code-protection'
   }
 };
