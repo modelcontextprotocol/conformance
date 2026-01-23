@@ -251,8 +251,8 @@ class TokenEndpointAuthScenario implements Scenario {
           name: 'Resource parameter consistency',
           description: consistent
             ? 'Resource parameter is consistent between authorization and token requests'
-            : 'Resource parameter SHOULD be consistent between authorization and token requests',
-          status: consistent ? 'SUCCESS' : 'WARNING',
+            : 'Resource parameter MUST be consistent between authorization and token requests',
+          status: consistent ? 'SUCCESS' : 'FAILURE',
           timestamp,
           specReferences: specRefs,
           details: {
@@ -270,10 +270,6 @@ class TokenEndpointAuthScenario implements Scenario {
   } {
     try {
       const parsed = new URL(uri);
-      // Check for scheme (URL constructor requires it, so if we get here it has one)
-      if (!parsed.protocol) {
-        return { valid: false, error: 'missing scheme' };
-      }
       // Check for fragment (RFC 8707: MUST NOT include fragment)
       if (parsed.hash) {
         return {
