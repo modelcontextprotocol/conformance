@@ -338,7 +338,8 @@ export async function runPreRegistration(serverUrl: string): Promise<void> {
   // Pre-set the client information so the SDK won't attempt DCR
   provider.saveClientInformation({
     client_id: ctx.client_id,
-    client_secret: ctx.client_secret
+    client_secret: ctx.client_secret,
+    redirect_uris: ['http://localhost:3000/callback']
   });
 
   // Use the provider-based middleware
