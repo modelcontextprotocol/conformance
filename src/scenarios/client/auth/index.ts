@@ -21,6 +21,11 @@ import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
+import {
+  CrossAppAccessTokenExchangeScenario,
+  CrossAppAccessJwtBearerScenario,
+  CrossAppAccessCompleteFlowScenario
+} from './cross-app-access';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -41,5 +46,8 @@ export const authScenariosList: Scenario[] = [
 // Extension scenarios (optional for tier 1 - protocol extensions)
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
-  new ClientCredentialsBasicScenario()
+  new ClientCredentialsBasicScenario(),
+  new CrossAppAccessTokenExchangeScenario(),
+  new CrossAppAccessJwtBearerScenario(),
+  new CrossAppAccessCompleteFlowScenario()
 ];
