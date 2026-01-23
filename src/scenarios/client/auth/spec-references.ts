@@ -72,5 +72,13 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   SEP_1046_CLIENT_CREDENTIALS: {
     id: 'SEP-1046-Client-Credentials',
     url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/oauth-client-credentials.mdx'
+  },
+  RFC_8707_RESOURCE_INDICATORS: {
+    id: 'RFC-8707-Resource-Indicators',
+    url: 'https://www.rfc-editor.org/rfc/rfc8707.html'
+  },
+  MCP_RESOURCE_PARAMETER: {
+    id: 'MCP-Resource-Parameter-Implementation',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#resource-parameter-implementation'
   }
 };

@@ -22,6 +22,8 @@ export interface ServerOptions {
   includeScopeInWwwAuth?: boolean;
   authMiddleware?: express.RequestHandler;
   tokenVerifier?: MockTokenVerifier;
+  /** Override the resource field in PRM response (for testing resource mismatch) */
+  prmResourceOverride?: string;
 }
 
 export function createServer(
@@ -36,7 +38,8 @@ export function createServer(
     scopesSupported,
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
-    tokenVerifier
+    tokenVerifier,
+    prmResourceOverride
   } = options;
   const server = new Server(
     {
@@ -107,10 +110,12 @@ export function createServer(
 
       // Resource is usually $baseUrl/mcp, but if PRM is at the root,
       // the resource identifier is the root.
+      // Can be overridden via prmResourceOverride for testing resource mismatch.
       const resource =
-        prmPath === '/.well-known/oauth-protected-resource'
+        prmResourceOverride ??
+        (prmPath === '/.well-known/oauth-protected-resource'
           ? getBaseUrl()
-          : `${getBaseUrl()}/mcp`;
+          : `${getBaseUrl()}/mcp`);
 
       const prmResponse: any = {
         resource,

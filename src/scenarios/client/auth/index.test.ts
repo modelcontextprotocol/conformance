@@ -22,7 +22,9 @@ const skipScenarios = new Set<string>([
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
-  'auth/scope-retry-limit'
+  'auth/scope-retry-limit',
+  // Client is expected to error when PRM resource doesn't match server URL
+  'auth/resource-mismatch'
 ]);
 
 describe('Client Auth Scenarios', () => {

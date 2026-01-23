@@ -21,6 +21,7 @@ import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
+import { ResourceMismatchScenario } from './resource-mismatch';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -35,7 +36,8 @@ export const authScenariosList: Scenario[] = [
   new ScopeRetryLimitScenario(),
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
-  new PublicClientAuthScenario()
+  new PublicClientAuthScenario(),
+  new ResourceMismatchScenario()
 ];
 
 // Extension scenarios (optional for tier 1 - protocol extensions)

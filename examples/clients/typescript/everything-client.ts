@@ -139,7 +139,9 @@ registerScenarios(
     // Token endpoint auth method scenarios
     'auth/token-endpoint-auth-basic',
     'auth/token-endpoint-auth-post',
-    'auth/token-endpoint-auth-none'
+    'auth/token-endpoint-auth-none',
+    // Resource mismatch (client should error when PRM resource doesn't match)
+    'auth/resource-mismatch'
   ],
   runAuthClient
 );
