@@ -5,6 +5,8 @@ A framework for testing MCP (Model Context Protocol) client and server implement
 > [!WARNING]
 > This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
 
+**For SDK maintainers:** See [SDK Integration Guide](./SDK_INTEGRATION.md) for a streamlined guide on integrating conformance tests into your SDK repository.
+
 ## Quick Start
 
 ### Testing Clients

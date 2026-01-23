@@ -17,6 +17,11 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     name: z.literal('auth/client-credentials-basic'),
     client_id: z.string(),
     client_secret: z.string()
+  }),
+  z.object({
+    name: z.literal('auth/pre-registration'),
+    client_id: z.string(),
+    client_secret: z.string()
   })
 ]);
 

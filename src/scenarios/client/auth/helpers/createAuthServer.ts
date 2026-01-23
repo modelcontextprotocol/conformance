@@ -39,6 +39,8 @@ export interface AuthServerOptions {
   tokenEndpointAuthMethodsSupported?: string[];
   tokenEndpointAuthSigningAlgValuesSupported?: string[];
   clientIdMetadataDocumentSupported?: boolean;
+  /** Set to true to NOT advertise registration_endpoint (for pre-registration tests) */
+  disableDynamicRegistration?: boolean;
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
   tokenVerifier?: MockTokenVerifier;
@@ -81,6 +83,7 @@ export function createAuthServer(
     tokenEndpointAuthMethodsSupported = ['none'],
     tokenEndpointAuthSigningAlgValuesSupported,
     clientIdMetadataDocumentSupported,
+    disableDynamicRegistration = false,
     codeChallengeMethodsSupported = ['S256'],
     tokenVerifier,
     onTokenRequest,
@@ -133,7 +136,9 @@ export function createAuthServer(
       issuer: getAuthBaseUrl(),
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
-      registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`,
+      ...(!disableDynamicRegistration && {
+        registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`
+      }),
       response_types_supported: ['code'],
       grant_types_supported: grantTypesSupported,
       // PKCE support - null means omit from metadata (for negative testing)
