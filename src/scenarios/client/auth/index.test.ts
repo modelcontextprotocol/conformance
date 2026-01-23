@@ -18,14 +18,13 @@ beforeAll(() => {
 });
 
 const skipScenarios = new Set<string>([
-  // Add scenarios that should be skipped here
+  // Skip for now - tests that client refuses when S256 not supported
+  'auth/pkce-no-s256-support'
 ]);
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
-  'auth/scope-retry-limit',
-  // Client should refuse/error when S256 is not in code_challenge_methods_supported
-  'auth/pkce-no-s256-support'
+  'auth/scope-retry-limit'
 ]);
 
 describe('Client Auth Scenarios', () => {

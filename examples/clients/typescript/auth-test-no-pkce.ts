@@ -30,12 +30,10 @@ interface OAuthTokens {
  * This is intentionally broken behavior for conformance testing.
  */
 async function oauthFlowWithoutPkce(
-  serverUrl: string | URL,
+  _serverUrl: string | URL,
   resourceMetadataUrl: string | URL,
   fetchFn: FetchLike
 ): Promise<OAuthTokens> {
-  const baseUrl =
-    typeof serverUrl === 'string' ? new URL(serverUrl).origin : serverUrl.origin;
 
   // 1. Fetch Protected Resource Metadata
   const prmResponse = await fetchFn(resourceMetadataUrl);
