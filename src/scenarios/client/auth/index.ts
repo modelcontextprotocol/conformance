@@ -22,6 +22,7 @@ import {
   ClientCredentialsBasicScenario
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
+import { PreRegistrationScenario } from './pre-registration';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -37,7 +38,8 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
-  new ResourceMismatchScenario()
+  new ResourceMismatchScenario(),
+  new PreRegistrationScenario()
 ];
 
 // Extension scenarios (optional for tier 1 - protocol extensions)

@@ -21,7 +21,12 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
-import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry.js';
+import {
+  withOAuthRetry,
+  withOAuthRetryWithProvider,
+  handle401
+} from './helpers/withOAuthRetry.js';
+import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -301,6 +306,69 @@ export async function runClientCredentialsBasic(
 }
 
 registerScenario('auth/client-credentials-basic', runClientCredentialsBasic);
+
+// ============================================================================
+// Pre-registration scenario
+// ============================================================================
+
+/**
+ * Pre-registration: client uses pre-registered credentials (no DCR).
+ *
+ * Server does not advertise registration_endpoint, so client must use
+ * pre-configured client_id and client_secret passed via context.
+ */
+export async function runPreRegistration(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/pre-registration') {
+    throw new Error(`Expected pre-registration context, got ${ctx.name}`);
+  }
+
+  const client = new Client(
+    { name: 'conformance-pre-registration', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  // Create provider with pre-registered credentials
+  const provider = new ConformanceOAuthProvider(
+    'http://localhost:3000/callback',
+    {
+      client_name: 'conformance-pre-registration',
+      redirect_uris: ['http://localhost:3000/callback']
+    }
+  );
+
+  // Pre-set the client information so the SDK won't attempt DCR
+  provider.saveClientInformation({
+    client_id: ctx.client_id,
+    client_secret: ctx.client_secret,
+    redirect_uris: ['http://localhost:3000/callback']
+  });
+
+  // Use the provider-based middleware
+  const oauthFetch = withOAuthRetryWithProvider(
+    provider,
+    new URL(serverUrl),
+    handle401
+  )(fetch);
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with pre-registered credentials');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await client.callTool({ name: 'test-tool', arguments: {} });
+  logger.debug('Successfully called tool');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/pre-registration', runPreRegistration);
 
 // ============================================================================
 // Main entry point

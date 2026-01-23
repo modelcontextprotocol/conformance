@@ -19,15 +19,15 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   MCP_PRM_DISCOVERY: {
     id: 'MCP-2025-06-18-PRM-discovery',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#protected-resource-metadata-discovery-requirements'
   },
   MCP_AUTH_DISCOVERY: {
     id: 'MCP-Authorization-metadata-discovery',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-server-metadata-discovery'
   },
   MCP_DCR: {
     id: 'MCP-Dynamic-client-registration',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/client#dynamic-client-registration'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/client#dynamic-client-registration'
   },
   OAUTH_2_1_AUTHORIZATION_ENDPOINT: {
     id: 'OAUTH-2.1-authorization-endpoint',
@@ -39,23 +39,23 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   MCP_ACCESS_TOKEN_USAGE: {
     id: 'MCP-Access-token-usage',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#access-token-usage'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#access-token-usage'
   },
   MCP_SCOPE_SELECTION_STRATEGY: {
     id: 'MCP-Scope-selection-strategy',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#scope-selection-strategy'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#scope-selection-strategy'
   },
   MCP_SCOPE_CHALLENGE_HANDLING: {
     id: 'MCP-Scope-challenge-handling',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#scope-challenge-handling'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#scope-challenge-handling'
   },
   MCP_AUTH_ERROR_HANDLING: {
     id: 'MCP-Auth-error-handling',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#error-handling'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#error-handling'
   },
   MCP_CLIENT_ID_METADATA_DOCUMENTS: {
     id: 'MCP-Client-ID-Metadata-Documents',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#client-id-metadata-documents'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#client-id-metadata-documents'
   },
   IETF_CIMD: {
     id: 'IETF-OAuth-Client-ID-Metadata-Document',
@@ -80,5 +80,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_RESOURCE_PARAMETER: {
     id: 'MCP-Resource-Parameter-Implementation',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#resource-parameter-implementation'
+  },
+  MCP_PREREGISTRATION: {
+    id: 'MCP-Preregistration',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#preregistration'
   }
 };
