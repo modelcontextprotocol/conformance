@@ -34,7 +34,6 @@ async function oauthFlowWithoutPkce(
   resourceMetadataUrl: string | URL,
   fetchFn: FetchLike
 ): Promise<OAuthTokens> {
-
   // 1. Fetch Protected Resource Metadata
   const prmResponse = await fetchFn(resourceMetadataUrl);
   if (!prmResponse.ok) {
@@ -80,7 +79,9 @@ async function oauthFlowWithoutPkce(
   // BUG: NOT setting code_challenge or code_challenge_method
 
   // 5. Fetch authorization endpoint (simulates redirect)
-  const authResponse = await fetchFn(authUrl.toString(), { redirect: 'manual' });
+  const authResponse = await fetchFn(authUrl.toString(), {
+    redirect: 'manual'
+  });
   const location = authResponse.headers.get('location');
   if (!location) {
     throw new Error('No redirect from authorization endpoint');
