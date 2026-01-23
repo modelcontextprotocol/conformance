@@ -1,8 +1,22 @@
 import express, { Request, Response } from 'express';
+import { createHash } from 'crypto';
 import type { ConformanceCheck } from '../../../../types';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
+
+/**
+ * Compute S256 code challenge from a code verifier.
+ * BASE64URL(SHA256(code_verifier))
+ */
+function computeS256Challenge(codeVerifier: string): string {
+  const hash = createHash('sha256').update(codeVerifier).digest();
+  return hash
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
 
 export interface TokenRequestResult {
   token: string;
@@ -27,6 +41,8 @@ export interface AuthServerOptions {
   clientIdMetadataDocumentSupported?: boolean;
   /** Set to true to NOT advertise registration_endpoint (for pre-registration tests) */
   disableDynamicRegistration?: boolean;
+  /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
+  codeChallengeMethodsSupported?: string[] | null;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -69,6 +85,7 @@ export function createAuthServer(
     tokenEndpointAuthSigningAlgValuesSupported,
     clientIdMetadataDocumentSupported,
     disableDynamicRegistration = false,
+    codeChallengeMethodsSupported = ['S256'],
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -77,6 +94,8 @@ export function createAuthServer(
 
   // Track scopes from the most recent authorization request
   let lastAuthorizationScopes: string[] = [];
+  // Track PKCE code_challenge for verification in token request
+  let storedCodeChallenge: string | undefined;
 
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
@@ -123,7 +142,10 @@ export function createAuthServer(
       }),
       response_types_supported: ['code'],
       grant_types_supported: grantTypesSupported,
-      code_challenge_methods_supported: ['S256'],
+      // PKCE support - null means omit from metadata (for negative testing)
+      ...(codeChallengeMethodsSupported !== null && {
+        code_challenge_methods_supported: codeChallengeMethodsSupported
+      }),
       token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
       ...(tokenEndpointAuthSigningAlgValuesSupported && {
         token_endpoint_auth_signing_alg_values_supported:
@@ -163,6 +185,41 @@ export function createAuthServer(
       specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
       details: {
         query: req.query
+      }
+    });
+
+    // PKCE: Store code_challenge for later verification
+    const codeChallenge = req.query.code_challenge as string | undefined;
+    const codeChallengeMethod = req.query.code_challenge_method as
+      | string
+      | undefined;
+    storedCodeChallenge = codeChallenge;
+
+    // PKCE: Check code_challenge is present
+    checks.push({
+      id: 'pkce-code-challenge-sent',
+      name: 'PKCE Code Challenge',
+      description: codeChallenge
+        ? 'Client sent code_challenge in authorization request'
+        : 'Client MUST send code_challenge in authorization request',
+      status: codeChallenge ? 'SUCCESS' : 'FAILURE',
+      timestamp,
+      specReferences: [SpecReferences.MCP_PKCE]
+    });
+
+    // PKCE: Check S256 method is used
+    checks.push({
+      id: 'pkce-s256-method-used',
+      name: 'PKCE S256 Method',
+      description:
+        codeChallengeMethod === 'S256'
+          ? 'Client used S256 code challenge method'
+          : 'Client MUST use S256 code challenge method when technically capable',
+      status: codeChallengeMethod === 'S256' ? 'SUCCESS' : 'FAILURE',
+      timestamp,
+      specReferences: [SpecReferences.MCP_PKCE],
+      details: {
+        method: codeChallengeMethod || 'not specified'
       }
     });
 
@@ -207,6 +264,61 @@ export function createAuthServer(
         grantType
       }
     });
+
+    // PKCE: Check code_verifier is present (only for authorization_code grant)
+    const codeVerifier = req.body.code_verifier as string | undefined;
+    if (grantType === 'authorization_code') {
+      checks.push({
+        id: 'pkce-code-verifier-sent',
+        name: 'PKCE Code Verifier',
+        description: codeVerifier
+          ? 'Client sent code_verifier in token request'
+          : 'Client MUST send code_verifier in token request',
+        status: codeVerifier ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.MCP_PKCE]
+      });
+
+      // PKCE: Validate code_verifier matches code_challenge (S256)
+      // Fail if either is missing
+      const computedChallenge =
+        codeVerifier && storedCodeChallenge
+          ? computeS256Challenge(codeVerifier)
+          : undefined;
+      const matches =
+        computedChallenge !== undefined &&
+        computedChallenge === storedCodeChallenge;
+
+      let description: string;
+      if (!storedCodeChallenge && !codeVerifier) {
+        description =
+          'Neither code_challenge nor code_verifier were sent - PKCE is required';
+      } else if (!storedCodeChallenge) {
+        description =
+          'code_challenge was not sent in authorization request - PKCE is required';
+      } else if (!codeVerifier) {
+        description =
+          'code_verifier was not sent in token request - PKCE is required';
+      } else if (matches) {
+        description = 'code_verifier correctly matches code_challenge (S256)';
+      } else {
+        description = 'code_verifier does not match code_challenge';
+      }
+
+      checks.push({
+        id: 'pkce-verifier-matches-challenge',
+        name: 'PKCE Verifier Validation',
+        description,
+        status: matches ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.MCP_PKCE],
+        details: {
+          matches,
+          storedChallenge: storedCodeChallenge || 'not sent',
+          computedChallenge: computedChallenge || 'not computed'
+        }
+      });
+    }
 
     let token = `test-token-${Date.now()}`;
     let scopes: string[] = lastAuthorizationScopes;
