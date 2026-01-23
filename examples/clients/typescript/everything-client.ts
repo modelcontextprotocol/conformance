@@ -139,7 +139,9 @@ registerScenarios(
     // Token endpoint auth method scenarios
     'auth/token-endpoint-auth-basic',
     'auth/token-endpoint-auth-post',
-    'auth/token-endpoint-auth-none'
+    'auth/token-endpoint-auth-none',
+    // PKCE scenarios - client should error when S256 not supported
+    'auth/pkce-no-s256-support'
   ],
   runAuthClient
 );

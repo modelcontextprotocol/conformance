@@ -72,5 +72,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   SEP_1046_CLIENT_CREDENTIALS: {
     id: 'SEP-1046-Client-Credentials',
     url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/oauth-client-credentials.mdx'
+  },
+  MCP_PKCE: {
+    id: 'MCP-PKCE-requirement',
+    url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#authorization-code-protection'
   }
 };
