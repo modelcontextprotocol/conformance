@@ -35,6 +35,7 @@ npx @modelcontextprotocol/conformance client \
 **Available client suites:** `all`, `core`, `extensions`, `auth`, `metadata`, `sep-835`
 
 Your client should:
+
 1. Accept the server URL as its last argument
 2. Read `MCP_CONFORMANCE_SCENARIO` env var to determine which scenario is being tested
 3. Read `MCP_CONFORMANCE_CONTEXT` env var for scenario-specific data (e.g., OAuth credentials)
@@ -62,6 +63,7 @@ npx @modelcontextprotocol/conformance server \
 ## Expected Failures (Baseline) File
 
 The expected-failures feature lets your CI pass while you work on fixing known issues. It catches regressions by failing when:
+
 - A previously passing test starts failing (regression)
 - A previously failing test starts passing (stale baseline - remove the entry)
 
@@ -87,12 +89,12 @@ npx @modelcontextprotocol/conformance server \
 
 ### Exit Code Behavior
 
-| Scenario Result | In Baseline? | Exit Code | Meaning |
-|-----------------|--------------|-----------|---------|
-| Fails | Yes | 0 | Expected failure |
-| Fails | No | 1 | Unexpected regression |
-| Passes | Yes | 1 | Stale baseline - remove entry |
-| Passes | No | 0 | Normal pass |
+| Scenario Result | In Baseline? | Exit Code | Meaning                       |
+| --------------- | ------------ | --------- | ----------------------------- |
+| Fails           | Yes          | 0         | Expected failure              |
+| Fails           | No           | 1         | Unexpected regression         |
+| Passes          | Yes          | 1         | Stale baseline - remove entry |
+| Passes          | No           | 0         | Normal pass                   |
 
 ---
 
@@ -117,7 +119,7 @@ jobs:
           # Your SDK setup (pip install, npm install, etc.)
           pip install -e .
 
-      - uses: modelcontextprotocol/conformance@v0.1.11
+      - uses: modelcontextprotocol/conformance@v0.1.10
         with:
           mode: client
           command: 'python tests/conformance/client.py'
@@ -144,7 +146,7 @@ jobs:
           # Wait for server to be ready
           timeout 15 bash -c 'until curl -s http://localhost:3001/mcp; do sleep 0.5; done'
 
-      - uses: modelcontextprotocol/conformance@v0.1.11
+      - uses: modelcontextprotocol/conformance@v0.1.10
         with:
           mode: server
           url: http://localhost:3001/mcp
@@ -154,17 +156,17 @@ jobs:
 
 ### Action Inputs
 
-| Input | Required | Description |
-|-------|----------|-------------|
-| `mode` | Yes | `server` or `client` |
-| `url` | Server mode | URL of the server to test |
-| `command` | Client mode | Command to run the client |
-| `expected-failures` | No | Path to YAML baseline file |
-| `suite` | No | Test suite to run |
-| `scenario` | No | Run a single scenario by name |
-| `timeout` | No | Timeout in ms for client tests (default: 30000) |
-| `verbose` | No | Show verbose output (default: false) |
-| `node-version` | No | Node.js version (default: 20) |
+| Input               | Required    | Description                                     |
+| ------------------- | ----------- | ----------------------------------------------- |
+| `mode`              | Yes         | `server` or `client`                            |
+| `url`               | Server mode | URL of the server to test                       |
+| `command`           | Client mode | Command to run the client                       |
+| `expected-failures` | No          | Path to YAML baseline file                      |
+| `suite`             | No          | Test suite to run                               |
+| `scenario`          | No          | Run a single scenario by name                   |
+| `timeout`           | No          | Timeout in ms for client tests (default: 30000) |
+| `verbose`           | No          | Show verbose output (default: false)            |
+| `node-version`      | No          | Node.js version (default: 20)                   |
 
 ---
 
