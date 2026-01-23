@@ -273,25 +273,44 @@ export function createAuthServer(
       });
 
       // PKCE: Validate code_verifier matches code_challenge (S256)
-      if (codeVerifier && storedCodeChallenge) {
-        const computedChallenge = computeS256Challenge(codeVerifier);
-        const matches = computedChallenge === storedCodeChallenge;
-        checks.push({
-          id: 'pkce-verifier-matches-challenge',
-          name: 'PKCE Verifier Validation',
-          description: matches
-            ? 'code_verifier correctly matches code_challenge (S256)'
-            : 'code_verifier does not match code_challenge',
-          status: matches ? 'SUCCESS' : 'FAILURE',
-          timestamp,
-          specReferences: [SpecReferences.MCP_PKCE],
-          details: {
-            matches,
-            storedChallenge: storedCodeChallenge,
-            computedChallenge
-          }
-        });
+      // Fail if either is missing
+      const computedChallenge =
+        codeVerifier && storedCodeChallenge
+          ? computeS256Challenge(codeVerifier)
+          : undefined;
+      const matches =
+        computedChallenge !== undefined &&
+        computedChallenge === storedCodeChallenge;
+
+      let description: string;
+      if (!storedCodeChallenge && !codeVerifier) {
+        description =
+          'Neither code_challenge nor code_verifier were sent - PKCE is required';
+      } else if (!storedCodeChallenge) {
+        description =
+          'code_challenge was not sent in authorization request - PKCE is required';
+      } else if (!codeVerifier) {
+        description =
+          'code_verifier was not sent in token request - PKCE is required';
+      } else if (matches) {
+        description = 'code_verifier correctly matches code_challenge (S256)';
+      } else {
+        description = 'code_verifier does not match code_challenge';
       }
+
+      checks.push({
+        id: 'pkce-verifier-matches-challenge',
+        name: 'PKCE Verifier Validation',
+        description,
+        status: matches ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.MCP_PKCE],
+        details: {
+          matches,
+          storedChallenge: storedCodeChallenge || 'not sent',
+          computedChallenge: computedChallenge || 'not computed'
+        }
+      });
     }
 
     let token = `test-token-${Date.now()}`;

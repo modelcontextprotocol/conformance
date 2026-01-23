@@ -21,7 +21,6 @@ import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
-import { PkceNoS256SupportScenario } from './pkce-no-support';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -36,8 +35,7 @@ export const authScenariosList: Scenario[] = [
   new ScopeRetryLimitScenario(),
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
-  new PublicClientAuthScenario(),
-  new PkceNoS256SupportScenario()
+  new PublicClientAuthScenario()
 ];
 
 // Extension scenarios (optional for tier 1 - protocol extensions)

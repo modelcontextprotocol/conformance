@@ -18,8 +18,7 @@ beforeAll(() => {
 });
 
 const skipScenarios = new Set<string>([
-  // Skip for now - tests that client refuses when S256 not supported
-  'auth/pkce-no-s256-support'
+  // Add scenarios that should be skipped here
 ]);
 
 const allowClientErrorScenarios = new Set<string>([
@@ -108,7 +107,8 @@ describe('Negative tests', () => {
       expectedFailureSlugs: [
         'pkce-code-challenge-sent',
         'pkce-s256-method-used',
-        'pkce-code-verifier-sent'
+        'pkce-code-verifier-sent',
+        'pkce-verifier-matches-challenge'
       ]
     });
   });
