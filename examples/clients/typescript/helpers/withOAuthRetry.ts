@@ -45,14 +45,6 @@ export const handle401 = async (
     }
   }
 };
-export interface WithOAuthRetryOptions {
-  clientName: string;
-  baseUrl?: string | URL;
-  handle401Fn?: typeof handle401;
-  clientMetadataUrl?: string;
-  /** Pre-configured provider to use instead of creating a new one */
-  provider?: ConformanceOAuthProvider;
-}
 
 /**
  * Creates a fetch wrapper that handles OAuth authentication with retry logic.
