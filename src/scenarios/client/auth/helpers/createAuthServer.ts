@@ -25,6 +25,8 @@ export interface AuthServerOptions {
   tokenEndpointAuthMethodsSupported?: string[];
   tokenEndpointAuthSigningAlgValuesSupported?: string[];
   clientIdMetadataDocumentSupported?: boolean;
+  /** Set to true to NOT advertise registration_endpoint (for pre-registration tests) */
+  disableDynamicRegistration?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -65,6 +67,7 @@ export function createAuthServer(
     tokenEndpointAuthMethodsSupported = ['none'],
     tokenEndpointAuthSigningAlgValuesSupported,
     clientIdMetadataDocumentSupported,
+    disableDynamicRegistration = false,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -114,7 +117,9 @@ export function createAuthServer(
       issuer: getAuthBaseUrl(),
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
-      registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`,
+      ...(!disableDynamicRegistration && {
+        registration_endpoint: `${getAuthBaseUrl()}${authRoutes.registration_endpoint}`
+      }),
       response_types_supported: ['code'],
       grant_types_supported: grantTypesSupported,
       code_challenge_methods_supported: ['S256'],
