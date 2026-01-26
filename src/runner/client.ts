@@ -201,7 +201,7 @@ export function printClientResults(
     failed > 0 ||
     warnings > 0 ||
     clientTimedOut ||
-    (clientOutput?.exitCode !== 0 && !allowClientError);
+    (clientExitedWithError && !allowClientError);
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
