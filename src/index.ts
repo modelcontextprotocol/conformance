@@ -207,7 +207,8 @@ program
       const { overallFailure } = printClientResults(
         result.checks,
         verbose,
-        result.clientOutput
+        result.clientOutput,
+        result.allowClientError
       );
 
       if (options.expectedFailures) {

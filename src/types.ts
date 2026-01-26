@@ -36,6 +36,11 @@ export interface ScenarioUrls {
 export interface Scenario {
   name: string;
   description: string;
+  /**
+   * If true, a non-zero client exit code is expected and will not cause the test to fail.
+   * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
+   */
+  allowClientError?: boolean;
   start(): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];

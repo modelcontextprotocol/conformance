@@ -97,6 +97,7 @@ export async function runConformanceTest(
   checks: ConformanceCheck[];
   clientOutput: ClientExecutionResult;
   resultDir?: string;
+  allowClientError?: boolean;
 }> {
   let resultDir: string | undefined;
 
@@ -164,7 +165,8 @@ export async function runConformanceTest(
     return {
       checks,
       clientOutput,
-      resultDir
+      resultDir,
+      allowClientError: scenario.allowClientError
     };
   } finally {
     await scenario.stop();
@@ -174,7 +176,8 @@ export async function runConformanceTest(
 export function printClientResults(
   checks: ConformanceCheck[],
   verbose: boolean = false,
-  clientOutput?: ClientExecutionResult
+  clientOutput?: ClientExecutionResult,
+  allowClientError: boolean = false
 ): {
   passed: number;
   failed: number;
@@ -195,7 +198,10 @@ export function printClientResults(
     ? clientOutput.exitCode !== 0
     : false;
   const overallFailure =
-    failed > 0 || warnings > 0 || clientTimedOut || clientExitedWithError;
+    failed > 0 ||
+    warnings > 0 ||
+    clientTimedOut ||
+    (clientOutput?.exitCode !== 0 && !allowClientError);
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
@@ -215,7 +221,7 @@ export function printClientResults(
     console.error(`\n⚠️  CLIENT TIMED OUT - Test incomplete`);
   }
 
-  if (clientExitedWithError && !clientTimedOut) {
+  if (clientExitedWithError && !clientTimedOut && !allowClientError) {
     console.error(
       `\n⚠️  CLIENT EXITED WITH ERROR (code ${clientOutput?.exitCode}) - Test may be incomplete`
     );

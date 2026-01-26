@@ -479,6 +479,7 @@ export class ScopeRetryLimitScenario implements Scenario {
   name = 'auth/scope-retry-limit';
   description =
     'Tests that client implements retry limits to prevent infinite authorization loops on repeated 403 responses';
+  allowClientError = true;
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];

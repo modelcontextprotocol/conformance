@@ -29,6 +29,7 @@ export class ResourceMismatchScenario implements Scenario {
   name = 'auth/resource-mismatch';
   description =
     'Tests that client rejects when PRM resource does not match server URL';
+  allowClientError = true;
 
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
