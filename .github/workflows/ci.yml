@@ -7,8 +7,8 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      prerelease:
-        description: 'Publish as prerelease (alpha tag). Version must already be bumped in package.json on the branch.'
+      publish_alpha:
+        description: 'Publish to npm as alpha prerelease. If unchecked, only tests run (no publish). Version must already be bumped in package.json on the selected branch.'
         type: boolean
         default: false
 
@@ -37,7 +37,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true')
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_alpha == 'true')
     environment: release
     needs: [test]
 
