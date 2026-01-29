@@ -28,8 +28,6 @@ import { PreRegistrationScenario } from './pre-registration';
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
   new AuthBasicCIMDScenario(),
-  new Auth20250326OAuthMetadataBackcompatScenario(),
-  new Auth20250326OEndpointFallbackScenario(),
   new ScopeFromWwwAuthenticateScenario(),
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
@@ -40,6 +38,12 @@ export const authScenariosList: Scenario[] = [
   new PublicClientAuthScenario(),
   new ResourceMismatchScenario(),
   new PreRegistrationScenario()
+];
+
+// Back-compat scenarios (optional - backward compatibility with older spec versions)
+export const backcompatScenariosList: Scenario[] = [
+  new Auth20250326OAuthMetadataBackcompatScenario(),
+  new Auth20250326OEndpointFallbackScenario()
 ];
 
 // Extension scenarios (optional for tier 1 - protocol extensions)

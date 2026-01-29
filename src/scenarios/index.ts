@@ -53,7 +53,11 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
-import { authScenariosList, extensionScenariosList } from './client/auth/index';
+import {
+  authScenariosList,
+  backcompatScenariosList,
+  extensionScenariosList
+} from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 
 // Pending client scenarios (not yet fully tested/implemented)
@@ -137,13 +141,14 @@ export const clientScenarios = new Map<string, ClientScenario>(
   allClientScenariosList.map((scenario) => [scenario.name, scenario])
 );
 
-// All client test scenarios (core + extensions)
+// All client test scenarios (core + backcompat + extensions)
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
   ...authScenariosList,
+  ...backcompatScenariosList,
   ...extensionScenariosList
 ];
 
@@ -199,6 +204,10 @@ export function listCoreScenarios(): string[] {
 
 export function listExtensionScenarios(): string[] {
   return extensionScenariosList.map((scenario) => scenario.name);
+}
+
+export function listBackcompatScenarios(): string[] {
+  return backcompatScenariosList.map((scenario) => scenario.name);
 }
 
 export { listMetadataScenarios };

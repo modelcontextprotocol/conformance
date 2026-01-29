@@ -18,7 +18,8 @@ import {
   listAuthScenarios,
   listMetadataScenarios,
   listCoreScenarios,
-  listExtensionScenarios
+  listExtensionScenarios,
+  listBackcompatScenarios
 } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
@@ -69,6 +70,7 @@ program
           all: listScenarios,
           core: listCoreScenarios,
           extensions: listExtensionScenarios,
+          backcompat: listBackcompatScenarios,
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
           'sep-835': () =>
@@ -182,7 +184,7 @@ program
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
         console.error(
-          '\nAvailable suites: all, core, extensions, auth, metadata, sep-835'
+          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, sep-835'
         );
         process.exit(1);
       }
