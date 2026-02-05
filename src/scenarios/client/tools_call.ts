@@ -135,7 +135,11 @@ function createApp(checks: ConformanceCheck[]): {
 
       await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
+    } else if (sessionId) {
+      // Invalid/stale session ID → 404
+      res.status(404).json({ error: 'Session not found' });
     } else {
+      // Non-initialization request without session ID → 400
       res.status(400).json({ error: 'Bad request' });
     }
   });
