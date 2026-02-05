@@ -254,12 +254,7 @@ async function initializeSession(
 
   const sessionId = init.headers.get('mcp-session-id') || undefined;
 
-  await sendNotification(
-    serverUrl,
-    'notifications/initialized',
-    {},
-    sessionId
-  );
+  await sendNotification(serverUrl, 'notifications/initialized', {}, sessionId);
 
   return { sessionId };
 }
@@ -426,22 +421,43 @@ export class SessionIsolationScenario implements ClientScenario {
       // We resolve eagerly: once Client B's (fast) response arrives, we give
       // Client A a very short grace period. If cross-wiring happened, Client A's
       // response was stolen so there's nothing to wait for.
-      const responseAPromise = sendJsonRpcRequest(serverUrl, textToolRequest, sessionIdA);
+      const responseAPromise = sendJsonRpcRequest(
+        serverUrl,
+        textToolRequest,
+        sessionIdA
+      );
       await new Promise((r) => setTimeout(r, 100));
-      const responseBPromise = sendJsonRpcRequest(serverUrl, imageToolRequest, sessionIdB);
+      const responseBPromise = sendJsonRpcRequest(
+        serverUrl,
+        imageToolRequest,
+        sessionIdB
+      );
 
       // Wait for B first (fast tool). If B got the wrong content type,
       // A's response was stolen — no point waiting for A at all.
       const responseB = await responseBPromise;
-      const bContentType = responseB.jsonRpcResponse?.result?.content?.[0]?.type;
+      const bContentType =
+        responseB.jsonRpcResponse?.result?.content?.[0]?.type;
       const bCorrect = bContentType === 'image';
 
       const responseA = bCorrect
         ? await Promise.race([
             responseAPromise,
             // If A hasn't resolved 200ms after B, it's not coming
-            new Promise<{ status: number; headers: Headers; jsonRpcResponse: any }>((resolve) =>
-              setTimeout(() => resolve({ status: 0, headers: new Headers(), jsonRpcResponse: null }), 200)
+            new Promise<{
+              status: number;
+              headers: Headers;
+              jsonRpcResponse: any;
+            }>((resolve) =>
+              setTimeout(
+                () =>
+                  resolve({
+                    status: 0,
+                    headers: new Headers(),
+                    jsonRpcResponse: null
+                  }),
+                200
+              )
             )
           ])
         : { status: 0, headers: new Headers(), jsonRpcResponse: null };
@@ -552,7 +568,7 @@ export class NotificationIsolationScenario implements ClientScenario {
     'Test that in-request notifications (progress) are correctly isolated ' +
     'between concurrent clients. Client A calls a slow tool that emits ' +
     'progress notifications. Client B connects while A is still processing. ' +
-    'Verifies that A\'s notifications do not leak to B\'s stream (Issue 2: ' +
+    "Verifies that A's notifications do not leak to B's stream (Issue 2: " +
     'server re-use / this._transport overwrite).';
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
@@ -565,9 +581,17 @@ export class NotificationIsolationScenario implements ClientScenario {
     let sessionIdB: string | undefined;
 
     try {
-      const sessA = await initializeSession(serverUrl, 1, 'notification-isolation-A');
+      const sessA = await initializeSession(
+        serverUrl,
+        1,
+        'notification-isolation-A'
+      );
       sessionIdA = sessA.sessionId;
-      const sessB = await initializeSession(serverUrl, 1, 'notification-isolation-B');
+      const sessB = await initializeSession(
+        serverUrl,
+        1,
+        'notification-isolation-B'
+      );
       sessionIdB = sessB.sessionId;
     } catch (error) {
       checks.push({
@@ -612,10 +636,18 @@ export class NotificationIsolationScenario implements ClientScenario {
       };
 
       // Fire A first, then B shortly after to create the race window
-      const rawA = await sendJsonRpcRequestRaw(serverUrl, progressRequestA, sessionIdA);
+      const rawA = await sendJsonRpcRequestRaw(
+        serverUrl,
+        progressRequestA,
+        sessionIdA
+      );
       // Small delay to let A's handler start processing
       await new Promise((r) => setTimeout(r, 20));
-      const rawB = await sendJsonRpcRequestRaw(serverUrl, progressRequestB, sessionIdB);
+      const rawB = await sendJsonRpcRequestRaw(
+        serverUrl,
+        progressRequestB,
+        sessionIdB
+      );
 
       // Parse both streams fully, collecting notifications + response
       const [streamA, streamB] = await Promise.all([
@@ -671,10 +703,14 @@ export class NotificationIsolationScenario implements ClientScenario {
         );
       }
       if (!aGotResponse) {
-        errors.push('Client A did not receive a final response (possible cross-wiring)');
+        errors.push(
+          'Client A did not receive a final response (possible cross-wiring)'
+        );
       }
       if (!bGotResponse) {
-        errors.push('Client B did not receive a final response (possible cross-wiring)');
+        errors.push(
+          'Client B did not receive a final response (possible cross-wiring)'
+        );
       }
       if (!aHasOwnNotifications && aGotResponse) {
         // Not an error per se, but worth noting — could mean notifications were lost
@@ -757,7 +793,8 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
     // -- Step 1: Initialize N sessions --
 
-    const sessions: Array<{ index: number; sessionId: string | undefined }> = [];
+    const sessions: Array<{ index: number; sessionId: string | undefined }> =
+      [];
 
     try {
       // Initialize sequentially to avoid overwhelming the server
@@ -818,11 +855,17 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
       // Fire all requests concurrently (small stagger to create realistic
       // interleaving, but fast enough to overlap handler execution)
-      const streamPromises: Array<Promise<{ index: number; stream: SSEStreamResult }>> = [];
+      const streamPromises: Array<
+        Promise<{ index: number; stream: SSEStreamResult }>
+      > = [];
 
       for (const req of requests) {
         const promise = (async () => {
-          const raw = await sendJsonRpcRequestRaw(serverUrl, req.body, req.sessionId);
+          const raw = await sendJsonRpcRequestRaw(
+            serverUrl,
+            req.body,
+            req.sessionId
+          );
           const stream = await parseSSEStreamFull(raw, 8000);
           return { index: req.index, stream };
         })();
