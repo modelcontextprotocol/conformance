@@ -171,9 +171,9 @@ async function parseSSEStreamFull(
           try {
             const parsed = JSON.parse(value.data);
             if (parsed.result !== undefined || parsed.error !== undefined) {
-              // Final response — we're done
               result.response = parsed;
-              return;
+              // Keep reading — there may be leaked notifications after
+              // the response from other clients' handlers
             } else if (parsed.method) {
               // Notification (has method, no id for response)
               result.notifications.push(parsed);
@@ -685,11 +685,10 @@ export class NotificationIsolationScenario implements ClientScenario {
       const aGotResponse = streamA.response != null;
       const bGotResponse = streamB.response != null;
 
-      // Success criteria:
-      // 1. No leaked notifications on either stream
-      // 2. Each client received its own notifications (or at least got a response)
       const noLeaks = !aHasLeakedNotifications && !bHasLeakedNotifications;
       const bothGotResponses = aGotResponse && bGotResponse;
+      const bothGotOwnNotifications =
+        aHasOwnNotifications && bHasOwnNotifications;
 
       const errors: string[] = [];
       if (aHasLeakedNotifications) {
@@ -713,9 +712,13 @@ export class NotificationIsolationScenario implements ClientScenario {
         );
       }
       if (!aHasOwnNotifications && aGotResponse) {
-        // Not an error per se, but worth noting — could mean notifications were lost
         errors.push(
-          'Client A received a response but no progress notifications (notifications may have been lost)'
+          'Client A received no progress notifications (may have been routed to another client)'
+        );
+      }
+      if (!bHasOwnNotifications && bGotResponse) {
+        errors.push(
+          'Client B received no progress notifications (may have been routed to another client)'
         );
       }
 
@@ -724,7 +727,10 @@ export class NotificationIsolationScenario implements ClientScenario {
         name: 'NotificationIsolation',
         description:
           'In-request progress notifications are routed to the correct client',
-        status: noLeaks && bothGotResponses ? 'SUCCESS' : 'FAILURE',
+        status:
+          noLeaks && bothGotResponses && bothGotOwnNotifications
+            ? 'SUCCESS'
+            : 'FAILURE',
         timestamp,
         specReferences: SPEC_REFERENCES,
         details: {
@@ -784,8 +790,7 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
   constructor(clientCount?: number) {
     this.clientCount =
-      clientCount ??
-      parseInt(process.env.FUZZ_CLIENT_COUNT || '10', 10);
+      clientCount ?? parseInt(process.env.FUZZ_CLIENT_COUNT || '10', 10);
   }
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
@@ -855,14 +860,9 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
         index: sess.index
       }));
 
-      // Fire all requests concurrently (small stagger to create realistic
-      // interleaving, but fast enough to overlap handler execution)
-      const streamPromises: Array<
-        Promise<{ index: number; stream: SSEStreamResult }>
-      > = [];
-
-      for (const req of requests) {
-        const promise = (async () => {
+      // Fire all requests concurrently
+      const streamPromises = requests.map((req) =>
+        (async () => {
           const raw = await sendJsonRpcRequestRaw(
             serverUrl,
             req.body,
@@ -870,11 +870,8 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
           );
           const stream = await parseSSEStreamFull(raw, 8000);
           return { index: req.index, stream };
-        })();
-        streamPromises.push(promise);
-        // Tiny stagger (5ms) to create realistic interleaving
-        await new Promise((r) => setTimeout(r, 5));
-      }
+        })()
+      );
 
       const results = await Promise.all(streamPromises);
 
@@ -893,7 +890,8 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
         const gotResponse = stream.response != null;
         const hasLeak = foreignTokens.length > 0;
-        const ok = !hasLeak && gotResponse;
+        const hasOwnNotifications = ownTokens.length > 0;
+        const ok = !hasLeak && gotResponse && hasOwnNotifications;
 
         const errors: string[] = [];
         if (hasLeak) {
@@ -903,6 +901,11 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
         }
         if (!gotResponse) {
           errors.push('No final response (possible cross-wiring)');
+        }
+        if (!hasOwnNotifications && gotResponse) {
+          errors.push(
+            'No progress notifications received (notifications may have been routed to another client)'
+          );
         }
 
         checks.push({
