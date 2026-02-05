@@ -29,34 +29,26 @@ const server = new McpServer({
   version: '1.0.0'
 });
 
-// Barrier to ensure both tool calls are in-flight before either returns.
-// The first tool to arrive waits for the second, then both return together.
-// This guarantees the _requestToStreamMapping collision happens deterministically.
-let barrierResolve: (() => void) | null = null;
-const barrier = new Promise<void>((resolve) => {
-  barrierResolve = resolve;
-});
-let arrivedCount = 0;
-
-async function waitForBothToolCalls(): Promise<void> {
-  arrivedCount++;
-  if (arrivedCount >= 2) {
-    // Second tool arrived -- release the barrier so both proceed
-    barrierResolve!();
-  } else {
-    // First tool arrived -- wait for the second
-    await barrier;
-  }
-}
-
-// Register tools identical to the everything-server, but each waits at the
-// barrier so both requests are guaranteed to be in-flight concurrently.
+// Register tools identical to the everything-server, with deliberate timing
+// to produce cross-talk (not just a stolen slot).
+//
+// The conformance test sends test_simple_text (Client A) first, then
+// test_image_content (Client B) 100ms later. With these delays:
+//
+//   T=0ms:   A arrives → mapping.set(2, streamA), tool starts (150ms)
+//   T=100ms: B arrives → mapping.set(2, streamB) ← OVERWRITES A's entry
+//   T=150ms: A's tool returns → mapping.get(2) → streamB → A's text response
+//            is written to B's HTTP stream. B receives A's data = CROSS-TALK.
+//   T=600ms: B's tool returns → mapping.get(2) → gone → error, A gets nothing.
+//
+// Result: B sees content type "text" instead of "image" — actual cross-talk.
 server.tool(
   'test_simple_text',
   'Tests simple text content response',
   {},
   async () => {
-    await waitForBothToolCalls();
+    // Slow enough for B to overwrite the mapping, but finishes before B's tool
+    await new Promise((r) => setTimeout(r, 150));
     return {
       content: [
         { type: 'text', text: 'This is a simple text response for testing.' }
@@ -71,7 +63,8 @@ server.registerTool(
     description: 'Tests image content response'
   },
   async () => {
-    await waitForBothToolCalls();
+    // Finishes after A, so A's response is routed first (to B's stream)
+    await new Promise((r) => setTimeout(r, 500));
     return {
       content: [
         { type: 'image', data: TEST_IMAGE_BASE64, mimeType: 'image/png' }

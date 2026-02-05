@@ -77,7 +77,7 @@ async function sendJsonRpcRequest(
  */
 async function parseSSEResponse(
   response: Response,
-  timeoutMs = 5000
+  timeoutMs = 800
 ): Promise<any> {
   if (!response.body) {
     return null;
@@ -278,11 +278,34 @@ export class SessionIsolationScenario implements ClientScenario {
         }
       };
 
-      // Send both concurrently
-      const [responseA, responseB] = await Promise.all([
-        sendJsonRpcRequest(serverUrl, textToolRequest, sessionIdA),
-        sendJsonRpcRequest(serverUrl, imageToolRequest, sessionIdB)
-      ]);
+      // Send the slow tool first (test_simple_text), wait briefly to ensure
+      // it is in-flight, then send the fast tool (test_image_content).
+      // Against a vulnerable stateless server, the second request overwrites
+      // the first's _requestToStreamMapping entry while the slow tool is still
+      // processing, causing deterministic cross-wiring.
+      //
+      // We resolve eagerly: once Client B's (fast) response arrives, we give
+      // Client A a very short grace period. If cross-wiring happened, Client A's
+      // response was stolen so there's nothing to wait for.
+      const responseAPromise = sendJsonRpcRequest(serverUrl, textToolRequest, sessionIdA);
+      await new Promise((r) => setTimeout(r, 100));
+      const responseBPromise = sendJsonRpcRequest(serverUrl, imageToolRequest, sessionIdB);
+
+      // Wait for B first (fast tool). If B got the wrong content type,
+      // A's response was stolen — no point waiting for A at all.
+      const responseB = await responseBPromise;
+      const bContentType = responseB.jsonRpcResponse?.result?.content?.[0]?.type;
+      const bCorrect = bContentType === 'image';
+
+      const responseA = bCorrect
+        ? await Promise.race([
+            responseAPromise,
+            // If A hasn't resolved 200ms after B, it's not coming
+            new Promise<{ status: number; headers: Headers; jsonRpcResponse: any }>((resolve) =>
+              setTimeout(() => resolve({ status: 0, headers: new Headers(), jsonRpcResponse: null }), 200)
+            )
+          ])
+        : { status: 0, headers: new Headers(), jsonRpcResponse: null };
 
       // Verify: Client A called test_simple_text -> should get content[0].type === "text"
       // Verify: Client B called test_image_content -> should get content[0].type === "image"
