@@ -88,5 +88,17 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_PKCE: {
     id: 'MCP-PKCE-requirement',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-code-protection'
+  },
+  RFC_8693_TOKEN_EXCHANGE: {
+    id: 'RFC-8693-Token-Exchange',
+    url: 'https://datatracker.ietf.org/doc/html/rfc8693'
+  },
+  RFC_7523_JWT_BEARER: {
+    id: 'RFC-7523-JWT-Bearer-Grant',
+    url: 'https://datatracker.ietf.org/doc/html/rfc7523'
+  },
+  SEP_990_ENTERPRISE_OAUTH: {
+    id: 'SEP-990-Enterprise-Managed-OAuth',
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-oauth.mdx'
   }
 };

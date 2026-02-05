@@ -23,6 +23,7 @@ import {
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
+import { CrossAppAccessCompleteFlowScenario } from './cross-app-access';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -49,5 +50,6 @@ export const backcompatScenariosList: Scenario[] = [
 // Extension scenarios (optional for tier 1 - protocol extensions)
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
-  new ClientCredentialsBasicScenario()
+  new ClientCredentialsBasicScenario(),
+  new CrossAppAccessCompleteFlowScenario()
 ];
