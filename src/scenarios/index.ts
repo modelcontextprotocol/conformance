@@ -52,7 +52,11 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
-import { SessionIsolationScenario } from './server/session-isolation';
+import {
+  SessionIsolationScenario,
+  NotificationIsolationScenario,
+  NotificationIsolationFuzzScenario
+} from './server/session-isolation';
 
 import {
   authScenariosList,
@@ -126,7 +130,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
-  new SessionIsolationScenario()
+  new SessionIsolationScenario(),
+  new NotificationIsolationScenario(),
+  new NotificationIsolationFuzzScenario()
 ];
 
 // Active client scenarios (excludes pending)
