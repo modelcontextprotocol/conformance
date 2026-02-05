@@ -782,8 +782,10 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
   private clientCount: number;
 
-  constructor(clientCount: number = 10) {
-    this.clientCount = clientCount;
+  constructor(clientCount?: number) {
+    this.clientCount =
+      clientCount ??
+      parseInt(process.env.FUZZ_CLIENT_COUNT || '10', 10);
   }
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
@@ -876,16 +878,7 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
       const results = await Promise.all(streamPromises);
 
-      // -- Analyze results --
-
-      let totalLeaks = 0;
-      let totalMissingResponses = 0;
-      let totalCorrectNotifications = 0;
-      const leakDetails: Array<{
-        clientIndex: number;
-        expectedToken: string;
-        foreignTokensReceived: string[];
-      }> = [];
+      // -- Analyze results: one check per client --
 
       for (const { index, stream } of results) {
         const expectedToken = `fuzz-client-${index}`;
@@ -898,54 +891,37 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
           (t) => t !== expectedToken && t !== undefined
         );
 
-        if (foreignTokens.length > 0) {
-          totalLeaks++;
-          leakDetails.push({
+        const gotResponse = stream.response != null;
+        const hasLeak = foreignTokens.length > 0;
+        const ok = !hasLeak && gotResponse;
+
+        const errors: string[] = [];
+        if (hasLeak) {
+          errors.push(
+            `Received foreign notifications: ${foreignTokens.join(', ')}`
+          );
+        }
+        if (!gotResponse) {
+          errors.push('No final response (possible cross-wiring)');
+        }
+
+        checks.push({
+          id: `notification-isolation-fuzz-client-${index}`,
+          name: `NotificationIsolationFuzz`,
+          description: `Client ${index}/${N}: notifications correctly isolated (token=${expectedToken})`,
+          status: ok ? 'SUCCESS' : 'FAILURE',
+          timestamp,
+          specReferences: SPEC_REFERENCES,
+          details: {
             clientIndex: index,
             expectedToken,
-            foreignTokensReceived: foreignTokens
-          });
-        }
-
-        if (ownTokens.length > 0) {
-          totalCorrectNotifications++;
-        }
-
-        if (!stream.response) {
-          totalMissingResponses++;
-        }
+            ownNotifications: ownTokens.length,
+            foreignNotifications: foreignTokens.length,
+            gotResponse
+          },
+          errorMessage: errors.length > 0 ? errors.join('; ') : undefined
+        });
       }
-
-      const passed = totalLeaks === 0 && totalMissingResponses === 0;
-
-      const errors: string[] = [];
-      if (totalLeaks > 0) {
-        errors.push(
-          `${totalLeaks}/${N} clients received foreign progress notifications (cross-talk detected)`
-        );
-      }
-      if (totalMissingResponses > 0) {
-        errors.push(
-          `${totalMissingResponses}/${N} clients did not receive a final response`
-        );
-      }
-
-      checks.push({
-        id: 'notification-isolation-fuzz',
-        name: 'NotificationIsolationFuzz',
-        description: `${N} concurrent clients all receive correctly routed notifications`,
-        status: passed ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: SPEC_REFERENCES,
-        details: {
-          clientCount: N,
-          clientsWithCorrectNotifications: totalCorrectNotifications,
-          clientsWithLeaks: totalLeaks,
-          clientsMissingResponse: totalMissingResponses,
-          ...(leakDetails.length > 0 ? { leakDetails } : {})
-        },
-        errorMessage: errors.length > 0 ? errors.join('; ') : undefined
-      });
     } catch (error) {
       checks.push({
         id: 'notification-isolation-fuzz',
