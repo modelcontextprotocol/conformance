@@ -657,103 +657,104 @@ export class NotificationIsolationScenario implements ClientScenario {
 
       // -- Analyze results --
 
-      // Extract progress tokens from notifications on each stream
-      const progressTokensOnA = streamA.notifications
-        .filter((n) => n.method === 'notifications/progress')
-        .map((n) => n.params?.progressToken);
+      // The test_tool_with_progress spec requires 3 notifications (0, 50, 100)
+      const EXPECTED_NOTIFICATION_COUNT = 3;
 
-      const progressTokensOnB = streamB.notifications
-        .filter((n) => n.method === 'notifications/progress')
-        .map((n) => n.params?.progressToken);
+      // Categorize notifications on each stream
+      const analyzeStream = (
+        stream: SSEStreamResult,
+        ownToken: string,
+        otherToken: string,
+        label: string
+      ) => {
+        const allProgress = stream.notifications.filter(
+          (n) => n.method === 'notifications/progress'
+        );
+        const ownCount = allProgress.filter(
+          (t) => t.params?.progressToken === ownToken
+        ).length;
+        const foreignTokens = allProgress
+          .filter((t) => t.params?.progressToken === otherToken)
+          .map((t) => t.params?.progressToken);
+        const gotResponse = stream.response != null;
 
-      // A should only have 'client-a-progress' tokens
-      const aHasOwnNotifications = progressTokensOnA.some(
-        (t) => t === 'client-a-progress'
+        const errors: string[] = [];
+        if (foreignTokens.length > 0) {
+          errors.push(
+            `${label} received ${foreignTokens.length} notification(s) ` +
+              `belonging to the other client — the server wrote them to ` +
+              `the wrong SSE stream`
+          );
+        }
+        if (!gotResponse) {
+          errors.push(
+            `${label} received no final response (response may have been ` +
+              `sent to the other client's stream)`
+          );
+        }
+        if (ownCount < EXPECTED_NOTIFICATION_COUNT) {
+          const missing = EXPECTED_NOTIFICATION_COUNT - ownCount;
+          errors.push(
+            `${label} received ${ownCount}/${EXPECTED_NOTIFICATION_COUNT} ` +
+              `expected progress notifications (${missing} likely routed ` +
+              `to the other client's stream)`
+          );
+        }
+
+        return {
+          ownCount,
+          foreignCount: foreignTokens.length,
+          gotResponse,
+          ok:
+            foreignTokens.length === 0 &&
+            gotResponse &&
+            ownCount >= EXPECTED_NOTIFICATION_COUNT,
+          errors
+        };
+      };
+
+      const a = analyzeStream(
+        streamA,
+        'client-a-progress',
+        'client-b-progress',
+        'Client A'
       );
-      const aHasLeakedNotifications = progressTokensOnA.some(
-        (t) => t === 'client-b-progress'
+      const b = analyzeStream(
+        streamB,
+        'client-b-progress',
+        'client-a-progress',
+        'Client B'
       );
 
-      // B should only have 'client-b-progress' tokens
-      const bHasOwnNotifications = progressTokensOnB.some(
-        (t) => t === 'client-b-progress'
-      );
-      const bHasLeakedNotifications = progressTokensOnB.some(
-        (t) => t === 'client-a-progress'
-      );
-
-      const aGotResponse = streamA.response != null;
-      const bGotResponse = streamB.response != null;
-
-      const noLeaks = !aHasLeakedNotifications && !bHasLeakedNotifications;
-      const bothGotResponses = aGotResponse && bGotResponse;
-      const bothGotOwnNotifications =
-        aHasOwnNotifications && bHasOwnNotifications;
-
-      const errors: string[] = [];
-      if (aHasLeakedNotifications) {
-        errors.push(
-          `Client A received Client B's progress notifications (tokens: ${progressTokensOnA.join(', ')})`
-        );
-      }
-      if (bHasLeakedNotifications) {
-        errors.push(
-          `Client B received Client A's progress notifications (tokens: ${progressTokensOnB.join(', ')})`
-        );
-      }
-      if (!aGotResponse) {
-        errors.push(
-          'Client A did not receive a final response (possible cross-wiring)'
-        );
-      }
-      if (!bGotResponse) {
-        errors.push(
-          'Client B did not receive a final response (possible cross-wiring)'
-        );
-      }
-      if (!aHasOwnNotifications && aGotResponse) {
-        errors.push(
-          'Client A received no progress notifications (may have been routed to another client)'
-        );
-      }
-      if (!bHasOwnNotifications && bGotResponse) {
-        errors.push(
-          'Client B received no progress notifications (may have been routed to another client)'
-        );
-      }
+      const allErrors = [...a.errors, ...b.errors];
 
       checks.push({
         id: 'notification-isolation',
         name: 'NotificationIsolation',
         description:
           'In-request progress notifications are routed to the correct client',
-        status:
-          noLeaks && bothGotResponses && bothGotOwnNotifications
-            ? 'SUCCESS'
-            : 'FAILURE',
+        status: a.ok && b.ok ? 'SUCCESS' : 'FAILURE',
         timestamp,
         specReferences: SPEC_REFERENCES,
         details: {
           clientA: {
             sessionId: sessionIdA || '(none)',
             progressToken: 'client-a-progress',
-            notificationCount: progressTokensOnA.length,
-            tokensReceived: progressTokensOnA,
-            hasOwnNotifications: aHasOwnNotifications,
-            hasLeakedNotifications: aHasLeakedNotifications,
-            gotResponse: aGotResponse
+            ownNotifications: a.ownCount,
+            foreignNotifications: a.foreignCount,
+            expectedNotifications: EXPECTED_NOTIFICATION_COUNT,
+            gotResponse: a.gotResponse
           },
           clientB: {
             sessionId: sessionIdB || '(none)',
             progressToken: 'client-b-progress',
-            notificationCount: progressTokensOnB.length,
-            tokensReceived: progressTokensOnB,
-            hasOwnNotifications: bHasOwnNotifications,
-            hasLeakedNotifications: bHasLeakedNotifications,
-            gotResponse: bGotResponse
+            ownNotifications: b.ownCount,
+            foreignNotifications: b.foreignCount,
+            expectedNotifications: EXPECTED_NOTIFICATION_COUNT,
+            gotResponse: b.gotResponse
           }
         },
-        errorMessage: errors.length > 0 ? errors.join('; ') : undefined
+        errorMessage: allErrors.length > 0 ? allErrors.join('; ') : undefined
       });
     } catch (error) {
       checks.push({
@@ -877,34 +878,60 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
 
       // -- Analyze results: one check per client --
 
+      // The test_tool_with_progress spec requires 3 notifications
+      const EXPECTED_NOTIFICATION_COUNT = 3;
+
       for (const { index, stream } of results) {
         const expectedToken = `fuzz-client-${index}`;
-        const progressTokens = stream.notifications
-          .filter((n) => n.method === 'notifications/progress')
-          .map((n) => n.params?.progressToken);
-
-        const ownTokens = progressTokens.filter((t) => t === expectedToken);
-        const foreignTokens = progressTokens.filter(
-          (t) => t !== expectedToken && t !== undefined
+        const allProgress = stream.notifications.filter(
+          (n) => n.method === 'notifications/progress'
         );
+        const ownCount = allProgress.filter(
+          (n) => n.params?.progressToken === expectedToken
+        ).length;
+
+        // Identify foreign tokens and count how many of each
+        const foreignTokenCounts = new Map<string, number>();
+        for (const n of allProgress) {
+          const token = n.params?.progressToken;
+          if (token !== expectedToken && token !== undefined) {
+            foreignTokenCounts.set(
+              token,
+              (foreignTokenCounts.get(token) || 0) + 1
+            );
+          }
+        }
 
         const gotResponse = stream.response != null;
-        const hasLeak = foreignTokens.length > 0;
-        const hasOwnNotifications = ownTokens.length > 0;
-        const ok = !hasLeak && gotResponse && hasOwnNotifications;
+        const foreignCount = allProgress.length - ownCount;
+        const ok =
+          foreignCount === 0 &&
+          gotResponse &&
+          ownCount >= EXPECTED_NOTIFICATION_COUNT;
 
         const errors: string[] = [];
-        if (hasLeak) {
+
+        if (foreignCount > 0) {
+          const leaked = Array.from(foreignTokenCounts.entries())
+            .map(([token, count]) => `${token} (${count}x)`)
+            .join(', ');
           errors.push(
-            `Received foreign notifications: ${foreignTokens.join(', ')}`
+            `Received ${foreignCount} notification(s) from other clients: ${leaked} ` +
+              `— the server wrote them to this client's SSE stream`
           );
         }
         if (!gotResponse) {
-          errors.push('No final response (possible cross-wiring)');
-        }
-        if (!hasOwnNotifications && gotResponse) {
           errors.push(
-            'No progress notifications received (notifications may have been routed to another client)'
+            'No final response (response may have been sent to another ' +
+              "client's stream)"
+          );
+        }
+        if (ownCount < EXPECTED_NOTIFICATION_COUNT) {
+          const missing = EXPECTED_NOTIFICATION_COUNT - ownCount;
+          errors.push(
+            `Received ${ownCount}/${EXPECTED_NOTIFICATION_COUNT} expected ` +
+              `progress notifications (${missing} likely routed to another ` +
+              "client's stream)"
           );
         }
 
@@ -918,8 +945,9 @@ export class NotificationIsolationFuzzScenario implements ClientScenario {
           details: {
             clientIndex: index,
             expectedToken,
-            ownNotifications: ownTokens.length,
-            foreignNotifications: foreignTokens.length,
+            ownNotifications: ownCount,
+            expectedNotifications: EXPECTED_NOTIFICATION_COUNT,
+            foreignNotifications: foreignCount,
             gotResponse
           },
           errorMessage: errors.length > 0 ? errors.join('; ') : undefined
