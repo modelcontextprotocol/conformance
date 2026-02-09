@@ -24,6 +24,13 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /**
+   * When true, create a fresh MCP Server for each request instead of
+   * reusing one.  Required for token refresh tests where requests span
+   * token expiry boundaries (the default behaviour calls server.close()
+   * on response end, which breaks subsequent requests).
+   */
+  perRequestServer?: boolean;
 }
 
 export function createServer(
@@ -39,45 +46,54 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    perRequestServer = false,
   } = options;
-  const server = new Server(
-    {
-      name: 'auth-prm-pathbased-server',
-      version: '1.0.0'
-    },
-    {
-      capabilities: {
-        tools: {}
-      }
-    }
-  );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: 'test-tool',
-          inputSchema: { type: 'object' }
+  function createMcpServer(): Server {
+    const srv = new Server(
+      {
+        name: 'auth-prm-pathbased-server',
+        version: '1.0.0'
+      },
+      {
+        capabilities: {
+          tools: {}
         }
-      ]
-    };
-  });
-
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    async (request): Promise<CallToolResult> => {
-      if (request.params.name === 'test-tool') {
-        return {
-          content: [{ type: 'text', text: 'test' }]
-        };
       }
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Tool ${request.params.name} not found`
-      );
-    }
-  );
+    );
+
+    srv.setRequestHandler(ListToolsRequestSchema, async () => {
+      return {
+        tools: [
+          {
+            name: 'test-tool',
+            inputSchema: { type: 'object' }
+          }
+        ]
+      };
+    });
+
+    srv.setRequestHandler(
+      CallToolRequestSchema,
+      async (request): Promise<CallToolResult> => {
+        if (request.params.name === 'test-tool') {
+          return {
+            content: [{ type: 'text', text: 'test' }]
+          };
+        }
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Tool ${request.params.name} not found`
+        );
+      }
+    );
+
+    return srv;
+  }
+
+  // For the default (non-per-request) mode, reuse a single server instance.
+  const server = perRequestServer ? null : createMcpServer();
 
   const app = express();
   app.use(express.json());
@@ -155,13 +171,18 @@ export function createServer(
         sessionIdGenerator: undefined
       });
 
+      // In per-request mode, create a fresh MCP server for each request
+      // so that server.close() doesn't break subsequent requests across
+      // token expiry boundaries.
+      const srv = perRequestServer ? createMcpServer() : server!;
+
       try {
-        await server.connect(transport);
+        await srv.connect(transport);
 
         await transport.handleRequest(req, res, req.body);
         res.on('close', () => {
           transport.close();
-          server.close();
+          srv.close();
         });
       } catch (error) {
         console.error('Error handling MCP request:', error);

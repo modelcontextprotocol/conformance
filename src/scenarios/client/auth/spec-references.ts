@@ -88,5 +88,13 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   MCP_PKCE: {
     id: 'MCP-PKCE-requirement',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-code-protection'
+  },
+  OAUTH_2_1_REFRESH_TOKEN: {
+    id: 'OAUTH-2.1-refresh-token',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-6'
+  },
+  OAUTH_2_1_TOKEN_ROTATION: {
+    id: 'OAUTH-2.1-token-rotation',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-6.1'
   }
 };

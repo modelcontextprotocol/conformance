@@ -23,6 +23,10 @@ import {
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
+import {
+  TokenRefreshBasicScenario,
+  TokenRefreshRotationScenario
+} from './token-refresh';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -37,7 +41,9 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
   new ResourceMismatchScenario(),
-  new PreRegistrationScenario()
+  new PreRegistrationScenario(),
+  new TokenRefreshBasicScenario(),
+  new TokenRefreshRotationScenario()
 ];
 
 // Back-compat scenarios (optional - backward compatibility with older spec versions)

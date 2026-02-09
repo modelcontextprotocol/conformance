@@ -44,6 +44,32 @@ export interface AuthServerOptions {
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
   tokenVerifier?: MockTokenVerifier;
+  /**
+   * Access token lifetime in seconds.  Default: 3600 (1 hour).
+   * Set to a small value (e.g. 2) for token refresh lifecycle tests.
+   */
+  accessTokenExpiresIn?: number;
+  /**
+   * When true, the token endpoint returns a `refresh_token` alongside the
+   * access token.  Default: false (preserves existing behavior).
+   * When enabled, the token endpoint also handles `grant_type=refresh_token`.
+   */
+  issueRefreshToken?: boolean;
+  /**
+   * When true and `issueRefreshToken` is true, the server issues a new
+   * refresh token on each refresh (token rotation per OAuth 2.1 §4.3.1).
+   * Default: false (returns the same refresh token).
+   */
+  rotateRefreshTokens?: boolean;
+  /**
+   * Called when the token endpoint receives a `grant_type=refresh_token`
+   * request.  Use this to emit conformance checks or control behavior.
+   */
+  onRefreshTokenRequest?: (requestData: {
+    refreshToken: string;
+    scope?: string;
+    timestamp: string;
+  }) => void;
   onTokenRequest?: (requestData: {
     scope?: string;
     grantType: string;
@@ -87,6 +113,10 @@ export function createAuthServer(
     disableDynamicRegistration = false,
     codeChallengeMethodsSupported = ['S256'],
     tokenVerifier,
+    accessTokenExpiresIn = 3600,
+    issueRefreshToken = false,
+    rotateRefreshTokens = false,
+    onRefreshTokenRequest,
     onTokenRequest,
     onAuthorizationRequest,
     onRegistrationRequest
@@ -96,6 +126,19 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
+
+  // ── Refresh token state ──────────────────────────────────────────
+  // Maps refresh_token → { scopes, generation }.  Generation increments
+  // on rotation so we can detect reuse of old tokens.
+  let refreshTokenCounter = 0;
+  const activeRefreshTokens = new Map<string, { scopes: string[]; generation: number }>();
+
+  function issueNewRefreshToken(scopes: string[]): string {
+    refreshTokenCounter++;
+    const token = `refresh-token-${refreshTokenCounter}-${Date.now()}`;
+    activeRefreshTokens.set(token, { scopes, generation: refreshTokenCounter });
+    return token;
+  }
 
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
@@ -320,6 +363,96 @@ export function createAuthServer(
       });
     }
 
+    // ── Handle refresh_token grant ──────────────────────────────────
+    if (grantType === 'refresh_token') {
+      const incomingRefreshToken = req.body.refresh_token as string | undefined;
+
+      checks.push({
+        id: 'refresh-token-grant-received',
+        name: 'RefreshTokenGrantReceived',
+        description: incomingRefreshToken
+          ? 'Client sent grant_type=refresh_token with a refresh token'
+          : 'Client sent grant_type=refresh_token but no refresh_token parameter',
+        status: incomingRefreshToken ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.OAUTH_2_1_TOKEN],
+        details: {
+          hasRefreshToken: !!incomingRefreshToken,
+        }
+      });
+
+      if (!incomingRefreshToken) {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'refresh_token parameter is required'
+        });
+        return;
+      }
+
+      const storedEntry = activeRefreshTokens.get(incomingRefreshToken);
+      if (!storedEntry) {
+        checks.push({
+          id: 'refresh-token-invalid',
+          name: 'RefreshTokenInvalid',
+          description: 'Client presented an unknown or revoked refresh token',
+          status: 'INFO',
+          timestamp,
+        });
+        res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'Refresh token is invalid, expired, or revoked'
+        });
+        return;
+      }
+
+      if (onRefreshTokenRequest) {
+        onRefreshTokenRequest({
+          refreshToken: incomingRefreshToken,
+          scope: requestedScope,
+          timestamp,
+        });
+      }
+
+      // Issue new access token
+      const newAccessToken = `test-token-refreshed-${Date.now()}`;
+      const scopes = storedEntry.scopes;
+
+      // Register with verifier
+      if (tokenVerifier) {
+        tokenVerifier.registerToken(newAccessToken, scopes);
+      }
+
+      // Optionally rotate the refresh token (OAuth 2.1 §4.3.1)
+      let newRefreshToken: string | undefined;
+      if (rotateRefreshTokens) {
+        // Revoke old token
+        activeRefreshTokens.delete(incomingRefreshToken);
+        newRefreshToken = issueNewRefreshToken(scopes);
+
+        checks.push({
+          id: 'refresh-token-rotated',
+          name: 'RefreshTokenRotated',
+          description: 'Server rotated refresh token per OAuth 2.1 §4.3.1',
+          status: 'INFO',
+          timestamp,
+          details: {
+            oldTokenPrefix: incomingRefreshToken.substring(0, 20) + '...',
+            newTokenPrefix: newRefreshToken.substring(0, 20) + '...',
+          }
+        });
+      }
+
+      res.json({
+        access_token: newAccessToken,
+        token_type: 'Bearer',
+        expires_in: accessTokenExpiresIn,
+        ...(newRefreshToken && { refresh_token: newRefreshToken }),
+        ...(scopes.length > 0 && { scope: scopes.join(' ') })
+      });
+      return;
+    }
+
+    // ── Handle authorization_code grant (existing logic) ─────────────
     let token = `test-token-${Date.now()}`;
     let scopes: string[] = lastAuthorizationScopes;
 
@@ -352,12 +485,20 @@ export function createAuthServer(
       tokenVerifier.registerToken(token, scopes);
     }
 
-    res.json({
+    // Build response with optional refresh token
+    const tokenResponse: Record<string, unknown> = {
       access_token: token,
       token_type: 'Bearer',
-      expires_in: 3600,
+      expires_in: accessTokenExpiresIn,
       ...(scopes.length > 0 && { scope: scopes.join(' ') })
-    });
+    };
+
+    if (issueRefreshToken) {
+      const refreshToken = issueNewRefreshToken(scopes);
+      tokenResponse.refresh_token = refreshToken;
+    }
+
+    res.json(tokenResponse);
   });
 
   app.post(authRoutes.registration_endpoint, (req: Request, res: Response) => {
