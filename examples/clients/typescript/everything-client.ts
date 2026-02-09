@@ -371,6 +371,66 @@ export async function runPreRegistration(serverUrl: string): Promise<void> {
 registerScenario('auth/pre-registration', runPreRegistration);
 
 // ============================================================================
+// Token refresh scenarios
+// ============================================================================
+
+/**
+ * Token refresh client: authenticates, makes a request, waits for the
+ * short-lived access token to expire, then makes another request to
+ * trigger the refresh_token grant.
+ */
+async function runTokenRefreshClient(serverUrl: string): Promise<void> {
+  const client = new Client(
+    { name: 'test-token-refresh-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const oauthFetch = withOAuthRetry(
+    'test-token-refresh-client',
+    new URL(serverUrl),
+    handle401,
+    CIMD_CLIENT_METADATA_URL
+  )(fetch);
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+
+  await client.connect(transport);
+  logger.debug('Token refresh: connected');
+
+  // First request — should succeed with initial access token
+  const tools = await client.listTools();
+  logger.debug(`Token refresh: listTools returned ${tools.tools.length} tool(s)`);
+
+  if (tools.tools.length > 0) {
+    await client.callTool({ name: tools.tools[0].name, arguments: {} });
+    logger.debug('Token refresh: initial callTool succeeded');
+  }
+
+  // Wait for the short-lived access token to expire (server uses 2s TTL)
+  logger.debug('Token refresh: waiting 3s for token expiry...');
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  // Second request — should trigger 401 → refresh_token grant → retry
+  const tools2 = await client.listTools();
+  logger.debug(`Token refresh: post-expiry listTools returned ${tools2.tools.length} tool(s)`);
+
+  if (tools2.tools.length > 0) {
+    await client.callTool({ name: tools2.tools[0].name, arguments: {} });
+    logger.debug('Token refresh: post-expiry callTool succeeded');
+  }
+
+  await transport.close();
+  logger.debug('Token refresh: done');
+}
+
+registerScenarios(
+  ['auth/token-refresh-basic', 'auth/token-refresh-rotation'],
+  runTokenRefreshClient
+);
+
+// ============================================================================
 // Main entry point
 // ============================================================================
 
