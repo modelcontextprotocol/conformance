@@ -217,6 +217,8 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):
 
 ```bash
+# Authenticate with GitHub, then run
+gh auth login
 npx @modelcontextprotocol/conformance tier-check --repo modelcontextprotocol/typescript-sdk
 ```
 

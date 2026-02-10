@@ -1,4 +1,4 @@
-# Policy Evaluation Subagent Prompt
+# Policy Evaluation Prompt
 
 You are evaluating the governance and policy documentation of an MCP SDK repository for the SEP-1730 tier assessment.
 
@@ -24,55 +24,39 @@ Evaluate three policy areas required by SEP-1730:
 gh repo clone {repo} /tmp/sdk-audit-policy -- --branch {branch} --depth 1
 ```
 
-### 2. Search for policy documents
+### 2. Read and evaluate policy documents
 
-Check these files and locations for each policy area:
+Check these files for each policy area. Read the actual content — you're evaluating the substance of what's written, not just whether the file exists.
 
-**Dependency Policy:**
-- `CONTRIBUTING.md` (look for dependency/update sections)
-- `SECURITY.md` (may reference dependency updates)
-- `.github/dependabot.yml` or `.github/dependabot.yaml`
-- `.github/renovate.json` or `renovate.json`
+**Dependency Policy** — check these files:
+- `CONTRIBUTING.md` (dependency/update sections)
+- `SECURITY.md` (dependency update references)
+- `.github/dependabot.yml` or `.github/renovate.json`
 - `docs/` directory (any policy documents)
-- `README.md` (may reference update policy)
-- `DEPENDENCIES.md` or similar
-- Any CI workflow files that run dependency updates
+- `README.md` (dependency update references)
+- CI workflow files that run dependency updates
 
-**Roadmap:**
+**Roadmap** — check these files:
 - `ROADMAP.md`
-- `docs/roadmap.md` or `docs/ROADMAP.md`
+- `docs/roadmap.md`
 - `README.md` (roadmap section)
-- GitHub Projects or Milestones (check via `gh` CLI)
 - `CHANGELOG.md` (for evidence of planned work)
-- Any file mentioning "roadmap" or "planned features"
-
-**Versioning Policy:**
-- `CONTRIBUTING.md` (versioning/release sections)
-- `README.md` (versioning section)
-- `CHANGELOG.md` (evidence of versioning practice)
-- `docs/versioning.md` or similar
-- `RELEASE.md` or `docs/releasing.md`
-- Any documentation mentioning "breaking changes", "semver", "versioning"
-
-```bash
-# Search for policy-related content
-grep -rli "dependency\|dependencies\|update policy\|dependabot\|renovate" /path/to/repo --include="*.md" --include="*.yml" --include="*.yaml" --include="*.json"
-grep -rli "roadmap\|planned\|upcoming\|milestone" /path/to/repo --include="*.md"
-grep -rli "breaking change\|semver\|versioning\|version policy\|release policy" /path/to/repo --include="*.md"
-```
 
 Also check GitHub-level resources:
-
 ```bash
 # Check for GitHub milestones
 gh api repos/{repo}/milestones --jq '.[].title'
 
-# Check for GitHub projects
-gh api repos/{repo}/projects --jq '.[].name' 2>/dev/null || echo "No classic projects"
-
 # Check for releases and versioning pattern
 gh release list --repo {repo} --limit 20
 ```
+
+**Versioning Policy** — check these files:
+- `CONTRIBUTING.md` (versioning/release sections)
+- `README.md` (versioning section)
+- `CHANGELOG.md` (evidence of versioning practice)
+- `RELEASE.md` or `docs/releasing.md`
+- Any documentation mentioning "breaking changes", "semver", "versioning"
 
 ### 3. Evaluate each policy area
 
@@ -164,7 +148,6 @@ Produce your assessment in this exact format:
 | ROADMAP.md | {path} or "Not found" | "{summary}" or "File does not exist" | {Found/Not found} |
 | README roadmap section | {path}:{lines} or "Not found" | "{summary}" or "No roadmap section" | {Found/Not found} |
 | GitHub Milestones | {URL or count} | "{milestone names}" or "None" | {Found/Not found} |
-| GitHub Projects | {URL or count} | "{project names}" or "None" | {Found/Not found} |
 | docs/ roadmap documents | {path} or "Not found" | "{summary}" or "None" | {Found/Not found} |
 | Other forward-looking docs | {path}:{lines} or "Not found" | "{summary}" or "None" | {Found/Not found} |
 
