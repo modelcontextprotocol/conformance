@@ -38,7 +38,7 @@ To include conformance results, the CLI can start the SDK's everything server au
 | SDK        | Everything Server Location (relative to SDK repo) | Start Command                     | URL                         |
 | ---------- | ------------------------------------------------- | --------------------------------- | --------------------------- |
 | TypeScript | `test/conformance/`                               | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
-| Python     | `examples/servers/everything-server/`             | `uv run mcp-everything-server`    | `http://localhost:3001/mcp`  |
+| Python     | `examples/servers/everything-server/`             | `uv run mcp-everything-server`    | `http://localhost:3001/mcp` |
 
 For other SDKs, ask the user how to start their everything server.
 
