@@ -24,13 +24,9 @@ export function computeTier(
     tier1Blockers.push('stable_release');
   }
 
-  // File checks - needed for T1
-  const missingFiles = Object.entries(checks.file_existence.files)
-    .filter(([, exists]) => !exists)
-    .map(([file]) => file);
-  if (missingFiles.length > 0) {
-    tier1Blockers.push('file_existence');
-  }
+  // Policy signals (CHANGELOG, SECURITY, etc.) are informational evidence —
+  // they feed into the skill's judgment-based evaluation but don't independently
+  // block tier advancement since SEP-1730 doesn't list specific files.
 
   if (checks.spec_tracking.status === 'fail') {
     tier1Blockers.push('spec_tracking');

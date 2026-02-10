@@ -19,11 +19,7 @@ Extract the target SDK from the user's input:
 - **repo**: e.g. `modelcontextprotocol/typescript-sdk`, `modelcontextprotocol/python-sdk`
 - **--branch**: optional branch name (defaults to the repo's default branch)
 
-If the user did not specify a repo, check if the current working directory is inside a known SDK repo and auto-detect. The known SDK repos under `~/src/mcp/` are:
-- `typescript-sdk` -> `modelcontextprotocol/typescript-sdk`
-- `python-sdk` -> `modelcontextprotocol/python-sdk`
-
-If you still cannot determine the repo, ask the user.
+If the user did not specify a repo, check if the current working directory is inside a known SDK repo (look for a `package.json` or `pyproject.toml` with MCP-related metadata) and auto-detect. If you still cannot determine the repo, ask the user.
 
 ## Step 2: Run Deterministic Conformance Checks
 
@@ -33,23 +29,17 @@ Look up the SDK in the conformance server table below. If the SDK has a known co
 
 | SDK | Org/Repo | Server Location | Start Command | Default URL |
 |-----|----------|----------------|---------------|-------------|
-| TypeScript | `modelcontextprotocol/typescript-sdk` | `~/src/mcp/conformance/examples/servers/typescript/` | `npx tsx everything-server.ts` | `http://localhost:3000/mcp` |
-| Python | `modelcontextprotocol/python-sdk` | SDK repo `examples/servers/everything-server/` | `python main.py` | TBD - check server source |
-| Go | `modelcontextprotocol/go-sdk` | SDK repo `conformance/everything-server/` | `go run ./everything-server` | TBD - check server source |
-| C# | `modelcontextprotocol/csharp-sdk` | SDK repo `samples/EverythingServer/` | `dotnet run` | TBD - check server source |
-| Java | `modelcontextprotocol/java-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
-| Kotlin | `modelcontextprotocol/kotlin-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
-| PHP | `modelcontextprotocol/php-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
-| Swift | `modelcontextprotocol/swift-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
-| Rust | `modelcontextprotocol/rust-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
-| Ruby | `modelcontextprotocol/ruby-sdk` | Check SDK repo for conformance/everything server | Varies | TBD |
+| TypeScript | `modelcontextprotocol/typescript-sdk` | Conformance repo `examples/servers/typescript/` | `npx tsx everything-server.ts` | `http://localhost:3000/mcp` |
+| Python | `modelcontextprotocol/python-sdk` | SDK repo `examples/servers/everything-server/` | `uv run mcp-everything-server` | TBD - check server source |
+
+For other SDKs, ask the user how to start the conformance server, or check for a `scripts/run-server-conformance.sh` or entry points in `pyproject.toml` / `package.json`. If no conformance server is available, skip conformance and note the gap.
 
 ### Running Conformance Tests
 
-For SDKs with a known server, run conformance tests:
+Ask the user where the conformance repo checkout is, or look for it as a sibling directory. Then:
 
 ```bash
-cd ~/src/mcp/conformance
+cd <conformance-repo-path>
 
 # First, start the SDK's everything server (in background)
 # Then run the conformance suite against it:
@@ -69,7 +59,7 @@ Use the GitHub CLI to gather issue triage and resolution metrics:
 
 ```bash
 # Get recent issues with labels and timestamps
-gh issue list --repo <repo> --state all --limit 100 --json number,title,labels,createdAt,closedAt,state
+gh issue list --repo <repo> --state all --limit 500 --json number,title,labels,createdAt,closedAt,state
 
 # Check for P0 issues specifically
 gh issue list --repo <repo> --label P0 --state all --json number,title,createdAt,closedAt,state
@@ -93,13 +83,13 @@ Check if there is a stable release >= 1.0.0 with no pre-release suffix (`-alpha`
 
 ## Step 3: Launch Parallel Subagent Evaluations
 
-Launch exactly 3 subagents in parallel using the Task tool with `subagent_type="general-purpose"`. Each subagent should clone or read the SDK repo and evaluate its assigned area.
+Launch exactly 2 subagents in parallel using the Task tool with `subagent_type="general-purpose"`. Each subagent should clone or read the SDK repo and evaluate its assigned area.
 
-**IMPORTANT**: Launch all 3 subagents at the same time (in the same response) so they run in parallel.
+**IMPORTANT**: Launch both subagents at the same time (in the same response) so they run in parallel.
 
 ### Subagent 1: Documentation Coverage
 
-Use the prompt from `references/docs-coverage-prompt.md`. Pass the repo name, branch, and the feature list from `references/feature-list.md`.
+Use the prompt from `references/docs-coverage-prompt.md`. Pass the repo name, branch, and the feature list embedded in that prompt.
 
 The subagent evaluates:
 - Whether all non-experimental features are documented with examples (Tier 1 requirement)
@@ -116,18 +106,9 @@ The subagent evaluates:
 - Clear versioning with documented breaking change policy (required for Tier 1)
 - Produces evidence tables for each policy area
 
-### Subagent 3: Feature Coverage
-
-Use the prompt from `references/feature-coverage-prompt.md`. Pass the repo name, branch, and the feature list from `references/feature-list.md`.
-
-The subagent evaluates:
-- API surface completeness against MCP spec schema
-- Protocol version tracking
-- Produces an evidence table with source file:line references
-
 ## Step 4: Compute Final Tier
 
-Combine the deterministic scorecard (conformance %, issue metrics, release info) with the subagent judgment results (docs, policies, features). Apply the tier logic:
+Combine the deterministic scorecard (conformance %, issue metrics, release info) with the subagent judgment results (docs, policies). Apply the tier logic:
 
 ### Tier 1 requires ALL of:
 - Conformance test pass rate == 100%
@@ -154,7 +135,7 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 **Important edge cases:**
 - If conformance tests could not be run (no server), this counts as a FAIL for both Tier 1 and Tier 2 conformance requirements unless the SDK has a documented reason and plan.
-- If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap.
+- If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — check for both.
 
 ## Step 5: Generate Output
 
@@ -183,11 +164,9 @@ Each item should include:
 The following reference files are available in the `references/` directory alongside this skill:
 
 - `references/tier-requirements.md` -- Full SEP-1730 requirements table with exact thresholds
-- `references/feature-list.md` -- Canonical MCP feature list for coverage evaluation
 - `references/report-template.md` -- Output format template for the audit report
 - `references/docs-coverage-prompt.md` -- Subagent prompt for documentation evaluation
 - `references/policy-evaluation-prompt.md` -- Subagent prompt for policy evaluation
-- `references/feature-coverage-prompt.md` -- Subagent prompt for feature/spec coverage
 
 Read these reference files when you need the detailed content for subagent prompts or report formatting.
 
@@ -203,30 +182,22 @@ Read these reference files when you need the detailed content for subagent promp
 # Python SDK
 /mcp-sdk-tier-audit modelcontextprotocol/python-sdk
 
-# Go SDK
-/mcp-sdk-tier-audit modelcontextprotocol/go-sdk
-
-# C# SDK
-/mcp-sdk-tier-audit modelcontextprotocol/csharp-sdk
-
-# Java SDK
-/mcp-sdk-tier-audit modelcontextprotocol/java-sdk
-
-# Kotlin SDK
-/mcp-sdk-tier-audit modelcontextprotocol/kotlin-sdk
-
-# PHP SDK
-/mcp-sdk-tier-audit modelcontextprotocol/php-sdk
-
-# Swift SDK
-/mcp-sdk-tier-audit modelcontextprotocol/swift-sdk
-
-# Rust SDK
-/mcp-sdk-tier-audit modelcontextprotocol/rust-sdk
-
-# Ruby SDK
-/mcp-sdk-tier-audit modelcontextprotocol/ruby-sdk
-
 # Auto-detect from current directory
 /mcp-sdk-tier-audit
+```
+
+For other SDKs, specify the repo and tell Claude how to start the conformance server:
+```
+/mcp-sdk-tier-audit modelcontextprotocol/go-sdk
+# Claude will ask how to start the conformance server if it can't find one
+```
+
+### Directory Layout
+
+For best results, have the conformance repo and SDK repos checked out as siblings:
+```
+some-dir/
+  conformance/          # modelcontextprotocol/conformance
+  typescript-sdk/       # modelcontextprotocol/typescript-sdk
+  python-sdk/           # modelcontextprotocol/python-sdk
 ```

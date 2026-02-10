@@ -86,12 +86,6 @@ Use this exact format when generating the final tier audit report.
 ### Policy Evaluation (Subagent 2)
 
 {Paste the subagent's evidence tables here}
-
----
-
-### Feature Coverage (Subagent 3)
-
-{Paste the subagent's evidence table here}
 ```
 
 ## Part 2: Remediation Guide

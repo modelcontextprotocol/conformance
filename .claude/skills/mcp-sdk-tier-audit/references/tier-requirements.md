@@ -2,7 +2,7 @@
 
 This is the authoritative reference table for MCP SDK tiering requirements, extracted from SEP-1730.
 
-Source: `~/src/mcp/modelcontextprotocol/docs/community/sdk-tiers.mdx`
+Source: `modelcontextprotocol/docs/community/sdk-tiers.mdx` in the spec repository
 
 ## Full Requirements Table
 

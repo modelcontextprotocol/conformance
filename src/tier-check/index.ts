@@ -5,7 +5,7 @@ import { checkLabels } from './checks/labels';
 import { checkTriage } from './checks/triage';
 import { checkP0Resolution } from './checks/p0';
 import { checkStableRelease } from './checks/release';
-import { checkFiles } from './checks/files';
+import { checkPolicySignals } from './checks/files';
 import { checkSpecTracking } from './checks/spec-tracking';
 import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
@@ -97,8 +97,8 @@ export function createTierCheckCommand(): Command {
             console.error('  \u2713 Stable Release');
             return r;
           }),
-          checkFiles(octokit, owner, repo, options.branch).then((r) => {
-            console.error('  \u2713 File Existence');
+          checkPolicySignals(octokit, owner, repo, options.branch).then((r) => {
+            console.error('  \u2713 Policy Signals');
             return r;
           }),
           checkSpecTracking(octokit, owner, repo).then((r) => {
@@ -113,7 +113,7 @@ export function createTierCheckCommand(): Command {
         triage,
         p0_resolution: p0,
         stable_release: release,
-        file_existence: files,
+        policy_signals: files,
         spec_tracking: specTracking
       };
 

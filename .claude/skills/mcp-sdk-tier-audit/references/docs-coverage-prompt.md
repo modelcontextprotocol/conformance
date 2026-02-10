@@ -19,7 +19,7 @@ Evaluate the documentation quality and coverage of this MCP SDK against the cano
 ### 1. Clone or access the repository
 
 ```bash
-# If the repo is available locally at ~/src/mcp/{sdk-name}, read from there
+# If the repo is available locally, read from there
 # Otherwise clone it:
 gh repo clone {repo} /tmp/sdk-audit-docs -- --branch {branch} --depth 1
 ```
@@ -91,10 +91,12 @@ For each feature in the canonical list below, determine:
 - Sampling - creating messages (`sampling/createMessage`)
 
 **Elicitation:**
-- Elicitation - requesting input (`elicitation/create`)
+- Elicitation - requesting input (`elicitation/create`) — form mode
+- Elicitation - URL mode (`elicitation/create` with `mode: "url"`)
 - Elicitation - schema validation
 - Elicitation - default values
 - Elicitation - enum values
+- Elicitation - complete notification (`notifications/elicitation/complete`)
 
 **Roots:**
 - Roots - listing (`roots/list`)
@@ -125,6 +127,14 @@ For each feature in the canonical list below, determine:
 - Pagination
 - Capability negotiation (initialize/initialized)
 - Protocol version negotiation
+- JSON Schema 2020-12 support
+
+### Experimental Features (does not count toward tier score)
+- Tasks - get (`tasks/get`)
+- Tasks - result (`tasks/result`)
+- Tasks - cancel (`tasks/cancel`)
+- Tasks - list (`tasks/list`)
+- Tasks - status notifications (`notifications/tasks/status`)
 
 ## Required Output Format
 
@@ -161,10 +171,12 @@ Produce your assessment in this exact format:
 | Prompts - image content | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Prompts - change notifications | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Sampling - creating messages | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - requesting input | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| Elicitation - form mode | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| Elicitation - URL mode | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Elicitation - schema validation | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Elicitation - default values | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Elicitation - enum values | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| Elicitation - complete notification | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Roots - listing | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Roots - change notifications | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Logging - sending log messages | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
@@ -182,6 +194,12 @@ Produce your assessment in this exact format:
 | Cancellation | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Pagination | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
 | Capability negotiation | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| JSON Schema 2020-12 | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| Tasks - get (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
+| Tasks - result (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
+| Tasks - cancel (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
+| Tasks - list (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
+| Tasks - status notifications (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
 
 #### Summary
 

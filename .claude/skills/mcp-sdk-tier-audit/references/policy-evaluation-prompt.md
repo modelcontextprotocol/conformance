@@ -19,7 +19,7 @@ Evaluate three policy areas required by SEP-1730:
 ### 1. Clone or access the repository
 
 ```bash
-# If the repo is available locally at ~/src/mcp/{sdk-name}, read from there
+# If the repo is available locally, read from there
 # Otherwise clone it:
 gh repo clone {repo} /tmp/sdk-audit-policy -- --branch {branch} --depth 1
 ```

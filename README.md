@@ -212,6 +212,18 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 - **resources-\*** - Resource management scenarios
 - **prompts-\*** - Prompt management scenarios
 
+## SDK Tier Assessment
+
+The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):
+
+```bash
+npx @modelcontextprotocol/conformance tier-check --repo modelcontextprotocol/typescript-sdk
+```
+
+If you use Claude Code, open it in this repo and run `/mcp-sdk-tier-audit` for a full AI-assisted assessment with remediation guide.
+
+See [`.claude/skills/mcp-sdk-tier-audit/README.md`](.claude/skills/mcp-sdk-tier-audit/README.md) for full documentation.
+
 ## Architecture
 
 See `src/runner/DESIGN.md` for detailed architecture documentation.

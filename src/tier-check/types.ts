@@ -23,6 +23,7 @@ export interface LabelsResult extends CheckResult {
   required: number;
   missing: string[];
   found: string[];
+  uses_issue_types: boolean;
 }
 
 export interface TriageResult extends CheckResult {
@@ -51,7 +52,7 @@ export interface ReleaseResult extends CheckResult {
   is_prerelease: boolean;
 }
 
-export interface FilesResult extends CheckResult {
+export interface PolicySignalsResult extends CheckResult {
   files: Record<string, boolean>;
 }
 
@@ -73,7 +74,7 @@ export interface TierScorecard {
     triage: TriageResult;
     p0_resolution: P0Result;
     stable_release: ReleaseResult;
-    file_existence: FilesResult;
+    policy_signals: PolicySignalsResult;
     spec_tracking: SpecTrackingResult;
   };
   implied_tier: {
