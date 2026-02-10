@@ -219,7 +219,7 @@ The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](h
 ```bash
 # Authenticate with GitHub, then run
 gh auth login
-npm run tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
+npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
 ```
 
 If you use Claude Code, open it in this repo and run `/mcp-sdk-tier-audit` for a full AI-assisted assessment with remediation guide.

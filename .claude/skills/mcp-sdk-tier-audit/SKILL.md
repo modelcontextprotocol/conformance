@@ -28,12 +28,12 @@ The `tier-check` CLI handles all deterministic checks — conformance, labels, t
 ### Without conformance tests (fastest)
 
 ```bash
-npm run tier-check -- --repo <repo> --skip-conformance --output json
+npm run --silent tier-check -- --repo <repo> --skip-conformance --output json
 ```
 
 ### With conformance tests
 
-To include conformance results, the CLI can start the SDK's everything server automatically. Look up the SDK below:
+Start the SDK's everything server first, then pass `--conformance-server-url`. Look up the SDK below:
 
 | SDK        | Everything Server Location (relative to SDK repo) | Start Command                     | URL                         |
 | ---------- | ------------------------------------------------- | --------------------------------- | --------------------------- |
@@ -42,16 +42,25 @@ To include conformance results, the CLI can start the SDK's everything server au
 
 For other SDKs, ask the user how to start their everything server.
 
-Example (assuming TypeScript SDK checked out at `~/src/mcp/typescript-sdk`):
+**Important**: The SDK must be built first (e.g. `pnpm build:all` for TypeScript). Start the server in the background, verify it's listening, then run the tier-check.
+
+Example (TypeScript SDK):
 
 ```bash
-npm run tier-check -- \
+# 1. Build the SDK and start the everything server
+cd ~/src/mcp/typescript-sdk && pnpm build:all
+cd test/conformance && npx tsx src/everythingServer.ts &
+sleep 3
+
+# 2. Run the tier-check (from the conformance repo)
+cd ~/src/mcp/worktrees/conformance-tier-check
+npm run --silent tier-check -- \
   --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-cmd 'npx tsx src/everythingServer.ts' \
-  --conformance-server-cwd ~/src/mcp/typescript-sdk/test/conformance \
   --conformance-server-url http://localhost:3000/mcp \
   --output json
 ```
+
+You can also have the CLI spawn the server automatically using `--conformance-server-cmd` and `--conformance-server-cwd`, but pre-starting it is more reliable.
 
 The CLI output includes conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 

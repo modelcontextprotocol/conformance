@@ -23,13 +23,34 @@ async function waitForServer(
   );
 }
 
+const SCENARIO_TIMEOUT_MS = 30_000;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label}: timed out after ${ms}ms`)),
+      ms
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 export async function checkConformance(options: {
   serverCmd?: string;
   serverCwd?: string;
   serverUrl?: string;
   skip?: boolean;
 }): Promise<ConformanceResult> {
-  if (options.skip || !options.serverCmd || !options.serverUrl) {
+  if (options.skip || !options.serverUrl) {
     return {
       status: 'skipped',
       pass_rate: 0,
@@ -42,13 +63,15 @@ export async function checkConformance(options: {
 
   let serverProcess: ChildProcess | undefined;
   try {
-    // Spawn server
-    const [cmd, ...args] = options.serverCmd.split(' ');
-    serverProcess = spawn(cmd, args, {
-      cwd: options.serverCwd || process.cwd(),
-      stdio: 'pipe',
-      shell: true
-    });
+    // Spawn server if a command was provided; otherwise assume it's already running
+    if (options.serverCmd) {
+      const [cmd, ...args] = options.serverCmd.split(' ');
+      serverProcess = spawn(cmd, args, {
+        cwd: options.serverCwd || process.cwd(),
+        stdio: 'pipe',
+        shell: true
+      });
+    }
 
     // Wait for server to be ready
     await waitForServer(options.serverUrl);
@@ -61,8 +84,9 @@ export async function checkConformance(options: {
 
     for (const scenarioName of scenarios) {
       try {
-        const result = await runServerConformanceTest(
-          options.serverUrl,
+        const result = await withTimeout(
+          runServerConformanceTest(options.serverUrl, scenarioName),
+          SCENARIO_TIMEOUT_MS,
           scenarioName
         );
         const passed = result.checks.filter(

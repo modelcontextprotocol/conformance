@@ -36,7 +36,7 @@ export async function runServerConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
 
-  console.log(
+  console.error(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
