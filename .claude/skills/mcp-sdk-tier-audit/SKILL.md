@@ -102,26 +102,50 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 ## Step 5: Generate Output
 
-Use the template from `references/report-template.md` to produce the final report.
+Write detailed reports to files and show a concise summary to the user.
 
-### Part 1: Audit Report
+### Output directory
 
-Output the tier summary table showing every requirement, the Tier 1 standard, the Tier 2 standard, the current value, whether it passes for T1 and T2, and any gap detail.
+Create a directory under `results/tier-audits/` in the conformance repo:
 
-### Part 2: Remediation Guide
+```
+results/tier-audits/<sdk-name>-<YYYY-MM-DD>/
+```
 
-Produce a prioritized list of action items for SDK maintainers. Order by impact -- items that would advance the SDK to a higher tier come first. Group by:
+For example: `results/tier-audits/typescript-sdk-2026-02-10/`
+
+### File 1: `assessment.md`
+
+Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details, triage metrics, documentation coverage table, and policy evaluation evidence.
+
+### File 2: `remediation.md`
+
+Use the remediation template from `references/report-template.md`. This file contains prioritized action items grouped by:
 
 1. **Blocking for next tier** -- requirements that must be met to advance
 2. **Quick wins** -- low-effort improvements
 3. **Longer-term** -- structural work needed
 
-Each item should include:
+### Console output (shown to the user)
 
-- What needs to change
-- Where in the repo to make the change (file paths if possible)
-- Estimated effort (small/medium/large)
-- Which tier requirement it satisfies
+After writing the files, output a short executive summary directly to the user:
+
+```
+## <sdk-name> — Tier <X>
+
+Conformance: <passed>/<total> (<status>) | Triage: <rate>% (<status>) | P0s: <count> open (<status>) | Docs: <pass>/<total> (<status>) | Policies: <summary> (<status>)
+
+Top actions for Tier <next>:
+1. <highest-impact action>
+2. <second action>
+3. <third action>
+
+Reports:
+- results/tier-audits/<sdk-name>-<date>/assessment.md
+- results/tier-audits/<sdk-name>-<date>/remediation.md
+```
+
+Use checkmarks/crosses for status: ✓ for pass, ✗ for fail.
 
 ## Reference Files
 
