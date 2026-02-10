@@ -1,8 +1,11 @@
 # Report Templates
 
-Write two files to `results/tier-audits/<sdk-name>-<YYYY-MM-DD>/`.
+Write two files to `results/` in the conformance repo:
 
-## File 1: assessment.md
+- `results/<YYYY-MM-DD>-<sdk-name>-assessment.md`
+- `results/<YYYY-MM-DD>-<sdk-name>-remediation.md`
+
+## assessment.md
 
 ```markdown
 # MCP SDK Tier Audit: {repo}
@@ -73,7 +76,7 @@ Labels: {present/missing list}
 {Paste subagent 2 output: dependency policy, roadmap, versioning policy sections with evidence tables}
 ```
 
-## File 2: remediation.md
+## remediation.md
 
 ```markdown
 # Remediation Guide: {repo}

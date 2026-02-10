@@ -104,21 +104,16 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 Write detailed reports to files and show a concise summary to the user.
 
-### Output directory
+### Output files
 
-Create a directory under `results/tier-audits/` in the conformance repo:
+Write two files to `results/` in the conformance repo:
 
-```
-results/tier-audits/<sdk-name>-<YYYY-MM-DD>/
-```
+- `results/<YYYY-MM-DD>-<sdk-name>-assessment.md`
+- `results/<YYYY-MM-DD>-<sdk-name>-remediation.md`
 
-For example: `results/tier-audits/typescript-sdk-2026-02-10/`
+For example: `results/2026-02-10-typescript-sdk-assessment.md`
 
-### File 1: `assessment.md`
-
-Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details, triage metrics, documentation coverage table, and policy evaluation evidence.
-
-### File 2: `remediation.md`
+### Assessment file
 
 Use the remediation template from `references/report-template.md`. This file contains prioritized action items grouped by:
 
@@ -141,8 +136,8 @@ Top actions for Tier <next>:
 3. <third action>
 
 Reports:
-- results/tier-audits/<sdk-name>-<date>/assessment.md
-- results/tier-audits/<sdk-name>-<date>/remediation.md
+- results/<date>-<sdk-name>-assessment.md
+- results/<date>-<sdk-name>-remediation.md
 ```
 
 Use checkmarks/crosses for status: ✓ for pass, ✗ for fail.
