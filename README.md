@@ -217,12 +217,21 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):
 
 ```bash
-# Authenticate with GitHub, then run
+# Without conformance tests (fastest)
 gh auth login
 npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
+
+# With conformance tests (start the everything server first)
+npm run --silent tier-check -- \
+  --repo modelcontextprotocol/typescript-sdk \
+  --conformance-server-url http://localhost:3000/mcp
 ```
 
-If you use Claude Code, open it in this repo and run `/mcp-sdk-tier-audit` for a full AI-assisted assessment with remediation guide.
+For a full AI-assisted assessment with remediation guide, use Claude Code:
+
+```
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url>
+```
 
 See [`.claude/skills/mcp-sdk-tier-audit/README.md`](.claude/skills/mcp-sdk-tier-audit/README.md) for full documentation.
 

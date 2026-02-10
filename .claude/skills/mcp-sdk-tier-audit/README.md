@@ -22,7 +22,7 @@ npm run build
 gh auth login
 
 # Run against any MCP SDK repo (without conformance tests)
-npm run tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
+npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
 ```
 
 The CLI uses the GitHub API (read-only) for issue metrics, labels, and release checks. Authenticate via one of:
@@ -39,9 +39,9 @@ For public repos, any authenticated token works (no special scopes needed — au
 --repo <owner/repo>              GitHub repository (required)
 --branch <branch>                Branch to check
 --skip-conformance               Skip conformance tests
---conformance-server-cmd <cmd>   Command to start the conformance server
---conformance-server-cwd <path>  Working directory for the conformance server
 --conformance-server-url <url>   URL of the running conformance server
+--conformance-server-cmd <cmd>   Command to start the conformance server (optional, prefer pre-starting)
+--conformance-server-cwd <path>  Working directory for the conformance server command
 --days <n>                       Limit triage analysis to last N days
 --output <format>                json | markdown | terminal (default: terminal)
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
@@ -87,13 +87,26 @@ The CLI produces a deterministic scorecard, but some SEP-1730 requirements need 
 
 ### Claude Code
 
-The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in the conformance repo it's already available — just run:
+The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in the conformance repo it's already available.
+
+1. Start the SDK's everything server in a separate terminal
+2. Run the skill:
 
 ```
-/mcp-sdk-tier-audit modelcontextprotocol/typescript-sdk
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url>
 ```
 
-It runs the CLI, launches parallel evaluations for docs and policy, and produces a full report with remediation guide.
+Example:
+
+```bash
+# Terminal 1: start the everything server
+cd ~/src/mcp/typescript-sdk/test/conformance && npx tsx src/everythingServer.ts
+
+# Terminal 2: run the audit (from the conformance repo)
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp
+```
+
+The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/tier-audits/`.
 
 ### Any Other AI Coding Agent
 
@@ -102,7 +115,7 @@ If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it the
 1. **Run the CLI** to get the deterministic scorecard:
 
    ```bash
-   npm run tier-check -- --repo <repo> --skip-conformance --output json
+   node dist/index.js tier-check --repo <repo> --conformance-server-url <url> --output json
    ```
 
 2. **Evaluate documentation coverage** — check whether MCP features (tools, resources, prompts, sampling, transports, etc.) are documented with examples. See [`references/docs-coverage-prompt.md`](references/docs-coverage-prompt.md) for the full checklist.
@@ -129,30 +142,35 @@ Run the CLI for the scorecard, then review docs and policies yourself using the 
 
 ## Running Conformance Tests
 
-To include conformance test results in the scorecard, you need to start the SDK's everything server, then run tier-check against it.
+To include conformance test results, start the SDK's everything server first, then pass the URL to the CLI.
 
-**TypeScript SDK** (assuming checkout at `~/src/mcp/typescript-sdk`):
+**TypeScript SDK**:
 
 ```bash
-# The CLI starts the server, runs conformance, and cleans up automatically
-npm run tier-check -- \
+# Terminal 1: start the server (SDK must be built first)
+cd ~/src/mcp/typescript-sdk && pnpm build:all
+cd test/conformance && npx tsx src/everythingServer.ts
+
+# Terminal 2: run tier-check
+npm run --silent tier-check -- \
   --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-cmd 'npx tsx src/everythingServer.ts' \
-  --conformance-server-cwd ~/src/mcp/typescript-sdk/test/conformance \
   --conformance-server-url http://localhost:3000/mcp
 ```
 
-**Python SDK** (assuming checkout at `~/src/mcp/python-sdk`):
+**Python SDK**:
 
 ```bash
-npm run tier-check -- \
+# Terminal 1
+cd ~/src/mcp/python-sdk/examples/servers/everything-server
+uv run mcp-everything-server
+
+# Terminal 2
+npm run --silent tier-check -- \
   --repo modelcontextprotocol/python-sdk \
-  --conformance-server-cmd 'uv run mcp-everything-server' \
-  --conformance-server-cwd ~/src/mcp/python-sdk/examples/servers/everything-server \
   --conformance-server-url http://localhost:3001/mcp
 ```
 
-**Other SDKs:** Pass `--conformance-server-cmd`, `--conformance-server-cwd`, and `--conformance-server-url` pointing to your SDK's everything server. If no everything server exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
+**Other SDKs:** Start your everything server, then pass `--conformance-server-url`. If no everything server exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
 
 ## Reference Files
 
