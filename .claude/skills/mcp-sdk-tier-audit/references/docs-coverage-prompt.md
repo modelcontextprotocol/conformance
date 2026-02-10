@@ -4,8 +4,7 @@ You are evaluating the documentation coverage of an MCP SDK repository for the S
 
 ## Input
 
-- **Repository**: {repo} (e.g., `modelcontextprotocol/typescript-sdk`)
-- **Branch**: {branch} (default branch if not specified)
+- **SDK path**: {local-path} (absolute path to local SDK checkout)
 
 ## Your Task
 
@@ -16,17 +15,9 @@ Evaluate the documentation quality and coverage of this MCP SDK against the cano
 
 ## Steps
 
-### 1. Clone or access the repository
+### 1. Find all documentation sources
 
-```bash
-# If the repo is available locally, read from there
-# Otherwise clone it:
-gh repo clone {repo} /tmp/sdk-audit-docs -- --branch {branch} --depth 1
-```
-
-### 2. Find all documentation sources
-
-Search for documentation in these locations:
+The SDK is available at `{local-path}`. Search for documentation in these locations:
 
 - `README.md` (root and any subdirectory READMEs)
 - `docs/` directory
@@ -39,13 +30,13 @@ Search for documentation in these locations:
 
 ```bash
 # Find all markdown files
-find /path/to/repo -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*"
+find {local-path} -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*"
 
 # Find example files
-find /path/to/repo -path "*/examples/*" -not -path "*/node_modules/*"
+find {local-path} -path "*/examples/*" -not -path "*/node_modules/*"
 
 # Find API docs
-find /path/to/repo -path "*/docs/*" -not -path "*/node_modules/*"
+find {local-path} -path "*/docs/*" -not -path "*/node_modules/*"
 ```
 
 ### 3. Evaluate each feature
@@ -157,8 +148,7 @@ Produce your assessment in this exact format:
 ```markdown
 ### Documentation Coverage Assessment
 
-**Repository**: {repo}
-**Branch**: {branch}
+**SDK path**: {local-path}
 **Documentation locations found**:
 
 - {path1}: {description}

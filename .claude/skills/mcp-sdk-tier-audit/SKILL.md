@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: '[repo] [--branch <branch>]'
+argument-hint: '<local-path> <conformance-server-url>'
 ---
 
 # MCP SDK Tier Audit
@@ -14,65 +14,41 @@ You are performing a comprehensive tier assessment for an MCP SDK repository aga
 
 ## Step 1: Parse Arguments
 
-Extract the target SDK from the user's input:
+Extract from the user's input:
 
-- **repo**: e.g. `modelcontextprotocol/typescript-sdk`, `modelcontextprotocol/python-sdk`
-- **--branch**: optional branch name (defaults to the repo's default branch)
+- **local-path**: absolute path to the SDK checkout (e.g. `~/src/mcp/typescript-sdk`)
+- **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
 
-If the user did not specify a repo, ask them which SDK to audit.
+Both arguments are required. If either is missing, ask the user to provide it.
+
+Derive the GitHub `owner/repo` from the local checkout:
+
+```bash
+cd <local-path> && git remote get-url origin | sed 's#.*github.com[:/]##; s#\.git$##'
+```
 
 ## Step 2: Run the Deterministic Scorecard
 
 The `tier-check` CLI handles all deterministic checks — conformance, labels, triage, P0 resolution, releases, policy signals, and spec tracking. You are already in the conformance repo, so run it directly.
 
-### Without conformance tests (fastest)
-
 ```bash
-npm run --silent tier-check -- --repo <repo> --skip-conformance --output json
-```
-
-### With conformance tests
-
-Start the SDK's everything server first, then pass `--conformance-server-url`. Look up the SDK below:
-
-| SDK        | Everything Server Location (relative to SDK repo) | Start Command                     | URL                         |
-| ---------- | ------------------------------------------------- | --------------------------------- | --------------------------- |
-| TypeScript | `test/conformance/`                               | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
-| Python     | `examples/servers/everything-server/`             | `uv run mcp-everything-server`    | `http://localhost:3001/mcp` |
-
-For other SDKs, ask the user how to start their everything server.
-
-**Important**: The SDK must be built first (e.g. `pnpm build:all` for TypeScript). Start the server in the background, verify it's listening, then run the tier-check.
-
-Example (TypeScript SDK):
-
-```bash
-# 1. Build the SDK and start the everything server
-cd ~/src/mcp/typescript-sdk && pnpm build:all
-cd test/conformance && npx tsx src/everythingServer.ts &
-sleep 3
-
-# 2. Run the tier-check (from the conformance repo)
-cd ~/src/mcp/worktrees/conformance-tier-check
 npm run --silent tier-check -- \
-  --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-url http://localhost:3000/mcp \
+  --repo <owner/repo> \
+  --conformance-server-url <conformance-server-url> \
   --output json
 ```
-
-You can also have the CLI spawn the server automatically using `--conformance-server-cmd` and `--conformance-server-cwd`, but pre-starting it is more reliable.
 
 The CLI output includes conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
 ## Step 3: Launch Parallel Evaluations
 
-Launch 2 evaluations in parallel. Each should clone or read the SDK repo and evaluate its assigned area.
+Launch 2 evaluations in parallel. Each reads the SDK from the local checkout path.
 
 **IMPORTANT**: Launch both evaluations at the same time (in the same response) so they run in parallel.
 
 ### Evaluation 1: Documentation Coverage
 
-Use the prompt from `references/docs-coverage-prompt.md`. Pass the repo name and branch.
+Use the prompt from `references/docs-coverage-prompt.md`. Pass the local path.
 
 This evaluation checks:
 
@@ -82,7 +58,7 @@ This evaluation checks:
 
 ### Evaluation 2: Policy Evaluation
 
-Use the prompt from `references/policy-evaluation-prompt.md`. Pass the repo name and branch.
+Use the prompt from `references/policy-evaluation-prompt.md`. Pass the local path and the derived `owner/repo`.
 
 This evaluation checks:
 
@@ -122,7 +98,6 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 **Important edge cases:**
 
-- If conformance tests could not be run (no server), this counts as a FAIL for both Tier 1 and Tier 2 conformance requirements unless the SDK has a documented reason and plan.
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
 
 ## Step 5: Generate Output
@@ -162,15 +137,9 @@ Read these reference files when you need the detailed content for evaluation pro
 ## Usage Examples
 
 ```
-# TypeScript SDK (default branch)
-/mcp-sdk-tier-audit modelcontextprotocol/typescript-sdk
+# TypeScript SDK on v1.x with everything server running on port 3000
+/mcp-sdk-tier-audit ~/src/mcp/worktrees/typescript-sdk-v1x http://localhost:3000/mcp
 
-# TypeScript SDK on specific branch
-/mcp-sdk-tier-audit modelcontextprotocol/typescript-sdk --branch v1.x
-
-# Python SDK
-/mcp-sdk-tier-audit modelcontextprotocol/python-sdk
-
-# Any other SDK
-/mcp-sdk-tier-audit modelcontextprotocol/go-sdk
+# Python SDK with everything server running on port 3001
+/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp
 ```

@@ -4,8 +4,8 @@ You are evaluating the governance and policy documentation of an MCP SDK reposit
 
 ## Input
 
-- **Repository**: {repo} (e.g., `modelcontextprotocol/typescript-sdk`)
-- **Branch**: {branch} (default branch if not specified)
+- **SDK path**: {local-path} (absolute path to local SDK checkout)
+- **Repository**: {repo} (GitHub `owner/repo`, derived from git remote — used for GitHub API queries)
 
 ## Your Task
 
@@ -17,15 +17,9 @@ Evaluate three policy areas required by SEP-1730:
 
 ## Steps
 
-### 1. Clone or access the repository
+### 1. Read and evaluate policy documents
 
-```bash
-# If the repo is available locally, read from there
-# Otherwise clone it:
-gh repo clone {repo} /tmp/sdk-audit-policy -- --branch {branch} --depth 1
-```
-
-### 2. Read and evaluate policy documents
+The SDK is available at `{local-path}`.
 
 Check these files for each policy area. Read the actual content — you're evaluating the substance of what's written, not just whether the file exists.
 
@@ -131,8 +125,8 @@ Produce your assessment in this exact format:
 ```markdown
 ### Policy Evaluation Assessment
 
+**SDK path**: {local-path}
 **Repository**: {repo}
-**Branch**: {branch}
 
 ---
 
