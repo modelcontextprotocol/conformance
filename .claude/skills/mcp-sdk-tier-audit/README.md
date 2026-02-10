@@ -21,15 +21,17 @@ npm run build
 # Authenticate with GitHub (needed for API access)
 gh auth login
 
-# Run against any MCP SDK repo
-npx @modelcontextprotocol/conformance tier-check --repo modelcontextprotocol/typescript-sdk
+# Run against any MCP SDK repo (without conformance tests)
+npm run tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
 ```
 
-The CLI uses the GitHub API for issue metrics, labels, and release checks. Authenticate via one of:
+The CLI uses the GitHub API (read-only) for issue metrics, labels, and release checks. Authenticate via one of:
 
 - **GitHub CLI** (recommended): `gh auth login` — the CLI picks up your token automatically
-- **Environment variable**: `export GITHUB_TOKEN=ghp_...` (create a read-only token at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo:read` and `issues:read` scopes)
+- **Environment variable**: `export GITHUB_TOKEN=ghp_...`
 - **Flag**: `--token ghp_...`
+
+For public repos, any authenticated token works (no special scopes needed — authentication just avoids rate limits). For a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new), select **Public Repositories (read-only)** with no additional permissions.
 
 ### CLI Options
 
@@ -100,7 +102,7 @@ If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it the
 1. **Run the CLI** to get the deterministic scorecard:
 
    ```bash
-   npx @modelcontextprotocol/conformance tier-check --repo <repo> --output json
+   npm run tier-check -- --repo <repo> --skip-conformance --output json
    ```
 
 2. **Evaluate documentation coverage** — check whether MCP features (tools, resources, prompts, sampling, transports, etc.) are documented with examples. See [`references/docs-coverage-prompt.md`](references/docs-coverage-prompt.md) for the full checklist.
@@ -129,32 +131,28 @@ Run the CLI for the scorecard, then review docs and policies yourself using the 
 
 To include conformance test results in the scorecard, you need to start the SDK's everything server, then run tier-check against it.
 
-**TypeScript SDK:**
+**TypeScript SDK** (assuming checkout at `~/src/mcp/typescript-sdk`):
 
 ```bash
-# Clone the TypeScript SDK and start its conformance server
-cd /path/to/typescript-sdk/test/conformance
-npx tsx src/everythingServer.ts &
-
-# Back in the conformance repo, run tier-check
-npx @modelcontextprotocol/conformance tier-check \
+# The CLI starts the server, runs conformance, and cleans up automatically
+npm run tier-check -- \
   --repo modelcontextprotocol/typescript-sdk \
+  --conformance-server-cmd 'npx tsx src/everythingServer.ts' \
+  --conformance-server-cwd ~/src/mcp/typescript-sdk/test/conformance \
   --conformance-server-url http://localhost:3000/mcp
 ```
 
-**Python SDK:**
+**Python SDK** (assuming checkout at `~/src/mcp/python-sdk`):
 
 ```bash
-# In the python-sdk repo, start the everything server
-uv run mcp-everything-server &
-
-# Back in the conformance repo, run tier-check
-npx @modelcontextprotocol/conformance tier-check \
+npm run tier-check -- \
   --repo modelcontextprotocol/python-sdk \
+  --conformance-server-cmd 'uv run mcp-everything-server' \
+  --conformance-server-cwd ~/src/mcp/python-sdk/examples/servers/everything-server \
   --conformance-server-url http://localhost:3001/mcp
 ```
 
-**Other SDKs:** Start your SDK's everything server, then pass `--conformance-server-url`. If no everything server exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
+**Other SDKs:** Pass `--conformance-server-cmd`, `--conformance-server-cwd`, and `--conformance-server-url` pointing to your SDK's everything server. If no everything server exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
 
 ## Reference Files
 

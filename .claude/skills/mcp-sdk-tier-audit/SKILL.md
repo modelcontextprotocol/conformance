@@ -28,26 +28,28 @@ The `tier-check` CLI handles all deterministic checks — conformance, labels, t
 ### Without conformance tests (fastest)
 
 ```bash
-npx @modelcontextprotocol/conformance tier-check --repo <repo> --skip-conformance --output json
+npm run tier-check -- --repo <repo> --skip-conformance --output json
 ```
 
 ### With conformance tests
 
-To include conformance results, you need to start the SDK's everything server first. Look up the SDK below:
+To include conformance results, the CLI can start the SDK's everything server automatically. Look up the SDK below:
 
-| SDK        | Everything Server Location                       | Start Command                     | URL                         |
-| ---------- | ------------------------------------------------ | --------------------------------- | --------------------------- |
-| TypeScript | `typescript-sdk/test/conformance/`               | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
-| Python     | `python-sdk/examples/servers/everything-server/` | `uv run mcp-everything-server`    | `http://localhost:3001/mcp` |
+| SDK        | Everything Server Location (relative to SDK repo) | Start Command                     | URL                         |
+| ---------- | ------------------------------------------------- | --------------------------------- | --------------------------- |
+| TypeScript | `test/conformance/`                               | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
+| Python     | `examples/servers/everything-server/`             | `uv run mcp-everything-server`    | `http://localhost:3001/mcp`  |
 
 For other SDKs, ask the user how to start their everything server.
 
-Start the server, then run:
+Example (assuming TypeScript SDK checked out at `~/src/mcp/typescript-sdk`):
 
 ```bash
-npx @modelcontextprotocol/conformance tier-check \
-  --repo <repo> \
-  --conformance-server-url <url> \
+npm run tier-check -- \
+  --repo modelcontextprotocol/typescript-sdk \
+  --conformance-server-cmd 'npx tsx src/everythingServer.ts' \
+  --conformance-server-cwd ~/src/mcp/typescript-sdk/test/conformance \
+  --conformance-server-url http://localhost:3000/mcp \
   --output json
 ```
 

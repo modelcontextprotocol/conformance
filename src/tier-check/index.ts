@@ -48,11 +48,22 @@ export function createTierCheckCommand(): Command {
     )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
-      const token = options.token || process.env.GITHUB_TOKEN;
+      let token = options.token || process.env.GITHUB_TOKEN;
+
+      if (!token) {
+        // Try to get token from GitHub CLI
+        try {
+          const { execSync } = await import('child_process');
+          token = execSync('gh auth token', { encoding: 'utf-8' }).trim();
+        } catch {
+          // gh not installed or not authenticated
+        }
+      }
 
       if (!token) {
         console.error(
           'GitHub token required. Either:\n' +
+            '  gh auth login\n' +
             '  export GITHUB_TOKEN=$(gh auth token)\n' +
             '  or pass --token <token>'
         );
