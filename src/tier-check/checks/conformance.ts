@@ -10,7 +10,7 @@ async function waitForServer(
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const resp = await fetch(url, { method: 'GET' });
+      await fetch(url, { method: 'GET' });
       // Any HTTP response means the server is listening (400, 405, etc. are all valid)
       return;
     } catch {
@@ -79,7 +79,7 @@ export async function checkConformance(options: {
           checks_passed: passed,
           checks_failed: failed
         });
-      } catch (error) {
+      } catch {
         totalFailed++;
         details.push({
           scenario: scenarioName,
