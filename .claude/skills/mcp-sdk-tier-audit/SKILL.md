@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: "[repo] [--branch <branch>]"
+argument-hint: '[repo] [--branch <branch>]'
 ---
 
 # MCP SDK Tier Audit
@@ -35,10 +35,10 @@ npx @modelcontextprotocol/conformance tier-check --repo <repo> --skip-conformanc
 
 To include conformance results, you need to start the SDK's everything server first. Look up the SDK below:
 
-| SDK | Everything Server Location | Start Command | URL |
-|-----|---------------------------|---------------|-----|
-| TypeScript | `typescript-sdk/test/conformance/` | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
-| Python | `python-sdk/examples/servers/everything-server/` | `uv run mcp-everything-server` | `http://localhost:3001/mcp` |
+| SDK        | Everything Server Location                       | Start Command                     | URL                         |
+| ---------- | ------------------------------------------------ | --------------------------------- | --------------------------- |
+| TypeScript | `typescript-sdk/test/conformance/`               | `npx tsx src/everythingServer.ts` | `http://localhost:3000/mcp` |
+| Python     | `python-sdk/examples/servers/everything-server/` | `uv run mcp-everything-server`    | `http://localhost:3001/mcp` |
 
 For other SDKs, ask the user how to start their everything server.
 
@@ -64,6 +64,7 @@ Launch 2 evaluations in parallel. Each should clone or read the SDK repo and eva
 Use the prompt from `references/docs-coverage-prompt.md`. Pass the repo name and branch.
 
 This evaluation checks:
+
 - Whether all non-experimental features are documented with examples (Tier 1 requirement)
 - Whether core features are documented (Tier 2 requirement)
 - Produces an evidence table with file:line references
@@ -73,6 +74,7 @@ This evaluation checks:
 Use the prompt from `references/policy-evaluation-prompt.md`. Pass the repo name and branch.
 
 This evaluation checks:
+
 - Dependency update policy (required for Tier 1 and Tier 2)
 - Published roadmap (required for Tier 1; plan-toward-Tier-1 for Tier 2)
 - Clear versioning with documented breaking change policy (required for Tier 1)
@@ -83,6 +85,7 @@ This evaluation checks:
 Combine the deterministic scorecard (from the CLI) with the evaluation results (docs, policies). Apply the tier logic:
 
 ### Tier 1 requires ALL of:
+
 - Conformance test pass rate == 100%
 - Issue triage compliance >= 90% within 2 business days
 - All P0 bugs resolved within 7 days
@@ -93,6 +96,7 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 - Published roadmap with concrete steps tracking spec components (evaluation)
 
 ### Tier 2 requires ALL of:
+
 - Conformance test pass rate >= 80%
 - Issue triage compliance >= 80% within 1 month
 - P0 bugs resolved within 2 weeks
@@ -106,6 +110,7 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 **Important edge cases:**
+
 - If conformance tests could not be run (no server), this counts as a FAIL for both Tier 1 and Tier 2 conformance requirements unless the SDK has a documented reason and plan.
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
 
@@ -126,6 +131,7 @@ Produce a prioritized list of action items for SDK maintainers. Order by impact 
 3. **Longer-term** -- structural work needed
 
 Each item should include:
+
 - What needs to change
 - Where in the repo to make the change (file paths if possible)
 - Estimated effort (small/medium/large)

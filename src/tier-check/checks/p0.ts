@@ -45,9 +45,7 @@ export async function checkP0Resolution(
   }
 
   const openP0s = p0Issues.filter((i) => i.state === 'open');
-  const closedP0s = p0Issues.filter(
-    (i) => i.state === 'closed' && i.closed_at
-  );
+  const closedP0s = p0Issues.filter((i) => i.state === 'closed' && i.closed_at);
 
   let closedWithin7d = 0;
   let closedWithin14d = 0;

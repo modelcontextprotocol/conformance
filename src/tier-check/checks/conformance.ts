@@ -94,8 +94,7 @@ export async function checkConformance(options: {
     const pass_rate = total > 0 ? totalPassed / total : 0;
 
     return {
-      status:
-        pass_rate >= 1.0 ? 'pass' : pass_rate >= 0.8 ? 'partial' : 'fail',
+      status: pass_rate >= 1.0 ? 'pass' : pass_rate >= 0.8 ? 'partial' : 'fail',
       pass_rate,
       passed: totalPassed,
       failed: totalFailed,

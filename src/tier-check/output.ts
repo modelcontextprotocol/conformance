@@ -58,7 +58,11 @@ export function formatMarkdown(scorecard: TierScorecard): string {
     `| Stable Release | ${c.stable_release.status} | ${c.stable_release.version || 'none'} (stable: ${c.stable_release.is_stable}) |`
   );
   lines.push(
-    `| Policy Signals | ${c.policy_signals.status} | ${Object.entries(c.policy_signals.files).map(([f, e]) => `${f}: ${e ? '\u2713' : '\u2717'}`).join(', ')} |`
+    `| Policy Signals | ${c.policy_signals.status} | ${Object.entries(
+      c.policy_signals.files
+    )
+      .map(([f, e]) => `${f}: ${e ? '\u2713' : '\u2717'}`)
+      .join(', ')} |`
   );
   lines.push(
     `| Spec Tracking | ${c.spec_tracking.status} | ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : 'N/A'} |`
@@ -122,7 +126,11 @@ export function formatTerminal(scorecard: TierScorecard): void {
     `  ${statusIcon(c.stable_release.status)} Stable Release ${c.stable_release.version || 'none'}`
   );
   console.log(
-    `  ${statusIcon(c.policy_signals.status)} Policy Signals ${Object.entries(c.policy_signals.files).map(([f, e]) => `${e ? '\u2713' : '\u2717'} ${f}`).join(', ')}`
+    `  ${statusIcon(c.policy_signals.status)} Policy Signals ${Object.entries(
+      c.policy_signals.files
+    )
+      .map(([f, e]) => `${e ? '\u2713' : '\u2717'} ${f}`)
+      .join(', ')}`
   );
   console.log(
     `  ${statusIcon(c.spec_tracking.status)} Spec Tracking  ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : 'N/A'}`
@@ -135,7 +143,5 @@ export function formatTerminal(scorecard: TierScorecard): void {
     }
   }
 
-  console.log(
-    `\n${COLORS.DIM}${scorecard.implied_tier.note}${COLORS.RESET}\n`
-  );
+  console.log(`\n${COLORS.DIM}${scorecard.implied_tier.note}${COLORS.RESET}\n`);
 }

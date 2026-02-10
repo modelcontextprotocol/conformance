@@ -68,8 +68,7 @@ export async function checkTriage(
 
   // For untriaged issues, compute how long they've been open without a label
   const untriagedAgeHours = untriaged.map(
-    (i) =>
-      (Date.now() - new Date(i.created_at).getTime()) / (1000 * 60 * 60)
+    (i) => (Date.now() - new Date(i.created_at).getTime()) / (1000 * 60 * 60)
   );
   untriagedAgeHours.sort((a, b) => a - b);
 

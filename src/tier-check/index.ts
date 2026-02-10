@@ -20,9 +20,7 @@ function parseRepo(repo: string): { owner: string; repo: string } {
 
 export function createTierCheckCommand(): Command {
   const tierCheck = new Command('tier-check')
-    .description(
-      'Run SDK tier assessment checks against a GitHub repository'
-    )
+    .description('Run SDK tier assessment checks against a GitHub repository')
     .requiredOption(
       '--repo <owner/repo>',
       'GitHub repository (e.g., modelcontextprotocol/typescript-sdk)'
@@ -36,10 +34,7 @@ export function createTierCheckCommand(): Command {
       '--conformance-server-cwd <path>',
       'Working directory for the conformance server'
     )
-    .option(
-      '--conformance-server-url <url>',
-      'URL of the conformance server'
-    )
+    .option('--conformance-server-url <url>', 'URL of the conformance server')
     .option('--skip-conformance', 'Skip conformance tests')
     .option('--days <n>', 'Limit triage check to issues created in last N days')
     .option(
@@ -58,8 +53,8 @@ export function createTierCheckCommand(): Command {
       if (!token) {
         console.error(
           'GitHub token required. Either:\n' +
-          '  export GITHUB_TOKEN=$(gh auth token)\n' +
-          '  or pass --token <token>'
+            '  export GITHUB_TOKEN=$(gh auth token)\n' +
+            '  or pass --token <token>'
         );
         process.exit(1);
       }

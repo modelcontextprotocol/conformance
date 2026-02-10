@@ -26,6 +26,7 @@ npx @modelcontextprotocol/conformance tier-check --repo modelcontextprotocol/typ
 ```
 
 The CLI uses the GitHub API for issue metrics, labels, and release checks. Authenticate via one of:
+
 - **GitHub CLI** (recommended): `gh auth login` — the CLI picks up your token automatically
 - **Environment variable**: `export GITHUB_TOKEN=ghp_...` (create a read-only token at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo:read` and `issues:read` scopes)
 - **Flag**: `--token ghp_...`
@@ -46,15 +47,15 @@ The CLI uses the GitHub API for issue metrics, labels, and release checks. Authe
 
 ### What the CLI Checks
 
-| Check | What it measures |
-|-------|-----------------|
-| Conformance | Pass rate against the conformance test suite |
-| Labels | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
-| Triage | How quickly issues get labeled after creation |
-| P0 Resolution | Whether critical bugs are resolved within SLA |
-| Stable Release | Whether a stable release >= 1.0.0 exists |
-| Policy Signals | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP |
-| Spec Tracking | Gap between latest spec release and SDK release |
+| Check          | What it measures                                                               |
+| -------------- | ------------------------------------------------------------------------------ |
+| Conformance    | Pass rate against the conformance test suite                                   |
+| Labels         | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
+| Triage         | How quickly issues get labeled after creation                                  |
+| P0 Resolution  | Whether critical bugs are resolved within SLA                                  |
+| Stable Release | Whether a stable release >= 1.0.0 exists                                       |
+| Policy Signals | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP             |
+| Spec Tracking  | Gap between latest spec release and SDK release                                |
 
 ### Example Output
 
@@ -97,6 +98,7 @@ It runs the CLI, launches parallel evaluations for docs and policy, and produces
 If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it these instructions:
 
 1. **Run the CLI** to get the deterministic scorecard:
+
    ```bash
    npx @modelcontextprotocol/conformance tier-check --repo <repo> --output json
    ```
@@ -113,21 +115,22 @@ If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it the
 
 Run the CLI for the scorecard, then review docs and policies yourself using the tier requirements as a checklist:
 
-| Requirement | Tier 1 | Tier 2 |
-|---|---|---|
-| Conformance | 100% pass | >= 80% pass |
-| Issue triage | Within 2 business days | Within 1 month |
-| P0 resolution | Within 7 days | Within 2 weeks |
-| Stable release | >= 1.0.0 with clear versioning | At least one >= 1.0.0 |
-| Documentation | All features with examples | Core features documented |
-| Dependency policy | Published | Published |
-| Roadmap | Published with spec tracking | Plan toward Tier 1 |
+| Requirement       | Tier 1                         | Tier 2                   |
+| ----------------- | ------------------------------ | ------------------------ |
+| Conformance       | 100% pass                      | >= 80% pass              |
+| Issue triage      | Within 2 business days         | Within 1 month           |
+| P0 resolution     | Within 7 days                  | Within 2 weeks           |
+| Stable release    | >= 1.0.0 with clear versioning | At least one >= 1.0.0    |
+| Documentation     | All features with examples     | Core features documented |
+| Dependency policy | Published                      | Published                |
+| Roadmap           | Published with spec tracking   | Plan toward Tier 1       |
 
 ## Running Conformance Tests
 
 To include conformance test results in the scorecard, you need to start the SDK's everything server, then run tier-check against it.
 
 **TypeScript SDK:**
+
 ```bash
 # Clone the TypeScript SDK and start its conformance server
 cd /path/to/typescript-sdk/test/conformance
@@ -140,6 +143,7 @@ npx @modelcontextprotocol/conformance tier-check \
 ```
 
 **Python SDK:**
+
 ```bash
 # In the python-sdk repo, start the everything server
 uv run mcp-everything-server &
@@ -156,9 +160,9 @@ npx @modelcontextprotocol/conformance tier-check \
 
 These files in [`references/`](references/) contain the detailed criteria and prompts:
 
-| File | Purpose |
-|------|---------|
-| `tier-requirements.md` | Full SEP-1730 requirements with exact thresholds |
-| `docs-coverage-prompt.md` | Feature checklist for documentation evaluation |
+| File                          | Purpose                                                 |
+| ----------------------------- | ------------------------------------------------------- |
+| `tier-requirements.md`        | Full SEP-1730 requirements with exact thresholds        |
+| `docs-coverage-prompt.md`     | Feature checklist for documentation evaluation          |
 | `policy-evaluation-prompt.md` | Criteria for dependency, roadmap, and versioning policy |
-| `report-template.md` | Output format for the full audit report |
+| `report-template.md`          | Output format for the full audit report                 |

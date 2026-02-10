@@ -58,9 +58,7 @@ export async function checkLabels(
     ...PRIORITY_LABELS
   ];
 
-  const missing = requiredLabels.filter(
-    (l) => !labelSet.has(l.toLowerCase())
-  );
+  const missing = requiredLabels.filter((l) => !labelSet.has(l.toLowerCase()));
   const found = requiredLabels.filter((l) => labelSet.has(l.toLowerCase()));
 
   return {

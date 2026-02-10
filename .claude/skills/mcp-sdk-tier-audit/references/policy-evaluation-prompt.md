@@ -10,6 +10,7 @@ You are evaluating the governance and policy documentation of an MCP SDK reposit
 ## Your Task
 
 Evaluate three policy areas required by SEP-1730:
+
 1. **Dependency update policy** (required for Tier 1 and Tier 2)
 2. **Roadmap** (Tier 1: published roadmap; Tier 2: published plan toward Tier 1)
 3. **Versioning policy** (Tier 1: clear versioning with documented breaking change policy)
@@ -29,6 +30,7 @@ gh repo clone {repo} /tmp/sdk-audit-policy -- --branch {branch} --depth 1
 Check these files for each policy area. Read the actual content — you're evaluating the substance of what's written, not just whether the file exists.
 
 **Dependency Policy** — check these files:
+
 - `CONTRIBUTING.md` (dependency/update sections)
 - `SECURITY.md` (dependency update references)
 - `.github/dependabot.yml` or `.github/renovate.json`
@@ -37,12 +39,14 @@ Check these files for each policy area. Read the actual content — you're evalu
 - CI workflow files that run dependency updates
 
 **Roadmap** — check these files:
+
 - `ROADMAP.md`
 - `docs/roadmap.md`
 - `README.md` (roadmap section)
 - `CHANGELOG.md` (for evidence of planned work)
 
 Also check GitHub-level resources:
+
 ```bash
 # Check for GitHub milestones
 gh api repos/{repo}/milestones --jq '.[].title'
@@ -52,6 +56,7 @@ gh release list --repo {repo} --limit 20
 ```
 
 **Versioning Policy** — check these files:
+
 - `CONTRIBUTING.md` (versioning/release sections)
 - `README.md` (versioning section)
 - `CHANGELOG.md` (evidence of versioning practice)
@@ -61,6 +66,7 @@ gh release list --repo {repo} --limit 20
 ### 3. Evaluate each policy area
 
 For each area, determine:
+
 - Is there a published policy/document?
 - What does it commit to? (specific commitments vs vague statements)
 - Does it meet Tier 1 standards? Tier 2 standards?
@@ -70,6 +76,7 @@ For each area, determine:
 ### Dependency Update Policy
 
 **PASS for Tier 1 and Tier 2** requires:
+
 - A published, findable policy describing how dependencies are updated
 - The policy must include actual commitments (e.g., "updated monthly", "security patches within 48h")
 - Automated tooling (Dependabot, Renovate) configured counts as evidence of policy in practice
@@ -78,29 +85,34 @@ For each area, determine:
 **Tier 1 additional**: Policy should be comprehensive -- covering frequency, security updates, major version handling
 
 **FAIL** if:
+
 - No dependency update policy found anywhere in the repo
 - Only vague references like "we try to keep dependencies up to date"
 
 ### Roadmap
 
 **PASS for Tier 1** requires:
+
 - A published roadmap document with concrete steps and work items
 - Must track implementation of MCP specification components (non-experimental features and optional capabilities)
 - Must give users visibility into upcoming feature support
 - Can be a ROADMAP.md, GitHub milestones/projects, or a section in docs
 
 **PASS for Tier 2** requires:
+
 - A published plan toward Tier 1 (what the SDK intends to implement to reach full support)
 - OR an explanation of why the SDK will remain at Tier 2 (intentionally scoped)
 - Can be simpler than a full roadmap
 
 **FAIL** if:
+
 - No roadmap or plan found
 - Only a CHANGELOG showing past work (not forward-looking)
 
 ### Versioning Policy
 
 **PASS for Tier 1** requires:
+
 - Documented breaking change policy (what constitutes a breaking change, how they are communicated)
 - Clear versioning pattern (SemVer or language-idiomatic equivalent)
 - Users can understand compatibility expectations when upgrading
@@ -108,6 +120,7 @@ For each area, determine:
 **Not required for Tier 2** (only needs a stable release >= 1.0.0)
 
 **FAIL** if:
+
 - No versioning documentation found
 - No breaking change policy documented
 
@@ -125,14 +138,14 @@ Produce your assessment in this exact format:
 
 #### 1. Dependency Update Policy: {PASS/FAIL}
 
-| What Was Checked | Where | Content Found | Verdict |
-|---|---|---|---|
+| What Was Checked                   | Where                         | Content Found                                 | Verdict           |
+| ---------------------------------- | ----------------------------- | --------------------------------------------- | ----------------- |
 | CONTRIBUTING.md dependency section | {path}:{lines} or "Not found" | "{relevant quote}" or "No dependency section" | {Found/Not found} |
-| Dependabot/Renovate config | {path} or "Not found" | "{config summary}" or "Not configured" | {Found/Not found} |
-| README dependency section | {path}:{lines} or "Not found" | "{relevant quote}" or "No section" | {Found/Not found} |
-| SECURITY.md dependency references | {path}:{lines} or "Not found" | "{relevant quote}" or "No references" | {Found/Not found} |
-| CI dependency update workflows | {path} or "Not found" | "{workflow description}" or "None" | {Found/Not found} |
-| Other policy documents | {path}:{lines} or "Not found" | "{relevant quote}" or "None" | {Found/Not found} |
+| Dependabot/Renovate config         | {path} or "Not found"         | "{config summary}" or "Not configured"        | {Found/Not found} |
+| README dependency section          | {path}:{lines} or "Not found" | "{relevant quote}" or "No section"            | {Found/Not found} |
+| SECURITY.md dependency references  | {path}:{lines} or "Not found" | "{relevant quote}" or "No references"         | {Found/Not found} |
+| CI dependency update workflows     | {path} or "Not found"         | "{workflow description}" or "None"            | {Found/Not found} |
+| Other policy documents             | {path}:{lines} or "Not found" | "{relevant quote}" or "None"                  | {Found/Not found} |
 
 **Policy content summary**: {Brief description of what the policy says, or "No dependency update policy found"}
 
@@ -143,13 +156,13 @@ Produce your assessment in this exact format:
 
 #### 2. Roadmap: {PASS/FAIL}
 
-| What Was Checked | Where | Content Found | Verdict |
-|---|---|---|---|
-| ROADMAP.md | {path} or "Not found" | "{summary}" or "File does not exist" | {Found/Not found} |
-| README roadmap section | {path}:{lines} or "Not found" | "{summary}" or "No roadmap section" | {Found/Not found} |
-| GitHub Milestones | {URL or count} | "{milestone names}" or "None" | {Found/Not found} |
-| docs/ roadmap documents | {path} or "Not found" | "{summary}" or "None" | {Found/Not found} |
-| Other forward-looking docs | {path}:{lines} or "Not found" | "{summary}" or "None" | {Found/Not found} |
+| What Was Checked           | Where                         | Content Found                        | Verdict           |
+| -------------------------- | ----------------------------- | ------------------------------------ | ----------------- |
+| ROADMAP.md                 | {path} or "Not found"         | "{summary}" or "File does not exist" | {Found/Not found} |
+| README roadmap section     | {path}:{lines} or "Not found" | "{summary}" or "No roadmap section"  | {Found/Not found} |
+| GitHub Milestones          | {URL or count}                | "{milestone names}" or "None"        | {Found/Not found} |
+| docs/ roadmap documents    | {path} or "Not found"         | "{summary}" or "None"                | {Found/Not found} |
+| Other forward-looking docs | {path}:{lines} or "Not found" | "{summary}" or "None"                | {Found/Not found} |
 
 **Roadmap content summary**: {Brief description of the roadmap contents, or "No roadmap found"}
 
@@ -160,14 +173,14 @@ Produce your assessment in this exact format:
 
 #### 3. Versioning Policy: {PASS/FAIL}
 
-| What Was Checked | Where | Content Found | Verdict |
-|---|---|---|---|
-| CONTRIBUTING.md versioning section | {path}:{lines} or "Not found" | "{relevant quote}" or "No versioning section" | {Found/Not found} |
-| README versioning section | {path}:{lines} or "Not found" | "{relevant quote}" or "No section" | {Found/Not found} |
-| CHANGELOG.md versioning evidence | {path} or "Not found" | "{pattern observed}" or "Not found" | {Found/Not found} |
-| Release docs | {path}:{lines} or "Not found" | "{relevant quote}" or "Not found" | {Found/Not found} |
-| Breaking change documentation | {path}:{lines} or "Not found" | "{relevant quote}" or "Not found" | {Found/Not found} |
-| Version pattern analysis | Release history | "{pattern}" (e.g., "Follows SemVer, X.Y.Z pattern") | {Consistent/Inconsistent} |
+| What Was Checked                   | Where                         | Content Found                                       | Verdict                   |
+| ---------------------------------- | ----------------------------- | --------------------------------------------------- | ------------------------- |
+| CONTRIBUTING.md versioning section | {path}:{lines} or "Not found" | "{relevant quote}" or "No versioning section"       | {Found/Not found}         |
+| README versioning section          | {path}:{lines} or "Not found" | "{relevant quote}" or "No section"                  | {Found/Not found}         |
+| CHANGELOG.md versioning evidence   | {path} or "Not found"         | "{pattern observed}" or "Not found"                 | {Found/Not found}         |
+| Release docs                       | {path}:{lines} or "Not found" | "{relevant quote}" or "Not found"                   | {Found/Not found}         |
+| Breaking change documentation      | {path}:{lines} or "Not found" | "{relevant quote}" or "Not found"                   | {Found/Not found}         |
+| Version pattern analysis           | Release history               | "{pattern}" (e.g., "Follows SemVer, X.Y.Z pattern") | {Consistent/Inconsistent} |
 
 **Versioning content summary**: {Brief description of the versioning approach and breaking change policy, or "No versioning policy found"}
 
@@ -178,11 +191,11 @@ Produce your assessment in this exact format:
 
 #### Overall Policy Summary
 
-| Policy Area | Tier 1 | Tier 2 |
-|---|---|---|
+| Policy Area              | Tier 1    | Tier 2    |
+| ------------------------ | --------- | --------- |
 | Dependency Update Policy | PASS/FAIL | PASS/FAIL |
-| Roadmap | PASS/FAIL | PASS/FAIL |
-| Versioning Policy | PASS/FAIL | N/A |
+| Roadmap                  | PASS/FAIL | PASS/FAIL |
+| Versioning Policy        | PASS/FAIL | N/A       |
 ```
 
 ## Important Notes
