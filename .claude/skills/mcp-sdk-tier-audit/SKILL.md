@@ -100,6 +100,15 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
 
+**P0 Label Audit Guidance:**
+
+When evaluating P0 metrics, flag potentially mislabeled P0 issues:
+
+- If P0 count is high (>2) but other Tier 2 metrics (conformance, triage compliance, docs) are strong, this may indicate P0 labels are being used for enhancements, lower-priority work, or feature requests rather than actual critical bugs.
+- In such cases, recommend a P0 label audit as a remediation action. Review open P0 issues to verify they represent genuine blocking defects vs. misclassified work.
+- Document this finding in the remediation output with specific issue numbers and suggested re-triage actions.
+- Do not treat high P0 count as an automatic hard blocker if the audit reveals mislabeling; instead, note it as a process improvement opportunity.
+
 ## Step 5: Generate Output
 
 Write detailed reports to files and show a concise summary to the user.
@@ -115,11 +124,14 @@ For example: `results/2026-02-10-typescript-sdk-assessment.md`
 
 ### Assessment file
 
-Use the remediation template from `references/report-template.md`. This file contains prioritized action items grouped by:
+Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details, triage metrics, documentation coverage table, and policy evaluation evidence.
 
-1. **Blocking for next tier** -- requirements that must be met to advance
-2. **Quick wins** -- low-effort improvements
-3. **Longer-term** -- structural work needed
+### Remediation file
+
+Use the remediation template from `references/report-template.md`. This file always includes both:
+
+- **Path to Tier 2** (if current tier is 3) -- what's needed to reach Tier 2
+- **Path to Tier 1** (always) -- what's needed to reach Tier 1
 
 ### Console output (shown to the user)
 
@@ -130,10 +142,8 @@ After writing the files, output a short executive summary directly to the user:
 
 Conformance: <passed>/<total> (<status>) | Triage: <rate>% (<status>) | P0s: <count> open (<status>) | Docs: <pass>/<total> (<status>) | Policies: <summary> (<status>)
 
-Top actions for Tier <next>:
-1. <highest-impact action>
-2. <second action>
-3. <third action>
+For Tier 2: <one-line summary of what's needed, or "All requirements met">
+For Tier 1: <one-line summary of what's needed, or "All requirements met">
 
 Reports:
 - results/<date>-<sdk-name>-assessment.md
@@ -141,6 +151,16 @@ Reports:
 ```
 
 Use checkmarks/crosses for status: ✓ for pass, ✗ for fail.
+
+**Special note for high P0 count with strong other metrics:**
+
+If P0 count is >2 but other Tier 2 metrics pass, add this note to the executive summary:
+
+```
+⚠️  P0 Label Audit Recommended: <count> open P0 issues detected. Review these issues to verify they represent critical bugs vs. misclassified enhancements or lower-priority work. See remediation report for specific issues and re-triage guidance.
+```
+
+This ensures the audit context is clear: the high P0 count may be a labeling process issue rather than a product quality issue.
 
 ## Reference Files
 

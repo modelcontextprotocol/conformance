@@ -83,28 +83,24 @@ Labels: {present/missing list}
 
 **Date**: {date}
 **Current Tier**: {X}
-**Target**: Tier {next}
 
-## Blocking for Tier {next}
+## Path to Tier 2
+
+{Only include this section if current tier is 3. List every requirement not met for Tier 2.}
 
 | #   | Action        | Requirement   | Effort               | Where        |
 | --- | ------------- | ------------- | -------------------- | ------------ |
 | 1   | {description} | {requirement} | {Small/Medium/Large} | {file paths} |
 | ... | ...           | ...           | ...                  | ...          |
 
-## Quick Wins
+## Path to Tier 1
 
-| #   | Action        | Requirement   | Effort | Where        |
-| --- | ------------- | ------------- | ------ | ------------ |
-| 1   | {description} | {requirement} | Small  | {file paths} |
-| ... | ...           | ...           | ...    | ...          |
+{Always include this section. List every requirement not met for Tier 1 (including any Tier 2 gaps).}
 
-## Longer-Term
-
-| #   | Action        | Requirement   | Effort         | Where        |
-| --- | ------------- | ------------- | -------------- | ------------ |
-| 1   | {description} | {requirement} | {Medium/Large} | {file paths} |
-| ... | ...           | ...           | ...            | ...          |
+| #   | Action        | Requirement   | Effort               | Where        |
+| --- | ------------- | ------------- | -------------------- | ------------ |
+| 1   | {description} | {requirement} | {Small/Medium/Large} | {file paths} |
+| ... | ...           | ...           | ...                  | ...          |
 
 ## Recommended Next Steps
 
