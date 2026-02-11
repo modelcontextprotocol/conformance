@@ -1,15 +1,28 @@
 import { Octokit } from '@octokit/rest';
 import { PolicySignalsResult } from '../types';
 
-// These files are evidence for policy evaluation, not hard tier requirements.
-// Their presence/absence feeds into the overall assessment but does not
-// independently block tier advancement.
+// Policy files checked deterministically by the CLI.
+// The AI policy evaluation then reads ONLY files that exist here
+// to judge whether content is substantive — it does not search for
+// files in other locations.
 const POLICY_SIGNAL_FILES = [
+  // General project health
   'CHANGELOG.md',
   'SECURITY.md',
   'CONTRIBUTING.md',
+  // Dependency update policy
+  'DEPENDENCY_POLICY.md',
+  'docs/dependency-policy.md',
   '.github/dependabot.yml',
-  'ROADMAP.md'
+  '.github/renovate.json',
+  'renovate.json',
+  // Roadmap
+  'ROADMAP.md',
+  'docs/roadmap.md',
+  // Versioning / breaking change policy
+  'VERSIONING.md',
+  'docs/versioning.md',
+  'BREAKING_CHANGES.md'
 ];
 
 export async function checkPolicySignals(

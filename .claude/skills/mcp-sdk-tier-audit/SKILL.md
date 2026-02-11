@@ -86,7 +86,9 @@ This evaluation checks:
 
 ### Evaluation 2: Policy Evaluation
 
-Use the prompt from `references/policy-evaluation-prompt.md`. Pass the local path and the derived `owner/repo`.
+Use the prompt from `references/policy-evaluation-prompt.md`. Pass the local path, the derived `owner/repo`, and the `policy_signals` section from the CLI JSON output.
+
+The CLI has already checked which policy files exist (ROADMAP.md, DEPENDENCY_POLICY.md, dependabot.yml, VERSIONING.md, etc.). The AI evaluation reads only the files the CLI found to judge whether the content is substantive — it does NOT search for files in other locations.
 
 This evaluation checks:
 

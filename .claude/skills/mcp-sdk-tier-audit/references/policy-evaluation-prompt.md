@@ -6,10 +6,13 @@ You are evaluating the governance and policy documentation of an MCP SDK reposit
 
 - **SDK path**: {local-path} (absolute path to local SDK checkout)
 - **Repository**: {repo} (GitHub `owner/repo`, derived from git remote)
+- **CLI policy_signals**: {policy_signals_json} (from the tier-check CLI output — shows which files exist)
 
 ## Your Task
 
-Check whether three required policy documents exist as files in the repository. This is a simple file-existence check — if the file exists and has substantive content, it passes.
+The CLI has already determined which policy files exist in the repository. Your job is to **read and evaluate the content** of the files that were found. Do NOT search for files in other locations — only evaluate what the CLI reported as present.
+
+Three policy areas to evaluate:
 
 1. **Dependency update policy** (required for Tier 1 and Tier 2)
 2. **Roadmap** (Tier 1: published roadmap; Tier 2: published plan toward Tier 1)
@@ -17,42 +20,38 @@ Check whether three required policy documents exist as files in the repository. 
 
 ## Steps
 
-### 1. Check for policy files
+### 1. Identify which files exist from CLI output
 
-```bash
-# Dependency update policy
-ls {local-path}/DEPENDENCY_POLICY.md {local-path}/docs/dependency-policy.md 2>/dev/null
+From the `policy_signals.files` object in the CLI JSON output, note which files have `true` (exist) vs `false` (missing).
 
-# Also check for automated dependency tooling as evidence
-ls {local-path}/.github/dependabot.yml {local-path}/.github/renovate.json {local-path}/renovate.json 2>/dev/null
+The CLI checks these files:
 
-# Roadmap
-ls {local-path}/ROADMAP.md {local-path}/docs/roadmap.md 2>/dev/null
+**Dependency policy**: `DEPENDENCY_POLICY.md`, `docs/dependency-policy.md`, `.github/dependabot.yml`, `.github/renovate.json`, `renovate.json`
 
-# Versioning / breaking change policy
-ls {local-path}/VERSIONING.md {local-path}/docs/versioning.md {local-path}/BREAKING_CHANGES.md 2>/dev/null
+**Roadmap**: `ROADMAP.md`, `docs/roadmap.md`
 
-# Also check CONTRIBUTING.md and CHANGELOG.md for versioning sections
-ls {local-path}/CONTRIBUTING.md {local-path}/CHANGELOG.md 2>/dev/null
-```
+**Versioning**: `VERSIONING.md`, `docs/versioning.md`, `BREAKING_CHANGES.md`
 
-### 2. Evaluate each policy area
+**General** (may contain relevant sections): `CONTRIBUTING.md`
 
-For each area, check:
-- Does a dedicated file exist?
-- If no dedicated file, is there a clearly labeled section in CONTRIBUTING.md or README.md?
-- Is the content substantive (not just a placeholder)?
+### 2. Read and evaluate files that exist
+
+For each file that the CLI reported as present, read its content at `{local-path}/{file}` and evaluate:
+
+- Is the content substantive (not just a placeholder title)?
+- Does it meet the criteria below?
+
+**Do NOT** search the repo for policy information in other files. If the dedicated file doesn't exist, the policy is not published.
 
 ## Evaluation Criteria
 
 ### Dependency Update Policy
 
 **PASS** if any of these exist with substantive content:
-- `DEPENDENCY_POLICY.md` or `docs/dependency-policy.md`
-- A clearly labeled "Dependency Updates" or "Dependency Policy" section in `CONTRIBUTING.md`
-- Configured Dependabot (`.github/dependabot.yml`) or Renovate (`.github/renovate.json`) — automated tooling counts as a published policy in practice
+- `DEPENDENCY_POLICY.md` or `docs/dependency-policy.md` — must describe how and when dependencies are updated
+- `.github/dependabot.yml` or `.github/renovate.json` or `renovate.json` — automated tooling counts as a published policy in practice
 
-**FAIL** if none of the above exist.
+**FAIL** if none of the above exist (per CLI output).
 
 ### Roadmap
 
@@ -60,23 +59,21 @@ For each area, check:
 
 **PASS for Tier 2**: Same file exists with at least a plan toward Tier 1, or explanation for remaining at Tier 2.
 
-**FAIL** if no roadmap file exists. GitHub milestones alone are not sufficient — there must be a file in the repo.
+**FAIL** if no roadmap file exists (per CLI output).
 
 ### Versioning Policy
 
 **PASS for Tier 1** if any of these exist with substantive content:
 - `VERSIONING.md` or `docs/versioning.md` or `BREAKING_CHANGES.md`
-- A clearly labeled "Versioning" or "Breaking Changes" section in `CONTRIBUTING.md`
+- A clearly labeled "Versioning" or "Breaking Changes" section in `CONTRIBUTING.md` (only check if CONTRIBUTING.md exists per CLI output)
 
-The content must describe: what constitutes a breaking change, how breaking changes are communicated, and the versioning scheme (SemVer or language-idiomatic equivalent).
+The content must describe: what constitutes a breaking change, how breaking changes are communicated, and the versioning scheme.
 
-**Not required for Tier 2** (only needs a stable release >= 1.0.0, checked separately).
+**Not required for Tier 2.**
 
-**FAIL** if no versioning documentation found.
+**FAIL** if no versioning documentation found in the above files.
 
 ## Required Output Format
-
-Produce your assessment in this exact format:
 
 ```markdown
 ### Policy Evaluation Assessment
@@ -88,13 +85,12 @@ Produce your assessment in this exact format:
 
 #### 1. Dependency Update Policy: {PASS/FAIL}
 
-| File Checked | Exists? | Path |
+| File | Exists (CLI) | Content Verdict |
 |---|---|---|
-| DEPENDENCY_POLICY.md | Yes/No | {path} or N/A |
-| docs/dependency-policy.md | Yes/No | {path} or N/A |
-| .github/dependabot.yml | Yes/No | {path} or N/A |
-| .github/renovate.json | Yes/No | {path} or N/A |
-| CONTRIBUTING.md (dependency section) | Yes/No | {path}:{lines} or N/A |
+| DEPENDENCY_POLICY.md | Yes/No | Substantive / Placeholder / N/A |
+| docs/dependency-policy.md | Yes/No | Substantive / Placeholder / N/A |
+| .github/dependabot.yml | Yes/No | Configured / N/A |
+| .github/renovate.json | Yes/No | Configured / N/A |
 
 **Verdict**: **PASS/FAIL** — {one-line explanation}
 
@@ -102,10 +98,10 @@ Produce your assessment in this exact format:
 
 #### 2. Roadmap: {PASS/FAIL}
 
-| File Checked | Exists? | Path |
+| File | Exists (CLI) | Content Verdict |
 |---|---|---|
-| ROADMAP.md | Yes/No | {path} or N/A |
-| docs/roadmap.md | Yes/No | {path} or N/A |
+| ROADMAP.md | Yes/No | Substantive / Placeholder / N/A |
+| docs/roadmap.md | Yes/No | Substantive / Placeholder / N/A |
 
 **Verdict**:
 - **Tier 1**: **PASS/FAIL** — {one-line explanation}
@@ -115,12 +111,12 @@ Produce your assessment in this exact format:
 
 #### 3. Versioning Policy: {PASS/FAIL}
 
-| File Checked | Exists? | Path |
+| File | Exists (CLI) | Content Verdict |
 |---|---|---|
-| VERSIONING.md | Yes/No | {path} or N/A |
-| docs/versioning.md | Yes/No | {path} or N/A |
-| BREAKING_CHANGES.md | Yes/No | {path} or N/A |
-| CONTRIBUTING.md (versioning section) | Yes/No | {path}:{lines} or N/A |
+| VERSIONING.md | Yes/No | Substantive / Placeholder / N/A |
+| docs/versioning.md | Yes/No | Substantive / Placeholder / N/A |
+| BREAKING_CHANGES.md | Yes/No | Substantive / Placeholder / N/A |
+| CONTRIBUTING.md (versioning section) | Yes/No | Found / Not found / N/A |
 
 **Verdict**:
 - **Tier 1**: **PASS/FAIL** — {one-line explanation}
@@ -139,7 +135,7 @@ Produce your assessment in this exact format:
 
 ## Important Notes
 
-- This is primarily a file-existence check. If the file exists and has real content (not just a title), it passes.
-- Do NOT search through the entire repo looking for scattered references. The policy must be in a dedicated file or a clearly labeled section in CONTRIBUTING.md.
-- Dependabot/Renovate configuration counts as a dependency policy — it's a published, machine-readable commitment.
-- CHANGELOG.md showing past releases does NOT count as a roadmap (it's backward-looking, not forward-looking).
+- Only evaluate files the CLI reported as existing. Do not search the repo for alternatives.
+- If a file exists but is just a placeholder (e.g., only has a title with no content), mark it as "Placeholder" and FAIL.
+- Dependabot/Renovate config files pass automatically if they exist and are properly configured.
+- CHANGELOG.md showing past releases does NOT count as a roadmap.
