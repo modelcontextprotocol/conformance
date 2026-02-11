@@ -157,64 +157,71 @@ Produce your assessment in this exact format:
 
 #### Feature Documentation Table
 
-| Feature                                     | Documented? | Where          | Has Examples?           | Verdict           |
-| ------------------------------------------- | ----------- | -------------- | ----------------------- | ----------------- |
-| Tools - listing                             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Tools - calling                             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - listing                         | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - reading text                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - reading binary                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - templates                       | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - template reading                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - subscribing                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - unsubscribing                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Resources - change notifications            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - listing                           | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - getting simple                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - getting with args                 | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - embedded resources                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - image content                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Prompts - change notifications              | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Sampling - creating messages                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - form mode                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - URL mode                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - schema validation             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - default values                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - enum values                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Elicitation - complete notification         | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Roots - listing                             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Roots - change notifications                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Logging - sending log messages              | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Logging - setting level                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Completions - resource argument             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Completions - prompt argument               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Ping                                        | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Streamable HTTP - client                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Streamable HTTP - server                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| SSE transport - client                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| SSE transport - server                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| stdio transport - client                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| stdio transport - server                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Progress notifications                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Cancellation                                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Pagination                                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Capability negotiation                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| JSON Schema 2020-12                         | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| Tasks - get (experimental)                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
-| Tasks - result (experimental)               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
-| Tasks - cancel (experimental)               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
-| Tasks - list (experimental)                 | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
-| Tasks - status notifications (experimental) | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| # | Feature                                     | Documented? | Where          | Has Examples?           | Verdict           |
+|---|---------------------------------------------|-------------|----------------|-------------------------| ------------------|
+| 1 | Tools - listing                             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 2 | Tools - calling                             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 3 | Tools - text results                        | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 4 | Tools - image results                       | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 5 | Tools - audio results                       | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 6 | Tools - embedded resources                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 7 | Tools - error handling                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 8 | Tools - change notifications                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 9 | Resources - listing                         | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 10 | Resources - reading text                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 11 | Resources - reading binary                 | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 12 | Resources - templates                      | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 13 | Resources - template reading               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 14 | Resources - subscribing                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 15 | Resources - unsubscribing                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 16 | Resources - change notifications           | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 17 | Prompts - listing                          | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 18 | Prompts - getting simple                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 19 | Prompts - getting with args                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 20 | Prompts - embedded resources               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 21 | Prompts - image content                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 22 | Prompts - change notifications             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 23 | Sampling - creating messages               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 24 | Elicitation - form mode                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 25 | Elicitation - URL mode                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 26 | Elicitation - schema validation            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 27 | Elicitation - default values               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 28 | Elicitation - enum values                  | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 29 | Elicitation - complete notification        | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 30 | Roots - listing                            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 31 | Roots - change notifications               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 32 | Logging - sending log messages             | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 33 | Logging - setting level                    | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 34 | Completions - resource argument            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 35 | Completions - prompt argument              | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 36 | Ping                                       | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 37 | Streamable HTTP - client                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 38 | Streamable HTTP - server                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 39 | SSE transport - client                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 40 | SSE transport - server                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 41 | stdio transport - client                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 42 | stdio transport - server                   | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 43 | Progress notifications                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 44 | Cancellation                               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 45 | Pagination                                 | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 46 | Capability negotiation                     | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 47 | Protocol version negotiation               | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 48 | JSON Schema 2020-12                        | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| — | Tasks - get (experimental)                 | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| — | Tasks - result (experimental)              | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| — | Tasks - cancel (experimental)              | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| — | Tasks - list (experimental)                | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| — | Tasks - status notifications (experimental)| Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
 
 #### Summary
 
-**Total features**: {N}
-**PASS (documented with examples)**: {N}
-**PARTIAL (documented, no examples)**: {N}
-**FAIL (not documented)**: {N}
+**Total non-experimental features**: 48
+**PASS (documented with examples)**: {N}/48
+**PARTIAL (documented, no examples)**: {N}/48
+**FAIL (not documented)**: {N}/48
 
 **Core features documented**: {N}/{total core} ({percentage}%)
-**All features documented with examples**: {N}/{total non-experimental} ({percentage}%)
+**All features documented with examples**: {N}/48 ({percentage}%)
 
 #### Tier Verdicts
 
