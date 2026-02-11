@@ -183,11 +183,16 @@ After the subagents finish, output a short executive summary directly to the use
 | Versioning Policy | <summary> | N/A | ✓/✗ |
 | Stable Release | <version> | ✓/✗ | ✓/✗ |
 
-For Tier 2: <"All requirements met" or list each gap as a numbered item, one per line>
+---
+
+**High-Priority Fixes:**
+1. <fix description>
+
+**For Tier 2:**
 1. <gap description>
 2. <gap description>
 
-For Tier 1: <"All requirements met" or list each gap as a numbered item, one per line>
+**For Tier 1:**
 1. <gap description>
 2. <gap description>
 
@@ -198,15 +203,9 @@ Reports:
 
 Use ✓ for pass and ✗ for fail.
 
-**Special note for high P0 count with strong other metrics:**
+**High-Priority Fixes**: List any issues that need urgent attention (e.g., P0 label audit if P0 count is >2 but other metrics are strong, suggesting mislabeled issues). If none, omit this section.
 
-If P0 count is >2 but other Tier 2 metrics pass, add this note to the executive summary:
-
-```
-⚠️  P0 Label Audit Recommended: <count> open P0 issues detected. Review these issues to verify they represent critical bugs vs. misclassified enhancements or lower-priority work. See remediation report for specific issues and re-triage guidance.
-```
-
-This ensures the audit context is clear: the high P0 count may be a labeling process issue rather than a product quality issue.
+**For Tier 2 / For Tier 1**: List each gap as a separate numbered item. Use "All requirements met" if there are no gaps for that tier. Each item should be a concise action (e.g., "Re-triage mislabeled P0s", "Document 16 undocumented core features").
 
 ## Reference Files
 
