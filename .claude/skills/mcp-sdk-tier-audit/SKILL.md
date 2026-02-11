@@ -213,6 +213,7 @@ Use ✓ for pass and ✗ for fail.
 
 The following reference files are available in the `references/` directory alongside this skill:
 
+- `references/feature-list.md` -- Canonical list of 48 non-experimental + 5 experimental features (single source of truth)
 - `references/tier-requirements.md` -- Full SEP-1730 requirements table with exact thresholds
 - `references/report-template.md` -- Output format template for the audit report
 - `references/docs-coverage-prompt.md` -- Evaluation prompt for documentation coverage
