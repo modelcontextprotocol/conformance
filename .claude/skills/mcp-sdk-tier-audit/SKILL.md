@@ -12,6 +12,30 @@ argument-hint: '<local-path> <conformance-server-url> [client-cmd]'
 
 You are performing a comprehensive tier assessment for an MCP SDK repository against SEP-1730 (the SDK Tiering System). Your goal is to produce a definitive tier classification (Tier 1, 2, or 3) backed by evidence.
 
+## Step 0: Pre-flight Checks
+
+Before doing anything else, verify GitHub CLI authentication:
+
+```bash
+gh auth status 2>&1
+```
+
+If this fails (exit code non-zero or shows "not logged in"), stop immediately and tell the user:
+
+> GitHub authentication is required for this skill. Please run `gh auth login` first, then re-run the skill.
+
+Do NOT proceed to any other step if this check fails.
+
+After parsing arguments (Step 1), also verify the conformance server is reachable:
+
+```bash
+curl -sf <conformance-server-url> -o /dev/null -w '%{http_code}' 2>&1 || true
+```
+
+If the server is not reachable, stop and tell the user:
+
+> Conformance server at `<url>` is not reachable. Make sure the everything server is running before invoking this skill.
+
 ## Step 1: Parse Arguments
 
 Extract from the user's input:
