@@ -183,8 +183,13 @@ After the subagents finish, output a short executive summary directly to the use
 | Versioning Policy | <summary> | N/A | ✓/✗ |
 | Stable Release | <version> | ✓/✗ | ✓/✗ |
 
-For Tier 2: <one-line summary of what's needed, or "All requirements met">
-For Tier 1: <one-line summary of what's needed, or "All requirements met">
+For Tier 2: <"All requirements met" or list each gap as a numbered item, one per line>
+1. <gap description>
+2. <gap description>
+
+For Tier 1: <"All requirements met" or list each gap as a numbered item, one per line>
+1. <gap description>
+2. <gap description>
 
 Reports:
 - results/<date>-<sdk-name>-assessment.md
