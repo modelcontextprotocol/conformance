@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { Octokit } from '@octokit/rest';
-import { checkConformance } from './checks/conformance';
+import { checkConformance, checkClientConformance } from './checks/conformance';
 import { checkLabels } from './checks/labels';
 import { checkTriage } from './checks/triage';
 import { checkP0Resolution } from './checks/p0';
@@ -35,6 +35,10 @@ export function createTierCheckCommand(): Command {
       'Working directory for the conformance server'
     )
     .option('--conformance-server-url <url>', 'URL of the conformance server')
+    .option(
+      '--client-cmd <cmd>',
+      'Command to run the SDK conformance client (for client conformance tests)'
+    )
     .option('--skip-conformance', 'Skip conformance tests')
     .option('--days <n>', 'Limit triage check to issues created in last N days')
     .option(
@@ -76,7 +80,7 @@ export function createTierCheckCommand(): Command {
       console.error('Running tier assessment checks...\n');
 
       // Run all checks
-      const [conformance, labels, triage, p0, release, files, specTracking] =
+      const [conformance, clientConformance, labels, triage, p0, release, files, specTracking] =
         await Promise.all([
           checkConformance({
             serverCmd: options.conformanceServerCmd,
@@ -84,7 +88,14 @@ export function createTierCheckCommand(): Command {
             serverUrl: options.conformanceServerUrl,
             skip: options.skipConformance
           }).then((r) => {
-            console.error('  ✓ Conformance');
+            console.error('  ✓ Server Conformance');
+            return r;
+          }),
+          checkClientConformance({
+            clientCmd: options.clientCmd,
+            skip: options.skipConformance || !options.clientCmd
+          }).then((r) => {
+            console.error('  ✓ Client Conformance');
             return r;
           }),
           checkLabels(octokit, owner, repo).then((r) => {
@@ -115,6 +126,7 @@ export function createTierCheckCommand(): Command {
 
       const checks = {
         conformance,
+        client_conformance: clientConformance,
         labels,
         triage,
         p0_resolution: p0,

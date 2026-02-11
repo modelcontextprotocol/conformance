@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
-import { listActiveClientScenarios } from '../../scenarios';
-import { runServerConformanceTest } from '../../runner';
+import { listActiveClientScenarios, listCoreScenarios } from '../../scenarios';
+import { runServerConformanceTest, runConformanceTest } from '../../runner';
 import { ConformanceResult } from '../types';
 
 async function waitForServer(
@@ -132,4 +132,80 @@ export async function checkConformance(options: {
       setTimeout(() => serverProcess?.kill('SIGKILL'), 5000);
     }
   }
+}
+
+/**
+ * Run client conformance tests — the conformance tool acts as a server and
+ * spawns the SDK's conformance client to validate client-side behaviour.
+ */
+export async function checkClientConformance(options: {
+  clientCmd?: string;
+  skip?: boolean;
+}): Promise<ConformanceResult> {
+  if (options.skip || !options.clientCmd) {
+    return {
+      status: 'skipped',
+      pass_rate: 0,
+      passed: 0,
+      failed: 0,
+      total: 0,
+      details: []
+    };
+  }
+
+  const scenarios = listCoreScenarios();
+  const details: ConformanceResult['details'] = [];
+  let totalPassed = 0;
+  let totalFailed = 0;
+
+  for (const scenarioName of scenarios) {
+    try {
+      const result = await withTimeout(
+        runConformanceTest(options.clientCmd, scenarioName, SCENARIO_TIMEOUT_MS),
+        SCENARIO_TIMEOUT_MS + 5_000, // extra buffer beyond the inner timeout
+        scenarioName
+      );
+      const passed = result.checks.filter(
+        (c) => c.status === 'SUCCESS'
+      ).length;
+      const failed = result.checks.filter(
+        (c) => c.status === 'FAILURE'
+      ).length;
+
+      // A non-zero exit code counts as a failure unless the scenario expects it
+      const clientFailed =
+        !result.allowClientError &&
+        result.clientOutput.exitCode !== 0;
+
+      const scenarioPassed = failed === 0 && passed > 0 && !clientFailed;
+      totalPassed += scenarioPassed ? 1 : 0;
+      totalFailed += scenarioPassed ? 0 : 1;
+      details.push({
+        scenario: scenarioName,
+        passed: scenarioPassed,
+        checks_passed: passed,
+        checks_failed: failed
+      });
+    } catch {
+      totalFailed++;
+      details.push({
+        scenario: scenarioName,
+        passed: false,
+        checks_passed: 0,
+        checks_failed: 1
+      });
+    }
+  }
+
+  const total = totalPassed + totalFailed;
+  const pass_rate = total > 0 ? totalPassed / total : 0;
+
+  return {
+    status: pass_rate >= 1.0 ? 'pass' : pass_rate >= 0.8 ? 'partial' : 'fail',
+    pass_rate,
+    passed: totalPassed,
+    failed: totalFailed,
+    total,
+    details
+  };
 }

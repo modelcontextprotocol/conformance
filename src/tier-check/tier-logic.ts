@@ -5,11 +5,18 @@ export function computeTier(
 ): TierScorecard['implied_tier'] {
   const tier1Blockers: string[] = [];
 
-  // Check Tier 1 requirements
+  // Check Tier 1 requirements — server conformance
   if (checks.conformance.status === 'skipped') {
-    tier1Blockers.push('conformance (skipped)');
+    tier1Blockers.push('server_conformance (skipped)');
   } else if (checks.conformance.pass_rate < 1.0) {
-    tier1Blockers.push('conformance');
+    tier1Blockers.push('server_conformance');
+  }
+
+  // Check Tier 1 requirements — client conformance
+  if (checks.client_conformance.status === 'skipped') {
+    tier1Blockers.push('client_conformance (skipped)');
+  } else if (checks.client_conformance.pass_rate < 1.0) {
+    tier1Blockers.push('client_conformance');
   }
 
   if (checks.triage.compliance_rate < 0.9) {
@@ -40,6 +47,8 @@ export function computeTier(
   const tier2Met =
     (checks.conformance.status === 'skipped' ||
       checks.conformance.pass_rate >= 0.8) &&
+    (checks.client_conformance.status === 'skipped' ||
+      checks.client_conformance.pass_rate >= 0.8) &&
     checks.p0_resolution.all_p0s_resolved_within_14d &&
     checks.stable_release.is_stable;
 

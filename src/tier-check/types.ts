@@ -70,6 +70,7 @@ export interface TierScorecard {
   version: string | null;
   checks: {
     conformance: ConformanceResult;
+    client_conformance: ConformanceResult;
     labels: LabelsResult;
     triage: TriageResult;
     p0_resolution: P0Result;

@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: '<local-path> <conformance-server-url>'
+argument-hint: '<local-path> <conformance-server-url> [client-cmd]'
 ---
 
 # MCP SDK Tier Audit
@@ -18,8 +18,31 @@ Extract from the user's input:
 
 - **local-path**: absolute path to the SDK checkout (e.g. `~/src/mcp/typescript-sdk`)
 - **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
+- **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, try to auto-detect it (see below).
 
-Both arguments are required. If either is missing, ask the user to provide it.
+The first two arguments are required. If either is missing, ask the user to provide it.
+
+### Auto-detecting the conformance client command
+
+If client-cmd is not provided, look for a conformance client in the local checkout:
+
+```bash
+# Check common locations for a conformance/everything client
+ls <local-path>/test/conformance/src/everythingClient.ts 2>/dev/null
+ls <local-path>/tests/conformance/client.py 2>/dev/null
+```
+
+For TypeScript SDKs, the client command is typically:
+```
+npx tsx <local-path>/test/conformance/src/everythingClient.ts
+```
+
+For Python SDKs, the client command is typically:
+```
+uv run python <local-path>/tests/conformance/client.py
+```
+
+If no conformance client is found, proceed without client conformance tests (they will be skipped and noted in the report).
 
 Derive the GitHub `owner/repo` from the local checkout:
 
@@ -29,16 +52,19 @@ cd <local-path> && git remote get-url origin | sed 's#.*github.com[:/]##; s#\.gi
 
 ## Step 2: Run the Deterministic Scorecard
 
-The `tier-check` CLI handles all deterministic checks — conformance, labels, triage, P0 resolution, releases, policy signals, and spec tracking. You are already in the conformance repo, so run it directly.
+The `tier-check` CLI handles all deterministic checks — server conformance, client conformance, labels, triage, P0 resolution, releases, policy signals, and spec tracking. You are already in the conformance repo, so run it directly.
 
 ```bash
 npm run --silent tier-check -- \
   --repo <owner/repo> \
   --conformance-server-url <conformance-server-url> \
+  --client-cmd '<client-cmd>' \
   --output json
 ```
 
-The CLI output includes conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
+If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped).
+
+The CLI output includes server conformance pass rate, client conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
 ## Step 3: Launch Parallel Evaluations
 
@@ -73,7 +99,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 1 requires ALL of:
 
-- Conformance test pass rate == 100%
+- Server conformance test pass rate == 100%
+- Client conformance test pass rate == 100%
 - Issue triage compliance >= 90% within 2 business days
 - All P0 bugs resolved within 7 days
 - Stable release >= 1.0.0 with no pre-release suffix
@@ -84,7 +111,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 2 requires ALL of:
 
-- Conformance test pass rate >= 80%
+- Server conformance test pass rate >= 80%
+- Client conformance test pass rate >= 80%
 - Issue triage compliance >= 80% within 1 month
 - P0 bugs resolved within 2 weeks
 - At least one stable release >= 1.0.0
@@ -99,6 +127,7 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 **Important edge cases:**
 
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
+- If client conformance was skipped (no client command found), note this as a gap but do not block tier advancement based on it alone.
 
 **P0 Label Audit Guidance:**
 
@@ -124,7 +153,7 @@ For example: `results/2026-02-10-typescript-sdk-assessment.md`
 
 ### Assessment file
 
-Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details, triage metrics, documentation coverage table, and policy evaluation evidence.
+Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details (both server and client), triage metrics, documentation coverage table, and policy evaluation evidence.
 
 ### Remediation file
 
@@ -140,7 +169,7 @@ After writing the files, output a short executive summary directly to the user:
 ```
 ## <sdk-name> — Tier <X>
 
-Conformance: <passed>/<total> (<status>) | Triage: <rate>% (<status>) | P0s: <count> open (<status>) | Docs: <pass>/<total> (<status>) | Policies: <summary> (<status>)
+Server Conformance: <passed>/<total> (<status>) | Client Conformance: <passed>/<total> (<status>) | Triage: <rate>% (<status>) | P0s: <count> open (<status>) | Docs: <pass>/<total> (<status>) | Policies: <summary> (<status>)
 
 For Tier 2: <one-line summary of what's needed, or "All requirements met">
 For Tier 1: <one-line summary of what's needed, or "All requirements met">
@@ -177,7 +206,11 @@ Read these reference files when you need the detailed content for evaluation pro
 
 ```
 # TypeScript SDK on v1.x with everything server running on port 3000
+# (client command auto-detected from test/conformance/src/everythingClient.ts)
 /mcp-sdk-tier-audit ~/src/mcp/worktrees/typescript-sdk-v1x http://localhost:3000/mcp
+
+# Explicit client command
+/mcp-sdk-tier-audit ~/src/mcp/worktrees/typescript-sdk-v1x http://localhost:3000/mcp "npx tsx ~/src/mcp/worktrees/typescript-sdk-v1x/test/conformance/src/everythingClient.ts"
 
 # Python SDK with everything server running on port 3001
 /mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp

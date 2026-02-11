@@ -43,7 +43,10 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push('| Check | Status | Detail |');
   lines.push('|-------|--------|--------|');
   lines.push(
-    `| Conformance | ${c.conformance.status} | ${c.conformance.passed}/${c.conformance.total} scenarios pass (${Math.round(c.conformance.pass_rate * 100)}%) |`
+    `| Server Conformance | ${c.conformance.status} | ${c.conformance.passed}/${c.conformance.total} scenarios pass (${Math.round(c.conformance.pass_rate * 100)}%) |`
+  );
+  lines.push(
+    `| Client Conformance | ${c.client_conformance.status} | ${c.client_conformance.passed}/${c.client_conformance.total} scenarios pass (${Math.round(c.client_conformance.pass_rate * 100)}%) |`
   );
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
@@ -100,7 +103,10 @@ export function formatTerminal(scorecard: TierScorecard): void {
   console.log(`${COLORS.BOLD}Check Results:${COLORS.RESET}\n`);
 
   console.log(
-    `  ${statusIcon(c.conformance.status)} Conformance    ${c.conformance.passed}/${c.conformance.total} (${Math.round(c.conformance.pass_rate * 100)}%)`
+    `  ${statusIcon(c.conformance.status)} Server Conformance  ${c.conformance.passed}/${c.conformance.total} (${Math.round(c.conformance.pass_rate * 100)}%)`
+  );
+  console.log(
+    `  ${statusIcon(c.client_conformance.status)} Client Conformance  ${c.client_conformance.passed}/${c.client_conformance.total} (${Math.round(c.client_conformance.pass_rate * 100)}%)`
   );
   console.log(
     `  ${statusIcon(c.labels.status)} Labels         ${c.labels.present}/${c.labels.required} required labels`

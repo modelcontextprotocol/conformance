@@ -4,7 +4,7 @@ Assess any MCP SDK repository against [SEP-1730](https://github.com/modelcontext
 
 Two components work together:
 
-- **`tier-check` CLI** — runs deterministic checks (conformance pass rate, issue triage speed, P0 resolution, labels, releases, policy signals). Works standalone, no AI needed.
+- **`tier-check` CLI** — runs deterministic checks (server + client conformance pass rate, issue triage speed, P0 resolution, labels, releases, policy signals). Works standalone, no AI needed.
 - **AI-assisted assessment** — an agent uses the CLI scorecard plus judgment-based evaluation (documentation coverage, dependency policy, roadmap) to produce a full tier report with remediation guide.
 
 ## Quick Start: CLI
@@ -42,6 +42,7 @@ For public repos, any authenticated token works (no special scopes needed — au
 --conformance-server-url <url>   URL of the running conformance server
 --conformance-server-cmd <cmd>   Command to start the conformance server (optional, prefer pre-starting)
 --conformance-server-cwd <path>  Working directory for the conformance server command
+--client-cmd <cmd>               Command to run the SDK conformance client (for client conformance tests)
 --days <n>                       Limit triage analysis to last N days
 --output <format>                json | markdown | terminal (default: terminal)
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
@@ -49,9 +50,10 @@ For public repos, any authenticated token works (no special scopes needed — au
 
 ### What the CLI Checks
 
-| Check          | What it measures                                                               |
-| -------------- | ------------------------------------------------------------------------------ |
-| Conformance    | Pass rate against the conformance test suite                                   |
+| Check               | What it measures                                                               |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Server Conformance  | Pass rate of server implementation against the conformance test suite           |
+| Client Conformance  | Pass rate of client implementation against the conformance test suite           |
 | Labels         | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
 | Triage         | How quickly issues get labeled after creation                                  |
 | P0 Resolution  | Whether critical bugs are resolved within SLA                                  |
@@ -69,7 +71,8 @@ Timestamp: 2026-02-10T12:00:00Z
 
 Check Results:
 
-  ✓ Conformance    45/45 (100%)
+  ✓ Server Conformance  45/45 (100%)
+  ✓ Client Conformance  4/4 (100%)
   ✗ Labels         9/12 required labels
     Missing: needs confirmation, needs repro, ready for work
   ✓ Triage         92% within 2BD (150 issues, median 8h)
@@ -130,9 +133,10 @@ If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it the
 
 Run the CLI for the scorecard, then review docs and policies yourself using the tier requirements as a checklist:
 
-| Requirement       | Tier 1                         | Tier 2                   |
-| ----------------- | ------------------------------ | ------------------------ |
-| Conformance       | 100% pass                      | >= 80% pass              |
+| Requirement            | Tier 1                         | Tier 2                   |
+| ---------------------- | ------------------------------ | ------------------------ |
+| Server Conformance     | 100% pass                      | >= 80% pass              |
+| Client Conformance     | 100% pass                      | >= 80% pass              |
 | Issue triage      | Within 2 business days         | Within 1 month           |
 | P0 resolution     | Within 7 days                  | Within 2 weeks           |
 | Stable release    | >= 1.0.0 with clear versioning | At least one >= 1.0.0    |
@@ -142,7 +146,7 @@ Run the CLI for the scorecard, then review docs and policies yourself using the 
 
 ## Running Conformance Tests
 
-To include conformance test results, start the SDK's everything server first, then pass the URL to the CLI.
+To include conformance test results, start the SDK's everything server first, then pass the URL to the CLI. To also run client conformance tests, pass `--client-cmd` with the command to launch the SDK's conformance client.
 
 **TypeScript SDK**:
 
@@ -151,10 +155,11 @@ To include conformance test results, start the SDK's everything server first, th
 cd ~/src/mcp/typescript-sdk && pnpm build:all
 cd test/conformance && npx tsx src/everythingServer.ts
 
-# Terminal 2: run tier-check
+# Terminal 2: run tier-check (server + client conformance)
 npm run --silent tier-check -- \
   --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-url http://localhost:3000/mcp
+  --conformance-server-url http://localhost:3000/mcp \
+  --client-cmd 'npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts'
 ```
 
 **Python SDK**:
@@ -167,10 +172,11 @@ uv run mcp-everything-server
 # Terminal 2
 npm run --silent tier-check -- \
   --repo modelcontextprotocol/python-sdk \
-  --conformance-server-url http://localhost:3001/mcp
+  --conformance-server-url http://localhost:3001/mcp \
+  --client-cmd 'uv run python ~/src/mcp/python-sdk/tests/conformance/client.py'
 ```
 
-**Other SDKs:** Start your everything server, then pass `--conformance-server-url`. If no everything server exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
+**Other SDKs:** Start your everything server, then pass `--conformance-server-url`. Pass `--client-cmd` if the SDK has a conformance client. If neither exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
 
 ## Reference Files
 
