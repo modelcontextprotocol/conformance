@@ -140,36 +140,48 @@ When evaluating P0 metrics, flag potentially mislabeled P0 issues:
 
 ## Step 5: Generate Output
 
-Write detailed reports to files and show a concise summary to the user.
+Write detailed reports to files using subagents, then show a concise summary to the user.
 
-### Output files
+### Output files (write via subagents)
+
+**IMPORTANT**: Write both report files using parallel subagents (Task tool) so the file-writing work does not pollute the main conversation thread. Launch both subagents at the same time.
 
 Write two files to `results/` in the conformance repo:
 
 - `results/<YYYY-MM-DD>-<sdk-name>-assessment.md`
 - `results/<YYYY-MM-DD>-<sdk-name>-remediation.md`
 
-For example: `results/2026-02-10-typescript-sdk-assessment.md`
+For example: `results/2026-02-11-typescript-sdk-assessment.md`
 
-### Assessment file
+#### Assessment subagent
 
-Use the assessment template from `references/report-template.md`. This file contains the full requirements table, conformance test details (both server and client), triage metrics, documentation coverage table, and policy evaluation evidence.
+Pass all the gathered data (CLI scorecard JSON, docs evaluation results, policy evaluation results) to a subagent and instruct it to write the assessment file using the template from `references/report-template.md`. This file contains the full requirements table, conformance test details (both server and client), triage metrics, documentation coverage table, and policy evaluation evidence.
 
-### Remediation file
+#### Remediation subagent
 
-Use the remediation template from `references/report-template.md`. This file always includes both:
+Pass all the gathered data to a subagent and instruct it to write the remediation file using the template from `references/report-template.md`. This file always includes both:
 
 - **Path to Tier 2** (if current tier is 3) -- what's needed to reach Tier 2
 - **Path to Tier 1** (always) -- what's needed to reach Tier 1
 
 ### Console output (shown to the user)
 
-After writing the files, output a short executive summary directly to the user:
+After the subagents finish, output a short executive summary directly to the user:
 
 ```
 ## <sdk-name> — Tier <X>
 
-Server Conformance: <passed>/<total> (<status>) | Client Conformance: <passed>/<total> (<status>) | Triage: <rate>% (<status>) | P0s: <count> open (<status>) | Docs: <pass>/<total> (<status>) | Policies: <summary> (<status>)
+| Check | Value | T2 | T1 |
+|-------|-------|----|----|
+| Server Conformance | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
+| Client Conformance | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
+| Issue Triage | <rate>% (<triaged>/<total>) | ✓/✗ | ✓/✗ |
+| P0 Resolution | <count> open | ✓/✗ | ✓/✗ |
+| Documentation | <pass>/<total> features | ✓/✗ | ✓/✗ |
+| Dependency Policy | <summary> | ✓/✗ | ✓/✗ |
+| Roadmap | <summary> | ✓/✗ | ✓/✗ |
+| Versioning Policy | <summary> | N/A | ✓/✗ |
+| Stable Release | <version> | ✓/✗ | ✓/✗ |
 
 For Tier 2: <one-line summary of what's needed, or "All requirements met">
 For Tier 1: <one-line summary of what's needed, or "All requirements met">
@@ -179,7 +191,7 @@ Reports:
 - results/<date>-<sdk-name>-remediation.md
 ```
 
-Use checkmarks/crosses for status: ✓ for pass, ✗ for fail.
+Use ✓ for pass and ✗ for fail.
 
 **Special note for high P0 count with strong other metrics:**
 
