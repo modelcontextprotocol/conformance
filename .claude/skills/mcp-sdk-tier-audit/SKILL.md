@@ -42,31 +42,9 @@ Extract from the user's input:
 
 - **local-path**: absolute path to the SDK checkout (e.g. `~/src/mcp/typescript-sdk`)
 - **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
-- **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, try to auto-detect it (see below).
+- **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, client conformance tests are skipped and noted as a gap in the report.
 
 The first two arguments are required. If either is missing, ask the user to provide it.
-
-### Auto-detecting the conformance client command
-
-If client-cmd is not provided, look for a conformance client in the local checkout:
-
-```bash
-# Check common locations for a conformance/everything client
-ls <local-path>/test/conformance/src/everythingClient.ts 2>/dev/null
-ls <local-path>/.github/actions/conformance/client.py 2>/dev/null
-```
-
-For TypeScript SDKs, the client command is typically:
-```
-npx tsx <local-path>/test/conformance/src/everythingClient.ts
-```
-
-For Python SDKs, the client command is typically:
-```
-uv run python <local-path>/.github/actions/conformance/client.py
-```
-
-If no conformance client is found, proceed without client conformance tests (they will be skipped and noted in the report).
 
 Derive the GitHub `owner/repo` from the local checkout:
 
@@ -245,13 +223,12 @@ Read these reference files when you need the detailed content for evaluation pro
 ## Usage Examples
 
 ```
-# TypeScript SDK on v1.x with everything server running on port 3000
-# (client command auto-detected from test/conformance/src/everythingClient.ts)
-/mcp-sdk-tier-audit ~/src/mcp/worktrees/typescript-sdk-v1x http://localhost:3000/mcp
+# TypeScript SDK — server + client conformance
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts"
 
-# Explicit client command
-/mcp-sdk-tier-audit ~/src/mcp/worktrees/typescript-sdk-v1x http://localhost:3000/mcp "npx tsx ~/src/mcp/worktrees/typescript-sdk-v1x/test/conformance/src/everythingClient.ts"
+# Python SDK — server + client conformance
+/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp "uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py"
 
-# Python SDK with everything server running on port 3001
-/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp
+# Any SDK — server conformance only (no client)
+/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002/mcp
 ```

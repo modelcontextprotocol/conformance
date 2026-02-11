@@ -100,7 +100,7 @@ The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](
 /mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd]
 ```
 
-The skill auto-detects the conformance client for TypeScript and Python SDKs by checking known paths (`test/conformance/src/everythingClient.ts` and `tests/conformance/client.py`). For other SDKs, pass the client command as the third argument — or omit it to skip client conformance (noted as a gap in the report).
+Pass the client command as the third argument to include client conformance testing. If omitted, client conformance is skipped and noted as a gap in the report.
 
 **TypeScript SDK example:**
 
@@ -109,7 +109,7 @@ The skill auto-detects the conformance client for TypeScript and Python SDKs by 
 cd ~/src/mcp/typescript-sdk && npm run test:conformance:server:run
 
 # Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts"
 ```
 
 **Python SDK example:**
@@ -120,13 +120,7 @@ cd ~/src/mcp/python-sdk && uv sync --frozen --all-extras --package mcp-everythin
 uv run mcp-everything-server --port 3001
 
 # Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp
-```
-
-**Other SDKs** — pass the client command explicitly:
-
-```bash
-/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002/mcp 'go run ./test/conformance/client'
+/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp "uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py"
 ```
 
 The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`.
