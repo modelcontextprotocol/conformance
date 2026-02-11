@@ -13,21 +13,27 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
 
-// Create minimal MCP server
-const server = new McpServer({
-  name: 'no-dns-rebinding-protection-server',
-  version: '1.0.0'
-});
+// Create a fresh MCP server per request to avoid "Already connected" errors
+// after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
+function createMcpServer() {
+  const server = new McpServer({
+    name: 'no-dns-rebinding-protection-server',
+    version: '1.0.0'
+  });
 
-// Add a simple tool
-server.tool(
-  'echo',
-  'Echo the input back',
-  { message: { type: 'string' } },
-  async ({ message }) => ({
-    content: [{ type: 'text', text: `Echo: ${message}` }]
-  })
-);
+  server.registerTool(
+    'echo',
+    {
+      description: 'Echo the input back',
+      inputSchema: { message: { type: 'string' } }
+    },
+    async ({ message }) => ({
+      content: [{ type: 'text', text: `Echo: ${message}` }]
+    })
+  );
+
+  return server;
+}
 
 // === VULNERABLE EXPRESS APP ===
 // This intentionally does NOT use createMcpExpressApp() or localhostHostValidation()
@@ -37,6 +43,7 @@ app.use(express.json());
 
 app.post('/mcp', async (req, res) => {
   try {
+    const server = createMcpServer();
     // Stateless: no session ID
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined
