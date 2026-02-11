@@ -53,7 +53,7 @@ If client-cmd is not provided, look for a conformance client in the local checko
 ```bash
 # Check common locations for a conformance/everything client
 ls <local-path>/test/conformance/src/everythingClient.ts 2>/dev/null
-ls <local-path>/tests/conformance/client.py 2>/dev/null
+ls <local-path>/.github/actions/conformance/client.py 2>/dev/null
 ```
 
 For TypeScript SDKs, the client command is typically:
@@ -63,7 +63,7 @@ npx tsx <local-path>/test/conformance/src/everythingClient.ts
 
 For Python SDKs, the client command is typically:
 ```
-uv run python <local-path>/tests/conformance/client.py
+uv run python <local-path>/.github/actions/conformance/client.py
 ```
 
 If no conformance client is found, proceed without client conformance tests (they will be skipped and noted in the report).

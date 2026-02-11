@@ -92,24 +92,44 @@ The CLI produces a deterministic scorecard, but some SEP-1730 requirements need 
 
 The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](https://docs.anthropic.com/en/docs/claude-code) in the conformance repo it's already available.
 
-1. Start the SDK's everything server in a separate terminal
-2. Run the skill:
+1. Make sure `gh auth login` is done (the skill checks this upfront)
+2. Start the SDK's everything server in a separate terminal
+3. Run the skill:
 
 ```
-/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url>
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd]
 ```
 
-Example:
+The skill auto-detects the conformance client for TypeScript and Python SDKs by checking known paths (`test/conformance/src/everythingClient.ts` and `tests/conformance/client.py`). For other SDKs, pass the client command as the third argument — or omit it to skip client conformance (noted as a gap in the report).
+
+**TypeScript SDK example:**
 
 ```bash
-# Terminal 1: start the everything server
-cd ~/src/mcp/typescript-sdk/test/conformance && npx tsx src/everythingServer.ts
+# Terminal 1: start the everything server (build first: npm run build)
+cd ~/src/mcp/typescript-sdk && npm run test:conformance:server:run
 
 # Terminal 2: run the audit (from the conformance repo)
 /mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp
 ```
 
-The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/tier-audits/`.
+**Python SDK example:**
+
+```bash
+# Terminal 1: install and start the everything server
+cd ~/src/mcp/python-sdk && uv sync --frozen --all-extras --package mcp-everything-server
+uv run mcp-everything-server --port 3001
+
+# Terminal 2: run the audit (from the conformance repo)
+/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp
+```
+
+**Other SDKs** — pass the client command explicitly:
+
+```bash
+/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002/mcp 'go run ./test/conformance/client'
+```
+
+The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`.
 
 ### Any Other AI Coding Agent
 
@@ -152,8 +172,8 @@ To include conformance test results, start the SDK's everything server first, th
 
 ```bash
 # Terminal 1: start the server (SDK must be built first)
-cd ~/src/mcp/typescript-sdk && pnpm build:all
-cd test/conformance && npx tsx src/everythingServer.ts
+cd ~/src/mcp/typescript-sdk && npm run build
+npm run test:conformance:server:run   # starts on port 3000
 
 # Terminal 2: run tier-check (server + client conformance)
 npm run --silent tier-check -- \
@@ -165,18 +185,21 @@ npm run --silent tier-check -- \
 **Python SDK**:
 
 ```bash
-# Terminal 1
-cd ~/src/mcp/python-sdk/examples/servers/everything-server
-uv run mcp-everything-server
+# Terminal 1: install and start the server
+cd ~/src/mcp/python-sdk
+uv sync --frozen --all-extras --package mcp-everything-server
+uv run mcp-everything-server --port 3001   # specify port to avoid conflicts
 
-# Terminal 2
+# Terminal 2: run tier-check (server + client conformance)
 npm run --silent tier-check -- \
   --repo modelcontextprotocol/python-sdk \
   --conformance-server-url http://localhost:3001/mcp \
-  --client-cmd 'uv run python ~/src/mcp/python-sdk/tests/conformance/client.py'
+  --client-cmd 'uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py'
 ```
 
-**Other SDKs:** Start your everything server, then pass `--conformance-server-url`. Pass `--client-cmd` if the SDK has a conformance client. If neither exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
+**Other SDKs:** Your SDK needs an "everything server" — an HTTP server at `/mcp` implementing the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/draft/basic/transports.md) with all MCP features (tools, resources, prompts, etc.). See the [TypeScript](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x/test/conformance) or [Python](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x/examples/servers/everything-server) implementations as reference.
+
+Start your everything server, then pass `--conformance-server-url`. Pass `--client-cmd` if your SDK has a conformance client. If neither exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
 
 ## Reference Files
 
