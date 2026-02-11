@@ -161,21 +161,20 @@ export async function checkClientConformance(options: {
   for (const scenarioName of scenarios) {
     try {
       const result = await withTimeout(
-        runConformanceTest(options.clientCmd, scenarioName, SCENARIO_TIMEOUT_MS),
+        runConformanceTest(
+          options.clientCmd,
+          scenarioName,
+          SCENARIO_TIMEOUT_MS
+        ),
         SCENARIO_TIMEOUT_MS + 5_000, // extra buffer beyond the inner timeout
         scenarioName
       );
-      const passed = result.checks.filter(
-        (c) => c.status === 'SUCCESS'
-      ).length;
-      const failed = result.checks.filter(
-        (c) => c.status === 'FAILURE'
-      ).length;
+      const passed = result.checks.filter((c) => c.status === 'SUCCESS').length;
+      const failed = result.checks.filter((c) => c.status === 'FAILURE').length;
 
       // A non-zero exit code counts as a failure unless the scenario expects it
       const clientFailed =
-        !result.allowClientError &&
-        result.clientOutput.exitCode !== 0;
+        !result.allowClientError && result.clientOutput.exitCode !== 0;
 
       const scenarioPassed = failed === 0 && passed > 0 && !clientFailed;
       totalPassed += scenarioPassed ? 1 : 0;

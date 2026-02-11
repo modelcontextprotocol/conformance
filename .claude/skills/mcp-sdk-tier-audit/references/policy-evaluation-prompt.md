@@ -48,6 +48,7 @@ For each file that the CLI reported as present, read its content at `{local-path
 ### Dependency Update Policy
 
 **PASS** if any of these exist with substantive content:
+
 - `DEPENDENCY_POLICY.md` or `docs/dependency-policy.md` — must describe how and when dependencies are updated
 - `.github/dependabot.yml` or `.github/renovate.json` or `renovate.json` — automated tooling counts as a published policy in practice
 
@@ -64,6 +65,7 @@ For each file that the CLI reported as present, read its content at `{local-path
 ### Versioning Policy
 
 **PASS for Tier 1** if any of these exist with substantive content:
+
 - `VERSIONING.md` or `docs/versioning.md` or `BREAKING_CHANGES.md`
 - A clearly labeled "Versioning" or "Breaking Changes" section in `CONTRIBUTING.md` (only check if CONTRIBUTING.md exists per CLI output)
 
@@ -85,12 +87,12 @@ The content must describe: what constitutes a breaking change, how breaking chan
 
 #### 1. Dependency Update Policy: {PASS/FAIL}
 
-| File | Exists (CLI) | Content Verdict |
-|---|---|---|
-| DEPENDENCY_POLICY.md | Yes/No | Substantive / Placeholder / N/A |
-| docs/dependency-policy.md | Yes/No | Substantive / Placeholder / N/A |
-| .github/dependabot.yml | Yes/No | Configured / N/A |
-| .github/renovate.json | Yes/No | Configured / N/A |
+| File                      | Exists (CLI) | Content Verdict                 |
+| ------------------------- | ------------ | ------------------------------- |
+| DEPENDENCY_POLICY.md      | Yes/No       | Substantive / Placeholder / N/A |
+| docs/dependency-policy.md | Yes/No       | Substantive / Placeholder / N/A |
+| .github/dependabot.yml    | Yes/No       | Configured / N/A                |
+| .github/renovate.json     | Yes/No       | Configured / N/A                |
 
 **Verdict**: **PASS/FAIL** — {one-line explanation}
 
@@ -98,12 +100,13 @@ The content must describe: what constitutes a breaking change, how breaking chan
 
 #### 2. Roadmap: {PASS/FAIL}
 
-| File | Exists (CLI) | Content Verdict |
-|---|---|---|
-| ROADMAP.md | Yes/No | Substantive / Placeholder / N/A |
-| docs/roadmap.md | Yes/No | Substantive / Placeholder / N/A |
+| File            | Exists (CLI) | Content Verdict                 |
+| --------------- | ------------ | ------------------------------- |
+| ROADMAP.md      | Yes/No       | Substantive / Placeholder / N/A |
+| docs/roadmap.md | Yes/No       | Substantive / Placeholder / N/A |
 
 **Verdict**:
+
 - **Tier 1**: **PASS/FAIL** — {one-line explanation}
 - **Tier 2**: **PASS/FAIL** — {one-line explanation}
 
@@ -111,14 +114,15 @@ The content must describe: what constitutes a breaking change, how breaking chan
 
 #### 3. Versioning Policy: {PASS/FAIL}
 
-| File | Exists (CLI) | Content Verdict |
-|---|---|---|
-| VERSIONING.md | Yes/No | Substantive / Placeholder / N/A |
-| docs/versioning.md | Yes/No | Substantive / Placeholder / N/A |
-| BREAKING_CHANGES.md | Yes/No | Substantive / Placeholder / N/A |
-| CONTRIBUTING.md (versioning section) | Yes/No | Found / Not found / N/A |
+| File                                 | Exists (CLI) | Content Verdict                 |
+| ------------------------------------ | ------------ | ------------------------------- |
+| VERSIONING.md                        | Yes/No       | Substantive / Placeholder / N/A |
+| docs/versioning.md                   | Yes/No       | Substantive / Placeholder / N/A |
+| BREAKING_CHANGES.md                  | Yes/No       | Substantive / Placeholder / N/A |
+| CONTRIBUTING.md (versioning section) | Yes/No       | Found / Not found / N/A         |
 
 **Verdict**:
+
 - **Tier 1**: **PASS/FAIL** — {one-line explanation}
 - **Tier 2**: **N/A** — only requires stable release
 

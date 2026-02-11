@@ -50,16 +50,16 @@ For public repos, any authenticated token works (no special scopes needed — au
 
 ### What the CLI Checks
 
-| Check               | What it measures                                                               |
-| ------------------- | ------------------------------------------------------------------------------ |
-| Server Conformance  | Pass rate of server implementation against the conformance test suite           |
-| Client Conformance  | Pass rate of client implementation against the conformance test suite           |
-| Labels         | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
-| Triage         | How quickly issues get labeled after creation                                  |
-| P0 Resolution  | Whether critical bugs are resolved within SLA                                  |
-| Stable Release | Whether a stable release >= 1.0.0 exists                                       |
-| Policy Signals | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP             |
-| Spec Tracking  | Gap between latest spec release and SDK release                                |
+| Check              | What it measures                                                               |
+| ------------------ | ------------------------------------------------------------------------------ |
+| Server Conformance | Pass rate of server implementation against the conformance test suite          |
+| Client Conformance | Pass rate of client implementation against the conformance test suite          |
+| Labels             | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
+| Triage             | How quickly issues get labeled after creation                                  |
+| P0 Resolution      | Whether critical bugs are resolved within SLA                                  |
+| Stable Release     | Whether a stable release >= 1.0.0 exists                                       |
+| Policy Signals     | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP             |
+| Spec Tracking      | Gap between latest spec release and SDK release                                |
 
 ### Example Output
 
@@ -147,16 +147,16 @@ If you use a different agent (Codex, Cursor, Aider, OpenCode, etc.), give it the
 
 Run the CLI for the scorecard, then review docs and policies yourself using the tier requirements as a checklist:
 
-| Requirement            | Tier 1                         | Tier 2                   |
-| ---------------------- | ------------------------------ | ------------------------ |
-| Server Conformance     | 100% pass                      | >= 80% pass              |
-| Client Conformance     | 100% pass                      | >= 80% pass              |
-| Issue triage      | Within 2 business days         | Within 1 month           |
-| P0 resolution     | Within 7 days                  | Within 2 weeks           |
-| Stable release    | >= 1.0.0 with clear versioning | At least one >= 1.0.0    |
-| Documentation     | All features with examples     | Core features documented |
-| Dependency policy | Published                      | Published                |
-| Roadmap           | Published with spec tracking   | Plan toward Tier 1       |
+| Requirement        | Tier 1                         | Tier 2                   |
+| ------------------ | ------------------------------ | ------------------------ |
+| Server Conformance | 100% pass                      | >= 80% pass              |
+| Client Conformance | 100% pass                      | >= 80% pass              |
+| Issue triage       | Within 2 business days         | Within 1 month           |
+| P0 resolution      | Within 7 days                  | Within 2 weeks           |
+| Stable release     | >= 1.0.0 with clear versioning | At least one >= 1.0.0    |
+| Documentation      | All features with examples     | Core features documented |
+| Dependency policy  | Published                      | Published                |
+| Roadmap            | Published with spec tracking   | Plan toward Tier 1       |
 
 ## Running Conformance Tests
 

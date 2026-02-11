@@ -80,49 +80,57 @@ export function createTierCheckCommand(): Command {
       console.error('Running tier assessment checks...\n');
 
       // Run all checks
-      const [conformance, clientConformance, labels, triage, p0, release, files, specTracking] =
-        await Promise.all([
-          checkConformance({
-            serverCmd: options.conformanceServerCmd,
-            serverCwd: options.conformanceServerCwd,
-            serverUrl: options.conformanceServerUrl,
-            skip: options.skipConformance
-          }).then((r) => {
-            console.error('  ✓ Server Conformance');
-            return r;
-          }),
-          checkClientConformance({
-            clientCmd: options.clientCmd,
-            skip: options.skipConformance || !options.clientCmd
-          }).then((r) => {
-            console.error('  ✓ Client Conformance');
-            return r;
-          }),
-          checkLabels(octokit, owner, repo).then((r) => {
-            console.error('  ✓ Labels');
-            return r;
-          }),
-          checkTriage(octokit, owner, repo, days).then((r) => {
-            console.error('  \u2713 Triage');
-            return r;
-          }),
-          checkP0Resolution(octokit, owner, repo).then((r) => {
-            console.error('  \u2713 P0 Resolution');
-            return r;
-          }),
-          checkStableRelease(octokit, owner, repo).then((r) => {
-            console.error('  \u2713 Stable Release');
-            return r;
-          }),
-          checkPolicySignals(octokit, owner, repo, options.branch).then((r) => {
-            console.error('  \u2713 Policy Signals');
-            return r;
-          }),
-          checkSpecTracking(octokit, owner, repo).then((r) => {
-            console.error('  \u2713 Spec Tracking');
-            return r;
-          })
-        ]);
+      const [
+        conformance,
+        clientConformance,
+        labels,
+        triage,
+        p0,
+        release,
+        files,
+        specTracking
+      ] = await Promise.all([
+        checkConformance({
+          serverCmd: options.conformanceServerCmd,
+          serverCwd: options.conformanceServerCwd,
+          serverUrl: options.conformanceServerUrl,
+          skip: options.skipConformance
+        }).then((r) => {
+          console.error('  ✓ Server Conformance');
+          return r;
+        }),
+        checkClientConformance({
+          clientCmd: options.clientCmd,
+          skip: options.skipConformance || !options.clientCmd
+        }).then((r) => {
+          console.error('  ✓ Client Conformance');
+          return r;
+        }),
+        checkLabels(octokit, owner, repo).then((r) => {
+          console.error('  ✓ Labels');
+          return r;
+        }),
+        checkTriage(octokit, owner, repo, days).then((r) => {
+          console.error('  \u2713 Triage');
+          return r;
+        }),
+        checkP0Resolution(octokit, owner, repo).then((r) => {
+          console.error('  \u2713 P0 Resolution');
+          return r;
+        }),
+        checkStableRelease(octokit, owner, repo).then((r) => {
+          console.error('  \u2713 Stable Release');
+          return r;
+        }),
+        checkPolicySignals(octokit, owner, repo, options.branch).then((r) => {
+          console.error('  \u2713 Policy Signals');
+          return r;
+        }),
+        checkSpecTracking(octokit, owner, repo).then((r) => {
+          console.error('  \u2713 Spec Tracking');
+          return r;
+        })
+      ]);
 
       const checks = {
         conformance,

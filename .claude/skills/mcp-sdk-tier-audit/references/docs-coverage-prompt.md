@@ -70,14 +70,14 @@ Produce your assessment in this exact format:
 
 One row per feature from `references/feature-list.md`. Use the exact feature numbers and names from that file.
 
-| # | Feature | Documented? | Where | Has Examples? | Verdict |
-|---|---------|-------------|-------|---------------|---------|
-| 1 | Tools - listing | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| 2 | Tools - calling | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| ... | ... | ... | ... | ... | ... |
-| 48 | JSON Schema 2020-12 | Yes/No | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
-| — | Tasks - get (experimental) | Yes/No | {file}:{lines} | Yes ({N} examples) / No | INFO |
-| ... | ... | ... | ... | ... | ... |
+| #   | Feature                    | Documented? | Where          | Has Examples?           | Verdict           |
+| --- | -------------------------- | ----------- | -------------- | ----------------------- | ----------------- |
+| 1   | Tools - listing            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| 2   | Tools - calling            | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| ... | ...                        | ...         | ...            | ...                     | ...               |
+| 48  | JSON Schema 2020-12        | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | PASS/PARTIAL/FAIL |
+| —   | Tasks - get (experimental) | Yes/No      | {file}:{lines} | Yes ({N} examples) / No | INFO              |
+| ... | ...                        | ...         | ...            | ...                     | ...               |
 
 All 48 non-experimental features MUST appear in the table. Do not skip or merge rows.
 
