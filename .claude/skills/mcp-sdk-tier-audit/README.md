@@ -138,7 +138,7 @@ go build -o /tmp/go-conformance-client ./conformance/everything-client
 ```bash
 # Terminal 1: start the everything server (requires .NET SDK)
 cd ~/src/mcp/csharp-sdk
-dotnet run --project tests/ModelContextProtocol.ConformanceServer -- --urls http://localhost:3003
+dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework net9.0 -- --urls http://localhost:3003
 
 # Terminal 2: run the audit (from the conformance repo)
 /mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
@@ -233,7 +233,7 @@ npm run --silent tier-check -- \
 ```bash
 # Terminal 1: start the server (requires .NET SDK)
 cd ~/src/mcp/csharp-sdk
-dotnet run --project tests/ModelContextProtocol.ConformanceServer -- --urls http://localhost:3003
+dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework net9.0 -- --urls http://localhost:3003
 
 # Terminal 2: run tier-check (server + client conformance)
 npm run --silent tier-check -- \
