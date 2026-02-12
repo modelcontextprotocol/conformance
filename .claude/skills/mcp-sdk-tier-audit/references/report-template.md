@@ -67,10 +67,10 @@ Full suite pass rate: {X}% ({passed}/{total})
 
 ### Auth Scenarios
 
-| Scenario | Status      | Checks           | Notes |
-| -------- | ----------- | ---------------- | ----- |
+| Scenario | Status      | Checks           | Notes                       |
+| -------- | ----------- | ---------------- | --------------------------- |
 | {name}   | {PASS/FAIL} | {passed}/{total} | {in baseline? / unexpected} |
-| ...      | ...         | ...              | ...   |
+| ...      | ...         | ...              | ...                         |
 
 ---
 
