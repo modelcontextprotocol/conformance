@@ -28,6 +28,7 @@ import {
   evaluateBaseline,
   printBaselineResults
 } from './expected-failures';
+import { createTierCheckCommand } from './tier-check';
 import packageJson from '../package.json';
 
 const program = new Command();
@@ -382,6 +383,9 @@ program
       process.exit(1);
     }
   });
+
+// Tier check command
+program.addCommand(createTierCheckCommand());
 
 // List scenarios command
 program
