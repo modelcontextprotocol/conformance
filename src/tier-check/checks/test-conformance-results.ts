@@ -4,13 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { ConformanceResult } from '../types';
 import { listScenarios, listActiveClientScenarios } from '../../scenarios';
-
-interface ConformanceCheck {
-  name: string;
-  status: 'SUCCESS' | 'FAILURE' | 'WARNING';
-  description?: string;
-  errorMessage?: string;
-}
+import { ConformanceCheck } from '../../types';
 
 /**
  * Parse conformance results from an output directory.
