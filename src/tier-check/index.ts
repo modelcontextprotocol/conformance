@@ -1,6 +1,9 @@
 import { Command } from 'commander';
 import { Octokit } from '@octokit/rest';
-import { checkConformance, checkClientConformance } from './checks/conformance';
+import {
+  checkConformance,
+  checkClientConformance
+} from './checks/test-conformance-results';
 import { checkLabels } from './checks/labels';
 import { checkTriage } from './checks/triage';
 import { checkP0Resolution } from './checks/p0';

@@ -15,10 +15,7 @@ interface ConformanceCheck {
  * Parse conformance results from an output directory.
  * The conformance CLI saves checks.json per scenario under outputDir/<scenario>/server/ or client/.
  */
-function parseOutputDir(
-  outputDir: string,
-  mode: 'server' | 'client'
-): ConformanceResult {
+function parseOutputDir(outputDir: string): ConformanceResult {
   if (!existsSync(outputDir)) {
     return {
       status: 'fail',
@@ -36,7 +33,7 @@ function parseOutputDir(
 
   const entries = readdirSync(outputDir);
   for (const scenarioName of entries) {
-    const checksPath = join(outputDir, scenarioName, mode, 'checks.json');
+    const checksPath = join(outputDir, scenarioName, 'checks.json');
     if (!existsSync(checksPath)) continue;
 
     try {
@@ -112,7 +109,7 @@ export async function checkConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return parseOutputDir(outputDir, 'server');
+  return parseOutputDir(outputDir);
 }
 
 /**
@@ -148,5 +145,5 @@ export async function checkClientConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return parseOutputDir(outputDir, 'client');
+  return parseOutputDir(outputDir);
 }

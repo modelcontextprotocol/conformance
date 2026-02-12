@@ -68,6 +68,16 @@ If no client-cmd was detected, omit the `--client-cmd` flag (client conformance 
 
 The CLI output includes server conformance pass rate, client conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
+### Conformance Baseline Check
+
+After running the CLI, check for an expected-failures baseline file in the SDK repo:
+
+```bash
+find <local-path> -name "baseline.yml" -o -name "expected-failures.yml" 2>/dev/null | head -5
+```
+
+If found, read the file. It lists known/expected conformance failures. This context is essential for interpreting raw pass rates — a 20% client pass rate due entirely to unimplemented OAuth scenarios is very different from 20% due to broken core functionality.
+
 ## Step 3: Launch Parallel Evaluations
 
 Launch 2 evaluations in parallel. Each reads the SDK from the local checkout path.
@@ -133,6 +143,18 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
 - If client conformance was skipped (no client command found), note this as a gap but do not block tier advancement based on it alone.
 
+**Client Conformance Splits:**
+
+When reporting client conformance, always break results into three categories:
+
+1. **Core suite** — Non-auth scenarios (e.g. initialize, tools_call, elicitation, sse-retry)
+2. **Auth suite** — OAuth/authorization scenarios (any scenario starting with `auth/`)
+3. **Full suite** — All scenarios combined
+
+The **full suite** number is used for tier threshold checks. However, the core vs auth split provides essential context. Always present both numbers in the report.
+
+If the SDK has a `baseline.yml` or expected-failures file, note which failures are known/tracked vs. unexpected regressions. A low full-suite score where all failures are auth scenarios documented in the baseline is a scope gap (OAuth not yet implemented), not a quality problem — flag it accordingly in the assessment.
+
 **P0 Label Audit Guidance:**
 
 When evaluating P0 metrics, flag potentially mislabeled P0 issues:
@@ -178,7 +200,9 @@ After the subagents finish, output a short executive summary directly to the use
 | Check | Value | T2 | T1 |
 |-------|-------|----|----|
 | Server Conformance | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
-| Client Conformance | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
+| Client Conformance (full) | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
+|   — Core scenarios | <core_pass>/<core_total> (<rate>%) | — | — |
+|   — Auth scenarios | <auth_pass>/<auth_total> (<rate>%) | — | — |
 | Issue Triage | <rate>% (<triaged>/<total>) | ✓/✗ | ✓/✗ |
 | P0 Resolution | <count> open | ✓/✗ | ✓/✗ |
 | Documentation | <pass>/<total> features | ✓/✗ | ✓/✗ |
@@ -186,6 +210,9 @@ After the subagents finish, output a short executive summary directly to the use
 | Roadmap | <summary> | ✓/✗ | ✓/✗ |
 | Versioning Policy | <summary> | N/A | ✓/✗ |
 | Stable Release | <version> | ✓/✗ | ✓/✗ |
+
+If a baseline file was found, add a note below the table:
+> **Baseline**: {N} failures in `baseline.yml` ({list of categories, e.g. "18 auth scenarios"}). Core suite: {core_rate}%.
 
 ---
 
@@ -236,7 +263,11 @@ Read these reference files when you need the detailed content for evaluation pro
 /mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002 "/tmp/go-conformance-client"
 
 # C# SDK — server + client conformance
-/mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
+# Two C#-specific requirements in the client-cmd:
+#   --framework net9.0    : required because the project targets net8.0/net9.0/net10.0
+#   -- $MCP_CONFORMANCE_SCENARIO : the runner sets this env var and uses shell:true, so the
+#                           shell expands it; dotnet passes [scenario, url] to the program
+/mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient --framework net9.0 -- $MCP_CONFORMANCE_SCENARIO"
 
 # Any SDK — server conformance only (no client)
 /mcp-sdk-tier-audit ~/src/mcp/some-sdk http://localhost:3004

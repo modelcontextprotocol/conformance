@@ -22,7 +22,8 @@ Write two files to `results/` in the conformance repo:
 
 | #   | Requirement             | Tier 1 Standard                   | Tier 2 Standard              | Current Value                     | T1?         | T2?         | Gap                |
 | --- | ----------------------- | --------------------------------- | ---------------------------- | --------------------------------- | ----------- | ----------- | ------------------ |
-| 1   | Conformance Tests       | 100% pass rate                    | >= 80% pass rate             | {X}% ({passed}/{total})           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
+| 1a  | Server Conformance      | 100% pass rate                    | >= 80% pass rate             | {X}% ({passed}/{total})           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
+| 1b  | Client Conformance      | 100% pass rate                    | >= 80% pass rate             | {X}% ({passed}/{total})           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 2   | Issue Triage            | >= 90% within 2 biz days          | >= 80% within 1 month        | {compliance}% ({triaged}/{total}) | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 3   | Critical Bug Resolution | All P0s within 7 days             | All P0s within 2 weeks       | {open P0 count} open              | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 4   | Stable Release          | Required + clear versioning       | At least one stable release  | {version}                         | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
@@ -39,7 +40,7 @@ Write two files to `results/` in the conformance repo:
 
 ---
 
-## Conformance Details
+## Server Conformance Details
 
 Pass rate: {X}% ({passed}/{total})
 
@@ -47,6 +48,29 @@ Pass rate: {X}% ({passed}/{total})
 | -------- | ----------- | ---------------- |
 | {name}   | {PASS/FAIL} | {passed}/{total} |
 | ...      | ...         | ...              |
+
+---
+
+## Client Conformance Details
+
+Full suite pass rate: {X}% ({passed}/{total})
+
+> **Suite breakdown**: Core: {core_pass}/{core_total} ({core_rate}%), Auth: {auth_pass}/{auth_total} ({auth_rate}%)
+> **Baseline**: {N} known expected failures documented in `{baseline_file}` ({categories})
+
+### Core Scenarios
+
+| Scenario | Status      | Checks           |
+| -------- | ----------- | ---------------- |
+| {name}   | {PASS/FAIL} | {passed}/{total} |
+| ...      | ...         | ...              |
+
+### Auth Scenarios
+
+| Scenario | Status      | Checks           | Notes |
+| -------- | ----------- | ---------------- | ----- |
+| {name}   | {PASS/FAIL} | {passed}/{total} | {in baseline? / unexpected} |
+| ...      | ...         | ...              | ...   |
 
 ---
 
