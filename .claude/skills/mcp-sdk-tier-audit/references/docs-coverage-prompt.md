@@ -102,10 +102,38 @@ All 48 non-experimental features MUST appear in the table. Do not skip or merge 
 - {If FAIL: list the core features missing documentation}
 ```
 
-## Important Notes
+## What Counts as "Documented"
 
-- A feature is "documented" if there is prose or API reference explaining what it does and how to use it. Mere existence of source code does not count as documentation.
-- "Has examples" means there is runnable or near-runnable code showing the feature in use. This can be in docs, README, or an examples/ directory.
-- Examples in test files count only if they are clearly labeled as examples or referenced from documentation.
+A feature is "documented" only if there is **prose documentation** (in README, docs/, or similar) explaining what the feature does, when to use it, and how it works. The following do **not** count as documentation on their own:
+
+- Example code without accompanying prose explanation
+- Conformance test servers or test fixtures
+- Source code, even with comments or docstrings
+- Mere existence of an API (e.g., a function existing in the SDK)
+
+**Examples supplement documentation but do not replace it.** A feature with a working example in `examples/` but no prose explaining the feature is PARTIAL, not PASS. A feature with only a conformance server implementation and no user-facing docs is FAIL.
+
+### Verdict criteria
+
+- **PASS**: Prose documentation exists explaining the feature AND at least one runnable or near-runnable code example
+- **PARTIAL**: Either prose docs exist but no examples, OR examples exist but no prose docs
+- **FAIL**: No prose documentation and no examples. Also use FAIL if the feature is only demonstrated in test/conformance code with no user-facing docs or examples
+
+### What counts as an "example"
+
+- Runnable code in an `examples/` directory
+- Code snippets embedded in prose documentation (README, docs/\*.md)
+- Go `Example*` test functions (these render on pkg.go.dev and are a language convention)
+- Examples in test files count only if they are clearly labeled as examples or referenced from documentation
+
+### What does NOT count as an example
+
+- Conformance test server implementations
+- Internal test fixtures
+- Source code of the SDK itself
+
+## Other Important Notes
+
 - If the SDK does not implement a feature at all, mark it as "FAIL" for documentation but note "Not implemented" in the Where column.
 - Be thorough: check README, docs/, examples/, API references, and inline docstrings.
+- Apply these criteria consistently across all features. Do not give credit for documentation that doesn't exist.

@@ -205,8 +205,5 @@ export async function checkClientConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return reconcileWithExpected(
-    parseOutputDir(outputDir),
-    listScenarios()
-  );
+  return reconcileWithExpected(parseOutputDir(outputDir), listScenarios());
 }
