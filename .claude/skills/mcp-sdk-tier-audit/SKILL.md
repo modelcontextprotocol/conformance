@@ -204,7 +204,9 @@ After the subagents finish, output a short executive summary directly to the use
 |   — Core scenarios | <core_pass>/<core_total> (<rate>%) | — | — |
 |   — Auth scenarios | <auth_pass>/<auth_total> (<rate>%) | — | — |
 | Issue Triage | <rate>% (<triaged>/<total>) | ✓/✗ | ✓/✗ |
+| Labels | <present>/<required> | ✓/✗ | ✓/✗ |
 | P0 Resolution | <count> open | ✓/✗ | ✓/✗ |
+| Spec Tracking | <days>d gap | ✓/✗ | ✓/✗ |
 | Documentation | <pass>/<total> features | ✓/✗ | ✓/✗ |
 | Dependency Policy | <summary> | ✓/✗ | ✓/✗ |
 | Roadmap | <summary> | ✓/✗ | ✓/✗ |

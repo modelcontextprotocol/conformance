@@ -25,8 +25,10 @@ Write two files to `results/` in the conformance repo:
 | 1a  | Server Conformance      | 100% pass rate                    | >= 80% pass rate             | {X}% ({passed}/{total})           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 1b  | Client Conformance      | 100% pass rate                    | >= 80% pass rate             | {X}% ({passed}/{total})           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 2   | Issue Triage            | >= 90% within 2 biz days          | >= 80% within 1 month        | {compliance}% ({triaged}/{total}) | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
+| 2b  | Labels                  | 12 required labels                | 12 required labels           | {present}/{required}              | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 3   | Critical Bug Resolution | All P0s within 7 days             | All P0s within 2 weeks       | {open P0 count} open              | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 4   | Stable Release          | Required + clear versioning       | At least one stable release  | {version}                         | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
+| 4b  | Spec Tracking           | Timeline agreed per release       | Within 6 months              | {days_gap}d gap ({PASS/FAIL})     | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 5   | Documentation           | Comprehensive w/ examples         | Basic docs for core features | {pass}/{total} features           | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 6   | Dependency Policy       | Published update policy           | Published update policy      | {Found/Not found}                 | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
 | 7   | Roadmap                 | Published roadmap                 | Plan toward Tier 1           | {Found/Not found}                 | {PASS/FAIL} | {PASS/FAIL} | {detail or "None"} |
