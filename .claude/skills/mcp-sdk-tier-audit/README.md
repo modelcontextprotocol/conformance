@@ -39,9 +39,7 @@ For public repos, any authenticated token works (no special scopes needed — au
 --repo <owner/repo>              GitHub repository (required)
 --branch <branch>                Branch to check
 --skip-conformance               Skip conformance tests
---conformance-server-url <url>   URL of the running conformance server
---conformance-server-cmd <cmd>   Command to start the conformance server (optional, prefer pre-starting)
---conformance-server-cwd <path>  Working directory for the conformance server command
+--conformance-server-url <url>   URL of the already-running conformance server
 --client-cmd <cmd>               Command to run the SDK conformance client (for client conformance tests)
 --days <n>                       Limit triage analysis to last N days
 --output <format>                json | markdown | terminal (default: terminal)

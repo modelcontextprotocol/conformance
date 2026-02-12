@@ -27,14 +27,9 @@ export function createTierCheckCommand(): Command {
     )
     .option('--branch <branch>', 'Branch to check')
     .option(
-      '--conformance-server-cmd <cmd>',
-      'Command to start the conformance server'
+      '--conformance-server-url <url>',
+      'URL of the already-running conformance server'
     )
-    .option(
-      '--conformance-server-cwd <path>',
-      'Working directory for the conformance server'
-    )
-    .option('--conformance-server-url <url>', 'URL of the conformance server')
     .option(
       '--client-cmd <cmd>',
       'Command to run the SDK conformance client (for client conformance tests)'
@@ -91,8 +86,6 @@ export function createTierCheckCommand(): Command {
         specTracking
       ] = await Promise.all([
         checkConformance({
-          serverCmd: options.conformanceServerCmd,
-          serverCwd: options.conformanceServerCwd,
           serverUrl: options.conformanceServerUrl,
           skip: options.skipConformance
         }).then((r) => {
