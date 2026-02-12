@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ConformanceResult } from '../types';
+import { listScenarios, listActiveClientScenarios } from '../../scenarios';
 
 interface ConformanceCheck {
   name: string;
@@ -77,6 +78,61 @@ function parseOutputDir(outputDir: string): ConformanceResult {
 }
 
 /**
+ * Strip the timestamp suffix from a result directory name.
+ * Result dirs are named `{scenario}-{ISO timestamp}` where the timestamp
+ * has colons/dots replaced with dashes (e.g., `initialize-2026-02-12T16-08-37-806Z`).
+ * Server scenarios also have a `server-` prefix (e.g., `server-ping-2026-02-12T16-08-37-806Z`).
+ */
+function stripTimestamp(dirName: string): string {
+  return dirName.replace(/-\d{4}-\d{2}-\d{2}T[\d-]+Z$/, '');
+}
+
+/**
+ * Reconcile parsed results against the full list of expected scenarios.
+ * Any expected scenario that didn't produce results is counted as a failure.
+ * This ensures the denominator reflects the full test suite, not just
+ * scenarios that ran successfully enough to write checks.json.
+ */
+function reconcileWithExpected(
+  result: ConformanceResult,
+  expectedScenarios: string[],
+  resultPrefix?: string
+): ConformanceResult {
+  const reportedNames = new Set(
+    result.details.map((d) => {
+      let name = stripTimestamp(d.scenario);
+      if (resultPrefix) {
+        name = name.replace(new RegExp(`^${resultPrefix}-`), '');
+      }
+      return name;
+    })
+  );
+
+  for (const expected of expectedScenarios) {
+    if (!reportedNames.has(expected)) {
+      result.failed++;
+      result.total++;
+      result.details.push({
+        scenario: expected,
+        passed: false,
+        checks_passed: 0,
+        checks_failed: 0
+      });
+    }
+  }
+
+  result.pass_rate = result.total > 0 ? result.passed / result.total : 0;
+  result.status =
+    result.pass_rate >= 1.0
+      ? 'pass'
+      : result.pass_rate >= 0.8
+        ? 'partial'
+        : 'fail';
+
+  return result;
+}
+
+/**
  * Run server conformance tests by shelling out to the conformance CLI.
  */
 export async function checkConformance(options: {
@@ -109,7 +165,11 @@ export async function checkConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return parseOutputDir(outputDir);
+  return reconcileWithExpected(
+    parseOutputDir(outputDir),
+    listActiveClientScenarios(),
+    'server'
+  );
 }
 
 /**
@@ -145,5 +205,8 @@ export async function checkClientConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return parseOutputDir(outputDir);
+  return reconcileWithExpected(
+    parseOutputDir(outputDir),
+    listScenarios()
+  );
 }
