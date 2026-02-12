@@ -121,6 +121,29 @@ uv run mcp-everything-server --port 3001
 /mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp "uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py"
 ```
 
+**Go SDK example:**
+
+```bash
+# Terminal 1: build and start the everything server
+cd ~/src/mcp/go-sdk && go build -o /tmp/go-conformance-server ./conformance/everything-server
+go build -o /tmp/go-conformance-client ./conformance/everything-client
+/tmp/go-conformance-server -http="localhost:3002"
+
+# Terminal 2: run the audit (from the conformance repo)
+/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002 "/tmp/go-conformance-client"
+```
+
+**C# SDK example:**
+
+```bash
+# Terminal 1: start the everything server (requires .NET SDK)
+cd ~/src/mcp/csharp-sdk
+dotnet run --project tests/ModelContextProtocol.ConformanceServer -- --urls http://localhost:3003
+
+# Terminal 2: run the audit (from the conformance repo)
+/mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
+```
+
 The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`.
 
 ### Any Other AI Coding Agent
@@ -189,7 +212,37 @@ npm run --silent tier-check -- \
   --client-cmd 'uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py'
 ```
 
-**Other SDKs:** Your SDK needs an "everything server" — an HTTP server at `/mcp` implementing the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/draft/basic/transports.md) with all MCP features (tools, resources, prompts, etc.). See the [TypeScript](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x/test/conformance) or [Python](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x/examples/servers/everything-server) implementations as reference.
+**Go SDK**:
+
+```bash
+# Terminal 1: build and start the server
+cd ~/src/mcp/go-sdk
+go build -o /tmp/go-conformance-server ./conformance/everything-server
+go build -o /tmp/go-conformance-client ./conformance/everything-client
+/tmp/go-conformance-server -http="localhost:3002"
+
+# Terminal 2: run tier-check (server + client conformance)
+npm run --silent tier-check -- \
+  --repo modelcontextprotocol/go-sdk \
+  --conformance-server-url http://localhost:3002 \
+  --client-cmd '/tmp/go-conformance-client'
+```
+
+**C# SDK**:
+
+```bash
+# Terminal 1: start the server (requires .NET SDK)
+cd ~/src/mcp/csharp-sdk
+dotnet run --project tests/ModelContextProtocol.ConformanceServer -- --urls http://localhost:3003
+
+# Terminal 2: run tier-check (server + client conformance)
+npm run --silent tier-check -- \
+  --repo modelcontextprotocol/csharp-sdk \
+  --conformance-server-url http://localhost:3003 \
+  --client-cmd 'dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient'
+```
+
+**Other SDKs:** Your SDK needs an "everything server" — an HTTP server implementing the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/draft/basic/transports.md) with all MCP features (tools, resources, prompts, etc.). See the implementations above as reference.
 
 Start your everything server, then pass `--conformance-server-url`. Pass `--client-cmd` if your SDK has a conformance client. If neither exists yet, use `--skip-conformance` — the scorecard will note this as a gap.
 

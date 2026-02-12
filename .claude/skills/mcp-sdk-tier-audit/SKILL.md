@@ -232,6 +232,12 @@ Read these reference files when you need the detailed content for evaluation pro
 # Python SDK — server + client conformance
 /mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp "uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py"
 
+# Go SDK — server + client conformance
+/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002 "/tmp/go-conformance-client"
+
+# C# SDK — server + client conformance
+/mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
+
 # Any SDK — server conformance only (no client)
-/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002/mcp
+/mcp-sdk-tier-audit ~/src/mcp/some-sdk http://localhost:3004
 ```
