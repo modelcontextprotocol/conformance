@@ -372,127 +372,6 @@ registerScenario('auth/pre-registration', runPreRegistration);
 // ============================================================================
 
 /**
- * Cross-app access: Token Exchange (RFC 8693)
- * Tests the first step of SEP-990 where IDP ID token is exchanged for authorization grant.
- */
-export async function runCrossAppAccessTokenExchange(
-  _serverUrl: string
-): Promise<void> {
-  const ctx = parseContext();
-  if (ctx.name !== 'auth/cross-app-access-token-exchange') {
-    throw new Error(
-      `Expected cross-app-access-token-exchange context, got ${ctx.name}`
-    );
-  }
-
-  logger.debug('Starting token exchange flow...');
-  logger.debug('IDP Issuer:', ctx.idp_issuer);
-  logger.debug('Auth Server:', ctx.auth_server_url);
-
-  // Step 1: Exchange IDP ID token for authorization grant using RFC 8693
-  const tokenExchangeParams = new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-    subject_token: ctx.idp_id_token,
-    subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-    client_id: ctx.client_id
-  });
-
-  logger.debug('Performing token exchange...');
-  const tokenExchangeResponse = await fetch(`${ctx.auth_server_url}/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: tokenExchangeParams
-  });
-
-  if (!tokenExchangeResponse.ok) {
-    const error = await tokenExchangeResponse.text();
-    throw new Error(`Token exchange failed: ${error}`);
-  }
-
-  const tokenExchangeResult = await tokenExchangeResponse.json();
-  logger.debug('Token exchange successful');
-  logger.debug('Issued token type:', tokenExchangeResult.issued_token_type);
-
-  // Note: In a real implementation, this authorization grant would be used
-  // in a subsequent JWT bearer grant flow to get an access token
-  logger.debug('Token exchange flow completed successfully');
-}
-
-registerScenario(
-  'auth/cross-app-access-token-exchange',
-  runCrossAppAccessTokenExchange
-);
-
-/**
- * Cross-app access: JWT Bearer Grant (RFC 7523)
- * Tests the second step of SEP-990 where authorization grant is exchanged for access token.
- */
-export async function runCrossAppAccessJwtBearer(
-  serverUrl: string
-): Promise<void> {
-  const ctx = parseContext();
-  if (ctx.name !== 'auth/cross-app-access-jwt-bearer') {
-    throw new Error(
-      `Expected cross-app-access-jwt-bearer context, got ${ctx.name}`
-    );
-  }
-
-  logger.debug('Starting JWT bearer grant flow...');
-  logger.debug('Auth Server:', ctx.auth_server_url);
-
-  // Exchange authorization grant for access token using RFC 7523
-  const jwtBearerParams = new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion: ctx.authorization_grant,
-    client_id: ctx.client_id
-  });
-
-  logger.debug('Performing JWT bearer grant...');
-  const tokenResponse = await fetch(`${ctx.auth_server_url}/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: jwtBearerParams
-  });
-
-  if (!tokenResponse.ok) {
-    const error = await tokenResponse.text();
-    throw new Error(`JWT bearer grant failed: ${error}`);
-  }
-
-  const tokenResult = await tokenResponse.json();
-  logger.debug('JWT bearer grant successful');
-  logger.debug('Access token obtained');
-
-  // Use the access token to connect to MCP server
-  const client = new Client(
-    { name: 'conformance-cross-app-access', version: '1.0.0' },
-    { capabilities: {} }
-  );
-
-  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-    requestInit: {
-      headers: {
-        Authorization: `Bearer ${tokenResult.access_token}`
-      }
-    }
-  });
-
-  await client.connect(transport);
-  logger.debug('Successfully connected to MCP server with access token');
-
-  await client.listTools();
-  logger.debug('Successfully listed tools');
-
-  await transport.close();
-  logger.debug('Connection closed successfully');
-}
-
-registerScenario(
-  'auth/cross-app-access-jwt-bearer',
-  runCrossAppAccessJwtBearer
-);
-
-/**
  * Cross-app access: Complete Flow (SEP-990)
  * Tests the complete flow: IDP ID token -> authorization grant -> access token -> MCP access.
  */
@@ -509,15 +388,50 @@ export async function runCrossAppAccessCompleteFlow(
   logger.debug('Starting complete cross-app access flow...');
   logger.debug('IDP Issuer:', ctx.idp_issuer);
   logger.debug('IDP Token Endpoint:', ctx.idp_token_endpoint);
-  logger.debug('Auth Server:', ctx.auth_server_url);
 
-  // Step 1: Token Exchange (IDP ID token -> ID-JAG)
+  // Step 0: Discover resource and auth server from PRM metadata
+  logger.debug('Step 0: Discovering resource and auth server via PRM...');
+  const prmUrl = new URL(
+    '/.well-known/oauth-protected-resource/mcp',
+    serverUrl
+  );
+  const prmResponse = await fetch(prmUrl.toString());
+  if (!prmResponse.ok) {
+    throw new Error(`PRM discovery failed: ${prmResponse.status}`);
+  }
+  const prm = await prmResponse.json();
+  const resource = prm.resource;
+  const authServerUrl = prm.authorization_servers[0];
+  logger.debug('Discovered resource:', resource);
+  logger.debug('Discovered auth server:', authServerUrl);
+
+  // Discover auth server metadata to find token endpoint
+  const asMetadataUrl = new URL(
+    '/.well-known/oauth-authorization-server',
+    authServerUrl
+  );
+  const asMetadataResponse = await fetch(asMetadataUrl.toString());
+  if (!asMetadataResponse.ok) {
+    throw new Error(
+      `Auth server metadata discovery failed: ${asMetadataResponse.status}`
+    );
+  }
+  const asMetadata = await asMetadataResponse.json();
+  const asTokenEndpoint = asMetadata.token_endpoint;
+  const asIssuer = asMetadata.issuer;
+  logger.debug('Auth server issuer:', asIssuer);
+  logger.debug('Auth server token endpoint:', asTokenEndpoint);
+
+  // Step 1: Token Exchange at IdP (IDP ID token -> ID-JAG)
   logger.debug('Step 1: Exchanging IDP ID token for ID-JAG at IdP...');
   const tokenExchangeParams = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag',
+    audience: asIssuer,
+    resource: resource,
     subject_token: ctx.idp_id_token,
     subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-    client_id: ctx.client_id
+    client_id: ctx.idp_client_id
   });
 
   const tokenExchangeResponse = await fetch(ctx.idp_token_endpoint, {
@@ -536,7 +450,7 @@ export async function runCrossAppAccessCompleteFlow(
   logger.debug('Token exchange successful, ID-JAG obtained');
   logger.debug('Issued token type:', tokenExchangeResult.issued_token_type);
 
-  // Step 2: JWT Bearer Grant (ID-JAG -> access token)
+  // Step 2: JWT Bearer Grant at AS (ID-JAG -> access token)
   logger.debug('Step 2: Exchanging ID-JAG for access token at Auth Server...');
   const jwtBearerParams = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -544,7 +458,7 @@ export async function runCrossAppAccessCompleteFlow(
     client_id: ctx.client_id
   });
 
-  const tokenResponse = await fetch(`${ctx.auth_server_url}/token`, {
+  const tokenResponse = await fetch(asTokenEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: jwtBearerParams

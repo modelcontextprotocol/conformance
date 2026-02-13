@@ -121,8 +121,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         idp_client_id: IDP_CLIENT_ID,
         idp_id_token: idpIdToken,
         idp_issuer: this.idpServer.getUrl(),
-        idp_token_endpoint: `${this.idpServer.getUrl()}/token`,
-        auth_server_url: this.authServer.getUrl()
+        idp_token_endpoint: `${this.idpServer.getUrl()}/token`
       }
     };
   }
@@ -154,6 +153,10 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
       const grantType = req.body.grant_type;
       const subjectToken = req.body.subject_token;
       const subjectTokenType = req.body.subject_token_type;
+      const requestedTokenType = req.body.requested_token_type;
+      const audience = req.body.audience;
+      const resource = req.body.resource;
+      const clientId = req.body.client_id;
 
       // Only handle token exchange at IdP
       if (grantType !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
@@ -172,21 +175,37 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         return;
       }
 
-      if (
-        !subjectToken ||
-        subjectTokenType !== 'urn:ietf:params:oauth:token-type:id_token'
-      ) {
+      // Verify all required token exchange parameters per SEP-990
+      const missingParams: string[] = [];
+      if (!subjectToken) missingParams.push('subject_token');
+      if (subjectTokenType !== 'urn:ietf:params:oauth:token-type:id_token') {
+        missingParams.push(
+          `subject_token_type (expected urn:ietf:params:oauth:token-type:id_token, got ${subjectTokenType || 'missing'})`
+        );
+      }
+      if (requestedTokenType !== 'urn:ietf:params:oauth:token-type:id-jag') {
+        missingParams.push(
+          `requested_token_type (expected urn:ietf:params:oauth:token-type:id-jag, got ${requestedTokenType || 'missing'})`
+        );
+      }
+      if (!audience) missingParams.push('audience');
+      if (!resource) missingParams.push('resource');
+
+      if (missingParams.length > 0) {
         this.checks.push({
           id: 'complete-flow-token-exchange',
           name: 'CompleteFlowTokenExchange',
-          description: 'Invalid subject_token or subject_token_type',
+          description: `Token exchange missing or invalid required parameters: ${missingParams.join(', ')}`,
           status: 'FAILURE',
           timestamp,
-          specReferences: [SpecReferences.RFC_8693_TOKEN_EXCHANGE]
+          specReferences: [
+            SpecReferences.RFC_8693_TOKEN_EXCHANGE,
+            SpecReferences.SEP_990_ENTERPRISE_OAUTH
+          ]
         });
         res.status(400).json({
           error: 'invalid_request',
-          error_description: 'Invalid subject_token'
+          error_description: `Missing or invalid required parameters: ${missingParams.join(', ')}`
         });
         return;
       }
@@ -205,7 +224,8 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         this.checks.push({
           id: 'complete-flow-token-exchange',
           name: 'CompleteFlowTokenExchange',
-          description: 'Successfully exchanged IDP ID token for ID-JAG at IdP',
+          description:
+            'Successfully exchanged IDP ID token for ID-JAG at IdP with all required parameters',
           status: 'SUCCESS',
           timestamp,
           specReferences: [
@@ -215,19 +235,22 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         });
 
         // Create ID-JAG (ID-bound JSON Assertion Grant)
+        // Include resource and client_id claims per SEP-990
         const userId = payload.sub as string;
         const { publicKey, privateKey } = await jose.generateKeyPair('ES256');
         this.grantKeypairs.set(userId, publicKey);
 
         const idJag = await new jose.SignJWT({
           sub: userId,
-          grant_type: 'id-jag'
+          resource: resource,
+          client_id: clientId || CONFORMANCE_TEST_CLIENT_ID
         })
           .setProtectedHeader({ alg: 'ES256', typ: 'oauth-id-jag+jwt' })
           .setIssuer(this.idpServer.getUrl())
-          .setAudience(this.authServer.getUrl())
+          .setAudience(audience)
           .setIssuedAt()
           .setExpirationTime('5m')
+          .setJti(crypto.randomUUID())
           .sign(privateKey);
 
         res.json({
@@ -277,6 +300,23 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
     }
 
     try {
+      // Verify the ID-JAG header has the correct typ
+      const header = jose.decodeProtectedHeader(assertion);
+      if (header.typ !== 'oauth-id-jag+jwt') {
+        this.checks.push({
+          id: 'complete-flow-jwt-bearer',
+          name: 'CompleteFlowJwtBearer',
+          description: `ID-JAG has wrong typ header: expected oauth-id-jag+jwt, got ${header.typ}`,
+          status: 'FAILURE',
+          timestamp,
+          specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH]
+        });
+        return {
+          error: 'invalid_grant',
+          errorDescription: 'Invalid ID-JAG typ header'
+        };
+      }
+
       // Decode without verification first to get subject
       const decoded = jose.decodeJwt(assertion);
       const userId = decoded.sub as string;
@@ -298,8 +338,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
       this.checks.push({
         id: 'complete-flow-jwt-bearer',
         name: 'CompleteFlowJwtBearer',
-        description:
-          'Successfully exchanged authorization grant for access token',
+        description: 'Successfully exchanged ID-JAG for access token',
         status: 'SUCCESS',
         timestamp,
         specReferences: [
