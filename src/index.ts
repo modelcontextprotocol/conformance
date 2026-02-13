@@ -19,8 +19,13 @@ import {
   listMetadataScenarios,
   listCoreScenarios,
   listExtensionScenarios,
-  listBackcompatScenarios
+  listBackcompatScenarios,
+  listScenariosForSpec,
+  listClientScenariosForSpec,
+  getScenarioSpecVersions,
+  ALL_SPEC_VERSIONS
 } from './scenarios';
+import type { SpecVersion } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
 import {
@@ -30,6 +35,32 @@ import {
 } from './expected-failures';
 import { createTierCheckCommand } from './tier-check';
 import packageJson from '../package.json';
+
+function resolveSpecVersion(value: string): SpecVersion {
+  if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
+    return value as SpecVersion;
+  }
+  console.error(`Unknown spec version: ${value}`);
+  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
+  process.exit(1);
+}
+
+// Note on naming: `command` refers to which CLI command is calling this.
+// The `client` command tests Scenario objects (which test clients),
+// and the `server` command tests ClientScenario objects (which test servers).
+// This matches the inverted naming in scenarios/index.ts.
+function filterScenariosBySpecVersion(
+  allScenarios: string[],
+  version: SpecVersion,
+  command: 'client' | 'server'
+): string[] {
+  const versionScenarios =
+    command === 'client'
+      ? listScenariosForSpec(version)
+      : listClientScenariosForSpec(version);
+  const allowed = new Set(versionScenarios);
+  return allScenarios.filter((s) => allowed.has(s));
+}
 
 const program = new Command();
 
@@ -53,12 +84,19 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
       const timeout = parseInt(options.timeout, 10);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
+      const specVersionFilter = options.specVersion
+        ? resolveSpecVersion(options.specVersion)
+        : undefined;
 
       // Handle suite mode
       if (options.suite) {
@@ -85,7 +123,14 @@ program
           process.exit(1);
         }
 
-        const scenarios = suites[suiteName]();
+        let scenarios = suites[suiteName]();
+        if (specVersionFilter) {
+          scenarios = filterScenariosBySpecVersion(
+            scenarios,
+            specVersionFilter,
+            'client'
+          );
+        }
         console.log(
           `Running ${suiteName} suite (${scenarios.length} scenarios) in parallel...\n`
         );
@@ -262,6 +307,10 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -270,6 +319,9 @@ program
 
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
+      const specVersionFilter = options.specVersion
+        ? resolveSpecVersion(options.specVersion)
+        : undefined;
 
       // If a single scenario is specified, run just that one
       if (validated.scenario) {
@@ -315,6 +367,14 @@ program
           console.error(`Unknown suite: ${suite}`);
           console.error('Available suites: active, all, core, pending');
           process.exit(1);
+        }
+
+        if (specVersionFilter) {
+          scenarios = filterScenariosBySpecVersion(
+            scenarios,
+            specVersionFilter,
+            'server'
+          );
         }
 
         console.log(
@@ -393,11 +453,29 @@ program
   .description('List available test scenarios')
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .action((options) => {
+    const specVersionFilter = options.specVersion
+      ? resolveSpecVersion(options.specVersion)
+      : undefined;
+
     if (options.server || (!options.client && !options.server)) {
       console.log('Server scenarios (test against a server):');
-      const serverScenarios = listClientScenarios();
-      serverScenarios.forEach((s) => console.log(`  - ${s}`));
+      let serverScenarios = listClientScenarios();
+      if (specVersionFilter) {
+        serverScenarios = filterScenariosBySpecVersion(
+          serverScenarios,
+          specVersionFilter,
+          'server'
+        );
+      }
+      serverScenarios.forEach((s) => {
+        const v = getScenarioSpecVersions(s);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+      });
     }
 
     if (options.client || (!options.client && !options.server)) {
@@ -405,8 +483,18 @@ program
         console.log('');
       }
       console.log('Client scenarios (test against a client):');
-      const clientScenarios = listScenarios();
-      clientScenarios.forEach((s) => console.log(`  - ${s}`));
+      let clientScenarioNames = listScenarios();
+      if (specVersionFilter) {
+        clientScenarioNames = filterScenariosBySpecVersion(
+          clientScenarioNames,
+          specVersionFilter,
+          'client'
+        );
+      }
+      clientScenarioNames.forEach((s) => {
+        const v = getScenarioSpecVersions(s);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+      });
     }
   });
 

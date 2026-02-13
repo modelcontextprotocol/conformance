@@ -66,7 +66,9 @@ npm run --silent tier-check -- \
 
 If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped).
 
-The CLI output includes server conformance pass rate, client conformance pass rate, issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
+The CLI output includes server conformance pass rate, client conformance pass rate (with per-spec-version breakdown), issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
+
+The conformance results now include a `specVersions` field on each detail entry, enabling per-version pass rate analysis. The `list` command also shows spec version tags: `node dist/index.js list` shows `[2025-06-18]`, `[2025-11-25]`, `[draft]`, or `[extension]` next to each scenario.
 
 ### Conformance Baseline Check
 
@@ -143,17 +145,21 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
 - If client conformance was skipped (no client command found), note this as a gap but do not block tier advancement based on it alone.
 
-**Client Conformance Splits:**
+**Conformance Breakdown:**
 
-When reporting client conformance, always break results into three categories:
+The **full suite** pass rates (server total, client total) are used for tier threshold checks. To interpret them, present a single conformance matrix combining server and client results. Each detail entry in the tier-check JSON has a `specVersions` field; client category is derived from the scenario name (`auth/` prefix = Auth, everything else = Core). Server scenarios are all Core.
 
-1. **Core suite** — Non-auth scenarios (e.g. initialize, tools_call, elicitation, sse-retry)
-2. **Auth suite** — OAuth/authorization scenarios (any scenario starting with `auth/`)
-3. **Full suite** — All scenarios combined
+Example:
 
-The **full suite** number is used for tier threshold checks. However, the core vs auth split provides essential context. Always present both numbers in the report.
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All\*        |
+| ------------ | ---------- | ---------- | ---------- | ----- | --------- | ------------ |
+| Server       | —          | 26/26      | 4/4        | —     | —         | 30/30 (100%) |
+| Client: Core | —          | 2/2        | 2/2        | —     | —         | 4/4 (100%)   |
+| Client: Auth | 0/2        | 3/3        | 6/11       | 0/1   | 0/2       | 9/19 (47%)   |
 
-If the SDK has a `baseline.yml` or expected-failures file, note which failures are known/tracked vs. unexpected regressions. A low full-suite score where all failures are auth scenarios documented in the baseline is a scope gap (OAuth not yet implemented), not a quality problem — flag it accordingly in the assessment.
+This immediately shows where failures concentrate. Failures clustered in Client: Auth / `2025-11-25` means "new auth features not yet implemented" — a scope gap, not a quality problem. Failures in Server or Client: Core are more concerning.
+
+If the SDK has a `baseline.yml` or expected-failures file, cross-reference with the matrix to identify whether baselined failures cluster in a specific cell (e.g. all in `2025-11-25` / Client: Auth = scope gap).
 
 **P0 Label Audit Guidance:**
 
@@ -197,12 +203,24 @@ After the subagents finish, output a short executive summary directly to the use
 ```
 ## <sdk-name> — Tier <X>
 
+Conformance:
+
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All* | T2 | T1 |
+|--------------|------------|------------|------------|-------|-----------|-------|----|----|
+| Server       | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | ✓/✗ | ✓/✗ |
+| Client: Core | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | — | — |
+| Client: Auth | pass/total | pass/total | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
+| **Client Total** | | | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
+
+\* unique scenarios — a scenario may apply to multiple spec versions
+
+If a baseline file was found, add a note below the conformance table:
+> **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
+
+Repository Health:
+
 | Check | Value | T2 | T1 |
 |-------|-------|----|----|
-| Server Conformance | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
-| Client Conformance (full) | <passed>/<total> (<rate>%) | ✓/✗ | ✓/✗ |
-|   — Core scenarios | <core_pass>/<core_total> (<rate>%) | — | — |
-|   — Auth scenarios | <auth_pass>/<auth_total> (<rate>%) | — | — |
 | Issue Triage | <rate>% (<triaged>/<total>) | ✓/✗ | ✓/✗ |
 | Labels | <present>/<required> | ✓/✗ | ✓/✗ |
 | P0 Resolution | <count> open | ✓/✗ | ✓/✗ |
@@ -212,9 +230,6 @@ After the subagents finish, output a short executive summary directly to the use
 | Roadmap | <summary> | ✓/✗ | ✓/✗ |
 | Versioning Policy | <summary> | N/A | ✓/✗ |
 | Stable Release | <version> | ✓/✗ | ✓/✗ |
-
-If a baseline file was found, add a note below the table:
-> **Baseline**: {N} failures in `baseline.yml` ({list of categories, e.g. "18 auth scenarios"}). Core suite: {core_rate}%.
 
 ---
 

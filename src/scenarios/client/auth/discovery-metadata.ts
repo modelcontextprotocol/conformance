@@ -87,6 +87,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
   return {
     name: `auth/${config.name}`,
+    specVersions: ['2025-11-25'],
     description: `Tests Basic OAuth metadata discovery flow.
 
 **PRM:** ${config.prmLocation}${config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}

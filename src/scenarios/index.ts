@@ -1,4 +1,4 @@
-import { Scenario, ClientScenario } from '../types';
+import { Scenario, ClientScenario, SpecVersion } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
@@ -211,3 +211,34 @@ export function listBackcompatScenarios(): string[] {
 }
 
 export { listMetadataScenarios };
+
+// All valid spec versions, used by the CLI to validate --spec-version input.
+export const ALL_SPEC_VERSIONS: SpecVersion[] = [
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
+  'draft',
+  'extension'
+];
+
+export function listScenariosForSpec(version: SpecVersion): string[] {
+  return scenariosList
+    .filter((s) => s.specVersions.includes(version))
+    .map((s) => s.name);
+}
+
+export function listClientScenariosForSpec(version: SpecVersion): string[] {
+  return allClientScenariosList
+    .filter((s) => s.specVersions.includes(version))
+    .map((s) => s.name);
+}
+
+export function getScenarioSpecVersions(
+  name: string
+): SpecVersion[] | undefined {
+  return (
+    scenarios.get(name)?.specVersions ?? clientScenarios.get(name)?.specVersions
+  );
+}
+
+export type { SpecVersion };
