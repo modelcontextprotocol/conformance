@@ -1,7 +1,12 @@
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import express, { type Request, type Response } from 'express';
-import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
+import type {
+  Scenario,
+  ConformanceCheck,
+  ScenarioUrls,
+  SpecVersion
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
@@ -55,6 +60,7 @@ async function createIdpIdToken(
  */
 export class CrossAppAccessCompleteFlowScenario implements Scenario {
   name = 'auth/cross-app-access-complete-flow';
+  specVersions: SpecVersion[] = ['extension'];
   description =
     'Tests complete SEP-990 flow: token exchange + JWT bearer grant (Enterprise Managed OAuth)';
 
