@@ -8,6 +8,7 @@ import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 
 const CONFORMANCE_TEST_CLIENT_ID = 'conformance-test-xaa-client';
+const CONFORMANCE_TEST_CLIENT_SECRET = 'conformance-test-xaa-secret';
 const IDP_CLIENT_ID = 'conformance-test-idp-client';
 const DEMO_USER_ID = 'demo-user@example.com';
 
@@ -83,10 +84,23 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         'client_secret_basic',
         'private_key_jwt'
       ],
-      onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
+      onTokenRequest: async ({
+        grantType,
+        body,
+        timestamp,
+        authBaseUrl,
+        authorizationHeader
+      }) => {
         // Auth server only handles JWT bearer grant (ID-JAG -> access token)
         if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
-          return await this.handleJwtBearerGrant(body, timestamp, authBaseUrl);
+          const mcpResourceUrl = `${this.mcpServer.getUrl()}/mcp`;
+          return await this.handleJwtBearerGrant(
+            body,
+            timestamp,
+            authBaseUrl,
+            authorizationHeader,
+            mcpResourceUrl
+          );
         }
 
         return {
@@ -118,6 +132,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
       serverUrl: `${this.mcpServer.getUrl()}/mcp`,
       context: {
         client_id: CONFORMANCE_TEST_CLIENT_ID,
+        client_secret: CONFORMANCE_TEST_CLIENT_SECRET,
         idp_client_id: IDP_CLIENT_ID,
         idp_id_token: idpIdToken,
         idp_issuer: this.idpServer.getUrl(),
@@ -156,7 +171,6 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
       const requestedTokenType = req.body.requested_token_type;
       const audience = req.body.audience;
       const resource = req.body.resource;
-      const clientId = req.body.client_id;
 
       // Only handle token exchange at IdP
       if (grantType !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
@@ -240,10 +254,14 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         const { publicKey, privateKey } = await jose.generateKeyPair('ES256');
         this.grantKeypairs.set(userId, publicKey);
 
+        // The IdP uses CONFORMANCE_TEST_CLIENT_ID (the MCP Client's client_id
+        // at the AS), not the IdP client_id from the request body.
+        // Per Section 6.1: "the IdP will need to be aware of the MCP Client's
+        // client_id that it normally uses with the MCP Server."
         const idJag = await new jose.SignJWT({
           sub: userId,
           resource: resource,
-          client_id: clientId || CONFORMANCE_TEST_CLIENT_ID
+          client_id: CONFORMANCE_TEST_CLIENT_ID
         })
           .setProtectedHeader({ alg: 'ES256', typ: 'oauth-id-jag+jwt' })
           .setIssuer(this.idpServer.getUrl())
@@ -281,8 +299,77 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
   private async handleJwtBearerGrant(
     body: Record<string, string>,
     timestamp: string,
-    authBaseUrl: string
+    authBaseUrl: string,
+    authorizationHeader?: string,
+    mcpResourceUrl?: string
   ): Promise<any> {
+    // 1. Verify client authentication (client_secret_basic)
+    if (!authorizationHeader || !authorizationHeader.startsWith('Basic ')) {
+      this.checks.push({
+        id: 'complete-flow-jwt-bearer',
+        name: 'CompleteFlowJwtBearer',
+        description:
+          'Missing or invalid Authorization header for client_secret_basic authentication',
+        status: 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH],
+        details: {
+          expected: 'Authorization: Basic <base64(client_id:client_secret)>',
+          received: authorizationHeader || 'missing'
+        }
+      });
+      return {
+        error: 'invalid_client',
+        errorDescription:
+          'Client authentication required (client_secret_basic)',
+        statusCode: 401
+      };
+    }
+
+    const base64Credentials = authorizationHeader.slice('Basic '.length);
+    const decoded = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const separatorIndex = decoded.indexOf(':');
+    if (separatorIndex === -1) {
+      this.checks.push({
+        id: 'complete-flow-jwt-bearer',
+        name: 'CompleteFlowJwtBearer',
+        description: 'Malformed Basic auth header (no colon separator)',
+        status: 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH]
+      });
+      return {
+        error: 'invalid_client',
+        errorDescription: 'Malformed Basic auth',
+        statusCode: 401
+      };
+    }
+
+    const authClientId = decodeURIComponent(decoded.slice(0, separatorIndex));
+    const authClientSecret = decodeURIComponent(
+      decoded.slice(separatorIndex + 1)
+    );
+
+    if (
+      authClientId !== CONFORMANCE_TEST_CLIENT_ID ||
+      authClientSecret !== CONFORMANCE_TEST_CLIENT_SECRET
+    ) {
+      this.checks.push({
+        id: 'complete-flow-jwt-bearer',
+        name: 'CompleteFlowJwtBearer',
+        description: `Client authentication failed: invalid credentials (client_id: ${authClientId})`,
+        status: 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH]
+      });
+      return {
+        error: 'invalid_client',
+        errorDescription: 'Invalid client credentials',
+        statusCode: 401
+      };
+    }
+
+    // 2. Verify assertion is present
     const assertion = body.assertion;
     if (!assertion) {
       this.checks.push({
@@ -300,7 +387,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
     }
 
     try {
-      // Verify the ID-JAG header has the correct typ
+      // 3. Verify the ID-JAG header has the correct typ
       const header = jose.decodeProtectedHeader(assertion);
       if (header.typ !== 'oauth-id-jag+jwt') {
         this.checks.push({
@@ -317,7 +404,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         };
       }
 
-      // Decode without verification first to get subject
+      // 4. Decode and verify the ID-JAG
       const decoded = jose.decodeJwt(assertion);
       const userId = decoded.sub as string;
       const publicKey = this.grantKeypairs.get(userId);
@@ -326,7 +413,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         throw new Error('Unknown authorization grant');
       }
 
-      // Verify with the stored public key
+      // Verify signature and audience
       const withoutSlash = authBaseUrl.replace(/\/+$/, '');
       const withSlash = `${withoutSlash}/`;
 
@@ -335,10 +422,54 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         clockTolerance: 30
       });
 
+      // 5. Verify client_id in ID-JAG matches the authenticating client (Section 5.1)
+      const jagClientId = decoded.client_id as string | undefined;
+      if (jagClientId !== authClientId) {
+        this.checks.push({
+          id: 'complete-flow-jwt-bearer',
+          name: 'CompleteFlowJwtBearer',
+          description: `ID-JAG client_id (${jagClientId}) does not match authenticating client (${authClientId})`,
+          status: 'FAILURE',
+          timestamp,
+          specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH],
+          details: {
+            jagClientId,
+            authClientId
+          }
+        });
+        return {
+          error: 'invalid_grant',
+          errorDescription:
+            'ID-JAG client_id does not match authenticating client'
+        };
+      }
+
+      // 6. Verify resource claim in ID-JAG matches the MCP server resource
+      const jagResource = decoded.resource as string | undefined;
+      if (mcpResourceUrl && jagResource !== mcpResourceUrl) {
+        this.checks.push({
+          id: 'complete-flow-jwt-bearer',
+          name: 'CompleteFlowJwtBearer',
+          description: `ID-JAG resource (${jagResource}) does not match MCP server resource (${mcpResourceUrl})`,
+          status: 'FAILURE',
+          timestamp,
+          specReferences: [SpecReferences.SEP_990_ENTERPRISE_OAUTH],
+          details: {
+            jagResource,
+            expectedResource: mcpResourceUrl
+          }
+        });
+        return {
+          error: 'invalid_grant',
+          errorDescription: 'ID-JAG resource does not match MCP server resource'
+        };
+      }
+
       this.checks.push({
         id: 'complete-flow-jwt-bearer',
         name: 'CompleteFlowJwtBearer',
-        description: 'Successfully exchanged ID-JAG for access token',
+        description:
+          'Successfully verified client auth, ID-JAG claims, and exchanged for access token',
         status: 'SUCCESS',
         timestamp,
         specReferences: [

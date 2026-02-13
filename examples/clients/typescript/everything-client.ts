@@ -422,6 +422,15 @@ export async function runCrossAppAccessCompleteFlow(
   logger.debug('Auth server issuer:', asIssuer);
   logger.debug('Auth server token endpoint:', asTokenEndpoint);
 
+  // Verify AS supports jwt-bearer grant type
+  const grantTypes: string[] = asMetadata.grant_types_supported || [];
+  if (!grantTypes.includes('urn:ietf:params:oauth:grant-type:jwt-bearer')) {
+    throw new Error(
+      `Auth server does not support jwt-bearer grant type. Supported: ${grantTypes.join(', ')}`
+    );
+  }
+  logger.debug('Auth server supports jwt-bearer grant type');
+
   // Step 1: Token Exchange at IdP (IDP ID token -> ID-JAG)
   logger.debug('Step 1: Exchanging IDP ID token for ID-JAG at IdP...');
   const tokenExchangeParams = new URLSearchParams({
@@ -451,16 +460,23 @@ export async function runCrossAppAccessCompleteFlow(
   logger.debug('Issued token type:', tokenExchangeResult.issued_token_type);
 
   // Step 2: JWT Bearer Grant at AS (ID-JAG -> access token)
+  // Client authenticates via client_secret_basic (RFC 7523 Section 5)
   logger.debug('Step 2: Exchanging ID-JAG for access token at Auth Server...');
   const jwtBearerParams = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion: idJag,
-    client_id: ctx.client_id
+    assertion: idJag
   });
+
+  const basicAuth = Buffer.from(
+    `${encodeURIComponent(ctx.client_id)}:${encodeURIComponent(ctx.client_secret)}`
+  ).toString('base64');
 
   const tokenResponse = await fetch(asTokenEndpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth}`
+    },
     body: jwtBearerParams
   });
 
