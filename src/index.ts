@@ -84,10 +84,7 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', 'Filter scenarios by spec version')
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
@@ -307,10 +304,7 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', 'Filter scenarios by spec version')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -453,10 +447,7 @@ program
   .description('List available test scenarios')
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', 'Filter scenarios by spec version')
   .action((options) => {
     const specVersionFilter = options.specVersion
       ? resolveSpecVersion(options.specVersion)

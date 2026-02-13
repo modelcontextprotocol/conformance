@@ -36,7 +36,7 @@ Every scenario in the conformance suite has a `specVersions` field indicating wh
 
 Date-versioned scenarios (e.g. `2025-06-18`, `2025-11-25`) count toward tier scoring. `draft` and `extension` scenarios are listed separately as informational.
 
-The `--spec-version` CLI flag filters scenarios cumulatively for date versions (e.g. `--spec-version 2025-06-18` includes `2025-03-26` + `2025-06-18`). For `draft`/`extension`, it returns exact matches only.
+The `--spec-version` CLI flag filters scenarios by exact match — only scenarios whose `specVersions` array includes the specified version are returned. Scenarios that should apply across multiple versions are tagged with all applicable versions.
 
 The tier-check output includes a per-version pass rate breakdown alongside the aggregate.
 
