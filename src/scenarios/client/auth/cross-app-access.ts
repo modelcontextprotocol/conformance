@@ -4,6 +4,7 @@ import express, { type Request, type Response } from 'express';
 import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
+import { MockTokenVerifier } from './helpers/mockTokenVerifier';
 import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 
@@ -73,6 +74,10 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
     this.idpPublicKey = publicKey;
     this.idpPrivateKey = privateKey;
 
+    // Shared token verifier ensures MCP server only accepts tokens
+    // actually issued by the auth server
+    const tokenVerifier = new MockTokenVerifier(this.checks, []);
+
     // Start IDP server
     await this.startIdpServer();
 
@@ -80,10 +85,8 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
     // Token exchange is handled by IdP
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
-      tokenEndpointAuthMethodsSupported: [
-        'client_secret_basic',
-        'private_key_jwt'
-      ],
+      tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
+      tokenVerifier,
       onTokenRequest: async ({
         grantType,
         body,
@@ -112,11 +115,12 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
 
     await this.authServer.start(authApp);
 
-    // Start MCP server
+    // Start MCP server with shared token verifier
     const mcpApp = createServer(
       this.checks,
       this.mcpServer.getUrl,
-      this.authServer.getUrl
+      this.authServer.getUrl,
+      { tokenVerifier }
     );
 
     await this.mcpServer.start(mcpApp);
