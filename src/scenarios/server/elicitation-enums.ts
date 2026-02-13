@@ -2,12 +2,13 @@
  * SEP-1330: Elicitation enum schema improvements test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationEnumsScenario implements ClientScenario {
   name = 'elicitation-sep1330-enums';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description = `Test elicitation with enum schema improvements (SEP-1330).
 
 **Server Implementation Requirements:**

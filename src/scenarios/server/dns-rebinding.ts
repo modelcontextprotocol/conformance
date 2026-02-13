@@ -5,7 +5,7 @@
  * to prevent DNS rebinding attacks. See GHSA-w48q-cv73-mx4w for details.
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -85,6 +85,7 @@ async function sendRequestWithHostAndOrigin(
 
 export class DNSRebindingProtectionScenario implements ClientScenario {
   name = 'dns-rebinding-protection';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description = `Test DNS rebinding protection for localhost servers.
 
 **Scope:** This test applies to localhost MCP servers running without HTTPS and without

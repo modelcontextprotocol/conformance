@@ -23,6 +23,13 @@ export interface ConformanceCheck {
   logs?: string[];
 }
 
+export type SpecVersion =
+  | '2025-03-26'
+  | '2025-06-18'
+  | '2025-11-25'
+  | 'draft'
+  | 'extension';
+
 export interface ScenarioUrls {
   serverUrl: string;
   authUrl?: string;
@@ -36,6 +43,7 @@ export interface ScenarioUrls {
 export interface Scenario {
   name: string;
   description: string;
+  specVersions: SpecVersion[];
   /**
    * If true, a non-zero client exit code is expected and will not cause the test to fail.
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
@@ -49,5 +57,6 @@ export interface Scenario {
 export interface ClientScenario {
   name: string;
   description: string;
+  specVersions: SpecVersion[];
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }

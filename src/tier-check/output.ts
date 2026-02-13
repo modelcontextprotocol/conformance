@@ -1,4 +1,4 @@
-import { TierScorecard, CheckStatus } from './types';
+import { TierScorecard, CheckStatus, ConformanceResult } from './types';
 
 const COLORS = {
   RESET: '\x1b[0m',
@@ -23,6 +23,79 @@ function statusIcon(status: CheckStatus): string {
   }
 }
 
+const SPEC_VERSIONS = [
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
+  'draft',
+  'extension'
+] as const;
+
+type Cell = { passed: number; total: number };
+
+interface MatrixRow {
+  cells: Map<string, Cell>;
+  unique: Cell;
+}
+
+function newRow(): MatrixRow {
+  return { cells: new Map(), unique: { passed: 0, total: 0 } };
+}
+
+interface ConformanceMatrix {
+  server: MatrixRow;
+  clientCore: MatrixRow;
+  clientAuth: MatrixRow;
+}
+
+function buildConformanceMatrix(
+  server: ConformanceResult,
+  client: ConformanceResult
+): ConformanceMatrix {
+  const matrix: ConformanceMatrix = {
+    server: newRow(),
+    clientCore: newRow(),
+    clientAuth: newRow()
+  };
+
+  for (const d of server.details) {
+    matrix.server.unique.total++;
+    if (d.passed) matrix.server.unique.passed++;
+    for (const v of d.specVersions ?? ['unknown']) {
+      const cell = matrix.server.cells.get(v) ?? { passed: 0, total: 0 };
+      cell.total++;
+      if (d.passed) cell.passed++;
+      matrix.server.cells.set(v, cell);
+    }
+  }
+
+  for (const d of client.details) {
+    const row = d.scenario.startsWith('auth/')
+      ? matrix.clientAuth
+      : matrix.clientCore;
+    row.unique.total++;
+    if (d.passed) row.unique.passed++;
+    for (const v of d.specVersions ?? ['unknown']) {
+      const cell = row.cells.get(v) ?? { passed: 0, total: 0 };
+      cell.total++;
+      if (d.passed) cell.passed++;
+      row.cells.set(v, cell);
+    }
+  }
+
+  return matrix;
+}
+
+function formatCell(cell: Cell | undefined): string {
+  if (!cell || cell.total === 0) return '\u2014';
+  return `${cell.passed}/${cell.total}`;
+}
+
+function formatRate(cell: Cell): string {
+  if (cell.total === 0) return '0/0';
+  return `${cell.passed}/${cell.total} (${Math.round((cell.passed / cell.total) * 100)}%)`;
+}
+
 export function formatJson(scorecard: TierScorecard): string {
   return JSON.stringify(scorecard, null, 2);
 }
@@ -42,12 +115,33 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push('');
   lines.push('| Check | Status | Detail |');
   lines.push('|-------|--------|--------|');
-  lines.push(
-    `| Server Conformance | ${c.conformance.status} | ${c.conformance.passed}/${c.conformance.total} scenarios pass (${Math.round(c.conformance.pass_rate * 100)}%) |`
+  // Conformance matrix
+  const matrix = buildConformanceMatrix(
+    c.conformance as ConformanceResult,
+    c.client_conformance as ConformanceResult
   );
+
+  lines.push('');
+  lines.push(`| | ${SPEC_VERSIONS.join(' | ')} | All* |`);
+  lines.push(`|---|${SPEC_VERSIONS.map(() => '---|').join('')}---|`);
+
+  const mdRows: [string, MatrixRow][] = [
+    ['Server', matrix.server],
+    ['Client: Core', matrix.clientCore],
+    ['Client: Auth', matrix.clientAuth]
+  ];
+
+  for (const [label, row] of mdRows) {
+    lines.push(
+      `| ${label} | ${SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} | ${formatRate(row.unique)} |`
+    );
+  }
+
+  lines.push('');
   lines.push(
-    `| Client Conformance | ${c.client_conformance.status} | ${c.client_conformance.passed}/${c.client_conformance.total} scenarios pass (${Math.round(c.client_conformance.pass_rate * 100)}%) |`
+    '_* unique scenarios — a scenario may apply to multiple spec versions_'
   );
+  lines.push('');
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
   );
@@ -100,14 +194,51 @@ export function formatTerminal(scorecard: TierScorecard): void {
   if (scorecard.version) console.log(`Version:   ${scorecard.version}`);
   console.log(`Timestamp: ${scorecard.timestamp}\n`);
 
-  console.log(`${COLORS.BOLD}Check Results:${COLORS.RESET}\n`);
+  console.log(`${COLORS.BOLD}Conformance:${COLORS.RESET}\n`);
+
+  // Conformance matrix
+  const matrix = buildConformanceMatrix(
+    c.conformance as ConformanceResult,
+    c.client_conformance as ConformanceResult
+  );
+
+  const vw = 10; // column width for version cells
+  const lw = 14; // label column width
+  const tw = 16; // total column width
+  const rp = (s: string, w: number) => s.padStart(w);
+  const lp = (s: string, w: number) => s.padEnd(w);
 
   console.log(
-    `  ${statusIcon(c.conformance.status)} Server Conformance  ${c.conformance.passed}/${c.conformance.total} (${Math.round(c.conformance.pass_rate * 100)}%)`
+    `  ${COLORS.DIM}${lp('', lw + 2)} ${SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}  ${rp('All*', tw)}${COLORS.RESET}`
+  );
+
+  const rows: [string, MatrixRow, CheckStatus | null, boolean][] = [
+    ['Server', matrix.server, c.conformance.status, true],
+    ['Client: Core', matrix.clientCore, null, false],
+    ['Client: Auth', matrix.clientAuth, null, false]
+  ];
+
+  for (const [label, row, status, bold] of rows) {
+    const icon = status ? statusIcon(status) + ' ' : '  ';
+    const b = bold ? COLORS.BOLD : '';
+    const r = bold ? COLORS.RESET : '';
+    console.log(
+      `  ${icon}${b}${lp(label, lw)}${r} ${SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}  ${b}${rp(formatRate(row.unique), tw)}${r}`
+    );
+  }
+
+  // Client total line
+  const clientTotal: Cell = {
+    passed: matrix.clientCore.unique.passed + matrix.clientAuth.unique.passed,
+    total: matrix.clientCore.unique.total + matrix.clientAuth.unique.total
+  };
+  console.log(
+    `  ${statusIcon(c.client_conformance.status)} ${COLORS.BOLD}${lp('Client Total', lw)}${COLORS.RESET} ${' '.repeat(SPEC_VERSIONS.length * (vw + 1) - 1)}  ${COLORS.BOLD}${rp(formatRate(clientTotal), tw)}${COLORS.RESET}`
   );
   console.log(
-    `  ${statusIcon(c.client_conformance.status)} Client Conformance  ${c.client_conformance.passed}/${c.client_conformance.total} (${Math.round(c.client_conformance.pass_rate * 100)}%)`
+    `\n  ${COLORS.DIM}* unique scenarios — a scenario may apply to multiple spec versions${COLORS.RESET}`
   );
+  console.log(`\n${COLORS.BOLD}Repository Health:${COLORS.RESET}\n`);
   console.log(
     `  ${statusIcon(c.labels.status)} Labels         ${c.labels.present}/${c.labels.required} required labels`
   );

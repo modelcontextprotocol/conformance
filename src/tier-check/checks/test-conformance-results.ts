@@ -3,7 +3,11 @@ import { mkdtempSync, readFileSync, existsSync, globSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { ConformanceResult } from '../types';
-import { listScenarios, listActiveClientScenarios } from '../../scenarios';
+import {
+  listScenarios,
+  listActiveClientScenarios,
+  getScenarioSpecVersions
+} from '../../scenarios';
 import { ConformanceCheck } from '../../types';
 
 /**
@@ -105,6 +109,15 @@ function reconcileWithExpected(
     })
   );
 
+  // Attach specVersion to existing detail entries
+  for (const detail of result.details) {
+    let name = stripTimestamp(detail.scenario);
+    if (resultPrefix) {
+      name = name.replace(new RegExp(`^${resultPrefix}-`), '');
+    }
+    detail.specVersions = getScenarioSpecVersions(name);
+  }
+
   for (const expected of expectedScenarios) {
     if (!reportedNames.has(expected)) {
       result.failed++;
@@ -113,7 +126,8 @@ function reconcileWithExpected(
         scenario: expected,
         passed: false,
         checks_passed: 0,
-        checks_failed: 0
+        checks_failed: 0,
+        specVersions: getScenarioSpecVersions(expected)
       });
     }
   }
