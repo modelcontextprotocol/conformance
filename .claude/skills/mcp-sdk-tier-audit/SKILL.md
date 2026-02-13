@@ -203,9 +203,7 @@ After the subagents finish, output a short executive summary directly to the use
 ```
 ## <sdk-name> — Tier <X>
 
-| Check | Value | T2 | T1 |
-|-------|-------|----|----|
-Conformance matrix:
+Conformance:
 
 |              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All* | T2 | T1 |
 |--------------|------------|------------|------------|-------|-----------|-------|----|----|
@@ -214,6 +212,13 @@ Conformance matrix:
 | Client: Auth | pass/total | pass/total | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
 | **Client Total** | | | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
 
+If a baseline file was found, add a note below the conformance table:
+> **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
+
+Scorecard:
+
+| Check | Value | T2 | T1 |
+|-------|-------|----|----|
 | Issue Triage | <rate>% (<triaged>/<total>) | ✓/✗ | ✓/✗ |
 | Labels | <present>/<required> | ✓/✗ | ✓/✗ |
 | P0 Resolution | <count> open | ✓/✗ | ✓/✗ |
@@ -223,9 +228,6 @@ Conformance matrix:
 | Roadmap | <summary> | ✓/✗ | ✓/✗ |
 | Versioning Policy | <summary> | N/A | ✓/✗ |
 | Stable Release | <version> | ✓/✗ | ✓/✗ |
-
-If a baseline file was found, add a note below the conformance matrix:
-> **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
 
 ---
 
