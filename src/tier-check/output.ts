@@ -111,17 +111,14 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   if (scorecard.version) lines.push(`**Version**: ${scorecard.version}`);
   lines.push(`**Timestamp**: ${scorecard.timestamp}`);
   lines.push('');
-  lines.push('## Check Results');
+  lines.push('## Conformance Results');
   lines.push('');
-  lines.push('| Check | Status | Detail |');
-  lines.push('|-------|--------|--------|');
   // Conformance matrix
   const matrix = buildConformanceMatrix(
     c.conformance as ConformanceResult,
     c.client_conformance as ConformanceResult
   );
 
-  lines.push('');
   lines.push(`| | ${SPEC_VERSIONS.join(' | ')} | All* |`);
   lines.push(`|---|${SPEC_VERSIONS.map(() => '---|').join('')}---|`);
 
@@ -141,7 +138,10 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push(
     '_* unique scenarios — a scenario may apply to multiple spec versions_'
   );
+  lines.push('## Repository Health');
   lines.push('');
+  lines.push('| Check | Status | Detail |');
+  lines.push('|-------|--------|--------|');
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
   );
