@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
-import { mkdtempSync, readFileSync, existsSync, globSync } from 'fs';
-import { join, dirname } from 'path';
+import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'fs';
+import { join, dirname, relative } from 'path';
 import { tmpdir } from 'os';
 import { ConformanceResult } from '../types';
 import {
@@ -9,6 +9,23 @@ import {
   getScenarioSpecVersions
 } from '../../scenarios';
 import { ConformanceCheck } from '../../types';
+
+/**
+ * Recursively find all files with the given name under a directory.
+ * Compatible with Node 20 (unlike fs.globSync which requires Node 22+).
+ */
+function findFilesRecursive(dir: string, filename: string): string[] {
+  const results: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findFilesRecursive(fullPath, filename));
+    } else if (entry.name === filename) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
 
 /**
  * Parse conformance results from an output directory.
@@ -32,7 +49,9 @@ function parseOutputDir(outputDir: string): ConformanceResult {
 
   // Find all checks.json files recursively to handle scenarios with '/' in
   // their name (e.g. auth/metadata-default) which create nested subdirectories.
-  const checksFiles = globSync('**/checks.json', { cwd: outputDir });
+  const checksFiles = findFilesRecursive(outputDir, 'checks.json').map((f) =>
+    relative(outputDir, f)
+  );
 
   for (const checksFile of checksFiles) {
     const scenarioName = dirname(checksFile);
