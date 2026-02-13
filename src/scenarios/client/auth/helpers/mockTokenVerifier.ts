@@ -1,5 +1,6 @@
 import { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
+import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { ConformanceCheck } from '../../../../types';
 import { SpecReferences } from '../spec-references';
 
@@ -53,6 +54,6 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
         token: token ? token.substring(0, 10) + '...' : 'missing'
       }
     });
-    throw new Error('Invalid token');
+    throw new InvalidTokenError('Invalid token');
   }
 }
