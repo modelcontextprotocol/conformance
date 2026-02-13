@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
-import { mkdtempSync, readFileSync, readdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { mkdtempSync, readFileSync, existsSync, globSync } from 'fs';
+import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { ConformanceResult } from '../types';
 import { listScenarios, listActiveClientScenarios } from '../../scenarios';
@@ -26,10 +26,13 @@ function parseOutputDir(outputDir: string): ConformanceResult {
   let totalPassed = 0;
   let totalFailed = 0;
 
-  const entries = readdirSync(outputDir);
-  for (const scenarioName of entries) {
-    const checksPath = join(outputDir, scenarioName, 'checks.json');
-    if (!existsSync(checksPath)) continue;
+  // Find all checks.json files recursively to handle scenarios with '/' in
+  // their name (e.g. auth/metadata-default) which create nested subdirectories.
+  const checksFiles = globSync('**/checks.json', { cwd: outputDir });
+
+  for (const checksFile of checksFiles) {
+    const scenarioName = dirname(checksFile);
+    const checksPath = join(outputDir, checksFile);
 
     try {
       const checks: ConformanceCheck[] = JSON.parse(
