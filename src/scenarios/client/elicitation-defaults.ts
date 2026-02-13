@@ -11,7 +11,7 @@ import {
   ListToolsRequestSchema,
   ElicitResultSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { Scenario, ConformanceCheck, SpecVersion } from '../../types';
 import express, { Request, Response } from 'express';
 import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
@@ -474,6 +474,7 @@ function createServer(checks: ConformanceCheck[]): {
 
 export class ElicitationClientDefaultsScenario implements Scenario {
   name = 'elicitation-sep1034-client-defaults';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests client applies default values for omitted elicitation fields (SEP-1034)';
   private app: express.Application | null = null;

@@ -1,3 +1,5 @@
+import type { SpecVersion } from '../types';
+
 export type CheckStatus = 'pass' | 'fail' | 'partial' | 'skipped';
 
 export interface CheckResult {
@@ -15,6 +17,7 @@ export interface ConformanceResult extends CheckResult {
     passed: boolean;
     checks_passed: number;
     checks_failed: number;
+    specVersions?: SpecVersion[];
   }>;
 }
 

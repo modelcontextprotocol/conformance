@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls } from '../../../types.js';
+import { ScenarioUrls, SpecVersion } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
@@ -45,6 +45,7 @@ const AUTH_METHOD_NAMES: Record<AuthMethod, string> = {
 
 class TokenEndpointAuthScenario implements Scenario {
   name: string;
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description: string;
   private expectedAuthMethod: AuthMethod;
   private authServer = new ServerLifecycle();

@@ -32,12 +32,13 @@ Source: `modelcontextprotocol/docs/community/sdk-tiers.mdx` in the spec reposito
 
 ## Conformance Score Calculation
 
-Conformance scores are calculated against **applicable required tests** only:
+Every scenario in the conformance suite has a `specVersions` field indicating which spec version it targets. The valid values are defined as the `SpecVersion` type (as a list) in `src/types.ts` — run `node dist/index.js list` to see the current mapping of scenarios to spec versions.
 
-- Tests for the specification version the SDK targets
-- Excluding tests marked as pending or skipped
-- Excluding tests for experimental features
-- Excluding legacy backward-compatibility tests (unless the SDK claims legacy support)
+Date-versioned scenarios (e.g. `2025-06-18`, `2025-11-25`) count toward tier scoring. `draft` and `extension` scenarios are listed separately as informational.
+
+The `--spec-version` CLI flag filters scenarios cumulatively for date versions (e.g. `--spec-version 2025-06-18` includes `2025-03-26` + `2025-06-18`). For `draft`/`extension`, it returns exact matches only.
+
+The tier-check output includes a per-version pass rate breakdown alongside the aggregate.
 
 ## Tier Relegation Rules
 
