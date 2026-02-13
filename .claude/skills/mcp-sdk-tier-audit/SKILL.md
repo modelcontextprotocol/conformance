@@ -212,10 +212,12 @@ Conformance:
 | Client: Auth | pass/total | pass/total | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
 | **Client Total** | | | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
 
+\* unique scenarios — a scenario may apply to multiple spec versions
+
 If a baseline file was found, add a note below the conformance table:
 > **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
 
-Scorecard:
+Repository Health:
 
 | Check | Value | T2 | T1 |
 |-------|-------|----|----|
