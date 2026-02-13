@@ -22,6 +22,15 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     name: z.literal('auth/pre-registration'),
     client_id: z.string(),
     client_secret: z.string()
+  }),
+  z.object({
+    name: z.literal('auth/cross-app-access-complete-flow'),
+    client_id: z.string(),
+    client_secret: z.string(),
+    idp_client_id: z.string(),
+    idp_id_token: z.string(),
+    idp_issuer: z.string(),
+    idp_token_endpoint: z.string()
   })
 ]);
 
