@@ -418,7 +418,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
         requiredScopes: escalatedScopes,
-        scopesSupported: escalatedScopes,
+        scopesSupported: [initialScope],
         includeScopeInWwwAuth: true,
         authMiddleware: stepUpMiddleware,
         tokenVerifier
