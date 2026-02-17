@@ -346,7 +346,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
           res.writeHead(400, { 'Content-Type': 'text/plain' });
           res.end('Missing authorization code');
         } else {
-          res.writeHead(404);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
           res.end('Not found');
         }
       });
