@@ -23,23 +23,28 @@ function statusIcon(status: CheckStatus): string {
   }
 }
 
-const SPEC_VERSIONS = [
-  '2025-03-26',
-  '2025-06-18',
-  '2025-11-25',
-  'draft',
-  'extension'
-] as const;
+const TIER_SPEC_VERSIONS = ['2025-03-26', '2025-06-18', '2025-11-25'] as const;
+
+const INFO_SPEC_VERSIONS = ['draft', 'extension'] as const;
 
 type Cell = { passed: number; total: number };
 
 interface MatrixRow {
   cells: Map<string, Cell>;
-  unique: Cell;
+  /** Unique scenario counts for tier-scoring versions only. */
+  tierUnique: Cell;
+  /** Unique scenario counts for informational versions only. */
+  infoUnique: Cell;
 }
 
+const INFO_SET = new Set<string>(INFO_SPEC_VERSIONS);
+
 function newRow(): MatrixRow {
-  return { cells: new Map(), unique: { passed: 0, total: 0 } };
+  return {
+    cells: new Map(),
+    tierUnique: { passed: 0, total: 0 },
+    infoUnique: { passed: 0, total: 0 }
+  };
 }
 
 interface ConformanceMatrix {
@@ -58,29 +63,32 @@ function buildConformanceMatrix(
     clientAuth: newRow()
   };
 
-  for (const d of server.details) {
-    matrix.server.unique.total++;
-    if (d.passed) matrix.server.unique.passed++;
-    for (const v of d.specVersions ?? ['unknown']) {
-      const cell = matrix.server.cells.get(v) ?? { passed: 0, total: 0 };
+  function addToRow(
+    row: MatrixRow,
+    d: { passed: boolean; specVersions?: string[] }
+  ) {
+    const versions = d.specVersions ?? ['unknown'];
+    const isTierScoring = versions.some((v) => !INFO_SET.has(v));
+    const bucket = isTierScoring ? row.tierUnique : row.infoUnique;
+    bucket.total++;
+    if (d.passed) bucket.passed++;
+    for (const v of versions) {
+      const cell = row.cells.get(v) ?? { passed: 0, total: 0 };
       cell.total++;
       if (d.passed) cell.passed++;
-      matrix.server.cells.set(v, cell);
+      row.cells.set(v, cell);
     }
+  }
+
+  for (const d of server.details) {
+    addToRow(matrix.server, d);
   }
 
   for (const d of client.details) {
     const row = d.scenario.startsWith('auth/')
       ? matrix.clientAuth
       : matrix.clientCore;
-    row.unique.total++;
-    if (d.passed) row.unique.passed++;
-    for (const v of d.specVersions ?? ['unknown']) {
-      const cell = row.cells.get(v) ?? { passed: 0, total: 0 };
-      cell.total++;
-      if (d.passed) cell.passed++;
-      row.cells.set(v, cell);
-    }
+    addToRow(row, d);
   }
 
   return matrix;
@@ -121,9 +129,10 @@ export function formatMarkdown(scorecard: TierScorecard): string {
     c.client_conformance as ConformanceResult
   );
 
+  // Tier-scoring matrix
   lines.push('');
-  lines.push(`| | ${SPEC_VERSIONS.join(' | ')} | All* |`);
-  lines.push(`|---|${SPEC_VERSIONS.map(() => '---|').join('')}---|`);
+  lines.push(`| | ${TIER_SPEC_VERSIONS.join(' | ')} | All* |`);
+  lines.push(`|---|${TIER_SPEC_VERSIONS.map(() => '---|').join('')}---|`);
 
   const mdRows: [string, MatrixRow][] = [
     ['Server', matrix.server],
@@ -133,7 +142,7 @@ export function formatMarkdown(scorecard: TierScorecard): string {
 
   for (const [label, row] of mdRows) {
     lines.push(
-      `| ${label} | ${SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} | ${formatRate(row.unique)} |`
+      `| ${label} | ${TIER_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} | ${formatRate(row.tierUnique)} |`
     );
   }
 
@@ -141,6 +150,31 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push(
     '_* unique scenarios — a scenario may apply to multiple spec versions_'
   );
+
+  // Informational matrix (draft/extension)
+  const hasInfoMd = mdRows.some(([, row]) =>
+    INFO_SPEC_VERSIONS.some((v) => {
+      const cell = row.cells.get(v);
+      return cell && cell.total > 0;
+    })
+  );
+  if (hasInfoMd) {
+    lines.push('');
+    lines.push('_Informational (not scored for tier):_');
+    lines.push('');
+    lines.push(`| | ${INFO_SPEC_VERSIONS.join(' | ')} |`);
+    lines.push(`|---|${INFO_SPEC_VERSIONS.map(() => '---|').join('')}`);
+    for (const [label, row] of mdRows) {
+      const hasData = INFO_SPEC_VERSIONS.some((v) => {
+        const cell = row.cells.get(v);
+        return cell && cell.total > 0;
+      });
+      if (!hasData) continue;
+      lines.push(
+        `| ${label} | ${INFO_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} |`
+      );
+    }
+  }
   lines.push('');
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
@@ -208,8 +242,9 @@ export function formatTerminal(scorecard: TierScorecard): void {
   const rp = (s: string, w: number) => s.padStart(w);
   const lp = (s: string, w: number) => s.padEnd(w);
 
+  // Tier-scoring matrix (date-versioned specs only)
   console.log(
-    `  ${COLORS.DIM}${lp('', lw + 2)} ${SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}  ${rp('All*', tw)}${COLORS.RESET}`
+    `  ${COLORS.DIM}${lp('', lw + 2)} ${TIER_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}  ${rp('All*', tw)}${COLORS.RESET}`
   );
 
   const rows: [string, MatrixRow, CheckStatus | null, boolean][] = [
@@ -223,21 +258,49 @@ export function formatTerminal(scorecard: TierScorecard): void {
     const b = bold ? COLORS.BOLD : '';
     const r = bold ? COLORS.RESET : '';
     console.log(
-      `  ${icon}${b}${lp(label, lw)}${r} ${SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}  ${b}${rp(formatRate(row.unique), tw)}${r}`
+      `  ${icon}${b}${lp(label, lw)}${r} ${TIER_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}  ${b}${rp(formatRate(row.tierUnique), tw)}${r}`
     );
   }
 
-  // Client total line
-  const clientTotal: Cell = {
-    passed: matrix.clientCore.unique.passed + matrix.clientAuth.unique.passed,
-    total: matrix.clientCore.unique.total + matrix.clientAuth.unique.total
+  // Client total line (tier-scoring only)
+  const clientTierTotal: Cell = {
+    passed:
+      matrix.clientCore.tierUnique.passed + matrix.clientAuth.tierUnique.passed,
+    total:
+      matrix.clientCore.tierUnique.total + matrix.clientAuth.tierUnique.total
   };
   console.log(
-    `  ${statusIcon(c.client_conformance.status)} ${COLORS.BOLD}${lp('Client Total', lw)}${COLORS.RESET} ${' '.repeat(SPEC_VERSIONS.length * (vw + 1) - 1)}  ${COLORS.BOLD}${rp(formatRate(clientTotal), tw)}${COLORS.RESET}`
+    `  ${statusIcon(c.client_conformance.status)} ${COLORS.BOLD}${lp('Client Total', lw)}${COLORS.RESET} ${' '.repeat(TIER_SPEC_VERSIONS.length * (vw + 1) - 1)}  ${COLORS.BOLD}${rp(formatRate(clientTierTotal), tw)}${COLORS.RESET}`
   );
   console.log(
     `\n  ${COLORS.DIM}* unique scenarios — a scenario may apply to multiple spec versions${COLORS.RESET}`
   );
+
+  // Informational matrix (draft/extension) — only if there are any
+  const hasInfo = rows.some(([, row]) =>
+    INFO_SPEC_VERSIONS.some((v) => {
+      const cell = row.cells.get(v);
+      return cell && cell.total > 0;
+    })
+  );
+  if (hasInfo) {
+    console.log(`\n  Informational (not scored for tier):\n`);
+    console.log(
+      `  ${COLORS.DIM}${lp('', lw + 2)} ${INFO_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}${COLORS.RESET}`
+    );
+    for (const [label, row, , bold] of rows) {
+      const hasData = INFO_SPEC_VERSIONS.some((v) => {
+        const cell = row.cells.get(v);
+        return cell && cell.total > 0;
+      });
+      if (!hasData) continue;
+      const b = bold ? COLORS.BOLD : '';
+      const r = bold ? COLORS.RESET : '';
+      console.log(
+        `    ${b}${lp(label, lw)}${r} ${INFO_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}`
+      );
+    }
+  }
   console.log(`\n${COLORS.BOLD}Repository Health:${COLORS.RESET}\n`);
   console.log(
     `  ${statusIcon(c.labels.status)} Labels         ${c.labels.present}/${c.labels.required} required labels`

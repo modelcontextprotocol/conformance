@@ -117,8 +117,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 1 requires ALL of:
 
-- Server conformance test pass rate == 100%
-- Client conformance test pass rate == 100%
+- Server conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
+- Client conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
 - Issue triage compliance >= 90% within 2 business days
 - All P0 bugs resolved within 7 days
 - Stable release >= 1.0.0 with no pre-release suffix
@@ -129,8 +129,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 2 requires ALL of:
 
-- Server conformance test pass rate >= 80%
-- Client conformance test pass rate >= 80%
+- Server conformance test pass rate >= 80% (date-versioned scenarios only)
+- Client conformance test pass rate >= 80% (date-versioned scenarios only)
 - Issue triage compliance >= 80% within 1 month
 - P0 bugs resolved within 2 weeks
 - At least one stable release >= 1.0.0
@@ -153,11 +153,19 @@ The **full suite** pass rates (server total, client total) are used for tier thr
 
 Example:
 
-|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All\*        |
-| ------------ | ---------- | ---------- | ---------- | ----- | --------- | ------------ |
-| Server       | —          | 26/26      | 4/4        | —     | —         | 30/30 (100%) |
-| Client: Core | —          | 2/2        | 2/2        | —     | —         | 4/4 (100%)   |
-| Client: Auth | 0/2        | 3/3        | 6/11       | 0/1   | 0/2       | 9/19 (47%)   |
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | All\*        |
+| ------------ | ---------- | ---------- | ---------- | ------------ |
+| Server       | —          | 26/26      | 4/4        | 30/30 (100%) |
+| Client: Core | —          | 2/2        | 2/2        | 4/4 (100%)   |
+| Client: Auth | 2/2        | 3/3        | 6/11       | 8/16 (50%)   |
+
+Informational (not scored for tier):
+
+|              | draft | extension |
+| ------------ | ----- | --------- |
+| Client: Auth | 0/1   | 0/2       |
+
+The tier-scoring table only includes date-versioned scenarios. `draft` and `extension` scenarios are shown separately as informational — they do not affect tier advancement.
 
 This immediately shows where failures concentrate. Failures clustered in Client: Auth / `2025-11-25` means "new auth features not yet implemented" — a scope gap, not a quality problem. Failures in Server or Client: Core are more concerning.
 
@@ -207,14 +215,20 @@ After the subagents finish, output a short executive summary directly to the use
 
 Conformance:
 
-|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All* | T2 | T1 |
-|--------------|------------|------------|------------|-------|-----------|-------|----|----|
-| Server       | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | ✓/✗ | ✓/✗ |
-| Client: Core | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | — | — |
-| Client: Auth | pass/total | pass/total | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
-| **Client Total** | | | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | All* | T2 | T1 |
+|--------------|------------|------------|------------|------|----|----|
+| Server       | —          | pass/total | pass/total | pass/total (rate%) | ✓/✗ | ✓/✗ |
+| Client: Core | —          | pass/total | pass/total | pass/total (rate%) | — | — |
+| Client: Auth | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
+| **Client Total** | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
 
 \* unique scenarios — a scenario may apply to multiple spec versions
+
+Informational (not scored for tier):
+
+|              | draft | extension |
+|--------------|-------|-----------|
+| Client: Auth | pass/total | pass/total |
 
 If a baseline file was found, add a note below the conformance table:
 > **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
