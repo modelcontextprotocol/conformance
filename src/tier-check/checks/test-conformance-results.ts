@@ -8,7 +8,15 @@ import {
   listActiveClientScenarios,
   getScenarioSpecVersions
 } from '../../scenarios';
-import { ConformanceCheck } from '../../types';
+import { ConformanceCheck, SpecVersion } from '../../types';
+
+const NON_SCORING_VERSIONS: SpecVersion[] = ['draft', 'extension'];
+
+/** Whether a scenario counts toward tier scoring (has at least one date-versioned spec). */
+function isTierScoring(specVersions?: SpecVersion[]): boolean {
+  if (!specVersions || specVersions.length === 0) return true; // unknown = count it
+  return specVersions.some((v) => !NON_SCORING_VERSIONS.includes(v));
+}
 
 /**
  * Parse conformance results from an output directory.
@@ -132,7 +140,16 @@ function reconcileWithExpected(
     }
   }
 
-  result.pass_rate = result.total > 0 ? result.passed / result.total : 0;
+  // pass_rate only counts tier-scoring scenarios (date-versioned, not draft/extension).
+  // passed/failed/total reflect ALL scenarios for full reporting; pass_rate and status
+  // reflect only tier-scoring scenarios for tier logic.
+  const tierDetails = result.details.filter((d) =>
+    isTierScoring(d.specVersions)
+  );
+  const tierPassed = tierDetails.filter((d) => d.passed).length;
+  const tierTotal = tierDetails.length;
+
+  result.pass_rate = tierTotal > 0 ? tierPassed / tierTotal : 0;
   result.status =
     result.pass_rate >= 1.0
       ? 'pass'

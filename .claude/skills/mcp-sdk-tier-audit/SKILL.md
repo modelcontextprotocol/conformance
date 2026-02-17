@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: '<local-path> <conformance-server-url> [client-cmd]'
+argument-hint: '<local-path> <conformance-server-url> [client-cmd] [--branch <branch>]'
 ---
 
 # MCP SDK Tier Audit
@@ -43,6 +43,7 @@ Extract from the user's input:
 - **local-path**: absolute path to the SDK checkout (e.g. `~/src/mcp/typescript-sdk`)
 - **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
 - **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, client conformance tests are skipped and noted as a gap in the report.
+- **branch** (optional): Git branch to check on GitHub (e.g. `--branch fweinberger/v1x-governance-docs`). If not provided, derive from the local checkout's current branch: `cd <local-path> && git rev-parse --abbrev-ref HEAD`. This is passed to the tier-check CLI so that policy signal file checks use the correct branch instead of the repo's default branch.
 
 The first two arguments are required. If either is missing, ask the user to provide it.
 
@@ -59,12 +60,13 @@ The `tier-check` CLI handles all deterministic checks — server conformance, cl
 ```bash
 npm run --silent tier-check -- \
   --repo <owner/repo> \
+  --branch <branch> \
   --conformance-server-url <conformance-server-url> \
   --client-cmd '<client-cmd>' \
   --output json
 ```
 
-If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped).
+If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
 
 The CLI output includes server conformance pass rate, client conformance pass rate (with per-spec-version breakdown), issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
@@ -115,8 +117,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 1 requires ALL of:
 
-- Server conformance test pass rate == 100%
-- Client conformance test pass rate == 100%
+- Server conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
+- Client conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
 - Issue triage compliance >= 90% within 2 business days
 - All P0 bugs resolved within 7 days
 - Stable release >= 1.0.0 with no pre-release suffix
@@ -127,8 +129,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 2 requires ALL of:
 
-- Server conformance test pass rate >= 80%
-- Client conformance test pass rate >= 80%
+- Server conformance test pass rate >= 80% (date-versioned scenarios only)
+- Client conformance test pass rate >= 80% (date-versioned scenarios only)
 - Issue triage compliance >= 80% within 1 month
 - P0 bugs resolved within 2 weeks
 - At least one stable release >= 1.0.0
@@ -151,11 +153,19 @@ The **full suite** pass rates (server total, client total) are used for tier thr
 
 Example:
 
-|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All\*        |
-| ------------ | ---------- | ---------- | ---------- | ----- | --------- | ------------ |
-| Server       | —          | 26/26      | 4/4        | —     | —         | 30/30 (100%) |
-| Client: Core | —          | 2/2        | 2/2        | —     | —         | 4/4 (100%)   |
-| Client: Auth | 0/2        | 3/3        | 6/11       | 0/1   | 0/2       | 9/19 (47%)   |
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | All\*        |
+| ------------ | ---------- | ---------- | ---------- | ------------ |
+| Server       | —          | 26/26      | 4/4        | 30/30 (100%) |
+| Client: Core | —          | 2/2        | 2/2        | 4/4 (100%)   |
+| Client: Auth | 2/2        | 3/3        | 6/11       | 8/16 (50%)   |
+
+Informational (not scored for tier):
+
+|              | draft | extension |
+| ------------ | ----- | --------- |
+| Client: Auth | 0/1   | 0/2       |
+
+The tier-scoring table only includes date-versioned scenarios. `draft` and `extension` scenarios are shown separately as informational — they do not affect tier advancement.
 
 This immediately shows where failures concentrate. Failures clustered in Client: Auth / `2025-11-25` means "new auth features not yet implemented" — a scope gap, not a quality problem. Failures in Server or Client: Core are more concerning.
 
@@ -205,14 +215,20 @@ After the subagents finish, output a short executive summary directly to the use
 
 Conformance:
 
-|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | draft | extension | All* | T2 | T1 |
-|--------------|------------|------------|------------|-------|-----------|-------|----|----|
-| Server       | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | ✓/✗ | ✓/✗ |
-| Client: Core | —          | pass/total | pass/total | —     | —         | pass/total (rate%) | — | — |
-| Client: Auth | pass/total | pass/total | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
-| **Client Total** | | | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
+|              | 2025-03-26 | 2025-06-18 | 2025-11-25 | All* | T2 | T1 |
+|--------------|------------|------------|------------|------|----|----|
+| Server       | —          | pass/total | pass/total | pass/total (rate%) | ✓/✗ | ✓/✗ |
+| Client: Core | —          | pass/total | pass/total | pass/total (rate%) | — | — |
+| Client: Auth | pass/total | pass/total | pass/total | pass/total (rate%) | — | — |
+| **Client Total** | | | | **pass/total (rate%)** | **✓/✗** | **✓/✗** |
 
 \* unique scenarios — a scenario may apply to multiple spec versions
+
+Informational (not scored for tier):
+
+|              | draft | extension |
+|--------------|-------|-----------|
+| Client: Auth | pass/total | pass/total |
 
 If a baseline file was found, add a note below the conformance table:
 > **Baseline**: {N} failures in `baseline.yml` ({list by cell, e.g. "6 in Client: Auth/2025-11-25, 2 in Client: Auth/extension"}).
