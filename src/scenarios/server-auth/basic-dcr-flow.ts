@@ -228,23 +228,40 @@ export class BasicDcrFlowScenario implements ClientScenario {
       if (unauthorizedRequest.wwwAuthenticate) {
         const wwwAuth = unauthorizedRequest.wwwAuthenticate;
 
-        checks.push({
-          id: 'auth-www-authenticate-header',
-          name: 'WWW-Authenticate Header Present',
-          description:
-            'Server includes WWW-Authenticate header in 401 response',
-          status:
-            wwwAuth.scheme.toLowerCase() === 'bearer' ? 'SUCCESS' : 'WARNING',
-          timestamp: timestamp(),
-          specReferences: [
-            ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
-            ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
-          ],
-          details: {
-            scheme: wwwAuth.scheme,
-            params: wwwAuth.params
-          }
-        });
+        if (wwwAuth.scheme.toLowerCase() === 'bearer') {
+          checks.push({
+            id: 'auth-www-authenticate-header',
+            name: 'WWW-Authenticate Header Present',
+            description:
+              'Server includes WWW-Authenticate header with Bearer scheme in 401 response',
+            status: 'SUCCESS',
+            timestamp: timestamp(),
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
+              ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
+            ],
+            details: {
+              scheme: wwwAuth.scheme,
+              params: wwwAuth.params
+            }
+          });
+        } else {
+          checks.push({
+            id: 'auth-www-authenticate-header',
+            name: 'WWW-Authenticate Header Present',
+            description: `Server returned WWW-Authenticate with "${wwwAuth.scheme}" scheme instead of required Bearer scheme`,
+            status: 'FAILURE',
+            timestamp: timestamp(),
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
+              ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
+            ],
+            details: {
+              scheme: wwwAuth.scheme,
+              params: wwwAuth.params
+            }
+          });
+        }
 
         // Check for resource_metadata parameter
         if (wwwAuth.params.resource_metadata) {
@@ -263,15 +280,48 @@ export class BasicDcrFlowScenario implements ClientScenario {
             }
           });
         }
+
+        // Check for scope parameter (MCP spec: servers SHOULD include scope)
+        if (wwwAuth.params.scope) {
+          checks.push({
+            id: 'auth-www-authenticate-scope',
+            name: 'Scope in WWW-Authenticate',
+            description:
+              'WWW-Authenticate header includes scope parameter for client guidance',
+            status: 'SUCCESS',
+            timestamp: timestamp(),
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
+            ],
+            details: {
+              scope: wwwAuth.params.scope
+            }
+          });
+        } else {
+          checks.push({
+            id: 'auth-www-authenticate-scope',
+            name: 'Scope in WWW-Authenticate',
+            description:
+              'Server SHOULD include scope parameter in WWW-Authenticate header (RFC 6750 Section 3)',
+            status: 'WARNING',
+            timestamp: timestamp(),
+            specReferences: [
+              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
+            ]
+          });
+        }
       } else {
         checks.push({
           id: 'auth-www-authenticate-header',
           name: 'WWW-Authenticate Header Present',
           description:
-            'Server should include WWW-Authenticate header in 401 response',
-          status: 'INFO',
+            'Server MUST include WWW-Authenticate header in 401 response (RFC 7235 Section 3.1)',
+          status: 'FAILURE',
           timestamp: timestamp(),
-          specReferences: [ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE]
+          specReferences: [
+            ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
+            ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
+          ]
         });
       }
     } else {
