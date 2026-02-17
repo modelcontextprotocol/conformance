@@ -173,10 +173,10 @@ export class BasicDcrFlowScenario implements ClientScenario {
       await transport.close();
 
       // Analyze observed requests to generate conformance checks
-      this.analyzeRequests(observedRequests, checks, timestamp);
+      this.analyzeRequests(observedRequests, checks, timestamp, serverUrl);
     } catch (error) {
       // Still analyze what we observed before the error
-      this.analyzeRequests(observedRequests, checks, timestamp);
+      this.analyzeRequests(observedRequests, checks, timestamp, serverUrl);
 
       checks.push({
         id: 'auth-flow-completion',
@@ -198,7 +198,8 @@ export class BasicDcrFlowScenario implements ClientScenario {
   private analyzeRequests(
     requests: ObservedRequest[],
     checks: ConformanceCheck[],
-    timestamp: () => string
+    timestamp: () => string,
+    serverUrl: string
   ): void {
     // Phase 1: Check for 401 response with WWW-Authenticate
     const unauthorizedRequest = requests.find(
@@ -311,6 +312,51 @@ export class BasicDcrFlowScenario implements ClientScenario {
         typeof prmRequest.responseBody === 'object'
       ) {
         const prm = prmRequest.responseBody as Record<string, unknown>;
+
+        // Check PRM resource field (RFC 9728 Section 3.2)
+        if (prm.resource) {
+          const resource = prm.resource as string;
+          const resourceMatches =
+            resource === serverUrl || serverUrl.startsWith(resource);
+
+          if (resourceMatches) {
+            checks.push({
+              id: 'auth-prm-resource',
+              name: 'PRM Resource Field',
+              description: 'PRM resource field matches server URL',
+              status: 'SUCCESS',
+              timestamp: timestamp(),
+              specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
+              details: {
+                resource,
+                serverUrl
+              }
+            });
+          } else {
+            checks.push({
+              id: 'auth-prm-resource',
+              name: 'PRM Resource Field',
+              description: `PRM resource field "${resource}" does not match server URL "${serverUrl}"`,
+              status: 'FAILURE',
+              timestamp: timestamp(),
+              specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
+              details: {
+                resource,
+                serverUrl
+              }
+            });
+          }
+        } else {
+          checks.push({
+            id: 'auth-prm-resource',
+            name: 'PRM Resource Field',
+            description:
+              'Protected Resource Metadata must include resource field',
+            status: 'FAILURE',
+            timestamp: timestamp(),
+            specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE]
+          });
+        }
 
         if (
           prm.authorization_servers &&
