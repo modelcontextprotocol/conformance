@@ -7,18 +7,18 @@
  */
 
 import type { ClientScenario } from '../../types';
-import { BasicDcrFlowScenario } from './basic-dcr-flow';
+import { BasicAuthFlowScenario } from './run-auth-flow';
 
 // Re-export helpers and spec references
 export * from './helpers/oauth-client';
 export * from './spec-references';
-export { BasicDcrFlowScenario } from './basic-dcr-flow';
+export { BasicAuthFlowScenario } from './run-auth-flow';
 
 /**
  * All server authentication scenarios.
  */
 export const serverAuthScenarios: ClientScenario[] = [
-  new BasicDcrFlowScenario()
+  new BasicAuthFlowScenario()
 ];
 
 /**

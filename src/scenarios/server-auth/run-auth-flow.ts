@@ -1,15 +1,11 @@
 /**
- * Basic DCR Flow Scenario
+ * Server Auth Flow
  *
- * Tests the complete OAuth authentication flow using Dynamic Client Registration:
- * 1. Unauthenticated MCP request triggers 401 + WWW-Authenticate header
- * 2. Protected Resource Metadata (PRM) discovery
- * 3. Authorization Server (AS) metadata discovery
- * 4. Dynamic Client Registration (DCR)
- * 5. Token acquisition via authorization_code flow
- * 6. Authenticated MCP tool call with Bearer token
+ * Runs the complete OAuth authentication flow against an MCP server and
+ * generates conformance checks based on observed behavior. Supports all
+ * client registration approaches (CIMD, DCR, pre-registration).
  *
- * This scenario uses the MCP SDK's real client with observation middleware
+ * This module uses the MCP SDK's real client with observation middleware
  * to verify server conformance.
  */
 
@@ -35,19 +31,20 @@ import {
 import { ServerAuthSpecReferences } from './spec-references';
 
 /**
- * Basic DCR Flow - Tests complete OAuth flow with Dynamic Client Registration.
+ * Basic Auth Flow Scenario - Tests complete OAuth flow.
  */
-export class BasicDcrFlowScenario implements ClientScenario {
-  name = 'server-auth/basic-dcr-flow';
-  description = `Tests the complete OAuth authentication flow using Dynamic Client Registration.
+export class BasicAuthFlowScenario implements ClientScenario {
+  name = 'server-auth/basic-auth-flow';
+  description = `Tests the complete OAuth authentication flow.
 
 **Flow tested:**
-1. Unauthenticated MCP request -> 401 + WWW-Authenticate
-2. PRM Discovery -> authorization_servers
-3. AS Metadata Discovery -> registration_endpoint, token_endpoint
-4. DCR Registration -> client_id, client_secret
-5. Token Acquisition -> access_token
-6. Authenticated MCP Call -> success
+1. Invalid token rejection -> 401
+2. Unauthenticated MCP request -> 401 + WWW-Authenticate
+3. PRM Discovery -> resource, authorization_servers
+4. AS Metadata Discovery -> endpoints, PKCE support
+5. Client Registration (CIMD or DCR, as supported)
+6. Token Acquisition -> access_token
+7. Authenticated MCP Call -> success
 
 **Spec References:**
 - RFC 9728 (Protected Resource Metadata)
@@ -87,43 +84,31 @@ export class BasicDcrFlowScenario implements ClientScenario {
         })
       });
 
-      if (invalidTokenResponse.status === 401) {
-        checks.push({
-          id: 'auth-invalid-token-rejected',
-          name: 'Invalid Token Rejected',
-          description:
-            'Server returns 401 for requests with invalid Bearer token',
-          status: 'SUCCESS',
-          timestamp: timestamp(),
-          specReferences: [
-            ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN,
-            ServerAuthSpecReferences.RFC_6750_BEARER_TOKEN
-          ],
-          details: {
-            status: invalidTokenResponse.status
-          }
-        });
-      } else {
-        checks.push({
-          id: 'auth-invalid-token-rejected',
-          name: 'Invalid Token Rejected',
-          description: `Server MUST return 401 for invalid tokens, but returned ${invalidTokenResponse.status}`,
-          status: 'FAILURE',
-          timestamp: timestamp(),
-          specReferences: [
-            ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN,
-            ServerAuthSpecReferences.RFC_6750_BEARER_TOKEN
-          ],
-          details: {
-            status: invalidTokenResponse.status
-          }
-        });
-      }
+      checks.push({
+        id: 'auth-invalid-token-rejected',
+        name: 'Invalid Token Rejected',
+        description:
+          'Server returns 401 for requests with invalid Bearer token',
+        status: invalidTokenResponse.status === 401 ? 'SUCCESS' : 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage:
+          invalidTokenResponse.status !== 401
+            ? `Expected 401 but received ${invalidTokenResponse.status}`
+            : undefined,
+        specReferences: [
+          ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN,
+          ServerAuthSpecReferences.RFC_6750_BEARER_TOKEN
+        ],
+        details: {
+          status: invalidTokenResponse.status
+        }
+      });
     } catch (error) {
       checks.push({
         id: 'auth-invalid-token-rejected',
         name: 'Invalid Token Rejected',
-        description: 'Failed to send invalid token request',
+        description:
+          'Server returns 401 for requests with invalid Bearer token',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -136,13 +121,10 @@ export class BasicDcrFlowScenario implements ClientScenario {
       observedRequests.push(req);
     });
 
-    // Create OAuth provider for conformance testing
+    // Create OAuth provider for conformance testing with minimal client metadata for the broadest compatibility
     const provider = new ConformanceOAuthProvider(
       {
-        client_name: 'MCP Conformance Test Client',
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        token_endpoint_auth_method: 'client_secret_post'
+        client_name: 'MCP Conformance Test Client'
       },
       { interactive }
     );
@@ -247,7 +229,7 @@ export class BasicDcrFlowScenario implements ClientScenario {
       checks.push({
         id: 'auth-flow-completion',
         name: 'OAuth Flow Completion',
-        description: 'Complete OAuth authentication flow',
+        description: 'Complete OAuth authentication flow succeeded',
         status: 'FAILURE',
         timestamp: timestamp(),
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -255,7 +237,82 @@ export class BasicDcrFlowScenario implements ClientScenario {
       });
     }
 
+    // If DCR is supported but wasn't exercised in the flow (e.g. CIMD was preferred),
+    // do a standalone DCR registration test
+    await this.testStandaloneDcr(
+      observedRequests,
+      checks,
+      timestamp
+    );
+
     return checks;
+  }
+
+  /**
+   * If DCR is supported but wasn't exercised in the flow, do a standalone
+   * DCR registration to verify the server accepts it.
+   */
+  private async testStandaloneDcr(
+    observedRequests: ObservedRequest[],
+    checks: ConformanceCheck[],
+    timestamp: () => string
+  ): Promise<void> {
+    const asMetadataRequest = observedRequests.find(
+      (r) => r.requestType === 'as-metadata'
+    );
+    const asMetadata =
+      asMetadataRequest?.responseStatus === 200 &&
+      typeof asMetadataRequest.responseBody === 'object'
+        ? (asMetadataRequest.responseBody as Record<string, unknown>)
+        : null;
+
+
+     // Skip if DCR is not supported or already tested
+     // Client prefers CIMD over DCR, so skip if there's already a DCR request from the original flow
+    const dcrSupported = !!asMetadata?.registration_endpoint;
+    const dcrAlreadyTested = observedRequests.some(
+      (r) => r.requestType === 'dcr-registration'
+    );
+
+    if (!dcrSupported || dcrAlreadyTested) {
+      return;
+    }
+
+    const registrationEndpoint = asMetadata!.registration_endpoint as string;
+
+    try {
+      const response = await fetch(registrationEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'MCP Conformance DCR Test',
+          redirect_uris: ['http://localhost:3333/callback']
+        })
+      });
+
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        // Not valid JSON
+      }
+
+      performDcrChecks(checks, timestamp, {
+        url: registrationEndpoint,
+        status: response.status,
+        body: responseBody
+      });
+    } catch (error) {
+      checks.push({
+        id: 'auth-dcr-registration',
+        name: 'Dynamic Client Registration',
+        description: 'Server accepted Dynamic Client Registration',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        specReferences: [ServerAuthSpecReferences.RFC_7591_DCR_ENDPOINT]
+      });
+    }
   }
 
   /**
@@ -294,40 +351,26 @@ export class BasicDcrFlowScenario implements ClientScenario {
       if (unauthorizedRequest.wwwAuthenticate) {
         const wwwAuth = unauthorizedRequest.wwwAuthenticate;
 
-        if (wwwAuth.scheme.toLowerCase() === 'bearer') {
-          checks.push({
-            id: 'auth-www-authenticate-header',
-            name: 'WWW-Authenticate Header Present',
-            description:
-              'Server includes WWW-Authenticate header with Bearer scheme in 401 response',
-            status: 'SUCCESS',
-            timestamp: timestamp(),
-            specReferences: [
-              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
-              ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
-            ],
-            details: {
-              scheme: wwwAuth.scheme,
-              params: wwwAuth.params
-            }
-          });
-        } else {
-          checks.push({
-            id: 'auth-www-authenticate-header',
-            name: 'WWW-Authenticate Header Present',
-            description: `Server returned WWW-Authenticate with "${wwwAuth.scheme}" scheme instead of required Bearer scheme`,
-            status: 'FAILURE',
-            timestamp: timestamp(),
-            specReferences: [
-              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
-              ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
-            ],
-            details: {
-              scheme: wwwAuth.scheme,
-              params: wwwAuth.params
-            }
-          });
-        }
+        const isBearer = wwwAuth.scheme.toLowerCase() === 'bearer';
+        checks.push({
+          id: 'auth-www-authenticate-header',
+          name: 'WWW-Authenticate Header Present',
+          description:
+            'Server includes WWW-Authenticate header with Bearer scheme in 401 response',
+          status: isBearer ? 'SUCCESS' : 'FAILURE',
+          timestamp: timestamp(),
+          errorMessage: !isBearer
+            ? `Expected Bearer scheme but received "${wwwAuth.scheme}"`
+            : undefined,
+          specReferences: [
+            ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
+            ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
+          ],
+          details: {
+            scheme: wwwAuth.scheme,
+            params: wwwAuth.params
+          }
+        });
 
         // Check for resource_metadata parameter
         if (wwwAuth.params.resource_metadata) {
@@ -348,42 +391,30 @@ export class BasicDcrFlowScenario implements ClientScenario {
         }
 
         // Check for scope parameter (MCP spec: servers SHOULD include scope)
-        if (wwwAuth.params.scope) {
-          checks.push({
-            id: 'auth-www-authenticate-scope',
-            name: 'Scope in WWW-Authenticate',
-            description:
-              'WWW-Authenticate header includes scope parameter for client guidance',
-            status: 'SUCCESS',
-            timestamp: timestamp(),
-            specReferences: [
-              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
-            ],
-            details: {
-              scope: wwwAuth.params.scope
-            }
-          });
-        } else {
-          checks.push({
-            id: 'auth-www-authenticate-scope',
-            name: 'Scope in WWW-Authenticate',
-            description:
-              'Server SHOULD include scope parameter in WWW-Authenticate header (RFC 6750 Section 3)',
-            status: 'WARNING',
-            timestamp: timestamp(),
-            specReferences: [
-              ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
-            ]
-          });
-        }
+        checks.push({
+          id: 'auth-www-authenticate-scope',
+          name: 'Scope in WWW-Authenticate',
+          description:
+            'Server includes scope parameter in WWW-Authenticate header',
+          status: wwwAuth.params.scope ? 'SUCCESS' : 'WARNING',
+          timestamp: timestamp(),
+          specReferences: [
+            ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
+          ],
+          details: wwwAuth.params.scope
+            ? { scope: wwwAuth.params.scope }
+            : undefined
+        });
       } else {
         checks.push({
           id: 'auth-www-authenticate-header',
           name: 'WWW-Authenticate Header Present',
           description:
-            'Server MUST include WWW-Authenticate header in 401 response (RFC 7235 Section 3.1)',
+            'Server includes WWW-Authenticate header with Bearer scheme in 401 response',
           status: 'FAILURE',
           timestamp: timestamp(),
+          errorMessage:
+            'WWW-Authenticate header missing from 401 response (required by RFC 7235 Section 3.1)',
           specReferences: [
             ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE,
             ServerAuthSpecReferences.RFC_7235_WWW_AUTHENTICATE
@@ -395,9 +426,10 @@ export class BasicDcrFlowScenario implements ClientScenario {
         id: 'auth-401-response',
         name: 'Unauthenticated Request Returns 401',
         description:
-          'No 401 response observed - server may not require authentication',
+          'Server returns 401 Unauthorized for unauthenticated MCP requests',
         status: 'FAILURE',
         timestamp: timestamp(),
+        errorMessage: 'No 401 response observed',
         specReferences: [ServerAuthSpecReferences.RFC_7235_401_RESPONSE]
       });
     }
@@ -435,80 +467,61 @@ export class BasicDcrFlowScenario implements ClientScenario {
           const resourceMatches =
             resource === serverUrl || serverUrl.startsWith(resource);
 
-          if (resourceMatches) {
-            checks.push({
-              id: 'auth-prm-resource',
-              name: 'PRM Resource Field',
-              description: 'PRM resource field matches server URL',
-              status: 'SUCCESS',
-              timestamp: timestamp(),
-              specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
-              details: {
-                resource,
-                serverUrl
-              }
-            });
-          } else {
-            checks.push({
-              id: 'auth-prm-resource',
-              name: 'PRM Resource Field',
-              description: `PRM resource field "${resource}" does not match server URL "${serverUrl}"`,
-              status: 'FAILURE',
-              timestamp: timestamp(),
-              specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
-              details: {
-                resource,
-                serverUrl
-              }
-            });
-          }
+          checks.push({
+            id: 'auth-prm-resource',
+            name: 'PRM Resource Field',
+            description:
+              'Protected Resource Metadata includes resource field matching server URL',
+            status: resourceMatches ? 'SUCCESS' : 'FAILURE',
+            timestamp: timestamp(),
+            errorMessage: !resourceMatches
+              ? `PRM resource "${resource}" does not match server URL "${serverUrl}"`
+              : undefined,
+            specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
+            details: {
+              resource,
+              serverUrl
+            }
+          });
         } else {
           checks.push({
             id: 'auth-prm-resource',
             name: 'PRM Resource Field',
             description:
-              'Protected Resource Metadata must include resource field',
+              'Protected Resource Metadata includes resource field matching server URL',
             status: 'FAILURE',
             timestamp: timestamp(),
+            errorMessage: 'PRM response missing required resource field',
             specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE]
           });
         }
 
-        if (
+        const hasAuthServers =
           prm.authorization_servers &&
-          Array.isArray(prm.authorization_servers)
-        ) {
-          checks.push({
-            id: 'auth-prm-authorization-servers',
-            name: 'PRM Contains Authorization Servers',
-            description:
-              'Protected Resource Metadata includes authorization_servers array',
-            status: 'SUCCESS',
-            timestamp: timestamp(),
-            specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
-            details: {
-              authorizationServers: prm.authorization_servers
-            }
-          });
-        } else {
-          checks.push({
-            id: 'auth-prm-authorization-servers',
-            name: 'PRM Contains Authorization Servers',
-            description:
-              'Protected Resource Metadata must include authorization_servers array',
-            status: 'FAILURE',
-            timestamp: timestamp(),
-            specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE]
-          });
-        }
+          Array.isArray(prm.authorization_servers);
+        checks.push({
+          id: 'auth-prm-authorization-servers',
+          name: 'PRM Contains Authorization Servers',
+          description:
+            'Protected Resource Metadata includes authorization_servers array',
+          status: hasAuthServers ? 'SUCCESS' : 'FAILURE',
+          timestamp: timestamp(),
+          errorMessage: !hasAuthServers
+            ? 'PRM response missing required authorization_servers array'
+            : undefined,
+          specReferences: [ServerAuthSpecReferences.RFC_9728_PRM_RESPONSE],
+          details: hasAuthServers
+            ? { authorizationServers: prm.authorization_servers }
+            : undefined
+        });
       }
     } else {
       checks.push({
         id: 'auth-prm-discovery',
         name: 'Protected Resource Metadata Discovery',
-        description:
-          'No PRM discovery request observed - required for OAuth flow',
+        description: 'Client discovered Protected Resource Metadata endpoint',
         status: 'FAILURE',
+        errorMessage: 'No PRM discovery request observed',
         timestamp: timestamp(),
         specReferences: [
           ServerAuthSpecReferences.RFC_9728_PRM_DISCOVERY,
@@ -573,10 +586,10 @@ export class BasicDcrFlowScenario implements ClientScenario {
         checks.push({
           id: 'auth-as-metadata-fields',
           name: 'AS Metadata Required Fields',
-          description: allValid
-            ? 'Authorization Server metadata includes all required fields'
-            : `Authorization Server metadata issues: ${issues.join(', ')}`,
+          description:
+            'Authorization Server metadata includes all required fields',
           status: allValid ? 'SUCCESS' : 'FAILURE',
+          errorMessage: !allValid ? issues.join('; ') : undefined,
           timestamp: timestamp(),
           specReferences: [
             ServerAuthSpecReferences.RFC_8414_AS_FIELDS,
@@ -595,9 +608,9 @@ export class BasicDcrFlowScenario implements ClientScenario {
       checks.push({
         id: 'auth-as-metadata-discovery',
         name: 'Authorization Server Metadata Discovery',
-        description:
-          'No AS metadata discovery request observed - required for OAuth flow',
+        description: 'Client discovered Authorization Server metadata',
         status: 'FAILURE',
+        errorMessage: 'No AS metadata discovery request observed',
         timestamp: timestamp(),
         specReferences: [
           ServerAuthSpecReferences.RFC_8414_AS_DISCOVERY,
@@ -606,47 +619,57 @@ export class BasicDcrFlowScenario implements ClientScenario {
       });
     }
 
-    // Phase 4: DCR Registration
+    // Phase 4: Client Registration
+    // Determine AS capabilities from observed metadata
+    const asMetadata =
+      asMetadataRequest?.responseStatus === 200 &&
+      typeof asMetadataRequest.responseBody === 'object'
+        ? (asMetadataRequest.responseBody as Record<string, unknown>)
+        : null;
+
+    const cimdSupported =
+      asMetadata?.client_id_metadata_document_supported === true;
+    const dcrSupported = !!asMetadata?.registration_endpoint;
+
     const dcrRequest = requests.find(
       (r) => r.requestType === 'dcr-registration'
     );
-    if (dcrRequest) {
-      checks.push({
-        id: 'auth-dcr-registration',
-        name: 'Dynamic Client Registration',
-        description: 'Client registered via Dynamic Client Registration',
-        status: dcrRequest.responseStatus === 201 ? 'SUCCESS' : 'FAILURE',
-        timestamp: timestamp(),
-        specReferences: [
-          ServerAuthSpecReferences.RFC_7591_DCR_ENDPOINT,
-          ServerAuthSpecReferences.MCP_AUTH_DCR
-        ],
-        details: {
-          url: dcrRequest.url,
-          status: dcrRequest.responseStatus
-        }
-      });
 
-      // Check DCR response
-      if (
-        dcrRequest.responseStatus === 201 &&
-        typeof dcrRequest.responseBody === 'object'
-      ) {
-        const client = dcrRequest.responseBody as Record<string, unknown>;
+    // Report AS registration capabilities
+    checks.push({
+      id: 'auth-as-cimd-supported',
+      name: 'AS Supports CIMD',
+      description:
+        'Authorization server advertises client_id_metadata_document_supported',
+      status: cimdSupported ? 'SUCCESS' : 'INFO',
+      timestamp: timestamp(),
+      specReferences: [ServerAuthSpecReferences.MCP_AUTH_DCR],
+      details: { cimdSupported }
+    });
 
-        checks.push({
-          id: 'auth-dcr-response',
-          name: 'DCR Response Contains Client Credentials',
-          description: 'DCR response includes client_id',
-          status: client.client_id ? 'SUCCESS' : 'FAILURE',
-          timestamp: timestamp(),
-          specReferences: [ServerAuthSpecReferences.RFC_7591_DCR_RESPONSE],
-          details: {
-            hasClientId: !!client.client_id,
-            hasClientSecret: !!client.client_secret
-          }
-        });
+    checks.push({
+      id: 'auth-as-dcr-supported',
+      name: 'AS Supports DCR',
+      description:
+        'Authorization server advertises registration_endpoint',
+      status: dcrSupported ? 'SUCCESS' : 'INFO',
+      timestamp: timestamp(),
+      specReferences: [
+        ServerAuthSpecReferences.RFC_7591_DCR_ENDPOINT,
+        ServerAuthSpecReferences.MCP_AUTH_DCR
+      ],
+      details: {
+        registrationEndpoint: asMetadata?.registration_endpoint
       }
+    });
+
+    // Validate server accepted DCR registration if it occurred
+    if (dcrRequest) {
+      performDcrChecks(checks, timestamp, {
+        url: dcrRequest.url,
+        status: dcrRequest.responseStatus,
+        body: dcrRequest.responseBody
+      });
     }
 
     // Phase 5: Token Request
@@ -695,9 +718,9 @@ export class BasicDcrFlowScenario implements ClientScenario {
       checks.push({
         id: 'auth-token-request',
         name: 'Token Acquisition',
-        description:
-          'No token request observed - required to complete OAuth flow',
+        description: 'Client obtained access token from token endpoint',
         status: 'FAILURE',
+        errorMessage: 'No token request observed',
         timestamp: timestamp(),
         specReferences: [
           ServerAuthSpecReferences.OAUTH_2_1_TOKEN_REQUEST,
@@ -741,5 +764,50 @@ export class BasicDcrFlowScenario implements ClientScenario {
         specReferences: [ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN]
       });
     }
+  }
+}
+
+function performDcrChecks(
+  checks: ConformanceCheck[],
+  timestamp: () => string,
+  response: { url: string; status: number; body?: unknown }
+): void {
+  const success = response.status === 201;
+  checks.push({
+    id: 'auth-dcr-registration',
+    name: 'Dynamic Client Registration',
+    description: 'Server accepted Dynamic Client Registration',
+    status: success ? 'SUCCESS' : 'FAILURE',
+    timestamp: timestamp(),
+    errorMessage: !success
+      ? `Registration endpoint returned ${response.status}`
+      : undefined,
+    specReferences: [
+      ServerAuthSpecReferences.RFC_7591_DCR_ENDPOINT,
+      ServerAuthSpecReferences.MCP_AUTH_DCR
+    ],
+    details: {
+      url: response.url,
+      status: response.status
+    }
+  });
+
+  if (success && typeof response.body === 'object' && response.body !== null) {
+    const client = response.body as Record<string, unknown>;
+    checks.push({
+      id: 'auth-dcr-response',
+      name: 'DCR Response Contains Client Credentials',
+      description: 'DCR response includes client_id',
+      status: client.client_id ? 'SUCCESS' : 'FAILURE',
+      timestamp: timestamp(),
+      errorMessage: !client.client_id
+        ? 'DCR response missing client_id'
+        : undefined,
+      specReferences: [ServerAuthSpecReferences.RFC_7591_DCR_RESPONSE],
+      details: {
+        hasClientId: !!client.client_id,
+        hasClientSecret: !!client.client_secret
+      }
+    });
   }
 }
