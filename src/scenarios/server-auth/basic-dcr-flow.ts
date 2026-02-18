@@ -65,6 +65,72 @@ export class BasicDcrFlowScenario implements ClientScenario {
     const timestamp = () => new Date().toISOString();
     const interactive = options?.interactive ?? false;
 
+    // Verify server rejects invalid tokens with 401
+    // Per MCP spec: "Invalid or expired tokens MUST receive a HTTP 401 response"
+    try {
+      const invalidTokenResponse = await fetch(serverUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          Authorization: 'Bearer invalid'
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-11-25',
+            capabilities: {},
+            clientInfo: { name: 'conformance-test', version: '1.0.0' }
+          }
+        })
+      });
+
+      if (invalidTokenResponse.status === 401) {
+        checks.push({
+          id: 'auth-invalid-token-rejected',
+          name: 'Invalid Token Rejected',
+          description:
+            'Server returns 401 for requests with invalid Bearer token',
+          status: 'SUCCESS',
+          timestamp: timestamp(),
+          specReferences: [
+            ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN,
+            ServerAuthSpecReferences.RFC_6750_BEARER_TOKEN
+          ],
+          details: {
+            status: invalidTokenResponse.status
+          }
+        });
+      } else {
+        checks.push({
+          id: 'auth-invalid-token-rejected',
+          name: 'Invalid Token Rejected',
+          description: `Server MUST return 401 for invalid tokens, but returned ${invalidTokenResponse.status}`,
+          status: 'FAILURE',
+          timestamp: timestamp(),
+          specReferences: [
+            ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN,
+            ServerAuthSpecReferences.RFC_6750_BEARER_TOKEN
+          ],
+          details: {
+            status: invalidTokenResponse.status
+          }
+        });
+      }
+    } catch (error) {
+      checks.push({
+        id: 'auth-invalid-token-rejected',
+        name: 'Invalid Token Rejected',
+        description: 'Failed to send invalid token request',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        specReferences: [ServerAuthSpecReferences.MCP_AUTH_ACCESS_TOKEN]
+      });
+    }
+
     // Create observation middleware to record all requests
     const observationMiddleware = createObservationMiddleware((req) => {
       observedRequests.push(req);
