@@ -2,11 +2,12 @@
  * Lifecycle test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test basic server initialization handshake.
 
 **Server Implementation Requirements:**

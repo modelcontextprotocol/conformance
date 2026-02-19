@@ -2,7 +2,7 @@
  * Resources test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 import {
   TextResourceContents,
@@ -11,6 +11,7 @@ import {
 
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test listing available resources.
 
 **Server Implementation Requirements:**
@@ -91,6 +92,7 @@ export class ResourcesListScenario implements ClientScenario {
 
 export class ResourcesReadTextScenario implements ClientScenario {
   name = 'resources-read-text';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test reading text resource.
 
 **Server Implementation Requirements:**
@@ -177,6 +179,7 @@ Implement resource \`test://static-text\` that returns:
 
 export class ResourcesReadBinaryScenario implements ClientScenario {
   name = 'resources-read-binary';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test reading binary resource.
 
 **Server Implementation Requirements:**
@@ -261,6 +264,7 @@ Implement resource \`test://static-binary\` that returns:
 
 export class ResourcesTemplateReadScenario implements ClientScenario {
   name = 'resources-templates-read';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test reading resource from template.
 
 **Server Implementation Requirements:**
@@ -362,6 +366,7 @@ Returns (for \`uri: "test://template/123/data"\`):
 
 export class ResourcesSubscribeScenario implements ClientScenario {
   name = 'resources-subscribe';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test subscribing to resource updates.
 
 **Server Implementation Requirements:**
@@ -432,6 +437,7 @@ Example request:
 
 export class ResourcesUnsubscribeScenario implements ClientScenario {
   name = 'resources-unsubscribe';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test unsubscribing from resource.
 
 **Server Implementation Requirements:**

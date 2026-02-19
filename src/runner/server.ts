@@ -3,7 +3,7 @@ import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { ConformanceCheck } from '../types';
 import { getClientScenario, getServerAuthScenario } from '../scenarios';
-import { ensureResultsDir, createResultDir, formatPrettyChecks } from './utils';
+import { createResultDir, formatPrettyChecks } from './utils';
 import { createAuthServer } from '../scenarios/client/auth/helpers/createAuthServer';
 import { ServerLifecycle } from '../scenarios/client/auth/helpers/serverLifecycle';
 
@@ -22,15 +22,19 @@ function formatMarkdown(text: string): string {
 
 export async function runServerConformanceTest(
   serverUrl: string,
-  scenarioName: string
+  scenarioName: string,
+  outputDir?: string
 ): Promise<{
   checks: ConformanceCheck[];
-  resultDir: string;
+  resultDir?: string;
   scenarioDescription: string;
 }> {
-  await ensureResultsDir();
-  const resultDir = createResultDir(scenarioName, 'server');
-  await fs.mkdir(resultDir, { recursive: true });
+  let resultDir: string | undefined;
+
+  if (outputDir) {
+    resultDir = createResultDir(outputDir, scenarioName, 'server');
+    await fs.mkdir(resultDir, { recursive: true });
+  }
 
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
@@ -41,12 +45,14 @@ export async function runServerConformanceTest(
 
   const checks = await scenario.run(serverUrl);
 
-  await fs.writeFile(
-    path.join(resultDir, 'checks.json'),
-    JSON.stringify(checks, null, 2)
-  );
+  if (resultDir) {
+    await fs.writeFile(
+      path.join(resultDir, 'checks.json'),
+      JSON.stringify(checks, null, 2)
+    );
 
-  console.log(`Results saved to ${resultDir}`);
+    console.log(`Results saved to ${resultDir}`);
+  }
 
   return {
     checks,
@@ -163,6 +169,8 @@ export async function runServerAuthConformanceTest(options: {
   scenarioName: string;
   timeout?: number;
   interactive?: boolean;
+  clientId?: string;
+  clientSecret?: string;
 }): Promise<{
   checks: ConformanceCheck[];
   resultDir: string;
@@ -173,11 +181,12 @@ export async function runServerAuthConformanceTest(options: {
     command,
     scenarioName,
     timeout = 30000,
-    interactive = false
+    interactive = false,
+    clientId,
+    clientSecret
   } = options;
 
-  await ensureResultsDir();
-  const resultDir = createResultDir(scenarioName, 'server-auth');
+  const resultDir = createResultDir('results', scenarioName, 'server-auth');
   await fs.mkdir(resultDir, { recursive: true });
 
   // Get the scenario
@@ -268,14 +277,18 @@ export async function runServerAuthConformanceTest(options: {
       console.log(
         `Running server auth scenario '${scenarioName}' against server: ${serverUrl}`
       );
-      const scenarioChecks = await scenario.run(serverUrl, { interactive });
+      const scenarioChecks = await scenario.run(serverUrl, {
+        interactive,
+        clientId,
+        clientSecret
+      });
       checks.push(...scenarioChecks);
     } else if (url) {
       // --url mode: Just run the scenario against the provided URL
       console.log(
         `Running server auth scenario '${scenarioName}' against: ${url}`
       );
-      checks = await scenario.run(url, { interactive });
+      checks = await scenario.run(url, { interactive, clientId, clientSecret });
     } else {
       throw new Error(
         'Either --url or --command must be provided for auth scenarios'

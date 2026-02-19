@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls } from '../../../types.js';
+import { ScenarioUrls, SpecVersion } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
@@ -45,11 +45,16 @@ const AUTH_METHOD_NAMES: Record<AuthMethod, string> = {
 
 class TokenEndpointAuthScenario implements Scenario {
   name: string;
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description: string;
   private expectedAuthMethod: AuthMethod;
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+
+  // Track resource parameters for RFC 8707 validation
+  private authorizationResource?: string;
+  private tokenResource?: string;
 
   constructor(expectedAuthMethod: AuthMethod) {
     this.expectedAuthMethod = expectedAuthMethod;
@@ -59,6 +64,8 @@ class TokenEndpointAuthScenario implements Scenario {
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.authorizationResource = undefined;
+    this.tokenResource = undefined;
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
@@ -66,7 +73,12 @@ class TokenEndpointAuthScenario implements Scenario {
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
       // Disable CIMD to force DCR - we need client_secret for auth method testing
       clientIdMetadataDocumentSupported: false,
+      onAuthorizationRequest: ({ resource }) => {
+        this.authorizationResource = resource;
+      },
       onTokenRequest: ({ authorizationHeader, body, timestamp }) => {
+        // Track resource from token request for RFC 8707 validation
+        this.tokenResource = body.resource;
         const bodyClientSecret = body.client_secret;
         const actualMethod = detectAuthMethod(
           authorizationHeader,
@@ -147,17 +159,131 @@ class TokenEndpointAuthScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    const timestamp = new Date().toISOString();
+
     if (!this.checks.some((c) => c.id === 'token-endpoint-auth-method')) {
       this.checks.push({
         id: 'token-endpoint-auth-method',
         name: 'Token endpoint authentication method',
         description: 'Client did not make a token request',
         status: 'FAILURE',
-        timestamp: new Date().toISOString(),
+        timestamp,
         specReferences: [SpecReferences.OAUTH_2_1_TOKEN]
       });
     }
+
+    // RFC 8707 Resource Parameter Validation Checks
+    this.addResourceParameterChecks(timestamp);
+
     return this.checks;
+  }
+
+  private addResourceParameterChecks(timestamp: string): void {
+    const specRefs = [
+      SpecReferences.RFC_8707_RESOURCE_INDICATORS,
+      SpecReferences.MCP_RESOURCE_PARAMETER
+    ];
+
+    // Check 1: Resource parameter in authorization request
+    if (
+      !this.checks.some((c) => c.id === 'resource-parameter-in-authorization')
+    ) {
+      const hasResource = !!this.authorizationResource;
+      this.checks.push({
+        id: 'resource-parameter-in-authorization',
+        name: 'Resource parameter in authorization request',
+        description: hasResource
+          ? 'Client included resource parameter in authorization request'
+          : 'Client MUST include resource parameter in authorization request per RFC 8707',
+        status: hasResource ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: specRefs,
+        details: {
+          resource: this.authorizationResource || 'not provided'
+        }
+      });
+    }
+
+    // Check 2: Resource parameter in token request
+    if (!this.checks.some((c) => c.id === 'resource-parameter-in-token')) {
+      const hasResource = !!this.tokenResource;
+      this.checks.push({
+        id: 'resource-parameter-in-token',
+        name: 'Resource parameter in token request',
+        description: hasResource
+          ? 'Client included resource parameter in token request'
+          : 'Client MUST include resource parameter in token request per RFC 8707',
+        status: hasResource ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: specRefs,
+        details: {
+          resource: this.tokenResource || 'not provided'
+        }
+      });
+    }
+
+    // Check 3: Resource parameter is valid canonical URI
+    if (!this.checks.some((c) => c.id === 'resource-parameter-valid-uri')) {
+      const resourceToValidate =
+        this.authorizationResource || this.tokenResource;
+      if (resourceToValidate) {
+        const validation = this.validateCanonicalUri(resourceToValidate);
+        this.checks.push({
+          id: 'resource-parameter-valid-uri',
+          name: 'Resource parameter is valid canonical URI',
+          description: validation.valid
+            ? 'Resource parameter is a valid canonical URI (has scheme, no fragment)'
+            : `Resource parameter is invalid: ${validation.error}`,
+          status: validation.valid ? 'SUCCESS' : 'FAILURE',
+          timestamp,
+          specReferences: specRefs,
+          details: {
+            resource: resourceToValidate,
+            ...(validation.error && { error: validation.error })
+          }
+        });
+      }
+    }
+
+    // Check 4: Resource parameter consistency between requests
+    if (!this.checks.some((c) => c.id === 'resource-parameter-consistency')) {
+      if (this.authorizationResource && this.tokenResource) {
+        const consistent = this.authorizationResource === this.tokenResource;
+        this.checks.push({
+          id: 'resource-parameter-consistency',
+          name: 'Resource parameter consistency',
+          description: consistent
+            ? 'Resource parameter is consistent between authorization and token requests'
+            : 'Resource parameter MUST be consistent between authorization and token requests',
+          status: consistent ? 'SUCCESS' : 'FAILURE',
+          timestamp,
+          specReferences: specRefs,
+          details: {
+            authorizationResource: this.authorizationResource,
+            tokenResource: this.tokenResource
+          }
+        });
+      }
+    }
+  }
+
+  private validateCanonicalUri(uri: string): {
+    valid: boolean;
+    error?: string;
+  } {
+    try {
+      const parsed = new URL(uri);
+      // Check for fragment (RFC 8707: MUST NOT include fragment)
+      if (parsed.hash) {
+        return {
+          valid: false,
+          error: 'contains fragment (not allowed per RFC 8707)'
+        };
+      }
+      return { valid: true };
+    } catch {
+      return { valid: false, error: 'invalid URI format' };
+    }
   }
 }
 

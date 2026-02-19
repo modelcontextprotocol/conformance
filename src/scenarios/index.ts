@@ -1,4 +1,4 @@
-import { Scenario, ClientScenario } from '../types';
+import { Scenario, ClientScenario, SpecVersion } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
@@ -51,7 +51,13 @@ import {
   PromptsGetWithImageScenario
 } from './server/prompts';
 
-import { authScenariosList } from './client/auth/index';
+import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+
+import {
+  authScenariosList,
+  backcompatScenariosList,
+  extensionScenariosList
+} from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import {
   serverAuthScenarios as serverAuthScenariosList,
@@ -60,18 +66,10 @@ import {
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
-  // Elicitation scenarios (SEP-1330)
-  new ElicitationEnumsScenario(),
-
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
   // $schema, $defs, and additionalProperties fields in tool schemas.
   new JsonSchema2020_12Scenario(),
-
-  // On hold until elicitation schema types are fixed
-  // https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1863
-  new ToolsCallElicitationScenario(),
-  new ElicitationDefaultsScenario(),
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
@@ -127,7 +125,10 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetSimpleScenario(),
   new PromptsGetWithArgsScenario(),
   new PromptsGetEmbeddedResourceScenario(),
-  new PromptsGetWithImageScenario()
+  new PromptsGetWithImageScenario(),
+
+  // Security scenarios
+  new DNSRebindingProtectionScenario()
 ];
 
 // Active client scenarios (excludes pending)
@@ -144,8 +145,19 @@ export const clientScenarios = new Map<string, ClientScenario>(
   allClientScenariosList.map((scenario) => [scenario.name, scenario])
 );
 
-// Scenario scenarios
+// All client test scenarios (core + backcompat + extensions)
 const scenariosList: Scenario[] = [
+  new InitializeScenario(),
+  new ToolsCallScenario(),
+  new ElicitationClientDefaultsScenario(),
+  new SSERetryScenario(),
+  ...authScenariosList,
+  ...backcompatScenariosList,
+  ...extensionScenariosList
+];
+
+// Core scenarios (tier 1 requirements)
+const coreScenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
@@ -190,6 +202,18 @@ export function listAuthScenarios(): string[] {
   return authScenariosList.map((scenario) => scenario.name);
 }
 
+export function listCoreScenarios(): string[] {
+  return coreScenariosList.map((scenario) => scenario.name);
+}
+
+export function listExtensionScenarios(): string[] {
+  return extensionScenariosList.map((scenario) => scenario.name);
+}
+
+export function listBackcompatScenarios(): string[] {
+  return backcompatScenariosList.map((scenario) => scenario.name);
+}
+
 export { listMetadataScenarios };
 
 // Server auth scenario helpers
@@ -207,3 +231,34 @@ export function getServerAuthScenario(
 export function listServerAuthScenarios(): string[] {
   return serverAuthScenariosList.map((s) => s.name);
 }
+
+// All valid spec versions, used by the CLI to validate --spec-version input.
+export const ALL_SPEC_VERSIONS: SpecVersion[] = [
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
+  'draft',
+  'extension'
+];
+
+export function listScenariosForSpec(version: SpecVersion): string[] {
+  return scenariosList
+    .filter((s) => s.specVersions.includes(version))
+    .map((s) => s.name);
+}
+
+export function listClientScenariosForSpec(version: SpecVersion): string[] {
+  return allClientScenariosList
+    .filter((s) => s.specVersions.includes(version))
+    .map((s) => s.name);
+}
+
+export function getScenarioSpecVersions(
+  name: string
+): SpecVersion[] | undefined {
+  return (
+    scenarios.get(name)?.specVersions ?? clientScenarios.get(name)?.specVersions
+  );
+}
+
+export type { SpecVersion };

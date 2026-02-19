@@ -170,3 +170,21 @@ If you're implementing MCP in another language/SDK:
 5. **Handle Notifications Carefully**: Catch/ignore errors when no client is connected
 
 **Goal**: All SDK example servers provide the same interface, enabling a single test suite to verify conformance across all implementations.
+
+## Negative Test Cases
+
+### no-dns-rebinding-protection.ts
+
+A minimal MCP server that intentionally omits DNS rebinding protection. This is a **negative test case** that demonstrates what a vulnerable server looks like and is expected to **FAIL** the `dns-rebinding-protection` conformance scenario.
+
+```bash
+# Run the vulnerable server
+npx tsx no-dns-rebinding-protection.ts
+
+# This should FAIL the dns-rebinding-protection checks
+npx @modelcontextprotocol/conformance server \
+  --url http://localhost:3003/mcp \
+  --scenario dns-rebinding-protection
+```
+
+**DO NOT** use this pattern in production servers. Always use `createMcpExpressApp()` or the `localhostHostValidation()` middleware for localhost servers.

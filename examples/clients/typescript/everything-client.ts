@@ -21,7 +21,12 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
-import { withOAuthRetry, handle401 } from './helpers/withOAuthRetry.js';
+import {
+  withOAuthRetry,
+  withOAuthRetryWithProvider,
+  handle401
+} from './helpers/withOAuthRetry.js';
+import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -139,7 +144,9 @@ registerScenarios(
     // Token endpoint auth method scenarios
     'auth/token-endpoint-auth-basic',
     'auth/token-endpoint-auth-post',
-    'auth/token-endpoint-auth-none'
+    'auth/token-endpoint-auth-none',
+    // Resource mismatch (client should error when PRM resource doesn't match)
+    'auth/resource-mismatch'
   ],
   runAuthClient
 );
@@ -299,6 +306,220 @@ export async function runClientCredentialsBasic(
 }
 
 registerScenario('auth/client-credentials-basic', runClientCredentialsBasic);
+
+// ============================================================================
+// Pre-registration scenario
+// ============================================================================
+
+/**
+ * Pre-registration: client uses pre-registered credentials (no DCR).
+ *
+ * Server does not advertise registration_endpoint, so client must use
+ * pre-configured client_id and client_secret passed via context.
+ */
+export async function runPreRegistration(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/pre-registration') {
+    throw new Error(`Expected pre-registration context, got ${ctx.name}`);
+  }
+
+  const client = new Client(
+    { name: 'conformance-pre-registration', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  // Create provider with pre-registered credentials
+  const provider = new ConformanceOAuthProvider(
+    'http://localhost:3000/callback',
+    {
+      client_name: 'conformance-pre-registration',
+      redirect_uris: ['http://localhost:3000/callback']
+    }
+  );
+
+  // Pre-set the client information so the SDK won't attempt DCR
+  provider.saveClientInformation({
+    client_id: ctx.client_id,
+    client_secret: ctx.client_secret,
+    redirect_uris: ['http://localhost:3000/callback']
+  });
+
+  // Use the provider-based middleware
+  const oauthFetch = withOAuthRetryWithProvider(
+    provider,
+    new URL(serverUrl),
+    handle401
+  )(fetch);
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with pre-registered credentials');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/pre-registration', runPreRegistration);
+
+// ============================================================================
+// Cross-App Access (SEP-990) scenarios
+// ============================================================================
+
+/**
+ * Cross-app access: Complete Flow (SEP-990)
+ * Tests the complete flow: IDP ID token -> authorization grant -> access token -> MCP access.
+ */
+export async function runCrossAppAccessCompleteFlow(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/cross-app-access-complete-flow') {
+    throw new Error(
+      `Expected cross-app-access-complete-flow context, got ${ctx.name}`
+    );
+  }
+
+  logger.debug('Starting complete cross-app access flow...');
+  logger.debug('IDP Issuer:', ctx.idp_issuer);
+  logger.debug('IDP Token Endpoint:', ctx.idp_token_endpoint);
+
+  // Step 0: Discover resource and auth server from PRM metadata
+  logger.debug('Step 0: Discovering resource and auth server via PRM...');
+  const prmUrl = new URL(
+    '/.well-known/oauth-protected-resource/mcp',
+    serverUrl
+  );
+  const prmResponse = await fetch(prmUrl.toString());
+  if (!prmResponse.ok) {
+    throw new Error(`PRM discovery failed: ${prmResponse.status}`);
+  }
+  const prm = await prmResponse.json();
+  const resource = prm.resource;
+  const authServerUrl = prm.authorization_servers[0];
+  logger.debug('Discovered resource:', resource);
+  logger.debug('Discovered auth server:', authServerUrl);
+
+  // Discover auth server metadata to find token endpoint
+  const asMetadataUrl = new URL(
+    '/.well-known/oauth-authorization-server',
+    authServerUrl
+  );
+  const asMetadataResponse = await fetch(asMetadataUrl.toString());
+  if (!asMetadataResponse.ok) {
+    throw new Error(
+      `Auth server metadata discovery failed: ${asMetadataResponse.status}`
+    );
+  }
+  const asMetadata = await asMetadataResponse.json();
+  const asTokenEndpoint = asMetadata.token_endpoint;
+  const asIssuer = asMetadata.issuer;
+  logger.debug('Auth server issuer:', asIssuer);
+  logger.debug('Auth server token endpoint:', asTokenEndpoint);
+
+  // Verify AS supports jwt-bearer grant type
+  const grantTypes: string[] = asMetadata.grant_types_supported || [];
+  if (!grantTypes.includes('urn:ietf:params:oauth:grant-type:jwt-bearer')) {
+    throw new Error(
+      `Auth server does not support jwt-bearer grant type. Supported: ${grantTypes.join(', ')}`
+    );
+  }
+  logger.debug('Auth server supports jwt-bearer grant type');
+
+  // Step 1: Token Exchange at IdP (IDP ID token -> ID-JAG)
+  logger.debug('Step 1: Exchanging IDP ID token for ID-JAG at IdP...');
+  const tokenExchangeParams = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag',
+    audience: asIssuer,
+    resource: resource,
+    subject_token: ctx.idp_id_token,
+    subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
+    client_id: ctx.idp_client_id
+  });
+
+  const tokenExchangeResponse = await fetch(ctx.idp_token_endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: tokenExchangeParams
+  });
+
+  if (!tokenExchangeResponse.ok) {
+    const error = await tokenExchangeResponse.text();
+    throw new Error(`Token exchange failed: ${error}`);
+  }
+
+  const tokenExchangeResult = await tokenExchangeResponse.json();
+  const idJag = tokenExchangeResult.access_token; // ID-JAG (ID-bound JSON Assertion Grant)
+  logger.debug('Token exchange successful, ID-JAG obtained');
+  logger.debug('Issued token type:', tokenExchangeResult.issued_token_type);
+
+  // Step 2: JWT Bearer Grant at AS (ID-JAG -> access token)
+  // Client authenticates via client_secret_basic (RFC 7523 Section 5)
+  logger.debug('Step 2: Exchanging ID-JAG for access token at Auth Server...');
+  const jwtBearerParams = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: idJag
+  });
+
+  const basicAuth = Buffer.from(
+    `${encodeURIComponent(ctx.client_id)}:${encodeURIComponent(ctx.client_secret)}`
+  ).toString('base64');
+
+  const tokenResponse = await fetch(asTokenEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth}`
+    },
+    body: jwtBearerParams
+  });
+
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.text();
+    throw new Error(`JWT bearer grant failed: ${error}`);
+  }
+
+  const tokenResult = await tokenResponse.json();
+  logger.debug('JWT bearer grant successful, access token obtained');
+
+  // Step 3: Use access token to access MCP server
+  logger.debug('Step 3: Accessing MCP server with access token...');
+  const client = new Client(
+    { name: 'conformance-cross-app-access', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    requestInit: {
+      headers: {
+        Authorization: `Bearer ${tokenResult.access_token}`
+      }
+    }
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected to MCP server');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await client.callTool({ name: 'test-tool', arguments: {} });
+  logger.debug('Successfully called tool');
+
+  await transport.close();
+  logger.debug('Complete cross-app access flow completed successfully');
+}
+
+registerScenario(
+  'auth/cross-app-access-complete-flow',
+  runCrossAppAccessCompleteFlow
+);
 
 // ============================================================================
 // Main entry point

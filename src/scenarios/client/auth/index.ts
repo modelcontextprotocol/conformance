@@ -21,12 +21,14 @@ import {
   ClientCredentialsJwtScenario,
   ClientCredentialsBasicScenario
 } from './client-credentials';
+import { ResourceMismatchScenario } from './resource-mismatch';
+import { PreRegistrationScenario } from './pre-registration';
+import { CrossAppAccessCompleteFlowScenario } from './cross-app-access';
 
+// Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
   new AuthBasicCIMDScenario(),
-  new Auth20250326OAuthMetadataBackcompatScenario(),
-  new Auth20250326OEndpointFallbackScenario(),
   new ScopeFromWwwAuthenticateScenario(),
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
@@ -35,6 +37,19 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
+  new ResourceMismatchScenario(),
+  new PreRegistrationScenario()
+];
+
+// Back-compat scenarios (optional - backward compatibility with older spec versions)
+export const backcompatScenariosList: Scenario[] = [
+  new Auth20250326OAuthMetadataBackcompatScenario(),
+  new Auth20250326OEndpointFallbackScenario()
+];
+
+// Extension scenarios (optional for tier 1 - protocol extensions)
+export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
-  new ClientCredentialsBasicScenario()
+  new ClientCredentialsBasicScenario(),
+  new CrossAppAccessCompleteFlowScenario()
 ];

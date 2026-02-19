@@ -2,12 +2,13 @@
  * SEP-1034: Elicitation default values test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationDefaultsScenario implements ClientScenario {
   name = 'elicitation-sep1034-defaults';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description = `Test elicitation with default values for all primitive types (SEP-1034).
 
 **Server Implementation Requirements:**

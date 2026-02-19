@@ -1,0 +1,9 @@
+{
+  "client_id": "https://raw.githubusercontent.com/modelcontextprotocol/conformance/main/src/scenarios/server-auth/helpers/client-metadata.json",
+  "client_name": "MCP Conformance Test Suite",
+  "client_uri": "https://github.com/modelcontextprotocol/conformance",
+  "redirect_uris": ["http://localhost:3333/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

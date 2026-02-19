@@ -4,12 +4,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { Scenario, ConformanceCheck, SpecVersion } from '../../types';
 import express, { Request, Response } from 'express';
 import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
 
-function createServer(checks: ConformanceCheck[]): express.Application {
+function createMcpServer(checks: ConformanceCheck[]): Server {
   const server = new Server(
     {
       name: 'add-numbers-server',
@@ -84,6 +84,10 @@ function createServer(checks: ConformanceCheck[]): express.Application {
     throw new Error(`Unknown tool: ${request.params.name}`);
   });
 
+  return server;
+}
+
+function createServerApp(checks: ConformanceCheck[]): express.Application {
   const app = express();
   app.use(express.json());
 
@@ -96,6 +100,8 @@ function createServer(checks: ConformanceCheck[]): express.Application {
   );
 
   app.post('/mcp', async (req: Request, res: Response) => {
+    // Stateless: create a fresh server and transport per request
+    const server = createMcpServer(checks);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined
     });
@@ -109,6 +115,7 @@ function createServer(checks: ConformanceCheck[]): express.Application {
 
 export class ToolsCallScenario implements Scenario {
   name = 'tools_call';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = 'Tests calling tools with various parameter types';
   private app: express.Application | null = null;
   private httpServer: any = null;
@@ -116,7 +123,7 @@ export class ToolsCallScenario implements Scenario {
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
-    this.app = createServer(this.checks);
+    this.app = createServerApp(this.checks);
     this.httpServer = this.app.listen(0);
     const port = this.httpServer.address().port;
     return { serverUrl: `http://localhost:${port}/mcp` };

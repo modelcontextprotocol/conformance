@@ -1,4 +1,4 @@
-import { authScenariosList } from './index';
+import { authScenariosList, backcompatScenariosList } from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
@@ -9,6 +9,7 @@ import { runClient as ignoreScopeClient } from '../../../../examples/clients/typ
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
+import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -22,7 +23,9 @@ const skipScenarios = new Set<string>([
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
-  'auth/scope-retry-limit'
+  'auth/scope-retry-limit',
+  // Client is expected to error when PRM resource doesn't match server URL
+  'auth/resource-mismatch'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -41,6 +44,19 @@ describe('Client Auth Scenarios', () => {
       await runClientAgainstScenario(runner, scenario.name, {
         allowClientError: allowClientErrorScenarios.has(scenario.name)
       });
+    });
+  }
+});
+
+describe('Client Back-compat Scenarios', () => {
+  for (const scenario of backcompatScenariosList) {
+    test(`${scenario.name} passes`, async () => {
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
+      const runner = new InlineClientRunner(clientFn);
+      await runClientAgainstScenario(runner, scenario.name);
     });
   }
 });
@@ -97,6 +113,18 @@ describe('Negative tests', () => {
     await runClientAgainstScenario(runner, 'auth/scope-retry-limit', {
       expectedFailureSlugs: ['scope-retry-limit'],
       allowClientError: true
+    });
+  });
+
+  test('client does not use PKCE', async () => {
+    const runner = new InlineClientRunner(noPkceClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      expectedFailureSlugs: [
+        'pkce-code-challenge-sent',
+        'pkce-s256-method-used',
+        'pkce-code-verifier-sent',
+        'pkce-verifier-matches-challenge'
+      ]
     });
   });
 });

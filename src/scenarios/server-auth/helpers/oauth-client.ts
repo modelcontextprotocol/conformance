@@ -192,12 +192,10 @@ export function createObservationMiddleware(
 }
 
 /**
- * Fixed client metadata URL for CIMD conformance tests.
- * When server supports client_id_metadata_document_supported, this URL
- * will be used as the client_id instead of doing dynamic registration.
+ * Default CIMD URL hosted in the conformance repo for these server tests.
  */
 const DEFAULT_CIMD_CLIENT_METADATA_URL =
-  'https://conformance-test.local/client-metadata.json';
+  'https://raw.githubusercontent.com/modelcontextprotocol/conformance/main/src/scenarios/server-auth/helpers/client-metadata.json';
 
 /** Callback URL for OAuth redirects */
 const CALLBACK_URL = 'http://localhost:3333/callback';
@@ -346,7 +344,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
           res.writeHead(400, { 'Content-Type': 'text/plain' });
           res.end('Missing authorization code');
         } else {
-          res.writeHead(404);
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
           res.end('Not found');
         }
       });

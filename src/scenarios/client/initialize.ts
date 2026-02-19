@@ -1,9 +1,15 @@
 import http from 'http';
-import { Scenario, ScenarioUrls, ConformanceCheck } from '../../types';
+import {
+  Scenario,
+  ScenarioUrls,
+  ConformanceCheck,
+  SpecVersion
+} from '../../types';
 import { clientChecks } from '../../checks/index';
 
 export class InitializeScenario implements Scenario {
   name = 'initialize';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = 'Tests MCP client initialization handshake';
 
   private server: http.Server | null = null;
