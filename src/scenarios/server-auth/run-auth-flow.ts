@@ -252,11 +252,7 @@ export class BasicAuthFlowScenario implements ClientScenario {
 
     // If DCR is supported but wasn't exercised in the flow (e.g. CIMD was preferred),
     // do a standalone DCR registration test
-    await this.testStandaloneDcr(
-      observedRequests,
-      checks,
-      timestamp
-    );
+    await this.testStandaloneDcr(observedRequests, checks, timestamp);
 
     // If CIMD is supported but wasn't exercised in the flow (e.g. pre-registered creds
     // were used or DCR was preferred), do a standalone CIMD auth flow test
@@ -289,9 +285,8 @@ export class BasicAuthFlowScenario implements ClientScenario {
         ? (asMetadataRequest.responseBody as Record<string, unknown>)
         : null;
 
-
-     // Skip if DCR is not supported or already tested
-     // Client prefers CIMD over DCR, so skip if there's already a DCR request from the original flow
+    // Skip if DCR is not supported or already tested
+    // Client prefers CIMD over DCR, so skip if there's already a DCR request from the original flow
     const dcrSupported = !!asMetadata?.registration_endpoint;
     const dcrAlreadyTested = observedRequests.some(
       (r) => r.requestType === 'dcr-registration'
@@ -525,9 +520,7 @@ export class BasicAuthFlowScenario implements ClientScenario {
             'Server includes scope parameter in WWW-Authenticate header',
           status: wwwAuth.params.scope ? 'SUCCESS' : 'WARNING',
           timestamp: timestamp(),
-          specReferences: [
-            ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE
-          ],
+          specReferences: [ServerAuthSpecReferences.RFC_6750_WWW_AUTHENTICATE],
           details: wwwAuth.params.scope
             ? { scope: wwwAuth.params.scope }
             : undefined
@@ -624,8 +617,7 @@ export class BasicAuthFlowScenario implements ClientScenario {
         }
 
         const hasAuthServers =
-          prm.authorization_servers &&
-          Array.isArray(prm.authorization_servers);
+          prm.authorization_servers && Array.isArray(prm.authorization_servers);
         checks.push({
           id: 'auth-prm-authorization-servers',
           name: 'PRM Contains Authorization Servers',
@@ -777,8 +769,7 @@ export class BasicAuthFlowScenario implements ClientScenario {
     checks.push({
       id: 'auth-as-dcr-supported',
       name: 'AS Supports DCR',
-      description:
-        'Authorization server advertises registration_endpoint',
+      description: 'Authorization server advertises registration_endpoint',
       status: dcrSupported ? 'SUCCESS' : 'INFO',
       timestamp: timestamp(),
       specReferences: [

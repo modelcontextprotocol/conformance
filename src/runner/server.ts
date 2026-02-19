@@ -277,7 +277,11 @@ export async function runServerAuthConformanceTest(options: {
       console.log(
         `Running server auth scenario '${scenarioName}' against server: ${serverUrl}`
       );
-      const scenarioChecks = await scenario.run(serverUrl, { interactive, clientId, clientSecret });
+      const scenarioChecks = await scenario.run(serverUrl, {
+        interactive,
+        clientId,
+        clientSecret
+      });
       checks.push(...scenarioChecks);
     } else if (url) {
       // --url mode: Just run the scenario against the provided URL
