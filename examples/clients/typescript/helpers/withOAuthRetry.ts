@@ -45,6 +45,7 @@ export const handle401 = async (
     }
   }
 };
+
 /**
  * Creates a fetch wrapper that handles OAuth authentication with retry logic.
  *
@@ -53,8 +54,10 @@ export const handle401 = async (
  * - Does not throw UnauthorizedError on redirect, but instead retries
  * - Calls next() instead of throwing for redirect-based auth
  *
- * @param provider - OAuth client provider for authentication
+ * @param clientName - Client name for OAuth registration
  * @param baseUrl - Base URL for OAuth server discovery (defaults to request URL domain)
+ * @param handle401Fn - Custom 401 handler function
+ * @param clientMetadataUrl - Optional CIMD URL for URL-based client IDs
  * @returns A fetch middleware function
  */
 export const withOAuthRetry = (
@@ -71,6 +74,18 @@ export const withOAuthRetry = (
     },
     clientMetadataUrl
   );
+  return withOAuthRetryWithProvider(provider, baseUrl, handle401Fn);
+};
+
+/**
+ * Creates a fetch wrapper using a pre-configured OAuth provider.
+ * Use this when you need to pre-set client credentials (e.g., for pre-registration tests).
+ */
+export const withOAuthRetryWithProvider = (
+  provider: ConformanceOAuthProvider,
+  baseUrl?: string | URL,
+  handle401Fn: typeof handle401 = handle401
+): Middleware => {
   return (next: FetchLike) => {
     return async (
       input: string | URL,

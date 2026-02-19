@@ -12,7 +12,8 @@
 import type {
   ClientScenario,
   ClientScenarioOptions,
-  ConformanceCheck
+  ConformanceCheck,
+  SpecVersion
 } from '../../types';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -35,6 +36,7 @@ import { ServerAuthSpecReferences } from './spec-references';
  */
 export class BasicAuthFlowScenario implements ClientScenario {
   name = 'server-auth/basic-auth-flow';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description = `Tests the complete OAuth authentication flow.
 
 **Flow tested:**

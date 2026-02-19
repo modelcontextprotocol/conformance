@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck } from '../types';
 import { getScenario } from '../scenarios';
-import { ensureResultsDir, createResultDir, formatPrettyChecks } from './utils';
+import { createResultDir, formatPrettyChecks } from './utils';
 
 export interface ClientExecutionResult {
   exitCode: number;
@@ -91,15 +91,20 @@ async function executeClient(
 export async function runConformanceTest(
   clientCommand: string,
   scenarioName: string,
-  timeout: number = 30000
+  timeout: number = 30000,
+  outputDir?: string
 ): Promise<{
   checks: ConformanceCheck[];
   clientOutput: ClientExecutionResult;
-  resultDir: string;
+  resultDir?: string;
+  allowClientError?: boolean;
 }> {
-  await ensureResultsDir();
-  const resultDir = createResultDir(scenarioName);
-  await fs.mkdir(resultDir, { recursive: true });
+  let resultDir: string | undefined;
+
+  if (outputDir) {
+    resultDir = createResultDir(outputDir, scenarioName);
+    await fs.mkdir(resultDir, { recursive: true });
+  }
 
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
@@ -138,21 +143,30 @@ export async function runConformanceTest(
 
     const checks = scenario.getChecks();
 
-    await fs.writeFile(
-      path.join(resultDir, 'checks.json'),
-      JSON.stringify(checks, null, 2)
-    );
+    if (resultDir) {
+      await fs.writeFile(
+        path.join(resultDir, 'checks.json'),
+        JSON.stringify(checks, null, 2)
+      );
 
-    await fs.writeFile(path.join(resultDir, 'stdout.txt'), clientOutput.stdout);
+      await fs.writeFile(
+        path.join(resultDir, 'stdout.txt'),
+        clientOutput.stdout
+      );
 
-    await fs.writeFile(path.join(resultDir, 'stderr.txt'), clientOutput.stderr);
+      await fs.writeFile(
+        path.join(resultDir, 'stderr.txt'),
+        clientOutput.stderr
+      );
 
-    console.error(`Results saved to ${resultDir}`);
+      console.error(`Results saved to ${resultDir}`);
+    }
 
     return {
       checks,
       clientOutput,
-      resultDir
+      resultDir,
+      allowClientError: scenario.allowClientError
     };
   } finally {
     await scenario.stop();
@@ -162,7 +176,8 @@ export async function runConformanceTest(
 export function printClientResults(
   checks: ConformanceCheck[],
   verbose: boolean = false,
-  clientOutput?: ClientExecutionResult
+  clientOutput?: ClientExecutionResult,
+  allowClientError: boolean = false
 ): {
   passed: number;
   failed: number;
@@ -183,7 +198,10 @@ export function printClientResults(
     ? clientOutput.exitCode !== 0
     : false;
   const overallFailure =
-    failed > 0 || warnings > 0 || clientTimedOut || clientExitedWithError;
+    failed > 0 ||
+    warnings > 0 ||
+    clientTimedOut ||
+    (clientExitedWithError && !allowClientError);
 
   if (verbose) {
     // Verbose mode: JSON goes to stdout for piping to jq/jless
@@ -203,7 +221,7 @@ export function printClientResults(
     console.error(`\n⚠️  CLIENT TIMED OUT - Test incomplete`);
   }
 
-  if (clientExitedWithError && !clientTimedOut) {
+  if (clientExitedWithError && !clientTimedOut && !allowClientError) {
     console.error(
       `\n⚠️  CLIENT EXITED WITH ERROR (code ${clientOutput?.exitCode}) - Test may be incomplete`
     );
@@ -244,11 +262,15 @@ export function printClientResults(
 
 export async function runInteractiveMode(
   scenarioName: string,
-  verbose: boolean = false
+  verbose: boolean = false,
+  outputDir?: string
 ): Promise<void> {
-  await ensureResultsDir();
-  const resultDir = createResultDir(scenarioName);
-  await fs.mkdir(resultDir, { recursive: true });
+  let resultDir: string | undefined;
+
+  if (outputDir) {
+    resultDir = createResultDir(outputDir, scenarioName);
+    await fs.mkdir(resultDir, { recursive: true });
+  }
 
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
@@ -257,23 +279,29 @@ export async function runInteractiveMode(
   const urls = await scenario.start();
 
   console.log(`Server URL: ${urls.serverUrl}`);
-  console.log('Press Ctrl+C to stop and save checks...');
+  console.log('Press Ctrl+C to stop...');
 
   const handleShutdown = async () => {
     console.log('\nShutting down...');
 
     const checks = scenario.getChecks();
-    await fs.writeFile(
-      path.join(resultDir, 'checks.json'),
-      JSON.stringify(checks, null, 2)
-    );
+
+    if (resultDir) {
+      await fs.writeFile(
+        path.join(resultDir, 'checks.json'),
+        JSON.stringify(checks, null, 2)
+      );
+    }
 
     if (verbose) {
       console.log(`\nChecks:\n${JSON.stringify(checks, null, 2)}`);
     } else {
       console.log(`\nChecks:\n${formatPrettyChecks(checks)}`);
     }
-    console.log(`\nChecks saved to ${resultDir}/checks.json`);
+
+    if (resultDir) {
+      console.log(`\nChecks saved to ${resultDir}/checks.json`);
+    }
 
     await scenario.stop();
     process.exit(0);

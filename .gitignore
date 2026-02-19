@@ -3,3 +3,4 @@ results/
 lefthook-local.yml
 dist/
 .vscode/
+.idea/

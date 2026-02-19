@@ -19,11 +19,51 @@ import {
   listPendingClientScenarios,
   listAuthScenarios,
   listMetadataScenarios,
-  listServerAuthScenarios
+  listServerAuthScenarios,
+  listCoreScenarios,
+  listExtensionScenarios,
+  listBackcompatScenarios,
+  listScenariosForSpec,
+  listClientScenariosForSpec,
+  getScenarioSpecVersions,
+  ALL_SPEC_VERSIONS
 } from './scenarios';
+import type { SpecVersion } from './scenarios';
 import { ConformanceCheck } from './types';
 import { ClientOptionsSchema, ServerOptionsSchema } from './schemas';
+import {
+  loadExpectedFailures,
+  evaluateBaseline,
+  printBaselineResults
+} from './expected-failures';
+import { createTierCheckCommand } from './tier-check';
 import packageJson from '../package.json';
+
+function resolveSpecVersion(value: string): SpecVersion {
+  if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
+    return value as SpecVersion;
+  }
+  console.error(`Unknown spec version: ${value}`);
+  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
+  process.exit(1);
+}
+
+// Note on naming: `command` refers to which CLI command is calling this.
+// The `client` command tests Scenario objects (which test clients),
+// and the `server` command tests ClientScenario objects (which test servers).
+// This matches the inverted naming in scenarios/index.ts.
+function filterScenariosBySpecVersion(
+  allScenarios: string[],
+  version: SpecVersion,
+  command: 'client' | 'server'
+): string[] {
+  const versionScenarios =
+    command === 'client'
+      ? listScenariosForSpec(version)
+      : listClientScenariosForSpec(version);
+  const allowed = new Set(versionScenarios);
+  return allScenarios.filter((s) => allowed.has(s));
+}
 
 const program = new Command();
 
@@ -42,11 +82,24 @@ program
   .option('--scenario <scenario>', 'Scenario to test')
   .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+  .option(
+    '--expected-failures <path>',
+    'Path to YAML file listing expected failures (baseline)'
+  )
+  .option('-o, --output-dir <path>', 'Save results to this directory')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
       const timeout = parseInt(options.timeout, 10);
       const verbose = options.verbose ?? false;
+      const outputDir = options.outputDir;
+      const specVersionFilter = options.specVersion
+        ? resolveSpecVersion(options.specVersion)
+        : undefined;
 
       // Handle suite mode
       if (options.suite) {
@@ -57,6 +110,9 @@ program
 
         const suites: Record<string, () => string[]> = {
           all: listScenarios,
+          core: listCoreScenarios,
+          extensions: listExtensionScenarios,
+          backcompat: listBackcompatScenarios,
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
           'sep-835': () =>
@@ -70,7 +126,14 @@ program
           process.exit(1);
         }
 
-        const scenarios = suites[suiteName]();
+        let scenarios = suites[suiteName]();
+        if (specVersionFilter) {
+          scenarios = filterScenariosBySpecVersion(
+            scenarios,
+            specVersionFilter,
+            'client'
+          );
+        }
         console.log(
           `Running ${suiteName} suite (${scenarios.length} scenarios) in parallel...\n`
         );
@@ -81,7 +144,8 @@ program
               const result = await runConformanceTest(
                 options.command,
                 scenarioName,
-                timeout
+                timeout,
+                outputDir
               );
               return {
                 scenario: scenarioName,
@@ -149,6 +213,17 @@ program
         console.log(
           `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
         );
+
+        if (options.expectedFailures) {
+          const expectedFailuresConfig = await loadExpectedFailures(
+            options.expectedFailures
+          );
+          const baselineScenarios = expectedFailuresConfig.client ?? [];
+          const baselineResult = evaluateBaseline(results, baselineScenarios);
+          printBaselineResults(baselineResult);
+          process.exit(baselineResult.exitCode);
+        }
+
         process.exit(totalFailed > 0 || totalWarnings > 0 ? 1 : 0);
       }
 
@@ -157,7 +232,9 @@ program
         console.error('Either --scenario or --suite is required');
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
-        console.error('\nAvailable suites: all, auth, metadata, sep-835');
+        console.error(
+          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, sep-835'
+        );
         process.exit(1);
       }
 
@@ -166,7 +243,7 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario, verbose);
+        await runInteractiveMode(validated.scenario, verbose, outputDir);
         process.exit(0);
       }
 
@@ -174,14 +251,30 @@ program
       const result = await runConformanceTest(
         validated.command,
         validated.scenario,
-        timeout
+        timeout,
+        outputDir
       );
 
       const { overallFailure } = printClientResults(
         result.checks,
         verbose,
-        result.clientOutput
+        result.clientOutput,
+        result.allowClientError
       );
+
+      if (options.expectedFailures) {
+        const expectedFailuresConfig = await loadExpectedFailures(
+          options.expectedFailures
+        );
+        const baselineScenarios = expectedFailuresConfig.client ?? [];
+        const baselineResult = evaluateBaseline(
+          [{ scenario: validated.scenario, checks: result.checks }],
+          baselineScenarios
+        );
+        printBaselineResults(baselineResult);
+        process.exit(baselineResult.exitCode);
+      }
+
       process.exit(overallFailure ? 1 : 0);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -220,6 +313,15 @@ program
     'active'
   )
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+  .option(
+    '--expected-failures <path>',
+    'Path to YAML file listing expected failures (baseline)'
+  )
+  .option('-o, --output-dir <path>', 'Save results to this directory')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .option(
     '--interactive',
@@ -237,14 +339,16 @@ program
     try {
       const verbose = options.verbose ?? false;
       const timeout = parseInt(options.timeout, 10);
+      const outputDir = options.outputDir;
       const suite = options.suite?.toLowerCase() || 'active';
-
-      // Check if this is an auth test
+      const specVersionFilter = options.specVersion
+        ? resolveSpecVersion(options.specVersion)
+        : undefined;
       const isAuthTest =
         suite === 'auth' || options.scenario?.startsWith('server-auth/');
 
+      // Input validation
       if (isAuthTest) {
-        // Auth testing mode - requires --url or --command
         if (!options.url && !options.command) {
           console.error(
             'For auth testing, either --url or --command is required'
@@ -255,23 +359,101 @@ program
           );
           process.exit(1);
         }
+      } else {
+        if (!options.url) {
+          console.error('--url is required for non-auth server testing');
+          process.exit(1);
+        }
+      }
 
-        // Get scenarios to run
-        let scenarios: string[];
-        if (options.scenario) {
-          scenarios = [options.scenario];
+      // Single-scenario fast path (detailed per-check output)
+      if (options.scenario) {
+        let checks: ConformanceCheck[];
+        let scenarioDescription: string;
+
+        if (isAuthTest) {
+          const result = await runServerAuthConformanceTest({
+            url: options.url,
+            command: options.command,
+            scenarioName: options.scenario,
+            timeout,
+            interactive: options.interactive,
+            clientId: options.clientId,
+            clientSecret: options.clientSecret
+          });
+          checks = result.checks;
+          scenarioDescription = result.scenarioDescription;
         } else {
-          scenarios = listServerAuthScenarios();
+          const validated = ServerOptionsSchema.parse(options);
+          const result = await runServerConformanceTest(
+            validated.url,
+            validated.scenario!,
+            outputDir
+          );
+          checks = result.checks;
+          scenarioDescription = result.scenarioDescription;
         }
 
-        console.log(`Running auth suite (${scenarios.length} scenarios)...\n`);
+        const { failed } = printServerResults(
+          checks,
+          scenarioDescription,
+          verbose
+        );
 
-        const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
-          [];
+        if (options.expectedFailures) {
+          const expectedFailuresConfig = await loadExpectedFailures(
+            options.expectedFailures
+          );
+          const baselineScenarios = expectedFailuresConfig.server ?? [];
+          const baselineResult = evaluateBaseline(
+            [{ scenario: options.scenario, checks }],
+            baselineScenarios
+          );
+          printBaselineResults(baselineResult);
+          process.exit(baselineResult.exitCode);
+        }
 
-        for (const scenarioName of scenarios) {
-          console.log(`\n=== Running scenario: ${scenarioName} ===`);
-          try {
+        process.exit(failed > 0 ? 1 : 0);
+      }
+
+      // Suite resolution
+      let scenarios: string[];
+      if (isAuthTest) {
+        scenarios = listServerAuthScenarios();
+      } else {
+        if (suite === 'all') {
+          scenarios = listClientScenarios();
+        } else if (suite === 'active' || suite === 'core') {
+          scenarios = listActiveClientScenarios();
+        } else if (suite === 'pending') {
+          scenarios = listPendingClientScenarios();
+        } else {
+          console.error(`Unknown suite: ${suite}`);
+          console.error('Available suites: active, all, core, pending, auth');
+          process.exit(1);
+        }
+        if (specVersionFilter) {
+          scenarios = filterScenariosBySpecVersion(
+            scenarios,
+            specVersionFilter,
+            'server'
+          );
+        }
+      }
+
+      console.log(
+        `Running ${suite} suite (${scenarios.length} scenarios)${options.url ? ` against ${options.url}` : ''}...\n`
+      );
+
+      // Run loop
+      const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+
+      for (const scenarioName of scenarios) {
+        console.log(`\n=== Running scenario: ${scenarioName} ===`);
+        try {
+          let checks: ConformanceCheck[];
+          let scenarioDescription: string;
+          if (isAuthTest) {
             const result = await runServerAuthConformanceTest({
               url: options.url,
               command: options.command,
@@ -281,116 +463,54 @@ program
               clientId: options.clientId,
               clientSecret: options.clientSecret
             });
-            allResults.push({ scenario: scenarioName, checks: result.checks });
-
-            if (verbose) {
-              printServerResults(
-                result.checks,
-                result.scenarioDescription,
-                verbose
-              );
-            }
-          } catch (error) {
-            console.error(`Failed to run scenario ${scenarioName}:`, error);
-            allResults.push({
-              scenario: scenarioName,
-              checks: [
-                {
-                  id: scenarioName,
-                  name: scenarioName,
-                  description: 'Failed to run scenario',
-                  status: 'FAILURE',
-                  timestamp: new Date().toISOString(),
-                  errorMessage:
-                    error instanceof Error ? error.message : String(error)
-                }
-              ]
-            });
-          }
-        }
-
-        const { totalFailed } = printServerSummary(allResults);
-        process.exit(totalFailed > 0 ? 1 : 0);
-      } else {
-        // Standard server testing mode - requires --url
-        if (!options.url) {
-          console.error('--url is required for non-auth server testing');
-          process.exit(1);
-        }
-
-        // Validate options with Zod
-        const validated = ServerOptionsSchema.parse(options);
-
-        // If a single scenario is specified, run just that one
-        if (validated.scenario) {
-          const result = await runServerConformanceTest(
-            validated.url,
-            validated.scenario
-          );
-
-          const { failed } = printServerResults(
-            result.checks,
-            result.scenarioDescription,
-            verbose
-          );
-          process.exit(failed > 0 ? 1 : 0);
-        } else {
-          // Run scenarios based on suite
-          let scenarios: string[];
-
-          if (suite === 'all') {
-            scenarios = listClientScenarios();
-          } else if (suite === 'active') {
-            scenarios = listActiveClientScenarios();
-          } else if (suite === 'pending') {
-            scenarios = listPendingClientScenarios();
+            checks = result.checks;
+            scenarioDescription = result.scenarioDescription;
           } else {
-            console.error(`Unknown suite: ${suite}`);
-            console.error('Available suites: active, all, pending, auth');
-            process.exit(1);
+            const result = await runServerConformanceTest(
+              options.url,
+              scenarioName,
+              outputDir
+            );
+            checks = result.checks;
+            scenarioDescription = result.scenarioDescription;
           }
-
-          console.log(
-            `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
-          );
-
-          const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
-            [];
-
-          for (const scenarioName of scenarios) {
-            console.log(`\n=== Running scenario: ${scenarioName} ===`);
-            try {
-              const result = await runServerConformanceTest(
-                validated.url,
-                scenarioName
-              );
-              allResults.push({
-                scenario: scenarioName,
-                checks: result.checks
-              });
-            } catch (error) {
-              console.error(`Failed to run scenario ${scenarioName}:`, error);
-              allResults.push({
-                scenario: scenarioName,
-                checks: [
-                  {
-                    id: scenarioName,
-                    name: scenarioName,
-                    description: 'Failed to run scenario',
-                    status: 'FAILURE',
-                    timestamp: new Date().toISOString(),
-                    errorMessage:
-                      error instanceof Error ? error.message : String(error)
-                  }
-                ]
-              });
-            }
+          allResults.push({ scenario: scenarioName, checks });
+          if (verbose) {
+            printServerResults(checks, scenarioDescription, verbose);
           }
-
-          const { totalFailed } = printServerSummary(allResults);
-          process.exit(totalFailed > 0 ? 1 : 0);
+        } catch (error) {
+          console.error(`Failed to run scenario ${scenarioName}:`, error);
+          allResults.push({
+            scenario: scenarioName,
+            checks: [
+              {
+                id: scenarioName,
+                name: scenarioName,
+                description: 'Failed to run scenario',
+                status: 'FAILURE',
+                timestamp: new Date().toISOString(),
+                errorMessage:
+                  error instanceof Error ? error.message : String(error)
+              }
+            ]
+          });
         }
       }
+
+      // Summary + baseline
+      const { totalFailed } = printServerSummary(allResults);
+
+      if (options.expectedFailures) {
+        const expectedFailuresConfig = await loadExpectedFailures(
+          options.expectedFailures
+        );
+        const baselineScenarios = expectedFailuresConfig.server ?? [];
+        const baselineResult = evaluateBaseline(allResults, baselineScenarios);
+        printBaselineResults(baselineResult);
+        process.exit(baselineResult.exitCode);
+      }
+
+      process.exit(totalFailed > 0 ? 1 : 0);
     } catch (error) {
       if (error instanceof ZodError) {
         console.error('Validation error:');
@@ -408,6 +528,9 @@ program
     }
   });
 
+// Tier check command
+program.addCommand(createTierCheckCommand());
+
 // List scenarios command
 program
   .command('list')
@@ -415,13 +538,30 @@ program
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
   .option('--server-auth', 'List server auth scenarios')
+  .option(
+    '--spec-version <version>',
+    'Filter scenarios by spec version (cumulative for date versions)'
+  )
   .action((options) => {
     const showAll = !options.client && !options.server && !options.serverAuth;
+    const specVersionFilter = options.specVersion
+      ? resolveSpecVersion(options.specVersion)
+      : undefined;
 
     if (options.server || showAll) {
       console.log('Server scenarios (test against a server):');
-      const serverScenarios = listClientScenarios();
-      serverScenarios.forEach((s) => console.log(`  - ${s}`));
+      let serverScenarios = listClientScenarios();
+      if (specVersionFilter) {
+        serverScenarios = filterScenariosBySpecVersion(
+          serverScenarios,
+          specVersionFilter,
+          'server'
+        );
+      }
+      serverScenarios.forEach((s) => {
+        const v = getScenarioSpecVersions(s);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+      });
     }
 
     if (options.serverAuth || showAll) {
@@ -438,8 +578,18 @@ program
         console.log('');
       }
       console.log('Client scenarios (test against a client):');
-      const clientScenarios = listScenarios();
-      clientScenarios.forEach((s) => console.log(`  - ${s}`));
+      let clientScenarioNames = listScenarios();
+      if (specVersionFilter) {
+        clientScenarioNames = filterScenariosBySpecVersion(
+          clientScenarioNames,
+          specVersionFilter,
+          'client'
+        );
+      }
+      clientScenarioNames.forEach((s) => {
+        const v = getScenarioSpecVersions(s);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+      });
     }
   });
 

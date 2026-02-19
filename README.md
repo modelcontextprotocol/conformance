@@ -2,7 +2,10 @@
 
 A framework for testing MCP (Model Context Protocol) client and server implementations against the specification.
 
-> [!WARNING] This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
+> [!WARNING]
+> This repository is a work in progress and is unstable. Join the conversation in the #conformance-testing-wg in the MCP Contributors discord.
+
+**For SDK maintainers:** See [SDK Integration Guide](./SDK_INTEGRATION.md) for a streamlined guide on integrating conformance tests into your SDK repository.
 
 ## Quick Start
 
@@ -64,6 +67,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
 - `--suite` - Run a suite of tests in parallel (e.g., "auth")
+- `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
@@ -78,7 +82,10 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 **Options:**
 
 - `--url` - URL of the server to test
-- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize". Runs all available scenarios by default
+- `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
+- `--suite <suite>` - Suite to run: "active" (default), "all", or "pending"
+- `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
+- `--verbose` - Show verbose output
 
 ## Test Results
 
@@ -91,6 +98,91 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 **Server Testing** - Results are saved to `results/server-<scenario>-<timestamp>/`:
 
 - `checks.json` - Array of conformance check results with pass/fail status
+
+## Expected Failures
+
+SDKs that don't yet pass all conformance tests can specify a baseline of known failures. This allows running conformance tests in CI without failing, while still catching regressions.
+
+Create a YAML file listing expected failures by mode:
+
+```yaml
+# conformance-baseline.yml
+server:
+  - tools-call-with-progress
+  - resources-subscribe
+client:
+  - sse-retry
+```
+
+Then pass it to the CLI:
+
+```bash
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --expected-failures ./conformance-baseline.yml
+```
+
+**Exit code behavior:**
+
+| Scenario Result | In Baseline? | Outcome                                   |
+| --------------- | ------------ | ----------------------------------------- |
+| Fails           | Yes          | Exit 0 — expected failure                 |
+| Fails           | No           | Exit 1 — unexpected regression            |
+| Passes          | Yes          | Exit 1 — stale baseline, remove the entry |
+| Passes          | No           | Exit 0 — normal pass                      |
+
+This ensures:
+
+- CI passes when only known failures occur
+- CI fails on new regressions (unexpected failures)
+- CI fails when a fix lands but the baseline isn't updated (stale entries)
+
+## GitHub Action
+
+This repo provides a composite GitHub Action so SDK repos don't need to write their own conformance scripts.
+
+### Server Testing
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  # Start your server (SDK-specific)
+  - run: |
+      my-server --port 3001 &
+      timeout 15 bash -c 'until curl -s http://localhost:3001/mcp; do sleep 0.5; done'
+
+  - uses: modelcontextprotocol/conformance@v0.1.11
+    with:
+      mode: server
+      url: http://localhost:3001/mcp
+      expected-failures: ./conformance-baseline.yml # optional
+```
+
+### Client Testing
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  - uses: modelcontextprotocol/conformance@v0.1.11
+    with:
+      mode: client
+      command: 'python tests/conformance/client.py'
+      expected-failures: ./conformance-baseline.yml # optional
+```
+
+### Action Inputs
+
+| Input               | Required    | Description                                     |
+| ------------------- | ----------- | ----------------------------------------------- |
+| `mode`              | Yes         | `server` or `client`                            |
+| `url`               | Server mode | URL of the server to test                       |
+| `command`           | Client mode | Command to run the client under test            |
+| `expected-failures` | No          | Path to YAML baseline file                      |
+| `suite`             | No          | Test suite to run                               |
+| `scenario`          | No          | Run a single scenario by name                   |
+| `timeout`           | No          | Timeout in ms for client tests (default: 30000) |
+| `verbose`           | No          | Show verbose output (default: false)            |
+| `node-version`      | No          | Node.js version (default: 20)                   |
 
 ## Example Clients
 
@@ -119,6 +211,29 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 - **tools-call-\*** - Various tool invocation scenarios
 - **resources-\*** - Resource management scenarios
 - **prompts-\*** - Prompt management scenarios
+
+## SDK Tier Assessment
+
+The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):
+
+```bash
+# Without conformance tests (fastest)
+gh auth login
+npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
+
+# With conformance tests (start the everything server first)
+npm run --silent tier-check -- \
+  --repo modelcontextprotocol/typescript-sdk \
+  --conformance-server-url http://localhost:3000/mcp
+```
+
+For a full AI-assisted assessment with remediation guide, use Claude Code:
+
+```
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url>
+```
+
+See [`.claude/skills/mcp-sdk-tier-audit/README.md`](.claude/skills/mcp-sdk-tier-audit/README.md) for full documentation.
 
 ## Architecture
 

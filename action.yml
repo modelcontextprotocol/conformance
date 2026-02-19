@@ -1,0 +1,97 @@
+name: 'MCP Conformance Tests'
+description: 'Run MCP conformance tests against a server or client implementation'
+inputs:
+  mode:
+    description: 'Test mode: "server" or "client"'
+    required: true
+  url:
+    description: 'Server URL to test against (required for server mode)'
+    required: false
+  command:
+    description: 'Command to run the client under test (required for client mode)'
+    required: false
+  expected-failures:
+    description: 'Path to YAML file listing expected failures (baseline)'
+    required: false
+  suite:
+    description: 'Test suite to run (server: "active"|"all"|"pending", client: "all"|"auth"|"metadata"|"sep-835")'
+    required: false
+  scenario:
+    description: 'Run a single scenario by name'
+    required: false
+  timeout:
+    description: 'Timeout in milliseconds for client tests (default: 30000)'
+    required: false
+    default: '30000'
+  verbose:
+    description: 'Show verbose output (default: false)'
+    required: false
+    default: 'false'
+  node-version:
+    description: 'Node.js version to use (default: 20)'
+    required: false
+    default: '20'
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Build conformance tests
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        npm ci
+        npm run build
+
+    - name: Run conformance tests
+      shell: bash
+      run: |
+        CONFORMANCE="${{ github.action_path }}/dist/index.js"
+
+        # Build the command arguments
+        ARGS="${{ inputs.mode }}"
+
+        # Mode-specific required options
+        if [ "${{ inputs.mode }}" = "server" ]; then
+          if [ -z "${{ inputs.url }}" ]; then
+            echo "::error::The 'url' input is required for server mode"
+            exit 1
+          fi
+          ARGS="${ARGS} --url ${{ inputs.url }}"
+        elif [ "${{ inputs.mode }}" = "client" ]; then
+          if [ -z "${{ inputs.command }}" ]; then
+            echo "::error::The 'command' input is required for client mode"
+            exit 1
+          fi
+          ARGS="${ARGS} --command '${{ inputs.command }}'"
+        else
+          echo "::error::Invalid mode '${{ inputs.mode }}'. Must be 'server' or 'client'."
+          exit 1
+        fi
+
+        # Optional arguments
+        if [ -n "${{ inputs.expected-failures }}" ]; then
+          ARGS="${ARGS} --expected-failures ${{ inputs.expected-failures }}"
+        fi
+
+        if [ -n "${{ inputs.suite }}" ]; then
+          ARGS="${ARGS} --suite ${{ inputs.suite }}"
+        fi
+
+        if [ -n "${{ inputs.scenario }}" ]; then
+          ARGS="${ARGS} --scenario ${{ inputs.scenario }}"
+        fi
+
+        if [ "${{ inputs.mode }}" = "client" ]; then
+          ARGS="${ARGS} --timeout ${{ inputs.timeout }}"
+        fi
+
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          ARGS="${ARGS} --verbose"
+        fi
+
+        echo "Running: node ${CONFORMANCE} ${ARGS}"
+        eval "node ${CONFORMANCE} ${ARGS}"

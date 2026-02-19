@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls } from '../../../types';
+import { ScenarioUrls, SpecVersion } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -15,6 +15,7 @@ import type { Request, Response, NextFunction } from 'express';
  */
 export class ScopeFromWwwAuthenticateScenario implements Scenario {
   name = 'auth/scope-from-www-authenticate';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests that client uses scope parameter from WWW-Authenticate header when provided';
   private authServer = new ServerLifecycle();
@@ -100,6 +101,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
  */
 export class ScopeFromScopesSupportedScenario implements Scenario {
   name = 'auth/scope-from-scopes-supported';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests that client uses all scopes from scopes_supported when scope not in WWW-Authenticate header';
   private authServer = new ServerLifecycle();
@@ -195,6 +197,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
  */
 export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   name = 'auth/scope-omitted-when-undefined';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests that client omits scope parameter when scopes_supported is undefined';
   private authServer = new ServerLifecycle();
@@ -281,6 +284,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
  */
 export class ScopeStepUpAuthScenario implements Scenario {
   name = 'auth/scope-step-up';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests that client handles step-up authentication with different scope requirements per operation';
   private authServer = new ServerLifecycle();
@@ -477,8 +481,10 @@ export class ScopeStepUpAuthScenario implements Scenario {
  */
 export class ScopeRetryLimitScenario implements Scenario {
   name = 'auth/scope-retry-limit';
+  specVersions: SpecVersion[] = ['2025-11-25'];
   description =
     'Tests that client implements retry limits to prevent infinite authorization loops on repeated 403 responses';
+  allowClientError = true;
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];

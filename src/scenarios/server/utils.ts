@@ -2,11 +2,12 @@
  * Utilities test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 
 export class LoggingSetLevelScenario implements ClientScenario {
   name = 'logging-set-level';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test setting logging level.
 
 **Server Implementation Requirements:**
@@ -85,6 +86,7 @@ export class LoggingSetLevelScenario implements ClientScenario {
 
 export class PingScenario implements ClientScenario {
   name = 'ping';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test ping utility for connection health check.
 
 **Server Implementation Requirements:**
@@ -174,6 +176,7 @@ export class PingScenario implements ClientScenario {
 
 export class CompletionCompleteScenario implements ClientScenario {
   name = 'completion-complete';
+  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
   description = `Test completion endpoint.
 
 **Server Implementation Requirements:**

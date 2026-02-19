@@ -1,6 +1,6 @@
 {
   "name": "@modelcontextprotocol/conformance",
-  "version": "0.1.9",
+  "version": "0.1.14",
   "type": "module",
   "license": "MIT",
   "author": "Anthropic, PBC (https://anthropic.com)",
@@ -18,6 +18,7 @@
     "lint": "eslint src/ examples/ && prettier --check .",
     "lint:fix": "eslint src/ examples/ --fix && prettier --write .",
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
+    "tier-check": "node dist/index.js tier-check",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
     "prepack": "npm run build"
@@ -46,11 +47,14 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "commander": "^14.0.2",
     "eventsource-parser": "^3.0.6",
     "express": "^5.1.0",
     "jose": "^6.1.2",
-    "zod": "^3.25.76"
+    "undici": "^7.19.0",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.76",
+    "@octokit/rest": "^22.0.0"
   }
 }

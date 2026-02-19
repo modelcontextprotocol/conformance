@@ -22,6 +22,8 @@ export interface ServerOptions {
   includeScopeInWwwAuth?: boolean;
   authMiddleware?: express.RequestHandler;
   tokenVerifier?: MockTokenVerifier;
+  /** Override the resource field in PRM response (for testing resource mismatch) */
+  prmResourceOverride?: string;
 }
 
 export function createServer(
@@ -36,45 +38,52 @@ export function createServer(
     scopesSupported,
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
-    tokenVerifier
+    tokenVerifier,
+    prmResourceOverride
   } = options;
-  const server = new Server(
-    {
-      name: 'auth-prm-pathbased-server',
-      version: '1.0.0'
-    },
-    {
-      capabilities: {
-        tools: {}
-      }
-    }
-  );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: 'test-tool',
-          inputSchema: { type: 'object' }
+  // Factory: create a fresh Server per request to avoid "Already connected" errors
+  // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
+  function createMcpServer() {
+    const server = new Server(
+      {
+        name: 'auth-prm-pathbased-server',
+        version: '1.0.0'
+      },
+      {
+        capabilities: {
+          tools: {}
         }
-      ]
-    };
-  });
-
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    async (request): Promise<CallToolResult> => {
-      if (request.params.name === 'test-tool') {
-        return {
-          content: [{ type: 'text', text: 'test' }]
-        };
       }
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Tool ${request.params.name} not found`
-      );
-    }
-  );
+    );
+
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      return {
+        tools: [
+          {
+            name: 'test-tool',
+            inputSchema: { type: 'object' }
+          }
+        ]
+      };
+    });
+
+    server.setRequestHandler(
+      CallToolRequestSchema,
+      async (request): Promise<CallToolResult> => {
+        if (request.params.name === 'test-tool') {
+          return {
+            content: [{ type: 'text', text: 'test' }]
+          };
+        }
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Tool ${request.params.name} not found`
+        );
+      }
+    );
+
+    return server;
+  }
 
   const app = express();
   app.use(express.json());
@@ -107,10 +116,12 @@ export function createServer(
 
       // Resource is usually $baseUrl/mcp, but if PRM is at the root,
       // the resource identifier is the root.
+      // Can be overridden via prmResourceOverride for testing resource mismatch.
       const resource =
-        prmPath === '/.well-known/oauth-protected-resource'
+        prmResourceOverride ??
+        (prmPath === '/.well-known/oauth-protected-resource'
           ? getBaseUrl()
-          : `${getBaseUrl()}/mcp`;
+          : `${getBaseUrl()}/mcp`);
 
       const prmResponse: any = {
         resource,
@@ -146,6 +157,7 @@ export function createServer(
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);
+      const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined
       });

@@ -18,6 +18,7 @@ import {
   EventId,
   StreamId
 } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
   ElicitResultSchema,
   ListToolsRequestSchema,
@@ -26,7 +27,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { z } from 'zod';
-import express from 'express';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 
@@ -1055,8 +1055,8 @@ function isInitializeRequest(body: any): boolean {
 
 // ===== EXPRESS APP =====
 
-const app = express();
-app.use(express.json());
+// Use createMcpExpressApp for DNS rebinding protection on localhost
+const app = createMcpExpressApp();
 
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
 app.use(
