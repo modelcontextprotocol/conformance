@@ -225,6 +225,14 @@ program
     '--interactive',
     'Interactive auth mode: opens browser for login instead of auto-redirect'
   )
+  .option(
+    '--client-id <id>',
+    'Pre-registered OAuth client ID (skips CIMD/DCR registration)'
+  )
+  .option(
+    '--client-secret <secret>',
+    'Pre-registered OAuth client secret (used with --client-id)'
+  )
   .action(async (options) => {
     try {
       const verbose = options.verbose ?? false;
@@ -269,7 +277,9 @@ program
               command: options.command,
               scenarioName,
               timeout,
-              interactive: options.interactive
+              interactive: options.interactive,
+              clientId: options.clientId,
+              clientSecret: options.clientSecret
             });
             allResults.push({ scenario: scenarioName, checks: result.checks });
 

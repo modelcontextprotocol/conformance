@@ -129,6 +129,17 @@ export class BasicAuthFlowScenario implements ClientScenario {
       { interactive }
     );
 
+    // Pre-populate client credentials for pre-registration flow
+    if (options?.clientId) {
+      provider.saveClientInformation({
+        client_id: options.clientId,
+        redirect_uris: [provider.redirectUrl as string],
+        ...(options.clientSecret && {
+          client_secret: options.clientSecret
+        })
+      });
+    }
+
     // Handle 401 with OAuth flow
     const handle401 = async (
       response: Response,
@@ -245,6 +256,16 @@ export class BasicAuthFlowScenario implements ClientScenario {
       timestamp
     );
 
+    // If CIMD is supported but wasn't exercised in the flow (e.g. pre-registered creds
+    // were used or DCR was preferred), do a standalone CIMD auth flow test
+    await this.testStandaloneCimd(
+      observedRequests,
+      checks,
+      timestamp,
+      serverUrl,
+      options?.interactive ?? false
+    );
+
     return checks;
   }
 
@@ -311,6 +332,110 @@ export class BasicAuthFlowScenario implements ClientScenario {
         timestamp: timestamp(),
         errorMessage: error instanceof Error ? error.message : String(error),
         specReferences: [ServerAuthSpecReferences.RFC_7591_DCR_ENDPOINT]
+      });
+    }
+  }
+
+  /**
+   * If CIMD is supported but wasn't exercised in the flow, do a standalone
+   * CIMD auth flow to verify the AS accepts a URL-based client_id.
+   */
+  private async testStandaloneCimd(
+    observedRequests: ObservedRequest[],
+    checks: ConformanceCheck[],
+    timestamp: () => string,
+    serverUrl: string,
+    interactive: boolean
+  ): Promise<void> {
+    const asMetadataRequest = observedRequests.find(
+      (r) => r.requestType === 'as-metadata'
+    );
+    const asMetadata =
+      asMetadataRequest?.responseStatus === 200 &&
+      typeof asMetadataRequest.responseBody === 'object'
+        ? (asMetadataRequest.responseBody as Record<string, unknown>)
+        : null;
+
+    const cimdSupported =
+      asMetadata?.client_id_metadata_document_supported === true;
+
+    // Check if the main flow already used CIMD (URL-based client_id in auth request)
+    const authorizationRequest = observedRequests.find(
+      (r) => r.requestType === 'authorization'
+    );
+    const cimdAlreadyTested =
+      authorizationRequest &&
+      typeof authorizationRequest.url === 'string' &&
+      /client_id=https?%3A/.test(authorizationRequest.url);
+
+    if (!cimdSupported || cimdAlreadyTested) {
+      return;
+    }
+
+    // Reuse WWW-Authenticate params from the main flow's observed 401
+    const unauthorizedRequest = observedRequests.find(
+      (r) => r.responseStatus === 401 && r.requestType === 'mcp-request'
+    );
+    const resourceMetadataUrlStr =
+      unauthorizedRequest?.wwwAuthenticate?.params.resource_metadata;
+    const resourceMetadataUrl = resourceMetadataUrlStr
+      ? new URL(resourceMetadataUrlStr)
+      : undefined;
+    const scope = unauthorizedRequest?.wwwAuthenticate?.params.scope;
+
+    try {
+      const cimdProvider = new ConformanceOAuthProvider(
+        { client_name: 'MCP Conformance CIMD Test' },
+        { interactive }
+      );
+
+      // Run auth flow with CIMD provider
+      let result = await auth(cimdProvider, {
+        serverUrl,
+        resourceMetadataUrl,
+        scope,
+        fetchFn: fetch
+      });
+
+      if (result === 'REDIRECT') {
+        const authorizationCode = await cimdProvider.getAuthCode();
+        result = await auth(cimdProvider, {
+          serverUrl,
+          resourceMetadataUrl,
+          scope,
+          authorizationCode,
+          fetchFn: fetch
+        });
+      }
+
+      const tokens = await cimdProvider.tokens();
+
+      checks.push({
+        id: 'auth-cimd-flow',
+        name: 'CIMD Authentication Flow',
+        description:
+          'AS accepts URL-based client_id via CIMD authentication flow',
+        status: tokens?.access_token ? 'SUCCESS' : 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: !tokens?.access_token
+          ? `Auth flow completed with result "${result}" but no access token obtained`
+          : undefined,
+        specReferences: [ServerAuthSpecReferences.MCP_AUTH_DCR],
+        details: {
+          hasAccessToken: !!tokens?.access_token,
+          tokenType: tokens?.token_type
+        }
+      });
+    } catch (error) {
+      checks.push({
+        id: 'auth-cimd-flow',
+        name: 'CIMD Authentication Flow',
+        description:
+          'AS accepts URL-based client_id via CIMD authentication flow',
+        status: 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        specReferences: [ServerAuthSpecReferences.MCP_AUTH_DCR]
       });
     }
   }

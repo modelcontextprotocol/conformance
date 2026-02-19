@@ -43,6 +43,8 @@ export interface Scenario {
 
 export interface ClientScenarioOptions {
   interactive?: boolean;
+  clientId?: string;
+  clientSecret?: string;
 }
 
 export interface ClientScenario {
