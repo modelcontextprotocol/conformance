@@ -134,7 +134,7 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: getAuthBaseUrl(),
+      issuer: `${getAuthBaseUrl()}${routePrefix}`,
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
