@@ -28,9 +28,9 @@ inputs:
     required: false
     default: 'false'
   node-version:
-    description: 'Node.js version to use (default: 20)'
+    description: 'Node.js version to use (default: 22)'
     required: false
-    default: '20'
+    default: '22'
 runs:
   using: 'composite'
   steps:
