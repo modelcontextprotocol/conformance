@@ -127,6 +127,8 @@ Implement tool \`test_simple_text\` with no arguments that returns:
 
       // Validate response
       const errors: string[] = [];
+      if ((result as any).isError === true)
+        errors.push('Tool returned an error instead of content');
       const content = (result as any).content;
       if (!content) errors.push('Missing content array');
       if (!Array.isArray(content)) errors.push('content is not an array');
