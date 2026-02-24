@@ -1,4 +1,8 @@
-import { authScenariosList, backcompatScenariosList } from './index';
+import {
+  authScenariosList,
+  backcompatScenariosList,
+  draftScenariosList
+} from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
@@ -57,6 +61,21 @@ describe('Client Back-compat Scenarios', () => {
       }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name);
+    });
+  }
+});
+
+describe('Client Draft Scenarios', () => {
+  for (const scenario of draftScenariosList) {
+    test(`${scenario.name} passes`, async () => {
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
+      const runner = new InlineClientRunner(clientFn);
+      await runClientAgainstScenario(runner, scenario.name, {
+        allowClientError: allowClientErrorScenarios.has(scenario.name)
+      });
     });
   }
 });
