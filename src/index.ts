@@ -20,6 +20,7 @@ import {
   listCoreScenarios,
   listExtensionScenarios,
   listBackcompatScenarios,
+  listDraftScenarios,
   listScenariosForSpec,
   listClientScenariosForSpec,
   getScenarioSpecVersions,
@@ -112,6 +113,7 @@ program
           backcompat: listBackcompatScenarios,
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
+          draft: listDraftScenarios,
           'sep-835': () =>
             listAuthScenarios().filter((name) => name.startsWith('auth/scope-'))
         };
@@ -230,7 +232,7 @@ program
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
         console.error(
-          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, sep-835'
+          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, draft, sep-835'
         );
         process.exit(1);
       }
