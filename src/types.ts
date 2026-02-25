@@ -60,3 +60,10 @@ export interface ClientScenario {
   specVersions: SpecVersion[];
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }
+
+export interface ClientScenarioForAuthorizationServer {
+  name: string;
+  description: string;
+  specVersions: SpecVersion[];
+  run(serverUrl: string): Promise<ConformanceCheck[]>;
+}
