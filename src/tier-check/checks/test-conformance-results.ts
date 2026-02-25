@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { mkdtempSync, readFileSync, existsSync, globSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
@@ -43,7 +43,7 @@ function parseOutputDir(outputDir: string): ConformanceResult {
   const checksFiles = globSync('**/checks.json', { cwd: outputDir });
 
   for (const checksFile of checksFiles) {
-    const scenarioName = dirname(checksFile);
+    const scenarioName = dirname(checksFile).replace(/\\/g, '/');
     const checksPath = join(outputDir, checksFile);
 
     try {
@@ -181,8 +181,9 @@ export async function checkConformance(options: {
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-server-'));
 
   try {
-    execSync(
-      `node dist/index.js server --url ${options.serverUrl} -o ${outputDir}`,
+    execFileSync(
+      process.execPath,
+      ['dist/index.js', 'server', '--url', options.serverUrl, '-o', outputDir],
       {
         cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -221,8 +222,18 @@ export async function checkClientConformance(options: {
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-client-'));
 
   try {
-    execSync(
-      `node dist/index.js client --command '${options.clientCmd}' --suite all -o ${outputDir}`,
+    execFileSync(
+      process.execPath,
+      [
+        'dist/index.js',
+        'client',
+        '--command',
+        options.clientCmd,
+        '--suite',
+        'all',
+        '-o',
+        outputDir
+      ],
       {
         cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
