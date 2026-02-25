@@ -44,6 +44,15 @@ export const ServerOptionsSchema = z.object({
 
 export type ServerOptions = z.infer<typeof ServerOptionsSchema>;
 
+// Authorization server command options schema
+export const AuthorizationServerOptionsSchema = z.object({
+  url: z.string().url('Invalid authorization server URL')
+});
+
+export type AuthorizationServerOptions = z.infer<
+  typeof AuthorizationServerOptionsSchema
+>;
+
 // Interactive command options schema
 export const InteractiveOptionsSchema = z.object({
   scenario: z

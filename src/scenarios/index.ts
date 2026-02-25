@@ -1,4 +1,9 @@
-import { Scenario, ClientScenario, SpecVersion } from '../types';
+import {
+  Scenario,
+  ClientScenario,
+  ClientScenarioForAuthorizationServer,
+  SpecVersion
+} from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
@@ -59,6 +64,7 @@ import {
   extensionScenariosList
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
+import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -141,6 +147,23 @@ export const clientScenarios = new Map<string, ClientScenario>(
   allClientScenariosList.map((scenario) => [scenario.name, scenario])
 );
 
+// All client scenarios for authorization server
+const allClientScenariosListForAuthorizationServer: ClientScenario[] = [
+  // Authorization server scenarios
+  new AuthorizationServerMetadataEndpointScenario()
+];
+
+// Client scenarios map for authorization server - built from list
+export const clientScenariosForAuthorizationServer = new Map<
+  string,
+  ClientScenario
+>(
+  allClientScenariosListForAuthorizationServer.map((scenario) => [
+    scenario.name,
+    scenario
+  ])
+);
+
 // All client test scenarios (core + backcompat + extensions)
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
@@ -178,6 +201,12 @@ export function getClientScenario(name: string): ClientScenario | undefined {
   return clientScenarios.get(name);
 }
 
+export function getClientScenarioForAuthorizationServer(
+  name: string
+): ClientScenarioForAuthorizationServer | undefined {
+  return clientScenariosForAuthorizationServer.get(name);
+}
+
 export function listScenarios(): string[] {
   return Array.from(scenarios.keys());
 }
@@ -210,6 +239,10 @@ export function listBackcompatScenarios(): string[] {
   return backcompatScenariosList.map((scenario) => scenario.name);
 }
 
+export function listClientScenariosForAuthorizationServer(): string[] {
+  return Array.from(clientScenariosForAuthorizationServer.keys());
+}
+
 export { listMetadataScenarios };
 
 // All valid spec versions, used by the CLI to validate --spec-version input.
@@ -233,11 +266,21 @@ export function listClientScenariosForSpec(version: SpecVersion): string[] {
     .map((s) => s.name);
 }
 
+export function listClientScenariosForAuthorizationServerForSpec(
+  version: SpecVersion
+): string[] {
+  return allClientScenariosListForAuthorizationServer
+    .filter((s) => s.specVersions.includes(version))
+    .map((s) => s.name);
+}
+
 export function getScenarioSpecVersions(
   name: string
 ): SpecVersion[] | undefined {
   return (
-    scenarios.get(name)?.specVersions ?? clientScenarios.get(name)?.specVersions
+    scenarios.get(name)?.specVersions ??
+    clientScenarios.get(name)?.specVersions ??
+    clientScenariosForAuthorizationServer.get(name)?.specVersions
   );
 }
 
