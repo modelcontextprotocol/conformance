@@ -182,9 +182,8 @@ export async function checkConformance(options: {
 
   try {
     execSync(
-      `node dist/index.js server --url ${options.serverUrl} -o ${outputDir}`,
+      `node "${process.argv[1]}" server --url ${options.serverUrl} -o ${outputDir}`,
       {
-        cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120_000
       }
@@ -222,9 +221,8 @@ export async function checkClientConformance(options: {
 
   try {
     execSync(
-      `node dist/index.js client --command '${options.clientCmd}' --suite all -o ${outputDir}`,
+      `node "${process.argv[1]}" client --command '${options.clientCmd}' --suite all -o ${outputDir}`,
       {
-        cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120_000
       }
