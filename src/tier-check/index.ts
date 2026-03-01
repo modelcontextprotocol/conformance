@@ -13,6 +13,8 @@ import { checkSpecTracking } from './checks/spec-tracking';
 import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
 import { TierScorecard } from './types';
+import { ALL_SPEC_VERSIONS } from '../scenarios';
+import { SpecVersion } from '../types';
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const parts = repo.split('/');
@@ -48,9 +50,23 @@ export function createTierCheckCommand(): Command {
       '--token <token>',
       'GitHub token (defaults to GITHUB_TOKEN env var)'
     )
+    .option(
+      '--spec-version <version>',
+      'Only run conformance scenarios for this spec version'
+    )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
       let token = options.token || process.env.GITHUB_TOKEN;
+
+      let specVersion: SpecVersion | undefined;
+      if (options.specVersion) {
+        if (!ALL_SPEC_VERSIONS.includes(options.specVersion as SpecVersion)) {
+          console.error(`Unknown spec version: ${options.specVersion}`);
+          console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
+          process.exit(1);
+        }
+        specVersion = options.specVersion as SpecVersion;
+      }
 
       if (!token) {
         // Try to get token from GitHub CLI
@@ -90,14 +106,16 @@ export function createTierCheckCommand(): Command {
       ] = await Promise.all([
         checkConformance({
           serverUrl: options.conformanceServerUrl,
-          skip: options.skipConformance
+          skip: options.skipConformance,
+          specVersion
         }).then((r) => {
           console.error('  ✓ Server Conformance');
           return r;
         }),
         checkClientConformance({
           clientCmd: options.clientCmd,
-          skip: options.skipConformance || !options.clientCmd
+          skip: options.skipConformance || !options.clientCmd,
+          specVersion
         }).then((r) => {
           console.error('  ✓ Client Conformance');
           return r;
