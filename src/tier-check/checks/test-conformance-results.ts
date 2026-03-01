@@ -6,6 +6,8 @@ import { ConformanceResult } from '../types';
 import {
   listScenarios,
   listActiveClientScenarios,
+  listScenariosForSpec,
+  listClientScenariosForSpec,
   getScenarioSpecVersions
 } from '../../scenarios';
 import { ConformanceCheck, SpecVersion } from '../../types';
@@ -166,6 +168,7 @@ function reconcileWithExpected(
 export async function checkConformance(options: {
   serverUrl?: string;
   skip?: boolean;
+  specVersion?: SpecVersion;
 }): Promise<ConformanceResult> {
   if (options.skip || !options.serverUrl) {
     return {
@@ -179,10 +182,13 @@ export async function checkConformance(options: {
   }
 
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-server-'));
+  const specVersionArg = options.specVersion
+    ? `--spec-version ${options.specVersion}`
+    : '';
 
   try {
     execSync(
-      `node dist/index.js server --url ${options.serverUrl} -o ${outputDir}`,
+      `node dist/index.js server --url ${options.serverUrl} -o ${outputDir} ${specVersionArg}`,
       {
         cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -193,9 +199,16 @@ export async function checkConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
+  const activeScenarios = new Set(listActiveClientScenarios());
+  const expectedScenarios = options.specVersion
+    ? listClientScenariosForSpec(options.specVersion).filter((s) =>
+        activeScenarios.has(s)
+      )
+    : [...activeScenarios];
+
   return reconcileWithExpected(
     parseOutputDir(outputDir),
-    listActiveClientScenarios(),
+    expectedScenarios,
     'server'
   );
 }
@@ -206,6 +219,7 @@ export async function checkConformance(options: {
 export async function checkClientConformance(options: {
   clientCmd?: string;
   skip?: boolean;
+  specVersion?: SpecVersion;
 }): Promise<ConformanceResult> {
   if (options.skip || !options.clientCmd) {
     return {
@@ -219,10 +233,13 @@ export async function checkClientConformance(options: {
   }
 
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-client-'));
+  const specVersionArg = options.specVersion
+    ? `--spec-version ${options.specVersion}`
+    : '';
 
   try {
     execSync(
-      `node dist/index.js client --command '${options.clientCmd}' --suite all -o ${outputDir}`,
+      `node dist/index.js client --command '${options.clientCmd}' --suite all -o ${outputDir} ${specVersionArg}`,
       {
         cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -233,5 +250,9 @@ export async function checkClientConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  return reconcileWithExpected(parseOutputDir(outputDir), listScenarios());
+  const expectedScenarios = options.specVersion
+    ? listScenariosForSpec(options.specVersion)
+    : listScenarios();
+
+  return reconcileWithExpected(parseOutputDir(outputDir), expectedScenarios);
 }
