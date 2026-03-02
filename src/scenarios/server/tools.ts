@@ -39,11 +39,11 @@ export class ToolsListScenario implements ClientScenario {
       const errors: string[] = [];
       if (!result.tools) {
         errors.push('Missing tools array');
+      } else if (!Array.isArray(result.tools)) {
+        errors.push('tools is not an array');
+      } else if (result.tools.length === 0) {
+        errors.push('tools array is empty');
       } else {
-        if (!Array.isArray(result.tools)) {
-          errors.push('tools is not an array');
-        }
-
         result.tools.forEach((tool, index) => {
           if (!tool.name) errors.push(`Tool ${index}: missing name`);
           if (!tool.description)
