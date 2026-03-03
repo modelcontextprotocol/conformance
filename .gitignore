@@ -1,5 +1,6 @@
 node_modules
 results/
+coverage/
 lefthook-local.yml
 dist/
 .vscode/
