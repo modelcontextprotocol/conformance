@@ -220,6 +220,45 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
         details: { result: r4.result }
       });
 
+      // Validate acknowledgment includes task metadata (SHOULD per spec)
+      if (r4Errors.length === 0) {
+        const r4Result = r4.result;
+        const ackErrors: string[] = [];
+
+        if (!r4Result) {
+          ackErrors.push('No result from tasks/input_response');
+        } else {
+          const meta = r4Result._meta as
+            | Record<string, unknown>
+            | undefined;
+          const relatedTask = meta?.[
+            'io.modelcontextprotocol/related-task'
+          ] as { taskId?: string } | undefined;
+          if (!relatedTask?.taskId) {
+            ackErrors.push(
+              'Acknowledgment missing _meta.io.modelcontextprotocol/related-task.taskId'
+            );
+          } else if (relatedTask.taskId !== taskId) {
+            ackErrors.push(
+              `taskId mismatch: expected "${taskId}", got "${relatedTask.taskId}"`
+            );
+          }
+        }
+
+        checks.push({
+          id: 'mrtr-persistent-ack-structure',
+          name: 'MRTRPersistentAckStructure',
+          description:
+            'tasks/input_response acknowledgment includes task metadata',
+          status: ackErrors.length === 0 ? 'SUCCESS' : 'WARNING',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            ackErrors.length > 0 ? ackErrors.join('; ') : undefined,
+          specReferences: MRTR_SPEC_REFERENCES,
+          details: { result: r4Result }
+        });
+      }
+
       if (r4Errors.length > 0) return checks;
 
       // Step 5: Poll until completed
@@ -288,135 +327,7 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
   }
 }
 
-// ─── B2: Input Response Acknowledgment ───────────────────────────────────────
-
-export class MrtrPersistentInputResponseAckScenario implements ClientScenario {
-  name = 'mrtr-persistent-input-response-ack';
-  specVersions: SpecVersion[] = ['draft'];
-  description = `Test that tasks/input_response returns proper acknowledgment with task metadata (SEP-2322).
-
-**Server Implementation Requirements:**
-
-Use the same tool as B1: \`test_mrtr_persistent\`.
-
-**Validation:** The \`tasks/input_response\` acknowledgment SHOULD include \`_meta\` with \`io.modelcontextprotocol/related-task\` containing the \`taskId\`.`;
-
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
-    const checks: ConformanceCheck[] = [];
-
-    try {
-      const session = await createMrtrSession(serverUrl);
-
-      // Create task
-      const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_persistent',
-        arguments: {},
-        task: { ttl: 30000 }
-      });
-
-      const task = r1.result?.task as { taskId?: string } | undefined;
-      if (!task?.taskId) {
-        checks.push({
-          id: 'mrtr-persistent-ack-prereq',
-          name: 'MRTRPersistentAckPrereq',
-          description: 'Prerequisite: Task creation',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: 'Could not create task',
-          specReferences: MRTR_SPEC_REFERENCES
-        });
-        return checks;
-      }
-
-      const taskId = task.taskId;
-
-      // Wait for input_required
-      await pollTaskStatus(session, taskId, 'input_required');
-
-      // Get input requests
-      const r3 = await session.send('tasks/result', { taskId });
-      if (
-        r3.error ||
-        !r3.result ||
-        !isIncompleteResult(r3.result) ||
-        !r3.result.inputRequests
-      ) {
-        checks.push({
-          id: 'mrtr-persistent-ack-prereq',
-          name: 'MRTRPersistentAckPrereq',
-          description: 'Prerequisite: Get inputRequests',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: 'Could not get inputRequests from tasks/result',
-          specReferences: MRTR_SPEC_REFERENCES
-        });
-        return checks;
-      }
-
-      // Send input_response and check acknowledgment
-      const inputKey = Object.keys(r3.result.inputRequests!)[0];
-      const r4 = await session.send('tasks/input_response', {
-        inputResponses: {
-          [inputKey]: mockElicitResponse({ input: 'test' })
-        },
-        _meta: {
-          'io.modelcontextprotocol/related-task': { taskId }
-        }
-      });
-
-      const r4Result = r4.result;
-      const errors: string[] = [];
-
-      if (r4.error) {
-        errors.push(`JSON-RPC error: ${r4.error.message}`);
-      } else if (!r4Result) {
-        errors.push('No result from tasks/input_response');
-      } else {
-        // Check for task metadata in acknowledgment
-        const meta = r4Result._meta as Record<string, unknown> | undefined;
-        const relatedTask = meta?.['io.modelcontextprotocol/related-task'] as
-          | { taskId?: string }
-          | undefined;
-        if (!relatedTask?.taskId) {
-          errors.push(
-            'Acknowledgment missing _meta.io.modelcontextprotocol/related-task.taskId'
-          );
-        } else if (relatedTask.taskId !== taskId) {
-          errors.push(
-            `taskId mismatch: expected "${taskId}", got "${relatedTask.taskId}"`
-          );
-        }
-      }
-
-      checks.push({
-        id: 'mrtr-persistent-ack-structure',
-        name: 'MRTRPersistentAckStructure',
-        description:
-          'tasks/input_response acknowledgment includes task metadata',
-        status: errors.length === 0 ? 'SUCCESS' : 'WARNING',
-        timestamp: new Date().toISOString(),
-        errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-        specReferences: MRTR_SPEC_REFERENCES,
-        details: { result: r4Result }
-      });
-    } catch (error) {
-      checks.push({
-        id: 'mrtr-persistent-ack-structure',
-        name: 'MRTRPersistentAckStructure',
-        description:
-          'tasks/input_response acknowledgment includes task metadata',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: MRTR_SPEC_REFERENCES
-      });
-    }
-
-    return checks;
-  }
-}
-
-// ─── B3: Bad Input Response ──────────────────────────────────────────────────
+// ─── B2: Bad Input Response ──────────────────────────────────────────────────
 
 export class MrtrPersistentBadInputResponseScenario implements ClientScenario {
   name = 'mrtr-persistent-bad-input-response';

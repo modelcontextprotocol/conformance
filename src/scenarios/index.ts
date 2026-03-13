@@ -68,7 +68,6 @@ import {
 
 import {
   MrtrPersistentBasicScenario,
-  MrtrPersistentInputResponseAckScenario,
   MrtrPersistentBadInputResponseScenario,
   MrtrPersistentInputResponseIncompleteScenario
 } from './server/mrtr-persistent';
@@ -111,7 +110,6 @@ const pendingClientScenariosList: ClientScenario[] = [
   new MrtrEphemeralMissingInputResponseScenario(),
   new MrtrEphemeralNonToolRequestScenario(),
   new MrtrPersistentBasicScenario(),
-  new MrtrPersistentInputResponseAckScenario(),
   new MrtrPersistentBadInputResponseScenario(),
   new MrtrPersistentInputResponseIncompleteScenario(),
   new MrtrIncompleteResultStructureScenario(),
@@ -186,7 +184,6 @@ const allClientScenariosList: ClientScenario[] = [
 
   // MRTR Persistent Workflow scenarios (SEP-2322)
   new MrtrPersistentBasicScenario(),
-  new MrtrPersistentInputResponseAckScenario(),
   new MrtrPersistentBadInputResponseScenario(),
   new MrtrPersistentInputResponseIncompleteScenario(),
 
