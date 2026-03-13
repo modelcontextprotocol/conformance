@@ -312,7 +312,141 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
   }
 }
 
-// ─── A3: Request State ───────────────────────────────────────────────────────
+// ─── A3: Basic ListRoots ─────────────────────────────────────────────────────
+
+export class MrtrEphemeralBasicListRootsScenario implements ClientScenario {
+  name = 'mrtr-ephemeral-basic-list-roots';
+  specVersions: SpecVersion[] = ['draft'];
+  description = `Test basic ephemeral MRTR flow with a single roots/list input request (SEP-2322).
+
+**Server Implementation Requirements:**
+
+Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required).
+
+**Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
+
+\`\`\`json
+{
+  "result_type": "incomplete",
+  "inputRequests": {
+    "client_roots": {
+      "method": "roots/list",
+      "params": {}
+    }
+  }
+}
+\`\`\`
+
+**Behavior (Round 2):** When called with \`inputResponses\` containing the key \`"client_roots"\` (a ListRootsResult with a \`roots\` array), return a complete result that references the provided roots.`;
+
+  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+    const checks: ConformanceCheck[] = [];
+
+    try {
+      const session = await createMrtrSession(serverUrl);
+
+      // Round 1: Initial call
+      const r1 = await session.send('tools/call', {
+        name: 'test_mrtr_ephemeral_list_roots',
+        arguments: {}
+      });
+
+      const r1Result = r1.result;
+      const r1Errors: string[] = [];
+
+      if (r1.error) {
+        r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
+      } else if (!r1Result) {
+        r1Errors.push('No result in response');
+      } else if (!isIncompleteResult(r1Result)) {
+        r1Errors.push('Expected IncompleteResult with roots/list inputRequest');
+      } else {
+        if (!r1Result.inputRequests) {
+          r1Errors.push('IncompleteResult missing inputRequests');
+        } else {
+          const key = Object.keys(r1Result.inputRequests)[0];
+          if (!key) {
+            r1Errors.push('inputRequests map is empty');
+          } else {
+            const req = r1Result.inputRequests[key];
+            if (req.method !== 'roots/list') {
+              r1Errors.push(
+                `Expected method "roots/list", got "${req.method}"`
+              );
+            }
+          }
+        }
+      }
+
+      checks.push({
+        id: 'mrtr-ephemeral-list-roots-incomplete',
+        name: 'MRTREphemeralListRootsIncomplete',
+        description:
+          'Server returns IncompleteResult with roots/list inputRequest',
+        status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
+        specReferences: MRTR_SPEC_REFERENCES,
+        details: { result: r1Result }
+      });
+
+      // Round 2: Retry with inputResponses
+      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+        const inputKey = Object.keys(r1Result.inputRequests!)[0];
+        const r2 = await session.send('tools/call', {
+          name: 'test_mrtr_ephemeral_list_roots',
+          arguments: {},
+          inputResponses: {
+            [inputKey]: mockListRootsResponse()
+          },
+          ...(r1Result.requestState !== undefined
+            ? { requestState: r1Result.requestState }
+            : {})
+        });
+
+        const r2Result = r2.result;
+        const r2Errors: string[] = [];
+
+        if (r2.error) {
+          r2Errors.push(`JSON-RPC error: ${r2.error.message}`);
+        } else if (!r2Result) {
+          r2Errors.push('No result in response');
+        } else if (!isCompleteResult(r2Result)) {
+          r2Errors.push(
+            'Expected complete result after retry with roots response'
+          );
+        }
+
+        checks.push({
+          id: 'mrtr-ephemeral-list-roots-complete',
+          name: 'MRTREphemeralListRootsComplete',
+          description:
+            'Server returns complete result after retry with roots response',
+          status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
+          specReferences: MRTR_SPEC_REFERENCES,
+          details: { result: r2Result }
+        });
+      }
+    } catch (error) {
+      checks.push({
+        id: 'mrtr-ephemeral-list-roots-incomplete',
+        name: 'MRTREphemeralListRootsIncomplete',
+        description:
+          'Server returns IncompleteResult with roots/list inputRequest',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences: MRTR_SPEC_REFERENCES
+      });
+    }
+
+    return checks;
+  }
+}
+
+// ─── A4: Request State ──────────────────────────────────────────────────────
 
 export class MrtrEphemeralRequestStateScenario implements ClientScenario {
   name = 'mrtr-ephemeral-request-state';
@@ -455,7 +589,7 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
   }
 }
 
-// ─── A4: Multiple Input Requests ─────────────────────────────────────────────
+// ─── A5: Multiple Input Requests ─────────────────────────────────────────────
 
 export class MrtrEphemeralMultipleInputRequestsScenario
   implements ClientScenario
@@ -613,7 +747,7 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
   }
 }
 
-// ─── A5: Multi-Round ─────────────────────────────────────────────────────────
+// ─── A6: Multi-Round ─────────────────────────────────────────────────────────
 
 export class MrtrEphemeralMultiRoundScenario implements ClientScenario {
   name = 'mrtr-ephemeral-multi-round';
@@ -797,7 +931,7 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
   }
 }
 
-// ─── A6: Request State Only (Load Shedding) ──────────────────────────────────
+// ─── A7: Request State Only ──────────────────────────────────
 
 export class MrtrEphemeralRequestStateOnlyScenario implements ClientScenario {
   name = 'mrtr-ephemeral-request-state-only';
@@ -906,7 +1040,7 @@ This simulates load shedding where the server transfers accumulated computation 
   }
 }
 
-// ─── A7: Missing Input Response ──────────────────────────────────────────────
+// ─── A8: Missing Input Response ──────────────────────────────────────────────
 
 export class MrtrEphemeralMissingInputResponseScenario
   implements ClientScenario
@@ -1010,7 +1144,7 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
   }
 }
 
-// ─── A8: Non-Tool Request (prompts/get) ──────────────────────────────────────
+// ─── A9: Non-Tool Request (prompts/get) ──────────────────────────────────────
 
 export class MrtrEphemeralNonToolRequestScenario implements ClientScenario {
   name = 'mrtr-ephemeral-non-tool-request';

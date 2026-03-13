@@ -57,6 +57,7 @@ import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import {
   MrtrEphemeralBasicElicitationScenario,
   MrtrEphemeralBasicSamplingScenario,
+  MrtrEphemeralBasicListRootsScenario,
   MrtrEphemeralRequestStateScenario,
   MrtrEphemeralMultipleInputRequestsScenario,
   MrtrEphemeralMultiRoundScenario,
@@ -102,6 +103,7 @@ const pendingClientScenariosList: ClientScenario[] = [
   // run via `--spec-version draft` against MRTR-capable servers.
   new MrtrEphemeralBasicElicitationScenario(),
   new MrtrEphemeralBasicSamplingScenario(),
+  new MrtrEphemeralBasicListRootsScenario(),
   new MrtrEphemeralRequestStateScenario(),
   new MrtrEphemeralMultipleInputRequestsScenario(),
   new MrtrEphemeralMultiRoundScenario(),
@@ -174,6 +176,7 @@ const allClientScenariosList: ClientScenario[] = [
   // MRTR Ephemeral Workflow scenarios (SEP-2322)
   new MrtrEphemeralBasicElicitationScenario(),
   new MrtrEphemeralBasicSamplingScenario(),
+  new MrtrEphemeralBasicListRootsScenario(),
   new MrtrEphemeralRequestStateScenario(),
   new MrtrEphemeralMultipleInputRequestsScenario(),
   new MrtrEphemeralMultiRoundScenario(),
