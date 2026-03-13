@@ -135,9 +135,7 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
         status: structureErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage:
-          structureErrors.length > 0
-            ? structureErrors.join('; ')
-            : undefined,
+          structureErrors.length > 0 ? structureErrors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r1Result }
       });
@@ -187,9 +185,7 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
           status: compatErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
           timestamp: new Date().toISOString(),
           errorMessage:
-            compatErrors.length > 0
-              ? compatErrors.join('; ')
-              : undefined,
+            compatErrors.length > 0 ? compatErrors.join('; ') : undefined,
           specReferences: MRTR_SPEC_REFERENCES,
           details: { result: r2Result }
         });
@@ -306,12 +302,18 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       // Find each type of InputRequest
-      const foundTypes: Record<string, { key: string; request: Record<string, unknown> }> = {};
+      const foundTypes: Record<
+        string,
+        { key: string; request: Record<string, unknown> }
+      > = {};
       for (const [key, value] of Object.entries(inputRequests)) {
         const method = value.method as string;
-        if (method === 'elicitation/create') foundTypes['elicitation'] = { key, request: value };
-        else if (method === 'sampling/createMessage') foundTypes['sampling'] = { key, request: value };
-        else if (method === 'roots/list') foundTypes['roots'] = { key, request: value };
+        if (method === 'elicitation/create')
+          foundTypes['elicitation'] = { key, request: value };
+        else if (method === 'sampling/createMessage')
+          foundTypes['sampling'] = { key, request: value };
+        else if (method === 'roots/list')
+          foundTypes['roots'] = { key, request: value };
       }
 
       // Check elicitation
@@ -330,7 +332,10 @@ When retried with valid \`inputResponses\` for all three, return a final result.
               'elicitation/create params.message should be a string'
             );
           }
-          if (!params.requestedSchema || typeof params.requestedSchema !== 'object') {
+          if (
+            !params.requestedSchema ||
+            typeof params.requestedSchema !== 'object'
+          ) {
             elicitErrors.push(
               'elicitation/create params.requestedSchema should be an object'
             );
@@ -341,8 +346,7 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       checks.push({
         id: 'mrtr-validate-elicitation-input-request',
         name: 'MRTRValidateElicitationInputRequest',
-        description:
-          'elicitation/create InputRequest has valid structure',
+        description: 'elicitation/create InputRequest has valid structure',
         status: elicitErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage:
@@ -378,8 +382,7 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       checks.push({
         id: 'mrtr-validate-sampling-input-request',
         name: 'MRTRValidateSamplingInputRequest',
-        description:
-          'sampling/createMessage InputRequest has valid structure',
+        description: 'sampling/createMessage InputRequest has valid structure',
         status: samplingErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage:
@@ -414,16 +417,17 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       // Retry with responses for all three types
       const inputResponses: Record<string, unknown> = {};
       if (foundTypes['elicitation']) {
-        inputResponses[foundTypes['elicitation'].key] =
-          mockElicitResponse({ value: 'test' });
+        inputResponses[foundTypes['elicitation'].key] = mockElicitResponse({
+          value: 'test'
+        });
       }
       if (foundTypes['sampling']) {
-        inputResponses[foundTypes['sampling'].key] =
-          mockSamplingResponse('Generated response text');
+        inputResponses[foundTypes['sampling'].key] = mockSamplingResponse(
+          'Generated response text'
+        );
       }
       if (foundTypes['roots']) {
-        inputResponses[foundTypes['roots'].key] =
-          mockListRootsResponse();
+        inputResponses[foundTypes['roots'].key] = mockListRootsResponse();
       }
 
       const r2 = await session.send('tools/call', {
@@ -442,7 +446,9 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       } else if (!r2.result) {
         retryErrors.push('No result from retry');
       } else if (isIncompleteResult(r2.result)) {
-        retryErrors.push('Expected complete result after providing all inputResponses');
+        retryErrors.push(
+          'Expected complete result after providing all inputResponses'
+        );
       }
 
       checks.push({

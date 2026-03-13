@@ -87,9 +87,7 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
         if (!r1Result.inputRequests) {
           r1Errors.push('IncompleteResult missing inputRequests');
         } else if (!r1Result.inputRequests['user_name']) {
-          r1Errors.push(
-            'inputRequests missing expected key "user_name"'
-          );
+          r1Errors.push('inputRequests missing expected key "user_name"');
         } else {
           const req = r1Result.inputRequests['user_name'];
           if (req.method !== 'elicitation/create') {
@@ -412,7 +410,9 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
         } else if (!r2Result) {
           r2Errors.push('No result in response');
         } else if (!isCompleteResult(r2Result)) {
-          r2Errors.push('Expected complete result after retry with requestState');
+          r2Errors.push(
+            'Expected complete result after retry with requestState'
+          );
         } else {
           // Check that server confirmed it received the state
           const content = r2Result.content as
@@ -698,7 +698,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       checks.push({
         id: 'mrtr-ephemeral-multi-round-r1',
         name: 'MRTRMultiRoundR1',
-        description: 'Round 1: Server returns IncompleteResult with requestState',
+        description:
+          'Round 1: Server returns IncompleteResult with requestState',
         status: r1Ok ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Ok
@@ -765,8 +766,7 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       });
 
       const r3Result = r3.result;
-      const r3Ok =
-        !r3.error && r3Result != null && isCompleteResult(r3Result);
+      const r3Ok = !r3.error && r3Result != null && isCompleteResult(r3Result);
 
       checks.push({
         id: 'mrtr-ephemeral-multi-round-r3',
@@ -784,7 +784,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       checks.push({
         id: 'mrtr-ephemeral-multi-round-r1',
         name: 'MRTRMultiRoundR1',
-        description: 'Round 1: Server returns IncompleteResult with requestState',
+        description:
+          'Round 1: Server returns IncompleteResult with requestState',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1068,8 +1069,7 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
       checks.push({
         id: 'mrtr-ephemeral-non-tool-incomplete',
         name: 'MRTRNonToolIncomplete',
-        description:
-          'prompts/get returns IncompleteResult with inputRequests',
+        description: 'prompts/get returns IncompleteResult with inputRequests',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -1100,7 +1100,9 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
         } else if (!isCompleteResult(r2Result)) {
           r2Errors.push('Expected complete GetPromptResult after retry');
         } else if (!r2Result.messages) {
-          r2Errors.push('Complete result missing messages (expected GetPromptResult)');
+          r2Errors.push(
+            'Complete result missing messages (expected GetPromptResult)'
+          );
         }
 
         checks.push({
@@ -1119,8 +1121,7 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
       checks.push({
         id: 'mrtr-ephemeral-non-tool-incomplete',
         name: 'MRTRNonToolIncomplete',
-        description:
-          'prompts/get returns IncompleteResult with inputRequests',
+        description: 'prompts/get returns IncompleteResult with inputRequests',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,

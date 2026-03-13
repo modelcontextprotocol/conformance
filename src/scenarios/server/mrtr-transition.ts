@@ -103,8 +103,7 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
           'Server responds with ephemeral IncompleteResult before creating task',
         status: ephErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage:
-          ephErrors.length > 0 ? ephErrors.join('; ') : undefined,
+        errorMessage: ephErrors.length > 0 ? ephErrors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r1Result }
       });
@@ -176,17 +175,13 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
 
       const taskErrors: string[] = [];
       if (!taskState) {
-        taskErrors.push(
-          'Could not retrieve task state via tasks/get'
-        );
+        taskErrors.push('Could not retrieve task state via tasks/get');
       } else if (
         taskState.status !== 'completed' &&
         taskState.status !== 'working'
       ) {
         // Accept working or completed — just verify the task is real
-        taskErrors.push(
-          `Unexpected task status: "${taskState.status}"`
-        );
+        taskErrors.push(`Unexpected task status: "${taskState.status}"`);
       }
 
       checks.push({
@@ -196,8 +191,7 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
           'Created task is accessible via Tasks API after transition',
         status: taskErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage:
-          taskErrors.length > 0 ? taskErrors.join('; ') : undefined,
+        errorMessage: taskErrors.length > 0 ? taskErrors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
         details: { taskState }
       });

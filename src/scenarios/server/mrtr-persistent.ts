@@ -110,9 +110,7 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
           | { taskId?: string; status?: string }
           | undefined;
         if (!task?.taskId) {
-          r1Errors.push(
-            'Expected CreateTaskResult with task.taskId'
-          );
+          r1Errors.push('Expected CreateTaskResult with task.taskId');
         } else {
           taskId = task.taskId;
           if (task.status !== 'working') {
@@ -137,11 +135,7 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       if (!taskId) return checks;
 
       // Step 2: Poll tasks/get until input_required
-      const taskState = await pollTaskStatus(
-        session,
-        taskId,
-        'input_required'
-      );
+      const taskState = await pollTaskStatus(session, taskId, 'input_required');
 
       const pollErrors: string[] = [];
       if (!taskState) {
@@ -160,8 +154,7 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
         description: 'Task reaches input_required status',
         status: pollErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage:
-          pollErrors.length > 0 ? pollErrors.join('; ') : undefined,
+        errorMessage: pollErrors.length > 0 ? pollErrors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
         details: { taskState }
       });
@@ -182,14 +175,15 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
           'Expected IncompleteResult with inputRequests from tasks/result'
         );
       } else if (!r3Result.inputRequests) {
-        r3Errors.push('IncompleteResult from tasks/result missing inputRequests');
+        r3Errors.push(
+          'IncompleteResult from tasks/result missing inputRequests'
+        );
       }
 
       checks.push({
         id: 'mrtr-persistent-tasks-result-incomplete',
         name: 'MRTRPersistentTasksResultIncomplete',
-        description:
-          'tasks/result returns IncompleteResult with inputRequests',
+        description: 'tasks/result returns IncompleteResult with inputRequests',
         status: r3Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r3Errors.length > 0 ? r3Errors.join('; ') : undefined,
@@ -229,17 +223,11 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       if (r4Errors.length > 0) return checks;
 
       // Step 5: Poll until completed
-      const completedState = await pollTaskStatus(
-        session,
-        taskId,
-        'completed'
-      );
+      const completedState = await pollTaskStatus(session, taskId, 'completed');
 
       const compErrors: string[] = [];
       if (!completedState) {
-        compErrors.push(
-          'Task did not reach completed status within timeout'
-        );
+        compErrors.push('Task did not reach completed status within timeout');
       } else if (completedState.status !== 'completed') {
         compErrors.push(
           `Expected status "completed", got "${completedState.status}"`
@@ -252,8 +240,7 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
         description: 'Task reaches completed status after input_response',
         status: compErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage:
-          compErrors.length > 0 ? compErrors.join('; ') : undefined,
+        errorMessage: compErrors.length > 0 ? compErrors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
         details: { taskState: completedState }
       });
@@ -327,9 +314,7 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
         task: { ttl: 30000 }
       });
 
-      const task = r1.result?.task as
-        | { taskId?: string }
-        | undefined;
+      const task = r1.result?.task as { taskId?: string } | undefined;
       if (!task?.taskId) {
         checks.push({
           id: 'mrtr-persistent-ack-prereq',
@@ -362,8 +347,7 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
           description: 'Prerequisite: Get inputRequests',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          errorMessage:
-            'Could not get inputRequests from tasks/result',
+          errorMessage: 'Could not get inputRequests from tasks/result',
           specReferences: MRTR_SPEC_REFERENCES
         });
         return checks;
@@ -389,12 +373,10 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
         errors.push('No result from tasks/input_response');
       } else {
         // Check for task metadata in acknowledgment
-        const meta = r4Result._meta as
-          | Record<string, unknown>
+        const meta = r4Result._meta as Record<string, unknown> | undefined;
+        const relatedTask = meta?.['io.modelcontextprotocol/related-task'] as
+          | { taskId?: string }
           | undefined;
-        const relatedTask = meta?.[
-          'io.modelcontextprotocol/related-task'
-        ] as { taskId?: string } | undefined;
         if (!relatedTask?.taskId) {
           errors.push(
             'Acknowledgment missing _meta.io.modelcontextprotocol/related-task.taskId'
@@ -460,9 +442,7 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
         task: { ttl: 30000 }
       });
 
-      const task = r1.result?.task as
-        | { taskId?: string }
-        | undefined;
+      const task = r1.result?.task as { taskId?: string } | undefined;
       if (!task?.taskId) {
         checks.push({
           id: 'mrtr-persistent-bad-input-prereq',
@@ -519,8 +499,7 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
 
       // Check task is still input_required
       const stateAfter = await session.send('tasks/get', { taskId });
-      const stillInputRequired =
-        stateAfter.result?.status === 'input_required';
+      const stillInputRequired = stateAfter.result?.status === 'input_required';
 
       // Try to get new inputRequests
       let newInputRequests = false;
@@ -622,9 +601,7 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
         task: { ttl: 30000 }
       });
 
-      const task = r1.result?.task as
-        | { taskId?: string }
-        | undefined;
+      const task = r1.result?.task as { taskId?: string } | undefined;
       if (!task?.taskId) {
         checks.push({
           id: 'mrtr-persistent-multi-input-prereq',
@@ -717,19 +694,13 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
 
         // Poll for completion
         if (r5Ok) {
-          const finalState = await pollTaskStatus(
-            session,
-            taskId,
-            'completed'
-          );
+          const finalState = await pollTaskStatus(session, taskId, 'completed');
 
           checks.push({
             id: 'mrtr-persistent-multi-input-completed',
             name: 'MRTRPersistentMultiInputCompleted',
-            description:
-              'Task completes after second input_response',
-            status:
-              finalState?.status === 'completed' ? 'SUCCESS' : 'FAILURE',
+            description: 'Task completes after second input_response',
+            status: finalState?.status === 'completed' ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
               finalState?.status !== 'completed'
