@@ -53,6 +53,32 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
+// MRTR scenarios (SEP-2322)
+import {
+  MrtrEphemeralBasicElicitationScenario,
+  MrtrEphemeralBasicSamplingScenario,
+  MrtrEphemeralRequestStateScenario,
+  MrtrEphemeralMultipleInputRequestsScenario,
+  MrtrEphemeralMultiRoundScenario,
+  MrtrEphemeralRequestStateOnlyScenario,
+  MrtrEphemeralMissingInputResponseScenario,
+  MrtrEphemeralNonToolRequestScenario
+} from './server/mrtr-ephemeral';
+
+import {
+  MrtrPersistentBasicScenario,
+  MrtrPersistentInputResponseAckScenario,
+  MrtrPersistentBadInputResponseScenario,
+  MrtrPersistentInputResponseIncompleteScenario
+} from './server/mrtr-persistent';
+
+import {
+  MrtrIncompleteResultStructureScenario,
+  MrtrInputRequestTypesScenario
+} from './server/mrtr-validation';
+
+import { MrtrEphemeralToPersistentScenario } from './server/mrtr-transition';
+
 import {
   authScenariosList,
   backcompatScenariosList,
@@ -69,7 +95,26 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario()
+  new ServerSSEPollingScenario(),
+
+  // MRTR scenarios (SEP-2322) — pending until a conformance test server
+  // implements MRTR tools. These are draft spec scenarios intended to be
+  // run via `--spec-version draft` against MRTR-capable servers.
+  new MrtrEphemeralBasicElicitationScenario(),
+  new MrtrEphemeralBasicSamplingScenario(),
+  new MrtrEphemeralRequestStateScenario(),
+  new MrtrEphemeralMultipleInputRequestsScenario(),
+  new MrtrEphemeralMultiRoundScenario(),
+  new MrtrEphemeralRequestStateOnlyScenario(),
+  new MrtrEphemeralMissingInputResponseScenario(),
+  new MrtrEphemeralNonToolRequestScenario(),
+  new MrtrPersistentBasicScenario(),
+  new MrtrPersistentInputResponseAckScenario(),
+  new MrtrPersistentBadInputResponseScenario(),
+  new MrtrPersistentInputResponseIncompleteScenario(),
+  new MrtrIncompleteResultStructureScenario(),
+  new MrtrInputRequestTypesScenario(),
+  new MrtrEphemeralToPersistentScenario()
 ];
 
 // All client scenarios
@@ -124,7 +169,30 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario(),
 
   // Security scenarios
-  new DNSRebindingProtectionScenario()
+  new DNSRebindingProtectionScenario(),
+
+  // MRTR Ephemeral Workflow scenarios (SEP-2322)
+  new MrtrEphemeralBasicElicitationScenario(),
+  new MrtrEphemeralBasicSamplingScenario(),
+  new MrtrEphemeralRequestStateScenario(),
+  new MrtrEphemeralMultipleInputRequestsScenario(),
+  new MrtrEphemeralMultiRoundScenario(),
+  new MrtrEphemeralRequestStateOnlyScenario(),
+  new MrtrEphemeralMissingInputResponseScenario(),
+  new MrtrEphemeralNonToolRequestScenario(),
+
+  // MRTR Persistent Workflow scenarios (SEP-2322)
+  new MrtrPersistentBasicScenario(),
+  new MrtrPersistentInputResponseAckScenario(),
+  new MrtrPersistentBadInputResponseScenario(),
+  new MrtrPersistentInputResponseIncompleteScenario(),
+
+  // MRTR Validation scenarios (SEP-2322)
+  new MrtrIncompleteResultStructureScenario(),
+  new MrtrInputRequestTypesScenario(),
+
+  // MRTR Transition scenarios (SEP-2322)
+  new MrtrEphemeralToPersistentScenario()
 ];
 
 // Active client scenarios (excludes pending)

@@ -1,5 +1,13 @@
 /**
- * Helper utilities for creating MCP clients to test servers
+ * Helper utilities for creating MCP clients to test servers.
+ *
+ * Provides two connection modes:
+ *  1. SDK-based (connectToServer) — uses the MCP TypeScript SDK for standard
+ *     protocol operations.
+ *  2. Raw JSON-RPC (RawMcpSession) — uses undici HTTP for draft/experimental
+ *     features that the SDK does not yet support.
+ *
+ * Both modes share the same SDK-based initialize handshake and session ID.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -8,14 +16,27 @@ import {
   LoggingMessageNotificationSchema,
   ProgressNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
+import { request } from 'undici';
+
+// ─── JSON-RPC Types ──────────────────────────────────────────────────────────
+
+export interface JsonRpcResponse {
+  jsonrpc: '2.0';
+  id: number;
+  result?: Record<string, unknown>;
+  error?: { code: number; message: string; data?: unknown };
+}
+
+// ─── SDK-based Connection ────────────────────────────────────────────────────
 
 export interface MCPClientConnection {
   client: Client;
+  transport: StreamableHTTPClientTransport;
   close: () => Promise<void>;
 }
 
 /**
- * Create and connect an MCP client to a server
+ * Create and connect an MCP client to a server using the SDK.
  */
 export async function connectToServer(
   serverUrl: string
@@ -40,15 +61,140 @@ export async function connectToServer(
 
   return {
     client,
+    transport,
     close: async () => {
       await client.close();
     }
   };
 }
 
+// ─── Raw JSON-RPC Session ────────────────────────────────────────────────────
+
 /**
- * Helper to collect notifications (logging and progress)
+ * A raw MCP session for testing draft/experimental protocol features that the
+ * SDK does not yet support. Uses the SDK for the standard initialize handshake,
+ * then sends raw JSON-RPC over HTTP via undici for subsequent requests.
+ *
+ * Usage:
+ *   const session = await createRawSession(serverUrl);
+ *   const response = await session.send('tools/call', { name: 'my-tool', arguments: {} });
  */
+export class RawMcpSession {
+  private nextId = 1;
+  private sessionId: string | undefined;
+  private serverUrl: string;
+  private connection: MCPClientConnection | null = null;
+
+  constructor(serverUrl: string) {
+    this.serverUrl = serverUrl;
+  }
+
+  /**
+   * Initialize the MCP session using the SDK's connectToServer(),
+   * then extract the session ID for subsequent raw requests.
+   */
+  async initialize(): Promise<void> {
+    this.connection = await connectToServer(this.serverUrl);
+    this.sessionId = this.connection.transport.sessionId;
+  }
+
+  /**
+   * Send a JSON-RPC request via raw HTTP.
+   * Automatically manages session ID and auto-incrementing JSON-RPC IDs.
+   * Handles both JSON and SSE response formats.
+   */
+  async send(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<JsonRpcResponse> {
+    const id = this.nextId++;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream'
+    };
+    if (this.sessionId) {
+      headers['mcp-session-id'] = this.sessionId;
+    }
+
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method,
+      params
+    });
+
+    const response = await request(this.serverUrl, {
+      method: 'POST',
+      headers,
+      body
+    });
+
+    // Update session ID if server sends a new one
+    const sid = response.headers['mcp-session-id'];
+    if (sid) {
+      this.sessionId = Array.isArray(sid) ? sid[0] : sid;
+    }
+
+    const contentType = response.headers['content-type'] ?? '';
+
+    // Handle SSE responses — parse the last JSON-RPC message from the stream
+    if (contentType.includes('text/event-stream')) {
+      const text = await response.body.text();
+      return parseSseResponse(text);
+    }
+
+    // Handle direct JSON responses
+    return (await response.body.json()) as JsonRpcResponse;
+  }
+
+  /**
+   * Close the underlying SDK connection.
+   */
+  async close(): Promise<void> {
+    if (this.connection) {
+      await this.connection.close();
+      this.connection = null;
+    }
+  }
+
+  getSessionId(): string | undefined {
+    return this.sessionId;
+  }
+}
+
+/**
+ * Create an initialized raw MCP session ready for testing.
+ */
+export async function createRawSession(
+  serverUrl: string
+): Promise<RawMcpSession> {
+  const session = new RawMcpSession(serverUrl);
+  await session.initialize();
+  return session;
+}
+
+/**
+ * Parse the last JSON-RPC message from an SSE response body.
+ */
+export function parseSseResponse(sseText: string): JsonRpcResponse {
+  const lines = sseText.split('\n');
+  let lastData: string | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      lastData = line.slice(6);
+    }
+  }
+
+  if (!lastData) {
+    throw new Error('No data found in SSE stream');
+  }
+
+  return JSON.parse(lastData) as JsonRpcResponse;
+}
+
+// ─── Notification Collector ──────────────────────────────────────────────────
 export class NotificationCollector {
   private loggingNotifications: any[] = [];
   private progressNotifications: any[] = [];
