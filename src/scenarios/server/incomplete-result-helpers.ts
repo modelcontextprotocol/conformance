@@ -1,9 +1,9 @@
 /**
- * MRTR-specific helpers for SEP-2322 conformance tests.
+ * IncompleteResult helpers for SEP-2322 conformance tests.
  *
  * Uses RawMcpSession from client-helper.ts for connection management and
- * raw JSON-RPC transport. This file adds only MRTR-specific type guards,
- * mock response builders, and convenience wrappers.
+ * raw JSON-RPC transport. This file adds IncompleteResult-specific type
+ * guards, mock response builders, and convenience wrappers.
  */
 
 import {
@@ -12,11 +12,9 @@ import {
   JsonRpcResponse
 } from './client-helper';
 
-// Re-export generic session types under MRTR-specific aliases for convenience
-export type MrtrSession = RawMcpSession;
-export type { JsonRpcResponse };
+export type { RawMcpSession, JsonRpcResponse };
 
-// ─── MRTR Types ──────────────────────────────────────────────────────────────
+// ─── IncompleteResult Types ──────────────────────────────────────────────────
 
 export interface IncompleteResult {
   result_type?: 'incomplete';
@@ -31,7 +29,7 @@ export interface InputRequestObject {
   params?: Record<string, unknown>;
 }
 
-// ─── MRTR Type Guards ────────────────────────────────────────────────────────
+// ─── Type Guards ─────────────────────────────────────────────────────────────
 
 /**
  * Check if a JSON-RPC result is an IncompleteResult.
@@ -41,7 +39,7 @@ export function isIncompleteResult(
 ): result is IncompleteResult {
   if (!result) return false;
   if (result.result_type === 'incomplete') return true;
-  // Also detect by presence of MRTR fields (for servers that may not set result_type)
+  // Also detect by presence of IncompleteResult fields
   return 'inputRequests' in result || 'requestState' in result;
 }
 
@@ -110,19 +108,19 @@ export function mockListRootsResponse(): Record<string, unknown> {
 // ─── Session Factory ─────────────────────────────────────────────────────────
 
 /**
- * Create an initialized MRTR session ready for testing.
+ * Create an initialized raw MCP session for IncompleteResult testing.
  * Delegates to createRawSession from client-helper.ts.
  */
-export async function createMrtrSession(
+export async function createIncompleteResultSession(
   serverUrl: string
-): Promise<MrtrSession> {
+): Promise<RawMcpSession> {
   return createRawSession(serverUrl);
 }
 
 // ─── Spec References ─────────────────────────────────────────────────────────
 
 /**
- * SEP reference for MRTR tests.
+ * SEP reference for IncompleteResult / MRTR tests.
  */
 export const MRTR_SPEC_REFERENCES = [
   {

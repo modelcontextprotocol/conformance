@@ -1,5 +1,5 @@
 /**
- * SEP-2322: Multi Round-Trip Requests (MRTR) - Persistent Workflow Tests
+ * SEP-2322: IncompleteResult - Persistent Workflow Tests
  *
  * Tests the persistent (task-based) workflow where servers use Tasks to
  * manage long-running operations that require additional input via
@@ -8,19 +8,19 @@
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import {
-  createMrtrSession,
+  createIncompleteResultSession,
   isIncompleteResult,
   isCompleteResult,
   mockElicitResponse,
   MRTR_SPEC_REFERENCES,
-  MrtrSession
-} from './mrtr-helpers';
+  RawMcpSession
+} from './incomplete-result-helpers';
 
 /**
  * Poll tasks/get until the task reaches the expected status or times out.
  */
 async function pollTaskStatus(
-  session: MrtrSession,
+  session: RawMcpSession,
   taskId: string,
   expectedStatus: string,
   maxAttempts: number = 20,
@@ -47,14 +47,14 @@ async function pollTaskStatus(
 
 // ─── B1: Basic Persistent Workflow ───────────────────────────────────────────
 
-export class MrtrPersistentBasicScenario implements ClientScenario {
-  name = 'mrtr-persistent-basic';
+export class IncompleteResultTaskBasicScenario implements ClientScenario {
+  name = 'incomplete-result-task-basic';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test full persistent MRTR workflow via Tasks API (SEP-2322).
+  description = `Test full persistent IncompleteResult workflow via Tasks API (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_persistent\` that supports task-augmented execution.
+Implement a tool named \`test_incomplete_result_task\` that supports task-augmented execution.
 
 **Behavior:**
 1. When called with \`task\` metadata, return a \`CreateTaskResult\` with \`status: "working"\`
@@ -88,11 +88,11 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Step 1: Call tool with task metadata
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_persistent',
+        name: 'test_incomplete_result_task',
         arguments: {},
         task: { ttl: 30000 }
       });
@@ -122,8 +122,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-task-created',
-        name: 'MRTRPersistentTaskCreated',
+        id: 'incomplete-result-task-created',
+        name: 'IncompleteResultTaskCreated',
         description: 'Server creates task with working status',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -149,8 +149,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-input-required',
-        name: 'MRTRPersistentInputRequired',
+        id: 'incomplete-result-task-input-required',
+        name: 'IncompleteResultTaskInputRequired',
         description: 'Task reaches input_required status',
         status: pollErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -181,8 +181,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-tasks-result-incomplete',
-        name: 'MRTRPersistentTasksResultIncomplete',
+        id: 'incomplete-result-task-tasks-result-incomplete',
+        name: 'IncompleteResultTaskTasksResultIncomplete',
         description: 'tasks/result returns IncompleteResult with inputRequests',
         status: r3Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -210,8 +210,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-input-response-sent',
-        name: 'MRTRPersistentInputResponseSent',
+        id: 'incomplete-result-task-input-response-sent',
+        name: 'IncompleteResultTaskInputResponseSent',
         description: 'tasks/input_response is acknowledged by server',
         status: r4Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -228,12 +228,10 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
         if (!r4Result) {
           ackErrors.push('No result from tasks/input_response');
         } else {
-          const meta = r4Result._meta as
-            | Record<string, unknown>
+          const meta = r4Result._meta as Record<string, unknown> | undefined;
+          const relatedTask = meta?.['io.modelcontextprotocol/related-task'] as
+            | { taskId?: string }
             | undefined;
-          const relatedTask = meta?.[
-            'io.modelcontextprotocol/related-task'
-          ] as { taskId?: string } | undefined;
           if (!relatedTask?.taskId) {
             ackErrors.push(
               'Acknowledgment missing _meta.io.modelcontextprotocol/related-task.taskId'
@@ -246,14 +244,13 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
         }
 
         checks.push({
-          id: 'mrtr-persistent-ack-structure',
-          name: 'MRTRPersistentAckStructure',
+          id: 'incomplete-result-task-ack-structure',
+          name: 'IncompleteResultTaskAckStructure',
           description:
             'tasks/input_response acknowledgment includes task metadata',
           status: ackErrors.length === 0 ? 'SUCCESS' : 'WARNING',
           timestamp: new Date().toISOString(),
-          errorMessage:
-            ackErrors.length > 0 ? ackErrors.join('; ') : undefined,
+          errorMessage: ackErrors.length > 0 ? ackErrors.join('; ') : undefined,
           specReferences: MRTR_SPEC_REFERENCES,
           details: { result: r4Result }
         });
@@ -274,8 +271,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-completed',
-        name: 'MRTRPersistentCompleted',
+        id: 'incomplete-result-task-completed',
+        name: 'IncompleteResultTaskCompleted',
         description: 'Task reaches completed status after input_response',
         status: compErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -302,8 +299,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       }
 
       checks.push({
-        id: 'mrtr-persistent-final-result',
-        name: 'MRTRPersistentFinalResult',
+        id: 'incomplete-result-task-final-result',
+        name: 'IncompleteResultTaskFinalResult',
         description: 'tasks/result returns complete final result',
         status: r6Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -313,8 +310,8 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-persistent-task-created',
-        name: 'MRTRPersistentTaskCreated',
+        id: 'incomplete-result-task-created',
+        name: 'IncompleteResultTaskCreated',
         description: 'Server creates task with working status',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -329,14 +326,16 @@ Implement a tool named \`test_mrtr_persistent\` that supports task-augmented exe
 
 // ─── B2: Bad Input Response ──────────────────────────────────────────────────
 
-export class MrtrPersistentBadInputResponseScenario implements ClientScenario {
-  name = 'mrtr-persistent-bad-input-response';
+export class IncompleteResultTaskBadInputResponseScenario
+  implements ClientScenario
+{
+  name = 'incomplete-result-task-bad-input-response';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test error handling when tasks/input_response contains wrong data (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Use the same tool as B1: \`test_mrtr_persistent\`.
+Use the same tool as B1: \`test_incomplete_result_task\`.
 
 **Behavior:** When the client sends \`tasks/input_response\` with incorrect keys, the server SHOULD acknowledge the message but keep the task in \`input_required\` status. The next \`tasks/result\` call should return a new \`inputRequests\` re-requesting the needed information.`;
 
@@ -344,11 +343,11 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Create task and wait for input_required
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_persistent',
+        name: 'test_incomplete_result_task',
         arguments: {},
         task: { ttl: 30000 }
       });
@@ -356,8 +355,8 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
       const task = r1.result?.task as { taskId?: string } | undefined;
       if (!task?.taskId) {
         checks.push({
-          id: 'mrtr-persistent-bad-input-prereq',
-          name: 'MRTRPersistentBadInputPrereq',
+          id: 'incomplete-result-task-bad-input-prereq',
+          name: 'IncompleteResultTaskBadInputPrereq',
           description: 'Prerequisite: Task creation',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -379,8 +378,8 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
         !r3.result.inputRequests
       ) {
         checks.push({
-          id: 'mrtr-persistent-bad-input-prereq',
-          name: 'MRTRPersistentBadInputPrereq',
+          id: 'incomplete-result-task-bad-input-prereq',
+          name: 'IncompleteResultTaskBadInputPrereq',
           description: 'Prerequisite: Get inputRequests',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -438,8 +437,8 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
       }
 
       checks.push({
-        id: 'mrtr-persistent-bad-input-rerequests',
-        name: 'MRTRPersistentBadInputRerequests',
+        id: 'incomplete-result-task-bad-input-rerequests',
+        name: 'IncompleteResultTaskBadInputRerequests',
         description:
           'Server keeps task in input_required and re-requests after bad inputResponses',
         status:
@@ -462,8 +461,8 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-persistent-bad-input-rerequests',
-        name: 'MRTRPersistentBadInputRerequests',
+        id: 'incomplete-result-task-bad-input-rerequests',
+        name: 'IncompleteResultTaskBadInputRerequests',
         description:
           'Server keeps task in input_required and re-requests after bad inputResponses',
         status: 'FAILURE',
@@ -479,16 +478,16 @@ Use the same tool as B1: \`test_mrtr_persistent\`.
 
 // ─── B4: tasks/input_response returning IncompleteResult ─────────────────────
 
-export class MrtrPersistentInputResponseIncompleteScenario
+export class IncompleteResultTaskInputResponseIncompleteScenario
   implements ClientScenario
 {
-  name = 'mrtr-persistent-input-response-incomplete';
+  name = 'incomplete-result-task-input-response-incomplete';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test that tasks/input_response can itself return an IncompleteResult (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_persistent_multi_input\` that supports task-augmented execution and requires TWO rounds of input.
+Implement a tool named \`test_incomplete_result_task_multi_input\` that supports task-augmented execution and requires TWO rounds of input.
 
 **Behavior:**
 1. Create task, transition to \`input_required\`
@@ -503,11 +502,11 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Create task
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_persistent_multi_input',
+        name: 'test_incomplete_result_task_multi_input',
         arguments: {},
         task: { ttl: 30000 }
       });
@@ -515,8 +514,8 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
       const task = r1.result?.task as { taskId?: string } | undefined;
       if (!task?.taskId) {
         checks.push({
-          id: 'mrtr-persistent-multi-input-prereq',
-          name: 'MRTRPersistentMultiInputPrereq',
+          id: 'incomplete-result-task-multi-input-prereq',
+          name: 'IncompleteResultTaskMultiInputPrereq',
           description: 'Prerequisite: Task creation',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -538,8 +537,8 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
         !r3.result.inputRequests
       ) {
         checks.push({
-          id: 'mrtr-persistent-multi-input-prereq',
-          name: 'MRTRPersistentMultiInputPrereq',
+          id: 'incomplete-result-task-multi-input-prereq',
+          name: 'IncompleteResultTaskMultiInputPrereq',
           description: 'Prerequisite: Get first inputRequests',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -578,8 +577,8 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
       }
 
       checks.push({
-        id: 'mrtr-persistent-input-response-returns-incomplete',
-        name: 'MRTRPersistentInputResponseReturnsIncomplete',
+        id: 'incomplete-result-task-input-response-returns-incomplete',
+        name: 'IncompleteResultTaskInputResponseReturnsIncomplete',
         description:
           'tasks/input_response returns IncompleteResult with additional inputRequests',
         status: r4Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -608,8 +607,8 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
           const finalState = await pollTaskStatus(session, taskId, 'completed');
 
           checks.push({
-            id: 'mrtr-persistent-multi-input-completed',
-            name: 'MRTRPersistentMultiInputCompleted',
+            id: 'incomplete-result-task-multi-input-completed',
+            name: 'IncompleteResultTaskMultiInputCompleted',
             description: 'Task completes after second input_response',
             status: finalState?.status === 'completed' ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
@@ -624,8 +623,8 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-persistent-input-response-returns-incomplete',
-        name: 'MRTRPersistentInputResponseReturnsIncomplete',
+        id: 'incomplete-result-task-input-response-returns-incomplete',
+        name: 'IncompleteResultTaskInputResponseReturnsIncomplete',
         description:
           'tasks/input_response returns IncompleteResult with additional inputRequests',
         status: 'FAILURE',

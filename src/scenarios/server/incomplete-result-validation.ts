@@ -1,31 +1,31 @@
 /**
- * SEP-2322: Multi Round-Trip Requests (MRTR) - Schema/Structure Validation Tests
+ * SEP-2322: IncompleteResult - Schema/Structure Validation Tests
  *
- * Tests that validate the structure and correctness of MRTR protocol
+ * Tests that validate the structure and correctness of IncompleteResult protocol
  * messages, including IncompleteResult format, InputRequest types, and
  * result_type field behavior.
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import {
-  createMrtrSession,
+  createIncompleteResultSession,
   isIncompleteResult,
   mockElicitResponse,
   mockSamplingResponse,
   mockListRootsResponse,
   MRTR_SPEC_REFERENCES
-} from './mrtr-helpers';
+} from './incomplete-result-helpers';
 
 // ─── C1: IncompleteResult Structure Validation ──────────────────────────────
 
-export class MrtrIncompleteResultStructureScenario implements ClientScenario {
-  name = 'mrtr-incomplete-result-structure';
+export class IncompleteResultStructureScenario implements ClientScenario {
+  name = 'incomplete-result-structure';
   specVersions: SpecVersion[] = ['draft'];
   description = `Validate the IncompleteResult structure conforms to the schema (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_validate_structure\` that returns an \`IncompleteResult\` with well-formed fields.
+Implement a tool named \`test_incomplete_result_validate_structure\` that returns an \`IncompleteResult\` with well-formed fields.
 
 **Behavior:**
 1. When called, return an \`IncompleteResult\` with both \`inputRequests\` and \`requestState\`:
@@ -63,11 +63,11 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Get IncompleteResult
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_validate_structure',
+        name: 'test_incomplete_result_validate_structure',
         arguments: {}
       });
 
@@ -128,8 +128,8 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
       }
 
       checks.push({
-        id: 'mrtr-validate-incomplete-result-fields',
-        name: 'MRTRValidateIncompleteResultFields',
+        id: 'incomplete-result-validate-incomplete-result-fields',
+        name: 'IncompleteResultValidateIncompleteResultFields',
         description:
           'IncompleteResult has correct result_type, inputRequests, and requestState',
         status: structureErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -146,7 +146,7 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
           r1Result.inputRequests as Record<string, unknown>
         )[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_validate_structure',
+          name: 'test_incomplete_result_validate_structure',
           arguments: {},
           inputResponses: {
             [inputKey]: mockElicitResponse({ value: 'test' })
@@ -178,8 +178,8 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
         }
 
         checks.push({
-          id: 'mrtr-validate-complete-result-default',
-          name: 'MRTRValidateCompleteResultDefault',
+          id: 'incomplete-result-validate-complete-result-default',
+          name: 'IncompleteResultValidateCompleteResultDefault',
           description:
             'Complete result has result_type absent or "complete" (backward compat)',
           status: compatErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -192,8 +192,8 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-validate-incomplete-result-fields',
-        name: 'MRTRValidateIncompleteResultFields',
+        id: 'incomplete-result-validate-incomplete-result-fields',
+        name: 'IncompleteResultValidateIncompleteResultFields',
         description:
           'IncompleteResult has correct result_type, inputRequests, and requestState',
         status: 'FAILURE',
@@ -209,14 +209,14 @@ Implement a tool named \`test_mrtr_validate_structure\` that returns an \`Incomp
 
 // ─── C2: InputRequest Types Validation ───────────────────────────────────────
 
-export class MrtrInputRequestTypesScenario implements ClientScenario {
-  name = 'mrtr-input-request-types';
+export class InputRequestTypesScenario implements ClientScenario {
+  name = 'input-request-types';
   specVersions: SpecVersion[] = ['draft'];
   description = `Validate all three InputRequest types in IncompleteResult.
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_input_types\` that returns an \`IncompleteResult\` containing all three types of \`InputRequest\`.
+Implement a tool named \`test_incomplete_result_input_types\` that returns an \`IncompleteResult\` containing all three types of \`InputRequest\`.
 
 **Behavior:**
 
@@ -260,10 +260,10 @@ When retried with valid \`inputResponses\` for all three, return a final result.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_input_types',
+        name: 'test_incomplete_result_input_types',
         arguments: {}
       });
 
@@ -271,8 +271,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
 
       if (r1.error || !r1Result || !isIncompleteResult(r1Result)) {
         checks.push({
-          id: 'mrtr-validate-input-types-prereq',
-          name: 'MRTRValidateInputTypesPrereq',
+          id: 'incomplete-result-validate-input-types-prereq',
+          name: 'IncompleteResultValidateInputTypesPrereq',
           description: 'Prerequisite: Get IncompleteResult',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -290,8 +290,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
 
       if (!inputRequests) {
         checks.push({
-          id: 'mrtr-validate-input-types-prereq',
-          name: 'MRTRValidateInputTypesPrereq',
+          id: 'incomplete-result-validate-input-types-prereq',
+          name: 'IncompleteResultValidateInputTypesPrereq',
           description: 'Prerequisite: inputRequests present',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -344,8 +344,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       checks.push({
-        id: 'mrtr-validate-elicitation-input-request',
-        name: 'MRTRValidateElicitationInputRequest',
+        id: 'incomplete-result-validate-elicitation-input-request',
+        name: 'IncompleteResultValidateElicitationInputRequest',
         description: 'elicitation/create InputRequest has valid structure',
         status: elicitErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -380,8 +380,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       checks.push({
-        id: 'mrtr-validate-sampling-input-request',
-        name: 'MRTRValidateSamplingInputRequest',
+        id: 'incomplete-result-validate-sampling-input-request',
+        name: 'IncompleteResultValidateSamplingInputRequest',
         description: 'sampling/createMessage InputRequest has valid structure',
         status: samplingErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -403,8 +403,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       checks.push({
-        id: 'mrtr-validate-roots-input-request',
-        name: 'MRTRValidateRootsInputRequest',
+        id: 'incomplete-result-validate-roots-input-request',
+        name: 'IncompleteResultValidateRootsInputRequest',
         description: 'roots/list InputRequest has valid structure',
         status: rootsErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -431,7 +431,7 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       const r2 = await session.send('tools/call', {
-        name: 'test_mrtr_input_types',
+        name: 'test_incomplete_result_input_types',
         arguments: {},
         inputResponses,
         requestState:
@@ -452,8 +452,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       }
 
       checks.push({
-        id: 'mrtr-validate-all-types-retry',
-        name: 'MRTRValidateAllTypesRetry',
+        id: 'incomplete-result-validate-all-types-retry',
+        name: 'IncompleteResultValidateAllTypesRetry',
         description:
           'Retry with all three InputResponse types produces final result',
         status: retryErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -465,8 +465,8 @@ When retried with valid \`inputResponses\` for all three, return a final result.
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-validate-input-types-prereq',
-        name: 'MRTRValidateInputTypesPrereq',
+        id: 'incomplete-result-validate-input-types-prereq',
+        name: 'IncompleteResultValidateInputTypesPrereq',
         description: 'Prerequisite: Get IncompleteResult with InputRequests',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),

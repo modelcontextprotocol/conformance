@@ -53,31 +53,31 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
-// MRTR scenarios (SEP-2322)
+// IncompleteResult scenarios (SEP-2322)
 import {
-  MrtrEphemeralBasicElicitationScenario,
-  MrtrEphemeralBasicSamplingScenario,
-  MrtrEphemeralBasicListRootsScenario,
-  MrtrEphemeralRequestStateScenario,
-  MrtrEphemeralMultipleInputRequestsScenario,
-  MrtrEphemeralMultiRoundScenario,
-  MrtrEphemeralRequestStateOnlyScenario,
-  MrtrEphemeralMissingInputResponseScenario,
-  MrtrEphemeralNonToolRequestScenario
-} from './server/mrtr-ephemeral';
+  IncompleteResultBasicElicitationScenario,
+  IncompleteResultBasicSamplingScenario,
+  IncompleteResultBasicListRootsScenario,
+  IncompleteResultRequestStateScenario,
+  IncompleteResultMultipleInputRequestsScenario,
+  IncompleteResultMultiRoundScenario,
+  IncompleteResultRequestStateOnlyScenario,
+  IncompleteResultMissingInputResponseScenario,
+  IncompleteResultNonToolRequestScenario
+} from './server/incomplete-result';
 
 import {
-  MrtrPersistentBasicScenario,
-  MrtrPersistentBadInputResponseScenario,
-  MrtrPersistentInputResponseIncompleteScenario
-} from './server/mrtr-persistent';
+  IncompleteResultTaskBasicScenario,
+  IncompleteResultTaskBadInputResponseScenario,
+  IncompleteResultTaskInputResponseIncompleteScenario
+} from './server/incomplete-result-tasks';
 
 import {
-  MrtrIncompleteResultStructureScenario,
-  MrtrInputRequestTypesScenario
-} from './server/mrtr-validation';
+  IncompleteResultStructureScenario,
+  InputRequestTypesScenario
+} from './server/incomplete-result-validation';
 
-import { MrtrEphemeralToPersistentScenario } from './server/mrtr-transition';
+import { IncompleteResultToTaskTransitionScenario } from './server/incomplete-result-transition';
 
 import {
   authScenariosList,
@@ -97,24 +97,24 @@ const pendingClientScenariosList: ClientScenario[] = [
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
   new ServerSSEPollingScenario(),
 
-  // MRTR scenarios (SEP-2322) — pending until a conformance test server
-  // implements MRTR tools. These are draft spec scenarios intended to be
-  // run via `--spec-version draft` against MRTR-capable servers.
-  new MrtrEphemeralBasicElicitationScenario(),
-  new MrtrEphemeralBasicSamplingScenario(),
-  new MrtrEphemeralBasicListRootsScenario(),
-  new MrtrEphemeralRequestStateScenario(),
-  new MrtrEphemeralMultipleInputRequestsScenario(),
-  new MrtrEphemeralMultiRoundScenario(),
-  new MrtrEphemeralRequestStateOnlyScenario(),
-  new MrtrEphemeralMissingInputResponseScenario(),
-  new MrtrEphemeralNonToolRequestScenario(),
-  new MrtrPersistentBasicScenario(),
-  new MrtrPersistentBadInputResponseScenario(),
-  new MrtrPersistentInputResponseIncompleteScenario(),
-  new MrtrIncompleteResultStructureScenario(),
-  new MrtrInputRequestTypesScenario(),
-  new MrtrEphemeralToPersistentScenario()
+  // IncompleteResult scenarios (SEP-2322) — pending until a conformance test
+  // server implements IncompleteResult tools. These are draft spec scenarios
+  // intended to be run via `--spec-version draft` against capable servers.
+  new IncompleteResultBasicElicitationScenario(),
+  new IncompleteResultBasicSamplingScenario(),
+  new IncompleteResultBasicListRootsScenario(),
+  new IncompleteResultRequestStateScenario(),
+  new IncompleteResultMultipleInputRequestsScenario(),
+  new IncompleteResultMultiRoundScenario(),
+  new IncompleteResultRequestStateOnlyScenario(),
+  new IncompleteResultMissingInputResponseScenario(),
+  new IncompleteResultNonToolRequestScenario(),
+  new IncompleteResultTaskBasicScenario(),
+  new IncompleteResultTaskBadInputResponseScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario(),
+  new IncompleteResultStructureScenario(),
+  new InputRequestTypesScenario(),
+  new IncompleteResultToTaskTransitionScenario()
 ];
 
 // All client scenarios
@@ -171,28 +171,28 @@ const allClientScenariosList: ClientScenario[] = [
   // Security scenarios
   new DNSRebindingProtectionScenario(),
 
-  // MRTR Ephemeral Workflow scenarios (SEP-2322)
-  new MrtrEphemeralBasicElicitationScenario(),
-  new MrtrEphemeralBasicSamplingScenario(),
-  new MrtrEphemeralBasicListRootsScenario(),
-  new MrtrEphemeralRequestStateScenario(),
-  new MrtrEphemeralMultipleInputRequestsScenario(),
-  new MrtrEphemeralMultiRoundScenario(),
-  new MrtrEphemeralRequestStateOnlyScenario(),
-  new MrtrEphemeralMissingInputResponseScenario(),
-  new MrtrEphemeralNonToolRequestScenario(),
+  // IncompleteResult scenarios (SEP-2322)
+  new IncompleteResultBasicElicitationScenario(),
+  new IncompleteResultBasicSamplingScenario(),
+  new IncompleteResultBasicListRootsScenario(),
+  new IncompleteResultRequestStateScenario(),
+  new IncompleteResultMultipleInputRequestsScenario(),
+  new IncompleteResultMultiRoundScenario(),
+  new IncompleteResultRequestStateOnlyScenario(),
+  new IncompleteResultMissingInputResponseScenario(),
+  new IncompleteResultNonToolRequestScenario(),
 
-  // MRTR Persistent Workflow scenarios (SEP-2322)
-  new MrtrPersistentBasicScenario(),
-  new MrtrPersistentBadInputResponseScenario(),
-  new MrtrPersistentInputResponseIncompleteScenario(),
+  // IncompleteResult Task scenarios (SEP-2322)
+  new IncompleteResultTaskBasicScenario(),
+  new IncompleteResultTaskBadInputResponseScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario(),
 
-  // MRTR Validation scenarios (SEP-2322)
-  new MrtrIncompleteResultStructureScenario(),
-  new MrtrInputRequestTypesScenario(),
+  // IncompleteResult Validation scenarios (SEP-2322)
+  new IncompleteResultStructureScenario(),
+  new InputRequestTypesScenario(),
 
-  // MRTR Transition scenarios (SEP-2322)
-  new MrtrEphemeralToPersistentScenario()
+  // IncompleteResult Transition scenarios (SEP-2322)
+  new IncompleteResultToTaskTransitionScenario()
 ];
 
 // Active client scenarios (excludes pending)

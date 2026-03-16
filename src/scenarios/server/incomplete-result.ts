@@ -1,5 +1,5 @@
 /**
- * SEP-2322: Multi Round-Trip Requests (MRTR) - Ephemeral Workflow Tests
+ * SEP-2322: IncompleteResult - Ephemeral Workflow Tests
  *
  * Tests the ephemeral (stateless) workflow where servers respond with
  * IncompleteResult containing inputRequests and/or requestState, and
@@ -8,21 +8,23 @@
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import {
-  createMrtrSession,
+  createIncompleteResultSession,
   isIncompleteResult,
   isCompleteResult,
   mockElicitResponse,
   mockSamplingResponse,
   mockListRootsResponse,
   MRTR_SPEC_REFERENCES
-} from './mrtr-helpers';
+} from './incomplete-result-helpers';
 
 // ─── A1: Basic Elicitation ────────────────────────────────────────────────────
 
-export class MrtrEphemeralBasicElicitationScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-basic-elicitation';
+export class IncompleteResultBasicElicitationScenario
+  implements ClientScenario
+{
+  name = 'incomplete-result-basic-elicitation';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral MRTR flow with a single elicitation input request (SEP-2322).
+  description = `Test basic ephemeral IncompleteResult flow with a single elicitation input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
@@ -63,7 +65,7 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1: Initial call — expect IncompleteResult
       const r1 = await session.send('tools/call', {
@@ -99,8 +101,8 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-elicitation-incomplete',
-        name: 'MRTREphemeralElicitationIncomplete',
+        id: 'incomplete-result-elicitation-incomplete',
+        name: 'IncompleteResultElicitationIncomplete',
         description:
           'Server returns IncompleteResult with elicitation inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -113,7 +115,7 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       // Round 2: Retry with inputResponses — expect complete result
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_ephemeral_elicitation',
+          name: 'test_incomplete_result_elicitation',
           arguments: {},
           inputResponses: {
             user_name: mockElicitResponse({ name: 'Alice' })
@@ -144,8 +146,8 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-elicitation-complete',
-          name: 'MRTREphemeralElicitationComplete',
+          id: 'incomplete-result-elicitation-complete',
+          name: 'IncompleteResultElicitationComplete',
           description:
             'Server returns complete result after retry with inputResponses',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -157,8 +159,8 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-elicitation-incomplete',
-        name: 'MRTREphemeralElicitationIncomplete',
+        id: 'incomplete-result-elicitation-incomplete',
+        name: 'IncompleteResultElicitationIncomplete',
         description:
           'Server returns IncompleteResult with elicitation inputRequest',
         status: 'FAILURE',
@@ -174,14 +176,14 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
 
 // ─── A2: Basic Sampling ──────────────────────────────────────────────────────
 
-export class MrtrEphemeralBasicSamplingScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-basic-sampling';
+export class IncompleteResultBasicSamplingScenario implements ClientScenario {
+  name = 'incomplete-result-basic-sampling';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral MRTR flow with a single sampling input request (SEP-2322).
+  description = `Test basic ephemeral IncompleteResult flow with a single sampling input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
+Implement a tool named \`test_incomplete_result_sampling\` (no arguments required).
 
 **Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
 
@@ -209,11 +211,11 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_ephemeral_sampling',
+        name: 'test_incomplete_result_sampling',
         arguments: {}
       });
 
@@ -245,8 +247,8 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-sampling-incomplete',
-        name: 'MRTREphemeralSamplingIncomplete',
+        id: 'incomplete-result-sampling-incomplete',
+        name: 'IncompleteResultSamplingIncomplete',
         description:
           'Server returns IncompleteResult with sampling inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -260,7 +262,7 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_ephemeral_sampling',
+          name: 'test_incomplete_result_sampling',
           arguments: {},
           inputResponses: {
             [inputKey]: mockSamplingResponse('The capital of France is Paris.')
@@ -284,8 +286,8 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-sampling-complete',
-          name: 'MRTREphemeralSamplingComplete',
+          id: 'incomplete-result-sampling-complete',
+          name: 'IncompleteResultSamplingComplete',
           description:
             'Server returns complete result after retry with sampling response',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -297,8 +299,8 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-sampling-incomplete',
-        name: 'MRTREphemeralSamplingIncomplete',
+        id: 'incomplete-result-sampling-incomplete',
+        name: 'IncompleteResultSamplingIncomplete',
         description:
           'Server returns IncompleteResult with sampling inputRequest',
         status: 'FAILURE',
@@ -314,14 +316,14 @@ Implement a tool named \`test_mrtr_ephemeral_sampling\` (no arguments required).
 
 // ─── A3: Basic ListRoots ─────────────────────────────────────────────────────
 
-export class MrtrEphemeralBasicListRootsScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-basic-list-roots';
+export class IncompleteResultBasicListRootsScenario implements ClientScenario {
+  name = 'incomplete-result-basic-list-roots';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral MRTR flow with a single roots/list input request (SEP-2322).
+  description = `Test basic ephemeral IncompleteResult flow with a single roots/list input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required).
+Implement a tool named \`test_incomplete_result_list_roots\` (no arguments required).
 
 **Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
 
@@ -343,11 +345,11 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_ephemeral_list_roots',
+        name: 'test_incomplete_result_list_roots',
         arguments: {}
       });
 
@@ -379,8 +381,8 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-list-roots-incomplete',
-        name: 'MRTREphemeralListRootsIncomplete',
+        id: 'incomplete-result-list-roots-incomplete',
+        name: 'IncompleteResultListRootsIncomplete',
         description:
           'Server returns IncompleteResult with roots/list inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -394,7 +396,7 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_ephemeral_list_roots',
+          name: 'test_incomplete_result_list_roots',
           arguments: {},
           inputResponses: {
             [inputKey]: mockListRootsResponse()
@@ -418,8 +420,8 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-list-roots-complete',
-          name: 'MRTREphemeralListRootsComplete',
+          id: 'incomplete-result-list-roots-complete',
+          name: 'IncompleteResultListRootsComplete',
           description:
             'Server returns complete result after retry with roots response',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -431,8 +433,8 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-list-roots-incomplete',
-        name: 'MRTREphemeralListRootsIncomplete',
+        id: 'incomplete-result-list-roots-incomplete',
+        name: 'IncompleteResultListRootsIncomplete',
         description:
           'Server returns IncompleteResult with roots/list inputRequest',
         status: 'FAILURE',
@@ -448,14 +450,14 @@ Implement a tool named \`test_mrtr_ephemeral_list_roots\` (no arguments required
 
 // ─── A4: Request State ──────────────────────────────────────────────────────
 
-export class MrtrEphemeralRequestStateScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-request-state';
+export class IncompleteResultRequestStateScenario implements ClientScenario {
+  name = 'incomplete-result-request-state';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test that requestState is correctly round-tripped in ephemeral MRTR flow (SEP-2322).
+  description = `Test that requestState is correctly round-tripped in ephemeral IncompleteResult flow (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_request_state\` (no arguments required).
+Implement a tool named \`test_incomplete_result_request_state\` (no arguments required).
 
 **Behavior (Round 1):** Return an \`IncompleteResult\` with both \`inputRequests\` and \`requestState\`:
 
@@ -485,11 +487,11 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_request_state',
+        name: 'test_incomplete_result_request_state',
         arguments: {}
       });
 
@@ -513,8 +515,8 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-request-state-incomplete',
-        name: 'MRTRRequestStateIncomplete',
+        id: 'incomplete-result-request-state-incomplete',
+        name: 'IncompleteResultRequestStateIncomplete',
         description:
           'Server returns IncompleteResult with both inputRequests and requestState',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -528,7 +530,7 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_request_state',
+          name: 'test_incomplete_result_request_state',
           arguments: {},
           inputResponses: {
             [inputKey]: mockElicitResponse({ ok: true })
@@ -561,8 +563,8 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-request-state-complete',
-          name: 'MRTRRequestStateComplete',
+          id: 'incomplete-result-request-state-complete',
+          name: 'IncompleteResultRequestStateComplete',
           description:
             'Server validates echoed requestState and returns complete result',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -574,8 +576,8 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-request-state-incomplete',
-        name: 'MRTRRequestStateIncomplete',
+        id: 'incomplete-result-request-state-incomplete',
+        name: 'IncompleteResultRequestStateIncomplete',
         description:
           'Server returns IncompleteResult with both inputRequests and requestState',
         status: 'FAILURE',
@@ -591,16 +593,16 @@ Implement a tool named \`test_mrtr_request_state\` (no arguments required).
 
 // ─── A5: Multiple Input Requests ─────────────────────────────────────────────
 
-export class MrtrEphemeralMultipleInputRequestsScenario
+export class IncompleteResultMultipleInputRequestsScenario
   implements ClientScenario
 {
-  name = 'mrtr-ephemeral-multiple-input-requests';
+  name = 'incomplete-result-multiple-input-requests';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test multiple input requests in a single IncompleteResult (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
+Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments required).
 
 **Behavior (Round 1):** Return an \`IncompleteResult\` with multiple \`inputRequests\` — at least one elicitation AND one sampling:
 
@@ -636,11 +638,11 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_multiple_inputs',
+        name: 'test_incomplete_result_multiple_inputs',
         arguments: {}
       });
 
@@ -672,8 +674,8 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-multiple-inputs-incomplete',
-        name: 'MRTRMultipleInputsIncomplete',
+        id: 'incomplete-result-multiple-inputs-incomplete',
+        name: 'IncompleteResultMultipleInputsIncomplete',
         description:
           'Server returns IncompleteResult with multiple inputRequests of different types',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -697,7 +699,7 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
         }
 
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_multiple_inputs',
+          name: 'test_incomplete_result_multiple_inputs',
           arguments: {},
           inputResponses,
           ...(r1Result.requestState !== undefined
@@ -719,8 +721,8 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-multiple-inputs-complete',
-          name: 'MRTRMultipleInputsComplete',
+          id: 'incomplete-result-multiple-inputs-complete',
+          name: 'IncompleteResultMultipleInputsComplete',
           description:
             'Server returns complete result after all inputResponses are provided',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -732,8 +734,8 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-multiple-inputs-incomplete',
-        name: 'MRTRMultipleInputsIncomplete',
+        id: 'incomplete-result-multiple-inputs-incomplete',
+        name: 'IncompleteResultMultipleInputsIncomplete',
         description:
           'Server returns IncompleteResult with multiple inputRequests of different types',
         status: 'FAILURE',
@@ -749,14 +751,14 @@ Implement a tool named \`test_mrtr_multiple_inputs\` (no arguments required).
 
 // ─── A6: Multi-Round ─────────────────────────────────────────────────────────
 
-export class MrtrEphemeralMultiRoundScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-multi-round';
+export class IncompleteResultMultiRoundScenario implements ClientScenario {
+  name = 'incomplete-result-multi-round';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test multi-round ephemeral MRTR flow with evolving requestState (SEP-2322).
+  description = `Test multi-round ephemeral IncompleteResult flow with evolving requestState (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
+Implement a tool named \`test_incomplete_result_multi_round\` (no arguments required).
 
 **Behavior (Round 1):** Return an \`IncompleteResult\` with an elicitation request and \`requestState\`:
 
@@ -808,11 +810,11 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_multi_round',
+        name: 'test_incomplete_result_multi_round',
         arguments: {}
       });
 
@@ -830,8 +832,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-multi-round-r1',
-        name: 'MRTRMultiRoundR1',
+        id: 'incomplete-result-multi-round-r1',
+        name: 'IncompleteResultMultiRoundR1',
         description:
           'Round 1: Server returns IncompleteResult with requestState',
         status: r1Ok ? 'SUCCESS' : 'FAILURE',
@@ -848,7 +850,7 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       // Round 2: Retry — expect another IncompleteResult
       const r1InputKey = Object.keys(r1Result.inputRequests!)[0];
       const r2 = await session.send('tools/call', {
-        name: 'test_mrtr_multi_round',
+        name: 'test_incomplete_result_multi_round',
         arguments: {},
         inputResponses: {
           [r1InputKey]: mockElicitResponse({ name: 'Alice' })
@@ -873,8 +875,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-multi-round-r2',
-        name: 'MRTRMultiRoundR2',
+        id: 'incomplete-result-multi-round-r2',
+        name: 'IncompleteResultMultiRoundR2',
         description:
           'Round 2: Server returns another IncompleteResult with updated requestState',
         status: r2Ok ? 'SUCCESS' : 'FAILURE',
@@ -891,7 +893,7 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       // Round 3: Final retry — expect complete result
       const r2InputKey = Object.keys(r2Result.inputRequests!)[0];
       const r3 = await session.send('tools/call', {
-        name: 'test_mrtr_multi_round',
+        name: 'test_incomplete_result_multi_round',
         arguments: {},
         inputResponses: {
           [r2InputKey]: mockElicitResponse({ color: 'blue' })
@@ -903,8 +905,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       const r3Ok = !r3.error && r3Result != null && isCompleteResult(r3Result);
 
       checks.push({
-        id: 'mrtr-ephemeral-multi-round-r3',
-        name: 'MRTRMultiRoundR3',
+        id: 'incomplete-result-multi-round-r3',
+        name: 'IncompleteResultMultiRoundR3',
         description: 'Round 3: Server returns complete result',
         status: r3Ok ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -916,8 +918,8 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-multi-round-r1',
-        name: 'MRTRMultiRoundR1',
+        id: 'incomplete-result-multi-round-r1',
+        name: 'IncompleteResultMultiRoundR1',
         description:
           'Round 1: Server returns IncompleteResult with requestState',
         status: 'FAILURE',
@@ -933,14 +935,16 @@ Implement a tool named \`test_mrtr_multi_round\` (no arguments required).
 
 // ─── A7: Request State Only ──────────────────────────────────
 
-export class MrtrEphemeralRequestStateOnlyScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-request-state-only';
+export class IncompleteResultRequestStateOnlyScenario
+  implements ClientScenario
+{
+  name = 'incomplete-result-request-state-only';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test IncompleteResult with requestState only — no inputRequests (load-shedding use case, SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_state_only\` (no arguments required).
+Implement a tool named \`test_incomplete_result_state_only\` (no arguments required).
 
 **Behavior (Round 1):** Return an \`IncompleteResult\` with \`requestState\` but NO \`inputRequests\`:
 
@@ -959,11 +963,11 @@ This simulates load shedding where the server transfers accumulated computation 
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1: Expect IncompleteResult with requestState only
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_state_only',
+        name: 'test_incomplete_result_state_only',
         arguments: {}
       });
 
@@ -986,8 +990,8 @@ This simulates load shedding where the server transfers accumulated computation 
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-state-only-incomplete',
-        name: 'MRTRStateOnlyIncomplete',
+        id: 'incomplete-result-state-only-incomplete',
+        name: 'IncompleteResultStateOnlyIncomplete',
         description:
           'Server returns IncompleteResult with requestState only (no inputRequests)',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -1000,7 +1004,7 @@ This simulates load shedding where the server transfers accumulated computation 
       // Round 2: Retry with requestState only
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const r2 = await session.send('tools/call', {
-          name: 'test_mrtr_state_only',
+          name: 'test_incomplete_result_state_only',
           arguments: {},
           requestState: r1Result.requestState
         });
@@ -1010,8 +1014,8 @@ This simulates load shedding where the server transfers accumulated computation 
           !r2.error && r2Result != null && isCompleteResult(r2Result);
 
         checks.push({
-          id: 'mrtr-ephemeral-state-only-complete',
-          name: 'MRTRStateOnlyComplete',
+          id: 'incomplete-result-state-only-complete',
+          name: 'IncompleteResultStateOnlyComplete',
           description:
             'Server completes after receiving echoed requestState (no inputResponses needed)',
           status: r2Ok ? 'SUCCESS' : 'FAILURE',
@@ -1025,8 +1029,8 @@ This simulates load shedding where the server transfers accumulated computation 
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-state-only-incomplete',
-        name: 'MRTRStateOnlyIncomplete',
+        id: 'incomplete-result-state-only-incomplete',
+        name: 'IncompleteResultStateOnlyIncomplete',
         description:
           'Server returns IncompleteResult with requestState only (no inputRequests)',
         status: 'FAILURE',
@@ -1042,16 +1046,16 @@ This simulates load shedding where the server transfers accumulated computation 
 
 // ─── A8: Missing Input Response ──────────────────────────────────────────────
 
-export class MrtrEphemeralMissingInputResponseScenario
+export class IncompleteResultMissingInputResponseScenario
   implements ClientScenario
 {
-  name = 'mrtr-ephemeral-missing-input-response';
+  name = 'incomplete-result-missing-input-response';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test error handling when client sends wrong/missing inputResponses (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
+Use the same tool as A1: \`test_incomplete_result_elicitation\`.
 
 **Behavior:** When the client retries with \`inputResponses\` that are missing required keys or contain wrong keys, the server SHOULD respond with a new \`IncompleteResult\` re-requesting the missing information (NOT a JSON-RPC error).`;
 
@@ -1059,11 +1063,11 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1: Get the initial IncompleteResult
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_ephemeral_elicitation',
+        name: 'test_incomplete_result_elicitation',
         arguments: {}
       });
 
@@ -1074,8 +1078,8 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
         !r1.result.inputRequests
       ) {
         checks.push({
-          id: 'mrtr-ephemeral-missing-response-prereq',
-          name: 'MRTRMissingResponsePrereq',
+          id: 'incomplete-result-missing-response-prereq',
+          name: 'IncompleteResultMissingResponsePrereq',
           description: 'Prerequisite: Server returns IncompleteResult',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
@@ -1088,7 +1092,7 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
 
       // Round 2: Send wrong inputResponses (wrong key)
       const r2 = await session.send('tools/call', {
-        name: 'test_mrtr_ephemeral_elicitation',
+        name: 'test_incomplete_result_elicitation',
         arguments: {},
         inputResponses: {
           wrong_key: mockElicitResponse({ data: 'wrong' })
@@ -1117,8 +1121,8 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-missing-response-rerequests',
-        name: 'MRTRMissingResponseRerequests',
+        id: 'incomplete-result-missing-response-rerequests',
+        name: 'IncompleteResultMissingResponseRerequests',
         description:
           'Server re-requests missing inputResponses via new IncompleteResult',
         status: r2Errors.length === 0 ? 'SUCCESS' : 'WARNING',
@@ -1129,8 +1133,8 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-missing-response-rerequests',
-        name: 'MRTRMissingResponseRerequests',
+        id: 'incomplete-result-missing-response-rerequests',
+        name: 'IncompleteResultMissingResponseRerequests',
         description:
           'Server re-requests missing inputResponses via new IncompleteResult',
         status: 'FAILURE',
@@ -1146,16 +1150,16 @@ Use the same tool as A1: \`test_mrtr_ephemeral_elicitation\`.
 
 // ─── A9: Non-Tool Request (prompts/get) ──────────────────────────────────────
 
-export class MrtrEphemeralNonToolRequestScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-non-tool-request';
+export class IncompleteResultNonToolRequestScenario implements ClientScenario {
+  name = 'incomplete-result-non-tool-request';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test IncompleteResult on a non-tool request (prompts/get) to verify MRTR is universal (SEP-2322).
+  description = `Test IncompleteResult on a non-tool request (prompts/get) to verify IncompleteResult is universal (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
+Implement a prompt named \`test_incomplete_result_prompt\` that requires elicitation input.
 
-**Behavior (Round 1):** When \`prompts/get\` is called for \`test_mrtr_prompt\` without \`inputResponses\`, return an \`IncompleteResult\`:
+**Behavior (Round 1):** When \`prompts/get\` is called for \`test_incomplete_result_prompt\` without \`inputResponses\`, return an \`IncompleteResult\`:
 
 \`\`\`json
 {
@@ -1182,11 +1186,11 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('prompts/get', {
-        name: 'test_mrtr_prompt'
+        name: 'test_incomplete_result_prompt'
       });
 
       const r1Result = r1.result;
@@ -1201,8 +1205,8 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
       }
 
       checks.push({
-        id: 'mrtr-ephemeral-non-tool-incomplete',
-        name: 'MRTRNonToolIncomplete',
+        id: 'incomplete-result-non-tool-incomplete',
+        name: 'IncompleteResultNonToolIncomplete',
         description: 'prompts/get returns IncompleteResult with inputRequests',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -1215,7 +1219,7 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('prompts/get', {
-          name: 'test_mrtr_prompt',
+          name: 'test_incomplete_result_prompt',
           inputResponses: {
             [inputKey]: mockElicitResponse({ context: 'test context' })
           },
@@ -1240,8 +1244,8 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
         }
 
         checks.push({
-          id: 'mrtr-ephemeral-non-tool-complete',
-          name: 'MRTRNonToolComplete',
+          id: 'incomplete-result-non-tool-complete',
+          name: 'IncompleteResultNonToolComplete',
           description:
             'prompts/get returns complete GetPromptResult after retry with inputResponses',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -1253,8 +1257,8 @@ Implement a prompt named \`test_mrtr_prompt\` that requires elicitation input.
       }
     } catch (error) {
       checks.push({
-        id: 'mrtr-ephemeral-non-tool-incomplete',
-        name: 'MRTRNonToolIncomplete',
+        id: 'incomplete-result-non-tool-incomplete',
+        name: 'IncompleteResultNonToolIncomplete',
         description: 'prompts/get returns IncompleteResult with inputRequests',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),

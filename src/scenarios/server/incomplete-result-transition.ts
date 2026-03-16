@@ -1,25 +1,25 @@
 /**
- * SEP-2322: Multi Round-Trip Requests (MRTR) - Ephemeral-to-Persistent Transition Test
+ * SEP-2322: IncompleteResult - IncompleteResult-to-Task Transition Test
  *
- * Tests the transition from an ephemeral workflow to a persistent (task-based)
- * workflow, as described in the SEP section "Interactions Between Ephemeral and
- * Persistent Workflows."
+ * Tests the transition from an IncompleteResult workflow to a task-based
+ * workflow, as described in the SEP section "Interactions Between IncompleteResult
+ * and Task-Based Workflows."
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import {
-  createMrtrSession,
+  createIncompleteResultSession,
   isIncompleteResult,
   mockElicitResponse,
   MRTR_SPEC_REFERENCES,
-  MrtrSession
-} from './mrtr-helpers';
+  RawMcpSession
+} from './incomplete-result-helpers';
 
 /**
  * Poll tasks/get until the task reaches the expected status or times out.
  */
 async function pollTaskStatus(
-  session: MrtrSession,
+  session: RawMcpSession,
   taskId: string,
   expectedStatus: string,
   maxAttempts: number = 20,
@@ -43,33 +43,35 @@ async function pollTaskStatus(
   return null;
 }
 
-// ─── D1: Ephemeral-to-Persistent Transition ─────────────────────────────────
+// ─── D1: IncompleteResult-to-Task Transition ─────────────────────────────────
 
-export class MrtrEphemeralToPersistentScenario implements ClientScenario {
-  name = 'mrtr-ephemeral-to-persistent';
+export class IncompleteResultToTaskTransitionScenario
+  implements ClientScenario
+{
+  name = 'incomplete-result-to-task-transition';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test transition from ephemeral to persistent workflow (SEP-2322).
+  description = `Test transition from IncompleteResult to task-based workflow (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_mrtr_transition\` that demonstrates the ephemeral-to-persistent workflow transition.
+Implement a tool named \`test_incomplete_result_transition\` that demonstrates the IncompleteResult-to-task-based workflow transition.
 
 **Behavior:**
-1. When called with \`task\` metadata in params, the server initially responds with an ephemeral \`IncompleteResult\` (with \`inputRequests\`) rather than creating a task immediately
-2. When the client retries the \`tools/call\` with \`inputResponses\` AND \`task\` metadata, the server now creates a persistent task and returns a \`CreateTaskResult\` with a task ID
+1. When called with \`task\` metadata in params, the server initially responds with an \`IncompleteResult\` (with \`inputRequests\`) rather than creating a task immediately
+2. When the client retries the \`tools/call\` with \`inputResponses\` AND \`task\` metadata, the server now creates a task and returns a \`CreateTaskResult\` with a task ID
 3. The task can then be managed via the Tasks API
 
-This tests the pattern where a server gathers required input via ephemeral MRTR before committing to task creation, as described in the SEP section "Interactions Between Ephemeral and Persistent Workflows."`;
+This tests the pattern where a server gathers required input via IncompleteResult before committing to task creation, as described in the SEP section "Interactions Between IncompleteResult and Task-Based Workflows."`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createMrtrSession(serverUrl);
+      const session = await createIncompleteResultSession(serverUrl);
 
-      // Step 1: Call tool with task metadata — server responds ephemerally
+      // Step 1: Call tool with task metadata — server responds with IncompleteResult
       const r1 = await session.send('tools/call', {
-        name: 'test_mrtr_transition',
+        name: 'test_incomplete_result_transition',
         arguments: {},
         task: { ttl: 30000 }
       });
@@ -83,24 +85,24 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
         ephErrors.push('No result in response');
       } else if (!isIncompleteResult(r1Result)) {
         ephErrors.push(
-          'Expected initial IncompleteResult (ephemeral response despite task metadata)'
+          'Expected initial IncompleteResult (IncompleteResult response despite task metadata)'
         );
       } else if (!r1Result.inputRequests) {
         ephErrors.push('IncompleteResult missing inputRequests');
       } else {
-        // Verify there is NO task in the response — it should be ephemeral
+        // Verify there is NO task in the response — it should be IncompleteResult
         if (r1Result.task) {
           ephErrors.push(
-            'Ephemeral step should not include task — expected no task creation yet'
+            'IncompleteResult step should not include task — expected no task creation yet'
           );
         }
       }
 
       checks.push({
-        id: 'mrtr-transition-ephemeral-phase',
-        name: 'MRTRTransitionEphemeralPhase',
+        id: 'incomplete-result-transition-ephemeral-phase',
+        name: 'IncompleteResultTransitionEphemeralPhase',
         description:
-          'Server responds with ephemeral IncompleteResult before creating task',
+          'Server responds with IncompleteResult before creating task',
         status: ephErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: ephErrors.length > 0 ? ephErrors.join('; ') : undefined,
@@ -115,7 +117,7 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
         r1Result.inputRequests as Record<string, unknown>
       )[0];
       const r2 = await session.send('tools/call', {
-        name: 'test_mrtr_transition',
+        name: 'test_incomplete_result_transition',
         arguments: {},
         inputResponses: {
           [inputKey]: mockElicitResponse({ confirmed: true })
@@ -136,7 +138,7 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
       } else if (!r2Result) {
         transErrors.push('No result from retry');
       } else {
-        // Should now have a task (persistent workflow)
+        // Should now have a task (task-based workflow)
         const task = r2Result.task as
           | { taskId?: string; status?: string }
           | undefined;
@@ -150,10 +152,10 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
       }
 
       checks.push({
-        id: 'mrtr-transition-task-created',
-        name: 'MRTRTransitionTaskCreated',
+        id: 'incomplete-result-transition-task-created',
+        name: 'IncompleteResultTransitionTaskCreated',
         description:
-          'Server transitions to persistent workflow and creates task',
+          'Server transitions to task-based workflow and creates task',
         status: transErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage:
@@ -185,8 +187,8 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
       }
 
       checks.push({
-        id: 'mrtr-transition-task-accessible',
-        name: 'MRTRTransitionTaskAccessible',
+        id: 'incomplete-result-transition-task-accessible',
+        name: 'IncompleteResultTransitionTaskAccessible',
         description:
           'Created task is accessible via Tasks API after transition',
         status: taskErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -197,10 +199,10 @@ This tests the pattern where a server gathers required input via ephemeral MRTR 
       });
     } catch (error) {
       checks.push({
-        id: 'mrtr-transition-ephemeral-phase',
-        name: 'MRTRTransitionEphemeralPhase',
+        id: 'incomplete-result-transition-ephemeral-phase',
+        name: 'IncompleteResultTransitionEphemeralPhase',
         description:
-          'Server responds with ephemeral IncompleteResult before creating task',
+          'Server responds with IncompleteResult before creating task',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
