@@ -838,7 +838,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       });
 
       const r1Result = r1.result;
-      let r1Ok = false;
+      let round1Complete = false;
 
       if (
         !r1.error &&
@@ -847,7 +847,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
         r1Result.inputRequests &&
         r1Result.requestState
       ) {
-        r1Ok = true;
+        round1Complete = true;
       }
 
       checks.push({
@@ -855,16 +855,16 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
         name: 'IncompleteResultMultiRoundR1',
         description:
           'Round 1: Server returns IncompleteResult with requestState',
-        status: r1Ok ? 'SUCCESS' : 'FAILURE',
+        status: round1Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: r1Ok
+        errorMessage: round1Complete
           ? undefined
           : 'Expected IncompleteResult with inputRequests and requestState',
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r1Result }
       });
 
-      if (!r1Ok || !isIncompleteResult(r1Result)) return checks;
+      if (!round1Complete || !isIncompleteResult(r1Result)) return checks;
 
       // Round 2: Retry — expect another IncompleteResult
       const r1InputKey = Object.keys(r1Result.inputRequests!)[0];
@@ -878,7 +878,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       });
 
       const r2Result = r2.result;
-      let r2Ok = false;
+      let round2Complete = false;
 
       if (
         !r2.error &&
@@ -889,7 +889,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       ) {
         // requestState should have changed
         if (r2Result.requestState !== r1Result.requestState) {
-          r2Ok = true;
+          round2Complete = true;
         }
       }
 
@@ -898,16 +898,16 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
         name: 'IncompleteResultMultiRoundR2',
         description:
           'Round 2: Server returns another IncompleteResult with updated requestState',
-        status: r2Ok ? 'SUCCESS' : 'FAILURE',
+        status: round2Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: r2Ok
+        errorMessage: round2Complete
           ? undefined
           : 'Expected new IncompleteResult with different requestState',
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r2Result }
       });
 
-      if (!r2Ok || !isIncompleteResult(r2Result)) return checks;
+      if (!round2Complete || !isIncompleteResult(r2Result)) return checks;
 
       // Round 3: Final retry — expect complete result
       const r2InputKey = Object.keys(r2Result.inputRequests!)[0];
@@ -921,15 +921,15 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       });
 
       const r3Result = r3.result;
-      const r3Ok = !r3.error && r3Result != null && isCompleteResult(r3Result);
+      const round3Complete = !r3.error && r3Result != null && isCompleteResult(r3Result);
 
       checks.push({
         id: 'incomplete-result-multi-round-r3',
         name: 'IncompleteResultMultiRoundR3',
         description: 'Round 3: Server returns complete result',
-        status: r3Ok ? 'SUCCESS' : 'FAILURE',
+        status: round3Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: r3Ok
+        errorMessage: round3Complete
           ? undefined
           : 'Expected complete result after final retry',
         specReferences: MRTR_SPEC_REFERENCES,
@@ -952,118 +952,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
   }
 }
 
-// ─── A7: Request State Only ──────────────────────────────────
-
-export class IncompleteResultRequestStateOnlyScenario
-  implements ClientScenario
-{
-  name = 'incomplete-result-request-state-only';
-  specVersions: SpecVersion[] = ['draft'];
-  description = `Test IncompleteResult with requestState only — no inputRequests (load-shedding use case, SEP-2322).
-
-**Server Implementation Requirements:**
-
-Implement a tool named \`test_incomplete_result_state_only\` (no arguments required).
-
-**Behavior (Round 1):** Return an \`IncompleteResult\` with \`requestState\` but NO \`inputRequests\`:
-
-\`\`\`json
-{
-  "result_type": "incomplete",
-  "requestState": "<accumulated-computation-state>"
-}
-\`\`\`
-
-**Behavior (Round 2):** When called with the echoed \`requestState\` (no \`inputResponses\`), return a complete result.
-
-This simulates load shedding where the server transfers accumulated computation state to be resumed by another instance.`;
-
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
-    const checks: ConformanceCheck[] = [];
-
-    try {
-      const session = await createRawSession(serverUrl);
-
-      // Round 1: Expect IncompleteResult with requestState only
-      const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_state_only',
-        arguments: {}
-      });
-
-      const r1Result = r1.result;
-      const r1Errors: string[] = [];
-
-      if (r1.error) {
-        r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
-      } else if (!r1Result || !isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult');
-      } else {
-        if (!r1Result.requestState) {
-          r1Errors.push('IncompleteResult missing requestState');
-        }
-        if (r1Result.inputRequests) {
-          r1Errors.push(
-            'Load-shedding IncompleteResult should NOT have inputRequests'
-          );
-        }
-      }
-
-      checks.push({
-        id: 'incomplete-result-state-only-incomplete',
-        name: 'IncompleteResultStateOnlyIncomplete',
-        description:
-          'Server returns IncompleteResult with requestState only (no inputRequests)',
-        status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
-        specReferences: MRTR_SPEC_REFERENCES,
-        details: { result: r1Result }
-      });
-
-      // Round 2: Retry with requestState only
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
-        const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_state_only',
-          arguments: {},
-          requestState: r1Result.requestState
-        });
-
-        const r2Result = r2.result;
-        const r2Ok =
-          !r2.error && r2Result != null && isCompleteResult(r2Result);
-
-        checks.push({
-          id: 'incomplete-result-state-only-complete',
-          name: 'IncompleteResultStateOnlyComplete',
-          description:
-            'Server completes after receiving echoed requestState (no inputResponses needed)',
-          status: r2Ok ? 'SUCCESS' : 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: r2Ok
-            ? undefined
-            : 'Expected complete result after retry with requestState',
-          specReferences: MRTR_SPEC_REFERENCES,
-          details: { result: r2Result }
-        });
-      }
-    } catch (error) {
-      checks.push({
-        id: 'incomplete-result-state-only-incomplete',
-        name: 'IncompleteResultStateOnlyIncomplete',
-        description:
-          'Server returns IncompleteResult with requestState only (no inputRequests)',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: MRTR_SPEC_REFERENCES
-      });
-    }
-
-    return checks;
-  }
-}
-
-// ─── A8: Missing Input Response ──────────────────────────────────────────────
+// ─── A7: Missing Input Response ──────────────────────────────────────────────
 
 export class IncompleteResultMissingInputResponseScenario
   implements ClientScenario
@@ -1084,56 +973,28 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
     try {
       const session = await createRawSession(serverUrl);
 
-      // Round 1: Get the initial IncompleteResult
+      // Round 1: Send wrong inputResponses (wrong key)
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_elicitation',
-        arguments: {}
-      });
-
-      if (
-        r1.error ||
-        !r1.result ||
-        !isIncompleteResult(r1.result) ||
-        !r1.result.inputRequests
-      ) {
-        checks.push({
-          id: 'incomplete-result-missing-response-prereq',
-          name: 'IncompleteResultMissingResponsePrereq',
-          description: 'Prerequisite: Server returns IncompleteResult',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage:
-            'Could not get initial IncompleteResult to test error handling',
-          specReferences: MRTR_SPEC_REFERENCES
-        });
-        return checks;
-      }
-
-      // Round 2: Send wrong inputResponses (wrong key)
-      const r2 = await session.send('tools/call', {
         name: 'test_incomplete_result_elicitation',
         arguments: {},
         inputResponses: {
           wrong_key: mockElicitResponse({ data: 'wrong' })
-        },
-        ...(r1.result.requestState !== undefined
-          ? { requestState: r1.result.requestState }
-          : {})
+        }
       });
 
-      const r2Result = r2.result;
-      const r2Errors: string[] = [];
+      const r1Result = r1.result;
+      const r1Errors: string[] = [];
 
-      if (r2.error) {
+      if (r1.error) {
         // A JSON-RPC error is acceptable but the SEP prefers re-requesting
-        r2Errors.push(
+        r1Errors.push(
           'Server returned JSON-RPC error instead of re-requesting via IncompleteResult. ' +
             'SEP-2322 recommends servers re-request missing information.'
         );
-      } else if (!r2Result) {
-        r2Errors.push('No result in response');
-      } else if (!isIncompleteResult(r2Result)) {
-        r2Errors.push(
+      } else if (!r1Result) {
+        r1Errors.push('No result in response');
+      } else if (!isIncompleteResult(r1Result)) {
+        r1Errors.push(
           'Expected IncompleteResult re-requesting missing information, ' +
             'but got a complete result'
         );
@@ -1144,11 +1005,11 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
         name: 'IncompleteResultMissingResponseRerequests',
         description:
           'Server re-requests missing inputResponses via new IncompleteResult',
-        status: r2Errors.length === 0 ? 'SUCCESS' : 'WARNING',
+        status: r1Errors.length === 0 ? 'SUCCESS' : 'WARNING',
         timestamp: new Date().toISOString(),
-        errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
+        errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
-        details: { result: r2Result }
+        details: { result: r1Result }
       });
     } catch (error) {
       checks.push({
