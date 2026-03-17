@@ -98,15 +98,11 @@ const pendingClientScenariosList: ClientScenario[] = [
   new IncompleteResultRequestStateScenario(),
   new IncompleteResultMultipleInputRequestsScenario(),
   new IncompleteResultMultiRoundScenario(),
-  new IncompleteResultRequestStateOnlyScenario(),
   new IncompleteResultMissingInputResponseScenario(),
   new IncompleteResultNonToolRequestScenario(),
   new IncompleteResultTaskBasicScenario(),
   new IncompleteResultTaskBadInputResponseScenario(),
   new IncompleteResultTaskInputResponseIncompleteScenario(),
-  new IncompleteResultStructureScenario(),
-  new InputRequestTypesScenario(),
-  new IncompleteResultToTaskTransitionScenario()
 ];
 
 // All client scenarios
@@ -170,7 +166,6 @@ const allClientScenariosList: ClientScenario[] = [
   new IncompleteResultRequestStateScenario(),
   new IncompleteResultMultipleInputRequestsScenario(),
   new IncompleteResultMultiRoundScenario(),
-  new IncompleteResultRequestStateOnlyScenario(),
   new IncompleteResultMissingInputResponseScenario(),
   new IncompleteResultNonToolRequestScenario(),
 
@@ -178,13 +173,6 @@ const allClientScenariosList: ClientScenario[] = [
   new IncompleteResultTaskBasicScenario(),
   new IncompleteResultTaskBadInputResponseScenario(),
   new IncompleteResultTaskInputResponseIncompleteScenario(),
-
-  // IncompleteResult Validation scenarios (SEP-2322)
-  new IncompleteResultStructureScenario(),
-  new InputRequestTypesScenario(),
-
-  // IncompleteResult Transition scenarios (SEP-2322)
-  new IncompleteResultToTaskTransitionScenario()
 ];
 
 // Active client scenarios (excludes pending)
