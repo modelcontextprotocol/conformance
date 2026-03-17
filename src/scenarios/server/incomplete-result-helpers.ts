@@ -6,10 +6,7 @@
  * guards and mock response builders.
  */
 
-import {
-  RawMcpSession,
-  JsonRpcResponse
-} from './client-helper';
+import { RawMcpSession, JsonRpcResponse } from './client-helper';
 
 export type { RawMcpSession, JsonRpcResponse };
 
@@ -44,7 +41,7 @@ export function isIncompleteResult(
 
 /**
  * Check if a JSON-RPC result is a complete result (not incomplete).
- * complete is the default so if result_type is missing we assume it's complete. 
+ * complete is the default so if result_type is missing we assume it's complete.
  */
 export function isCompleteResult(
   result: Record<string, unknown> | undefined

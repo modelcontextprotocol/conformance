@@ -921,7 +921,8 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       });
 
       const r3Result = r3.result;
-      const round3Complete = !r3.error && r3Result != null && isCompleteResult(r3Result);
+      const round3Complete =
+        !r3.error && r3Result != null && isCompleteResult(r3Result);
 
       checks.push({
         id: 'incomplete-result-multi-round-r3',

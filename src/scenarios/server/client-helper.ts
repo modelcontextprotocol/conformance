@@ -129,7 +129,7 @@ export class RawMcpSession {
 
     // Handle SSE responses — parse the last JSON-RPC message from the stream
     // Not doing proper handling of SSE here since none of the MRTR features under test currently require it.
-    // This can be expanded if necessary for new features. 
+    // This can be expanded if necessary for new features.
     if (contentType.includes('text/event-stream')) {
       const text = await response.body.text();
       return parseSseResponse(text);

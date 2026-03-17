@@ -61,7 +61,6 @@ import {
   IncompleteResultRequestStateScenario,
   IncompleteResultMultipleInputRequestsScenario,
   IncompleteResultMultiRoundScenario,
-  IncompleteResultRequestStateOnlyScenario,
   IncompleteResultMissingInputResponseScenario,
   IncompleteResultNonToolRequestScenario
 } from './server/incomplete-result';
@@ -71,13 +70,6 @@ import {
   IncompleteResultTaskBadInputResponseScenario,
   IncompleteResultTaskInputResponseIncompleteScenario
 } from './server/incomplete-result-tasks';
-
-import {
-  IncompleteResultStructureScenario,
-  InputRequestTypesScenario
-} from './server/incomplete-result-validation';
-
-import { IncompleteResultToTaskTransitionScenario } from './server/incomplete-result-transition';
 
 import {
   authScenariosList,
