@@ -25,7 +25,7 @@ export class OfflineAccessScopeScenario implements Scenario {
   name = 'auth/offline-access-scope';
   specVersions: SpecVersion[] = ['draft'];
   description =
-    'Tests that client handles offline_access scope and refresh_token grant type when AS supports them (SEP-2207)';
+    'Tests that a client that wants a refresh token handles offline_access scope and refresh_token grant type when AS supports them (SEP-2207)';
 
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
