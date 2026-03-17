@@ -102,7 +102,7 @@ const pendingClientScenariosList: ClientScenario[] = [
   new IncompleteResultNonToolRequestScenario(),
   new IncompleteResultTaskBasicScenario(),
   new IncompleteResultTaskBadInputResponseScenario(),
-  new IncompleteResultTaskInputResponseIncompleteScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario()
 ];
 
 // All client scenarios
@@ -172,7 +172,7 @@ const allClientScenariosList: ClientScenario[] = [
   // IncompleteResult Task scenarios (SEP-2322)
   new IncompleteResultTaskBasicScenario(),
   new IncompleteResultTaskBadInputResponseScenario(),
-  new IncompleteResultTaskInputResponseIncompleteScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario()
 ];
 
 // Active client scenarios (excludes pending)
