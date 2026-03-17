@@ -81,7 +81,6 @@ export async function connectToServer(
  */
 export class RawMcpSession {
   private nextId = 1;
-  private sessionId: string | undefined;
   private serverUrl: string;
   private connection: MCPClientConnection | null = null;
 
@@ -95,7 +94,6 @@ export class RawMcpSession {
    */
   async initialize(): Promise<void> {
     this.connection = await connectToServer(this.serverUrl);
-    this.sessionId = this.connection.transport.sessionId;
   }
 
   /**
@@ -113,9 +111,6 @@ export class RawMcpSession {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream'
     };
-    if (this.sessionId) {
-      headers['mcp-session-id'] = this.sessionId;
-    }
 
     const body = JSON.stringify({
       jsonrpc: '2.0',
@@ -130,15 +125,11 @@ export class RawMcpSession {
       body
     });
 
-    // Update session ID if server sends a new one
-    const sid = response.headers['mcp-session-id'];
-    if (sid) {
-      this.sessionId = Array.isArray(sid) ? sid[0] : sid;
-    }
-
     const contentType = response.headers['content-type'] ?? '';
 
     // Handle SSE responses — parse the last JSON-RPC message from the stream
+    // Not doing proper handling of SSE here since none of the MRTR features under test currently require it.
+    // This can be expanded if necessary for new features. 
     if (contentType.includes('text/event-stream')) {
       const text = await response.body.text();
       return parseSseResponse(text);
@@ -156,10 +147,6 @@ export class RawMcpSession {
       await this.connection.close();
       this.connection = null;
     }
-  }
-
-  getSessionId(): string | undefined {
-    return this.sessionId;
   }
 }
 

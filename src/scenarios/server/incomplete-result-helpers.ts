@@ -1,14 +1,13 @@
 /**
- * IncompleteResult helpers for SEP-2322 conformance tests.
+ * Helpers for SEP-2322 conformance tests.
  *
  * Uses RawMcpSession from client-helper.ts for connection management and
  * raw JSON-RPC transport. This file adds IncompleteResult-specific type
- * guards, mock response builders, and convenience wrappers.
+ * guards and mock response builders.
  */
 
 import {
   RawMcpSession,
-  createRawSession,
   JsonRpcResponse
 } from './client-helper';
 
@@ -45,11 +44,14 @@ export function isIncompleteResult(
 
 /**
  * Check if a JSON-RPC result is a complete result (not incomplete).
+ * complete is the default so if result_type is missing we assume it's complete. 
  */
 export function isCompleteResult(
   result: Record<string, unknown> | undefined
 ): boolean {
   if (!result) return false;
+  if (result.result_type === 'complete') return true;
+  if (!('result_type' in result)) return true;
   return !isIncompleteResult(result);
 }
 
@@ -103,18 +105,6 @@ export function mockListRootsResponse(): Record<string, unknown> {
       }
     ]
   };
-}
-
-// ─── Session Factory ─────────────────────────────────────────────────────────
-
-/**
- * Create an initialized raw MCP session for IncompleteResult testing.
- * Delegates to createRawSession from client-helper.ts.
- */
-export async function createIncompleteResultSession(
-  serverUrl: string
-): Promise<RawMcpSession> {
-  return createRawSession(serverUrl);
 }
 
 // ─── Spec References ─────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 /**
- * SEP-2322: IncompleteResult - Persistent Workflow Tests
+ * SEP-2322: MRTR Tests for Persistent Workflow aka Tasks
  *
  * Tests the persistent (task-based) workflow where servers use Tasks to
  * manage long-running operations that require additional input via
@@ -7,8 +7,8 @@
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { createRawSession } from './client-helper';
 import {
-  createIncompleteResultSession,
   isIncompleteResult,
   isCompleteResult,
   mockElicitResponse,
@@ -88,7 +88,7 @@ Implement a tool named \`test_incomplete_result_task\` that supports task-augmen
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Step 1: Call tool with task metadata
       const r1 = await session.send('tools/call', {
@@ -343,7 +343,7 @@ Use the same tool as B1: \`test_incomplete_result_task\`.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Create task and wait for input_required
       const r1 = await session.send('tools/call', {
@@ -502,7 +502,7 @@ This tests the schema: \`TaskInputResponseResultResponse.result: Result | Incomp
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Create task
       const r1 = await session.send('tools/call', {

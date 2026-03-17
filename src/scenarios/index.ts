@@ -53,7 +53,7 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
-// IncompleteResult scenarios (SEP-2322)
+// IncompleteResult scenarios from (SEP-2322)
 import {
   IncompleteResultBasicElicitationScenario,
   IncompleteResultBasicSamplingScenario,

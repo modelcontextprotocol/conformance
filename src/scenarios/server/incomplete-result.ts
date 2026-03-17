@@ -7,8 +7,8 @@
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { createRawSession } from './client-helper';
 import {
-  createIncompleteResultSession,
   isIncompleteResult,
   isCompleteResult,
   mockElicitResponse,
@@ -65,7 +65,7 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1: Initial call — expect IncompleteResult
       const r1 = await session.send('tools/call', {
@@ -211,7 +211,7 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
@@ -345,7 +345,7 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
@@ -487,7 +487,7 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
@@ -638,7 +638,7 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
@@ -810,7 +810,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('tools/call', {
@@ -963,7 +963,7 @@ This simulates load shedding where the server transfers accumulated computation 
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1: Expect IncompleteResult with requestState only
       const r1 = await session.send('tools/call', {
@@ -1063,7 +1063,7 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1: Get the initial IncompleteResult
       const r1 = await session.send('tools/call', {
@@ -1186,7 +1186,7 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Round 1
       const r1 = await session.send('prompts/get', {

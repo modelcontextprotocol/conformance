@@ -7,8 +7,8 @@
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { createRawSession } from './client-helper';
 import {
-  createIncompleteResultSession,
   isIncompleteResult,
   mockElicitResponse,
   mockSamplingResponse,
@@ -63,7 +63,7 @@ Implement a tool named \`test_incomplete_result_validate_structure\` that return
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Get IncompleteResult
       const r1 = await session.send('tools/call', {
@@ -260,7 +260,7 @@ When retried with valid \`inputResponses\` for all three, return a final result.
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       const r1 = await session.send('tools/call', {
         name: 'test_incomplete_result_input_types',

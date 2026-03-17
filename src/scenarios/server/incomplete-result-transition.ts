@@ -7,8 +7,8 @@
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { createRawSession } from './client-helper';
 import {
-  createIncompleteResultSession,
   isIncompleteResult,
   mockElicitResponse,
   MRTR_SPEC_REFERENCES,
@@ -67,7 +67,7 @@ This tests the pattern where a server gathers required input via IncompleteResul
     const checks: ConformanceCheck[] = [];
 
     try {
-      const session = await createIncompleteResultSession(serverUrl);
+      const session = await createRawSession(serverUrl);
 
       // Step 1: Call tool with task metadata — server responds with IncompleteResult
       const r1 = await session.send('tools/call', {
