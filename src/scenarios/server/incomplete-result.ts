@@ -115,7 +115,7 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       // Round 2: Retry with inputResponses — expect complete result
       if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
         const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_elicitation',
+          name: 'test_tool_with_elicitation',
           arguments: {},
           inputResponses: {
             user_name: mockElicitResponse({ name: 'Alice' })
@@ -604,7 +604,7 @@ export class IncompleteResultMultipleInputRequestsScenario
 
 Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments required).
 
-**Behavior (Round 1):** Return an \`IncompleteResult\` with multiple \`inputRequests\` — at least one elicitation AND one sampling:
+**Behavior (Round 1):** Return an \`IncompleteResult\` with multiple \`inputRequests\` — elicitation, sampling, and roots/list — plus \`requestState\`:
 
 \`\`\`json
 {
@@ -627,12 +627,17 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
         "messages": [{ "role": "user", "content": { "type": "text", "text": "Generate a greeting" } }],
         "maxTokens": 50
       }
+    },
+    "client_roots": {
+      "method": "roots/list",
+      "params": {}
     }
-  }
+  },
+  "requestState": "<opaque-server-state>"
 }
 \`\`\`
 
-**Behavior (Round 2):** When called with \`inputResponses\` containing ALL keys, return a complete result.`;
+**Behavior (Round 2):** When called with \`inputResponses\` containing ALL keys and the echoed \`requestState\`, return a complete result.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -656,19 +661,33 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
       } else if (!r1Result.inputRequests) {
         r1Errors.push('IncompleteResult missing inputRequests');
       } else {
+        if (!r1Result.requestState) {
+          r1Errors.push('IncompleteResult missing requestState');
+        }
+
         const keys = Object.keys(r1Result.inputRequests);
-        if (keys.length < 2) {
+        if (keys.length < 3) {
           r1Errors.push(
-            `Expected at least 2 inputRequests, got ${keys.length}`
+            `Expected at least 3 inputRequests, got ${keys.length}`
           );
         }
-        // Check that we have different method types
+
+        // Check that required method types are present
         const methods = new Set(
           keys.map((k) => r1Result.inputRequests![k].method)
         );
-        if (methods.size < 2) {
+        if (!methods.has('elicitation/create')) {
+          r1Errors.push('Expected an elicitation/create inputRequest');
+        }
+        if (!methods.has('sampling/createMessage')) {
+          r1Errors.push('Expected a sampling/createMessage inputRequest');
+        }
+        if (!methods.has('roots/list')) {
+          r1Errors.push('Expected a roots/list inputRequest');
+        }
+        if (methods.size < 3) {
           r1Errors.push(
-            'Expected inputRequests with different method types (e.g., elicitation + sampling)'
+            'Expected inputRequests with different method types (elicitation + sampling + roots/list)'
           );
         }
       }
