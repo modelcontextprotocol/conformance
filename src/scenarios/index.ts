@@ -56,6 +56,7 @@ import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import {
   authScenariosList,
   backcompatScenariosList,
+  draftScenariosList,
   extensionScenariosList
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
@@ -149,6 +150,7 @@ const scenariosList: Scenario[] = [
   new SSERetryScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
+  ...draftScenariosList,
   ...extensionScenariosList
 ];
 
@@ -208,6 +210,10 @@ export function listExtensionScenarios(): string[] {
 
 export function listBackcompatScenarios(): string[] {
   return backcompatScenariosList.map((scenario) => scenario.name);
+}
+
+export function listDraftScenarios(): string[] {
+  return draftScenariosList.map((scenario) => scenario.name);
 }
 
 export { listMetadataScenarios };
