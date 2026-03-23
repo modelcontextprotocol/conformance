@@ -25,8 +25,8 @@ import {
   type ListToolsResult,
   type Tool
 } from '@modelcontextprotocol/sdk/types.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import { z } from 'zod';
+import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
 import cors from 'cors';
 import { randomUUID } from 'crypto';
 
@@ -1006,31 +1006,14 @@ function createMcpServer() {
               };
             }
 
-            // For other tools, convert Zod to JSON Schema
-            // Handle different inputSchema formats:
-            // - undefined/null: use empty object schema
-            // - Zod schema (has _def): convert directly
-            // - Raw shape (object with Zod values): wrap in z.object first
-            let inputSchema: Tool['inputSchema'];
-            if (!tool.inputSchema) {
-              inputSchema = { type: 'object' as const, properties: {} };
-            } else if ('_def' in tool.inputSchema) {
-              // Already a Zod schema
-              inputSchema = zodToJsonSchema(tool.inputSchema, {
-                strictUnions: true
-              }) as Tool['inputSchema'];
-            } else if (
-              typeof tool.inputSchema === 'object' &&
-              Object.keys(tool.inputSchema).length > 0
-            ) {
-              // Raw shape with Zod values
-              inputSchema = zodToJsonSchema(z.object(tool.inputSchema), {
-                strictUnions: true
-              }) as Tool['inputSchema'];
-            } else {
-              // Empty object or unknown format
-              inputSchema = { type: 'object' as const, properties: {} };
-            }
+            // For other tools, use the SDK's own JSON Schema conversion
+            // which handles zod v3/v4/v4-mini compatibility
+            const inputSchema: Tool['inputSchema'] = tool.inputSchema
+              ? (toJsonSchemaCompat(tool.inputSchema, {
+                  strictUnions: true,
+                  pipeStrategy: 'input'
+                }) as Tool['inputSchema'])
+              : { type: 'object' as const, properties: {} };
 
             return {
               name,

@@ -278,7 +278,7 @@ program
     } catch (error) {
       if (error instanceof ZodError) {
         console.error('Validation error:');
-        error.errors.forEach((err) => {
+        error.issues.forEach((err) => {
           console.error(`  ${err.path.join('.')}: ${err.message}`);
         });
         console.error('\nAvailable client scenarios:');
@@ -434,7 +434,7 @@ program
     } catch (error) {
       if (error instanceof ZodError) {
         console.error('Validation error:');
-        error.errors.forEach((err) => {
+        error.issues.forEach((err) => {
           console.error(`  ${err.path.join('.')}: ${err.message}`);
         });
         console.error('\nAvailable server scenarios:');

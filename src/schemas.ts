@@ -7,12 +7,9 @@ export const ClientOptionsSchema = z.object({
   scenario: z
     .string()
     .min(1, 'Scenario cannot be empty')
-    .refine(
-      (scenario) => getScenario(scenario) !== undefined,
-      (scenario) => ({
-        message: `Unknown scenario '${scenario}'`
-      })
-    ),
+    .refine((scenario) => getScenario(scenario) !== undefined, {
+      error: (iss) => `Unknown scenario '${iss.input}'`
+    }),
   timeout: z
     .string()
     .transform((val) => parseInt(val, 10))
@@ -33,12 +30,9 @@ export const ServerOptionsSchema = z.object({
   url: z.string().url('Invalid server URL'),
   scenario: z
     .string()
-    .refine(
-      (scenario) => getClientScenario(scenario) !== undefined,
-      (scenario) => ({
-        message: `Unknown scenario '${scenario}'`
-      })
-    )
+    .refine((scenario) => getClientScenario(scenario) !== undefined, {
+      error: (iss) => `Unknown scenario '${iss.input}'`
+    })
     .optional()
 });
 
@@ -49,12 +43,9 @@ export const InteractiveOptionsSchema = z.object({
   scenario: z
     .string()
     .min(1, 'Scenario cannot be empty')
-    .refine(
-      (scenario) => getScenario(scenario) !== undefined,
-      (scenario) => ({
-        message: `Unknown scenario '${scenario}'`
-      })
-    )
+    .refine((scenario) => getScenario(scenario) !== undefined, {
+      error: (iss) => `Unknown scenario '${iss.input}'`
+    })
 });
 
 export type InteractiveOptions = z.infer<typeof InteractiveOptionsSchema>;
