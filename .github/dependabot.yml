@@ -1,5 +1,9 @@
 version: 2
 
+# Security updates always come through regardless of these settings.
+# Scheduled (non-security) updates are limited to minor/patch only —
+# major bumps of devDeps like eslint/typescript are manual decisions.
+
 updates:
   - package-ecosystem: npm
     directory: /
@@ -9,6 +13,9 @@ updates:
       all-dependencies:
         patterns:
           - '*'
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /examples/servers/typescript
@@ -18,6 +25,9 @@ updates:
       all-dependencies:
         patterns:
           - '*'
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
@@ -27,3 +37,6 @@ updates:
       all-actions:
         patterns:
           - '*'
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
