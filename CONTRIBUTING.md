@@ -6,7 +6,7 @@ The most valuable contributions are **new conformance scenarios** that cover und
 
 ## Before you start
 
-**Open an issue first.** Describe which part of the spec you want to cover and roughly how — a short discussion up front saves everyone time on scenarios that overlap existing work or don't fit the suite structure.
+**Open an issue first** — whether you've found a bug or want to propose a new scenario. A short discussion up front saves everyone time on PRs that overlap existing work or head in a direction we're not going.
 
 Then read **[AGENTS.md](./AGENTS.md)** — it's the design guide for scenarios and checks. The short version:
 

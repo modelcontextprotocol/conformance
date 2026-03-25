@@ -10,7 +10,7 @@ Uses **npm** (not pnpm/yarn). Don't commit `pnpm-lock.yaml` or `yarn.lock`.
 
 ## Where to start
 
-**Open an issue first.** Before writing a scenario, open an issue describing which part of the spec you want to cover and roughly how. A quick discussion up front avoids wasted effort on scenarios that overlap existing work or don't fit the suite structure.
+**Open an issue first** — whether you've hit a bug in the harness or want to propose a new scenario. For scenarios, sketch which part of the spec you want to cover and roughly how; for bugs, include the command you ran and the output. Either way, a short discussion up front beats review churn on a PR that overlaps existing work or heads in a direction we're not going.
 
 **Don't point an agent at the repo and ask it to "find bugs."** Generic bug-hunting on a test harness produces low-signal PRs (typo fixes, unused-variable cleanups, speculative refactors). If you want to contribute via an agent, give it a concrete target:
 
