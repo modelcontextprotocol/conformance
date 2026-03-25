@@ -146,7 +146,10 @@ registerScenarios(
     'auth/token-endpoint-auth-post',
     'auth/token-endpoint-auth-none',
     // Resource mismatch (client should error when PRM resource doesn't match)
-    'auth/resource-mismatch'
+    'auth/resource-mismatch',
+    // SEP-2207: Offline access / refresh token guidance (draft)
+    'auth/offline-access-scope',
+    'auth/offline-access-not-supported'
   ],
   runAuthClient
 );
