@@ -24,6 +24,10 @@ import {
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
 import { CrossAppAccessCompleteFlowScenario } from './cross-app-access';
+import {
+  OfflineAccessScopeScenario,
+  OfflineAccessNotSupportedScenario
+} from './offline-access';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -37,7 +41,6 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
-  new ResourceMismatchScenario(),
   new PreRegistrationScenario()
 ];
 
@@ -52,4 +55,11 @@ export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
   new CrossAppAccessCompleteFlowScenario()
+];
+
+// Draft scenarios (informational - not scored for tier assessment)
+export const draftScenariosList: Scenario[] = [
+  new ResourceMismatchScenario(),
+  new OfflineAccessScopeScenario(),
+  new OfflineAccessNotSupportedScenario()
 ];
