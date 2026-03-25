@@ -227,6 +227,15 @@ export const ALL_SPEC_VERSIONS: SpecVersion[] = [
   'extension'
 ];
 
+export function resolveSpecVersion(value: string): SpecVersion {
+  if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
+    return value as SpecVersion;
+  }
+  console.error(`Unknown spec version: ${value}`);
+  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
+  process.exit(1);
+}
+
 export function listScenariosForSpec(version: SpecVersion): string[] {
   return scenariosList
     .filter((s) => s.specVersions.includes(version))

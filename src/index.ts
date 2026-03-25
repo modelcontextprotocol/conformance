@@ -24,7 +24,7 @@ import {
   listScenariosForSpec,
   listClientScenariosForSpec,
   getScenarioSpecVersions,
-  ALL_SPEC_VERSIONS
+  resolveSpecVersion
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
 import { ConformanceCheck } from './types';
@@ -36,15 +36,6 @@ import {
 } from './expected-failures';
 import { createTierCheckCommand } from './tier-check';
 import packageJson from '../package.json';
-
-function resolveSpecVersion(value: string): SpecVersion {
-  if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
-    return value as SpecVersion;
-  }
-  console.error(`Unknown spec version: ${value}`);
-  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
-  process.exit(1);
-}
 
 // Note on naming: `command` refers to which CLI command is calling this.
 // The `client` command tests Scenario objects (which test clients),

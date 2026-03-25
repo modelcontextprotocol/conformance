@@ -13,8 +13,7 @@ import { checkSpecTracking } from './checks/spec-tracking';
 import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
 import { TierScorecard } from './types';
-import { ALL_SPEC_VERSIONS } from '../scenarios';
-import { SpecVersion } from '../types';
+import { resolveSpecVersion } from '../scenarios';
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const parts = repo.split('/');
@@ -58,15 +57,9 @@ export function createTierCheckCommand(): Command {
       const { owner, repo } = parseRepo(options.repo);
       let token = options.token || process.env.GITHUB_TOKEN;
 
-      let specVersion: SpecVersion | undefined;
-      if (options.specVersion) {
-        if (!ALL_SPEC_VERSIONS.includes(options.specVersion as SpecVersion)) {
-          console.error(`Unknown spec version: ${options.specVersion}`);
-          console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
-          process.exit(1);
-        }
-        specVersion = options.specVersion as SpecVersion;
-      }
+      const specVersion = options.specVersion
+        ? resolveSpecVersion(options.specVersion)
+        : undefined;
 
       if (!token) {
         // Try to get token from GitHub CLI
