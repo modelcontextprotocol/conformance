@@ -183,9 +183,8 @@ export async function checkConformance(options: {
   try {
     execFileSync(
       process.execPath,
-      ['dist/index.js', 'server', '--url', options.serverUrl, '-o', outputDir],
+      [process.argv[1], 'server', '--url', options.serverUrl, '-o', outputDir],
       {
-        cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120_000
       }
@@ -225,7 +224,7 @@ export async function checkClientConformance(options: {
     execFileSync(
       process.execPath,
       [
-        'dist/index.js',
+        process.argv[1],
         'client',
         '--command',
         options.clientCmd,
@@ -235,7 +234,6 @@ export async function checkClientConformance(options: {
         outputDir
       ],
       {
-        cwd: process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120_000
       }
