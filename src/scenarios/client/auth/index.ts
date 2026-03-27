@@ -10,6 +10,7 @@ import {
   ScopeFromScopesSupportedScenario,
   ScopeOmittedWhenUndefinedScenario,
   ScopeStepUpAuthScenario,
+  ScopeStepUpWithRefreshTokenScenario,
   ScopeRetryLimitScenario
 } from './scope-handling';
 import {
@@ -37,6 +38,7 @@ export const authScenariosList: Scenario[] = [
   new ScopeFromScopesSupportedScenario(),
   new ScopeOmittedWhenUndefinedScenario(),
   new ScopeStepUpAuthScenario(),
+  new ScopeStepUpWithRefreshTokenScenario(),
   new ScopeRetryLimitScenario(),
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),

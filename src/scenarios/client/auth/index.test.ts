@@ -22,7 +22,9 @@ beforeAll(() => {
 });
 
 const skipScenarios = new Set<string>([
-  // Add scenarios that should be skipped here
+  // Requires typescript-sdk fix for RFC 6749 §6 scope-elevation-via-refresh bug.
+  // Remove once @modelcontextprotocol/sdk > 1.27.1 is released and bumped here.
+  'auth/scope-step-up-with-refresh-token'
 ]);
 
 const allowClientErrorScenarios = new Set<string>([

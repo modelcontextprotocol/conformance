@@ -140,6 +140,7 @@ registerScenarios(
     'auth/scope-from-scopes-supported',
     'auth/scope-omitted-when-undefined',
     'auth/scope-step-up',
+    'auth/scope-step-up-with-refresh-token',
     'auth/scope-retry-limit',
     // Token endpoint auth method scenarios
     'auth/token-endpoint-auth-basic',

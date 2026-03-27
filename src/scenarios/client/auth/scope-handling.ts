@@ -472,6 +472,210 @@ export class ScopeStepUpAuthScenario implements Scenario {
 }
 
 /**
+ * Scenario: Client performs step-up authentication when holding a refresh token
+ *
+ * RFC 6749 §6 forbids scope elevation via refresh token — the requested scope
+ * MUST NOT exceed the scope originally granted. When a server returns 403
+ * insufficient_scope demanding elevated scope, a client holding a refresh_token
+ * must NOT rely on refresh (it will return the same-scoped token). It must
+ * initiate a new authorization flow so the user can grant the elevated scope.
+ *
+ * This scenario mirrors ScopeStepUpAuthScenario but issues a refresh_token
+ * during the initial grant. A buggy client will refresh, get the same scope
+ * back, retry, hit 403 again, and abort without ever making a second
+ * authorization request.
+ */
+export class ScopeStepUpWithRefreshTokenScenario implements Scenario {
+  name = 'auth/scope-step-up-with-refresh-token';
+  specVersions: SpecVersion[] = ['2025-11-25'];
+  description =
+    'Tests that client initiates new authorization (not refresh) when step-up scope exceeds the refresh_token grant (RFC 6749 §6)';
+  private authServer = new ServerLifecycle();
+  private server = new ServerLifecycle();
+  private checks: ConformanceCheck[] = [];
+
+  async start(): Promise<ScenarioUrls> {
+    this.checks = [];
+
+    const initialScope = 'mcp:basic';
+    const escalatedScopes = ['mcp:basic', 'mcp:write'];
+    const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
+    let authRequestCount = 0;
+
+    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+      tokenVerifier,
+      issueRefreshToken: true,
+      onAuthorizationRequest: (data) => {
+        authRequestCount++;
+        const requestedScopes = data.scope ? data.scope.split(' ') : [];
+
+        if (authRequestCount === 1) {
+          const usedCorrectScope = requestedScopes.includes(initialScope);
+          this.checks.push({
+            id: 'scope-step-up-refresh-initial',
+            name: 'Client initial authorization with refresh token issued',
+            description: usedCorrectScope
+              ? 'Client correctly used scope from WWW-Authenticate header for initial auth'
+              : 'Client SHOULD use the scope parameter from the WWW-Authenticate header',
+            status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
+            timestamp: data.timestamp,
+            specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+            details: {
+              expectedScope: initialScope,
+              requestedScope: data.scope || 'none'
+            }
+          });
+        } else if (authRequestCount === 2) {
+          const hasAllScopes = escalatedScopes.every((s) =>
+            requestedScopes.includes(s)
+          );
+          this.checks.push({
+            id: 'scope-step-up-refresh-escalation',
+            name: 'Client reauthorizes (not refreshes) for scope elevation',
+            description: hasAllScopes
+              ? 'Client correctly initiated a new authorization request with elevated scope instead of relying on refresh'
+              : 'Client initiated reauthorization but SHOULD request the elevated scope from the 403 WWW-Authenticate header',
+            status: hasAllScopes ? 'SUCCESS' : 'WARNING',
+            timestamp: data.timestamp,
+            specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+            details: {
+              expectedScopes: escalatedScopes.join(' '),
+              requestedScope: data.scope || 'none'
+            }
+          });
+        }
+      }
+    });
+    await this.authServer.start(authApp);
+
+    const resourceMetadataUrl = () =>
+      `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`;
+
+    const stepUpMiddleware = async (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ) => {
+      let body = req.body;
+      if (typeof body === 'string') {
+        body = JSON.parse(body);
+      }
+      const method = body?.method;
+
+      if (method === 'initialize' || method?.startsWith('notifications/')) {
+        return next();
+      }
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res
+          .status(401)
+          .set(
+            'WWW-Authenticate',
+            `Bearer scope="${initialScope}", resource_metadata="${resourceMetadataUrl()}"`
+          )
+          .json({
+            error: 'invalid_token',
+            error_description: 'Missing Authorization header'
+          });
+      }
+
+      const token = authHeader.substring('Bearer '.length);
+      const authInfo = await tokenVerifier.verifyAccessToken(token);
+      const tokenScopes = authInfo.scopes || [];
+
+      const isToolCall = method === 'tools/call';
+      const requiredScopes = isToolCall ? escalatedScopes : [initialScope];
+
+      const hasRequiredScopes = requiredScopes.every((s) =>
+        tokenScopes.includes(s)
+      );
+
+      if (!hasRequiredScopes) {
+        return res
+          .status(403)
+          .set(
+            'WWW-Authenticate',
+            `Bearer scope="${requiredScopes.join(' ')}", resource_metadata="${resourceMetadataUrl()}", error="insufficient_scope"`
+          )
+          .json({
+            error: 'insufficient_scope',
+            error_description: 'Token has insufficient scope'
+          });
+      }
+
+      next();
+    };
+
+    const baseApp = createServer(
+      this.checks,
+      this.server.getUrl,
+      this.authServer.getUrl,
+      {
+        prmPath: '/.well-known/oauth-protected-resource/mcp',
+        requiredScopes: escalatedScopes,
+        scopesSupported: [initialScope],
+        includeScopeInWwwAuth: true,
+        authMiddleware: stepUpMiddleware,
+        tokenVerifier
+      }
+    );
+
+    await this.server.start(baseApp);
+
+    return { serverUrl: `${this.server.getUrl()}/mcp` };
+  }
+
+  async stop() {
+    await this.authServer.stop();
+    await this.server.stop();
+  }
+
+  getChecks(): ConformanceCheck[] {
+    const hasInitialCheck = this.checks.some(
+      (c) => c.id === 'scope-step-up-refresh-initial'
+    );
+    const hasEscalationCheck = this.checks.some(
+      (c) => c.id === 'scope-step-up-refresh-escalation'
+    );
+    const attemptedRefresh = this.checks.some(
+      (c) =>
+        c.id === 'token-request' &&
+        (c.details as { grantType?: string })?.grantType === 'refresh_token'
+    );
+
+    if (!hasInitialCheck) {
+      this.checks.push({
+        id: 'scope-step-up-refresh-initial',
+        name: 'Client initial authorization with refresh token issued',
+        description: 'Client did not make an initial authorization request',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+      });
+    }
+
+    if (!hasEscalationCheck) {
+      this.checks.push({
+        id: 'scope-step-up-refresh-escalation',
+        name: 'Client reauthorizes (not refreshes) for scope elevation',
+        description: attemptedRefresh
+          ? 'Client attempted refresh but did not fall through to a new authorization request. RFC 6749 §6 forbids scope elevation via refresh — the refreshed token has the same scope, so the 403 persists.'
+          : 'Client did not make a second authorization request for scope elevation',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        details: {
+          attemptedRefresh
+        }
+      });
+    }
+
+    return this.checks;
+  }
+}
+
+/**
  * Scenario 5: Client implements retry limits for scope escalation
  *
  * Tests that clients SHOULD implement retry limits to avoid infinite

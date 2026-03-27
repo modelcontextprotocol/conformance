@@ -43,6 +43,8 @@ export interface AuthServerOptions {
   disableDynamicRegistration?: boolean;
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
+  /** When true, token responses include a refresh_token and the refresh_token grant is handled (returning the same scope as the original grant, per RFC 6749 §6). */
+  issueRefreshToken?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -86,6 +88,7 @@ export function createAuthServer(
     clientIdMetadataDocumentSupported,
     disableDynamicRegistration = false,
     codeChallengeMethodsSupported = ['S256'],
+    issueRefreshToken = false,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -96,6 +99,8 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
+  // Track refresh_token -> originally granted scopes (RFC 6749 §6: refresh cannot elevate scope)
+  const refreshTokenScopes = new Map<string, string[]>();
 
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
@@ -323,6 +328,21 @@ export function createAuthServer(
     let token = `test-token-${Date.now()}`;
     let scopes: string[] = lastAuthorizationScopes;
 
+    // RFC 6749 §6: refresh_token grant returns the same scope as the original
+    // grant (or narrower). Scope elevation via refresh is forbidden.
+    if (grantType === 'refresh_token') {
+      const presentedRefreshToken = req.body.refresh_token;
+      const originalScopes = refreshTokenScopes.get(presentedRefreshToken);
+      if (!originalScopes) {
+        res.status(400).json({
+          error: 'invalid_grant',
+          error_description: 'refresh_token not recognized'
+        });
+        return;
+      }
+      scopes = originalScopes;
+    }
+
     if (onTokenRequest) {
       const result = await onTokenRequest({
         scope: requestedScope,
@@ -352,11 +372,18 @@ export function createAuthServer(
       tokenVerifier.registerToken(token, scopes);
     }
 
+    let refreshToken: string | undefined;
+    if (issueRefreshToken) {
+      refreshToken = `test-refresh-${Date.now()}`;
+      refreshTokenScopes.set(refreshToken, scopes);
+    }
+
     res.json({
       access_token: token,
       token_type: 'Bearer',
       expires_in: 3600,
-      ...(scopes.length > 0 && { scope: scopes.join(' ') })
+      ...(scopes.length > 0 && { scope: scopes.join(' ') }),
+      ...(refreshToken && { refresh_token: refreshToken })
     });
   });
 
