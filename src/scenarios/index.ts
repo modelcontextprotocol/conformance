@@ -45,7 +45,8 @@ import {
   ResourcesReadBinaryScenario,
   ResourcesTemplateReadScenario,
   ResourcesSubscribeScenario,
-  ResourcesUnsubscribeScenario
+  ResourcesUnsubscribeScenario,
+  ResourcesNotFoundErrorScenario
 } from './server/resources';
 
 import {
@@ -122,6 +123,9 @@ const allClientScenariosList: ClientScenario[] = [
   new ResourcesTemplateReadScenario(),
   new ResourcesSubscribeScenario(),
   new ResourcesUnsubscribeScenario(),
+
+  // Resources error handling (SEP-2164)
+  new ResourcesNotFoundErrorScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
