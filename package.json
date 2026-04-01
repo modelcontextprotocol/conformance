@@ -33,26 +33,26 @@
     "@eslint/js": "^9.39.4",
     "@types/express": "^5.0.3",
     "@types/node": "^25.5.0",
-    "@typescript/native-preview": "^7.0.0-dev.20260325.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260401.1",
     "cors": "^2.8.5",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "lefthook": "^2.1.4",
     "prettier": "^3.8.1",
-    "tsdown": "^0.21.5",
+    "tsdown": "^0.21.7",
     "tsx": "^4.7.0",
     "typescript": "^5.5.4",
-    "typescript-eslint": "^8.57.1",
-    "vitest": "^4.0.16"
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^4.1.2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^22.0.0",
     "commander": "^14.0.2",
     "eventsource-parser": "^3.0.6",
     "express": "^5.1.0",
     "jose": "^6.1.2",
-    "undici": "^7.19.0",
+    "undici": "^7.24.7",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
   }
