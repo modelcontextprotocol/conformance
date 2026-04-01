@@ -58,6 +58,24 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
+// IncompleteResult scenarios from (SEP-2322)
+import {
+  IncompleteResultBasicElicitationScenario,
+  IncompleteResultBasicSamplingScenario,
+  IncompleteResultBasicListRootsScenario,
+  IncompleteResultRequestStateScenario,
+  IncompleteResultMultipleInputRequestsScenario,
+  IncompleteResultMultiRoundScenario,
+  IncompleteResultMissingInputResponseScenario,
+  IncompleteResultNonToolRequestScenario
+} from './server/incomplete-result';
+
+import {
+  IncompleteResultTaskBasicScenario,
+  IncompleteResultTaskBadInputResponseScenario,
+  IncompleteResultTaskInputResponseIncompleteScenario
+} from './server/incomplete-result-tasks';
+
 import {
   authScenariosList,
   backcompatScenariosList,
@@ -76,7 +94,22 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario()
+  new ServerSSEPollingScenario(),
+
+  // IncompleteResult scenarios (SEP-2322) — pending until a conformance test
+  // server implements IncompleteResult tools. These are draft spec scenarios
+  // intended to be run via `--spec-version draft` against capable servers.
+  new IncompleteResultBasicElicitationScenario(),
+  new IncompleteResultBasicSamplingScenario(),
+  new IncompleteResultBasicListRootsScenario(),
+  new IncompleteResultRequestStateScenario(),
+  new IncompleteResultMultipleInputRequestsScenario(),
+  new IncompleteResultMultiRoundScenario(),
+  new IncompleteResultMissingInputResponseScenario(),
+  new IncompleteResultNonToolRequestScenario(),
+  new IncompleteResultTaskBasicScenario(),
+  new IncompleteResultTaskBadInputResponseScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario()
 ];
 
 // All client scenarios
@@ -131,7 +164,22 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario(),
 
   // Security scenarios
-  new DNSRebindingProtectionScenario()
+  new DNSRebindingProtectionScenario(),
+
+  // IncompleteResult scenarios (SEP-2322)
+  new IncompleteResultBasicElicitationScenario(),
+  new IncompleteResultBasicSamplingScenario(),
+  new IncompleteResultBasicListRootsScenario(),
+  new IncompleteResultRequestStateScenario(),
+  new IncompleteResultMultipleInputRequestsScenario(),
+  new IncompleteResultMultiRoundScenario(),
+  new IncompleteResultMissingInputResponseScenario(),
+  new IncompleteResultNonToolRequestScenario(),
+
+  // IncompleteResult Task scenarios (SEP-2322)
+  new IncompleteResultTaskBasicScenario(),
+  new IncompleteResultTaskBadInputResponseScenario(),
+  new IncompleteResultTaskInputResponseIncompleteScenario()
 ];
 
 // Active client scenarios (excludes pending)
