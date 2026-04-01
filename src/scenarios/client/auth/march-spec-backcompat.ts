@@ -18,11 +18,12 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
     this.checks = [];
     // Legacy server, so we create the auth server endpoints on the
     // same URL as the main server (rather than separating AS / RS).
+    // Metadata at root well-known → issuer is the root URL (no path).
+    // Test integrity against fallback-bypass is ensured by expectedSlugs
+    // requiring 'authorization-server-metadata'.
     const authApp = createAuthServer(this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
-      loggingEnabled: false,
-      // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
-      routePrefix: '/oauth'
+      loggingEnabled: false
     });
     const app = createServer(
       this.checks,
