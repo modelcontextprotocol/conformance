@@ -14,6 +14,7 @@ import { runClient as partialScopesClient } from '../../../../examples/clients/t
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
+import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -29,7 +30,11 @@ const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
   'auth/scope-retry-limit',
   // Client is expected to error when PRM resource doesn't match server URL
-  'auth/resource-mismatch'
+  'auth/resource-mismatch',
+  // Client is expected to error when iss validation fails
+  'auth/iss-supported-missing',
+  'auth/iss-wrong-issuer',
+  'auth/iss-unexpected'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -144,6 +149,30 @@ describe('Negative tests', () => {
         'pkce-code-verifier-sent',
         'pkce-verifier-matches-challenge'
       ]
+    });
+  });
+
+  test('client does not reject missing iss when server requires it', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-supported-missing', {
+      expectedFailureSlugs: ['iss-client-rejected-missing'],
+      allowClientError: true
+    });
+  });
+
+  test('client does not reject mismatched iss', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-wrong-issuer', {
+      expectedFailureSlugs: ['iss-client-rejected-wrong-issuer'],
+      allowClientError: true
+    });
+  });
+
+  test('client does not reject unexpected iss', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-unexpected', {
+      expectedFailureSlugs: ['iss-client-rejected-unexpected'],
+      allowClientError: true
     });
   });
 });
