@@ -381,7 +381,8 @@ export class IssParameterUnexpectedScenario implements Scenario {
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
-      // issParameterSupported not set — omitted from metadata
+      // issParameterSupported omitted from metadata
+      issParameterSupported: false,
       issInRedirect: 'correct', // but send iss anyway
       onTokenRequest: () => {
         this.tokenRequestMade = true;
