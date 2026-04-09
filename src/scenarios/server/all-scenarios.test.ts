@@ -1,14 +1,28 @@
 import { spawn, ChildProcess } from 'child_process';
+import { createServer } from 'net';
 import { getClientScenario, listActiveClientScenarios } from '../index';
 import path from 'path';
 
+function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0, () => {
+      const port = (server.address() as { port: number }).port;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
+}
+
 describe('Server Scenarios', () => {
   let serverProcess: ChildProcess | null = null;
-  const TEST_PORT = 3001;
-  const SERVER_URL = `http://localhost:${TEST_PORT}/mcp`;
+  let serverUrl: string;
   const SERVER_STARTUP_TIMEOUT = 30000; // 30 seconds for CI
 
   beforeAll(async () => {
+    const testPort = await getFreePort();
+    serverUrl = `http://localhost:${testPort}/mcp`;
+
     // Start the everything-server once for all scenarios in this file
     const serverPath = path.join(
       process.cwd(),
@@ -18,7 +32,7 @@ describe('Server Scenarios', () => {
     // Use shell: true on Windows only (npx is npx.cmd on Windows)
     const isWindows = process.platform === 'win32';
     serverProcess = spawn('npx', ['tsx', serverPath], {
-      env: { ...process.env, PORT: TEST_PORT.toString() },
+      env: { ...process.env, PORT: testPort.toString() },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: false,
       shell: isWindows
@@ -114,7 +128,7 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario ${scenarioName} not found`);
       }
 
-      const checks = await scenario.run(SERVER_URL);
+      const checks = await scenario.run(serverUrl);
 
       // Verify checks were returned
       expect(checks.length).toBeGreaterThan(0);
