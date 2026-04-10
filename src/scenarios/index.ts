@@ -58,6 +58,10 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
+import { StatelessServerScenario } from './client/stateless_server';
+
+import { StatelessServerCheckScenario } from './server/stateless';
+
 import {
   authScenariosList,
   backcompatScenariosList,
@@ -76,7 +80,10 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario()
+  new ServerSSEPollingScenario(),
+
+  // Only for stateless servers - not testable against everything-server
+  new StatelessServerCheckScenario()
 ];
 
 // All client scenarios
@@ -114,6 +121,8 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Elicitation scenarios (SEP-1330) - pending
   new ElicitationEnumsScenario(),
+
+  new StatelessServerCheckScenario(),
 
   // Resources scenarios
   new ResourcesListScenario(),
@@ -171,6 +180,7 @@ const scenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
+  new StatelessServerScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,
