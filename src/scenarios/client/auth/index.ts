@@ -28,6 +28,13 @@ import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
 } from './offline-access';
+import {
+  IssParameterSupportedScenario,
+  IssParameterNotAdvertisedScenario,
+  IssParameterSupportedMissingScenario,
+  IssParameterWrongIssuerScenario,
+  IssParameterUnexpectedScenario
+} from './issuer-parameter';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -61,5 +68,10 @@ export const extensionScenariosList: Scenario[] = [
 export const draftScenariosList: Scenario[] = [
   new ResourceMismatchScenario(),
   new OfflineAccessScopeScenario(),
-  new OfflineAccessNotSupportedScenario()
+  new OfflineAccessNotSupportedScenario(),
+  new IssParameterSupportedScenario(),
+  new IssParameterNotAdvertisedScenario(),
+  new IssParameterSupportedMissingScenario(),
+  new IssParameterWrongIssuerScenario(),
+  new IssParameterUnexpectedScenario()
 ];

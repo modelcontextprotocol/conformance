@@ -27,6 +27,7 @@ import {
   handle401
 } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
+import { runClient as issValidationClient } from './auth-test-iss-validation.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -149,9 +150,22 @@ registerScenarios(
     'auth/resource-mismatch',
     // SEP-2207: Offline access / refresh token guidance (draft)
     'auth/offline-access-scope',
-    'auth/offline-access-not-supported'
+    'auth/offline-access-not-supported',
+    // SEP-2468: ISS parameter - positive scenarios (standard client is fine)
+    'auth/iss-supported',
+    'auth/iss-not-advertised'
   ],
   runAuthClient
+);
+
+// SEP-2468: ISS parameter - rejection scenarios use iss-validating client
+registerScenarios(
+  [
+    'auth/iss-supported-missing',
+    'auth/iss-wrong-issuer',
+    'auth/iss-unexpected'
+  ],
+  issValidationClient
 );
 
 // ============================================================================
