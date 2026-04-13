@@ -147,6 +147,8 @@ registerScenarios(
     'auth/token-endpoint-auth-none',
     // Resource mismatch (client should error when PRM resource doesn't match)
     'auth/resource-mismatch',
+    // Issuer mismatch (client should error when AS metadata issuer doesn't match, RFC 8414 §3.3)
+    'auth/issuer-mismatch',
     // SEP-2207: Offline access / refresh token guidance (draft)
     'auth/offline-access-scope',
     'auth/offline-access-not-supported'

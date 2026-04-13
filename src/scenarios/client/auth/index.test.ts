@@ -22,14 +22,19 @@ beforeAll(() => {
 });
 
 const skipScenarios = new Set<string>([
-  // Add scenarios that should be skipped here
+  // TS SDK does not yet validate that AS metadata issuer matches the issuer
+  // used to construct the metadata URL (RFC 8414 §3.3). Unskip once
+  // typescript-sdk implements validation.
+  'auth/issuer-mismatch'
 ]);
 
 const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
   'auth/scope-retry-limit',
   // Client is expected to error when PRM resource doesn't match server URL
-  'auth/resource-mismatch'
+  'auth/resource-mismatch',
+  // Client is expected to error when AS metadata issuer doesn't match (RFC 8414 §3.3)
+  'auth/issuer-mismatch'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -68,6 +73,9 @@ describe('Client Back-compat Scenarios', () => {
 describe('Client Draft Scenarios', () => {
   for (const scenario of draftScenariosList) {
     test(`${scenario.name} passes`, async () => {
+      if (skipScenarios.has(scenario.name)) {
+        return;
+      }
       const clientFn = getHandler(scenario.name);
       if (!clientFn) {
         throw new Error(`No handler registered for scenario: ${scenario.name}`);
