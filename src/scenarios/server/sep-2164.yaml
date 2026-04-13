@@ -1,0 +1,9 @@
+sep: 2164
+spec_url: https://modelcontextprotocol.io/specification/draft/server/resources#error-handling
+requirements:
+  - text: 'servers MUST return a JSON-RPC error with code -32602 (Invalid Params)'
+    check: sep-2164-error-code
+  - text: 'Servers MUST NOT return an empty contents array for a non-existent resource'
+    check: sep-2164-error-code
+  - text: 'The data field SHOULD include the uri that was not found'
+    check: sep-2164-data-uri

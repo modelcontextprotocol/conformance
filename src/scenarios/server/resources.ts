@@ -6,7 +6,8 @@ import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { connectToServer } from './client-helper';
 import {
   TextResourceContents,
-  BlobResourceContents
+  BlobResourceContents,
+  McpError
 } from '@modelcontextprotocol/sdk/types.js';
 
 export class ResourcesListScenario implements ClientScenario {
@@ -431,6 +432,150 @@ Example request:
       });
     }
 
+    return checks;
+  }
+}
+
+export class ResourcesNotFoundErrorScenario implements ClientScenario {
+  name = 'sep-2164-resource-not-found';
+  specVersions: SpecVersion[] = ['draft'];
+  description = `Test error handling for non-existent resources (SEP-2164).
+
+**Server Implementation Requirements:**
+
+**Endpoint**: \`resources/read\`
+
+When a client requests a URI that does not correspond to any resource, the server:
+
+- **MUST** return a JSON-RPC error with code \`-32602\` (Invalid Params)
+- **MUST NOT** return a result with an empty \`contents\` array
+- **SHOULD** include the requested \`uri\` in the error \`data\` field
+
+Example error response:
+
+\`\`\`json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "error": {
+    "code": -32602,
+    "message": "Resource not found",
+    "data": {
+      "uri": "test://nonexistent-resource-for-conformance-testing"
+    }
+  }
+}
+\`\`\`
+
+This scenario does not require the server to register any specific resource — it tests behavior when reading a URI the server does not recognize.`;
+
+  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+    const checks: ConformanceCheck[] = [];
+    const nonexistentUri =
+      'test://nonexistent-resource-for-conformance-testing';
+    const specReferences = [
+      {
+        id: 'SEP-2164',
+        url: 'https://modelcontextprotocol.io/specification/draft/server/resources#error-handling'
+      }
+    ];
+
+    let connection;
+    try {
+      connection = await connectToServer(serverUrl);
+    } catch (error) {
+      checks.push({
+        id: 'sep-2164-error-code',
+        name: 'ResourcesNotFoundErrorCode',
+        description:
+          'Server returns -32602 (Invalid Params) for non-existent resource',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Failed to connect: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences
+      });
+      return checks;
+    }
+
+    let caughtError: unknown;
+    let result: { contents: unknown[] } | undefined;
+    try {
+      result = await connection.client.readResource({ uri: nonexistentUri });
+    } catch (error) {
+      caughtError = error;
+    }
+
+    // Check 1: MUST return -32602 error code (not empty contents, not other codes)
+    const errorCode =
+      caughtError instanceof McpError ? caughtError.code : undefined;
+    const errorCodeErrors: string[] = [];
+    if (result !== undefined) {
+      errorCodeErrors.push(
+        `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers MUST NOT return an empty contents array for non-existent resources.`
+      );
+    } else if (!(caughtError instanceof McpError)) {
+      errorCodeErrors.push(
+        `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`
+      );
+    } else if (errorCode !== -32602) {
+      errorCodeErrors.push(
+        `Expected error code -32602 (Invalid Params), got ${errorCode}. ` +
+          (errorCode === -32002
+            ? 'Code -32002 was used in earlier spec versions but SEP-2164 standardizes on -32602.'
+            : '')
+      );
+    }
+
+    checks.push({
+      id: 'sep-2164-error-code',
+      name: 'ResourcesNotFoundErrorCode',
+      description:
+        'Server returns -32602 (Invalid Params) for non-existent resource',
+      status: errorCodeErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage:
+        errorCodeErrors.length > 0 ? errorCodeErrors.join('; ') : undefined,
+      specReferences,
+      details: {
+        requestedUri: nonexistentUri,
+        receivedErrorCode: errorCode,
+        receivedResult: result !== undefined
+      }
+    });
+
+    // Check 2: SHOULD include uri in error data field
+    const errorData =
+      caughtError instanceof McpError
+        ? (caughtError.data as { uri?: string } | undefined)
+        : undefined;
+    const dataUriMatches = errorData?.uri === nonexistentUri;
+
+    checks.push({
+      id: 'sep-2164-data-uri',
+      name: 'ResourcesNotFoundDataUri',
+      description:
+        'Server includes the requested URI in the error data field (SHOULD)',
+      status:
+        caughtError instanceof McpError
+          ? dataUriMatches
+            ? 'SUCCESS'
+            : 'WARNING'
+          : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage:
+        caughtError instanceof McpError
+          ? dataUriMatches
+            ? undefined
+            : `Error data.uri is ${JSON.stringify(errorData?.uri)}, expected "${nonexistentUri}". This is a SHOULD requirement.`
+          : 'No JSON-RPC error received; cannot evaluate data field.',
+      specReferences,
+      details: {
+        requestedUri: nonexistentUri,
+        receivedDataUri: errorData?.uri
+      }
+    });
+
+    await connection.close();
     return checks;
   }
 }
