@@ -142,6 +142,15 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
       );
     }
 
+    if (
+      !Array.isArray(body.code_challenge_methods_supported) ||
+      !body.code_challenge_methods_supported.includes('S256')
+    ) {
+      errors.push(
+        'Response body does not include valid "code_challenge_methods_supported" claim'
+      );
+    }
+
     if (body.issuer !== serverUrl) {
       errors.push(`Invalid issuer: ${body.issuer ?? '(missing)'}`);
     }
