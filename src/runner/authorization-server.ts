@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck } from '../types';
 import { getClientScenarioForAuthorizationServer } from '../scenarios';
-import { createResultDir } from './utils';
+import { createResultDir, formatPrettyChecks } from './utils';
 
 export async function runAuthorizationServerConformanceTest(
   serverUrl: string,
@@ -47,6 +47,49 @@ export async function runAuthorizationServerConformanceTest(
     resultDir,
     scenarioDescription: scenario.description
   };
+}
+
+export function printAuthorizationServerResults(
+  checks: ConformanceCheck[],
+  scenarioDescription: string,
+  verbose: boolean = false
+): {
+  passed: number;
+  failed: number;
+  denominator: number;
+  warnings: number;
+} {
+  const denominator = checks.filter(
+    (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
+  ).length;
+  const passed = checks.filter((c) => c.status === 'SUCCESS').length;
+  const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const warnings = checks.filter((c) => c.status === 'WARNING').length;
+
+  if (verbose) {
+    console.log(JSON.stringify(checks, null, 2));
+  } else {
+    console.log(`Checks:\n${formatPrettyChecks(checks)}`);
+  }
+
+  console.log(`\nTest Results:`);
+  console.log(
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+  );
+
+  if (failed > 0) {
+    console.log('\n=== Failed Checks ===');
+    checks
+      .filter((c) => c.status === 'FAILURE')
+      .forEach((c) => {
+        console.log(`\n  - ${c.name}: ${c.description}`);
+        if (c.errorMessage) {
+          console.log(`    Error: ${c.errorMessage}`);
+        }
+      });
+  }
+
+  return { passed, failed, denominator, warnings };
 }
 
 export function printAuthorizationServerSummary(
