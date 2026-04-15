@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { ZodError } from 'zod';
+import { readFile } from 'fs/promises';
 import {
   runConformanceTest,
   printClientResults,
@@ -37,6 +38,7 @@ import {
 import type { SpecVersion } from './scenarios';
 import { ConformanceCheck } from './types';
 import {
+  AuthorizationServerFileOptionsSchema,
   AuthorizationServerOptionsSchema,
   ClientOptionsSchema,
   ServerOptionsSchema
@@ -74,6 +76,17 @@ function filterScenariosBySpecVersion(
   }
   const allowed = new Set(versionScenarios);
   return allScenarios.filter((s) => allowed.has(s));
+}
+
+function mergeAuthorizationServerOptions(
+  cli: Record<string, any>,
+  file: Record<string, any>
+) {
+  return {
+    url: cli.url ?? file?.url,
+    outputDir: cli.outputDir,
+    specVersion: cli.specVersion
+  };
 }
 
 const program = new Command();
@@ -514,7 +527,8 @@ program
   .description(
     'Run conformance tests against an authorization server implementation'
   )
-  .requiredOption('--url <url>', 'URL of the authorization server issuer')
+  .option('--file <filename>', 'authorization server settings file')
+  .option('--url <url>', 'URL of the authorization server issuer')
   .option('--scenario <scenario>', 'Test scenario to run')
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
@@ -524,8 +538,38 @@ program
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
+      let fileOptions: Record<string, any> = {};
+      if (options.file) {
+        try {
+          const content = await readFile(options.file, 'utf-8');
+          fileOptions = AuthorizationServerFileOptionsSchema.parse(
+            JSON.parse(content)
+          ) as Record<string, any>;
+        } catch (error) {
+          if (error instanceof SyntaxError) {
+            console.error(`Invalid JSON in setting file: ${options.file}`);
+          } else if (error instanceof ZodError) {
+            const details = error.issues
+              .map((e) => `${e.path.join('.')}: ${e.message}`)
+              .join(', ');
+            console.error(
+              `Invalid setting file format: ${options.file}${details}`
+            );
+          } else {
+            console.error(
+              `Failed to read setting file: ${options.file}` +
+                (error instanceof Error ? `: ${error.message}` : '')
+            );
+          }
+          process.exit(1);
+        }
+      }
+      const mergedOptions = mergeAuthorizationServerOptions(
+        options,
+        fileOptions
+      );
       // Validate options with Zod
-      const validated = AuthorizationServerOptionsSchema.parse(options);
+      const validated = AuthorizationServerOptionsSchema.parse(mergedOptions);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
       const specVersionFilter = options.specVersion
