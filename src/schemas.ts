@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { getScenario, getClientScenario } from './scenarios';
+import {
+  getScenario,
+  getClientScenario,
+  getClientScenarioForAuthorizationServer
+} from './scenarios';
 
 // Client command options schema
 export const ClientOptionsSchema = z.object({
@@ -40,7 +44,17 @@ export type ServerOptions = z.infer<typeof ServerOptionsSchema>;
 
 // Authorization server command options schema
 export const AuthorizationServerOptionsSchema = z.object({
-  url: z.string().url('Invalid authorization server URL')
+  url: z.string().url('Invalid authorization server URL'),
+  scenario: z
+    .string()
+    .refine(
+      (scenario) =>
+        getClientScenarioForAuthorizationServer(scenario) !== undefined,
+      {
+        error: (iss) => `Unknown scenario '${iss.input}'`
+      }
+    )
+    .optional()
 });
 
 export type AuthorizationServerOptions = z.infer<

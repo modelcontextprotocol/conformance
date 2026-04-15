@@ -11,6 +11,7 @@ import {
   runInteractiveMode
 } from './runner';
 import {
+  printAuthorizationServerResults,
   printAuthorizationServerSummary,
   runAuthorizationServerConformanceTest
 } from './runner/authorization-server';
@@ -461,19 +462,39 @@ program
     'Run conformance tests against an authorization server implementation'
   )
   .requiredOption('--url <url>', 'URL of the authorization server issuer')
+  .option('--scenario <scenario>', 'Test scenario to run')
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
       // Validate options with Zod
       const validated = AuthorizationServerOptionsSchema.parse(options);
+      const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
       const specVersionFilter = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      // If a single scenario is specified, run just that one
+      if (validated.scenario) {
+        const result = await runAuthorizationServerConformanceTest(
+          validated.url,
+          validated.scenario,
+          outputDir
+        );
+
+        const { failed } = printAuthorizationServerResults(
+          result.checks,
+          result.scenarioDescription,
+          verbose
+        );
+
+        process.exit(failed > 0 ? 1 : 0);
+      }
 
       let scenarios: string[];
       scenarios = listClientScenariosForAuthorizationServer();
