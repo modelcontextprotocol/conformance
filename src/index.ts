@@ -495,7 +495,8 @@ program
           const result = await runAuthorizationServerConformanceTest(
             validated.url,
             scenarioName,
-            outputDir
+            outputDir,
+            specVersionFilter
           );
           allResults.push({ scenario: scenarioName, checks: result.checks });
         } catch (error) {
