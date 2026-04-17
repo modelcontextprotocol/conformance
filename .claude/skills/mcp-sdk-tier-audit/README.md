@@ -39,6 +39,9 @@ For public repos, any authenticated token works (no special scopes needed — au
 --repo <owner/repo>              GitHub repository (required)
 --branch <branch>                Branch to check
 --skip-conformance               Skip conformance tests (server and client)
+--skip-server-conformance        Skip only the server conformance test suite
+--skip-client-conformance        Skip only the client conformance test suite
+--skip-repo-health               Skip all GitHub-backed repo-health checks
 --conformance-server-url <url>   URL of the already-running conformance server
 --client-cmd <cmd>               Command to run the SDK conformance client (for client conformance tests)
 --days <n>                       Limit triage analysis to last N days
@@ -46,7 +49,7 @@ For public repos, any authenticated token works (no special scopes needed — au
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
 ```
 
-When any check is skipped — either via `--skip-conformance` or because `--conformance-server-url` / `--client-cmd` were omitted — the run is **partial**: the scorecard's `partial_run` field is `true` and the tier classification is suppressed (shown as `N/A (partial run)`). Skipped checks appear as `status: "skipped"` in JSON output and as `○ skipped` in the human-readable formats.
+When any check is skipped — either via `--skip-*` flags or because `--conformance-server-url` / `--client-cmd` were omitted — the run is **partial**: the scorecard's `partial_run` field is `true` and the tier classification is suppressed (shown as `N/A (partial run)`). Skipped checks appear as `status: "skipped"` in JSON output and as `○ skipped` in the human-readable formats.
 
 ### What the CLI Checks
 
@@ -153,7 +156,7 @@ dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework ne
 /mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
 ```
 
-The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`. If `--client-cmd` is omitted, client conformance is skipped and the result is treated as a partial run.
+The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`. For scoped runs, `--skip-repo-health` also suppresses the AI policy review so repo-health behavior stays aligned end-to-end; `--skip-docs-eval` only suppresses the documentation evaluation.
 
 ### Any Other AI Coding Agent
 
