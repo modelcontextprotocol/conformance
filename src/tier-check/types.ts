@@ -71,6 +71,12 @@ export interface TierScorecard {
   branch: string | null;
   timestamp: string;
   version: string | null;
+  /**
+   * True if at least one check was skipped via --skip-* flags.
+   * When true, the implied_tier value should be treated as informational
+   * only — a partial run cannot definitively establish a tier.
+   */
+  partial_run?: boolean;
   checks: {
     conformance: ConformanceResult;
     client_conformance: ConformanceResult;

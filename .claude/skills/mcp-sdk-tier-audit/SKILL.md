@@ -66,7 +66,7 @@ npm run --silent tier-check -- \
   --output json
 ```
 
-If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
+If no client-cmd was detected, omit the `--client-cmd` flag. Client conformance will be skipped, and because the run is no longer complete, the final result should be treated as a partial run (`Tier: N/A (partial run)`). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
 
 The CLI output includes server conformance pass rate, client conformance pass rate (with per-spec-version breakdown), issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
@@ -113,7 +113,9 @@ This evaluation checks:
 
 ## Step 4: Compute Final Tier
 
-Combine the deterministic scorecard (from the CLI) with the evaluation results (docs, policies). Apply the tier logic:
+**If the run is partial** (the CLI JSON has `partial_run: true`): **do not classify a tier**. Report the result as "Tier: N/A (partial run)" and list which checks ran vs. which were skipped. Do not output Tier 1/2 blockers for skipped checks — the skipped list already conveys that information. Still present the full table for the sections that did run so the user gets signal on those.
+
+Otherwise (full run): combine the deterministic scorecard (from the CLI) with the evaluation results (docs, policies). Apply the tier logic:
 
 ### Tier 1 requires ALL of:
 
@@ -145,7 +147,7 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 **Important edge cases:**
 
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
-- If client conformance was skipped (no client command found), note this as a gap but do not block tier advancement based on it alone.
+- If client conformance was skipped (no client command found), note this as a gap and keep the overall result as a partial run rather than assigning a definitive tier.
 
 **Conformance Breakdown:**
 
@@ -182,7 +184,7 @@ When evaluating P0 metrics, flag potentially mislabeled P0 issues:
 
 ## Step 5: Generate Output
 
-Write detailed reports to files using subagents, then show a concise summary to the user.
+Write detailed reports to files using subagents, then show a concise summary to the user. **Always write both files**, even for partial runs — skipped sections should render as `○ skipped` / "Not run — excluded by scope" so the file shape stays stable. Include a `**Scope**` line in the header of each report (e.g., `Scope: partial run (server conformance only)` or `Scope: full`).
 
 ### Output files (write via subagents)
 
@@ -208,7 +210,7 @@ Pass all the gathered data to a subagent and instruct it to write the remediatio
 
 ### Console output (shown to the user)
 
-After the subagents finish, output a short executive summary directly to the user:
+After the subagents finish, output a short executive summary directly to the user. For **partial runs** (when the CLI JSON has `partial_run: true`), replace the `## <sdk-name> — Tier <X>` header with `## <sdk-name> — Tier N/A (partial run)`, list the skipped sections directly below, and render rows for skipped checks as `○ skipped` in the tables (no ✓/✗ for T2/T1 columns on those rows). If you include a legend, state that `○` means "skipped". Omit the "For Tier 2" / "For Tier 1" sections entirely on partial runs — a partial run cannot definitively identify tier gaps.
 
 ```
 ## <sdk-name> — Tier <X>

@@ -38,7 +38,7 @@ For public repos, any authenticated token works (no special scopes needed — au
 ```
 --repo <owner/repo>              GitHub repository (required)
 --branch <branch>                Branch to check
---skip-conformance               Skip conformance tests
+--skip-conformance               Skip conformance tests (server and client)
 --conformance-server-url <url>   URL of the already-running conformance server
 --client-cmd <cmd>               Command to run the SDK conformance client (for client conformance tests)
 --days <n>                       Limit triage analysis to last N days
@@ -46,18 +46,27 @@ For public repos, any authenticated token works (no special scopes needed — au
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
 ```
 
+When any check is skipped — either via `--skip-conformance` or because `--conformance-server-url` / `--client-cmd` were omitted — the run is **partial**: the scorecard's `partial_run` field is `true` and the tier classification is suppressed (shown as `N/A (partial run)`). Skipped checks appear as `status: "skipped"` in JSON output and as `○ skipped` in the human-readable formats.
+
 ### What the CLI Checks
 
-| Check              | What it measures                                                               |
-| ------------------ | ------------------------------------------------------------------------------ |
-| Server Conformance | Pass rate of server implementation against the conformance test suite          |
-| Client Conformance | Pass rate of client implementation against the conformance test suite          |
-| Labels             | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
-| Triage             | How quickly issues get labeled after creation                                  |
-| P0 Resolution      | Whether critical bugs are resolved within SLA                                  |
-| Stable Release     | Whether a stable release >= 1.0.0 exists                                       |
-| Policy Signals     | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP             |
-| Spec Tracking      | Gap between latest spec release and SDK release                                |
+#### Conformance Tests
+
+| Check              | What it measures                                                      |
+| ------------------ | --------------------------------------------------------------------- |
+| Server Conformance | Pass rate of server implementation against the conformance test suite |
+| Client Conformance | Pass rate of client implementation against the conformance test suite |
+
+#### Repository Health
+
+| Check          | What it measures                                                               |
+| -------------- | ------------------------------------------------------------------------------ |
+| Labels         | Whether SEP-1730 label taxonomy is set up (supports GitHub native issue types) |
+| Triage         | How quickly issues get labeled after creation                                  |
+| P0 Resolution  | Whether critical bugs are resolved within SLA                                  |
+| Stable Release | Whether a stable release >= 1.0.0 exists                                       |
+| Policy Signals | Presence of CHANGELOG, SECURITY, CONTRIBUTING, dependabot, ROADMAP             |
+| Spec Tracking  | Gap between latest spec release and SDK release                                |
 
 ### Example Output
 
@@ -144,7 +153,7 @@ dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework ne
 /mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
 ```
 
-The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`.
+The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`. If `--client-cmd` is omitted, client conformance is skipped and the result is treated as a partial run.
 
 ### Any Other AI Coding Agent
 

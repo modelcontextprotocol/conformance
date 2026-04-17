@@ -12,13 +12,16 @@ Write two files to `results/` in the conformance repo:
 
 **Date**: {date}
 **Branch**: {branch}
+**Scope**: {full | partial run — skipped: <list>}
 **Auditor**: mcp-sdk-tier-audit skill (automated + subagent evaluation)
 
-## Tier Assessment: Tier {X}
+## Tier Assessment: {Tier X | N/A (partial run)}
 
-{Brief 1-2 sentence summary of the overall assessment and key factors.}
+{Brief 1-2 sentence summary of the overall assessment and key factors. For partial runs: state which scopes ran and note that no definitive tier is assigned.}
 
 ### Requirements Summary
+
+For partial runs, rows corresponding to skipped checks should render with `Current Value` = `○ skipped (excluded by scope)` and both `T1?` / `T2?` = `N/A`. Do not mark skipped rows as PASS or FAIL.
 
 | #   | Requirement             | Tier 1 Standard                   | Tier 2 Standard              | Current Value                     | T1?         | T2?         | Gap                |
 | --- | ----------------------- | --------------------------------- | ---------------------------- | --------------------------------- | ----------- | ----------- | ------------------ |
@@ -108,7 +111,10 @@ Labels: {present/missing list}
 # Remediation Guide: {repo}
 
 **Date**: {date}
-**Current Tier**: {X}
+**Scope**: {full | partial run — skipped: <list>}
+**Current Tier**: {X | N/A (partial run)}
+
+> For **partial runs**, omit the "Path to Tier 2" and "Path to Tier 1" sections (a partial run cannot identify all tier gaps). Instead, include a single section titled **Findings from scoped run** that lists remediation items only for the sections that were actually run, and a note that a full audit is required to enumerate remaining tier gaps.
 
 ## Path to Tier 2
 
