@@ -222,6 +222,17 @@ npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip
 npm run --silent tier-check -- \
   --repo modelcontextprotocol/typescript-sdk \
   --conformance-server-url http://localhost:3000/mcp
+
+# Partial runs (tier classification is suppressed — reported as "N/A (partial run)"):
+#   --skip-server-conformance / --skip-client-conformance  target one conformance suite
+#   --skip-conformance                                     skip both conformance suites
+#   --skip-repo-health                                     skip all GitHub-backed checks
+# Example: run only client conformance
+npm run --silent tier-check -- \
+  --repo modelcontextprotocol/typescript-sdk \
+  --conformance-server-url http://localhost:3000/mcp \
+  --client-cmd '<client-cmd>' \
+  --skip-server-conformance --skip-repo-health
 ```
 
 For a full AI-assisted assessment with remediation guide, use Claude Code:

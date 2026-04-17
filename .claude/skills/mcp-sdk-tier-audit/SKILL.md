@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: '<local-path> <conformance-server-url> [client-cmd] [--branch <branch>]'
+argument-hint: '<local-path> <conformance-server-url> [client-cmd] [--branch <branch>] [--scope <scope>] [--skip-*]'
 ---
 
 # MCP SDK Tier Audit
@@ -44,6 +44,18 @@ Extract from the user's input:
 - **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
 - **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, client conformance tests are skipped and noted as a gap in the report.
 - **branch** (optional): Git branch to check on GitHub (e.g. `--branch fweinberger/v1x-governance-docs`). If not provided, derive from the local checkout's current branch: `cd <local-path> && git rev-parse --abbrev-ref HEAD`. This is passed to the tier-check CLI so that policy signal file checks use the correct branch instead of the repo's default branch.
+- **scope** (optional): one of `server`, `client`, `conformance`, `repo-health`, or `full` (default). A partial scope runs only a subset of the audit and **suppresses tier classification** — the report will show "Tier: N/A (partial run)". Scope presets expand to skip flags:
+  - `--scope server` → `--skip-client-conformance --skip-repo-health --skip-docs-eval`
+  - `--scope client` → `--skip-server-conformance --skip-repo-health --skip-docs-eval`
+  - `--scope conformance` → `--skip-repo-health --skip-docs-eval`
+  - `--scope repo-health` → `--skip-conformance --skip-docs-eval`
+  - `--scope full` → default, no skips
+- **individual skip flags** (optional; override/augment `--scope` if both supplied):
+  - `--skip-server-conformance`, `--skip-client-conformance`, `--skip-conformance`
+  - `--skip-repo-health` (skips all repo-health work: the CLI's GitHub-backed checks plus the AI policy evaluation in Step 3)
+  - `--skip-docs-eval` (skips Evaluation 1 in Step 3)
+
+Note: repo health is treated as a single concern across the deterministic CLI checks and the AI-assisted policy review. `--skip-repo-health` skips both of those surfaces. `--skip-docs-eval` remains the only separate evaluation skip.
 
 The first two arguments are required. If either is missing, ask the user to provide it.
 
@@ -63,10 +75,15 @@ npm run --silent tier-check -- \
   --branch <branch> \
   --conformance-server-url <conformance-server-url> \
   --client-cmd '<client-cmd>' \
-  --output json
+  --output json \
+  [--skip-server-conformance] \
+  [--skip-client-conformance] \
+  [--skip-repo-health]
 ```
 
-If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
+Forward whichever `--skip-*` flags the user passed (or that the `--scope` preset resolved to). If no scope/skip flags were supplied, run the CLI without them for a full assessment.
+
+If no client-cmd was detected, omit the `--client-cmd` flag. Client conformance will be skipped, and because the run is no longer complete, the final result should be treated as a partial run (`Tier: N/A (partial run)`). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
 
 The CLI output includes server conformance pass rate, client conformance pass rate (with per-spec-version breakdown), issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
@@ -84,11 +101,13 @@ If found, read the file. It lists known/expected conformance failures. This cont
 
 ## Step 3: Launch Parallel Evaluations
 
-Launch 2 evaluations in parallel. Each reads the SDK from the local checkout path.
+Launch up to 2 evaluations in parallel. Each reads the SDK from the local checkout path.
 
-**IMPORTANT**: Launch both evaluations at the same time (in the same response) so they run in parallel.
+**IMPORTANT**: Launch both evaluations at the same time (in the same response) so they run in parallel. If documentation coverage is skipped via `--skip-docs-eval`, or repo-health work is skipped via `--skip-repo-health` (or via a `--scope` preset), omit the relevant evaluation and treat its section in the report as "Not run — excluded by scope".
 
 ### Evaluation 1: Documentation Coverage
+
+**Skip if** `--skip-docs-eval` is set.
 
 Use the prompt from `references/docs-coverage-prompt.md`. Pass the local path.
 
@@ -99,6 +118,8 @@ This evaluation checks:
 - Produces an evidence table with file:line references
 
 ### Evaluation 2: Policy Evaluation
+
+**Skip if** `--skip-repo-health` is set. Repo health is intentionally aligned here: if the repo-health checks are excluded from the CLI run, the AI policy evaluation is excluded too.
 
 Use the prompt from `references/policy-evaluation-prompt.md`. Pass the local path, the derived `owner/repo`, and the `policy_signals` section from the CLI JSON output.
 
@@ -113,7 +134,9 @@ This evaluation checks:
 
 ## Step 4: Compute Final Tier
 
-Combine the deterministic scorecard (from the CLI) with the evaluation results (docs, policies). Apply the tier logic:
+**If the run is partial** (any `--scope` other than `full`, or any individual `--skip-*` flag is set, or the CLI JSON has `partial_run: true`): **do not classify a tier**. Report the result as "Tier: N/A (partial run)" and list which checks ran vs. which were skipped. Do not output Tier 1/2 blockers for skipped checks — the skipped list already conveys that information. Still present the full table for the sections that did run so the user gets signal on those.
+
+Otherwise (full run): combine the deterministic scorecard (from the CLI) with the evaluation results (docs, policies). Apply the tier logic:
 
 ### Tier 1 requires ALL of:
 
@@ -145,7 +168,7 @@ If any Tier 2 requirement is not met, the SDK is Tier 3.
 **Important edge cases:**
 
 - If GitHub issue labels are not set up per SEP-1730, triage metrics cannot be computed. Note this as a gap. However, repos may use GitHub's native issue types instead of type labels — the CLI checks for both.
-- If client conformance was skipped (no client command found), note this as a gap but do not block tier advancement based on it alone.
+- If client conformance was skipped (no client command found), note this as a gap and keep the overall result as a partial run rather than assigning a definitive tier.
 
 **Conformance Breakdown:**
 
@@ -182,7 +205,7 @@ When evaluating P0 metrics, flag potentially mislabeled P0 issues:
 
 ## Step 5: Generate Output
 
-Write detailed reports to files using subagents, then show a concise summary to the user.
+Write detailed reports to files using subagents, then show a concise summary to the user. **Always write both files**, even for partial runs — skipped sections should render as `○ skipped` / "Not run — excluded by scope (`--skip-…` / `--scope <name>`)" so the file shape stays stable. Include a `**Scope**` line in the header of each report (e.g., `Scope: partial run (server conformance only)` or `Scope: full`).
 
 ### Output files (write via subagents)
 
@@ -208,7 +231,7 @@ Pass all the gathered data to a subagent and instruct it to write the remediatio
 
 ### Console output (shown to the user)
 
-After the subagents finish, output a short executive summary directly to the user:
+After the subagents finish, output a short executive summary directly to the user. For **partial runs**, replace the `## <sdk-name> — Tier <X>` header with `## <sdk-name> — Tier N/A (partial run)`, list the skipped sections directly below, and render rows for skipped checks as `○ skipped` in the tables (no ✓/✗ for T2/T1 columns on those rows). If you include a legend, state that `○` means "skipped". Omit the "For Tier 2" / "For Tier 1" sections entirely on partial runs — a partial run cannot definitively identify tier gaps.
 
 ```
 ## <sdk-name> — Tier <X>
@@ -304,4 +327,10 @@ Read these reference files when you need the detailed content for evaluation pro
 
 # Any SDK — server conformance only (no client)
 /mcp-sdk-tier-audit ~/src/mcp/some-sdk http://localhost:3004
+
+# Scope presets — run only a subset of the audit
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp --scope server
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "<client-cmd>" --scope client
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "<client-cmd>" --scope conformance
+/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk --scope repo-health
 ```

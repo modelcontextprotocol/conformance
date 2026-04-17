@@ -10,6 +10,15 @@ import { checkP0Resolution } from './checks/p0';
 import { checkStableRelease } from './checks/release';
 import { checkPolicySignals } from './checks/files';
 import { checkSpecTracking } from './checks/spec-tracking';
+import {
+  skippedConformance,
+  skippedLabels,
+  skippedTriage,
+  skippedP0,
+  skippedRelease,
+  skippedPolicySignals,
+  skippedSpecTracking
+} from './checks/skipped';
 import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
 import { TierScorecard } from './types';
@@ -20,6 +29,41 @@ function parseRepo(repo: string): { owner: string; repo: string } {
   if (parts.length !== 2)
     throw new Error(`Invalid repo format: ${repo}. Expected owner/repo`);
   return { owner: parts[0], repo: parts[1] };
+}
+
+export function resolveTierCheckPlan(options: {
+  skipServerConformance?: boolean;
+  skipClientConformance?: boolean;
+  skipConformance?: boolean;
+  skipRepoHealth?: boolean;
+  conformanceServerUrl?: string;
+  clientCmd?: string;
+}) {
+  const skipServerExplicit =
+    !!options.skipServerConformance || !!options.skipConformance;
+  const skipClientExplicit =
+    !!options.skipClientConformance || !!options.skipConformance;
+  const skipRepoHealth = !!options.skipRepoHealth;
+
+  const runServer = !skipServerExplicit && !!options.conformanceServerUrl;
+  const runClient = !skipClientExplicit && !!options.clientCmd;
+
+  return {
+    runServer,
+    runClient,
+    skipRepoHealth,
+    nothingToRun: !runServer && !runClient && skipRepoHealth,
+    serverSkipReason: runServer
+      ? null
+      : skipServerExplicit
+        ? 'excluded by scope'
+        : 'no --conformance-server-url',
+    clientSkipReason: runClient
+      ? null
+      : skipClientExplicit
+        ? 'excluded by scope'
+        : 'no --client-cmd'
+  };
 }
 
 export function createTierCheckCommand(): Command {
@@ -38,7 +82,19 @@ export function createTierCheckCommand(): Command {
       '--client-cmd <cmd>',
       'Command to run the SDK conformance client (for client conformance tests)'
     )
-    .option('--skip-conformance', 'Skip conformance tests')
+    .option('--skip-conformance', 'Skip conformance tests (server and client)')
+    .option(
+      '--skip-server-conformance',
+      'Skip only the server conformance test suite'
+    )
+    .option(
+      '--skip-client-conformance',
+      'Skip only the client conformance test suite'
+    )
+    .option(
+      '--skip-repo-health',
+      'Skip all GitHub-backed repo-health checks (labels, triage, P0, release, policy signals, spec tracking)'
+    )
     .option('--days <n>', 'Limit triage check to issues created in last N days')
     .option(
       '--output <format>',
@@ -55,13 +111,27 @@ export function createTierCheckCommand(): Command {
     )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
+
+      const runPlan = resolveTierCheckPlan(options);
+      const { runServer, runClient, skipRepoHealth } = runPlan;
+
+      if (runPlan.nothingToRun) {
+        console.error(
+          'All checks are skipped — nothing to run. Provide --conformance-server-url and/or --client-cmd, or remove a --skip-* flag.'
+        );
+        process.exit(1);
+      }
+
       let token = options.token || process.env.GITHUB_TOKEN;
 
       const specVersion = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
 
-      if (!token) {
+      // Token is only required if at least one GitHub-backed check will run.
+      const needsGitHub = !skipRepoHealth;
+
+      if (!token && needsGitHub) {
         // Try to get token from GitHub CLI
         try {
           const { execSync } = await import('child_process');
@@ -71,7 +141,7 @@ export function createTierCheckCommand(): Command {
         }
       }
 
-      if (!token) {
+      if (!token && needsGitHub) {
         console.error(
           'GitHub token required. Either:\n' +
             '  gh auth login\n' +
@@ -86,7 +156,12 @@ export function createTierCheckCommand(): Command {
 
       console.error('Running tier assessment checks...\n');
 
-      // Run all checks
+      const note = (label: string, didRun: boolean, reason?: string | null) =>
+        `  ${didRun ? '\u2713' : '\u25cb'} ${label}${didRun ? '' : ` (skipped${reason ? `: ${reason}` : ''})`}`;
+
+      // Run all non-skipped checks in parallel. Skipped checks resolve to
+      // a canned {status: 'skipped'} payload so downstream formatting and
+      // the tier scorecard schema remain stable.
       const [
         conformance,
         clientConformance,
@@ -97,46 +172,92 @@ export function createTierCheckCommand(): Command {
         files,
         specTracking
       ] = await Promise.all([
-        checkConformance({
-          serverUrl: options.conformanceServerUrl,
-          skip: options.skipConformance,
-          specVersion
-        }).then((r) => {
-          console.error('  ✓ Server Conformance');
-          return r;
-        }),
-        checkClientConformance({
-          clientCmd: options.clientCmd,
-          skip: options.skipConformance || !options.clientCmd,
-          specVersion
-        }).then((r) => {
-          console.error('  ✓ Client Conformance');
-          return r;
-        }),
-        checkLabels(octokit, owner, repo).then((r) => {
-          console.error('  ✓ Labels');
-          return r;
-        }),
-        checkTriage(octokit, owner, repo, days).then((r) => {
-          console.error('  \u2713 Triage');
-          return r;
-        }),
-        checkP0Resolution(octokit, owner, repo).then((r) => {
-          console.error('  \u2713 P0 Resolution');
-          return r;
-        }),
-        checkStableRelease(octokit, owner, repo).then((r) => {
-          console.error('  \u2713 Stable Release');
-          return r;
-        }),
-        checkPolicySignals(octokit, owner, repo, options.branch).then((r) => {
-          console.error('  \u2713 Policy Signals');
-          return r;
-        }),
-        checkSpecTracking(octokit, owner, repo).then((r) => {
-          console.error('  \u2713 Spec Tracking');
-          return r;
-        })
+        runServer
+          ? checkConformance({
+              serverUrl: options.conformanceServerUrl,
+              skip: false,
+              specVersion
+            }).then((r) => {
+              console.error(note('Server Conformance', true));
+              return r;
+            })
+          : Promise.resolve(skippedConformance()).then((r) => {
+              console.error(
+                note('Server Conformance', false, runPlan.serverSkipReason)
+              );
+              return r;
+            }),
+        runClient
+          ? checkClientConformance({
+              clientCmd: options.clientCmd,
+              skip: false,
+              specVersion
+            }).then((r) => {
+              console.error(note('Client Conformance', true));
+              return r;
+            })
+          : Promise.resolve(skippedConformance()).then((r) => {
+              console.error(
+                note('Client Conformance', false, runPlan.clientSkipReason)
+              );
+              return r;
+            }),
+        skipRepoHealth
+          ? Promise.resolve(skippedLabels()).then((r) => {
+              console.error(note('Labels', false));
+              return r;
+            })
+          : checkLabels(octokit, owner, repo).then((r) => {
+              console.error(note('Labels', true));
+              return r;
+            }),
+        skipRepoHealth
+          ? Promise.resolve(skippedTriage()).then((r) => {
+              console.error(note('Triage', false));
+              return r;
+            })
+          : checkTriage(octokit, owner, repo, days).then((r) => {
+              console.error(note('Triage', true));
+              return r;
+            }),
+        skipRepoHealth
+          ? Promise.resolve(skippedP0()).then((r) => {
+              console.error(note('P0 Resolution', false));
+              return r;
+            })
+          : checkP0Resolution(octokit, owner, repo).then((r) => {
+              console.error(note('P0 Resolution', true));
+              return r;
+            }),
+        skipRepoHealth
+          ? Promise.resolve(skippedRelease()).then((r) => {
+              console.error(note('Stable Release', false));
+              return r;
+            })
+          : checkStableRelease(octokit, owner, repo).then((r) => {
+              console.error(note('Stable Release', true));
+              return r;
+            }),
+        skipRepoHealth
+          ? Promise.resolve(skippedPolicySignals()).then((r) => {
+              console.error(note('Policy Signals', false));
+              return r;
+            })
+          : checkPolicySignals(octokit, owner, repo, options.branch).then(
+              (r) => {
+                console.error(note('Policy Signals', true));
+                return r;
+              }
+            ),
+        skipRepoHealth
+          ? Promise.resolve(skippedSpecTracking()).then((r) => {
+              console.error(note('Spec Tracking', false));
+              return r;
+            })
+          : checkSpecTracking(octokit, owner, repo).then((r) => {
+              console.error(note('Spec Tracking', true));
+              return r;
+            })
       ]);
 
       const checks = {
@@ -149,6 +270,9 @@ export function createTierCheckCommand(): Command {
         policy_signals: files,
         spec_tracking: specTracking
       };
+      const partialRun = Object.values(checks).some(
+        (check) => check.status === 'skipped'
+      );
 
       const implied_tier = computeTier(checks);
 
@@ -157,6 +281,7 @@ export function createTierCheckCommand(): Command {
         branch: options.branch || null,
         timestamp: new Date().toISOString(),
         version: release.version,
+        partial_run: partialRun,
         checks,
         implied_tier
       };

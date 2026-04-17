@@ -19,15 +19,21 @@ export function computeTier(
     tier1Blockers.push('client_conformance');
   }
 
-  if (checks.triage.compliance_rate < 0.9) {
+  if (checks.triage.status === 'skipped') {
+    tier1Blockers.push('triage (skipped)');
+  } else if (checks.triage.compliance_rate < 0.9) {
     tier1Blockers.push('triage');
   }
 
-  if (!checks.p0_resolution.all_p0s_resolved_within_7d) {
+  if (checks.p0_resolution.status === 'skipped') {
+    tier1Blockers.push('p0_resolution (skipped)');
+  } else if (!checks.p0_resolution.all_p0s_resolved_within_7d) {
     tier1Blockers.push('p0_resolution');
   }
 
-  if (!checks.stable_release.is_stable) {
+  if (checks.stable_release.status === 'skipped') {
+    tier1Blockers.push('stable_release (skipped)');
+  } else if (!checks.stable_release.is_stable) {
     tier1Blockers.push('stable_release');
   }
 
@@ -35,11 +41,15 @@ export function computeTier(
   // they feed into the skill's judgment-based evaluation but don't independently
   // block tier advancement since SEP-1730 doesn't list specific files.
 
-  if (checks.spec_tracking.status === 'fail') {
+  if (checks.spec_tracking.status === 'skipped') {
+    tier1Blockers.push('spec_tracking (skipped)');
+  } else if (checks.spec_tracking.status === 'fail') {
     tier1Blockers.push('spec_tracking');
   }
 
-  if (checks.labels.missing.length > 0) {
+  if (checks.labels.status === 'skipped') {
+    tier1Blockers.push('labels (skipped)');
+  } else if (checks.labels.missing.length > 0) {
     tier1Blockers.push('labels');
   }
 
@@ -49,8 +59,10 @@ export function computeTier(
       checks.conformance.pass_rate >= 0.8) &&
     (checks.client_conformance.status === 'skipped' ||
       checks.client_conformance.pass_rate >= 0.8) &&
-    checks.p0_resolution.all_p0s_resolved_within_14d &&
-    checks.stable_release.is_stable;
+    (checks.p0_resolution.status === 'skipped' ||
+      checks.p0_resolution.all_p0s_resolved_within_14d) &&
+    (checks.stable_release.status === 'skipped' ||
+      checks.stable_release.is_stable);
 
   const tier = tier1Blockers.length === 0 ? 1 : tier2Met ? 2 : 3;
 
