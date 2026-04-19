@@ -121,8 +121,14 @@ Implement tool \`test_simple_text\` with no arguments that returns:
       const connection = await connectToServer(serverUrl);
 
       const result = await connection.client.callTool({
-        name: 'test_simple_text'
-        /* omit arguments as it is not required in the schema */
+        name: 'test_simple_text',
+        // Per MCP spec, `arguments` is optional when the tool's inputSchema
+        // has no required fields. But the typescript-sdk server (<= 1.29.x)
+        // rejects undefined `arguments` against any inputSchema, returning
+        // isError: true. Fix merged into main (PR #1404) but not backported
+        // to the 1.x line — see modelcontextprotocol/typescript-sdk#1869.
+        // Passing `{}` explicitly until the fix is released.
+        arguments: {}
       });
 
       // Validate response
