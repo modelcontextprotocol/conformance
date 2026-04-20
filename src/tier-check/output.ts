@@ -121,8 +121,7 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push('');
   lines.push('## Check Results');
   lines.push('');
-  lines.push('| Check | Status | Detail |');
-  lines.push('|-------|--------|--------|');
+
   // Conformance matrix
   const matrix = buildConformanceMatrix(
     c.conformance as ConformanceResult,
@@ -176,6 +175,8 @@ export function formatMarkdown(scorecard: TierScorecard): string {
     }
   }
   lines.push('');
+  lines.push('| Check | Status | Detail |');
+  lines.push('|-------|--------|--------|');
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
   );
