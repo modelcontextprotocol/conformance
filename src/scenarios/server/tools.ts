@@ -11,6 +11,83 @@ import {
   Progress
 } from '@modelcontextprotocol/sdk/types.js';
 
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_./-]+$/;
+const TOOL_NAME_MAX_LENGTH = 64;
+
+const TOOLS_NAME_FORMAT_SPEC_REFS = [
+  {
+    id: 'MCP-Tools-List',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools#listing-tools'
+  },
+  {
+    id: 'SEP-986',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/SEP/SEP-986.md'
+  }
+];
+
+export function validateToolNameFormat(name: string): string | null {
+  if (name.length < 1 || name.length > TOOL_NAME_MAX_LENGTH) {
+    return `length ${name.length} is outside 1-${TOOL_NAME_MAX_LENGTH}`;
+  }
+  if (!TOOL_NAME_PATTERN.test(name)) {
+    return 'contains characters outside [A-Za-z0-9_./-]';
+  }
+  return null;
+}
+
+export function buildToolsNameFormatCheck(
+  tools: ReadonlyArray<{ name?: unknown }> | undefined
+): ConformanceCheck {
+  const timestamp = new Date().toISOString();
+  const baseCheck = {
+    id: 'tools-name-format',
+    name: 'ToolsNameFormat',
+    description: 'Tool names are 1-64 characters and match ^[A-Za-z0-9_./-]+$',
+    specReferences: TOOLS_NAME_FORMAT_SPEC_REFS,
+    timestamp
+  };
+
+  if (!Array.isArray(tools) || tools.length === 0) {
+    return {
+      ...baseCheck,
+      status: 'INFO',
+      errorMessage: 'No tools advertised; nothing to validate',
+      details: { toolCount: 0 }
+    };
+  }
+
+  const toolResults: Record<string, string> = {};
+  const violations: string[] = [];
+
+  tools.forEach((tool, index) => {
+    const name = typeof tool.name === 'string' ? tool.name : '';
+    const key = name || `<tool[${index}] missing name>`;
+    const reason =
+      typeof tool.name === 'string'
+        ? validateToolNameFormat(tool.name)
+        : 'name is not a string';
+    if (reason) {
+      toolResults[key] = `invalid: ${reason}`;
+      violations.push(`${key}: ${reason}`);
+    } else {
+      toolResults[key] = 'valid';
+    }
+  });
+
+  return {
+    ...baseCheck,
+    status: violations.length === 0 ? 'SUCCESS' : 'FAILURE',
+    errorMessage:
+      violations.length > 0
+        ? `${violations.length} tool name(s) violate SEP-986 format: ${violations.join('; ')}`
+        : undefined,
+    details: {
+      toolCount: tools.length,
+      results: toolResults
+    }
+  };
+}
+
 export class ToolsListScenario implements ClientScenario {
   name = 'tools-list';
   specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
@@ -23,7 +100,7 @@ export class ToolsListScenario implements ClientScenario {
 **Requirements**:
 - Return array of all available tools
 - Each tool MUST have:
-  - \`name\` (string)
+  - \`name\` (string, 1-64 chars, matching \`^[A-Za-z0-9_./-]+$\`)
   - \`description\` (string)
   - \`inputSchema\` (valid JSON Schema object)`;
 
@@ -71,6 +148,10 @@ export class ToolsListScenario implements ClientScenario {
           tools: result.tools?.map((t) => t.name)
         }
       });
+
+      // Validate tool name format per SEP-986:
+      // names MUST be 1-64 chars matching ^[A-Za-z0-9_./-]+$
+      checks.push(buildToolsNameFormatCheck(result.tools));
 
       await connection.close();
     } catch (error) {
