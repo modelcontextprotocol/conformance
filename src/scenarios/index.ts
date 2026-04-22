@@ -11,6 +11,7 @@ import { SSERetryScenario } from './client/sse-retry';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { ServerProtocolVersionHeaderScenario } from './server/protocol-version-header';
 
 import {
   PingScenario,
@@ -83,6 +84,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new ServerProtocolVersionHeaderScenario(),
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
