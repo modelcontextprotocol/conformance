@@ -1,9 +1,28 @@
 sep: 2164
 spec_url: https://modelcontextprotocol.io/specification/draft/server/resources#error-handling
 requirements:
-  - text: 'servers MUST return a JSON-RPC error with code -32602 (Invalid Params)'
-    check: sep-2164-error-code
   - text: 'Servers MUST NOT return an empty contents array for a non-existent resource'
+    level: MUST
+    check: sep-2164-empty-contents
+  - text: 'Servers SHOULD return standard JSON-RPC errors for common failure cases'
+    level: SHOULD
+    check: sep-2164-error-raised
+  - text: 'Resource not found error code SHOULD be -32602 (Invalid Params)'
+    level: SHOULD
     check: sep-2164-error-code
-  - text: 'The data field SHOULD include the uri that was not found'
+    notes: |
+      The draft spec lists -32602 under a SHOULD. For backwards compatibility
+      clients SHOULD also accept the legacy -32002, so the check grades -32002
+      as WARNING rather than FAILURE.
+  - text: 'Example responses include the requested uri in the error data field'
+    level: INFORMATIVE
     check: sep-2164-data-uri
+    notes: |
+      Illustrated in the spec's example block; not a normative SHOULD. The
+      check emits WARNING rather than FAILURE when absent or mismatched.
+  - text: 'resources/read succeeds for a URI returned by resources/list (positive control)'
+    level: IMPLICIT
+    check: sep-2164-valid-read-succeeds
+    notes: |
+      Not a SEP-2164 requirement per se — guards against a server that errors
+      on every URI and therefore appears to satisfy the not-found checks.
