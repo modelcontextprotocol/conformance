@@ -13,7 +13,8 @@ const specRefs = [SpecReferences.RFC_9207_ISS_PARAMETER];
  *
  * Server advertises authorization_response_iss_parameter_supported: true and
  * includes the correct iss value in the authorization redirect. A conformant
- * client should validate iss and proceed normally.
+ * client should validate iss and proceed normally (i.e. complete the token
+ * exchange).
  */
 export class IssParameterSupportedScenario implements Scenario {
   name = 'auth/iss-supported';
@@ -24,9 +25,11 @@ export class IssParameterSupportedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -35,9 +38,12 @@ export class IssParameterSupportedScenario implements Scenario {
       issParameterSupported: true,
       issInRedirect: 'correct',
       onAuthorizationRequest: ({ timestamp }) => {
+        // AS-side facts: document that the server did its part. These do not
+        // by themselves prove the client validated iss — see the
+        // `iss-client-accepted-correct` check below for that.
         this.checks.push({
-          id: 'iss-advertised-in-metadata',
-          name: 'ISS Parameter Advertised',
+          id: 'iss-advertised-by-server',
+          name: 'ISS Parameter Advertised (AS)',
           description:
             'Server advertised authorization_response_iss_parameter_supported: true in AS metadata',
           status: 'SUCCESS',
@@ -45,14 +51,18 @@ export class IssParameterSupportedScenario implements Scenario {
           specReferences: specRefs
         });
         this.checks.push({
-          id: 'iss-sent-in-redirect',
-          name: 'ISS Sent in Redirect',
+          id: 'iss-present-in-redirect',
+          name: 'ISS Present in Redirect (AS)',
           description:
             'Server included correct iss value in authorization redirect',
           status: 'SUCCESS',
           timestamp,
           specReferences: specRefs
         });
+      },
+      onTokenRequest: () => {
+        this.tokenRequestMade = true;
+        return { token: `test-token-${Date.now()}`, scopes: [] };
       }
     });
     await this.authServer.start(authApp);
@@ -76,10 +86,10 @@ export class IssParameterSupportedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-advertised-in-metadata')) {
+    if (!this.checks.some((c) => c.id === 'iss-advertised-by-server')) {
       this.checks.push({
-        id: 'iss-advertised-in-metadata',
-        name: 'ISS Parameter Advertised',
+        id: 'iss-advertised-by-server',
+        name: 'ISS Parameter Advertised (AS)',
         description:
           'Client did not reach authorization endpoint — could not verify iss parameter handling',
         status: 'FAILURE',
@@ -88,15 +98,33 @@ export class IssParameterSupportedScenario implements Scenario {
       });
     }
 
-    if (!this.checks.some((c) => c.id === 'iss-sent-in-redirect')) {
+    if (!this.checks.some((c) => c.id === 'iss-present-in-redirect')) {
       this.checks.push({
-        id: 'iss-sent-in-redirect',
-        name: 'ISS Sent in Redirect',
+        id: 'iss-present-in-redirect',
+        name: 'ISS Present in Redirect (AS)',
         description:
           'Client did not reach authorization endpoint — could not verify iss in redirect',
         status: 'FAILURE',
         timestamp,
         specReferences: specRefs
+      });
+    }
+
+    // Client-side assertion: with a correct iss present, a conformant client
+    // MUST accept the response and proceed to exchange the code for a token.
+    if (!this.checks.some((c) => c.id === 'iss-client-accepted-correct')) {
+      this.checks.push({
+        id: 'iss-client-accepted-correct',
+        name: 'Client accepts correct iss',
+        description: this.tokenRequestMade
+          ? 'Client validated iss and proceeded to exchange the authorization code'
+          : 'Client did not complete the token exchange — either it rejected a correct iss or aborted for unrelated reasons',
+        status: this.tokenRequestMade ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: specRefs,
+        details: {
+          tokenRequestMade: this.tokenRequestMade
+        }
       });
     }
 
@@ -119,35 +147,43 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
-      // issParameterSupported not set — omitted from metadata
-      // issInRedirect defaults to 'omit'
+      // Explicitly omit iss support: undefined leaves the key out of AS metadata,
+      // 'omit' keeps iss out of the redirect. These match the scenario's name.
+      issParameterSupported: undefined,
+      issInRedirect: 'omit',
       onAuthorizationRequest: ({ timestamp }) => {
         this.checks.push({
-          id: 'iss-not-advertised-in-metadata',
-          name: 'ISS Parameter Not Advertised',
+          id: 'iss-not-advertised-by-server',
+          name: 'ISS Parameter Not Advertised (AS)',
           description:
-            'Client accepted authorization response from server that does not advertise iss parameter support',
+            'Server AS metadata does not advertise authorization_response_iss_parameter_supported',
           status: 'SUCCESS',
           timestamp,
           specReferences: specRefs
         });
         this.checks.push({
-          id: 'iss-not-sent-in-redirect',
-          name: 'ISS Not Sent in Redirect',
+          id: 'iss-absent-from-redirect',
+          name: 'ISS Absent from Redirect (AS)',
           description:
-            'Client accepted authorization response that does not include an iss parameter',
+            'Server did not include an iss parameter in the authorization redirect',
           status: 'SUCCESS',
           timestamp,
           specReferences: specRefs
         });
+      },
+      onTokenRequest: () => {
+        this.tokenRequestMade = true;
+        return { token: `test-token-${Date.now()}`, scopes: [] };
       }
     });
     await this.authServer.start(authApp);
@@ -171,10 +207,10 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-not-advertised-in-metadata')) {
+    if (!this.checks.some((c) => c.id === 'iss-not-advertised-by-server')) {
       this.checks.push({
-        id: 'iss-not-advertised-in-metadata',
-        name: 'ISS Parameter Not Advertised',
+        id: 'iss-not-advertised-by-server',
+        name: 'ISS Parameter Not Advertised (AS)',
         description:
           'Client did not reach authorization endpoint — could not verify iss-absent handling',
         status: 'FAILURE',
@@ -183,15 +219,33 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
       });
     }
 
-    if (!this.checks.some((c) => c.id === 'iss-not-sent-in-redirect')) {
+    if (!this.checks.some((c) => c.id === 'iss-absent-from-redirect')) {
       this.checks.push({
-        id: 'iss-not-sent-in-redirect',
-        name: 'ISS Not Sent in Redirect',
+        id: 'iss-absent-from-redirect',
+        name: 'ISS Absent from Redirect (AS)',
         description:
           'Client did not reach authorization endpoint — could not verify absent iss handling',
         status: 'FAILURE',
         timestamp,
         specReferences: specRefs
+      });
+    }
+
+    // Client-side assertion: a client should accept an iss-free response when
+    // the AS did not advertise support and should complete the token exchange.
+    if (!this.checks.some((c) => c.id === 'iss-client-accepted-absent')) {
+      this.checks.push({
+        id: 'iss-client-accepted-absent',
+        name: 'Client accepts absent iss when not advertised',
+        description: this.tokenRequestMade
+          ? 'Client accepted authorization response without iss when AS did not advertise support and completed the token exchange'
+          : 'Client did not complete the token exchange — a conformant client should proceed when iss is legitimately absent',
+        status: this.tokenRequestMade ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: specRefs,
+        details: {
+          tokenRequestMade: this.tokenRequestMade
+        }
       });
     }
 
@@ -381,9 +435,10 @@ export class IssParameterUnexpectedScenario implements Scenario {
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
-      // issParameterSupported omitted from metadata
-      issParameterSupported: false,
-      issInRedirect: 'correct', // but send iss anyway
+      // undefined => authorization_response_iss_parameter_supported is omitted
+      // from AS metadata entirely; but the server sends iss in the redirect anyway.
+      issParameterSupported: undefined,
+      issInRedirect: 'correct',
       onTokenRequest: () => {
         this.tokenRequestMade = true;
         return { token: `test-token-${Date.now()}`, scopes: [] };
