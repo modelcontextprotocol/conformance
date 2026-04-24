@@ -76,7 +76,7 @@ gh api "repos/modelcontextprotocol/modelcontextprotocol/contents/docs/specificat
 A new scenario should come with:
 
 1. **A passing example** — usually by extending `examples/clients/typescript/everything-client.ts` or the everything-server, not a new file.
-2. **Evidence it fails when it should** — ideally a negative example (a deliberately broken client), or at minimum a manual run showing the failure mode.
+2. **A negative test** — a deliberately-broken implementation in `examples/{clients,servers}/typescript/` plus a vitest case asserting the check emits `FAILURE`/`WARNING` against it. See `src/scenarios/client/auth/index.test.ts` and `src/scenarios/server/negative.test.ts` for the pattern. A passing run against the everything-server proves the check doesn't false-positive, but not that it catches anything.
 
 Delete unused example scenarios. If a scenario key in the everything-client has no corresponding test, remove it.
 
