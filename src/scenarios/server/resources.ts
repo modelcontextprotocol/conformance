@@ -447,8 +447,8 @@ export class ResourcesNotFoundErrorScenario implements ClientScenario {
 
 When a client requests a URI that does not correspond to any resource, the server:
 
-- **MUST** return a JSON-RPC error with code \`-32602\` (Invalid Params)
 - **MUST NOT** return a result with an empty \`contents\` array
+- **SHOULD** return a JSON-RPC error with code \`-32602\` (Invalid Params)
 - **SHOULD** include the requested \`uri\` in the error \`data\` field
 
 Example error response:
@@ -505,36 +505,51 @@ This scenario does not require the server to register any specific resource — 
       caughtError = error;
     }
 
-    // Check 1: MUST return -32602 error code (not empty contents, not other codes)
+    // Check 1: MUST NOT return an empty contents array
+    const returnedEmptyContents =
+      result !== undefined && (result.contents?.length ?? 0) === 0;
+    checks.push({
+      id: 'sep-2164-no-empty-contents',
+      name: 'ResourcesNotFoundNoEmptyContents',
+      description:
+        'Server does not return an empty contents array for a non-existent resource',
+      status: returnedEmptyContents ? 'FAILURE' : 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      errorMessage: returnedEmptyContents
+        ? 'Server returned a result with an empty contents array. Servers MUST NOT return an empty contents array for non-existent resources.'
+        : undefined,
+      specReferences,
+      details: {
+        requestedUri: nonexistentUri,
+        receivedResult: result !== undefined,
+        contentsLength: result?.contents?.length
+      }
+    });
+
+    // Check 2: SHOULD return JSON-RPC error with code -32602
     const errorCode =
       caughtError instanceof McpError ? caughtError.code : undefined;
-    const errorCodeErrors: string[] = [];
+    let errorCodeMessage: string | undefined;
     if (result !== undefined) {
-      errorCodeErrors.push(
-        `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers MUST NOT return an empty contents array for non-existent resources.`
-      );
+      errorCodeMessage = `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers SHOULD return a JSON-RPC error for non-existent resources.`;
     } else if (!(caughtError instanceof McpError)) {
-      errorCodeErrors.push(
-        `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`
-      );
+      errorCodeMessage = `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`;
     } else if (errorCode !== -32602) {
-      errorCodeErrors.push(
+      errorCodeMessage =
         `Expected error code -32602 (Invalid Params), got ${errorCode}. ` +
-          (errorCode === -32002
-            ? 'Code -32002 was used in earlier spec versions but SEP-2164 standardizes on -32602.'
-            : '')
-      );
+        (errorCode === -32002
+          ? 'Code -32002 was used in earlier spec versions but SEP-2164 standardizes on -32602.'
+          : '');
     }
 
     checks.push({
       id: 'sep-2164-error-code',
       name: 'ResourcesNotFoundErrorCode',
       description:
-        'Server returns -32602 (Invalid Params) for non-existent resource',
-      status: errorCodeErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
+        'Server returns -32602 (Invalid Params) for non-existent resource (SHOULD)',
+      status: errorCodeMessage === undefined ? 'SUCCESS' : 'WARNING',
       timestamp: new Date().toISOString(),
-      errorMessage:
-        errorCodeErrors.length > 0 ? errorCodeErrors.join('; ') : undefined,
+      errorMessage: errorCodeMessage,
       specReferences,
       details: {
         requestedUri: nonexistentUri,
@@ -543,7 +558,7 @@ This scenario does not require the server to register any specific resource — 
       }
     });
 
-    // Check 2: SHOULD include uri in error data field
+    // Check 3: SHOULD include uri in error data field
     const errorData =
       caughtError instanceof McpError
         ? (caughtError.data as { uri?: string } | undefined)
