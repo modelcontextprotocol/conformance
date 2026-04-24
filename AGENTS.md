@@ -53,12 +53,23 @@ Keep scenarios separate when they're genuinely independent features or when they
 - **Optimize for Ctrl+F on the slug.** Repetitive check blocks are fine — easier to find the failing one than to unwind a clever helper.
 - Reuse `ConformanceCheck` and other types from `src/types.ts` rather than defining parallel shapes.
 - Include `specReferences` pointing to the relevant spec section.
+- **Severity follows the spec keyword:** MUST / MUST NOT → `FAILURE`; SHOULD / SHOULD NOT → `WARNING`. (CI treats WARNING as a failure, so Tier-1 SDKs still need to satisfy SHOULDs — see #245.)
 
 ## Descriptions and wording
 
 Be precise about what's **required** vs **optional**. A scenario description that tests optional behavior should make that clear — e.g. "Tests that a client _that wants a refresh token_ handles offline_access scope…" not "Tests that a client handles offline_access scope…". Don't accidentally promote a MAY/SHOULD to a MUST in the prose.
 
 When in doubt about spec details (OAuth parameters, audiences, grant types), check the actual spec in `modelcontextprotocol` rather than guessing.
+
+## Reviewing PRs
+
+### SEP scenarios
+
+Verify requirement levels against the SEP's **spec diff** — the change to `docs/specification/draft/` in the SEP's PR — not the SEP markdown summary or the conformance PR's description. The keyword that governs check severity is the one in the spec text; a bullet under a "Servers SHOULD…" sentence is SHOULD-level even if the SEP's title says "standardize."
+
+```sh
+gh api "repos/modelcontextprotocol/modelcontextprotocol/contents/docs/specification/draft/<path>?ref=<sep-branch>" --jq '.content' | base64 -d
+```
 
 ## Examples: prove it passes and fails
 
