@@ -25,11 +25,15 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 - Return a JSON response including issuer, authorization_endpoint, token_endpoint and response_types_supported
 - The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    specVersion?: SpecVersion
+  ): Promise<ConformanceCheck[]> {
     let status: Status = 'SUCCESS';
     let errorMessage: string | undefined;
     let details: any;
     let response: any | null = null;
+    let body: Record<string, any> | undefined;
     try {
       const wellKnownUrls = this.createWellKnownUrl(serverUrl);
 
@@ -53,7 +57,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 
       this.validateContentType(response.headers['content-type']);
 
-      const body = await this.parseJson(response);
+      body = await this.parseJson(response);
       const errors: string[] = [];
       this.validateMetadataBody(body, serverUrl, errors);
 
@@ -71,7 +75,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
       errorMessage = error instanceof Error ? error.message : String(error);
     }
 
-    return [
+    const checks: ConformanceCheck[] = [
       {
         id: 'authorization-server-metadata',
         name: 'AuthorizationServerMetadata',
@@ -88,6 +92,38 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
         ...(details ? { details } : {})
       }
     ];
+
+    if (specVersion === '2025-11-25' && body) {
+      const cimdSupported = body.client_id_metadata_document_supported;
+      const cimdStatus: Status = cimdSupported === true ? 'SUCCESS' : 'FAILURE';
+      const cimdErrorMessage =
+        cimdSupported === true
+          ? undefined
+          : cimdSupported === undefined
+            ? 'Authorization server metadata does not include "client_id_metadata_document_supported"'
+            : `Expected "client_id_metadata_document_supported" to be true, got ${JSON.stringify(cimdSupported)}`;
+
+      checks.push({
+        id: 'authorization-server-metadata-cimd',
+        name: 'AuthorizationServerMetadataCIMD',
+        description:
+          'Authorization server metadata includes client_id_metadata_document_supported=true',
+        status: cimdStatus,
+        timestamp: new Date().toISOString(),
+        errorMessage: cimdErrorMessage,
+        specReferences: [
+          {
+            id: 'IETF-OAuth-Client-ID-Metadata-Document',
+            url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-client-id-metadata-document-01.html#name-authorization-server-metada'
+          }
+        ],
+        details: {
+          client_id_metadata_document_supported: cimdSupported
+        }
+      });
+    }
+
+    return checks;
   }
 
   private createWellKnownUrl(serverUrl: string): string[] {

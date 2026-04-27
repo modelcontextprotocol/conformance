@@ -15,7 +15,7 @@ describe('createClientInitializationCheck', () => {
     expect(check.errorMessage).toBeUndefined();
   });
 
-  it('should return FAILURE when protocol version is missing', () => {
+  it('should return WARNING when protocol version is missing', () => {
     const invalidRequest = {
       clientInfo: {
         name: 'TestClient',
@@ -24,11 +24,11 @@ describe('createClientInitializationCheck', () => {
     };
 
     const check = createClientInitializationCheck(invalidRequest);
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     expect(check.errorMessage).toContain('Protocol version not provided');
   });
 
-  it('should return FAILURE when protocol version does not match', () => {
+  it('should return WARNING when protocol version does not match', () => {
     const invalidRequest = {
       protocolVersion: '2024-11-05',
       clientInfo: {
@@ -38,11 +38,11 @@ describe('createClientInitializationCheck', () => {
     };
 
     const check = createClientInitializationCheck(invalidRequest);
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     expect(check.errorMessage).toContain('Version mismatch');
   });
 
-  it('should return FAILURE when client name is missing', () => {
+  it('should return WARNING when client name is missing', () => {
     const invalidRequest = {
       protocolVersion: '2025-06-18',
       clientInfo: {
@@ -51,11 +51,11 @@ describe('createClientInitializationCheck', () => {
     };
 
     const check = createClientInitializationCheck(invalidRequest);
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     expect(check.errorMessage).toContain('Client name missing');
   });
 
-  it('should return FAILURE when client version is missing', () => {
+  it('should return WARNING when client version is missing', () => {
     const invalidRequest = {
       protocolVersion: '2025-06-18',
       clientInfo: {
@@ -64,7 +64,7 @@ describe('createClientInitializationCheck', () => {
     };
 
     const check = createClientInitializationCheck(invalidRequest);
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     expect(check.errorMessage).toContain('Client version missing');
   });
 

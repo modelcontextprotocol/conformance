@@ -48,7 +48,7 @@ export function createClientInitializationCheck(
   if (!initializeRequest?.clientInfo?.version)
     errors.push('Client version missing');
 
-  const status: CheckStatus = errors.length === 0 ? 'SUCCESS' : 'FAILURE';
+  const status: CheckStatus = errors.length === 0 ? 'SUCCESS' : 'WARNING';
 
   return {
     id: 'mcp-client-initialization',

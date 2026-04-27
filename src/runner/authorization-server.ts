@@ -1,13 +1,14 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
+import { ConformanceCheck, SpecVersion } from '../types';
 import { getClientScenarioForAuthorizationServer } from '../scenarios';
 import { createResultDir } from './utils';
 
 export async function runAuthorizationServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -31,7 +32,7 @@ export async function runAuthorizationServerConformanceTest(
     `Running client scenario for authorization server '${scenarioName}' against server: ${serverUrl}`
   );
 
-  const checks = await scenario.run(serverUrl);
+  const checks = await scenario.run(serverUrl, specVersion);
 
   if (resultDir) {
     await fs.writeFile(
