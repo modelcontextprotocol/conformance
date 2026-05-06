@@ -18,6 +18,9 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
 import {
   ClientScenario,
   ConformanceCheck,
@@ -29,7 +32,6 @@ import {
   SEP_2663_REF,
   errMsg,
   failureCheck,
-  initRawSession,
   waitForTerminal
 } from './helpers';
 
@@ -54,11 +56,15 @@ notification params MUST carry:
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let sessionId: string;
+    let client: Client;
+    let transport: StreamableHTTPClientTransport;
     try {
-      ({ sessionId } = await initRawSession(serverUrl, {
-        capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
-      }));
+      client = new Client(
+        { name: 'mcp-conformance', version: '1.0' },
+        { capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } } }
+      );
+      transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+      await client.connect(transport);
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -81,6 +87,11 @@ notification params MUST carry:
     // Issue tools/call with SSE-accepting headers and capture every
     // `data:` payload. Some are JSON-RPC responses (with id), some are
     // notifications (no id). We ingest all and classify by the body.
+    //
+    // The SDK's Client.request() consumes the response stream internally,
+    // so to *observe* notification frames on the POST SSE we drop to raw
+    // fetch here while reusing the SDK-initialized session via
+    // `transport.sessionId`.
     let taskId: string | undefined;
     const notifications: any[] = [];
     try {
@@ -89,7 +100,7 @@ notification params MUST carry:
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream, application/json',
-          'Mcp-Session-Id': sessionId
+          'Mcp-Session-Id': transport.sessionId!
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
@@ -132,7 +143,7 @@ notification params MUST carry:
     // collecting more, but we're done with this scenario regardless).
     if (taskId) {
       try {
-        await waitForTerminal(serverUrl, sessionId, taskId);
+        await waitForTerminal(client, taskId);
       } catch {
         /* swallow */
       }
@@ -149,6 +160,7 @@ notification params MUST carry:
           'No status notifications received on the tools/call POST SSE stream (notifications are optional)',
         specReferences: [SEP_2663_REF]
       });
+      await client.close().catch(() => {});
       return checks;
     }
 
@@ -183,6 +195,7 @@ notification params MUST carry:
       details: { notificationCount: notifications.length }
     });
 
+    await client.close().catch(() => {});
     return checks;
   }
 }

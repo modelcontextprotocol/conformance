@@ -16,6 +16,9 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
 import {
   ClientScenario,
   ConformanceCheck,
@@ -25,11 +28,74 @@ import {
 import {
   TASKS_EXTENSION_ID,
   SEP_2243_REF,
+  AnyResult,
   errMsg,
-  failureCheck,
-  initRawSession,
-  rawRequest
+  failureCheck
 } from './helpers';
+
+/**
+ * Minimal raw POST that lets us inject SEP-2243 routing headers
+ * (Mcp-Method, Mcp-Name) on a JSON-RPC call. The SDK's
+ * StreamableHTTPClientTransport doesn't expose per-request HTTP
+ * headers, and this whole scenario exists to verify the server tolerates
+ * those headers — so we pin a single raw fetch helper to this file.
+ *
+ * Reuses the SDK transport's session via `transport.sessionId` so the
+ * request lands on the same already-initialized session.
+ */
+async function rawJsonRpcWithHeaders(
+  serverUrl: string,
+  sessionId: string,
+  method: string,
+  params: any,
+  extraHeaders: Record<string, string>
+): Promise<any> {
+  const resp = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Session-Id': sessionId,
+      ...extraHeaders
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `hdr-${Math.random().toString(36).slice(2, 10)}`,
+      method,
+      params
+    })
+  });
+  const ct = resp.headers.get('content-type') || '';
+  let body: any;
+  if (ct.includes('text/event-stream')) {
+    const text = await resp.text();
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data:')) {
+        const payload = trimmed.slice(5).trimStart();
+        if (payload.startsWith('{')) {
+          const parsed = JSON.parse(payload);
+          if (parsed.id !== undefined && (parsed.result || parsed.error)) {
+            body = parsed;
+            break;
+          }
+        }
+      }
+    }
+  } else {
+    body = await resp.json();
+  }
+  if (!body) {
+    throw new Error(`No JSON-RPC frame in response (status ${resp.status})`);
+  }
+  if (body.error) {
+    const err: any = new Error(body.error.message || 'JSON-RPC error');
+    err.code = body.error.code;
+    err.data = body.error.data;
+    throw err;
+  }
+  return body.result;
+}
 
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
@@ -53,11 +119,15 @@ based on them — including when the headers disagree with the body.`;
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let sessionId: string;
+    let client: Client;
+    let transport: StreamableHTTPClientTransport;
     try {
-      ({ sessionId } = await initRawSession(serverUrl, {
-        capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
-      }));
+      client = new Client(
+        { name: 'mcp-conformance', version: '1.0' },
+        { capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } } }
+      );
+      transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+      await client.connect(transport);
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -79,11 +149,12 @@ based on them — including when the headers disagree with the body.`;
       const description =
         'Server tolerates Mcp-Method request header on tools/call (sync tool dispatch unaffected)';
       try {
-        const result = await rawRequest(
+        const result = await rawJsonRpcWithHeaders(
           serverUrl,
+          transport.sessionId!,
           'tools/call',
           { name: 'greet', arguments: { name: 'sep-2243' } },
-          { sessionId, headers: { 'Mcp-Method': 'tools/call' } }
+          { 'Mcp-Method': 'tools/call' }
         );
         const errs: string[] = [];
         if (result.resultType !== 'complete') {
@@ -123,15 +194,16 @@ based on them — including when the headers disagree with the body.`;
       const description =
         'Server tolerates Mcp-Method + Mcp-Name request headers on tasks/get (body taskId resolves regardless of routing headers)';
       try {
-        const created = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const created = (await client.request(
           {
-            name: 'slow_compute',
-            arguments: { seconds: 60, label: 'headers-tasks-get' }
+            method: 'tools/call',
+            params: {
+              name: 'slow_compute',
+              arguments: { seconds: 60, label: 'headers-tasks-get' }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         routingTaskId = created.taskId;
         if (!routingTaskId) {
           checks.push({
@@ -144,16 +216,14 @@ based on them — including when the headers disagree with the body.`;
             specReferences: [SEP_2243_REF]
           });
         } else {
-          const got = await rawRequest(
+          const got = await rawJsonRpcWithHeaders(
             serverUrl,
+            transport.sessionId!,
             'tasks/get',
             { taskId: routingTaskId },
             {
-              sessionId,
-              headers: {
-                'Mcp-Method': 'tasks/get',
-                'Mcp-Name': routingTaskId
-              }
+              'Mcp-Method': 'tasks/get',
+              'Mcp-Name': routingTaskId
             }
           );
           const errs: string[] = [];
@@ -190,11 +260,12 @@ based on them — including when the headers disagree with the body.`;
       const description =
         'When Mcp-Method header disagrees with body, server MUST dispatch on body method (header is informational)';
       try {
-        const result = await rawRequest(
+        const result = await rawJsonRpcWithHeaders(
           serverUrl,
+          transport.sessionId!,
           'tools/call',
           { name: 'greet', arguments: { name: 'header-mismatch' } },
-          { sessionId, headers: { 'Mcp-Method': 'tasks/get' } }
+          { 'Mcp-Method': 'tasks/get' }
         );
         const errs: string[] = [];
         if (result.resultType !== 'complete') {
@@ -227,17 +298,19 @@ based on them — including when the headers disagree with the body.`;
     // Cleanup the long-lived task.
     if (routingTaskId) {
       try {
-        await rawRequest(
-          serverUrl,
-          'tasks/cancel',
-          { taskId: routingTaskId },
-          { sessionId }
+        await client.request(
+          {
+            method: 'tasks/cancel',
+            params: { taskId: routingTaskId }
+          },
+          AnyResult
         );
       } catch {
         /* swallow */
       }
     }
 
+    await client.close().catch(() => {});
     return checks;
   }
 }

@@ -103,9 +103,11 @@ the SKIPPED short-circuit in `ephemeral-flow.ts` Check 8.
 
 `MRTR_INCOMPLETE_RESULT_TYPE`, the result-type predicates
 (`isIncompleteResult`, `isCompleteResult`), and the elicitation/sampling/
-roots mocks live in `mrtr/helpers.ts`. The raw-fetch primitives
-(`initRawSession`, `rawRequest`) are imported from the sibling
-`../tasks/helpers` because both scenario sets share the same wire-shape
-problem (SDK Zod schemas strip extension fields). When the upstream
-SDK gains schemas for SEP-2322 / SEP-2663 shapes, those import paths
-collapse back into the SDK.
+roots mocks live in `mrtr/helpers.ts`. The shared `AnyResult` Zod
+passthrough schema and `waitForTerminal`/`waitForStatus` polling helpers
+are imported from the sibling `../tasks/helpers` because both scenario
+sets share the same wire-shape problem (SDK Zod schemas strip extension
+fields). Pair `client.request(req, AnyResult)` with the SDK's
+`StreamableHTTPClientTransport` and you preserve every SEP-2322 / SEP-2663
+field. When the upstream SDK gains schemas for those shapes, the
+passthrough disappears in favor of the typed schemas directly.

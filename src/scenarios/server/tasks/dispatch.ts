@@ -21,6 +21,9 @@
  *   - failing_job     — task-supporting, returns tool error
  */
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
 import {
   ClientScenario,
   ConformanceCheck,
@@ -31,10 +34,9 @@ import {
   TASKS_EXTENSION_ID,
   SEP_2322_REF,
   SEP_2663_REF,
+  AnyResult,
   errMsg,
   failureCheck,
-  initRawSession,
-  rawRequest,
   waitForStatus,
   waitForTerminal
 } from './helpers';
@@ -90,15 +92,19 @@ export class TasksDispatchScenario implements ClientScenario {
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let sessionId: string;
+    let client: Client;
     try {
-      ({ sessionId } = await initRawSession(serverUrl, {
-        capabilities: {
-          elicitation: {},
-          sampling: {},
-          extensions: { [TASKS_EXTENSION_ID]: {} }
+      client = new Client(
+        { name: 'mcp-conformance', version: '1.0' },
+        {
+          capabilities: {
+            elicitation: {},
+            sampling: {},
+            extensions: { [TASKS_EXTENSION_ID]: {} }
+          }
         }
-      }));
+      );
+      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -120,13 +126,9 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/result is removed in v2 and MUST reject with -32601';
       try {
-        await rawRequest(
-          serverUrl,
-          'tasks/result',
-          { taskId: 'any' },
-          {
-            sessionId
-          }
+        await client.request(
+          { method: 'tasks/result', params: { taskId: 'any' } },
+          AnyResult
         );
         checks.push({
           id,
@@ -161,7 +163,10 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/list is removed in v2 and MUST reject with -32601';
       try {
-        await rawRequest(serverUrl, 'tasks/list', {}, { sessionId });
+        await client.request(
+          { method: 'tasks/list', params: {} },
+          AnyResult
+        );
         checks.push({
           id,
           name,
@@ -195,12 +200,13 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tools/call with no client `task` hint param MUST still produce CreateTaskResult for task-supporting tools';
       try {
-        const result = await rawRequest(
-          serverUrl,
-          'tools/call',
-          { name: 'failing_job', arguments: {} },
-          { sessionId }
-        );
+        const result = (await client.request(
+          {
+            method: 'tools/call',
+            params: { name: 'failing_job', arguments: {} }
+          },
+          AnyResult
+        )) as any;
         const errs: string[] = [];
         if (result.resultType !== 'task' || !result.taskId) {
           errs.push(
@@ -210,7 +216,7 @@ export class TasksDispatchScenario implements ClientScenario {
         // Best-effort wait so we don't leak.
         if (result.taskId) {
           try {
-            await waitForTerminal(serverUrl, sessionId, result.taskId);
+            await waitForTerminal(client, result.taskId);
           } catch {
             /* swallow */
           }
@@ -236,17 +242,18 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tools/call with legacy `task` param against a sync tool MUST NOT error and MUST NOT be promoted to a task';
       try {
-        const result = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const result = (await client.request(
           {
-            name: 'greet',
-            arguments: { name: 'legacy-hint' },
-            // Legacy v1 hint that the server MUST ignore.
-            task: { ttl: 60_000, pollInterval: 100 }
+            method: 'tools/call',
+            params: {
+              name: 'greet',
+              arguments: { name: 'legacy-hint' },
+              // Legacy v1 hint that the server MUST ignore.
+              task: { ttl: 60_000, pollInterval: 100 }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         const errs: string[] = [];
         if (result.resultType === 'task') {
           errs.push(
@@ -283,15 +290,16 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'For a fast operation, a task-supporting tool MAY skip task creation and return a sync ToolResult; either path is valid';
       try {
-        const result = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const result = (await client.request(
           {
-            name: 'slow_compute',
-            arguments: { seconds: 0, label: 'instant' }
+            method: 'tools/call',
+            params: {
+              name: 'slow_compute',
+              arguments: { seconds: 0, label: 'instant' }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         const errs: string[] = [];
         if (result.resultType === 'task') {
           if (!result.taskId) {
@@ -331,12 +339,13 @@ export class TasksDispatchScenario implements ClientScenario {
       const errs: string[] = [];
       try {
         // Sync tools/call.
-        const sync = await rawRequest(
-          serverUrl,
-          'tools/call',
-          { name: 'greet', arguments: { name: 'rt' } },
-          { sessionId }
-        );
+        const sync = (await client.request(
+          {
+            method: 'tools/call',
+            params: { name: 'greet', arguments: { name: 'rt' } }
+          },
+          AnyResult
+        )) as any;
         if (sync.resultType !== 'complete') {
           errs.push(
             `sync tools/call resultType = ${JSON.stringify(sync.resultType)}, want "complete"`
@@ -344,24 +353,23 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/get against a fresh task.
-        const created = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const created = (await client.request(
           {
-            name: 'slow_compute',
-            arguments: { seconds: 0, label: 'rt-get' }
+            method: 'tools/call',
+            params: {
+              name: 'slow_compute',
+              arguments: { seconds: 0, label: 'rt-get' }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         const taskIdForGet = created.taskId;
         if (taskIdForGet) {
-          await waitForTerminal(serverUrl, sessionId, taskIdForGet);
-          const got = await rawRequest(
-            serverUrl,
-            'tasks/get',
-            { taskId: taskIdForGet },
-            { sessionId }
-          );
+          await waitForTerminal(client, taskIdForGet);
+          const got = (await client.request(
+            { method: 'tasks/get', params: { taskId: taskIdForGet } },
+            AnyResult
+          )) as any;
           if (got.resultType !== 'complete') {
             errs.push(
               `tasks/get resultType = ${JSON.stringify(got.resultType)}, want "complete"`
@@ -370,22 +378,21 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/cancel ack on a fresh long-running task.
-        const longLived = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const longLived = (await client.request(
           {
-            name: 'slow_compute',
-            arguments: { seconds: 60, label: 'rt-cancel' }
+            method: 'tools/call',
+            params: {
+              name: 'slow_compute',
+              arguments: { seconds: 60, label: 'rt-cancel' }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         if (longLived.taskId) {
-          const cancelAck = await rawRequest(
-            serverUrl,
-            'tasks/cancel',
-            { taskId: longLived.taskId },
-            { sessionId }
-          );
+          const cancelAck = (await client.request(
+            { method: 'tasks/cancel', params: { taskId: longLived.taskId } },
+            AnyResult
+          )) as any;
           if (cancelAck.resultType !== 'complete') {
             errs.push(
               `tasks/cancel ack resultType = ${JSON.stringify(cancelAck.resultType)}, want "complete"`
@@ -394,41 +401,40 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/update ack on a parked elicitation task.
-        const elicit = await rawRequest(
-          serverUrl,
-          'tools/call',
-          { name: 'confirm_delete', arguments: { filename: 'rt.txt' } },
-          { sessionId }
-        );
+        const elicit = (await client.request(
+          {
+            method: 'tools/call',
+            params: { name: 'confirm_delete', arguments: { filename: 'rt.txt' } }
+          },
+          AnyResult
+        )) as any;
         const elicitTaskId = elicit.taskId;
         if (elicitTaskId) {
           await waitForStatus(
-            serverUrl,
-            sessionId,
+            client,
             elicitTaskId,
             'input_required',
             5_000
           );
-          const updateAck = await rawRequest(
-            serverUrl,
-            'tasks/update',
+          const updateAck = (await client.request(
             {
-              taskId: elicitTaskId,
-              inputResponses: { 'unknown-key': { ignored: true } }
+              method: 'tasks/update',
+              params: {
+                taskId: elicitTaskId,
+                inputResponses: { 'unknown-key': { ignored: true } }
+              }
             },
-            { sessionId }
-          );
+            AnyResult
+          )) as any;
           if (updateAck.resultType !== 'complete') {
             errs.push(
               `tasks/update ack resultType = ${JSON.stringify(updateAck.resultType)}, want "complete"`
             );
           }
           try {
-            await rawRequest(
-              serverUrl,
-              'tasks/cancel',
-              { taskId: elicitTaskId },
-              { sessionId }
+            await client.request(
+              { method: 'tasks/cancel', params: { taskId: elicitTaskId } },
+              AnyResult
             );
           } catch {
             /* swallow */
@@ -455,15 +461,16 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/get issued immediately after CreateTaskResult arrives MUST resolve (server MUST NOT return CreateTaskResult before the task is durably created)';
       try {
-        const created = await rawRequest(
-          serverUrl,
-          'tools/call',
+        const created = (await client.request(
           {
-            name: 'slow_compute',
-            arguments: { seconds: 60, label: 'consistency' }
+            method: 'tools/call',
+            params: {
+              name: 'slow_compute',
+              arguments: { seconds: 60, label: 'consistency' }
+            }
           },
-          { sessionId }
-        );
+          AnyResult
+        )) as any;
         const taskId = created.taskId;
         if (!taskId) {
           checks.push({
@@ -478,12 +485,10 @@ export class TasksDispatchScenario implements ClientScenario {
         } else {
           // No await/sleep between create and get — codifies the
           // strong-consistency ordering.
-          const got = await rawRequest(
-            serverUrl,
-            'tasks/get',
-            { taskId },
-            { sessionId }
-          );
+          const got = (await client.request(
+            { method: 'tasks/get', params: { taskId } },
+            AnyResult
+          )) as any;
           const errs: string[] = [];
           if (got.taskId !== taskId) {
             errs.push(
@@ -492,11 +497,9 @@ export class TasksDispatchScenario implements ClientScenario {
           }
           // Cleanup.
           try {
-            await rawRequest(
-              serverUrl,
-              'tasks/cancel',
-              { taskId },
-              { sessionId }
+            await client.request(
+              { method: 'tasks/cancel', params: { taskId } },
+              AnyResult
             );
           } catch {
             /* swallow */
@@ -523,11 +526,12 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/get for a taskId the server does not recognize MUST return -32602';
       try {
-        await rawRequest(
-          serverUrl,
-          'tasks/get',
-          { taskId: 'tasks-conformance-nonexistent-12345' },
-          { sessionId }
+        await client.request(
+          {
+            method: 'tasks/get',
+            params: { taskId: 'tasks-conformance-nonexistent-12345' }
+          },
+          AnyResult
         );
         checks.push({
           id,
@@ -555,6 +559,7 @@ export class TasksDispatchScenario implements ClientScenario {
       }
     }
 
+    await client.close().catch(() => {});
     return checks;
   }
 }

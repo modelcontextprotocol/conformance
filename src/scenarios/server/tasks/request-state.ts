@@ -16,6 +16,9 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
 import {
   ClientScenario,
   ConformanceCheck,
@@ -26,10 +29,9 @@ import {
   TASKS_EXTENSION_ID,
   SEP_2322_REF,
   SEP_2663_REF,
+  AnyResult,
   errMsg,
-  failureCheck,
-  initRawSession,
-  rawRequest
+  failureCheck
 } from './helpers';
 
 export class TasksRequestStateScenario implements ClientScenario {
@@ -59,11 +61,15 @@ export class TasksRequestStateScenario implements ClientScenario {
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let sessionId: string;
+    let client: Client;
     try {
-      ({ sessionId } = await initRawSession(serverUrl, {
-        capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
-      }));
+      client = new Client(
+        { name: 'mcp-conformance', version: '1.0' },
+        {
+          capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
+        }
+      );
+      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -81,15 +87,16 @@ export class TasksRequestStateScenario implements ClientScenario {
     // Drive a long-running task once and reuse it for every check.
     let taskId: string | undefined;
     try {
-      const created = await rawRequest(
-        serverUrl,
-        'tools/call',
+      const created = (await client.request(
         {
-          name: 'slow_compute',
-          arguments: { seconds: 60, label: 'request-state' }
+          method: 'tools/call',
+          params: {
+            name: 'slow_compute',
+            arguments: { seconds: 60, label: 'request-state' }
+          }
         },
-        { sessionId }
-      );
+        AnyResult
+      )) as any;
       taskId = created.taskId;
     } catch (error) {
       checks.push(
@@ -127,12 +134,10 @@ export class TasksRequestStateScenario implements ClientScenario {
       const description =
         'tasks/get may include requestState; when present it MUST be a non-empty string';
       try {
-        const task = await rawRequest(
-          serverUrl,
-          'tasks/get',
-          { taskId },
-          { sessionId }
-        );
+        const task = (await client.request(
+          { method: 'tasks/get', params: { taskId } },
+          AnyResult
+        )) as any;
         const errs: string[] = [];
         if (task.requestState !== undefined) {
           if (typeof task.requestState !== 'string') {
@@ -187,12 +192,10 @@ export class TasksRequestStateScenario implements ClientScenario {
         });
       } else {
         try {
-          const echoed = await rawRequest(
-            serverUrl,
-            'tasks/get',
-            { taskId, requestState: firstToken },
-            { sessionId }
-          );
+          const echoed = (await client.request(
+            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            AnyResult
+          )) as any;
           const errs: string[] = [];
           if (echoed.taskId !== taskId) {
             errs.push(
@@ -239,19 +242,15 @@ export class TasksRequestStateScenario implements ClientScenario {
           // that sign tokens with embedded expiry, this likely yields a
           // newer token; on plaintext-token servers it round-trips the
           // same value (still valid).
-          await rawRequest(
-            serverUrl,
-            'tasks/get',
-            { taskId, requestState: firstToken },
-            { sessionId }
+          await client.request(
+            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            AnyResult
           );
           // Now re-echo the OLDER token; server MUST accept.
-          const stale = await rawRequest(
-            serverUrl,
-            'tasks/get',
-            { taskId, requestState: firstToken },
-            { sessionId }
-          );
+          const stale = (await client.request(
+            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            AnyResult
+          )) as any;
           const errs: string[] = [];
           if (stale.taskId !== taskId) {
             errs.push(
@@ -280,11 +279,15 @@ export class TasksRequestStateScenario implements ClientScenario {
 
     // Cleanup the long-lived task so we don't leak goroutines.
     try {
-      await rawRequest(serverUrl, 'tasks/cancel', { taskId }, { sessionId });
+      await client.request(
+        { method: 'tasks/cancel', params: { taskId } },
+        AnyResult
+      );
     } catch {
       /* swallow */
     }
 
+    await client.close().catch(() => {});
     return checks;
   }
 }
