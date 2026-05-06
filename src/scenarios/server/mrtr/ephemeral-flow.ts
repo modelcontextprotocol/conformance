@@ -101,7 +101,9 @@ Every \`tools/call\` response in the MRTR contract is one of:
           }
         }
       );
-      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
     } catch (error) {
       checks.push({
         id: 'mrtr-session-bootstrap',
@@ -312,7 +314,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
         const r1 = (await client.request(
           {
             method: 'tools/call',
-            params: { name: 'test_incomplete_result_request_state', arguments: {} }
+            params: {
+              name: 'test_incomplete_result_request_state',
+              arguments: {}
+            }
           },
           AnyResult
         )) as any;
@@ -378,7 +383,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
         const r1 = (await client.request(
           {
             method: 'tools/call',
-            params: { name: 'test_incomplete_result_multiple_inputs', arguments: {} }
+            params: {
+              name: 'test_incomplete_result_multiple_inputs',
+              arguments: {}
+            }
           },
           AnyResult
         )) as any;
@@ -455,7 +463,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
         const r1 = (await client.request(
           {
             method: 'tools/call',
-            params: { name: 'test_incomplete_result_multi_round', arguments: {} }
+            params: {
+              name: 'test_incomplete_result_multi_round',
+              arguments: {}
+            }
           },
           AnyResult
         )) as any;
@@ -544,7 +555,9 @@ Every \`tools/call\` response in the MRTR contract is one of:
             params: {
               name: 'test_incomplete_result_elicitation',
               arguments: {},
-              inputResponses: { wrong_key: mockElicitResponse({ data: 'wrong' }) }
+              inputResponses: {
+                wrong_key: mockElicitResponse({ data: 'wrong' })
+              }
             }
           },
           AnyResult

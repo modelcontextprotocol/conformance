@@ -98,7 +98,9 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
           }
         }
       );
-      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',

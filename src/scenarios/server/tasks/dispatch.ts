@@ -104,7 +104,9 @@ export class TasksDispatchScenario implements ClientScenario {
           }
         }
       );
-      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -163,10 +165,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/list is removed in v2 and MUST reject with -32601';
       try {
-        await client.request(
-          { method: 'tasks/list', params: {} },
-          AnyResult
-        );
+        await client.request({ method: 'tasks/list', params: {} }, AnyResult);
         checks.push({
           id,
           name,
@@ -404,18 +403,16 @@ export class TasksDispatchScenario implements ClientScenario {
         const elicit = (await client.request(
           {
             method: 'tools/call',
-            params: { name: 'confirm_delete', arguments: { filename: 'rt.txt' } }
+            params: {
+              name: 'confirm_delete',
+              arguments: { filename: 'rt.txt' }
+            }
           },
           AnyResult
         )) as any;
         const elicitTaskId = elicit.taskId;
         if (elicitTaskId) {
-          await waitForStatus(
-            client,
-            elicitTaskId,
-            'input_required',
-            5_000
-          );
+          await waitForStatus(client, elicitTaskId, 'input_required', 5_000);
           const updateAck = (await client.request(
             {
               method: 'tasks/update',

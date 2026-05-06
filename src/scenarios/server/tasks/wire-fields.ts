@@ -69,7 +69,9 @@ export class TasksWireFieldsScenario implements ClientScenario {
           }
         }
       );
-      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',

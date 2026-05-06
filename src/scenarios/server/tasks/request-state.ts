@@ -69,7 +69,9 @@ export class TasksRequestStateScenario implements ClientScenario {
           capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
         }
       );
-      await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -193,7 +195,10 @@ export class TasksRequestStateScenario implements ClientScenario {
       } else {
         try {
           const echoed = (await client.request(
-            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            {
+              method: 'tasks/get',
+              params: { taskId, requestState: firstToken }
+            },
             AnyResult
           )) as any;
           const errs: string[] = [];
@@ -243,12 +248,18 @@ export class TasksRequestStateScenario implements ClientScenario {
           // newer token; on plaintext-token servers it round-trips the
           // same value (still valid).
           await client.request(
-            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            {
+              method: 'tasks/get',
+              params: { taskId, requestState: firstToken }
+            },
             AnyResult
           );
           // Now re-echo the OLDER token; server MUST accept.
           const stale = (await client.request(
-            { method: 'tasks/get', params: { taskId, requestState: firstToken } },
+            {
+              method: 'tasks/get',
+              params: { taskId, requestState: firstToken }
+            },
             AnyResult
           )) as any;
           const errs: string[] = [];

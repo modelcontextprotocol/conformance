@@ -76,7 +76,9 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
           }
         }
       );
-      await withExt.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+      await withExt.connect(
+        new StreamableHTTPClientTransport(new URL(serverUrl))
+      );
 
       withoutExt = new Client(
         { name: 'mcp-conformance', version: '1.0' },
