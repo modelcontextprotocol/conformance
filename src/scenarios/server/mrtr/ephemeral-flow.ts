@@ -586,30 +586,31 @@ Every \`tools/call\` response in the MRTR contract is one of:
 
     // Check 8: SKIPPED — MRTR → Tasks composition.
     // Tracking placeholder; spec made this normative in commit 451f5e1
-    // (Apr 30) but two blockers remain before this can be enabled:
-    //   (a) Spec alignment on the MRTR resultType. SEP-2322 merged
-    //       2026-05-06 with "input_required" (commit de6d76fb).
-    //       SEP-2663's PR head still reads "incomplete" on line 121 of
-    //       the mdx — Caitie's 5/15 RC commitment (PR 2322 issue
-    //       comment 4384052694) tracks the alignment. Once SEP-2663
-    //       lands its alignment commit this blocker is resolved.
-    //   (b) Reference servers need middleware that observes the
-    //       handler's InputRequiredResult signal BEFORE creating a task —
-    //       the natural implementation pattern (create task up-front,
-    //       run handler in goroutine) doesn't expose the signal in time.
-    //       Tracked in https://github.com/panyam/mcpkit/issues/347 as
-    //       one example impl that hits this; SDKs in any language will
-    //       need an equivalent fix.
+    // (Apr 30). Blocker: reference servers need a middleware that
+    // observes the handler's InputRequiredResult signal BEFORE creating
+    // a task — the natural implementation pattern (create task up-front,
+    // run handler in goroutine) doesn't expose the signal in time, so
+    // round 1 of an MRTR-composing tools/call ends up emitting
+    // CreateTaskResult instead of InputRequiredResult. Tracked in
+    // https://github.com/panyam/mcpkit/issues/347 as one example impl
+    // that hits this; SDKs in any language will need an equivalent fix.
+    //
+    // (An earlier version of this skip also tracked a discriminator
+    // value blocker on "incomplete" vs "input_required". SEP-2322
+    // merged on 2026-05-06 with "input_required" (commit de6d76fb).
+    // SEP-2663's mdx hasn't yet caught up but every server emitting
+    // the merged 2322 literal is interoperable, so the blocker is
+    // effectively resolved for conformance purposes.)
     {
       checks.push({
         id: 'mrtr-tasks-composition',
         name: 'MrtrTasksComposition',
         description:
-          'MRTR loop gathers input then final round returns CreateTaskResult (SEP-2663 451f5e1; deferred — SEP-2663 has not yet aligned its resultType literal with the merged SEP-2322 rename, and reference servers still need a middleware that surfaces the InputRequiredResult signal before task creation)',
+          'MRTR loop gathers input then final round returns CreateTaskResult (SEP-2663 451f5e1). Deferred on the reference-impl middleware refactor — the eager-task-creation pattern emits CreateTaskResult before the handler runs, so the handler\'s IsInputRequired signal can\'t be surfaced as InputRequiredResult on round 1. Tracked at panyam/mcpkit issue 347.',
         status: 'SKIPPED',
         timestamp: new Date().toISOString(),
         errorMessage:
-          "Skipped: deferred until (a) SEP-2663 aligns its resultType literal with the merged SEP-2322 'input_required' value (still 'incomplete' as of PR 2663 head 82fb2c4d, expected at the 5/15 RC) and (b) reference servers can observe the handler's IsInputRequired signal before creating a task (panyam/mcpkit issue 347).",
+          "Skipped: deferred on the reference-impl middleware refactor (panyam/mcpkit issue 347). The current eager-task-creation pattern emits CreateTaskResult before the handler runs, so the handler's IsInputRequired signal can't be surfaced as InputRequiredResult on round 1.",
         specReferences: [
           SEP_2322_REF,
           {
