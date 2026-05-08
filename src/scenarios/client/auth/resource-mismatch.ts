@@ -31,7 +31,7 @@ import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
  */
 export class ResourceMismatchScenario implements Scenario {
   name = 'auth/resource-mismatch';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  introducedIn: SpecVersion = DRAFT_PROTOCOL_VERSION;
   description =
     'Tests that client rejects when PRM resource does not match server URL';
   allowClientError = true;

@@ -71,7 +71,9 @@ export interface ScenarioUrls {
 export interface Scenario {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  extension?: boolean;
   /**
    * If true, a non-zero client exit code is expected and will not cause the test to fail.
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
@@ -85,13 +87,17 @@ export interface Scenario {
 export interface ClientScenario {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  extension?: boolean;
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+  extension?: boolean;
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }

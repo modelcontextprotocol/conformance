@@ -2,7 +2,7 @@ import type {
   Scenario,
   ConformanceCheck,
   ScenarioUrls,
-  SpecVersion
+  DatedSpecVersion
 } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
@@ -24,7 +24,7 @@ const PRE_REGISTERED_CLIENT_SECRET = 'pre-registered-secret';
  */
 export class PreRegistrationScenario implements Scenario {
   name = 'auth/pre-registration';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-11-25';
   description =
     'Tests OAuth flow with pre-registered client credentials. Server does not support DCR.';
 

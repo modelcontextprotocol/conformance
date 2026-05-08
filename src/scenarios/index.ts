@@ -3,10 +3,10 @@ import {
   ClientScenario,
   ClientScenarioForAuthorizationServer,
   SpecVersion,
+  DatedSpecVersion,
   ScenarioSpecTag,
   DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION
+  DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
@@ -279,20 +279,27 @@ export function resolveSpecVersion(value: string): SpecVersion {
   process.exit(1);
 }
 
-// The draft version selects everything in the latest dated release plus
-// scenarios tagged draft-only, so SEP authors can run the full suite against an
-// SDK tracking the in-progress spec without retagging core scenarios.
+function versionIndex(
+  v: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION
+): number {
+  return ALL_SPEC_VERSIONS.indexOf(v);
+}
+
+// Extension scenarios are never selected by --spec-version.
 function matchesSpecVersion(
-  scenario: { specVersions: ScenarioSpecTag[] },
+  scenario: {
+    introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+    removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+    extension?: boolean;
+  },
   version: SpecVersion
 ): boolean {
-  if (version === DRAFT_PROTOCOL_VERSION) {
-    return (
-      scenario.specVersions.includes(DRAFT_PROTOCOL_VERSION) ||
-      scenario.specVersions.includes(LATEST_SPEC_VERSION)
-    );
-  }
-  return scenario.specVersions.includes(version);
+  if (scenario.extension) return false;
+  return (
+    versionIndex(scenario.introducedIn) <= versionIndex(version) &&
+    (scenario.removedIn === undefined ||
+      versionIndex(version) < versionIndex(scenario.removedIn))
+  );
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {
@@ -318,11 +325,17 @@ export function listClientScenariosForAuthorizationServerForSpec(
 export function getScenarioSpecVersions(
   name: string
 ): ScenarioSpecTag[] | undefined {
-  return (
-    scenarios.get(name)?.specVersions ??
-    clientScenarios.get(name)?.specVersions ??
-    clientScenariosForAuthorizationServer.get(name)?.specVersions
-  );
+  const s =
+    scenarios.get(name) ??
+    clientScenarios.get(name) ??
+    clientScenariosForAuthorizationServer.get(name);
+  if (!s) return undefined;
+  if (s.extension) return ['extension'];
+  const result: ScenarioSpecTag[] = [];
+  for (const v of ALL_SPEC_VERSIONS) {
+    if (matchesSpecVersion(s, v)) result.push(v);
+  }
+  return result;
 }
 
 export type { SpecVersion, ScenarioSpecTag };

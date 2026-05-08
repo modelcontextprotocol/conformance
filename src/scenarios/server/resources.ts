@@ -5,6 +5,7 @@
 import {
   ClientScenario,
   ConformanceCheck,
+  DatedSpecVersion,
   SpecVersion,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
@@ -17,7 +18,7 @@ import {
 
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test listing available resources.
 
 **Server Implementation Requirements:**
@@ -98,7 +99,7 @@ export class ResourcesListScenario implements ClientScenario {
 
 export class ResourcesReadTextScenario implements ClientScenario {
   name = 'resources-read-text';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test reading text resource.
 
 **Server Implementation Requirements:**
@@ -185,7 +186,7 @@ Implement resource \`test://static-text\` that returns:
 
 export class ResourcesReadBinaryScenario implements ClientScenario {
   name = 'resources-read-binary';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test reading binary resource.
 
 **Server Implementation Requirements:**
@@ -270,7 +271,7 @@ Implement resource \`test://static-binary\` that returns:
 
 export class ResourcesTemplateReadScenario implements ClientScenario {
   name = 'resources-templates-read';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test reading resource from template.
 
 **Server Implementation Requirements:**
@@ -372,7 +373,7 @@ Returns (for \`uri: "test://template/123/data"\`):
 
 export class ResourcesSubscribeScenario implements ClientScenario {
   name = 'resources-subscribe';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test subscribing to resource updates.
 
 **Server Implementation Requirements:**
@@ -443,7 +444,7 @@ Example request:
 
 export class ResourcesNotFoundErrorScenario implements ClientScenario {
   name = 'sep-2164-resource-not-found';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  introducedIn: SpecVersion = DRAFT_PROTOCOL_VERSION;
   description = `Test error handling for non-existent resources (SEP-2164).
 
 **Server Implementation Requirements:**
@@ -602,7 +603,7 @@ This scenario does not require the server to register any specific resource — 
 
 export class ResourcesUnsubscribeScenario implements ClientScenario {
   name = 'resources-unsubscribe';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-06-18';
   description = `Test unsubscribing from resource.
 
 **Server Implementation Requirements:**

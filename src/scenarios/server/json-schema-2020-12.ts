@@ -6,7 +6,11 @@
  * or additionalProperties fields.
  */
 
-import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types.js';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DatedSpecVersion
+} from '../../types.js';
 import { connectToServer } from './client-helper.js';
 
 const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
@@ -14,7 +18,7 @@ const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 
 export class JsonSchema2020_12Scenario implements ClientScenario {
   name = 'json-schema-2020-12';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-11-25';
   description = `Validates JSON Schema 2020-12 keyword preservation (SEP-1613).
 
 **Server Implementation Requirements:**

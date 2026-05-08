@@ -4,7 +4,7 @@
 import {
   ClientScenarioForAuthorizationServer,
   ConformanceCheck,
-  SpecVersion
+  DatedSpecVersion
 } from '../../types';
 import { request } from 'undici';
 
@@ -12,7 +12,7 @@ type Status = 'SUCCESS' | 'FAILURE';
 
 export class AuthorizationServerMetadataEndpointScenario implements ClientScenarioForAuthorizationServer {
   name = 'authorization-server-metadata-endpoint';
-  specVersions: SpecVersion[] = ['2025-03-26', '2025-06-18', '2025-11-25'];
+  introducedIn: DatedSpecVersion = '2025-03-26';
   description = `Test authorization server metadata endpoint.
 
 **Authorization Server Implementation Requirements:**
