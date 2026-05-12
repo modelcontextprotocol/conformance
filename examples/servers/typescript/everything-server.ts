@@ -1053,6 +1053,149 @@ app.use(
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
+  const reqVersion = req.headers['mcp-protocol-version'] as string | undefined;
+  const body = req.body || {};
+  const method = body.method;
+  const id = body.id ?? null;
+  const params = body.params || {};
+  const meta = params._meta;
+  const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
+
+  // If it's a stateless request (no session ID, and has either _meta or MCP-Protocol-Version header indicating stateless mode)
+  if (!sessionId && (reqVersion || meta)) {
+    if (process.env.STATELESS_NEGATIVE === 'true') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {}
+      });
+    }
+
+    if (!reqVersion) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32600, message: 'Missing MCP-Protocol-Version header' }
+      });
+    }
+
+    if (
+      !meta ||
+      !meta['io.modelcontextprotocol/protocolVersion'] ||
+      !meta['io.modelcontextprotocol/clientInfo'] ||
+      !meta['io.modelcontextprotocol/clientCapabilities']
+    ) {
+      return res.status(200).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32602,
+          message: 'Invalid params: missing _meta or required fields'
+        }
+      });
+    }
+
+    if (reqVersion !== metaVersion) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32001,
+          message: 'Mismatched MCP-Protocol-Version header'
+        }
+      });
+    }
+
+    if (metaVersion !== 'DRAFT-2026-v1') {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32602,
+          message: 'UnsupportedProtocolVersionError',
+          data: { supported: ['DRAFT-2026-v1'] }
+        }
+      });
+    }
+
+    res.setHeader('mcp-protocol-version', 'DRAFT-2026-v1');
+
+    if (method === 'server/discover') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          supportedVersions: ['DRAFT-2026-v1'],
+          capabilities: { tools: {} },
+          serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
+        }
+      });
+    }
+
+    if (method === 'tools/list') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          tools: [
+            {
+              name: 'test_missing_capability',
+              description: 'Test tool requiring sampling',
+              inputSchema: { type: 'object', properties: {} }
+            }
+          ]
+        }
+      });
+    }
+
+    if (method === 'tools/call') {
+      const name = params.name;
+      if (name === 'test_missing_capability') {
+        const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
+        if (!clientCaps?.sampling) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32003,
+              message: 'MissingRequiredClientCapabilityError',
+              data: { requiredCapabilities: ['sampling'] }
+            }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: { content: [{ type: 'text', text: 'Success' }] }
+        });
+      }
+    }
+
+    if (
+      [
+        'initialize',
+        'ping',
+        'logging/setLevel',
+        'resources/subscribe',
+        'resources/unsubscribe'
+      ].includes(method)
+    ) {
+      return res.status(200).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32601,
+          message: 'Method not found: removed stateful RPC'
+        }
+      });
+    }
+
+    return res.status(404).json({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: 'Method not found' }
+    });
+  }
 
   try {
     let transport: StreamableHTTPServerTransport;
