@@ -18,6 +18,7 @@ import {
 
 const WIF_ISSUER = 'https://wif-idp.conformance-test.local';
 const WIF_SUBJECT = 'conformance:test-workload';
+const WIF_CLIENT_ID = 'conformance-wif-workload';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
@@ -28,9 +29,13 @@ export class WifJwtBearerScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private tokenRequestReceived = false;
+  private failedOnce = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.tokenRequestReceived = false;
+    this.failedOnce = false;
 
     const { publicKey, privateKey } = await generateWorkloadKeypair();
 
@@ -41,7 +46,27 @@ export class WifJwtBearerScenario implements Scenario {
       tokenEndpointAuthMethodsSupported: ['none'],
       tokenEndpointAuthSigningAlgValuesSupported: ['ES256'],
       tokenVerifier,
+      disableDynamicRegistration: true,
       onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
+        if (this.tokenRequestReceived && this.failedOnce) {
+          this.checks.push({
+            id: 'wif-no-retry',
+            name: 'WifNoRetry',
+            description:
+              'Client retried JWT-bearer token request after a failure instead of giving up',
+            status: 'FAILURE',
+            timestamp,
+            specReferences: [
+              SpecReferences.RFC_7523_JWT_BEARER,
+              SpecReferences.SEP_1933_WIF
+            ]
+          });
+          return {
+            error: 'invalid_request',
+            errorDescription: 'Retry not allowed for JWT-bearer grant'
+          };
+        }
+        this.tokenRequestReceived = true;
         if (grantType !== JWT_BEARER_GRANT_TYPE) {
           this.checks.push({
             id: 'wif-grant-type',
@@ -54,6 +79,7 @@ export class WifJwtBearerScenario implements Scenario {
               SpecReferences.SEP_1933_WIF
             ]
           });
+          this.failedOnce = true;
           return {
             error: 'unsupported_grant_type',
             errorDescription: `Only ${JWT_BEARER_GRANT_TYPE} grant is supported`
@@ -74,6 +100,7 @@ export class WifJwtBearerScenario implements Scenario {
               SpecReferences.SEP_1933_WIF
             ]
           });
+          this.failedOnce = true;
           return {
             error: 'invalid_request',
             errorDescription: 'Missing assertion parameter'
@@ -126,6 +153,7 @@ export class WifJwtBearerScenario implements Scenario {
                 SpecReferences.SEP_1933_WIF
               ]
             });
+            this.failedOnce = true;
             return {
               error: 'invalid_grant',
               errorDescription: 'JWT assertion is expired'
@@ -149,6 +177,7 @@ export class WifJwtBearerScenario implements Scenario {
                 SpecReferences.SEP_1933_WIF
               ]
             });
+            this.failedOnce = true;
             return {
               error: 'invalid_grant',
               errorDescription: 'JWT assertion audience is invalid'
@@ -166,6 +195,7 @@ export class WifJwtBearerScenario implements Scenario {
               SpecReferences.SEP_1933_WIF
             ]
           });
+          this.failedOnce = true;
           return {
             error: 'invalid_grant',
             errorDescription: `JWT assertion verification failed: ${msg}`
@@ -214,6 +244,7 @@ export class WifJwtBearerScenario implements Scenario {
     return {
       serverUrl: `${this.server.getUrl()}/mcp`,
       context: {
+        client_id: WIF_CLIENT_ID,
         issuer: WIF_ISSUER,
         subject: WIF_SUBJECT,
         audience: authServerUrl,
@@ -235,10 +266,13 @@ export class WifJwtBearerScenario implements Scenario {
       (c) => c.id === 'wif-assertion-verified'
     );
     if (!hasVerifiedCheck) {
+      const description = this.tokenRequestReceived
+        ? 'JWT-bearer token request was received but assertion verification did not succeed'
+        : 'Client did not make a JWT-bearer token request';
       this.checks.push({
         id: 'wif-assertion-verified',
         name: 'WifAssertionVerified',
-        description: 'Client did not make a JWT-bearer token request',
+        description,
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [

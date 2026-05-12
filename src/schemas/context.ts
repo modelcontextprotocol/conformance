@@ -34,6 +34,7 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
   }),
   z.object({
     name: z.literal('auth/wif-jwt-bearer'),
+    client_id: z.string(),
     issuer: z.string(),
     subject: z.string(),
     audience: z.string().url(),

@@ -895,11 +895,16 @@ registerScenario('sep-2322-client-request-state', runMRTRClient);
 
 class WifJwtBearerProvider implements OAuthClientProvider {
   private _tokens?: OAuthTokens;
-  private _clientInfo?: OAuthClientInformation;
+  private _clientInfo: OAuthClientInformation;
   private readonly _clientMetadata: OAuthClientMetadata;
+  private hasAttempted = false;
 
-  // Pass null to deliberately omit the assertion (for missing-assertion negative tests).
-  constructor(private readonly assertion: string | null) {
+  // Pass null for assertion to deliberately omit it (missing-assertion negative tests).
+  constructor(
+    private readonly assertion: string | null,
+    clientId: string
+  ) {
+    this._clientInfo = { client_id: clientId };
     this._clientMetadata = {
       client_name: 'conformance-wif-jwt-bearer',
       redirect_uris: [],
@@ -916,7 +921,7 @@ class WifJwtBearerProvider implements OAuthClientProvider {
     return this._clientMetadata;
   }
 
-  clientInformation(): OAuthClientInformation | undefined {
+  clientInformation(): OAuthClientInformation {
     return this._clientInfo;
   }
 
@@ -943,6 +948,10 @@ class WifJwtBearerProvider implements OAuthClientProvider {
   }
 
   prepareTokenRequest(scope?: string): URLSearchParams {
+    if (this.hasAttempted) {
+      throw new Error('JWT-bearer grant must not be retried after failure');
+    }
+    this.hasAttempted = true;
     const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
     if (this.assertion !== null) params.set('assertion', this.assertion);
     if (scope) params.set('scope', scope);
@@ -956,7 +965,7 @@ export async function runWifJwtBearer(serverUrl: string): Promise<void> {
     throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
   }
 
-  const provider = new WifJwtBearerProvider(ctx.valid_jwt);
+  const provider = new WifJwtBearerProvider(ctx.valid_jwt, ctx.client_id);
 
   const client = new Client(
     { name: 'conformance-wif-jwt-bearer', version: '1.0.0' },
@@ -987,7 +996,7 @@ export async function runWifJwtBearerWrongAudience(
     throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
   }
 
-  const provider = new WifJwtBearerProvider(ctx.wrong_audience_jwt);
+  const provider = new WifJwtBearerProvider(ctx.wrong_audience_jwt, ctx.client_id);
 
   const client = new Client(
     { name: 'conformance-wif-jwt-bearer-wrong-aud', version: '1.0.0' },
@@ -1016,7 +1025,7 @@ export async function runWifJwtBearerMissingAssertion(
   }
 
   // BUG: null omits the assertion parameter from the token request
-  const provider = new WifJwtBearerProvider(null);
+  const provider = new WifJwtBearerProvider(null, ctx.client_id);
 
   const client = new Client(
     { name: 'conformance-wif-no-assertion', version: '1.0.0' },
@@ -1044,7 +1053,7 @@ export async function runWifJwtBearerExpiredAssertion(
     throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
   }
 
-  const provider = new WifJwtBearerProvider(ctx.expired_jwt);
+  const provider = new WifJwtBearerProvider(ctx.expired_jwt, ctx.client_id);
 
   const client = new Client(
     { name: 'conformance-wif-jwt-bearer-expired', version: '1.0.0' },
