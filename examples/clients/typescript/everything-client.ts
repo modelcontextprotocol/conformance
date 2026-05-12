@@ -115,11 +115,14 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
     JSON.stringify(discoverResult.result)
   );
 
-  // Call tools/list with required inline _meta tags
+  // Call tools/list with required inline _meta tags and header
   logger.debug('Calling tools/list with inline _meta...');
   const toolsResponse = await fetch(serverUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 2,
@@ -145,6 +148,78 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
     'Successfully listed tools statelessly:',
     JSON.stringify(toolsResult.result)
   );
+
+  // Test consistent version (send another request)
+  logger.debug('Calling tools/list again to test consistent version...');
+  const toolsResponse2 = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'conformance-test-client',
+            version: '1.0.0'
+          },
+          'io.modelcontextprotocol/clientCapabilities': { roots: {} }
+        }
+      }
+    })
+  });
+  await toolsResponse2.json();
+
+  // Test cancellation (HTTP: close stream)
+  logger.debug('Calling long_running_task and cancelling by closing stream...');
+  const controller = new AbortController();
+  const signal = controller.signal;
+
+  const cancelPromise = fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'long_running_task',
+        arguments: {},
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'conformance-test-client',
+            version: '1.0.0'
+          },
+          'io.modelcontextprotocol/clientCapabilities': { roots: {} }
+        }
+      }
+    }),
+    signal
+  });
+
+  // Abort after a short delay to trigger cancellation
+  setTimeout(() => {
+    controller.abort();
+    logger.debug('Aborted long running task stream');
+  }, 100);
+
+  try {
+    await cancelPromise;
+  } catch (e) {
+    logger.debug(
+      'Long running task fetch threw expected error due to abort',
+      e
+    );
+  }
 
   logger.debug('Stateless client flow completed successfully');
 }

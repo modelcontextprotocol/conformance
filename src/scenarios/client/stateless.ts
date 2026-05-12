@@ -14,6 +14,7 @@ export class StatelessClientScenario implements Scenario {
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
+  private negotiatedVersion: string | null = null;
 
   async start(): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
@@ -57,7 +58,43 @@ export class StatelessClientScenario implements Scenario {
     req.on('end', () => {
       const request = JSON.parse(body);
 
-      // TEST 1: Verify client can call server/discover
+      // Extract version and headers
+      const meta = request.params?._meta;
+      const currentVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
+      const headerVersion = req.headers['mcp-protocol-version'];
+
+      // [HTTP] Sends MCP-Protocol-Version header on every request, equal to _meta.protocolVersion
+      if (currentVersion) {
+        this.checks.push({
+          id: 'client-sends-version-header',
+          name: 'ClientSendsVersionHeader',
+          description:
+            'Client sends MCP-Protocol-Version header equal to _meta.protocolVersion',
+          status: headerVersion === currentVersion ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          specReferences: [{ id: 'SEP-2575', url: '' }]
+        });
+      }
+
+      // Sends a consistent protocolVersion once chosen
+      if (currentVersion) {
+        if (!this.negotiatedVersion) {
+          this.negotiatedVersion = currentVersion;
+        } else {
+          this.checks.push({
+            id: 'client-consistent-version',
+            name: 'ClientConsistentVersion',
+            description:
+              'Client sends a consistent protocolVersion once chosen',
+            status:
+              currentVersion === this.negotiatedVersion ? 'SUCCESS' : 'FAILURE',
+            timestamp: new Date().toISOString(),
+            specReferences: [{ id: 'SEP-2575', url: '' }]
+          });
+        }
+      }
+
+      // Verify client can call server/discover
       if (request.method === 'server/discover') {
         this.checks.push({
           id: 'client-calls-discover',
@@ -68,14 +105,14 @@ export class StatelessClientScenario implements Scenario {
           specReferences: [{ id: 'SEP-2575', url: '' }]
         });
 
-        // Respond with valid discovery payload to keep client happy
+        // Respond with valid discovery payload
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
             result: {
-              supportedVersions: ['2026-06-18'],
+              supportedVersions: [DRAFT_PROTOCOL_VERSION],
               capabilities: {},
               serverInfo: { name: 'test', version: '1.0' }
             }
@@ -84,8 +121,24 @@ export class StatelessClientScenario implements Scenario {
         return;
       }
 
-      // TEST 2: Verify inline _meta on every request
-      const meta = request.params?._meta;
+      // [STDIO] Cancels by sending notifications/cancelled with the request id
+      if (request.method === 'notifications/cancelled') {
+        this.checks.push({
+          id: 'client-cancels-by-notification',
+          name: 'ClientCancelsByNotification',
+          description:
+            'Client cancels by sending notifications/cancelled with the request id',
+          status: 'SUCCESS',
+          timestamp: new Date().toISOString(),
+          specReferences: [{ id: 'SEP-2575', url: '' }]
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} }));
+        return;
+      }
+
+      // Verify inline _meta on every request
       const hasProtocolVersion =
         meta?.['io.modelcontextprotocol/protocolVersion'];
       const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
@@ -105,6 +158,27 @@ export class StatelessClientScenario implements Scenario {
         specReferences: [{ id: 'SEP-2575', url: '' }],
         details: { meta }
       });
+
+      // Handle long running task for cancellation testing
+      if (
+        request.method === 'tools/call' &&
+        request.params?.name === 'long_running_task'
+      ) {
+        // Do not respond immediately, wait for client to abort (req close) or send cancel notification
+        req.on('close', () => {
+          if (!res.writableEnded) {
+            this.checks.push({
+              id: 'client-cancels-by-closing-stream',
+              name: 'ClientCancelsByClosingStream',
+              description: 'Client cancels by closing the stream (request)',
+              status: 'SUCCESS',
+              timestamp: new Date().toISOString(),
+              specReferences: [{ id: 'SEP-2575', url: '' }]
+            });
+          }
+        });
+        return; // Keep request open
+      }
 
       // Return generic response to unblock client
       res.writeHead(200, { 'Content-Type': 'application/json' });
