@@ -1,3 +1,5 @@
+import { AuthorizationServerOptions } from './schemas';
+
 export type CheckStatus =
   | 'SUCCESS'
   | 'FAILURE'
@@ -116,5 +118,8 @@ export interface ClientScenarioForAuthorizationServer {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(
+    option: AuthorizationServerOptions,
+    details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]>;
 }
