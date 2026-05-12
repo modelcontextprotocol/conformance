@@ -996,7 +996,10 @@ export async function runWifJwtBearerWrongAudience(
     throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
   }
 
-  const provider = new WifJwtBearerProvider(ctx.wrong_audience_jwt, ctx.client_id);
+  const provider = new WifJwtBearerProvider(
+    ctx.wrong_audience_jwt,
+    ctx.client_id
+  );
 
   const client = new Client(
     { name: 'conformance-wif-jwt-bearer-wrong-aud', version: '1.0.0' },
