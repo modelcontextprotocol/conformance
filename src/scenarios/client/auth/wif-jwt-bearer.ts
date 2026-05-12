@@ -65,7 +65,8 @@ export class WifJwtBearerScenario implements Scenario {
           this.checks.push({
             id: 'wif-assertion-missing',
             name: 'WifAssertionMissing',
-            description: 'Missing assertion parameter in JWT-bearer token request',
+            description:
+              'Missing assertion parameter in JWT-bearer token request',
             status: 'FAILURE',
             timestamp,
             specReferences: [
@@ -233,8 +234,7 @@ export class WifJwtBearerScenario implements Scenario {
       this.checks.push({
         id: 'wif-assertion-verified',
         name: 'WifAssertionVerified',
-        description:
-          'Client did not make a JWT-bearer token request',
+        description: 'Client did not make a JWT-bearer token request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [
