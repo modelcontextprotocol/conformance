@@ -24,6 +24,7 @@ import {
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
 import { CrossAppAccessCompleteFlowScenario } from './cross-app-access';
+import { WifJwtBearerScenario } from './wif-jwt-bearer';
 import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
@@ -54,7 +55,8 @@ export const backcompatScenariosList: Scenario[] = [
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
-  new CrossAppAccessCompleteFlowScenario()
+  new CrossAppAccessCompleteFlowScenario(),
+  new WifJwtBearerScenario()
 ];
 
 // Draft scenarios (informational - not scored for tier assessment)

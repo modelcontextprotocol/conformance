@@ -19,6 +19,13 @@ import {
   ClientCredentialsProvider,
   PrivateKeyJwtProvider
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type {
+  OAuthClientInformation,
+  OAuthClientMetadata,
+  OAuthTokens
+} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import {
@@ -523,6 +530,153 @@ registerScenario(
   'auth/cross-app-access-complete-flow',
   runCrossAppAccessCompleteFlow
 );
+
+// ============================================================================
+// WIF JWT-bearer scenario
+// ============================================================================
+
+class WifJwtBearerProvider implements OAuthClientProvider {
+  private _tokens?: OAuthTokens;
+  private _clientInfo?: OAuthClientInformation;
+  private readonly _clientMetadata: OAuthClientMetadata;
+
+  // Pass null to deliberately omit the assertion (for missing-assertion negative tests).
+  constructor(private readonly assertion: string | null) {
+    this._clientMetadata = {
+      client_name: 'conformance-wif-jwt-bearer',
+      redirect_uris: [],
+      grant_types: [JWT_BEARER_GRANT_TYPE],
+      token_endpoint_auth_method: 'none'
+    };
+  }
+
+  get redirectUrl(): undefined {
+    return undefined;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this._clientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformation | undefined {
+    return this._clientInfo;
+  }
+
+  saveClientInformation(info: OAuthClientInformation): void {
+    this._clientInfo = info;
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return this._tokens;
+  }
+
+  saveTokens(tokens: OAuthTokens): void {
+    this._tokens = tokens;
+  }
+
+  redirectToAuthorization(): void {
+    throw new Error('redirectToAuthorization is not used for JWT-bearer flow');
+  }
+
+  saveCodeVerifier(): void {}
+
+  codeVerifier(): string {
+    throw new Error('codeVerifier is not used for JWT-bearer flow');
+  }
+
+  prepareTokenRequest(scope?: string): URLSearchParams {
+    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
+    if (this.assertion !== null) params.set('assertion', this.assertion);
+    if (scope) params.set('scope', scope);
+    return params;
+  }
+}
+
+export async function runWifJwtBearer(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifJwtBearerProvider(ctx.valid_jwt);
+
+  const client = new Client(
+    { name: 'conformance-wif-jwt-bearer', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with JWT-bearer assertion');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/wif-jwt-bearer', runWifJwtBearer);
+
+export async function runWifJwtBearerWrongAudience(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifJwtBearerProvider(ctx.wrong_audience_jwt);
+
+  const client = new Client(
+    { name: 'conformance-wif-jwt-bearer-wrong-aud', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  try {
+    await client.connect(transport);
+    await client.listTools();
+    await transport.close();
+  } catch {
+    // Expected — server rejects wrong audience
+  }
+}
+
+export async function runWifJwtBearerMissingAssertion(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  // BUG: null omits the assertion parameter from the token request
+  const provider = new WifJwtBearerProvider(null);
+
+  const client = new Client(
+    { name: 'conformance-wif-no-assertion', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  try {
+    await client.connect(transport);
+    await client.listTools();
+    await transport.close();
+  } catch {
+    // Expected — server rejects missing assertion
+  }
+}
 
 // ============================================================================
 // Main entry point

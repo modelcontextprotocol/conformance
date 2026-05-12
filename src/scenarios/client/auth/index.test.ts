@@ -1,13 +1,18 @@
 import {
   authScenariosList,
   backcompatScenariosList,
-  draftScenariosList
+  draftScenariosList,
+  extensionScenariosList
 } from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
 } from './test_helpers/testClient';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
+import {
+  runWifJwtBearerWrongAudience,
+  runWifJwtBearerMissingAssertion
+} from '../../../../examples/clients/typescript/everything-client';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
@@ -144,6 +149,37 @@ describe('Negative tests', () => {
         'pkce-code-verifier-sent',
         'pkce-verifier-matches-challenge'
       ]
+    });
+  });
+});
+
+describe('Client Extension Scenarios', () => {
+  for (const scenario of extensionScenariosList) {
+    test(`${scenario.name} passes`, async () => {
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
+      const runner = new InlineClientRunner(clientFn);
+      await runClientAgainstScenario(runner, scenario.name);
+    });
+  }
+});
+
+describe('WIF JWT-bearer negative tests', () => {
+  test('client presents JWT with wrong audience', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerWrongAudience);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-audience'],
+      allowClientError: true
+    });
+  });
+
+  test('client omits assertion from JWT-bearer request', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerMissingAssertion);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-missing'],
+      allowClientError: true
     });
   });
 });
