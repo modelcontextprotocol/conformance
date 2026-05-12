@@ -110,6 +110,7 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
 import {
@@ -274,7 +275,8 @@ export const clientScenarios = new Map<string, ClientScenario>(
 const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizationServer[] =
   [
     // Authorization server scenarios
-    new AuthorizationServerMetadataEndpointScenario()
+    new AuthorizationServerMetadataEndpointScenario(),
+    new AuthorizationCodeGrantScenario()
   ];
 
 // Client scenarios map for authorization server - built from list

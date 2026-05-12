@@ -54,7 +54,14 @@ export const AuthorizationServerOptionsSchema = z.object({
         error: (iss) => `Unknown scenario '${iss.input}'`
       }
     )
-    .optional()
+    .optional(),
+  clientId: z.string().min(1, 'Client id cannot be empty'),
+  secret: z.string().min(1, 'Client secret cannot be empty'),
+  port: z
+    .number()
+    .int('Port must be an integer')
+    .min(1, 'Port must be >= 1')
+    .max(65535, 'Port must be <= 65535')
 });
 
 export type AuthorizationServerOptions = z.infer<
