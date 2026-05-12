@@ -83,9 +83,11 @@ export class WifJwtBearerScenario implements Scenario {
         try {
           const withoutSlash = authBaseUrl.replace(/\/+$/, '');
           const withSlash = `${withoutSlash}/`;
-          // iss is not validated here: the keypair is generated per start() call and
-          // the public key closure already binds the assertion to this specific run.
-          // The scenario exercises client behaviour, not AS issuer policy.
+          // iss is not validated: the keypair is generated per start() call and
+          // the public key closure binds the assertion to this run. This scenario
+          // tests client behaviour, not AS issuer policy.
+          // clockTolerance of 5s is sufficient because JWTs are signed and consumed
+          // within the same test run; skew from a real IdP is not a factor here.
           await jose.jwtVerify(assertion, publicKey, {
             audience: [withoutSlash, withSlash],
             clockTolerance: 5
@@ -95,7 +97,7 @@ export class WifJwtBearerScenario implements Scenario {
             id: 'wif-assertion-verified',
             name: 'WifAssertionVerified',
             description:
-              'Workload JWT assertion verified — signature, audience, and expiry are valid',
+              'Workload JWT assertion verified — signature, audience, and expiry are valid (iss not validated; keypair is run-scoped)',
             status: 'SUCCESS',
             timestamp,
             specReferences: [
@@ -194,6 +196,8 @@ export class WifJwtBearerScenario implements Scenario {
         subject: WIF_SUBJECT,
         audience: authServerUrl,
         privateKey,
+        // Absolute epoch seconds in the past — jose treats a number as an absolute
+        // epoch timestamp, producing a token that is already expired.
         expiresIn: Math.floor(Date.now() / 1000) - 60
       })
     ]);

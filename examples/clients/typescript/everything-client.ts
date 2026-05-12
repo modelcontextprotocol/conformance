@@ -1036,6 +1036,34 @@ export async function runWifJwtBearerMissingAssertion(
   }
 }
 
+export async function runWifJwtBearerExpiredAssertion(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifJwtBearerProvider(ctx.expired_jwt);
+
+  const client = new Client(
+    { name: 'conformance-wif-jwt-bearer-expired', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  try {
+    await client.connect(transport);
+    await client.listTools();
+    await transport.close();
+  } catch {
+    // Expected — server rejects the expired assertion
+  }
+}
+
 // ============================================================================
 // Main entry point
 // ============================================================================
