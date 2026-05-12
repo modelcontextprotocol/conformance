@@ -88,6 +88,71 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
 
 // ============================================================================
+// Stateless scenario (SEP-2575)
+// ============================================================================
+
+async function runStatelessClient(serverUrl: string): Promise<void> {
+  logger.debug('Starting stateless client flow...');
+
+  // Call server/discover
+  logger.debug('Calling server/discover...');
+  const discoverResponse = await fetch(serverUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'discover-1',
+      method: 'server/discover'
+    })
+  });
+
+  if (!discoverResponse.ok) {
+    throw new Error(`Discovery failed: ${discoverResponse.status}`);
+  }
+  const discoverResult = await discoverResponse.json();
+  logger.debug(
+    'Successfully discovered server capabilities:',
+    JSON.stringify(discoverResult.result)
+  );
+
+  // Call tools/list with required inline _meta tags
+  logger.debug('Calling tools/list with inline _meta...');
+  const toolsResponse = await fetch(serverUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'conformance-test-client',
+            version: '1.0.0'
+          },
+          'io.modelcontextprotocol/clientCapabilities': { roots: {} }
+        }
+      }
+    })
+  });
+
+  if (!toolsResponse.ok) {
+    throw new Error(`Tools list failed: ${toolsResponse.status}`);
+  }
+  const toolsResult = await toolsResponse.json();
+  logger.debug(
+    'Successfully listed tools statelessly:',
+    JSON.stringify(toolsResult.result)
+  );
+
+  logger.debug('Stateless client flow completed successfully');
+}
+
+// Register the scenario handler
+registerScenario('stateless-client', runStatelessClient);
+
+// ============================================================================
 // Auth scenarios - well-behaved client
 // ============================================================================
 
