@@ -3,8 +3,6 @@ import { Octokit } from '@octokit/rest';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-export type Target = 'client' | 'server' | 'authorization-server';
-
 export interface RequirementRow {
   text: string;
   check?: string;
@@ -14,12 +12,7 @@ export interface RequirementRow {
   url?: string;
 }
 
-const TARGET_DIRS: Record<Target, string> = {
-  client: 'src/scenarios/client',
-  server: 'src/scenarios/server',
-  'authorization-server': 'src/scenarios/authorization-server'
-};
-
+const OUT_DIR = 'src/seps';
 const SPEC_PATH_PREFIX = 'docs/specification/draft/';
 const DEFAULT_SPEC_REPO = 'modelcontextprotocol/modelcontextprotocol';
 
@@ -31,21 +24,6 @@ export function specPathToUrl(specPath: string): string {
   }
   const rest = specPath.slice(SPEC_PATH_PREFIX.length).replace(/\.mdx$/, '');
   return `https://modelcontextprotocol.io/specification/draft/${rest}`;
-}
-
-export function inferTarget(specPath: string): {
-  target: Target;
-  inferred: boolean;
-} {
-  const rest = specPath.startsWith(SPEC_PATH_PREFIX)
-    ? specPath.slice(SPEC_PATH_PREFIX.length)
-    : specPath;
-  if (rest.startsWith('server/')) return { target: 'server', inferred: false };
-  if (rest.startsWith('client/')) return { target: 'client', inferred: false };
-  if (/^basic\/authorization/.test(rest) || /^auth/.test(rest)) {
-    return { target: 'authorization-server', inferred: false };
-  }
-  return { target: 'server', inferred: true };
 }
 
 function escapeSingleQuoted(s: string): string {
@@ -72,19 +50,32 @@ export function renderYaml(input: {
   requirements?: RequirementRow[];
 }): string {
   const reqs = input.requirements ?? defaultPlaceholderRequirements(input.sep);
+  const checkRows = reqs.filter((r) => r.check);
+  const excludedRows = reqs.filter((r) => !r.check);
+
   const lines: string[] = [];
   lines.push(`sep: ${input.sep}`);
   lines.push(`spec_url: ${input.specUrl}`);
   lines.push('requirements:');
-  for (const r of reqs) {
+
+  for (const r of checkRows) {
+    lines.push(`  - check: ${r.check}`);
+    lines.push(`    text: '${escapeSingleQuoted(r.text)}'`);
+    if (r.url) lines.push(`    url: ${r.url}`);
+  }
+
+  if (checkRows.length > 0 && excludedRows.length > 0) {
+    lines.push('');
+  }
+
+  for (const r of excludedRows) {
     lines.push(`  - text: '${escapeSingleQuoted(r.text)}'`);
-    if (r.check) lines.push(`    check: ${r.check}`);
     if (r.excluded) {
       lines.push(`    excluded: '${escapeSingleQuoted(r.excluded)}'`);
     }
     if (r.issue) lines.push(`    issue: ${r.issue}`);
-    if (r.url) lines.push(`    url: ${r.url}`);
   }
+
   return lines.join('\n') + '\n';
 }
 
@@ -151,10 +142,6 @@ export function createNewSepCommand(): Command {
     )
     .argument('<number>', 'SEP number, e.g. 2164')
     .option(
-      '--target <target>',
-      'Output directory: client | server | authorization-server'
-    )
-    .option(
       '--spec-url <url>',
       'Use this spec URL verbatim (skips GitHub lookup)'
     )
@@ -176,18 +163,6 @@ export function createNewSepCommand(): Command {
       const sep = parseInt(sepArg, 10);
       if (!Number.isFinite(sep) || sep <= 0 || String(sep) !== sepArg.trim()) {
         console.error(`Invalid SEP number: ${sepArg}`);
-        process.exit(1);
-      }
-
-      const explicitTarget = options.target as Target | undefined;
-      if (
-        explicitTarget &&
-        !['client', 'server', 'authorization-server'].includes(explicitTarget)
-      ) {
-        console.error(
-          `Invalid --target: ${explicitTarget} ` +
-            `(expected client | server | authorization-server)`
-        );
         process.exit(1);
       }
 
@@ -235,27 +210,9 @@ export function createNewSepCommand(): Command {
         process.exit(1);
       }
 
-      let target: Target;
-      if (explicitTarget) {
-        target = explicitTarget;
-      } else if (specPath) {
-        const inferred = inferTarget(specPath);
-        target = inferred.target;
-        if (inferred.inferred) {
-          console.error(`inferred target=${target}; use --target to override`);
-        }
-      } else {
-        target = 'server';
-        console.error(
-          'No --target and no --spec-path given; defaulting to target=server. ' +
-            'Use --target to override.'
-        );
-      }
+      const outPath = path.join(OUT_DIR, `sep-${sep}.yaml`);
 
-      const outDir = TARGET_DIRS[target];
-      const outPath = path.join(outDir, `sep-${sep}.yaml`);
-
-      await fs.mkdir(outDir, { recursive: true });
+      await fs.mkdir(OUT_DIR, { recursive: true });
 
       if (!options.force) {
         try {

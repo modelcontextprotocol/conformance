@@ -79,7 +79,7 @@ Scaffold the requirement-traceability YAML with:
 npx @modelcontextprotocol/conformance new-sep <NNNN>
 ```
 
-The command looks up PR #`<NNNN>` in `modelcontextprotocol/modelcontextprotocol` (SEP numbers are PR numbers), derives `spec_url` from the `docs/specification/draft/*.mdx` file it changes, picks `src/scenarios/{client,server,authorization-server}/` from the spec path, and writes `sep-<NNNN>.yaml` with TODO `requirements[]` rows. Use `--spec-path` or `--spec-url` to skip the lookup. The `new-sep` Claude Code skill drives the same flow end-to-end, parses the spec diff, and fills in the requirement rows.
+The command looks up PR #`<NNNN>` in `modelcontextprotocol/modelcontextprotocol` (SEP numbers are PR numbers), derives `spec_url` from the `docs/specification/draft/*.mdx` file it changes, and writes `src/seps/sep-<NNNN>.yaml` with TODO `requirements[]` rows. Use `--spec-path` or `--spec-url` to skip the lookup. The `new-sep` Claude Code skill drives the same flow end-to-end, parses the spec diff, and fills in the requirement rows.
 
 ## Examples: prove it passes and fails
 

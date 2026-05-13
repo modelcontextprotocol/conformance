@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { specPathToUrl, inferTarget, renderYaml } from './index';
+import { specPathToUrl, renderYaml } from './index';
 
 describe('specPathToUrl', () => {
   it('strips the docs/specification/draft/ prefix and .mdx suffix', () => {
@@ -21,39 +21,6 @@ describe('specPathToUrl', () => {
   });
 });
 
-describe('inferTarget', () => {
-  it('returns server for server/ paths', () => {
-    expect(
-      inferTarget('docs/specification/draft/server/resources.mdx')
-    ).toEqual({ target: 'server', inferred: false });
-  });
-
-  it('returns client for client/ paths', () => {
-    expect(inferTarget('docs/specification/draft/client/sampling.mdx')).toEqual(
-      { target: 'client', inferred: false }
-    );
-  });
-
-  it('returns authorization-server for basic/authorization* paths', () => {
-    expect(
-      inferTarget('docs/specification/draft/basic/authorization.mdx')
-    ).toEqual({ target: 'authorization-server', inferred: false });
-  });
-
-  it('falls back to server (inferred) for unrecognized paths', () => {
-    expect(inferTarget('docs/specification/draft/basic/lifecycle.mdx')).toEqual(
-      { target: 'server', inferred: true }
-    );
-  });
-
-  it('accepts paths already stripped of the prefix', () => {
-    expect(inferTarget('client/elicitation.mdx')).toEqual({
-      target: 'client',
-      inferred: false
-    });
-  });
-});
-
 describe('renderYaml', () => {
   it('emits placeholder yaml in the sep-2164.yaml style', () => {
     const out = renderYaml({
@@ -65,8 +32,9 @@ describe('renderYaml', () => {
       `sep: 9999
 spec_url: https://modelcontextprotocol.io/specification/draft/server/resources
 requirements:
-  - text: 'TODO: quote the normative sentence from the spec diff'
-    check: sep-9999-todo
+  - check: sep-9999-todo
+    text: 'TODO: quote the normative sentence from the spec diff'
+
   - text: 'TODO: requirement that cannot be tested'
     excluded: 'TODO: reason'
     issue: https://github.com/modelcontextprotocol/conformance/issues/<NNNN>
@@ -99,10 +67,11 @@ requirements:
       `sep: 2164
 spec_url: https://modelcontextprotocol.io/specification/draft/server/resources#error-handling
 requirements:
-  - text: 'Servers MUST NOT return an empty contents array for a non-existent resource'
-    check: sep-2164-no-empty-contents
-  - text: 'Servers SHOULD return standard JSON-RPC errors for common failure cases: Resource not found: -32602 (Invalid Params)'
-    check: sep-2164-error-code
+  - check: sep-2164-no-empty-contents
+    text: 'Servers MUST NOT return an empty contents array for a non-existent resource'
+  - check: sep-2164-error-code
+    text: 'Servers SHOULD return standard JSON-RPC errors for common failure cases: Resource not found: -32602 (Invalid Params)'
+
   - text: 'clients SHOULD also accept -32002 as a resource not found error'
     excluded: 'Client-side error handling is implementation-defined; not protocol-observable'
 `
@@ -126,10 +95,10 @@ requirements:
       `sep: 1234
 spec_url: https://modelcontextprotocol.io/specification/draft/server/a
 requirements:
-  - text: 'from primary file'
-    check: sep-1234-a
-  - text: 'from secondary file'
-    check: sep-1234-b
+  - check: sep-1234-a
+    text: 'from primary file'
+  - check: sep-1234-b
+    text: 'from secondary file'
     url: https://modelcontextprotocol.io/specification/draft/server/b#x
 `
     );
