@@ -8,6 +8,7 @@ import type {
   ScenarioSpecTag
 } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
+import { JWT_BEARER_GRANT_TYPE } from './helpers/createWorkloadJwt.js';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -90,7 +91,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
     // Start auth server with JWT bearer grant support only
     // Token exchange is handled by IdP
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
-      grantTypesSupported: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
+      grantTypesSupported: [JWT_BEARER_GRANT_TYPE],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       tokenVerifier,
       onTokenRequest: async ({
@@ -101,7 +102,7 @@ export class CrossAppAccessCompleteFlowScenario implements Scenario {
         authorizationHeader
       }) => {
         // Auth server only handles JWT bearer grant (ID-JAG -> access token)
-        if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
+        if (grantType === JWT_BEARER_GRANT_TYPE) {
           const mcpResourceUrl = `${this.mcpServer.getUrl()}/mcp`;
           return await this.handleJwtBearerGrant(
             body,
