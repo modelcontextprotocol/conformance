@@ -181,8 +181,22 @@ export class StatelessScenario implements Scenario {
       }
 
       // Return generic response to unblock client
+      let result: any = {};
+      if (request.method === 'tools/list') {
+        result = {
+          tools: [
+            {
+              name: 'long_running_task',
+              description: 'A mock long running task for cancellation',
+              inputSchema: { type: 'object', properties: {} }
+            }
+          ]
+        };
+      } else if (request.method === 'tools/call') {
+        result = { content: [] };
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} }));
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
     });
   }
 }
