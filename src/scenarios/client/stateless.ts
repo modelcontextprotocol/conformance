@@ -7,8 +7,8 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 
-export class StatelessClientScenario implements Scenario {
-  name = 'stateless-client';
+export class StatelessScenario implements Scenario {
+  name = 'stateless';
   specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   description = 'Tests stateless MCP client behavior (SEP-2575)';
 

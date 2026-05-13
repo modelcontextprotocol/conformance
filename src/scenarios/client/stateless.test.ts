@@ -92,21 +92,21 @@ async function missingHeaderClient(serverUrl: string) {
 describe('Stateless Client Scenario Negative Tests', () => {
   test('client fails when omitting _meta', async () => {
     const runner = new InlineClientRunner(badClient);
-    await runClientAgainstScenario(runner, 'stateless-client', {
+    await runClientAgainstScenario(runner, 'stateless', {
       expectedFailureSlugs: ['client-populates-meta']
     });
   });
 
   test('client fails when flipping versions', async () => {
     const runner = new InlineClientRunner(flippingVersionClient);
-    await runClientAgainstScenario(runner, 'stateless-client', {
+    await runClientAgainstScenario(runner, 'stateless', {
       expectedFailureSlugs: ['client-consistent-version']
     });
   });
 
   test('client fails when missing version header', async () => {
     const runner = new InlineClientRunner(missingHeaderClient);
-    await runClientAgainstScenario(runner, 'stateless-client', {
+    await runClientAgainstScenario(runner, 'stateless', {
       expectedFailureSlugs: ['client-sends-version-header']
     });
   });

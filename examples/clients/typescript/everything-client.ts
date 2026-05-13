@@ -225,7 +225,7 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
 }
 
 // Register the scenario handler
-registerScenario('stateless-client', runStatelessClient);
+registerScenario('stateless', runStatelessClient);
 
 // ============================================================================
 // Auth scenarios - well-behaved client

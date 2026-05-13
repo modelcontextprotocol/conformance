@@ -12,7 +12,7 @@ import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
-import { StatelessClientScenario } from './client/stateless';
+import { StatelessScenario } from './client/stateless';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
@@ -183,7 +183,7 @@ const scenariosList: Scenario[] = [
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,
-  new StatelessClientScenario(),
+  new StatelessScenario(),
   ...extensionScenariosList
 ];
 
