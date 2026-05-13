@@ -5,7 +5,7 @@ description: >-
   conformance repo from a SEP PR's spec diff. Runs the new-sep CLI, then
   parses the modelcontextprotocol/modelcontextprotocol spec diff to populate
   `requirements[]` with the RFC 2119 sentences and proposed check IDs.
-argument-hint: '<sep-number> [--pr <num>] [--target client|server|authorization-server]'
+argument-hint: '<sep-number> [--target client|server|authorization-server]'
 ---
 
 # new-sep: SEP traceability YAML scaffolding
@@ -36,8 +36,7 @@ The name should be `@modelcontextprotocol/conformance`. If not, stop and ask the
 
 Extract from the user's input:
 
-- **sep-number** (required): the SEP number, e.g. `2164`.
-- **--pr <num>** (optional): the PR number in `modelcontextprotocol/modelcontextprotocol`. If omitted, the CLI searches for a PR titled `SEP-<NNNN>` and fails loudly on 0 or >1 hits.
+- **sep-number** (required): the SEP number, e.g. `2164`. This is also the PR number in `modelcontextprotocol/modelcontextprotocol` by convention.
 - **--target client|server|authorization-server** (optional): which scenarios subdirectory to write to. Inferred from the spec path if omitted.
 
 ## Step 2: Generate the skeleton
@@ -46,22 +45,21 @@ Run the CLI:
 
 ```bash
 npm run --silent build
-node dist/index.js new-sep <NNNN> [--pr <num>] [--target <target>]
+node dist/index.js new-sep <NNNN> [--target <target>]
 ```
 
 (For development against a non-built source tree: `npx tsx src/index.ts new-sep ...`.)
 
 The CLI writes `src/scenarios/<target>/sep-<NNNN>.yaml` with `sep`, `spec_url`, and two TODO `requirements[]` rows. Capture the output path from the CLI's `Wrote …` line and remember it as `$YAML`.
 
-If the CLI errors with "No PRs match" or "Multiple PRs match", read the message, ask the user for the right `--pr <num>`, and rerun. Do not guess.
+If the CLI errors with "does not change any docs/specification/draft/\*.mdx", the SEP's spec changes landed in a separate PR — ask the user for the spec file path and rerun with `--spec-path docs/specification/draft/<path>`. Do not guess.
 
 ## Step 3: Fetch the spec diff
 
 `AGENTS.md` (lines 64–72) is explicit that severity must come from the spec text itself, not the SEP markdown or the conformance PR description:
 
 ```bash
-PR=$(node dist/index.js new-sep <NNNN> --help >/dev/null 2>&1; echo <pr-from-step-2>)
-gh api "repos/modelcontextprotocol/modelcontextprotocol/pulls/$PR/files" \
+gh api "repos/modelcontextprotocol/modelcontextprotocol/pulls/<NNNN>/files" \
   --jq '.[] | select(.filename | test("^docs/specification/draft/.*\\.mdx$")) | {filename, patch}'
 ```
 
@@ -109,6 +107,16 @@ Replace the two TODO rows the CLI generated with one row per extracted requireme
 If a requirement is ambiguous or you're not confident, leave it as a `TODO:` row rather than guessing — humans review this yaml before scenarios get written.
 
 Also fix the `spec_url`: the CLI emits the page URL with no anchor. If the requirements you extracted live under a specific spec subsection (e.g. `#error-handling`), append it.
+
+If a requirement comes from a **different spec page** than `spec_url` (the SEP touched multiple `.mdx` files — the CLI prints these as "PR also changes N other spec file(s)"), give that row a full `url:` override:
+
+```yaml
+- text: '...'
+  check: sep-NNNN-slug
+  url: https://modelcontextprotocol.io/specification/draft/other/page#anchor
+```
+
+A row's effective spec reference is `row.url ?? file.spec_url`.
 
 Write the result back to `$YAML`.
 

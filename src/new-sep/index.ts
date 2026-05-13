@@ -10,6 +10,8 @@ export interface RequirementRow {
   check?: string;
   excluded?: string;
   issue?: string;
+  /** Full spec URL for this requirement; overrides the file-level spec_url. */
+  url?: string;
 }
 
 const TARGET_DIRS: Record<Target, string> = {
@@ -81,6 +83,7 @@ export function renderYaml(input: {
       lines.push(`    excluded: '${escapeSingleQuoted(r.excluded)}'`);
     }
     if (r.issue) lines.push(`    issue: ${r.issue}`);
+    if (r.url) lines.push(`    url: ${r.url}`);
   }
   return lines.join('\n') + '\n';
 }
@@ -105,38 +108,17 @@ interface SpecCandidate {
 
 async function lookupSpecPath(args: {
   sep: number;
-  pr?: number;
   repo: string;
   token: string;
-}): Promise<string> {
+}): Promise<string[]> {
   const [owner, repoName] = args.repo.split('/');
   if (!owner || !repoName) {
     throw new Error(`Invalid --repo: ${args.repo} (expected owner/repo)`);
   }
   const octokit = new Octokit({ auth: args.token });
 
-  let prNumber = args.pr;
-  if (!prNumber) {
-    const q = `repo:${args.repo} type:pr SEP-${args.sep} in:title`;
-    const res = await octokit.search.issuesAndPullRequests({ q });
-    if (res.data.total_count === 0) {
-      throw new Error(
-        `No PRs in ${args.repo} matching "SEP-${args.sep}" in title. ` +
-          `Pass --pr <num> to disambiguate.`
-      );
-    }
-    if (res.data.total_count > 1) {
-      const candidates = res.data.items
-        .slice(0, 5)
-        .map((i) => `  #${i.number}  ${i.title}`)
-        .join('\n');
-      throw new Error(
-        `Multiple PRs in ${args.repo} match "SEP-${args.sep}":\n${candidates}\n` +
-          `Pass --pr <num> to pick one.`
-      );
-    }
-    prNumber = res.data.items[0].number;
-  }
+  // SEP numbers are PR numbers in the spec repo by convention.
+  const prNumber = args.sep;
 
   const files = await octokit.paginate(octokit.pulls.listFiles, {
     owner,
@@ -158,24 +140,8 @@ async function lookupSpecPath(args: {
         `${SPEC_PATH_PREFIX}*.mdx file. Pass --spec-path <path> to override.`
     );
   }
-  if (candidates.length === 1) {
-    return candidates[0].filename;
-  }
   candidates.sort((a, b) => b.additions - a.additions);
-  if (candidates[0].additions > candidates[1].additions) {
-    console.error(
-      `Multiple spec files changed; picking ${candidates[0].filename} ` +
-        `(most additions).`
-    );
-    return candidates[0].filename;
-  }
-  const list = candidates
-    .map((c) => `  ${c.filename}  (+${c.additions})`)
-    .join('\n');
-  throw new Error(
-    `Multiple spec files changed with equal weight in PR #${prNumber}:\n${list}\n` +
-      `Pass --spec-path <path> to pick one.`
-  );
+  return candidates.map((c) => c.filename);
 }
 
 export function createNewSepCommand(): Command {
@@ -196,7 +162,6 @@ export function createNewSepCommand(): Command {
       '--spec-path <path>',
       `${SPEC_PATH_PREFIX}... path to derive spec_url from (skips GitHub lookup)`
     )
-    .option('--pr <num>', 'PR number in the spec repo (skips title search)')
     .option(
       '--repo <owner/repo>',
       'Spec repo to query for the SEP PR',
@@ -228,6 +193,7 @@ export function createNewSepCommand(): Command {
 
       let specUrl: string | undefined = options.specUrl;
       let specPath: string | undefined = options.specPath;
+      let otherSpecPaths: string[] = [];
 
       if (!specUrl && !specPath) {
         const token = await resolveToken(options.token);
@@ -242,12 +208,13 @@ export function createNewSepCommand(): Command {
           process.exit(1);
         }
         try {
-          specPath = await lookupSpecPath({
+          const specPaths = await lookupSpecPath({
             sep,
-            pr: options.pr ? parseInt(options.pr, 10) : undefined,
             repo: options.repo,
             token
           });
+          specPath = specPaths[0];
+          otherSpecPaths = specPaths.slice(1);
           console.error(`Resolved spec path: ${specPath}`);
         } catch (err) {
           console.error((err as Error).message);
@@ -306,6 +273,17 @@ export function createNewSepCommand(): Command {
       await fs.writeFile(outPath, yaml, 'utf-8');
 
       console.error(`Wrote ${outPath}`);
+      if (otherSpecPaths.length > 0) {
+        console.error(
+          `Note: PR also changes ${otherSpecPaths.length} other spec file(s):`
+        );
+        for (const p of otherSpecPaths) {
+          console.error(`  ${specPathToUrl(p)}`);
+        }
+        console.error(
+          `  Use a per-row "url:" for requirements from those files.`
+        );
+      }
       console.error('Next steps:');
       console.error(
         '  1. Edit the file to quote real normative sentences from the spec diff'

@@ -109,6 +109,32 @@ requirements:
     );
   });
 
+  it('emits per-row url: overrides', () => {
+    const out = renderYaml({
+      sep: 1234,
+      specUrl: 'https://modelcontextprotocol.io/specification/draft/server/a',
+      requirements: [
+        { text: 'from primary file', check: 'sep-1234-a' },
+        {
+          text: 'from secondary file',
+          check: 'sep-1234-b',
+          url: 'https://modelcontextprotocol.io/specification/draft/server/b#x'
+        }
+      ]
+    });
+    expect(out).toBe(
+      `sep: 1234
+spec_url: https://modelcontextprotocol.io/specification/draft/server/a
+requirements:
+  - text: 'from primary file'
+    check: sep-1234-a
+  - text: 'from secondary file'
+    check: sep-1234-b
+    url: https://modelcontextprotocol.io/specification/draft/server/b#x
+`
+    );
+  });
+
   it('escapes single quotes by doubling them', () => {
     const out = renderYaml({
       sep: 1,
