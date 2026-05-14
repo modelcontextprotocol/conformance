@@ -33,6 +33,15 @@ const SPEC_REFERENCE_CASE = {
   url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#case-sensitivity'
 };
 
+// OWS handling is an RFC 9110 §5.5 MUST ("a field parsing implementation MUST
+// exclude such whitespace prior to evaluating the field value"), not a
+// SEP-2243 requirement. Kept as a check because a server stack that fails it
+// has a real HTTP-layer bug that will manifest as header-mismatch rejections.
+const SPEC_REFERENCE_RFC9110_OWS = {
+  id: 'RFC-9110-5.5-Field-Values',
+  url: 'https://www.rfc-editor.org/rfc/rfc9110#section-5.5'
+};
+
 const SPEC_REFERENCE_BASE64 = {
   id: 'SEP-2243-Value-Encoding',
   url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#value-encoding'
@@ -110,7 +119,8 @@ function createRejectionCheck(
   description: string,
   response: { status: number; body: any },
   specRef: { id: string; url: string },
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
+  failSeverity: 'FAILURE' | 'WARNING' | 'INFO' = 'FAILURE'
 ): ConformanceCheck {
   const errors: string[] = [];
   if (response.status !== 400) {
@@ -127,7 +137,7 @@ function createRejectionCheck(
     id,
     name,
     description,
-    status: errors.length > 0 ? 'FAILURE' : 'SUCCESS',
+    status: errors.length > 0 ? failSeverity : 'SUCCESS',
     timestamp: new Date().toISOString(),
     errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
     specReferences: [specRef],
@@ -314,7 +324,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           'accept',
           'server-accepts-whitespace-header-value',
           'ServerAcceptsWhitespaceHeaderValue',
-          'Server MUST accept extra whitespace in Mcp-Name value (trimmed per HTTP spec)',
+          'Server MUST accept leading/trailing whitespace in Mcp-Name value (RFC 9110 §5.5: field parsing MUST exclude OWS before evaluating)',
           {
             jsonrpc: '2.0',
             id: 0,
@@ -325,7 +335,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
             'Mcp-Method': 'tools/call',
             'Mcp-Name': `  ${toolName}  `
           },
-          SPEC_REFERENCE,
+          SPEC_REFERENCE_RFC9110_OWS,
           {
             headerValue: `  ${toolName}  `,
             bodyValue: toolName,
@@ -638,16 +648,21 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         defaultHeaders
       );
 
-      // Invalid Base64 padding - server MUST reject
+      // Invalid Base64 padding — INFO, not FAILURE/WARNING. SEP-2243 says only
+      // "MUST decode them accordingly" without specifying RFC 4648 strictness.
+      // Lenient decoders (Node Buffer.from, browser atob) accept 'SGVsbG8' →
+      // server matches → accepts. Strict decoders (.NET Convert.FromBase64String)
+      // throw → server rejects. Either is currently spec-compliant. INFO records
+      // the behavior so cross-SDK divergence is visible without affecting tier.
       await this.testBase64Case(
         checks,
         serverUrl,
         baseHeaders,
         nextId,
-        'reject',
+        'reject-info',
         'server-rejects-invalid-base64-padding',
         'ServerRejectsInvalidBase64Padding',
-        'Server MUST reject header with invalid Base64 padding',
+        'Records whether server rejects unpadded Base64 in Mcp-Param value (informational — spec does not mandate strict decoding)',
         xMcpTool.name,
         paramName,
         'Hello',
@@ -657,16 +672,16 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         defaultHeaders
       );
 
-      // Invalid Base64 characters - server MUST reject
+      // Invalid Base64 characters — INFO for the same reason as padding.
       await this.testBase64Case(
         checks,
         serverUrl,
         baseHeaders,
         nextId,
-        'reject',
+        'reject-info',
         'server-rejects-invalid-base64-chars',
         'ServerRejectsInvalidBase64Chars',
-        'Server MUST reject header with invalid Base64 characters',
+        'Records whether server rejects non-alphabet chars in Base64 Mcp-Param value (informational — spec does not mandate strict decoding)',
         xMcpTool.name,
         paramName,
         'Hello',
@@ -747,7 +762,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     serverUrl: string,
     baseHeaders: Record<string, string>,
     nextId: () => number,
-    expectation: 'accept' | 'reject',
+    expectation: 'accept' | 'reject' | 'reject-info',
     checkId: string,
     checkName: string,
     description: string,
@@ -789,8 +804,8 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       };
 
       checks.push(
-        expectation === 'reject'
-          ? createRejectionCheck(
+        expectation === 'accept'
+          ? createAcceptanceCheck(
               checkId,
               checkName,
               description,
@@ -798,13 +813,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
               SPEC_REFERENCE_BASE64,
               details
             )
-          : createAcceptanceCheck(
+          : createRejectionCheck(
               checkId,
               checkName,
               description,
               response,
               SPEC_REFERENCE_BASE64,
-              details
+              details,
+              expectation === 'reject-info' ? 'INFO' : 'FAILURE'
             )
       );
     } catch (error) {
