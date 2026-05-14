@@ -323,7 +323,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
   getChecks(): ConformanceCheck[] {
     if (!this.toolCallReceived) {
       this.checks.push({
-        id: 'client-custom-header-tool-call',
+        id: 'sep-2243-param-header-tool-call-gate',
         name: 'ClientCustomHeaderToolCall',
         description: 'Client calls the tool with x-mcp-header annotations',
         status: 'FAILURE',
@@ -335,7 +335,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     }
     if (!this.nullToolCallReceived) {
       this.checks.push({
-        id: 'client-custom-header-omit-null',
+        id: 'sep-2243-client-omit-null',
         name: 'ClientCustomHeaderOmitNull',
         description:
           'Client MUST omit Mcp-Param header when parameter value is null or not provided',
@@ -628,7 +628,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       // Check that 'query' (no x-mcp-header) is NOT mirrored
       const queryHeader = req.headers['mcp-param-query'] as string | undefined;
       this.checks.push({
-        id: 'client-custom-header-no-mirror-unannotated',
+        id: 'sep-2243-no-mirror-unannotated',
         name: 'ClientCustomHeaderNoMirrorUnannotated',
         description:
           'Client MUST NOT add Mcp-Param headers for parameters without x-mcp-header',
@@ -648,7 +648,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         | string
         | undefined;
       this.checks.push({
-        id: 'client-custom-header-omit-null',
+        id: 'sep-2243-client-omit-null',
         name: 'ClientCustomHeaderOmitNull',
         description:
           'Client MUST omit Mcp-Param header when parameter value is null or not provided',
@@ -716,7 +716,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     }
 
     this.checks.push({
-      id: `client-custom-header-${headerName.toLowerCase()}`,
+      id: `sep-2243-param-header-${headerName.toLowerCase()}`,
       name: `ClientCustomHeader_${headerName}`,
       description: `Client sends correct Mcp-Param-${headerName} header (${valueType} value)`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -753,7 +753,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
   getChecks(): ConformanceCheck[] {
     if (!this.toolsListSent) {
       this.checks.push({
-        id: 'client-invalid-tool-headers-tools-list',
+        id: 'sep-2243-invalid-tool-tools-list-gate',
         name: 'ClientInvalidToolHeadersToolsList',
         description: 'Client requests tools/list',
         status: 'FAILURE',
@@ -766,7 +766,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     // Check that valid_tool WAS called — proves client kept valid tools
     const validToolCalled = this.calledTools.has('valid_tool');
     this.checks.push({
-      id: 'client-keeps-valid-tool',
+      id: 'sep-2243-keep-valid-tool',
       name: 'ClientKeepsValidTool',
       description: 'Client MUST keep valid tools while excluding invalid ones',
       status: validToolCalled ? 'SUCCESS' : 'FAILURE',
@@ -794,7 +794,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     for (const toolName of invalidTools) {
       const called = this.calledTools.has(toolName);
       this.checks.push({
-        id: `client-rejects-invalid-tool-${toolName}`,
+        id: `sep-2243-reject-invalid-tool-${toolName.replace(/_/g, '-')}`,
         name: `ClientRejectsInvalidTool_${toolName}`,
         description: `Client MUST NOT call tool '${toolName}' with invalid x-mcp-header`,
         status: called ? 'FAILURE' : 'SUCCESS',

@@ -289,7 +289,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'server-rejects-mismatched-method-header',
+        'sep-2243-server-rejects-mismatched-method-header',
         'ServerRejectsMismatchedMethodHeader',
         'Server rejects requests where Mcp-Method header does not match body method',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -304,7 +304,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'server-rejects-missing-method-header',
+        'sep-2243-server-rejects-missing-method-header',
         'ServerRejectsMissingMethodHeader',
         'Server rejects requests with missing Mcp-Method header',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -322,7 +322,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           baseHeaders,
           nextId,
           'reject',
-          'server-rejects-mismatched-name-header',
+          'sep-2243-server-rejects-mismatched-name-header',
           'ServerRejectsMismatchedNameHeader',
           'Server rejects tools/call where Mcp-Name does not match body params.name',
           {
@@ -344,7 +344,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           baseHeaders,
           nextId,
           'accept',
-          'server-accepts-whitespace-header-value',
+          'sep-2243-server-accepts-whitespace-header-value',
           'ServerAcceptsWhitespaceHeaderValue',
           'Server MUST accept leading/trailing whitespace in Mcp-Name value (RFC 9110 §5.5: field parsing MUST exclude OWS before evaluating)',
           {
@@ -373,7 +373,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           baseHeaders,
           nextId,
           'reject',
-          'server-rejects-missing-name-header',
+          'sep-2243-server-rejects-missing-name-header',
           'ServerRejectsMissingNameHeader',
           'Server MUST reject tools/call with missing Mcp-Name header when body has params.name',
           {
@@ -401,7 +401,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'accept',
-        'server-accepts-lowercase-header-name',
+        'sep-2243-server-accepts-lowercase-header-name',
         'ServerAcceptsLowercaseHeaderName',
         'Server MUST accept lowercase header name (mcp-method)',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -416,7 +416,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'accept',
-        'server-accepts-uppercase-header-name',
+        'sep-2243-server-accepts-uppercase-header-name',
         'ServerAcceptsUppercaseHeaderName',
         'Server MUST accept uppercase header name (MCP-METHOD)',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -431,7 +431,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'server-rejects-case-mismatch-value',
+        'sep-2243-server-rejects-case-mismatch-value',
         'ServerRejectsCaseMismatchValue',
         'Server MUST reject uppercase method value (TOOLS/LIST) since values are case-sensitive',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -441,7 +441,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
       );
     } catch (error) {
       checks.push({
-        id: 'http-header-validation-setup',
+        id: 'sep-2243-server-standard-setup',
         name: 'HttpHeaderValidationSetup',
         description: 'Setup for header validation tests',
         status: 'FAILURE',
@@ -548,7 +548,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
       if (!xMcpTool) {
         checks.push({
-          id: 'http-custom-header-server-no-tool',
+          id: 'sep-2243-server-no-xmcp-tool',
           name: 'HttpCustomHeaderServerNoTool',
           description:
             'Server has no tools with x-mcp-header annotations to test',
@@ -610,7 +610,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
       if (!annotatedEntry) {
         checks.push({
-          id: 'http-custom-header-server-no-string-param',
+          id: 'sep-2243-server-no-string-param',
           name: 'HttpCustomHeaderServerNoStringParam',
           description:
             'Server has no string-typed x-mcp-header parameter to test',
@@ -664,7 +664,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'server-accepts-valid-base64',
+        'sep-2243-server-accepts-valid-base64',
         'ServerAcceptsValidBase64',
         'Server decodes valid Base64 header value and validates against body',
         xMcpTool.name,
@@ -688,7 +688,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'reject-info',
-        'server-rejects-invalid-base64-padding',
+        'sep-2243-server-rejects-invalid-base64-padding',
         'ServerRejectsInvalidBase64Padding',
         'Records whether server rejects unpadded Base64 in Mcp-Param value (informational — spec does not mandate strict decoding)',
         xMcpTool.name,
@@ -707,7 +707,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'reject-info',
-        'server-rejects-invalid-base64-chars',
+        'sep-2243-server-rejects-invalid-base64-chars',
         'ServerRejectsInvalidBase64Chars',
         'Records whether server rejects non-alphabet chars in Base64 Mcp-Param value (informational — spec does not mandate strict decoding)',
         xMcpTool.name,
@@ -726,7 +726,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'server-literal-missing-base64-prefix',
+        'sep-2243-server-literal-missing-base64-prefix',
         'ServerLiteralMissingBase64Prefix',
         'Server treats value without =?base64? prefix as literal (not Base64)',
         xMcpTool.name,
@@ -745,7 +745,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'server-literal-missing-base64-suffix',
+        'sep-2243-server-literal-missing-base64-suffix',
         'ServerLiteralMissingBase64Suffix',
         'Server treats value without ?= suffix as literal (not Base64)',
         xMcpTool.name,
@@ -772,7 +772,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
     } catch (error) {
       checks.push({
-        id: 'http-custom-header-server-validation-setup',
+        id: 'sep-2243-server-custom-setup',
         name: 'HttpCustomHeaderServerValidationSetup',
         description: 'Setup for custom header server validation tests',
         status: 'FAILURE',
@@ -908,7 +908,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // Custom-header rejection: both 400 and -32001 are MUST.
       checks.push(
         ...createRejectionChecks(
-          'server-rejects-missing-custom-header',
+          'sep-2243-server-rejects-missing-custom-header',
           'ServerRejectsMissingCustomHeader',
           'Server MUST reject request where custom header is omitted but value is present in body',
           response,
@@ -925,7 +925,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
     } catch (error) {
       checks.push({
-        id: 'server-rejects-missing-custom-header',
+        id: 'sep-2243-server-rejects-missing-custom-header',
         name: 'ServerRejectsMissingCustomHeader',
         description:
           'Server MUST reject request where custom header is omitted but value is present in body',

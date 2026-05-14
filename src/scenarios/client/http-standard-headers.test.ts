@@ -31,14 +31,14 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     });
   }
 
-  it('FAILs client-mcp-method-header-initialize when Mcp-Method is missing', async () => {
+  it('FAILs sep-2243-mcp-method-header-initialize when Mcp-Method is missing', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start();
     try {
       await postInitialize(serverUrl, {}); // no Mcp-Method header
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === 'client-mcp-method-header-initialize'
+        (c) => c.id === 'sep-2243-mcp-method-header-initialize'
       );
       expect(check?.status).toBe('FAILURE');
     } finally {
@@ -46,14 +46,14 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     }
   });
 
-  it('SUCCEEDs client-mcp-method-header-initialize when Mcp-Method matches', async () => {
+  it('SUCCEEDs sep-2243-mcp-method-header-initialize when Mcp-Method matches', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start();
     try {
       await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === 'client-mcp-method-header-initialize'
+        (c) => c.id === 'sep-2243-mcp-method-header-initialize'
       );
       expect(check?.status).toBe('SUCCESS');
     } finally {

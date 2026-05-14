@@ -102,7 +102,7 @@ export class HttpStandardHeadersScenario implements Scenario {
     for (const method of expectedMethods) {
       if (!this.methodHeaderChecks.has(method)) {
         result.push({
-          id: `client-mcp-method-header-${method.replace(/\//g, '-')}`,
+          id: `sep-2243-mcp-method-header-${method.replace(/\//g, '-')}`,
           name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
           description: `Client sends correct Mcp-Method header on ${method} request`,
           status: 'SKIPPED',
@@ -117,7 +117,7 @@ export class HttpStandardHeadersScenario implements Scenario {
     for (const method of expectedNameMethods) {
       if (!this.nameHeaderChecks.has(method)) {
         result.push({
-          id: `client-mcp-name-header-${method.replace(/\//g, '-')}`,
+          id: `sep-2243-mcp-name-header-${method.replace(/\//g, '-')}`,
           name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
           description: `Client sends correct Mcp-Name header on ${method} request`,
           status: 'SKIPPED',
@@ -244,7 +244,7 @@ export class HttpStandardHeadersScenario implements Scenario {
     this.methodHeaderChecks.set(method, errors.length === 0);
 
     this.checks.push({
-      id: `client-mcp-method-header-${method.replace(/\//g, '-')}`,
+      id: `sep-2243-mcp-method-header-${method.replace(/\//g, '-')}`,
       name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
       description: `Client sends correct Mcp-Method header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -289,7 +289,7 @@ export class HttpStandardHeadersScenario implements Scenario {
     this.nameHeaderChecks.set(method, errors.length === 0);
 
     this.checks.push({
-      id: `client-mcp-name-header-${method.replace(/\//g, '-')}`,
+      id: `sep-2243-mcp-name-header-${method.replace(/\//g, '-')}`,
       name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
       description: `Client sends correct Mcp-Name header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
