@@ -13,71 +13,27 @@
 
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
   ConformanceCheck,
   SpecVersion,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
+import { BaseHttpScenario } from './http-base.js';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Standard-Headers',
   url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#standard-mcp-request-headers'
 };
 
-export class HttpStandardHeadersScenario implements Scenario {
+export class HttpStandardHeadersScenario extends BaseHttpScenario {
   name = 'http-standard-headers';
   specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   description =
     'Tests that client includes Mcp-Method and Mcp-Name headers on HTTP POST requests (SEP-2243)';
 
-  private server: http.Server | null = null;
-  private checks: ConformanceCheck[] = [];
-  private port: number = 0;
-  private sessionId: string = `session-${Date.now()}`;
-
   // Track which header checks have been recorded
   private methodHeaderChecks = new Map<string, boolean>();
   // Track which Mcp-Name checks have been recorded
   private nameHeaderChecks = new Map<string, boolean>();
-
-  async start(): Promise<ScenarioUrls> {
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
-      this.server.on('error', reject);
-
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          this.port = address.port;
-          resolve({
-            serverUrl: `http://localhost:${this.port}`
-          });
-        } else {
-          reject(new Error('Failed to get server address'));
-        }
-      });
-    });
-  }
-
-  async stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.server) {
-        this.server.close((err) => {
-          if (err) reject(err);
-          else {
-            this.server = null;
-            resolve();
-          }
-        });
-      } else {
-        resolve();
-      }
-    });
-  }
 
   getChecks(): ConformanceCheck[] {
     // Build a fresh array each call so getChecks() is idempotent — the runner
@@ -131,92 +87,38 @@ export class HttpStandardHeadersScenario implements Scenario {
     return result;
   }
 
-  private handleRequest(
+  protected handlePost(
     req: http.IncomingMessage,
-    res: http.ServerResponse
+    res: http.ServerResponse,
+    request: any
   ): void {
-    if (req.method !== 'POST') {
-      // Handle GET for SSE resumability - just close
-      if (req.method === 'GET') {
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'mcp-session-id': this.sessionId
-        });
-        res.write('data: \n\n');
-        return;
-      }
-      if (req.method === 'DELETE') {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
-      res.writeHead(405);
-      res.end('Method Not Allowed');
-      return;
+    // Check Mcp-Method header for every request
+    this.checkMcpMethodHeader(req, request);
+
+    // Route to handlers
+    if (request.method === 'initialize') {
+      this.handleInitialize(res, request);
+    } else if (request.method === 'tools/list') {
+      this.handleToolsList(res, request);
+    } else if (request.method === 'tools/call') {
+      this.checkMcpNameHeader(req, request, 'params.name');
+      this.handleToolsCall(res, request);
+    } else if (request.method === 'resources/list') {
+      this.handleResourcesList(res, request);
+    } else if (request.method === 'resources/read') {
+      this.checkMcpNameHeader(req, request, 'params.uri');
+      this.handleResourcesRead(res, request);
+    } else if (request.method === 'prompts/list') {
+      this.handlePromptsList(res, request);
+    } else if (request.method === 'prompts/get') {
+      this.checkMcpNameHeader(req, request, 'params.name');
+      this.handlePromptsGet(res, request);
+    } else if (request.id === undefined) {
+      // Notifications - return 202 (Mcp-Method already checked above)
+      this.sendNotificationAck(res);
+    } else {
+      this.sendGenericResult(res, request);
     }
-
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-    });
-
-    req.on('end', () => {
-      try {
-        const request = JSON.parse(body);
-
-        // Check Mcp-Method header for every request
-        this.checkMcpMethodHeader(req, request);
-
-        // Route to handlers
-        if (request.method === 'initialize') {
-          this.handleInitialize(res, request);
-        } else if (request.method === 'tools/list') {
-          this.handleToolsList(res, request);
-        } else if (request.method === 'tools/call') {
-          this.checkMcpNameHeader(req, request, 'params.name');
-          this.handleToolsCall(res, request);
-        } else if (request.method === 'resources/list') {
-          this.handleResourcesList(res, request);
-        } else if (request.method === 'resources/read') {
-          this.checkMcpNameHeader(req, request, 'params.uri');
-          this.handleResourcesRead(res, request);
-        } else if (request.method === 'prompts/list') {
-          this.handlePromptsList(res, request);
-        } else if (request.method === 'prompts/get') {
-          this.checkMcpNameHeader(req, request, 'params.name');
-          this.handlePromptsGet(res, request);
-        } else if (request.id === undefined) {
-          // Notifications - return 202 (Mcp-Method already checked above)
-          res.writeHead(202);
-          res.end();
-        } else {
-          res.writeHead(200, {
-            'Content-Type': 'application/json',
-            'mcp-session-id': this.sessionId
-          });
-          res.end(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              id: request.id,
-              result: {}
-            })
-          );
-        }
-      } catch (error) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: {
-              code: -32700,
-              message: `Parse error: ${error}`
-            }
-          })
-        );
-      }
-    });
   }
 
   private checkMcpMethodHeader(req: http.IncomingMessage, request: any): void {
@@ -306,29 +208,11 @@ export class HttpStandardHeadersScenario implements Scenario {
   }
 
   private handleInitialize(res: http.ServerResponse, request: any): void {
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-      'mcp-session-id': this.sessionId
+    this.sendInitialize(res, request, {
+      tools: {},
+      resources: {},
+      prompts: {}
     });
-
-    res.end(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: request.id,
-        result: {
-          protocolVersion: DRAFT_PROTOCOL_VERSION,
-          serverInfo: {
-            name: 'http-standard-headers-test-server',
-            version: '1.0.0'
-          },
-          capabilities: {
-            tools: {},
-            resources: {},
-            prompts: {}
-          }
-        }
-      })
-    );
   }
 
   private handleToolsList(res: http.ServerResponse, request: any): void {
