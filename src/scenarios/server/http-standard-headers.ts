@@ -569,18 +569,21 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       const [paramName, paramDef] = annotatedEntry as [string, any];
       const headerSuffix = paramDef['x-mcp-header'];
 
-      // Build default arguments for all required params to avoid schema validation errors
+      // Build default arguments for all required params to avoid schema validation errors.
+      // These go in the JSON body, so number/boolean must be the real types —
+      // sending '0' or 'false' as strings makes the server reject on JSON-schema
+      // grounds and the header-validation checks below would false-pass on that 400.
       const requiredParams: string[] = schema.required || [];
-      const defaultArgs: Record<string, string> = {};
+      const defaultArgs: Record<string, string | number | boolean> = {};
       const defaultHeaders: Record<string, string> = {};
       for (const rp of requiredParams) {
         if (rp !== paramName) {
           const rpDef = schema.properties[rp];
           const rpType = rpDef?.type || 'string';
-          if (rpType === 'number') {
-            defaultArgs[rp] = '0' as any;
+          if (rpType === 'number' || rpType === 'integer') {
+            defaultArgs[rp] = 0;
           } else if (rpType === 'boolean') {
-            defaultArgs[rp] = 'false' as any;
+            defaultArgs[rp] = false;
           } else {
             defaultArgs[rp] = 'test-default';
           }
