@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, DatedSpecVersion } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -8,8 +8,10 @@ import { SpecReferences } from './spec-references';
 
 export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
   name = 'auth/2025-03-26-oauth-metadata-backcompat';
-  introducedIn: DatedSpecVersion = '2025-03-26';
-  removedIn: DatedSpecVersion = '2025-06-18';
+  readonly source = {
+    introducedIn: '2025-03-26',
+    removedIn: '2025-06-18'
+  } as const;
   description =
     'Tests 2025-03-26 spec OAuth flow: no PRM (Protected Resource Metadata), OAuth metadata at root location';
   private server = new ServerLifecycle();
@@ -70,8 +72,10 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
 
 export class Auth20250326OEndpointFallbackScenario implements Scenario {
   name = 'auth/2025-03-26-oauth-endpoint-fallback';
-  introducedIn: DatedSpecVersion = '2025-03-26';
-  removedIn: DatedSpecVersion = '2025-06-18';
+  readonly source = {
+    introducedIn: '2025-03-26',
+    removedIn: '2025-06-18'
+  } as const;
   description =
     'Tests OAuth flow with no metadata endpoints, relying on fallback to standard OAuth endpoints at server root (2025-03-26 spec behavior)';
   private server = new ServerLifecycle();

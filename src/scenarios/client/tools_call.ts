@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck, DatedSpecVersion } from '../../types';
+import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
 import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
@@ -115,7 +115,7 @@ function createServerApp(checks: ConformanceCheck[]): express.Application {
 
 export class ToolsCallScenario implements Scenario {
   name = 'tools_call';
-  introducedIn: DatedSpecVersion = '2025-06-18';
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests calling tools with various parameter types';
   private app: express.Application | null = null;
   private httpServer: any = null;

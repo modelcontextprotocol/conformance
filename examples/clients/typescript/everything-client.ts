@@ -375,20 +375,20 @@ registerScenario('auth/pre-registration', runPreRegistration);
 // ============================================================================
 
 /**
- * Cross-app access: Complete Flow (SEP-990)
+ * Enterprise Managed Auth (SEP-990)
  * Tests the complete flow: IDP ID token -> authorization grant -> access token -> MCP access.
  */
-export async function runCrossAppAccessCompleteFlow(
+export async function runEnterpriseManagedAuth(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseContext();
-  if (ctx.name !== 'auth/cross-app-access-complete-flow') {
+  if (ctx.name !== 'auth/enterprise-managed-auth') {
     throw new Error(
-      `Expected cross-app-access-complete-flow context, got ${ctx.name}`
+      `Expected enterprise-managed-auth context, got ${ctx.name}`
     );
   }
 
-  logger.debug('Starting complete cross-app access flow...');
+  logger.debug('Starting enterprise managed auth flow...');
   logger.debug('IDP Issuer:', ctx.idp_issuer);
   logger.debug('IDP Token Endpoint:', ctx.idp_token_endpoint);
 
@@ -494,7 +494,7 @@ export async function runCrossAppAccessCompleteFlow(
   // Step 3: Use access token to access MCP server
   logger.debug('Step 3: Accessing MCP server with access token...');
   const client = new Client(
-    { name: 'conformance-cross-app-access', version: '1.0.0' },
+    { name: 'conformance-enterprise-managed-auth', version: '1.0.0' },
     { capabilities: {} }
   );
 
@@ -516,13 +516,10 @@ export async function runCrossAppAccessCompleteFlow(
   logger.debug('Successfully called tool');
 
   await transport.close();
-  logger.debug('Complete cross-app access flow completed successfully');
+  logger.debug('Enterprise managed auth flow completed successfully');
 }
 
-registerScenario(
-  'auth/cross-app-access-complete-flow',
-  runCrossAppAccessCompleteFlow
-);
+registerScenario('auth/enterprise-managed-auth', runEnterpriseManagedAuth);
 
 // ============================================================================
 // Main entry point

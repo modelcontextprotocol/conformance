@@ -1,12 +1,6 @@
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
-import { LATEST_SPEC_VERSION } from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -38,8 +32,7 @@ async function generateTestKeypair(): Promise<{
  */
 export class ClientCredentialsJwtScenario implements Scenario {
   name = 'auth/client-credentials-jwt';
-  extension = true;
-  introducedIn: SpecVersion = LATEST_SPEC_VERSION;
+  readonly source = { extensionId: 'client-credentials' } as const;
   description =
     'Tests OAuth client_credentials flow with private_key_jwt authentication (SEP-1046)';
 
@@ -258,8 +251,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
  */
 export class ClientCredentialsBasicScenario implements Scenario {
   name = 'auth/client-credentials-basic';
-  extension = true;
-  introducedIn: SpecVersion = LATEST_SPEC_VERSION;
+  readonly source = { extensionId: 'client-credentials' } as const;
   description =
     'Tests OAuth client_credentials flow with client_secret_basic authentication';
 

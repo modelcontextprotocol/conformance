@@ -1,60 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import {
   listScenarios,
-  listClientScenarios,
   listScenariosForSpec,
   listDraftScenarios,
   listExtensionScenarios,
   getScenarioSpecVersions,
   resolveSpecVersion,
   ALL_SPEC_VERSIONS,
-  scenarios,
-  clientScenarios
+  scenarios
 } from './index';
 import {
   DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION,
-  ScenarioSpecTag
+  LATEST_SPEC_VERSION
 } from '../types';
 
-const ALL_SCENARIO_SPEC_TAGS: ScenarioSpecTag[] = [
-  ...ALL_SPEC_VERSIONS,
-  'extension'
-];
-
 describe('specVersions helpers', () => {
-  it('every Scenario has introducedIn', () => {
-    for (const name of listScenarios()) {
-      const s = scenarios.get(name);
-      expect(s, `scenario "${name}" missing from map`).toBeDefined();
-      if (s!.extension) continue;
-      expect(
-        s!.introducedIn,
-        `scenario "${name}" is missing introducedIn`
-      ).toBeDefined();
-      expect(ALL_SCENARIO_SPEC_TAGS).toContain(s!.introducedIn);
-      if (s!.removedIn !== undefined) {
-        expect(ALL_SCENARIO_SPEC_TAGS).toContain(s!.removedIn);
-      }
-    }
-  });
-
-  it('every ClientScenario has introducedIn', () => {
-    for (const name of listClientScenarios()) {
-      const s = clientScenarios.get(name);
-      expect(s, `client scenario "${name}" missing from map`).toBeDefined();
-      if (s!.extension) continue;
-      expect(
-        s!.introducedIn,
-        `client scenario "${name}" is missing introducedIn`
-      ).toBeDefined();
-      expect(ALL_SCENARIO_SPEC_TAGS).toContain(s!.introducedIn);
-      if (s!.removedIn !== undefined) {
-        expect(ALL_SCENARIO_SPEC_TAGS).toContain(s!.removedIn);
-      }
-    }
-  });
+  // The ScenarioSource union (introducedIn XOR extensionId) is enforced by the
+  // type system; no runtime invariant test is needed.
 
   it('listScenariosForSpec returns scenarios whose range covers that version', () => {
     const selected = listScenariosForSpec('2025-06-18');
@@ -70,12 +33,12 @@ describe('specVersions helpers', () => {
       const selected = new Set(listScenariosForSpec(v));
       const vIdx = ALL_SPEC_VERSIONS.indexOf(v);
       for (const name of listScenarios()) {
-        const s = scenarios.get(name)!;
-        if (s.extension || s.removedIn === undefined) continue;
-        if (vIdx >= ALL_SPEC_VERSIONS.indexOf(s.removedIn)) {
+        const src = scenarios.get(name)!.source;
+        if ('extensionId' in src || src.removedIn === undefined) continue;
+        if (vIdx >= ALL_SPEC_VERSIONS.indexOf(src.removedIn)) {
           expect(
             selected.has(name),
-            `scenario "${name}" (removedIn ${s.removedIn}) should not appear in --spec-version ${v}`
+            `scenario "${name}" (removedIn ${src.removedIn}) should not appear in --spec-version ${v}`
           ).toBe(false);
         }
       }

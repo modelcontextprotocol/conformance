@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, DatedSpecVersion } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -22,7 +22,7 @@ export const CIMD_CLIENT_METADATA_URL =
  */
 export class AuthBasicCIMDScenario implements Scenario {
   name = 'auth/basic-cimd';
-  introducedIn: DatedSpecVersion = '2025-11-25';
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests OAuth flow with Client ID Metadata Documents (SEP-991/URL-based client IDs). Server advertises client_id_metadata_document_supported=true and client should use URL as client_id instead of DCR.';
   private authServer = new ServerLifecycle();

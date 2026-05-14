@@ -7,7 +7,7 @@
  */
 
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, DatedSpecVersion } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -87,7 +87,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
   return {
     name: `auth/${config.name}`,
-    introducedIn: '2025-11-25' as DatedSpecVersion,
+    source: { introducedIn: '2025-11-25' },
     description: `Tests Basic OAuth metadata discovery flow.
 
 **PRM:** ${config.prmLocation}${config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}

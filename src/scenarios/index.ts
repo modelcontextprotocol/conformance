@@ -2,6 +2,7 @@ import {
   Scenario,
   ClientScenario,
   ClientScenarioForAuthorizationServer,
+  ScenarioSource,
   SpecVersion,
   DatedSpecVersion,
   ScenarioSpecTag,
@@ -285,32 +286,28 @@ function versionIndex(
   return ALL_SPEC_VERSIONS.indexOf(v);
 }
 
-// Extension scenarios are never selected by --spec-version.
+// Off-timeline sources (extensions etc.) are never selected by --spec-version.
 function matchesSpecVersion(
-  scenario: {
-    introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
-    removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
-    extension?: boolean;
-  },
+  source: ScenarioSource,
   version: SpecVersion
 ): boolean {
-  if (scenario.extension) return false;
+  if ('extensionId' in source) return false;
   return (
-    versionIndex(scenario.introducedIn) <= versionIndex(version) &&
-    (scenario.removedIn === undefined ||
-      versionIndex(version) < versionIndex(scenario.removedIn))
+    versionIndex(source.introducedIn) <= versionIndex(version) &&
+    (source.removedIn === undefined ||
+      versionIndex(version) < versionIndex(source.removedIn))
   );
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {
   return scenariosList
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
 export function listClientScenariosForSpec(version: SpecVersion): string[] {
   return allClientScenariosList
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
@@ -318,7 +315,7 @@ export function listClientScenariosForAuthorizationServerForSpec(
   version: SpecVersion
 ): string[] {
   return allClientScenariosListForAuthorizationServer
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
@@ -330,10 +327,10 @@ export function getScenarioSpecVersions(
     clientScenarios.get(name) ??
     clientScenariosForAuthorizationServer.get(name);
   if (!s) return undefined;
-  if (s.extension) return ['extension'];
+  if ('extensionId' in s.source) return ['extension'];
   const result: ScenarioSpecTag[] = [];
   for (const v of ALL_SPEC_VERSIONS) {
-    if (matchesSpecVersion(s, v)) result.push(v);
+    if (matchesSpecVersion(s.source, v)) result.push(v);
   }
   return result;
 }

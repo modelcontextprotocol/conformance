@@ -8,11 +8,7 @@
  * - Replaying events when client reconnects with Last-Event-ID
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DatedSpecVersion
-} from '../../types.js';
+import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -71,7 +67,7 @@ function createLoggingFetch(checks: ConformanceCheck[]) {
 
 export class ServerSSEPollingScenario implements ClientScenario {
   name = 'server-sse-polling';
-  introducedIn: DatedSpecVersion = '2025-11-25';
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Test server SSE polling via test_reconnection tool that closes stream mid-call (SEP-1699)';
 

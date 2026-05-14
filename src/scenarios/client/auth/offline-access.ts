@@ -1,9 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types';
-import {
-  ScenarioUrls,
-  SpecVersion,
-  DRAFT_PROTOCOL_VERSION
-} from '../../../types';
+import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -27,7 +23,7 @@ import { MockTokenVerifier } from './helpers/mockTokenVerifier';
  */
 export class OfflineAccessScopeScenario implements Scenario {
   name = 'auth/offline-access-scope';
-  introducedIn: SpecVersion = DRAFT_PROTOCOL_VERSION;
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that a client that wants a refresh token handles offline_access scope and refresh_token grant type when AS supports them (SEP-2207)';
 
@@ -231,7 +227,7 @@ export class OfflineAccessScopeScenario implements Scenario {
  */
 export class OfflineAccessNotSupportedScenario implements Scenario {
   name = 'auth/offline-access-not-supported';
-  introducedIn: SpecVersion = DRAFT_PROTOCOL_VERSION;
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client does not request offline_access when AS does not list it in scopes_supported (SEP-2207)';
 
