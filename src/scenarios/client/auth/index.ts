@@ -23,7 +23,7 @@ import {
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
-import { EnterpriseManagedAuthScenario } from './enterprise-managed-auth';
+import { EnterpriseManagedAuthorizationScenario } from './enterprise-managed-authorization';
 import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
@@ -54,7 +54,7 @@ export const backcompatScenariosList: Scenario[] = [
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
-  new EnterpriseManagedAuthScenario()
+  new EnterpriseManagedAuthorizationScenario()
 ];
 
 // Draft scenarios (informational - not scored for tier assessment)

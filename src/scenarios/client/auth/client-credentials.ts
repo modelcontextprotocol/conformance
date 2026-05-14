@@ -32,7 +32,9 @@ async function generateTestKeypair(): Promise<{
  */
 export class ClientCredentialsJwtScenario implements Scenario {
   name = 'auth/client-credentials-jwt';
-  readonly source = { extensionId: 'client-credentials' } as const;
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/oauth-client-credentials'
+  } as const;
   description =
     'Tests OAuth client_credentials flow with private_key_jwt authentication (SEP-1046)';
 
@@ -251,7 +253,9 @@ export class ClientCredentialsJwtScenario implements Scenario {
  */
 export class ClientCredentialsBasicScenario implements Scenario {
   name = 'auth/client-credentials-basic';
-  readonly source = { extensionId: 'client-credentials' } as const;
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/oauth-client-credentials'
+  } as const;
   description =
     'Tests OAuth client_credentials flow with client_secret_basic authentication';
 

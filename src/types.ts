@@ -58,10 +58,14 @@ export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 // (selectable via --suite extensions, never via --spec-version). See #256.
 export type ScenarioSpecTag = SpecVersion | 'extension';
 
-/** Known protocol extensions that this suite has scenarios for. */
+/**
+ * Known protocol extensions that this suite has scenarios for.
+ * Values are SEP-2133 extension identifiers (the keys used in
+ * `capabilities.extensions`).
+ */
 export const EXTENSION_IDS = [
-  'client-credentials',
-  'enterprise-managed-auth'
+  'io.modelcontextprotocol/oauth-client-credentials',
+  'io.modelcontextprotocol/enterprise-managed-authorization'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 

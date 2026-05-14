@@ -375,20 +375,20 @@ registerScenario('auth/pre-registration', runPreRegistration);
 // ============================================================================
 
 /**
- * Enterprise Managed Auth (SEP-990)
+ * Enterprise-Managed Authorization (SEP-990)
  * Tests the complete flow: IDP ID token -> authorization grant -> access token -> MCP access.
  */
-export async function runEnterpriseManagedAuth(
+export async function runEnterpriseManagedAuthorization(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseContext();
-  if (ctx.name !== 'auth/enterprise-managed-auth') {
+  if (ctx.name !== 'auth/enterprise-managed-authorization') {
     throw new Error(
-      `Expected enterprise-managed-auth context, got ${ctx.name}`
+      `Expected enterprise-managed-authorization context, got ${ctx.name}`
     );
   }
 
-  logger.debug('Starting enterprise managed auth flow...');
+  logger.debug('Starting enterprise-managed authorization flow...');
   logger.debug('IDP Issuer:', ctx.idp_issuer);
   logger.debug('IDP Token Endpoint:', ctx.idp_token_endpoint);
 
@@ -494,7 +494,7 @@ export async function runEnterpriseManagedAuth(
   // Step 3: Use access token to access MCP server
   logger.debug('Step 3: Accessing MCP server with access token...');
   const client = new Client(
-    { name: 'conformance-enterprise-managed-auth', version: '1.0.0' },
+    { name: 'conformance-enterprise-managed-authorization', version: '1.0.0' },
     { capabilities: {} }
   );
 
@@ -516,10 +516,13 @@ export async function runEnterpriseManagedAuth(
   logger.debug('Successfully called tool');
 
   await transport.close();
-  logger.debug('Enterprise managed auth flow completed successfully');
+  logger.debug('Enterprise-managed authorization flow completed successfully');
 }
 
-registerScenario('auth/enterprise-managed-auth', runEnterpriseManagedAuth);
+registerScenario(
+  'auth/enterprise-managed-authorization',
+  runEnterpriseManagedAuthorization
+);
 
 // ============================================================================
 // Main entry point
