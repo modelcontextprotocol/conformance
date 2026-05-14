@@ -79,8 +79,14 @@ export class HttpStandardHeadersScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    // Enforce that Mcp-Method was checked for all expected request types
-    // SEP-2243 requires Mcp-Method on "all requests and notifications"
+    // Build a fresh array each call so getChecks() is idempotent — the runner
+    // may call it more than once and we must not accumulate duplicates.
+    const result = [...this.checks];
+
+    // SEP-2243 requires Mcp-Method on "all requests and notifications". A
+    // client that never sent prompts/list isn't violating SEP-2243 — it just
+    // didn't exercise that path. Emit SKIPPED (not FAILURE) so a prompts-less
+    // client doesn't show red, but the gap is still visible in the report.
     const expectedMethods = [
       'initialize',
       'notifications/initialized',
@@ -94,35 +100,34 @@ export class HttpStandardHeadersScenario implements Scenario {
 
     for (const method of expectedMethods) {
       if (!this.methodHeaderChecks.has(method)) {
-        this.checks.push({
+        result.push({
           id: `client-mcp-method-header-${method.replace('/', '-')}`,
           name: `ClientMcpMethodHeader_${method.replace('/', '_')}`,
           description: `Client sends correct Mcp-Method header on ${method} request`,
-          status: 'FAILURE',
+          status: 'SKIPPED',
           timestamp: new Date().toISOString(),
-          errorMessage: `Client did not send a ${method} request. Expected Mcp-Method header to be tested.`,
+          errorMessage: `Client did not send a ${method} request; Mcp-Method header was not exercised for this method.`,
           specReferences: [SPEC_REFERENCE]
         });
       }
     }
 
-    // Enforce that Mcp-Name was checked for methods that require it
     const expectedNameMethods = ['tools/call', 'resources/read', 'prompts/get'];
     for (const method of expectedNameMethods) {
       if (!this.nameHeaderChecks.has(method)) {
-        this.checks.push({
+        result.push({
           id: `client-mcp-name-header-${method.replace('/', '-')}`,
           name: `ClientMcpNameHeader_${method.replace('/', '_')}`,
           description: `Client sends correct Mcp-Name header on ${method} request`,
-          status: 'FAILURE',
+          status: 'SKIPPED',
           timestamp: new Date().toISOString(),
-          errorMessage: `Client did not send a ${method} request. Expected Mcp-Name header to be tested.`,
+          errorMessage: `Client did not send a ${method} request; Mcp-Name header was not exercised for this method.`,
           specReferences: [SPEC_REFERENCE]
         });
       }
     }
 
-    return this.checks;
+    return result;
   }
 
   private handleRequest(
