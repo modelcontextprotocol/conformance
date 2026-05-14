@@ -525,31 +525,11 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       this.checkParamHeader(req, 'Priority', args.priority, 'number');
 
       // Check Mcp-Param-Verbose header (boolean value)
+      // checkParamHeader already FAILs on missing header, so this also covers
+      // "optional parameter present → client MUST include header" without a
+      // separate check id.
       if (args.verbose !== undefined && args.verbose !== null) {
         this.checkParamHeader(req, 'Verbose', args.verbose, 'boolean');
-
-        // Explicit check: optional parameter present → client MUST include header
-        const verboseHeader = req.headers['mcp-param-verbose'] as
-          | string
-          | undefined;
-        this.checks.push({
-          id: 'client-custom-header-optional-present',
-          name: 'ClientCustomHeaderOptionalPresent',
-          description:
-            'Client MUST include Mcp-Param header when optional parameter is provided',
-          status: verboseHeader !== undefined ? 'SUCCESS' : 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage:
-            verboseHeader === undefined
-              ? `Optional parameter 'verbose' was provided with value '${args.verbose}' but Mcp-Param-Verbose header is missing. Client MUST include the header when the parameter is present.`
-              : undefined,
-          specReferences: [SPEC_REFERENCE_CUSTOM],
-          details: {
-            parameter: 'verbose',
-            bodyValue: args.verbose,
-            headerPresent: verboseHeader !== undefined
-          }
-        });
       }
 
       // Check Mcp-Param-Debug header (boolean true value)
