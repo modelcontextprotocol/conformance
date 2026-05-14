@@ -113,40 +113,62 @@ async function sendRawRequest(
   });
 }
 
-function createRejectionCheck(
+/**
+ * Builds two checks for a rejection case: one for the HTTP 400 status, one for
+ * the -32001 JSON-RPC error code. Per SEP-2243 §Server Validation, 400 is MUST
+ * but -32001 is SHOULD for *standard* headers (and MUST for *custom* headers,
+ * §Server Behavior for Custom Headers) — so a server returning 400 with a
+ * different error code is compliant for standard headers and must not FAIL.
+ */
+function createRejectionChecks(
   id: string,
   name: string,
   description: string,
   response: { status: number; body: any },
   specRef: { id: string; url: string },
   details: Record<string, unknown>,
-  failSeverity: 'FAILURE' | 'WARNING' | 'INFO' = 'FAILURE'
-): ConformanceCheck {
-  const errors: string[] = [];
-  if (response.status !== 400) {
-    errors.push(
-      `Expected HTTP 400, got ${response.status}. Server MUST reject with 400 Bad Request.`
-    );
+  opts: {
+    statusSeverity?: 'FAILURE' | 'INFO';
+    errorCodeSeverity: 'FAILURE' | 'WARNING' | 'INFO';
   }
-  if (response.body?.error?.code !== HEADER_MISMATCH_ERROR_CODE) {
-    errors.push(
-      `Expected JSON-RPC error code ${HEADER_MISMATCH_ERROR_CODE} (HeaderMismatch), got ${response.body?.error?.code ?? '(missing)'}. Server MUST use code -32001.`
-    );
-  }
-  return {
-    id,
-    name,
-    description,
-    status: errors.length > 0 ? failSeverity : 'SUCCESS',
-    timestamp: new Date().toISOString(),
-    errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
-    specReferences: [specRef],
-    details: {
-      ...details,
-      responseStatus: response.status,
-      responseBody: response.body
-    }
+): ConformanceCheck[] {
+  const statusSeverity = opts.statusSeverity ?? 'FAILURE';
+  const fullDetails = {
+    ...details,
+    responseStatus: response.status,
+    responseBody: response.body
   };
+  const ts = new Date().toISOString();
+
+  const statusOk = response.status === 400;
+  const codeOk = response.body?.error?.code === HEADER_MISMATCH_ERROR_CODE;
+
+  return [
+    {
+      id,
+      name,
+      description,
+      status: statusOk ? 'SUCCESS' : statusSeverity,
+      timestamp: ts,
+      errorMessage: statusOk
+        ? undefined
+        : `Expected HTTP 400, got ${response.status}. Server MUST reject with 400 Bad Request.`,
+      specReferences: [specRef],
+      details: fullDetails
+    },
+    {
+      id: `${id}-error-code`,
+      name: `${name}ErrorCode`,
+      description: `${description} — uses JSON-RPC error code -32001 (HeaderMismatch)`,
+      status: codeOk ? 'SUCCESS' : opts.errorCodeSeverity,
+      timestamp: ts,
+      errorMessage: codeOk
+        ? undefined
+        : `Expected JSON-RPC error code ${HEADER_MISMATCH_ERROR_CODE} (HeaderMismatch), got ${response.body?.error?.code ?? '(missing)'}.`,
+      specReferences: [specRef],
+      details: fullDetails
+    }
+  ];
 }
 
 function createAcceptanceCheck(
@@ -452,25 +474,31 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         ...baseHeaders,
         ...extraHeaders
       });
-      checks.push(
-        expectation === 'reject'
-          ? createRejectionCheck(
-              checkId,
-              checkName,
-              description,
-              response,
-              specRef,
-              details
-            )
-          : createAcceptanceCheck(
-              checkId,
-              checkName,
-              description,
-              response,
-              specRef,
-              details
-            )
-      );
+      if (expectation === 'reject') {
+        // Standard-header rejection: 400 is MUST, -32001 is SHOULD.
+        checks.push(
+          ...createRejectionChecks(
+            checkId,
+            checkName,
+            description,
+            response,
+            specRef,
+            details,
+            { errorCodeSeverity: 'WARNING' }
+          )
+        );
+      } else {
+        checks.push(
+          createAcceptanceCheck(
+            checkId,
+            checkName,
+            description,
+            response,
+            specRef,
+            details
+          )
+        );
+      }
     } catch (error) {
       checks.push({
         id: checkId,
@@ -803,26 +831,34 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         headerValue
       };
 
-      checks.push(
-        expectation === 'accept'
-          ? createAcceptanceCheck(
-              checkId,
-              checkName,
-              description,
-              response,
-              SPEC_REFERENCE_BASE64,
-              details
-            )
-          : createRejectionCheck(
-              checkId,
-              checkName,
-              description,
-              response,
-              SPEC_REFERENCE_BASE64,
-              details,
-              expectation === 'reject-info' ? 'INFO' : 'FAILURE'
-            )
-      );
+      if (expectation === 'accept') {
+        checks.push(
+          createAcceptanceCheck(
+            checkId,
+            checkName,
+            description,
+            response,
+            SPEC_REFERENCE_BASE64,
+            details
+          )
+        );
+      } else {
+        // Custom-header rejection: both 400 and -32001 are MUST per
+        // §Server Behavior for Custom Headers — except the two
+        // 'reject-info' malformed-base64 probes which are observational.
+        const sev = expectation === 'reject-info' ? 'INFO' : 'FAILURE';
+        checks.push(
+          ...createRejectionChecks(
+            checkId,
+            checkName,
+            description,
+            response,
+            SPEC_REFERENCE_BASE64,
+            details,
+            { statusSeverity: sev, errorCodeSeverity: sev }
+          )
+        );
+      }
     } catch (error) {
       checks.push({
         id: checkId,
@@ -869,8 +905,9 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         }
       );
 
+      // Custom-header rejection: both 400 and -32001 are MUST.
       checks.push(
-        createRejectionCheck(
+        ...createRejectionChecks(
           'server-rejects-missing-custom-header',
           'ServerRejectsMissingCustomHeader',
           'Server MUST reject request where custom header is omitted but value is present in body',
@@ -882,7 +919,8 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
             bodyValue: 'test-value',
             expectedHeader: `Mcp-Param-${headerSuffix}`,
             mcpParamHeader: '(missing)'
-          }
+          },
+          { errorCodeSeverity: 'FAILURE' }
         )
       );
     } catch (error) {
