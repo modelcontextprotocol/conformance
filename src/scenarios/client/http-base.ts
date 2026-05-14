@@ -12,14 +12,14 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
-  SpecVersion,
+  ScenarioSource,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
 
 export abstract class BaseHttpScenario implements Scenario {
   abstract name: string;
   abstract description: string;
-  abstract specVersions: SpecVersion[];
+  readonly source: ScenarioSource = { introducedIn: DRAFT_PROTOCOL_VERSION };
   allowClientError?: boolean;
 
   protected server: http.Server | null = null;

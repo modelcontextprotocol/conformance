@@ -12,11 +12,7 @@
  */
 
 import http from 'http';
-import {
-  ConformanceCheck,
-  SpecVersion,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types.js';
+import { ConformanceCheck } from '../../types.js';
 import { BaseHttpScenario } from './http-base.js';
 
 const SPEC_REFERENCE = {
@@ -26,7 +22,6 @@ const SPEC_REFERENCE = {
 
 export class HttpStandardHeadersScenario extends BaseHttpScenario {
   name = 'http-standard-headers';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   description =
     'Tests that client includes Mcp-Method and Mcp-Name headers on HTTP POST requests (SEP-2243)';
 

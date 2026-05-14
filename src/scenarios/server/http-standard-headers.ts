@@ -18,7 +18,6 @@ import http from 'http';
 import {
   ClientScenario,
   ConformanceCheck,
-  SpecVersion,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { connectToServer } from './client-helper';
@@ -215,7 +214,7 @@ function createAcceptanceCheck(
 
 export class HttpHeaderValidationScenario implements ClientScenario {
   name = 'http-header-validation';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = `Test server validation of standard MCP request headers (SEP-2243).
 
 **Server Implementation Requirements:**
@@ -516,7 +515,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
 export class HttpCustomHeaderServerValidationScenario implements ClientScenario {
   name = 'http-custom-header-server-validation';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = `Test server validation of custom Mcp-Param headers and Base64 encoding (SEP-2243).
 
 **Server Implementation Requirements:**
