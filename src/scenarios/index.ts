@@ -63,6 +63,7 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { CachingScenario } from './server/caching';
 
 import {
   authScenariosList,
@@ -140,7 +141,10 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario(),
 
   // Security scenarios
-  new DNSRebindingProtectionScenario()
+  new DNSRebindingProtectionScenario(),
+
+  // Caching scenarios (SEP-2549)
+  new CachingScenario()
 ];
 
 // Active client scenarios (excludes pending)

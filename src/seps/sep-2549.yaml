@@ -1,0 +1,42 @@
+sep: 2549
+spec_url: https://modelcontextprotocol.io/specification/draft/server/utilities/caching
+requirements:
+  # Server MUST requirements (testable)
+  - check: sep-2549-tools-list-caching-hints
+    text: 'Servers MUST include caching hints on results returned by tools/list'
+  - check: sep-2549-prompts-list-caching-hints
+    text: 'Servers MUST include caching hints on results returned by prompts/list'
+  - check: sep-2549-resources-list-caching-hints
+    text: 'Servers MUST include caching hints on results returned by resources/list'
+  - check: sep-2549-resources-templates-list-caching-hints
+    text: 'Servers MUST include caching hints on results returned by resources/templates/list'
+  - check: sep-2549-resources-read-caching-hints
+    text: 'Servers MUST include caching hints on results returned by resources/read'
+  - check: sep-2549-ttl-non-negative
+    text: 'Servers MUST provide a ttlMs value that is >= 0'
+  - check: sep-2549-cache-scope-valid
+    text: 'cacheScope indicates the intended scope of the cached response, either "public" or "private"'
+
+  # Client-side requirements (not protocol-observable from server tests)
+  - text: 'If ttlMs is 0, the response SHOULD be considered immediately stale'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'If ttlMs is positive, the client SHOULD consider the result fresh for that many milliseconds'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'If ttlMs is absent, clients SHOULD assume a default of 0'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'If ttlMs is negative, clients SHOULD ignore it and treat it as 0'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'Once the TTL expires, the response is stale and the client SHOULD re-fetch on next access'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'Clients SHOULD NOT treat TTL as a polling interval that triggers automatic background refetches'
+    excluded: 'Client-side caching behavior; not observable at the protocol level'
+  - text: 'Implementations that do choose to poll MUST apply jitter and backoff'
+    excluded: 'Client-side polling behavior; not observable at the protocol level'
+  - text: 'Cached responses MAY be reused for the same authorization context. Caches MUST NOT be shared across authorization contexts'
+    excluded: 'Client/cache-side behavior; not observable at the protocol level'
+
+  # Server security requirements (implementation guidance, not wire-observable)
+  - text: 'Servers MUST ensure that responses marked as "public" do not lead to primitives being exposed across users and auth context'
+    excluded: 'Server-side access control; implementation guidance not testable via protocol messages'
+  - text: 'Server authors MUST apply appropriate per-primitive access controls, and MUST NOT rely on cacheScope alone to prevent unauthorized access to primitives'
+    excluded: 'Server-side access control; implementation guidance not testable via protocol messages'

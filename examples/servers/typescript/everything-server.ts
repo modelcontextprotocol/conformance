@@ -22,6 +22,10 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import {
   ElicitResultSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
   type ListToolsResult,
   type Tool
 } from '@modelcontextprotocol/sdk/types.js';
@@ -1023,8 +1027,135 @@ function createMcpServer() {
               annotations: tool.annotations,
               _meta: tool._meta
             };
-          })
+          }),
+        // SEP-2549: Caching hints
+        ttlMs: 300000,
+        cacheScope: 'public' as const
       };
+    }
+  );
+
+  // ===== SEP-2549: Override list/read handlers to include caching hints =====
+
+  mcpServer.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    const registeredPrompts = (mcpServer as any)._registeredPrompts as Record<
+      string,
+      {
+        enabled: boolean;
+        title?: string;
+        description?: string;
+        argsSchema?: any;
+      }
+    >;
+
+    return {
+      prompts: Object.entries(registeredPrompts)
+        .filter(([, prompt]) => prompt.enabled)
+        .map(([name, prompt]) => ({
+          name,
+          title: prompt.title,
+          description: prompt.description
+        })),
+      ttlMs: 300000,
+      cacheScope: 'public' as const
+    };
+  });
+
+  mcpServer.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    const registeredResources = (mcpServer as any)
+      ._registeredResources as Record<
+      string,
+      { enabled: boolean; name: string; metadata?: any }
+    >;
+
+    return {
+      resources: Object.entries(registeredResources)
+        .filter(([, res]) => res.enabled)
+        .map(([uri, res]) => ({
+          uri,
+          name: res.name,
+          ...res.metadata
+        })),
+      ttlMs: 300000,
+      cacheScope: 'public' as const
+    };
+  });
+
+  mcpServer.server.setRequestHandler(
+    ListResourceTemplatesRequestSchema,
+    async () => {
+      const registeredResourceTemplates = (mcpServer as any)
+        ._registeredResourceTemplates as Record<
+        string,
+        { resourceTemplate: any; metadata?: any }
+      >;
+
+      return {
+        resourceTemplates: Object.entries(registeredResourceTemplates).map(
+          ([name, template]) => ({
+            name,
+            uriTemplate: template.resourceTemplate.uriTemplate.toString(),
+            ...template.metadata
+          })
+        ),
+        ttlMs: 300000,
+        cacheScope: 'public' as const
+      };
+    }
+  );
+
+  mcpServer.server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async (request: any) => {
+      const uri = new URL(request.params.uri);
+      const registeredResources = (mcpServer as any)
+        ._registeredResources as Record<
+        string,
+        {
+          enabled: boolean;
+          readCallback: (uri: URL, extra?: any) => Promise<any>;
+        }
+      >;
+      const registeredResourceTemplates = (mcpServer as any)
+        ._registeredResourceTemplates as Record<
+        string,
+        {
+          resourceTemplate: any;
+          readCallback: (
+            uri: URL,
+            variables: Record<string, string>,
+            extra?: any
+          ) => Promise<any>;
+        }
+      >;
+
+      // Exact resource match
+      const resource = registeredResources[uri.toString()];
+      if (resource && resource.enabled) {
+        const result = await resource.readCallback(uri);
+        return {
+          ...result,
+          ttlMs: 300000,
+          cacheScope: 'private' as const
+        };
+      }
+
+      // Template match
+      for (const template of Object.values(registeredResourceTemplates)) {
+        const variables = template.resourceTemplate.uriTemplate.match(
+          uri.toString()
+        );
+        if (variables) {
+          const result = await template.readCallback(uri, variables);
+          return {
+            ...result,
+            ttlMs: 300000,
+            cacheScope: 'private' as const
+          };
+        }
+      }
+
+      throw new Error(`Resource not found: ${uri}`);
     }
   );
 

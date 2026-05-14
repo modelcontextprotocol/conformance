@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
+import { CachingScenario } from './caching';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -105,5 +106,46 @@ describe('Server scenario negative tests', () => {
       const errorCode = checks.find((c) => c.id === 'sep-2164-error-code');
       expect(errorCode?.status).toBe('WARNING');
     }, 10000);
+  });
+
+  describe('sep-2549-caching-hints', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3006;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2549-no-caching-hints.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits FAILURE for presence checks against a server without caching hints', async () => {
+      const scenario = new CachingScenario();
+      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+
+      // Should have at least 7 checks (5 presence + 2 aggregate)
+      expect(checks.length).toBeGreaterThanOrEqual(7);
+
+      const presenceCheckIds = [
+        'sep-2549-tools-list-caching-hints',
+        'sep-2549-prompts-list-caching-hints',
+        'sep-2549-resources-list-caching-hints',
+        'sep-2549-resources-templates-list-caching-hints',
+        'sep-2549-resources-read-caching-hints'
+      ];
+
+      for (const checkId of presenceCheckIds) {
+        const check = checks.find((c) => c.id === checkId);
+        expect(check).toBeDefined();
+        expect(check?.status).toBe('FAILURE');
+      }
+    }, 15000);
   });
 });
