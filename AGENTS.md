@@ -52,6 +52,7 @@ Keep scenarios separate when they're genuinely independent features or when they
 - **Same `id` for SUCCESS and FAIL.** A check should use one slug and flip `status` + `errorMessage`, not branch into `foo-success` vs `foo-failure` slugs.
 - **Optimize for Ctrl+F on the slug.** Repetitive check blocks are fine — easier to find the failing one than to unwind a clever helper.
 - Reuse `ConformanceCheck` and other types from `src/types.ts` rather than defining parallel shapes.
+- **Don't reimplement the runner.** New subcommands that need to "select scenarios → run them → print summary → compute exit code" must go through the existing `client` / `server` commands (subprocess via `process.execPath` like `tier-check` and `sdk` do) or call shared helpers — never a parallel suite-map / summary loop.
 - Include `specReferences` pointing to the relevant spec section.
 - **Severity follows the spec keyword:** MUST / MUST NOT → `FAILURE`; SHOULD / SHOULD NOT → `WARNING`. (CI treats WARNING as a failure, so Tier-1 SDKs still need to satisfy SHOULDs — see #245.)
 

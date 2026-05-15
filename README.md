@@ -210,6 +210,40 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 - **resources-\*** - Resource management scenarios
 - **prompts-\*** - Prompt management scenarios
 
+## Running Against an SDK at a Specific Ref
+
+The `sdk` subcommand clones an SDK repository at a given ref, builds it, and runs the **local** conformance build against it. This is the inner-loop tool for scenario authors and the basis for cross-SDK CI. Examples below use `npm start --` so they run from source — no `npm run build` between edits.
+
+```bash
+# Clone and run everything against typescript-sdk@main
+npm start -- sdk typescript-sdk@main
+
+# Against a specific tag, SHA, or branch
+npm start -- sdk typescript-sdk@v1.29.0
+npm start -- sdk typescript-sdk@abc123f
+npm start -- sdk python-sdk@some-feature-branch
+
+# Use an existing local checkout (no clone, no fetch)
+npm start -- sdk --path ../typescript-sdk --skip-build
+
+# Narrow to one mode / scenario / suite
+npm start -- sdk --path ../typescript-sdk --mode server --scenario server-initialize
+npm start -- sdk typescript-sdk@main --mode client --suite auth
+```
+
+Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > `conformance.config.yaml` in the SDK checkout (optional override) > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in:
+
+```bash
+npm start -- sdk owner/go-sdk@some-branch \
+  --mode client \
+  --build-cmd 'go build -tags mcp_go_client_oauth -o ./.conformance-client ./conformance/everything-client' \
+  --client-cmd './.conformance-client'
+```
+
+To add a new SDK to the matrix, add an entry to `KNOWN_SDKS`.
+
+Clones are cached under `.sdk-under-test/` and reused (fetched) on subsequent runs.
+
 ## SDK Tier Assessment
 
 The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):

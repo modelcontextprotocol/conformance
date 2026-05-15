@@ -5,3 +5,4 @@ dist/
 .vscode/
 .idea/
 .claude/settings.local.json
+.sdk-under-test/
