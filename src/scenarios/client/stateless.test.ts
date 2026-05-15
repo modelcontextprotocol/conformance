@@ -21,50 +21,6 @@ async function badClient(serverUrl: string) {
   return response.json();
 }
 
-// A client that flips versions between requests
-async function flippingVersionClient(serverUrl: string) {
-  const metaA = {
-    'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
-    'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
-    'io.modelcontextprotocol/clientCapabilities': {}
-  };
-  const metaB = {
-    ...metaA,
-    'io.modelcontextprotocol/protocolVersion': '2025-11-25'
-  };
-
-  // Send first request
-  await fetch(serverUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/list',
-      params: { _meta: metaA }
-    })
-  });
-
-  // Send second request with different version
-  const response = await fetch(serverUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'MCP-Protocol-Version': '2025-11-25'
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'tools/list',
-      params: { _meta: metaB }
-    })
-  });
-  return response.json();
-}
-
 // A client that misses the HTTP header
 async function missingHeaderClient(serverUrl: string) {
   const response = await fetch(serverUrl, {
@@ -94,13 +50,6 @@ describe('Stateless Client Scenario Negative Tests', () => {
     const runner = new InlineClientRunner(badClient);
     await runClientAgainstScenario(runner, 'stateless', {
       expectedFailureSlugs: ['client-populates-meta']
-    });
-  });
-
-  test('client fails when flipping versions', async () => {
-    const runner = new InlineClientRunner(flippingVersionClient);
-    await runClientAgainstScenario(runner, 'stateless', {
-      expectedFailureSlugs: ['client-consistent-version']
     });
   });
 

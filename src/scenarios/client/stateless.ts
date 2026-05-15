@@ -14,7 +14,6 @@ export class StatelessScenario implements Scenario {
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
-  private negotiatedVersion: string | null = null;
 
   async start(): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
@@ -74,24 +73,6 @@ export class StatelessScenario implements Scenario {
           timestamp: new Date().toISOString(),
           specReferences: [{ id: 'SEP-2575', url: '' }]
         });
-      }
-
-      // Sends a consistent protocolVersion once chosen
-      if (currentVersion) {
-        if (!this.negotiatedVersion) {
-          this.negotiatedVersion = currentVersion;
-        } else {
-          this.checks.push({
-            id: 'client-consistent-version',
-            name: 'ClientConsistentVersion',
-            description:
-              'Client sends a consistent protocolVersion once chosen',
-            status:
-              currentVersion === this.negotiatedVersion ? 'SUCCESS' : 'FAILURE',
-            timestamp: new Date().toISOString(),
-            specReferences: [{ id: 'SEP-2575', url: '' }]
-          });
-        }
       }
 
       // Verify client can call server/discover

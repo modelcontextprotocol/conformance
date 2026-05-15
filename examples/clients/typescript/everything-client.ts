@@ -149,32 +149,6 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
     JSON.stringify(toolsResult.result)
   );
 
-  // Test consistent version (send another request)
-  logger.debug('Calling tools/list again to test consistent version...');
-  const toolsResponse2 = await fetch(serverUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'tools/list',
-      params: {
-        _meta: {
-          'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
-          'io.modelcontextprotocol/clientInfo': {
-            name: 'conformance-test-client',
-            version: '1.0.0'
-          },
-          'io.modelcontextprotocol/clientCapabilities': { roots: {} }
-        }
-      }
-    })
-  });
-  await toolsResponse2.json();
-
   // Test cancellation (HTTP: close stream)
   logger.debug('Calling long_running_task and cancelling by closing stream...');
   const controller = new AbortController();
