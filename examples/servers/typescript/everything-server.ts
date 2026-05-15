@@ -389,6 +389,141 @@ function createMcpServer() {
     }
   );
 
+  // SEP-1699: Event replay test tool - closes stream mid-call, sends more events, tests replay
+  mcpServer.registerTool(
+    'test_event_replay',
+    {
+      description:
+        'Tests SSE event replay after disconnection (SEP-1699). Sends notification1, closes stream, sends notification2 and notification3, then returns. Client should receive all notifications via event replay.',
+      inputSchema: {}
+    },
+    async (_args, { sessionId, requestId, sendNotification }) => {
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      console.log(`[${sessionId}] Starting test_event_replay tool...`);
+
+      // Send notification1 before closing
+      await sendNotification({
+        method: 'notifications/message',
+        params: {
+          level: 'info',
+          data: 'notification1'
+        }
+      });
+      console.log(`[${sessionId}] Sent notification1`);
+
+      // Get the transport for this session
+      const transport = sessionId ? transports[sessionId] : undefined;
+      if (transport && requestId) {
+        // Close the SSE stream to trigger client reconnection
+        console.log(`[${sessionId}] Closing SSE stream...`);
+        transport.closeSSEStream(requestId);
+      }
+
+      // Wait a bit for stream to close
+      await sleep(100);
+
+      // Send notification2 and notification3 (should be stored in event store)
+      await sendNotification({
+        method: 'notifications/message',
+        params: {
+          level: 'info',
+          data: 'notification2'
+        }
+      });
+      console.log(`[${sessionId}] Sent notification2 (stored for replay)`);
+
+      await sendNotification({
+        method: 'notifications/message',
+        params: {
+          level: 'info',
+          data: 'notification3'
+        }
+      });
+      console.log(`[${sessionId}] Sent notification3 (stored for replay)`);
+
+      // Wait for client to reconnect
+      await sleep(200);
+
+      console.log(`[${sessionId}] test_event_replay tool complete`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Event replay test completed. You should have received notification1, notification2, and notification3.'
+          }
+        ]
+      };
+    }
+  );
+
+  // SEP-1699: Multiple reconnections test tool - closes stream multiple times
+  mcpServer.registerTool(
+    'test_multiple_reconnections',
+    {
+      description:
+        'Tests multiple SSE stream closures during single tool call (SEP-1699). Sends checkpoint notifications and closes stream at each checkpoint.',
+      inputSchema: {
+        checkpoints: z
+          .number()
+          .min(1)
+          .max(10)
+          .default(3)
+          .describe('Number of checkpoints (stream closures)')
+      }
+    },
+    async (
+      args: { checkpoints?: number },
+      { sessionId, requestId, sendNotification }
+    ) => {
+      const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+
+      const numCheckpoints = args.checkpoints ?? 3;
+      console.log(
+        `[${sessionId}] Starting test_multiple_reconnections with ${numCheckpoints} checkpoints...`
+      );
+
+      const transport = sessionId ? transports[sessionId] : undefined;
+
+      for (let i = 0; i < numCheckpoints; i++) {
+        // Send checkpoint notification
+        await sendNotification({
+          method: 'notifications/message',
+          params: {
+            level: 'info',
+            data: `checkpoint_${i}`
+          }
+        });
+        console.log(`[${sessionId}] Sent checkpoint_${i}`);
+
+        // Close the SSE stream
+        if (transport && requestId) {
+          console.log(
+            `[${sessionId}] Closing SSE stream at checkpoint ${i}...`
+          );
+          transport.closeSSEStream(requestId);
+        }
+
+        // Wait for client to reconnect (should respect retry field)
+        await sleep(200);
+      }
+
+      console.log(`[${sessionId}] test_multiple_reconnections tool complete`);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Completed ${numCheckpoints} checkpoints with stream closures. You should have received all checkpoint notifications.`
+          }
+        ]
+      };
+    }
+  );
+
   // Sampling tool - requests LLM completion from client
   mcpServer.registerTool(
     'test_sampling',
