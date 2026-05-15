@@ -1,0 +1,23 @@
+sep: 2468
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-response-validation
+requirements:
+  - check: sep-2468-client-validate-metadata-issuer
+    text: 'After retrieving a metadata document, MCP clients MUST validate it as required by RFC8414 Section 3.3 or OpenID Connect Discovery Section 4.3: the issuer value in the document MUST be identical to the issuer identifier used to construct the well-known URL. If they differ, the client MUST NOT use the metadata.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery
+  - check: sep-2468-as-include-iss
+    text: 'MCP authorization servers SHOULD include the iss parameter in authorization responses, including error responses, as defined in RFC9207 Section 2.'
+  - check: sep-2468-as-advertise-iss-supported
+    text: 'Authorization servers that include the iss parameter MUST advertise this by setting authorization_response_iss_parameter_supported to true in their metadata (RFC9207 Section 2.3).'
+  - check: sep-2468-client-compare-iss-supported
+    text: 'On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss present -> Compare to the recorded issuer using simple string comparison / Before redirecting the user-agent, the client MUST record the issuer value from the selected authorization server validated metadata document and associate it with the same per-request record used to store the PKCE code verifier.'
+  - check: sep-2468-client-reject-missing-iss
+    text: 'On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss absent -> Reject the response.'
+  - check: sep-2468-client-compare-iss-unadvertised
+    text: 'On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss present -> Compare to the recorded issuer using simple string comparison.'
+  - check: sep-2468-client-proceed-no-iss
+    text: 'On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss absent -> Proceed.'
+  - check: sep-2468-client-no-normalization
+    text: 'After decoding the iss value from the application/x-www-form-urlencoded response per RFC 9207 Section 2.4, clients MUST NOT apply scheme or host case folding, default-port elision, trailing-slash, or percent-encoding normalization (RFC 3986 Sections 6.2.2-6.2.3) before comparison.'
+
+  - text: 'This validation applies equally to error responses - on mismatch the client MUST NOT act on or display error, error_description, or error_uri.'
+    excluded: 'display is UI-facing; act-on has no protocol-observable signal beyond the existing reject-on-mismatch checks'
