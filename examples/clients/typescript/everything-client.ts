@@ -88,6 +88,79 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
 
 // ============================================================================
+// request-metadata scenario (SEP-2575)
+// ============================================================================
+
+async function runRequestMetadataClient(serverUrl: string): Promise<void> {
+  logger.debug('Starting request-metadata client flow...');
+
+  const meta = {
+    'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+    'io.modelcontextprotocol/clientInfo': {
+      name: 'conformance-test-client',
+      version: '1.0.0'
+    },
+    'io.modelcontextprotocol/clientCapabilities': { roots: {} }
+  };
+
+  // Call server/discover (optional for clients, but every POST still needs
+  // the header + _meta).
+  logger.debug('Calling server/discover...');
+  const discoverResponse = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 'discover-1',
+      method: 'server/discover',
+      params: { _meta: meta }
+    })
+  });
+
+  if (!discoverResponse.ok) {
+    throw new Error(`Discovery failed: ${discoverResponse.status}`);
+  }
+  const discoverResult = await discoverResponse.json();
+  logger.debug(
+    'Successfully discovered server capabilities:',
+    JSON.stringify(discoverResult.result)
+  );
+
+  // Call tools/list with required inline _meta tags and header
+  logger.debug('Calling tools/list with inline _meta...');
+  const toolsResponse = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: { _meta: meta }
+    })
+  });
+
+  if (!toolsResponse.ok) {
+    throw new Error(`Tools list failed: ${toolsResponse.status}`);
+  }
+  const toolsResult = await toolsResponse.json();
+  logger.debug(
+    'Successfully listed tools statelessly:',
+    JSON.stringify(toolsResult.result)
+  );
+
+  logger.debug('request-metadata client flow completed successfully');
+}
+
+// Register the scenario handler
+registerScenario('request-metadata', runRequestMetadataClient);
+
+// ============================================================================
 // Auth scenarios - well-behaved client
 // ============================================================================
 
