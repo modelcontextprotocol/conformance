@@ -64,21 +64,24 @@ describe('Stateless Client Scenario Negative Tests', () => {
   test('client fails when omitting _meta', async () => {
     const runner = new InlineClientRunner(badClient);
     await runClientAgainstScenario(runner, 'stateless', {
-      expectedFailureSlugs: ['client-populates-meta']
+      expectedFailureSlugs: [
+        'sep-2575-client-populates-meta',
+        'sep-2575-http-client-sends-version-header'
+      ]
     });
   });
 
   test('client fails when missing version header', async () => {
     const runner = new InlineClientRunner(missingHeaderClient);
     await runClientAgainstScenario(runner, 'stateless', {
-      expectedFailureSlugs: ['client-sends-version-header']
+      expectedFailureSlugs: ['sep-2575-http-client-sends-version-header']
     });
   });
 
   test('client fails when header disagrees with _meta', async () => {
     const runner = new InlineClientRunner(mismatchedHeaderClient);
     await runClientAgainstScenario(runner, 'stateless', {
-      expectedFailureSlugs: ['client-version-header-matches-meta']
+      expectedFailureSlugs: ['sep-2575-http-version-header-matches-meta']
     });
   });
 });

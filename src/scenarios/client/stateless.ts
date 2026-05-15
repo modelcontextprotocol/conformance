@@ -66,13 +66,18 @@ export class StatelessScenario implements Scenario {
       //  MCP-Protocol-Version header." — unconditional, so this fires for
       // server/discover too.
       this.checks.push({
-        id: 'client-sends-version-header',
+        id: 'sep-2575-http-client-sends-version-header',
         name: 'ClientSendsVersionHeader',
         description:
           'Client sends MCP-Protocol-Version header on every POST',
         status: headerVersion !== undefined ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [{ id: 'SEP-2575', url: '' }],
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+          }
+        ],
         details: { method: request.method, headerVersion }
       });
 
@@ -85,13 +90,18 @@ export class StatelessScenario implements Scenario {
       const metaIsValid = metaVersion && hasClientInfo && hasCapabilities;
 
       this.checks.push({
-        id: 'client-populates-meta',
+        id: 'sep-2575-client-populates-meta',
         name: 'ClientPopulatesMeta',
         description:
           'Client populates _meta on every request with all three required fields',
         status: metaIsValid ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [{ id: 'SEP-2575', url: '' }],
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+          }
+        ],
         details: { method: request.method, meta }
       });
 
@@ -100,13 +110,18 @@ export class StatelessScenario implements Scenario {
       // are present; absence is already covered by the two checks above.
       if (headerVersion !== undefined && metaVersion !== undefined) {
         this.checks.push({
-          id: 'client-version-header-matches-meta',
+          id: 'sep-2575-http-version-header-matches-meta',
           name: 'ClientVersionHeaderMatchesMeta',
           description:
             'MCP-Protocol-Version header matches _meta.protocolVersion',
           status: headerVersion === metaVersion ? 'SUCCESS' : 'FAILURE',
           timestamp: new Date().toISOString(),
-          specReferences: [{ id: 'SEP-2575', url: '' }],
+          specReferences: [
+            {
+              id: 'SEP-2575',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+            }
+          ],
           details: { headerVersion, metaVersion }
         });
       }
