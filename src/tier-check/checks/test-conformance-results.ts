@@ -211,12 +211,9 @@ export async function checkConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
-  const activeScenarios = new Set(listActiveClientScenarios());
   const expectedScenarios = options.specVersion
-    ? listClientScenariosForSpec(options.specVersion).filter((s) =>
-        activeScenarios.has(s)
-      )
-    : [...activeScenarios];
+    ? listScenariosForSpec(options.specVersion)
+    : listScenarios();
 
   return reconcileWithExpected(
     parseOutputDir(outputDir),
@@ -268,9 +265,12 @@ export async function checkClientConformance(options: {
     // Non-zero exit is expected when tests fail — results are still in outputDir
   }
 
+  const activeScenarios = new Set(listActiveClientScenarios());
   const expectedScenarios = options.specVersion
-    ? listScenariosForSpec(options.specVersion)
-    : listScenarios();
+    ? listClientScenariosForSpec(options.specVersion).filter((s) =>
+        activeScenarios.has(s)
+      )
+    : [...activeScenarios];
 
   return reconcileWithExpected(parseOutputDir(outputDir), expectedScenarios);
 }
