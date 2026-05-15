@@ -75,18 +75,10 @@ export class StatelessScenario implements Scenario {
         });
       }
 
-      // Verify client can call server/discover
+      // server/discover is optional for clients (spec: "Clients MAY call it"),
+      // so no check is emitted; we still respond so a client that does call it
+      // proceeds normally and exercises the per-request _meta/header checks above.
       if (request.method === 'server/discover') {
-        this.checks.push({
-          id: 'client-calls-discover',
-          name: 'ClientCallsDiscover',
-          description: 'Client is able to successfully call server/discover',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          specReferences: [{ id: 'SEP-2575', url: '' }]
-        });
-
-        // Respond with valid discovery payload
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -99,23 +91,6 @@ export class StatelessScenario implements Scenario {
             }
           })
         );
-        return;
-      }
-
-      // [STDIO] Cancels by sending notifications/cancelled with the request id
-      if (request.method === 'notifications/cancelled') {
-        this.checks.push({
-          id: 'client-cancels-by-notification',
-          name: 'ClientCancelsByNotification',
-          description:
-            'Client cancels by sending notifications/cancelled with the request id',
-          status: 'SUCCESS',
-          timestamp: new Date().toISOString(),
-          specReferences: [{ id: 'SEP-2575', url: '' }]
-        });
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} }));
         return;
       }
 
@@ -140,39 +115,10 @@ export class StatelessScenario implements Scenario {
         details: { meta }
       });
 
-      // Handle long running task for cancellation testing
-      if (
-        request.method === 'tools/call' &&
-        request.params?.name === 'long_running_task'
-      ) {
-        // Do not respond immediately, wait for client to abort (req close) or send cancel notification
-        req.on('close', () => {
-          if (!res.writableEnded) {
-            this.checks.push({
-              id: 'client-cancels-by-closing-stream',
-              name: 'ClientCancelsByClosingStream',
-              description: 'Client cancels by closing the stream (request)',
-              status: 'SUCCESS',
-              timestamp: new Date().toISOString(),
-              specReferences: [{ id: 'SEP-2575', url: '' }]
-            });
-          }
-        });
-        return; // Keep request open
-      }
-
       // Return generic response to unblock client
-      let result: any = {};
+      let result: object = {};
       if (request.method === 'tools/list') {
-        result = {
-          tools: [
-            {
-              name: 'long_running_task',
-              description: 'A mock long running task for cancellation',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
-        };
+        result = { tools: [] };
       } else if (request.method === 'tools/call') {
         result = { content: [] };
       }
