@@ -127,8 +127,8 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
-      // issParameterSupported not set — omitted from metadata
-      // issInRedirect defaults to 'omit'
+      issParameterSupported: null,
+      issInRedirect: 'omit',
       onAuthorizationRequest: ({ timestamp }) => {
         this.checks.push({
           id: 'iss-not-advertised-in-metadata',
@@ -381,9 +381,8 @@ export class IssParameterUnexpectedScenario implements Scenario {
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
-      // issParameterSupported omitted from metadata
-      issParameterSupported: false,
-      issInRedirect: 'correct', // but send iss anyway
+      issParameterSupported: null,
+      issInRedirect: 'correct', // send iss without advertising support
       onTokenRequest: () => {
         this.tokenRequestMade = true;
         return { token: `test-token-${Date.now()}`, scopes: [] };

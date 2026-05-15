@@ -43,9 +43,9 @@ export interface AuthServerOptions {
   disableDynamicRegistration?: boolean;
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
-  /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: not included */
-  issParameterSupported?: boolean;
-  /** What iss value to include in authorization redirect. Default: not included */
+  /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: true. Pass null to omit. */
+  issParameterSupported?: boolean | null;
+  /** What iss value to include in authorization redirect. Default: 'correct'. */
   issInRedirect?: 'correct' | 'wrong' | 'omit';
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
@@ -152,7 +152,7 @@ export function createAuthServer(
       ...(codeChallengeMethodsSupported !== null && {
         code_challenge_methods_supported: codeChallengeMethodsSupported
       }),
-      ...(issParameterSupported !== undefined && {
+      ...(issParameterSupported !== null && {
         authorization_response_iss_parameter_supported: issParameterSupported
       }),
       token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
