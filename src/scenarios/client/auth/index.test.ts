@@ -155,7 +155,7 @@ describe('Negative tests', () => {
   test('client does not reject missing iss when server requires it', async () => {
     const runner = new InlineClientRunner(noIssValidationClient);
     await runClientAgainstScenario(runner, 'auth/iss-supported-missing', {
-      expectedFailureSlugs: ['iss-client-rejected-missing'],
+      expectedFailureSlugs: ['sep-2468-client-reject-missing-iss'],
       allowClientError: true
     });
   });
@@ -163,7 +163,7 @@ describe('Negative tests', () => {
   test('client does not reject mismatched iss', async () => {
     const runner = new InlineClientRunner(noIssValidationClient);
     await runClientAgainstScenario(runner, 'auth/iss-wrong-issuer', {
-      expectedFailureSlugs: ['iss-client-rejected-wrong-issuer'],
+      expectedFailureSlugs: ['sep-2468-client-compare-iss-supported'],
       allowClientError: true
     });
   });
@@ -171,7 +171,7 @@ describe('Negative tests', () => {
   test('client does not reject unexpected iss', async () => {
     const runner = new InlineClientRunner(noIssValidationClient);
     await runClientAgainstScenario(runner, 'auth/iss-unexpected', {
-      expectedFailureSlugs: ['iss-client-rejected-unexpected'],
+      expectedFailureSlugs: ['sep-2468-client-compare-iss-unadvertised'],
       allowClientError: true
     });
   });

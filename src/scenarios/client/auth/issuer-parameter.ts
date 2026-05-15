@@ -63,7 +63,7 @@ export class IssParameterSupportedScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     this.checks.push({
-      id: 'iss-client-accepted-supported',
+      id: 'sep-2468-client-compare-iss-supported',
       name: 'Client accepts matching iss when advertised',
       description: this.tokenRequestMade
         ? 'Client compared advertised iss against recorded issuer and proceeded to token exchange'
@@ -132,7 +132,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     this.checks.push({
-      id: 'iss-client-proceed-no-iss',
+      id: 'sep-2468-client-proceed-no-iss',
       name: 'Client proceeds when iss absent and not advertised',
       description: this.tokenRequestMade
         ? 'Client proceeded to token exchange when neither metadata advertised iss support nor redirect contained iss'
@@ -206,10 +206,10 @@ export class IssParameterSupportedMissingScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-client-rejected-missing')) {
+    if (!this.checks.some((c) => c.id === 'sep-2468-client-reject-missing-iss')) {
       const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
-        id: 'iss-client-rejected-missing',
+        id: 'sep-2468-client-reject-missing-iss',
         name: 'Client rejects missing iss when required',
         description: correctlyRejected
           ? 'Client correctly rejected authorization response missing required iss parameter'
@@ -290,10 +290,10 @@ export class IssParameterWrongIssuerScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-client-rejected-wrong-issuer')) {
+    if (!this.checks.some((c) => c.id === 'sep-2468-client-compare-iss-supported')) {
       const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
-        id: 'iss-client-rejected-wrong-issuer',
+        id: 'sep-2468-client-compare-iss-supported',
         name: 'Client rejects mismatched iss',
         description: correctlyRejected
           ? 'Client correctly rejected authorization response with mismatched iss parameter'
@@ -375,10 +375,10 @@ export class IssParameterUnexpectedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-client-rejected-unexpected')) {
+    if (!this.checks.some((c) => c.id === 'sep-2468-client-compare-iss-unadvertised')) {
       const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
-        id: 'iss-client-rejected-unexpected',
+        id: 'sep-2468-client-compare-iss-unadvertised',
         name: 'Client compares unadvertised iss and rejects mismatch',
         description: correctlyRejected
           ? 'Client correctly compared unadvertised iss against recorded issuer and rejected the mismatch'
