@@ -88,11 +88,11 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
 
 // ============================================================================
-// Stateless scenario (SEP-2575)
+// request-metadata scenario (SEP-2575)
 // ============================================================================
 
-async function runStatelessClient(serverUrl: string): Promise<void> {
-  logger.debug('Starting stateless client flow...');
+async function runRequestMetadataClient(serverUrl: string): Promise<void> {
+  logger.debug('Starting request-metadata client flow...');
 
   const meta = {
     'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
@@ -154,11 +154,11 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
     JSON.stringify(toolsResult.result)
   );
 
-  logger.debug('Stateless client flow completed successfully');
+  logger.debug('request-metadata client flow completed successfully');
 }
 
 // Register the scenario handler
-registerScenario('stateless', runStatelessClient);
+registerScenario('request-metadata', runRequestMetadataClient);
 
 // ============================================================================
 // Auth scenarios - well-behaved client

@@ -6,10 +6,11 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 
-export class StatelessScenario implements Scenario {
-  name = 'stateless';
+export class RequestMetadataScenario implements Scenario {
+  name = 'request-metadata';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  description = 'Tests stateless MCP client behavior (SEP-2575)';
+  description =
+    'Per-request _meta and MCP-Protocol-Version header obligations (SEP-2575)';
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
