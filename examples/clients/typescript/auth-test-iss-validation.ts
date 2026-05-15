@@ -135,10 +135,11 @@ async function oauthFlowWithIssValidation(
       );
     }
   } else {
-    // Server did NOT advertise support: iss MUST NOT be present
-    if (issInRedirect) {
+    // Server did NOT advertise support: if iss is present, compare anyway
+    // (SEP-2468 spec table row 3 — local-policy provision per RFC 9207 §2.4)
+    if (issInRedirect && issInRedirect !== expectedIssuer) {
       throw new Error(
-        `Unexpected iss parameter in redirect: server did not advertise authorization_response_iss_parameter_supported`
+        `iss mismatch: expected '${expectedIssuer}', got '${issInRedirect}'`
       );
     }
   }
