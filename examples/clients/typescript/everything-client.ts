@@ -88,6 +88,122 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
 
 // ============================================================================
+// request-metadata scenario (SEP-2575)
+// ============================================================================
+
+async function runRequestMetadataClient(serverUrl: string): Promise<void> {
+  logger.debug('Starting request-metadata client flow...');
+
+  const meta = {
+    'io.modelcontextprotocol/clientInfo': {
+      name: 'conformance-test-client',
+      version: '1.0.0'
+    },
+    'io.modelcontextprotocol/clientCapabilities': {
+      tools: {},
+      roots: {},
+      sampling: {},
+      elicitation: {}
+    }
+  };
+
+  let activeVersion = 'DRAFT-2026-v1';
+
+  const sendRequestWithNegotiation = async (
+    method: string,
+    requestId: string | number,
+    params: any
+  ): Promise<any> => {
+    const getPayload = (version: string) => ({
+      jsonrpc: '2.0',
+      id: requestId,
+      method,
+      params: {
+        ...params,
+        _meta: {
+          ...params?._meta,
+          'io.modelcontextprotocol/protocolVersion': version
+        }
+      }
+    });
+
+    const send = async (version: string) => {
+      return fetch(serverUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'MCP-Protocol-Version': version
+        },
+        body: JSON.stringify(getPayload(version))
+      });
+    };
+
+    let response = await send(activeVersion);
+    if (response.status === 400) {
+      const clone = response.clone();
+      try {
+        const errorResult = await clone.json();
+        if (errorResult.error?.code === -32001) {
+          logger.debug(
+            'Received UnsupportedProtocolVersionError, starting negotiation...'
+          );
+          const serverSupported: string[] =
+            errorResult.error.data?.supported || [];
+          const clientSupported = ['DRAFT-2026-v1'];
+          const mutuallySupported = clientSupported.filter((v) =>
+            serverSupported.includes(v)
+          );
+          if (mutuallySupported.length > 0) {
+            activeVersion = mutuallySupported[0];
+            logger.debug(
+              `Mutually supported version found: ${activeVersion}. Retrying...`
+            );
+            response = await send(activeVersion);
+          } else {
+            logger.debug('No mutually supported version found. Aborting.');
+          }
+        }
+      } catch (err) {
+        logger.debug('Failed to parse error response as JSON:', err);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`${method} failed: ${response.status}`);
+    }
+    return response.json();
+  };
+
+  // Call server/discover (optional for clients, but every POST still needs
+  // the header + _meta).
+  logger.debug('Calling server/discover...');
+  const discoverResult = await sendRequestWithNegotiation(
+    'server/discover',
+    'discover-1',
+    { _meta: meta }
+  );
+  logger.debug(
+    'Successfully discovered server capabilities:',
+    JSON.stringify(discoverResult.result)
+  );
+
+  // Call tools/list with required inline _meta tags and header
+  logger.debug('Calling tools/list with inline _meta...');
+  const toolsResult = await sendRequestWithNegotiation('tools/list', 2, {
+    _meta: meta
+  });
+  logger.debug(
+    'Successfully listed tools statelessly:',
+    JSON.stringify(toolsResult.result)
+  );
+
+  logger.debug('request-metadata client flow completed successfully');
+}
+
+// Register the scenario handler
+registerScenario('request-metadata', runRequestMetadataClient);
+
+// ============================================================================
 // Auth scenarios - well-behaved client
 // ============================================================================
 
