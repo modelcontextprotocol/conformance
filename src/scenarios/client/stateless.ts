@@ -59,19 +59,55 @@ export class StatelessScenario implements Scenario {
 
       // Extract version and headers
       const meta = request.params?._meta;
-      const currentVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
+      const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
       const headerVersion = req.headers['mcp-protocol-version'];
 
-      // [HTTP] Sends MCP-Protocol-Version header on every request, equal to _meta.protocolVersion
-      if (currentVersion) {
+      // "Every POST request to the MCP endpoint MUST include an
+      //  MCP-Protocol-Version header." — unconditional, so this fires for
+      // server/discover too.
+      this.checks.push({
+        id: 'client-sends-version-header',
+        name: 'ClientSendsVersionHeader',
+        description:
+          'Client sends MCP-Protocol-Version header on every POST',
+        status: headerVersion !== undefined ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [{ id: 'SEP-2575', url: '' }],
+        details: { method: request.method, headerVersion }
+      });
+
+      // "Every client request MUST include the following
+      //  io.modelcontextprotocol/* fields in _meta: protocolVersion,
+      //  clientInfo, clientCapabilities."
+      const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
+      const hasCapabilities =
+        meta?.['io.modelcontextprotocol/clientCapabilities'];
+      const metaIsValid = metaVersion && hasClientInfo && hasCapabilities;
+
+      this.checks.push({
+        id: 'client-populates-meta',
+        name: 'ClientPopulatesMeta',
+        description:
+          'Client populates _meta on every request with all three required fields',
+        status: metaIsValid ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [{ id: 'SEP-2575', url: '' }],
+        details: { method: request.method, meta }
+      });
+
+      // "The header value MUST match the io.modelcontextprotocol/protocolVersion
+      //  field carried in the request body's _meta." Only meaningful when both
+      // are present; absence is already covered by the two checks above.
+      if (headerVersion !== undefined && metaVersion !== undefined) {
         this.checks.push({
-          id: 'client-sends-version-header',
-          name: 'ClientSendsVersionHeader',
+          id: 'client-version-header-matches-meta',
+          name: 'ClientVersionHeaderMatchesMeta',
           description:
-            'Client sends MCP-Protocol-Version header equal to _meta.protocolVersion',
-          status: headerVersion === currentVersion ? 'SUCCESS' : 'FAILURE',
+            'MCP-Protocol-Version header matches _meta.protocolVersion',
+          status: headerVersion === metaVersion ? 'SUCCESS' : 'FAILURE',
           timestamp: new Date().toISOString(),
-          specReferences: [{ id: 'SEP-2575', url: '' }]
+          specReferences: [{ id: 'SEP-2575', url: '' }],
+          details: { headerVersion, metaVersion }
         });
       }
 
@@ -93,27 +129,6 @@ export class StatelessScenario implements Scenario {
         );
         return;
       }
-
-      // Verify inline _meta on every request
-      const hasProtocolVersion =
-        meta?.['io.modelcontextprotocol/protocolVersion'];
-      const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
-      const hasCapabilities =
-        meta?.['io.modelcontextprotocol/clientCapabilities'];
-
-      const metaIsValid =
-        hasProtocolVersion && hasClientInfo && hasCapabilities;
-
-      this.checks.push({
-        id: 'client-populates-meta',
-        name: 'ClientPopulatesMeta',
-        description:
-          'Client populates _meta on every request with all three required fields',
-        status: metaIsValid ? 'SUCCESS' : 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [{ id: 'SEP-2575', url: '' }],
-        details: { meta }
-      });
 
       // Return generic response to unblock client
       let result: object = {};

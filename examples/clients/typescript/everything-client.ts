@@ -94,15 +94,29 @@ registerScenarios(['initialize', 'tools-call'], runBasicClient);
 async function runStatelessClient(serverUrl: string): Promise<void> {
   logger.debug('Starting stateless client flow...');
 
-  // Call server/discover
+  const meta = {
+    'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+    'io.modelcontextprotocol/clientInfo': {
+      name: 'conformance-test-client',
+      version: '1.0.0'
+    },
+    'io.modelcontextprotocol/clientCapabilities': { roots: {} }
+  };
+
+  // Call server/discover (optional for clients, but every POST still needs
+  // the header + _meta).
   logger.debug('Calling server/discover...');
   const discoverResponse = await fetch(serverUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 'discover-1',
-      method: 'server/discover'
+      method: 'server/discover',
+      params: { _meta: meta }
     })
   });
 
@@ -127,16 +141,7 @@ async function runStatelessClient(serverUrl: string): Promise<void> {
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/list',
-      params: {
-        _meta: {
-          'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
-          'io.modelcontextprotocol/clientInfo': {
-            name: 'conformance-test-client',
-            version: '1.0.0'
-          },
-          'io.modelcontextprotocol/clientCapabilities': { roots: {} }
-        }
-      }
+      params: { _meta: meta }
     })
   });
 
