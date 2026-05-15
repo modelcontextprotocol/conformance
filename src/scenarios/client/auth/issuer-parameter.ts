@@ -1,5 +1,5 @@
 import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls, SpecVersion } from '../../../types.js';
+import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
@@ -17,7 +17,7 @@ const specRefs = [SpecReferences.RFC_9207_ISS_PARAMETER];
  */
 export class IssParameterSupportedScenario implements Scenario {
   name = 'auth/iss-supported';
-  specVersions: SpecVersion[] = ['draft'];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client accepts authorization response when server advertises and sends correct iss parameter';
 
@@ -86,7 +86,7 @@ export class IssParameterSupportedScenario implements Scenario {
  */
 export class IssParameterNotAdvertisedScenario implements Scenario {
   name = 'auth/iss-not-advertised';
-  specVersions: SpecVersion[] = ['draft'];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client accepts authorization response when server does not advertise or send iss parameter';
 
@@ -155,7 +155,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
  */
 export class IssParameterSupportedMissingScenario implements Scenario {
   name = 'auth/iss-supported-missing';
-  specVersions: SpecVersion[] = ['draft'];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client rejects authorization response when server advertised iss support but omitted iss from redirect';
   allowClientError = true;
@@ -239,7 +239,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
  */
 export class IssParameterWrongIssuerScenario implements Scenario {
   name = 'auth/iss-wrong-issuer';
-  specVersions: SpecVersion[] = ['draft'];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client rejects authorization response when iss does not match the authorization server issuer';
   allowClientError = true;
@@ -324,7 +324,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
  */
 export class IssParameterUnexpectedScenario implements Scenario {
   name = 'auth/iss-unexpected';
-  specVersions: SpecVersion[] = ['draft'];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client compares iss against recorded issuer even when not advertised, and rejects on mismatch';
   allowClientError = true;
