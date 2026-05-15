@@ -43,6 +43,10 @@ export interface AuthServerOptions {
   disableDynamicRegistration?: boolean;
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
+  /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: not included */
+  issParameterSupported?: boolean;
+  /** What iss value to include in authorization redirect. Default: not included */
+  issInRedirect?: 'correct' | 'wrong' | 'omit';
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -86,6 +90,8 @@ export function createAuthServer(
     clientIdMetadataDocumentSupported,
     disableDynamicRegistration = false,
     codeChallengeMethodsSupported = ['S256'],
+    issParameterSupported = true,
+    issInRedirect = 'correct',
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -145,6 +151,9 @@ export function createAuthServer(
       // PKCE support - null means omit from metadata (for negative testing)
       ...(codeChallengeMethodsSupported !== null && {
         code_challenge_methods_supported: codeChallengeMethodsSupported
+      }),
+      ...(issParameterSupported !== undefined && {
+        authorization_response_iss_parameter_supported: issParameterSupported
       }),
       token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
       ...(tokenEndpointAuthSigningAlgValuesSupported && {
@@ -242,6 +251,13 @@ export function createAuthServer(
     redirectUrl.searchParams.set('code', 'test-auth-code');
     if (state) {
       redirectUrl.searchParams.set('state', state);
+    }
+
+    // ISS: Include iss parameter in redirect if configured
+    if (issInRedirect === 'correct') {
+      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}`);
+    } else if (issInRedirect === 'wrong') {
+      redirectUrl.searchParams.set('iss', 'https://evil.example.com');
     }
 
     res.redirect(redirectUrl.toString());
