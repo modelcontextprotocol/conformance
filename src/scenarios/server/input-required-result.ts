@@ -1,40 +1,40 @@
 /**
- * SEP-2322: IncompleteResult - Ephemeral Workflow Tests
+ * SEP-2322: InputRequiredResult - Ephemeral Workflow Tests
  *
  * Tests the ephemeral (stateless) workflow where servers respond with
- * IncompleteResult containing inputRequests and/or requestState, and
+ * InputRequiredResult containing inputRequests and/or requestState, and
  * clients retry with inputResponses and echoed requestState.
  */
 
 import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
 import { createRawSession } from './client-helper';
 import {
-  isIncompleteResult,
+  isInputRequiredResult,
   isCompleteResult,
   mockElicitResponse,
   mockSamplingResponse,
   mockListRootsResponse,
   MRTR_SPEC_REFERENCES
-} from './incomplete-result-helpers';
+} from './input-required-result-helpers';
 
 // ─── A1: Basic Elicitation ────────────────────────────────────────────────────
 
-export class IncompleteResultBasicElicitationScenario
+export class InputRequiredResultBasicElicitationScenario
   implements ClientScenario
 {
-  name = 'incomplete-result-basic-elicitation';
+  name = 'input-required-result-basic-elicitation';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral IncompleteResult flow with a single elicitation input request (SEP-2322).
+  description = `Test basic ephemeral InputRequiredResult flow with a single elicitation input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
+Implement a tool named \`test_input_required_result_elicitation\` (no arguments required).
 
-**Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
+**Behavior (Round 1):** When called without \`inputResponses\`, return an \`InputRequiredResult\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "user_name": {
       "method": "elicitation/create",
@@ -67,9 +67,9 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
     try {
       const session = await createRawSession(serverUrl);
 
-      // Round 1: Initial call — expect IncompleteResult
+      // Round 1: Initial call — expect InputRequiredResult
       const r1 = await session.send('tools/call', {
-        name: 'test_tool_with_elicitation',
+        name: 'test_input_required_result_elicitation',
         arguments: {}
       });
 
@@ -80,14 +80,14 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
       } else if (!r1Result) {
         r1Errors.push('No result in response');
-      } else if (!isIncompleteResult(r1Result)) {
+      } else if (!isInputRequiredResult(r1Result)) {
         r1Errors.push(
-          'Expected IncompleteResult but got a complete result. ' +
-            'Server should return result_type: "incomplete" with inputRequests.'
+          'Expected InputRequiredResult but got a complete result. ' +
+            'Server should return resultType: "input_required" with inputRequests.'
         );
       } else {
         if (!r1Result.inputRequests) {
-          r1Errors.push('IncompleteResult missing inputRequests');
+          r1Errors.push('InputRequiredResult missing inputRequests');
         } else if (!r1Result.inputRequests['user_name']) {
           r1Errors.push('inputRequests missing expected key "user_name"');
         } else {
@@ -101,10 +101,10 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       }
 
       checks.push({
-        id: 'incomplete-result-elicitation-incomplete',
-        name: 'IncompleteResultElicitationIncomplete',
+        id: 'input-required-result-elicitation-incomplete',
+        name: 'InputRequiredResultElicitationIncomplete',
         description:
-          'Server returns IncompleteResult with elicitation inputRequest',
+          'Server returns InputRequiredResult with elicitation inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -113,9 +113,9 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       });
 
       // Round 2: Retry with inputResponses — expect complete result
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const r2 = await session.send('tools/call', {
-          name: 'test_tool_with_elicitation',
+          name: 'test_input_required_result_elicitation',
           arguments: {},
           inputResponses: {
             user_name: mockElicitResponse({ name: 'Alice' })
@@ -146,8 +146,8 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
         }
 
         checks.push({
-          id: 'incomplete-result-elicitation-complete',
-          name: 'IncompleteResultElicitationComplete',
+          id: 'input-required-result-elicitation-complete',
+          name: 'InputRequiredResultElicitationComplete',
           description:
             'Server returns complete result after retry with inputResponses',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -159,10 +159,10 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-elicitation-incomplete',
-        name: 'IncompleteResultElicitationIncomplete',
+        id: 'input-required-result-elicitation-incomplete',
+        name: 'InputRequiredResultElicitationIncomplete',
         description:
-          'Server returns IncompleteResult with elicitation inputRequest',
+          'Server returns InputRequiredResult with elicitation inputRequest',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -176,20 +176,20 @@ Implement a tool named \`test_tool_with_elicitation\` (no arguments required).
 
 // ─── A2: Basic Sampling ──────────────────────────────────────────────────────
 
-export class IncompleteResultBasicSamplingScenario implements ClientScenario {
-  name = 'incomplete-result-basic-sampling';
+export class InputRequiredResultBasicSamplingScenario implements ClientScenario {
+  name = 'input-required-result-basic-sampling';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral IncompleteResult flow with a single sampling input request (SEP-2322).
+  description = `Test basic ephemeral InputRequiredResult flow with a single sampling input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_incomplete_result_sampling\` (no arguments required).
+Implement a tool named \`test_input_required_result_sampling\` (no arguments required).
 
-**Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
+**Behavior (Round 1):** When called without \`inputResponses\`, return an \`InputRequiredResult\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "capital_question": {
       "method": "sampling/createMessage",
@@ -215,7 +215,7 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_sampling',
+        name: 'test_input_required_result_sampling',
         arguments: {}
       });
 
@@ -226,11 +226,11 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
       } else if (!r1Result) {
         r1Errors.push('No result in response');
-      } else if (!isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult with sampling inputRequest');
+      } else if (!isInputRequiredResult(r1Result)) {
+        r1Errors.push('Expected InputRequiredResult with sampling inputRequest');
       } else {
         if (!r1Result.inputRequests) {
-          r1Errors.push('IncompleteResult missing inputRequests');
+          r1Errors.push('InputRequiredResult missing inputRequests');
         } else {
           const key = Object.keys(r1Result.inputRequests)[0];
           if (!key) {
@@ -247,10 +247,10 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
       }
 
       checks.push({
-        id: 'incomplete-result-sampling-incomplete',
-        name: 'IncompleteResultSamplingIncomplete',
+        id: 'input-required-result-sampling-incomplete',
+        name: 'InputRequiredResultSamplingIncomplete',
         description:
-          'Server returns IncompleteResult with sampling inputRequest',
+          'Server returns InputRequiredResult with sampling inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -259,10 +259,10 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
       });
 
       // Round 2: Retry with inputResponses
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_sampling',
+          name: 'test_input_required_result_sampling',
           arguments: {},
           inputResponses: {
             [inputKey]: mockSamplingResponse('The capital of France is Paris.')
@@ -286,8 +286,8 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
         }
 
         checks.push({
-          id: 'incomplete-result-sampling-complete',
-          name: 'IncompleteResultSamplingComplete',
+          id: 'input-required-result-sampling-complete',
+          name: 'InputRequiredResultSamplingComplete',
           description:
             'Server returns complete result after retry with sampling response',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -299,10 +299,10 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-sampling-incomplete',
-        name: 'IncompleteResultSamplingIncomplete',
+        id: 'input-required-result-sampling-incomplete',
+        name: 'InputRequiredResultSamplingIncomplete',
         description:
-          'Server returns IncompleteResult with sampling inputRequest',
+          'Server returns InputRequiredResult with sampling inputRequest',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -316,20 +316,20 @@ Implement a tool named \`test_incomplete_result_sampling\` (no arguments require
 
 // ─── A3: Basic ListRoots ─────────────────────────────────────────────────────
 
-export class IncompleteResultBasicListRootsScenario implements ClientScenario {
-  name = 'incomplete-result-basic-list-roots';
+export class InputRequiredResultBasicListRootsScenario implements ClientScenario {
+  name = 'input-required-result-basic-list-roots';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test basic ephemeral IncompleteResult flow with a single roots/list input request (SEP-2322).
+  description = `Test basic ephemeral InputRequiredResult flow with a single roots/list input request (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_incomplete_result_list_roots\` (no arguments required).
+Implement a tool named \`test_input_required_result_list_roots\` (no arguments required).
 
-**Behavior (Round 1):** When called without \`inputResponses\`, return an \`IncompleteResult\`:
+**Behavior (Round 1):** When called without \`inputResponses\`, return an \`InputRequiredResult\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "client_roots": {
       "method": "roots/list",
@@ -349,7 +349,7 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
 
       // Round 1: Initial call
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_list_roots',
+        name: 'test_input_required_result_list_roots',
         arguments: {}
       });
 
@@ -360,11 +360,11 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
       } else if (!r1Result) {
         r1Errors.push('No result in response');
-      } else if (!isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult with roots/list inputRequest');
+      } else if (!isInputRequiredResult(r1Result)) {
+        r1Errors.push('Expected InputRequiredResult with roots/list inputRequest');
       } else {
         if (!r1Result.inputRequests) {
-          r1Errors.push('IncompleteResult missing inputRequests');
+          r1Errors.push('InputRequiredResult missing inputRequests');
         } else {
           const key = Object.keys(r1Result.inputRequests)[0];
           if (!key) {
@@ -381,10 +381,10 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
       }
 
       checks.push({
-        id: 'incomplete-result-list-roots-incomplete',
-        name: 'IncompleteResultListRootsIncomplete',
+        id: 'input-required-result-list-roots-incomplete',
+        name: 'InputRequiredResultListRootsIncomplete',
         description:
-          'Server returns IncompleteResult with roots/list inputRequest',
+          'Server returns InputRequiredResult with roots/list inputRequest',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -393,10 +393,10 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
       });
 
       // Round 2: Retry with inputResponses
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_list_roots',
+          name: 'test_input_required_result_list_roots',
           arguments: {},
           inputResponses: {
             [inputKey]: mockListRootsResponse()
@@ -420,8 +420,8 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
         }
 
         checks.push({
-          id: 'incomplete-result-list-roots-complete',
-          name: 'IncompleteResultListRootsComplete',
+          id: 'input-required-result-list-roots-complete',
+          name: 'InputRequiredResultListRootsComplete',
           description:
             'Server returns complete result after retry with roots response',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -433,10 +433,10 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-list-roots-incomplete',
-        name: 'IncompleteResultListRootsIncomplete',
+        id: 'input-required-result-list-roots-incomplete',
+        name: 'InputRequiredResultListRootsIncomplete',
         description:
-          'Server returns IncompleteResult with roots/list inputRequest',
+          'Server returns InputRequiredResult with roots/list inputRequest',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -450,20 +450,20 @@ Implement a tool named \`test_incomplete_result_list_roots\` (no arguments requi
 
 // ─── A4: Request State ──────────────────────────────────────────────────────
 
-export class IncompleteResultRequestStateScenario implements ClientScenario {
-  name = 'incomplete-result-request-state';
+export class InputRequiredResultRequestStateScenario implements ClientScenario {
+  name = 'input-required-result-request-state';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test that requestState is correctly round-tripped in ephemeral IncompleteResult flow (SEP-2322).
+  description = `Test that requestState is correctly round-tripped in ephemeral InputRequiredResult flow (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_incomplete_result_request_state\` (no arguments required).
+Implement a tool named \`test_input_required_result_request_state\` (no arguments required).
 
-**Behavior (Round 1):** Return an \`IncompleteResult\` with both \`inputRequests\` and \`requestState\`:
+**Behavior (Round 1):** Return an \`InputRequiredResult\` with both \`inputRequests\` and \`requestState\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "confirm": {
       "method": "elicitation/create",
@@ -491,7 +491,7 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_request_state',
+        name: 'test_input_required_result_request_state',
         arguments: {}
       });
 
@@ -500,25 +500,25 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
-      } else if (!r1Result || !isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult');
+      } else if (!r1Result || !isInputRequiredResult(r1Result)) {
+        r1Errors.push('Expected InputRequiredResult');
       } else {
         if (!r1Result.requestState) {
-          r1Errors.push('IncompleteResult missing requestState');
+          r1Errors.push('InputRequiredResult missing requestState');
         }
         if (typeof r1Result.requestState !== 'string') {
           r1Errors.push('requestState must be a string');
         }
         if (!r1Result.inputRequests) {
-          r1Errors.push('IncompleteResult missing inputRequests');
+          r1Errors.push('InputRequiredResult missing inputRequests');
         }
       }
 
       checks.push({
-        id: 'incomplete-result-request-state-incomplete',
-        name: 'IncompleteResultRequestStateIncomplete',
+        id: 'input-required-result-request-state-incomplete',
+        name: 'InputRequiredResultRequestStateIncomplete',
         description:
-          'Server returns IncompleteResult with both inputRequests and requestState',
+          'Server returns InputRequiredResult with both inputRequests and requestState',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -527,10 +527,10 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
       });
 
       // Round 2: Retry with inputResponses + requestState
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_request_state',
+          name: 'test_input_required_result_request_state',
           arguments: {},
           inputResponses: {
             [inputKey]: mockElicitResponse({ ok: true })
@@ -563,8 +563,8 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
         }
 
         checks.push({
-          id: 'incomplete-result-request-state-complete',
-          name: 'IncompleteResultRequestStateComplete',
+          id: 'input-required-result-request-state-complete',
+          name: 'InputRequiredResultRequestStateComplete',
           description:
             'Server validates echoed requestState and returns complete result',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -576,10 +576,10 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-request-state-incomplete',
-        name: 'IncompleteResultRequestStateIncomplete',
+        id: 'input-required-result-request-state-incomplete',
+        name: 'InputRequiredResultRequestStateIncomplete',
         description:
-          'Server returns IncompleteResult with both inputRequests and requestState',
+          'Server returns InputRequiredResult with both inputRequests and requestState',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -593,22 +593,22 @@ Implement a tool named \`test_incomplete_result_request_state\` (no arguments re
 
 // ─── A5: Multiple Input Requests ─────────────────────────────────────────────
 
-export class IncompleteResultMultipleInputRequestsScenario
+export class InputRequiredResultMultipleInputRequestsScenario
   implements ClientScenario
 {
-  name = 'incomplete-result-multiple-input-requests';
+  name = 'input-required-result-multiple-input-requests';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test multiple input requests in a single IncompleteResult (SEP-2322).
+  description = `Test multiple input requests in a single InputRequiredResult (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments required).
+Implement a tool named \`test_input_required_result_multiple_inputs\` (no arguments required).
 
-**Behavior (Round 1):** Return an \`IncompleteResult\` with multiple \`inputRequests\` — elicitation, sampling, and roots/list — plus \`requestState\`:
+**Behavior (Round 1):** Return an \`InputRequiredResult\` with multiple \`inputRequests\` — elicitation, sampling, and roots/list — plus \`requestState\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "user_name": {
       "method": "elicitation/create",
@@ -647,7 +647,7 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_multiple_inputs',
+        name: 'test_input_required_result_multiple_inputs',
         arguments: {}
       });
 
@@ -656,13 +656,13 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
-      } else if (!r1Result || !isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult');
+      } else if (!r1Result || !isInputRequiredResult(r1Result)) {
+        r1Errors.push('Expected InputRequiredResult');
       } else if (!r1Result.inputRequests) {
-        r1Errors.push('IncompleteResult missing inputRequests');
+        r1Errors.push('InputRequiredResult missing inputRequests');
       } else {
         if (!r1Result.requestState) {
-          r1Errors.push('IncompleteResult missing requestState');
+          r1Errors.push('InputRequiredResult missing requestState');
         }
 
         const keys = Object.keys(r1Result.inputRequests);
@@ -693,10 +693,10 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
       }
 
       checks.push({
-        id: 'incomplete-result-multiple-inputs-incomplete',
-        name: 'IncompleteResultMultipleInputsIncomplete',
+        id: 'input-required-result-multiple-inputs-incomplete',
+        name: 'InputRequiredResultMultipleInputsIncomplete',
         description:
-          'Server returns IncompleteResult with multiple inputRequests of different types',
+          'Server returns InputRequiredResult with multiple inputRequests of different types',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -705,7 +705,7 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
       });
 
       // Round 2: Respond to all input requests
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputResponses: Record<string, unknown> = {};
         for (const [key, req] of Object.entries(r1Result.inputRequests!)) {
           if (req.method === 'elicitation/create') {
@@ -718,7 +718,7 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
         }
 
         const r2 = await session.send('tools/call', {
-          name: 'test_incomplete_result_multiple_inputs',
+          name: 'test_input_required_result_multiple_inputs',
           arguments: {},
           inputResponses,
           ...(r1Result.requestState !== undefined
@@ -740,8 +740,8 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
         }
 
         checks.push({
-          id: 'incomplete-result-multiple-inputs-complete',
-          name: 'IncompleteResultMultipleInputsComplete',
+          id: 'input-required-result-multiple-inputs-complete',
+          name: 'InputRequiredResultMultipleInputsComplete',
           description:
             'Server returns complete result after all inputResponses are provided',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -753,10 +753,10 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-multiple-inputs-incomplete',
-        name: 'IncompleteResultMultipleInputsIncomplete',
+        id: 'input-required-result-multiple-inputs-incomplete',
+        name: 'InputRequiredResultMultipleInputsIncomplete',
         description:
-          'Server returns IncompleteResult with multiple inputRequests of different types',
+          'Server returns InputRequiredResult with multiple inputRequests of different types',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -770,20 +770,20 @@ Implement a tool named \`test_incomplete_result_multiple_inputs\` (no arguments 
 
 // ─── A6: Multi-Round ─────────────────────────────────────────────────────────
 
-export class IncompleteResultMultiRoundScenario implements ClientScenario {
-  name = 'incomplete-result-multi-round';
+export class InputRequiredResultMultiRoundScenario implements ClientScenario {
+  name = 'input-required-result-multi-round';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test multi-round ephemeral IncompleteResult flow with evolving requestState (SEP-2322).
+  description = `Test multi-round ephemeral InputRequiredResult flow with evolving requestState (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a tool named \`test_incomplete_result_multi_round\` (no arguments required).
+Implement a tool named \`test_input_required_result_multi_round\` (no arguments required).
 
-**Behavior (Round 1):** Return an \`IncompleteResult\` with an elicitation request and \`requestState\`:
+**Behavior (Round 1):** Return an \`InputRequiredResult\` with an elicitation request and \`requestState\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "step1": {
       "method": "elicitation/create",
@@ -801,11 +801,11 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
 }
 \`\`\`
 
-**Behavior (Round 2):** When called with \`inputResponses\` for step1 + requestState, return ANOTHER \`IncompleteResult\` with a new elicitation and updated requestState:
+**Behavior (Round 2):** When called with \`inputResponses\` for step1 + requestState, return ANOTHER \`InputRequiredResult\` with a new elicitation and updated requestState:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "step2": {
       "method": "elicitation/create",
@@ -833,7 +833,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
 
       // Round 1
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_multi_round',
+        name: 'test_input_required_result_multi_round',
         arguments: {}
       });
 
@@ -843,7 +843,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       if (
         !r1.error &&
         r1Result &&
-        isIncompleteResult(r1Result) &&
+        isInputRequiredResult(r1Result) &&
         r1Result.inputRequests &&
         r1Result.requestState
       ) {
@@ -851,25 +851,25 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       }
 
       checks.push({
-        id: 'incomplete-result-multi-round-r1',
-        name: 'IncompleteResultMultiRoundR1',
+        id: 'input-required-result-multi-round-r1',
+        name: 'InputRequiredResultMultiRoundR1',
         description:
-          'Round 1: Server returns IncompleteResult with requestState',
+          'Round 1: Server returns InputRequiredResult with requestState',
         status: round1Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: round1Complete
           ? undefined
-          : 'Expected IncompleteResult with inputRequests and requestState',
+          : 'Expected InputRequiredResult with inputRequests and requestState',
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r1Result }
       });
 
-      if (!round1Complete || !isIncompleteResult(r1Result)) return checks;
+      if (!round1Complete || !isInputRequiredResult(r1Result)) return checks;
 
-      // Round 2: Retry — expect another IncompleteResult
+      // Round 2: Retry — expect another InputRequiredResult
       const r1InputKey = Object.keys(r1Result.inputRequests!)[0];
       const r2 = await session.send('tools/call', {
-        name: 'test_incomplete_result_multi_round',
+        name: 'test_input_required_result_multi_round',
         arguments: {},
         inputResponses: {
           [r1InputKey]: mockElicitResponse({ name: 'Alice' })
@@ -883,7 +883,7 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       if (
         !r2.error &&
         r2Result &&
-        isIncompleteResult(r2Result) &&
+        isInputRequiredResult(r2Result) &&
         r2Result.inputRequests &&
         r2Result.requestState
       ) {
@@ -894,25 +894,25 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       }
 
       checks.push({
-        id: 'incomplete-result-multi-round-r2',
-        name: 'IncompleteResultMultiRoundR2',
+        id: 'input-required-result-multi-round-r2',
+        name: 'InputRequiredResultMultiRoundR2',
         description:
-          'Round 2: Server returns another IncompleteResult with updated requestState',
+          'Round 2: Server returns another InputRequiredResult with updated requestState',
         status: round2Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: round2Complete
           ? undefined
-          : 'Expected new IncompleteResult with different requestState',
+          : 'Expected new InputRequiredResult with different requestState',
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r2Result }
       });
 
-      if (!round2Complete || !isIncompleteResult(r2Result)) return checks;
+      if (!round2Complete || !isInputRequiredResult(r2Result)) return checks;
 
       // Round 3: Final retry — expect complete result
       const r2InputKey = Object.keys(r2Result.inputRequests!)[0];
       const r3 = await session.send('tools/call', {
-        name: 'test_incomplete_result_multi_round',
+        name: 'test_input_required_result_multi_round',
         arguments: {},
         inputResponses: {
           [r2InputKey]: mockElicitResponse({ color: 'blue' })
@@ -925,8 +925,8 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
         !r3.error && r3Result != null && isCompleteResult(r3Result);
 
       checks.push({
-        id: 'incomplete-result-multi-round-r3',
-        name: 'IncompleteResultMultiRoundR3',
+        id: 'input-required-result-multi-round-r3',
+        name: 'InputRequiredResultMultiRoundR3',
         description: 'Round 3: Server returns complete result',
         status: round3Complete ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
@@ -938,10 +938,10 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
       });
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-multi-round-r1',
-        name: 'IncompleteResultMultiRoundR1',
+        id: 'input-required-result-multi-round-r1',
+        name: 'InputRequiredResultMultiRoundR1',
         description:
-          'Round 1: Server returns IncompleteResult with requestState',
+          'Round 1: Server returns InputRequiredResult with requestState',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -955,18 +955,18 @@ Implement a tool named \`test_incomplete_result_multi_round\` (no arguments requ
 
 // ─── A7: Missing Input Response ──────────────────────────────────────────────
 
-export class IncompleteResultMissingInputResponseScenario
+export class InputRequiredResultMissingInputResponseScenario
   implements ClientScenario
 {
-  name = 'incomplete-result-missing-input-response';
+  name = 'input-required-result-missing-input-response';
   specVersions: SpecVersion[] = ['draft'];
   description = `Test error handling when client sends wrong/missing inputResponses (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Use the same tool as A1: \`test_incomplete_result_elicitation\`.
+Use the same tool as A1: \`test_input_required_result_elicitation\`.
 
-**Behavior:** When the client retries with \`inputResponses\` that are missing required keys or contain wrong keys, the server SHOULD respond with a new \`IncompleteResult\` re-requesting the missing information (NOT a JSON-RPC error).`;
+**Behavior:** When the client retries with \`inputResponses\` that are missing required keys or contain wrong keys, the server SHOULD respond with a new \`InputRequiredResult\` re-requesting the missing information (NOT a JSON-RPC error).`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -976,7 +976,7 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
 
       // Round 1: Send wrong inputResponses (wrong key)
       const r1 = await session.send('tools/call', {
-        name: 'test_incomplete_result_elicitation',
+        name: 'test_input_required_result_elicitation',
         arguments: {},
         inputResponses: {
           wrong_key: mockElicitResponse({ data: 'wrong' })
@@ -989,23 +989,23 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
       if (r1.error) {
         // A JSON-RPC error is acceptable but the SEP prefers re-requesting
         r1Errors.push(
-          'Server returned JSON-RPC error instead of re-requesting via IncompleteResult. ' +
+          'Server returned JSON-RPC error instead of re-requesting via InputRequiredResult. ' +
             'SEP-2322 recommends servers re-request missing information.'
         );
       } else if (!r1Result) {
         r1Errors.push('No result in response');
-      } else if (!isIncompleteResult(r1Result)) {
+      } else if (!isInputRequiredResult(r1Result)) {
         r1Errors.push(
-          'Expected IncompleteResult re-requesting missing information, ' +
+          'Expected InputRequiredResult re-requesting missing information, ' +
             'but got a complete result'
         );
       }
 
       checks.push({
-        id: 'incomplete-result-missing-response-rerequests',
-        name: 'IncompleteResultMissingResponseRerequests',
+        id: 'input-required-result-missing-response-rerequests',
+        name: 'InputRequiredResultMissingResponseRerequests',
         description:
-          'Server re-requests missing inputResponses via new IncompleteResult',
+          'Server re-requests missing inputResponses via new InputRequiredResult',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -1014,10 +1014,10 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
       });
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-missing-response-rerequests',
-        name: 'IncompleteResultMissingResponseRerequests',
+        id: 'input-required-result-missing-response-rerequests',
+        name: 'InputRequiredResultMissingResponseRerequests',
         description:
-          'Server re-requests missing inputResponses via new IncompleteResult',
+          'Server re-requests missing inputResponses via new InputRequiredResult',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1031,20 +1031,20 @@ Use the same tool as A1: \`test_incomplete_result_elicitation\`.
 
 // ─── A9: Non-Tool Request (prompts/get) ──────────────────────────────────────
 
-export class IncompleteResultNonToolRequestScenario implements ClientScenario {
-  name = 'incomplete-result-non-tool-request';
+export class InputRequiredResultNonToolRequestScenario implements ClientScenario {
+  name = 'input-required-result-non-tool-request';
   specVersions: SpecVersion[] = ['draft'];
-  description = `Test IncompleteResult on a non-tool request (prompts/get) to verify IncompleteResult is universal (SEP-2322).
+  description = `Test InputRequiredResult on a non-tool request (prompts/get) to verify InputRequiredResult is universal (SEP-2322).
 
 **Server Implementation Requirements:**
 
-Implement a prompt named \`test_incomplete_result_prompt\` that requires elicitation input.
+Implement a prompt named \`test_input_required_result_prompt\` that requires elicitation input.
 
-**Behavior (Round 1):** When \`prompts/get\` is called for \`test_incomplete_result_prompt\` without \`inputResponses\`, return an \`IncompleteResult\`:
+**Behavior (Round 1):** When \`prompts/get\` is called for \`test_input_required_result_prompt\` without \`inputResponses\`, return an \`InputRequiredResult\`:
 
 \`\`\`json
 {
-  "result_type": "incomplete",
+  "resultType": "input_required",
   "inputRequests": {
     "user_context": {
       "method": "elicitation/create",
@@ -1071,7 +1071,7 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
 
       // Round 1
       const r1 = await session.send('prompts/get', {
-        name: 'test_incomplete_result_prompt'
+        name: 'test_input_required_result_prompt'
       });
 
       const r1Result = r1.result;
@@ -1079,16 +1079,16 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
-      } else if (!r1Result || !isIncompleteResult(r1Result)) {
-        r1Errors.push('Expected IncompleteResult from prompts/get');
+      } else if (!r1Result || !isInputRequiredResult(r1Result)) {
+        r1Errors.push('Expected InputRequiredResult from prompts/get');
       } else if (!r1Result.inputRequests) {
-        r1Errors.push('IncompleteResult missing inputRequests');
+        r1Errors.push('InputRequiredResult missing inputRequests');
       }
 
       checks.push({
-        id: 'incomplete-result-non-tool-incomplete',
-        name: 'IncompleteResultNonToolIncomplete',
-        description: 'prompts/get returns IncompleteResult with inputRequests',
+        id: 'input-required-result-non-tool-incomplete',
+        name: 'InputRequiredResultNonToolIncomplete',
+        description: 'prompts/get returns InputRequiredResult with inputRequests',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -1097,10 +1097,10 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
       });
 
       // Round 2: Retry with inputResponses
-      if (r1Errors.length === 0 && isIncompleteResult(r1Result)) {
+      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests!)[0];
         const r2 = await session.send('prompts/get', {
-          name: 'test_incomplete_result_prompt',
+          name: 'test_input_required_result_prompt',
           inputResponses: {
             [inputKey]: mockElicitResponse({ context: 'test context' })
           },
@@ -1125,8 +1125,8 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
         }
 
         checks.push({
-          id: 'incomplete-result-non-tool-complete',
-          name: 'IncompleteResultNonToolComplete',
+          id: 'input-required-result-non-tool-complete',
+          name: 'InputRequiredResultNonToolComplete',
           description:
             'prompts/get returns complete GetPromptResult after retry with inputResponses',
           status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -1138,9 +1138,9 @@ Implement a prompt named \`test_incomplete_result_prompt\` that requires elicita
       }
     } catch (error) {
       checks.push({
-        id: 'incomplete-result-non-tool-incomplete',
-        name: 'IncompleteResultNonToolIncomplete',
-        description: 'prompts/get returns IncompleteResult with inputRequests',
+        id: 'input-required-result-non-tool-incomplete',
+        name: 'InputRequiredResultNonToolIncomplete',
+        description: 'prompts/get returns InputRequiredResult with inputRequests',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,

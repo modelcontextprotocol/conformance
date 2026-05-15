@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
+import { InputRequiredResultBasicElicitationScenario } from './input-required-result';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -105,5 +106,35 @@ describe('Server scenario negative tests', () => {
       const errorCode = checks.find((c) => c.id === 'sep-2164-error-code');
       expect(errorCode?.status).toBe('WARNING');
     }, 10000);
+  });
+
+  describe('sep-2322-no-mrtr', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3011;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2322-no-mrtr.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits FAILURE when server returns complete result instead of InputRequiredResult', async () => {
+      const scenario = new InputRequiredResultBasicElicitationScenario();
+      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+
+      const incompleteCheck = checks.find(
+        (c) => c.id === 'input-required-result-elicitation-incomplete'
+      );
+      expect(incompleteCheck).toBeDefined();
+      expect(incompleteCheck?.status).toBe('FAILURE');
+    }, 15000);
   });
 });

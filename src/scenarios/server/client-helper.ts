@@ -83,6 +83,7 @@ export class RawMcpSession {
   private nextId = 1;
   private serverUrl: string;
   private connection: MCPClientConnection | null = null;
+  private sessionId: string | undefined = undefined;
 
   constructor(serverUrl: string) {
     this.serverUrl = serverUrl;
@@ -94,6 +95,7 @@ export class RawMcpSession {
    */
   async initialize(): Promise<void> {
     this.connection = await connectToServer(this.serverUrl);
+    this.sessionId = this.connection.transport.sessionId;
   }
 
   /**
@@ -111,6 +113,10 @@ export class RawMcpSession {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream'
     };
+
+    if (this.sessionId) {
+      headers['Mcp-Session-Id'] = this.sessionId;
+    }
 
     const body = JSON.stringify({
       jsonrpc: '2.0',

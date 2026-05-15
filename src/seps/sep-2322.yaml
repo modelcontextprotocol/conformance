@@ -1,0 +1,184 @@
+sep: 2322
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/utilities/mrtr
+
+requirements:
+  # ── Note (non-normative) ────────────────────────────────────────────────────
+  # "Servers MUST send server-to-client requests ... using the MRTR pattern."
+  # This is an architectural requirement tested indirectly through all scenarios.
+
+  # ── Supported Requests ──────────────────────────────────────────────────────
+  - text: "Servers MUST NOT send InputRequiredResult responses on any other client requests."
+    excluded: "Requires exhaustive negative testing of unsupported methods; not practical in conformance framework"
+
+  # ── Server Requirements (Basic Workflow) ────────────────────────────────────
+
+  # Requirement: inputRequests keys MUST be unique within the scope of the request.
+  - check: input-required-result-multiple-inputs-input-required
+    text: "inputRequests keys are server assigned identifiers and MUST be unique within the scope of the request."
+
+  # Requirement: inputRequests values MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest.
+  - check: input-required-result-elicitation-input-required
+    text: "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest"
+
+  - check: input-required-result-sampling-input-required
+    text: "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (sampling)"
+
+  - check: input-required-result-list-roots-input-required
+    text: "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (list roots)"
+
+  # Requirement: servers MUST treat requestState as attacker-controlled input
+  - text: "servers MUST treat requestState as an attacker-controlled input"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # Requirement: servers MUST protect integrity (HMAC/AEAD) if requestState influences auth/logic
+  - text: "servers MUST protect its integrity (e.g. HMAC or AEAD)"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # Requirement: servers MUST reject state that fails verification
+  - text: "MUST reject state that fails verification"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # Requirement: SHOULD include principal, TTL, request identifier in requestState
+  - text: "servers SHOULD include the authenticated principal, a short expiry (TTL), and an identifier for the originating request inside the integrity-protected requestState payload"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # Requirement: single-use requestState MUST be enforced server-side
+  - text: "Servers for which a given requestState must be consumed at most once MUST enforce that invariant server-side"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # Requirement: MUST include at least one of inputRequests or requestState
+  - check: input-required-result-request-state-input-required
+    text: "Servers MUST include at least one of inputRequests or requestState in every InputRequiredResult response."
+
+  # Requirement: MUST NOT send inputRequests client hasn't declared support for
+  - text: "Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities"
+    excluded: "Requires testing with restricted client capabilities; framework limitation"
+    issue: https://github.com/modelcontextprotocol/conformance/issues/new
+
+  # Requirement: MUST NOT assume clients will fulfill inputRequests
+  - text: "Servers MUST NOT assume that clients will fulfill the inputRequests or retry the original request"
+    excluded: "Server-internal assumption; not observable at protocol level"
+
+  # ── Client Requirements (Basic Workflow) ────────────────────────────────────
+
+  - text: "client MUST construct the requested inputs before retrying the original request"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "client MUST echo back the exact value of requestState when retrying"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "The JSON-RPC id MUST be different between the initial request and the retry"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "inputRequests and requestState MUST NOT be used for any other request the client may be sending in parallel"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  # ── Server Requirements (Tasks) ────────────────────────────────────────────
+
+  # Requirement: MUST include inputRequests in tasks/result when input_required
+  - check: input-required-result-task-tasks-result-input-required
+    text: "Servers MUST include an inputRequests field in the tasks/result response when the task is in status input_required."
+
+  # Requirement: inputRequests keys MUST be unique within scope of Task
+  - check: input-required-result-task-input-response-returns-input-required
+    text: "inputRequests keys are server assigned identifiers and MUST be unique within the scope of a Task."
+
+  # ── Client Requirements (Tasks) ────────────────────────────────────────────
+
+  - text: "When tasks/get shows status input_required, clients MUST call tasks/result"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  - text: "Clients SHOULD construct the results and call tasks/input_response"
+    excluded: "Client behavior; not testable via server conformance tests"
+
+  # ── Error Handling ──────────────────────────────────────────────────────────
+
+  # Requirement: SHOULD validate InputResponses
+  - check: input-required-result-task-bad-input-rerequests
+    text: "Servers SHOULD validate that the data provided by the client is a valid InputResponses object"
+
+  # Requirement: SHOULD return JSON-RPC error for protocol errors
+  - text: "Protocol errors SHOULD return a JSON-RPC error response with an appropriate error code and message"
+    excluded: "Requires fault injection (malformed JSON); framework limitation"
+
+  # Requirement: SHOULD ignore unrecognized extra parameters
+  - text: "server SHOULD ignore any information it does not recognize or need"
+    excluded: "Requires server-side behavior verification; not easily testable"
+
+  # Requirement: SHOULD re-request missing information
+  - check: input-required-result-missing-response-rerequests
+    text: "server SHOULD respond with a new InputRequiredResult requesting the missing information again, rather than returning an error"
+
+  # ── Security Considerations ─────────────────────────────────────────────────
+
+  - text: "Servers MUST validate request state as described in the server requirements"
+    excluded: "Security implementation detail; not observable at protocol level"
+
+  # ── Ephemeral workflow: complete result after retry ─────────────────────────
+
+  - check: input-required-result-elicitation-complete
+    text: "Server returns complete result after retry with inputResponses (elicitation)"
+
+  - check: input-required-result-sampling-complete
+    text: "Server returns complete result after retry with inputResponses (sampling)"
+
+  - check: input-required-result-list-roots-complete
+    text: "Server returns complete result after retry with inputResponses (list roots)"
+
+  - check: input-required-result-request-state-complete
+    text: "Server returns complete result after retry with requestState echoed back"
+
+  - check: input-required-result-multiple-inputs-complete
+    text: "Server returns complete result after retry with multiple inputResponses"
+
+  - check: input-required-result-multi-round-r1
+    text: "Server returns InputRequiredResult on first round of multi-round flow"
+
+  - check: input-required-result-multi-round-r2
+    text: "Server returns InputRequiredResult on second round (re-requesting with new requestState)"
+
+  - check: input-required-result-multi-round-r3
+    text: "Server returns complete result on third round of multi-round flow"
+
+  # ── Non-tool request (prompts/get) ──────────────────────────────────────────
+
+  - check: input-required-result-non-tool-input-required
+    text: "Server returns InputRequiredResult on prompts/get request"
+
+  - check: input-required-result-non-tool-complete
+    text: "Server returns complete GetPromptResult after retry with inputResponses"
+
+  # ── Task workflow checks ────────────────────────────────────────────────────
+
+  - check: input-required-result-task-created
+    text: "Server creates task with status working"
+
+  - check: input-required-result-task-input-required
+    text: "Task transitions to input_required status"
+
+  - check: input-required-result-task-input-response-sent
+    text: "Server accepts tasks/input_response"
+
+  - check: input-required-result-task-ack-structure
+    text: "tasks/input_response acknowledgement has correct structure"
+
+  - check: input-required-result-task-completed
+    text: "Task transitions to completed status after input provided"
+
+  - check: input-required-result-task-final-result
+    text: "tasks/result returns final content after task completes"
+
+  - check: input-required-result-task-bad-input-prereq
+    text: "Prerequisite: task reaches input_required for bad input test"
+
+  - check: input-required-result-task-multi-input-prereq
+    text: "Prerequisite: task created for multi-input test"
+
+  - check: input-required-result-task-multi-input-completed
+    text: "Task completes after second input_response"

@@ -2,7 +2,7 @@
  * Helpers for SEP-2322 conformance tests.
  *
  * Uses RawMcpSession from client-helper.ts for connection management and
- * raw JSON-RPC transport. This file adds IncompleteResult-specific type
+ * raw JSON-RPC transport. This file adds InputRequiredResult-specific type
  * guards and mock response builders.
  */
 
@@ -10,10 +10,10 @@ import { RawMcpSession, JsonRpcResponse } from './client-helper';
 
 export type { RawMcpSession, JsonRpcResponse };
 
-// ─── IncompleteResult Types ──────────────────────────────────────────────────
+// ─── InputRequiredResult Types ───────────────────────────────────────────────
 
-export interface IncompleteResult {
-  result_type?: 'incomplete';
+export interface InputRequiredResultData {
+  resultType?: 'input_required';
   inputRequests?: Record<string, InputRequestObject>;
   requestState?: string;
   _meta?: Record<string, unknown>;
@@ -28,35 +28,35 @@ export interface InputRequestObject {
 // ─── Type Guards ─────────────────────────────────────────────────────────────
 
 /**
- * Check if a JSON-RPC result is an IncompleteResult.
+ * Check if a JSON-RPC result is an InputRequiredResult.
  */
-export function isIncompleteResult(
+export function isInputRequiredResult(
   result: Record<string, unknown> | undefined
-): result is IncompleteResult {
+): result is InputRequiredResultData {
   if (!result) return false;
-  if (result.result_type === 'incomplete') return true;
-  // Also detect by presence of IncompleteResult fields
+  if (result.resultType === 'input_required') return true;
+  // Also detect by presence of InputRequiredResult fields
   return 'inputRequests' in result || 'requestState' in result;
 }
 
 /**
- * Check if a JSON-RPC result is a complete result (not incomplete).
- * complete is the default so if result_type is missing we assume it's complete.
+ * Check if a JSON-RPC result is a complete result (not input_required).
+ * complete is the default so if resultType is missing we assume it's complete.
  */
 export function isCompleteResult(
   result: Record<string, unknown> | undefined
 ): boolean {
   if (!result) return false;
-  if (result.result_type === 'complete') return true;
-  if (!('result_type' in result)) return true;
-  return !isIncompleteResult(result);
+  if (result.resultType === 'complete') return true;
+  if (!('resultType' in result)) return true;
+  return !isInputRequiredResult(result);
 }
 
 /**
- * Extract inputRequests from an IncompleteResult.
+ * Extract inputRequests from an InputRequiredResult.
  */
 export function getInputRequests(
-  result: IncompleteResult
+  result: InputRequiredResultData
 ): Record<string, InputRequestObject> | undefined {
   return result.inputRequests;
 }
@@ -107,7 +107,7 @@ export function mockListRootsResponse(): Record<string, unknown> {
 // ─── Spec References ─────────────────────────────────────────────────────────
 
 /**
- * SEP reference for IncompleteResult / MRTR tests.
+ * SEP reference for InputRequiredResult / MRTR tests.
  */
 export const MRTR_SPEC_REFERENCES = [
   {
