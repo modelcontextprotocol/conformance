@@ -3,13 +3,12 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
-  SpecVersion,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 
 export class StatelessScenario implements Scenario {
   name = 'stateless';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = 'Tests stateless MCP client behavior (SEP-2575)';
 
   private server: http.Server | null = null;
