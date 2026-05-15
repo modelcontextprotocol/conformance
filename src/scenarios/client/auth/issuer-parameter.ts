@@ -215,10 +215,12 @@ export class IssParameterSupportedMissingScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private authReached = false;
   private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
@@ -227,6 +229,9 @@ export class IssParameterSupportedMissingScenario implements Scenario {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'omit', // advertise support but don't send iss
+      onAuthorizationRequest: () => {
+        this.authReached = true;
+      },
       onTokenRequest: () => {
         this.tokenRequestMade = true;
         return { token: `test-token-${Date.now()}`, scopes: [] };
@@ -254,7 +259,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     if (!this.checks.some((c) => c.id === 'iss-client-rejected-missing')) {
-      const correctlyRejected = !this.tokenRequestMade;
+      const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
         id: 'iss-client-rejected-missing',
         name: 'Client rejects missing iss when required',
@@ -267,6 +272,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
         details: {
           serverAdvertisedSupport: true,
           issSentInRedirect: false,
+          authReached: this.authReached,
           tokenRequestMade: this.tokenRequestMade
         }
       });
@@ -293,10 +299,12 @@ export class IssParameterWrongIssuerScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private authReached = false;
   private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
@@ -305,6 +313,9 @@ export class IssParameterWrongIssuerScenario implements Scenario {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'wrong', // send iss that doesn't match metadata issuer
+      onAuthorizationRequest: () => {
+        this.authReached = true;
+      },
       onTokenRequest: () => {
         this.tokenRequestMade = true;
         return { token: `test-token-${Date.now()}`, scopes: [] };
@@ -332,7 +343,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     if (!this.checks.some((c) => c.id === 'iss-client-rejected-wrong-issuer')) {
-      const correctlyRejected = !this.tokenRequestMade;
+      const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
         id: 'iss-client-rejected-wrong-issuer',
         name: 'Client rejects mismatched iss',
@@ -345,6 +356,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
         details: {
           serverAdvertisedSupport: true,
           issSentInRedirect: 'https://evil.example.com',
+          authReached: this.authReached,
           tokenRequestMade: this.tokenRequestMade
         }
       });
@@ -371,10 +383,12 @@ export class IssParameterUnexpectedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private authReached = false;
   private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
@@ -383,6 +397,9 @@ export class IssParameterUnexpectedScenario implements Scenario {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'correct', // send iss without advertising support
+      onAuthorizationRequest: () => {
+        this.authReached = true;
+      },
       onTokenRequest: () => {
         this.tokenRequestMade = true;
         return { token: `test-token-${Date.now()}`, scopes: [] };
@@ -410,7 +427,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     if (!this.checks.some((c) => c.id === 'iss-client-rejected-unexpected')) {
-      const correctlyRejected = !this.tokenRequestMade;
+      const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
         id: 'iss-client-rejected-unexpected',
         name: 'Client rejects unexpected iss',
@@ -423,6 +440,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
         details: {
           serverAdvertisedSupport: false,
           issSentInRedirect: true,
+          authReached: this.authReached,
           tokenRequestMade: this.tokenRequestMade
         }
       });
