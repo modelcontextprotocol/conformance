@@ -367,17 +367,18 @@ export class IssParameterWrongIssuerScenario implements Scenario {
 }
 
 /**
- * Scenario: ISS Parameter Sent but Not Advertised (client must reject)
+ * Scenario: ISS Parameter Sent but Not Advertised, Mismatched (client must reject)
  *
  * Server does not advertise authorization_response_iss_parameter_supported but
- * includes an iss value in the redirect anyway. A conformant client MUST reject
- * this unexpected parameter to prevent downgrade attacks.
+ * includes a mismatched iss value in the redirect. Per the SEP-2468 spec table
+ * row 3, a conformant client MUST compare a present iss against the recorded
+ * issuer regardless of metadata advertisement, and reject on mismatch.
  */
 export class IssParameterUnexpectedScenario implements Scenario {
   name = 'auth/iss-unexpected';
   specVersions: SpecVersion[] = ['draft'];
   description =
-    'Tests that client rejects authorization response when server sends iss but did not advertise support';
+    'Tests that client compares iss against recorded issuer even when not advertised, and rejects on mismatch';
   allowClientError = true;
 
   private authServer = new ServerLifecycle();
@@ -396,7 +397,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: null,
-      issInRedirect: 'correct', // send iss without advertising support
+      issInRedirect: 'wrong', // send mismatched iss without advertising support
       onAuthorizationRequest: () => {
         this.authReached = true;
       },
@@ -430,16 +431,16 @@ export class IssParameterUnexpectedScenario implements Scenario {
       const correctlyRejected = this.authReached && !this.tokenRequestMade;
       this.checks.push({
         id: 'iss-client-rejected-unexpected',
-        name: 'Client rejects unexpected iss',
+        name: 'Client compares unadvertised iss and rejects mismatch',
         description: correctlyRejected
-          ? 'Client correctly rejected authorization response containing unexpected iss parameter'
-          : 'Client MUST reject authorization response when server sends iss without advertising authorization_response_iss_parameter_supported',
+          ? 'Client correctly compared unadvertised iss against recorded issuer and rejected the mismatch'
+          : 'Client MUST compare a present iss against the recorded issuer regardless of metadata advertisement, and reject on mismatch',
         status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
         timestamp,
         specReferences: specRefs,
         details: {
           serverAdvertisedSupport: false,
-          issSentInRedirect: true,
+          issSentInRedirect: 'https://evil.example.com',
           authReached: this.authReached,
           tokenRequestMade: this.tokenRequestMade
         }
