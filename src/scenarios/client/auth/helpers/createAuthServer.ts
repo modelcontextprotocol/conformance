@@ -33,7 +33,18 @@ export interface AuthServerOptions {
   metadataPath?: string;
   isOpenIdConfiguration?: boolean;
   loggingEnabled?: boolean;
-  routePrefix?: string;
+  /**
+   * Path component of the issuer identifier (e.g., '/tenant1' for multi-tenant).
+   * Per RFC 8414, this must match the path used to construct the metadata URL.
+   * OAuth endpoints (/authorize, /token, /register) are mounted under this path.
+   */
+  issuerPath?: string;
+  /**
+   * Override the issuer value in the metadata response. For negative testing
+   * of RFC 8414 §3.3 issuer validation — clients MUST reject when the issuer
+   * in the response doesn't match the one used to construct the metadata URL.
+   */
+  issuerOverride?: string;
   scopesSupported?: string[];
   grantTypesSupported?: string[];
   tokenEndpointAuthMethodsSupported?: string[];
@@ -78,7 +89,8 @@ export function createAuthServer(
     metadataPath = '/.well-known/oauth-authorization-server',
     isOpenIdConfiguration = false,
     loggingEnabled = true,
-    routePrefix = '',
+    issuerPath = '',
+    issuerOverride,
     scopesSupported,
     grantTypesSupported = ['authorization_code', 'refresh_token'],
     tokenEndpointAuthMethodsSupported = ['none'],
@@ -98,9 +110,9 @@ export function createAuthServer(
   let storedCodeChallenge: string | undefined;
 
   const authRoutes = {
-    authorization_endpoint: `${routePrefix}/authorize`,
-    token_endpoint: `${routePrefix}/token`,
-    registration_endpoint: `${routePrefix}/register`
+    authorization_endpoint: `${issuerPath}/authorize`,
+    token_endpoint: `${issuerPath}/token`,
+    registration_endpoint: `${issuerPath}/register`
   };
 
   const app = express();
@@ -134,7 +146,7 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: `${getAuthBaseUrl()}${routePrefix}`,
+      issuer: issuerOverride ?? `${getAuthBaseUrl()}${issuerPath}`,
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
