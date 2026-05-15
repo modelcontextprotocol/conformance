@@ -14,8 +14,11 @@ export class RequestMetadataScenario implements Scenario {
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
+  private hasSimulatedRejection = false;
 
   async start(): Promise<ScenarioUrls> {
+    this.hasSimulatedRejection = false;
+    this.checks = [];
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);
@@ -46,6 +49,15 @@ export class RequestMetadataScenario implements Scenario {
     return this.checks;
   }
 
+  private addOrUpdateCheck(check: ConformanceCheck): void {
+    const index = this.checks.findIndex((c) => c.id === check.id);
+    if (index !== -1) {
+      this.checks[index] = check;
+    } else {
+      this.checks.push(check);
+    }
+  }
+
   private handleRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse
@@ -62,14 +74,13 @@ export class RequestMetadataScenario implements Scenario {
       const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
       const headerVersion = req.headers['mcp-protocol-version'];
 
-      // "Every POST request to the MCP endpoint MUST include an
+      // 1. "Every POST request to the MCP endpoint MUST include an
       //  MCP-Protocol-Version header." — unconditional, so this fires for
       // server/discover too.
-      this.checks.push({
+      this.addOrUpdateCheck({
         id: 'sep-2575-http-client-sends-version-header',
         name: 'ClientSendsVersionHeader',
-        description:
-          'Client sends MCP-Protocol-Version header on every POST',
+        description: 'Client sends MCP-Protocol-Version header on every POST',
         status: headerVersion !== undefined ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [
@@ -81,7 +92,7 @@ export class RequestMetadataScenario implements Scenario {
         details: { method: request.method, headerVersion }
       });
 
-      // "Every client request MUST include the following
+      // 2. "Every client request MUST include the following
       //  io.modelcontextprotocol/* fields in _meta: protocolVersion,
       //  clientInfo, clientCapabilities."
       const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
@@ -89,7 +100,7 @@ export class RequestMetadataScenario implements Scenario {
         meta?.['io.modelcontextprotocol/clientCapabilities'];
       const metaIsValid = metaVersion && hasClientInfo && hasCapabilities;
 
-      this.checks.push({
+      this.addOrUpdateCheck({
         id: 'sep-2575-client-populates-meta',
         name: 'ClientPopulatesMeta',
         description:
@@ -105,11 +116,11 @@ export class RequestMetadataScenario implements Scenario {
         details: { method: request.method, meta }
       });
 
-      // "The header value MUST match the io.modelcontextprotocol/protocolVersion
+      // 3. "The header value MUST match the io.modelcontextprotocol/protocolVersion
       //  field carried in the request body's _meta." Only meaningful when both
       // are present; absence is already covered by the two checks above.
       if (headerVersion !== undefined && metaVersion !== undefined) {
-        this.checks.push({
+        this.addOrUpdateCheck({
           id: 'sep-2575-http-version-header-matches-meta',
           name: 'ClientVersionHeaderMatchesMeta',
           description:
@@ -124,6 +135,108 @@ export class RequestMetadataScenario implements Scenario {
           ],
           details: { headerVersion, metaVersion }
         });
+      }
+
+      // 4. Optional client capabilities conditional verification
+      const capabilities = meta?.['io.modelcontextprotocol/clientCapabilities'];
+      const checkOptionalCapability = (
+        capabilityName: string,
+        checkId: string,
+        checkName: string
+      ) => {
+        let status: 'SUCCESS' | 'FAILURE' | 'SKIPPED' = 'SKIPPED';
+        if (capabilities && capabilityName in capabilities) {
+          const val = capabilities[capabilityName];
+          const isValidObject =
+            typeof val === 'object' && val !== null && !Array.isArray(val);
+          status = isValidObject ? 'SUCCESS' : 'FAILURE';
+        }
+        this.addOrUpdateCheck({
+          id: checkId,
+          name: checkName,
+          description: `Client declares valid ${capabilityName} capability if present`,
+          status,
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-2575',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/index#capabilities'
+            }
+          ],
+          details: { capabilityValue: capabilities?.[capabilityName] }
+        });
+      };
+
+      checkOptionalCapability(
+        'roots',
+        'sep-2575-client-declares-roots-capability',
+        'ClientDeclaresRootsCapability'
+      );
+      checkOptionalCapability(
+        'sampling',
+        'sep-2575-client-declares-sampling-capability',
+        'ClientDeclaresSamplingCapability'
+      );
+      checkOptionalCapability(
+        'elicitation',
+        'sep-2575-client-declares-elicitation-capability',
+        'ClientDeclaresElicitationCapability'
+      );
+
+      // 5. Simulated Version Negotiation Retry Check
+      if (!this.hasSimulatedRejection) {
+        this.hasSimulatedRejection = true;
+
+        this.addOrUpdateCheck({
+          id: 'sep-2575-client-retry-supported-version',
+          name: 'ClientRetrySupportedVersion',
+          description:
+            'Client retries with a supported version when first choice is rejected',
+          status: 'WARNING',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-2575',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+            }
+          ],
+          details: { headerVersion }
+        });
+
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id ?? null,
+            error: {
+              code: -32001,
+              message: 'Unsupported protocol version',
+              data: {
+                supported: [DRAFT_PROTOCOL_VERSION]
+              }
+            }
+          })
+        );
+        return;
+      }
+
+      const retryCheck = this.checks.find(
+        (c) => c.id === 'sep-2575-client-retry-supported-version'
+      );
+      if (retryCheck) {
+        if (
+          headerVersion === DRAFT_PROTOCOL_VERSION &&
+          metaVersion === DRAFT_PROTOCOL_VERSION
+        ) {
+          retryCheck.status = 'SUCCESS';
+        } else {
+          retryCheck.status = 'WARNING';
+        }
+        retryCheck.details = {
+          ...retryCheck.details,
+          retryHeaderVersion: headerVersion,
+          retryMetaVersion: metaVersion
+        };
       }
 
       // server/discover is optional for clients (spec: "Clients MAY call it"),
