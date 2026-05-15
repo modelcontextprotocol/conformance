@@ -82,10 +82,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario(),
-
-  // Stateless MCP architecture (SEP-2575)
-  new ServerStatelessScenario()
+  new ServerSSEPollingScenario()
 ];
 
 // All client scenarios

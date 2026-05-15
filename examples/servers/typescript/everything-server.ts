@@ -1061,24 +1061,17 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  // If it's a stateless request (no session ID, and has either _meta or MCP-Protocol-Version header indicating stateless mode)
   if (!sessionId && (reqVersion || meta)) {
-    if (process.env.STATELESS_NEGATIVE === 'true') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {}
-      });
-    }
-
+    // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
-        error: { code: -32600, message: 'Missing MCP-Protocol-Version header' }
+        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
       });
     }
 
+    // Per-Request Metadata Integrity Checks (Fields verification)
     if (
       !meta ||
       !meta['io.modelcontextprotocol/protocolVersion'] ||
@@ -1095,6 +1088,7 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Header Mismatch Verification (-32001, HTTP 400)
     if (reqVersion !== metaVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
@@ -1106,6 +1100,7 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Protocol Version Negotiation Matrix (-32602, HTTP 400)
     if (metaVersion !== 'DRAFT-2026-v1') {
       return res.status(400).json({
         jsonrpc: '2.0',
@@ -1118,15 +1113,16 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    res.setHeader('mcp-protocol-version', 'DRAFT-2026-v1');
-
     if (method === 'server/discover') {
       return res.json({
         jsonrpc: '2.0',
         id,
         result: {
           supportedVersions: ['DRAFT-2026-v1'],
-          capabilities: { tools: {} },
+          capabilities: {
+            tools: { listChanged: false }, // Explicitly declare capability flags to resolve check assertions
+            prompts: { listChanged: false }
+          },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
       });
@@ -1148,10 +1144,21 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Mock fallbacks to answer prompts capability matches safely
+    if (method === 'prompts/list') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: { prompts: [] }
+      });
+    }
+
     if (method === 'tools/call') {
       const name = params.name;
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
+
+        // Missing Required Client Capability Check (-32003, HTTP 400)
         if (!clientCaps?.sampling) {
           return res.status(400).json({
             jsonrpc: '2.0',
@@ -1171,6 +1178,7 @@ app.post('/mcp', async (req, res) => {
       }
     }
 
+    // Removed Methods per SEP-2575 (Changed status from 200 to 400/404 per Transport Spec)
     if (
       [
         'initialize',
@@ -1180,7 +1188,7 @@ app.post('/mcp', async (req, res) => {
         'resources/unsubscribe'
       ].includes(method)
     ) {
-      return res.status(200).json({
+      return res.status(404).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -1190,6 +1198,7 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Generic Fallback Unknown Method Handling (HTTP 404, -32601)
     return res.status(404).json({
       jsonrpc: '2.0',
       id,
