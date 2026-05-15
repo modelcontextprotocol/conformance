@@ -11,7 +11,7 @@ requirements:
     excluded: 'Server-side behavioral constraint. The conformance harness tests servers by sending client requests and checking responses. Servers that only use sampling within request handlers already comply. Testing violation requires a misbehaving server that sends standalone sampling requests.'
     url: https://modelcontextprotocol.io/specification/draft/client/sampling
 
-  # elicitation.mdx — Request association requirement 
+  # elicitation.mdx — Request association requirement
   - text: 'Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).'
     excluded: 'Server-side behavioral constraint. The conformance harness already operates within originating client request context. Testing violation requires a deliberately misbehaving server.'
     url: https://modelcontextprotocol.io/specification/draft/client/elicitation
