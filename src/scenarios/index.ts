@@ -72,6 +72,7 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -158,15 +159,17 @@ export const clientScenarios = new Map<string, ClientScenario>(
 );
 
 // All client scenarios for authorization server
-const allClientScenariosListForAuthorizationServer: ClientScenario[] = [
-  // Authorization server scenarios
-  new AuthorizationServerMetadataEndpointScenario()
-];
+const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizationServer[] =
+  [
+    // Authorization server scenarios
+    new AuthorizationServerMetadataEndpointScenario(),
+    new AuthorizationCodeGrantScenario()
+  ];
 
 // Client scenarios map for authorization server - built from list
 export const clientScenariosForAuthorizationServer = new Map<
   string,
-  ClientScenario
+  ClientScenarioForAuthorizationServer
 >(
   allClientScenariosListForAuthorizationServer.map((scenario) => [
     scenario.name,
