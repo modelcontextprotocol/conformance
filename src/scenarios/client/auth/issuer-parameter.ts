@@ -24,9 +24,11 @@ export class IssParameterSupportedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -34,25 +36,9 @@ export class IssParameterSupportedScenario implements Scenario {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'correct',
-      onAuthorizationRequest: ({ timestamp }) => {
-        this.checks.push({
-          id: 'iss-advertised-in-metadata',
-          name: 'ISS Parameter Advertised',
-          description:
-            'Server advertised authorization_response_iss_parameter_supported: true in AS metadata',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: specRefs
-        });
-        this.checks.push({
-          id: 'iss-sent-in-redirect',
-          name: 'ISS Sent in Redirect',
-          description:
-            'Server included correct iss value in authorization redirect',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: specRefs
-        });
+      onTokenRequest: () => {
+        this.tokenRequestMade = true;
+        return { token: `test-token-${Date.now()}`, scopes: [] };
       }
     });
     await this.authServer.start(authApp);
@@ -76,29 +62,17 @@ export class IssParameterSupportedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-advertised-in-metadata')) {
-      this.checks.push({
-        id: 'iss-advertised-in-metadata',
-        name: 'ISS Parameter Advertised',
-        description:
-          'Client did not reach authorization endpoint — could not verify iss parameter handling',
-        status: 'FAILURE',
-        timestamp,
-        specReferences: specRefs
-      });
-    }
-
-    if (!this.checks.some((c) => c.id === 'iss-sent-in-redirect')) {
-      this.checks.push({
-        id: 'iss-sent-in-redirect',
-        name: 'ISS Sent in Redirect',
-        description:
-          'Client did not reach authorization endpoint — could not verify iss in redirect',
-        status: 'FAILURE',
-        timestamp,
-        specReferences: specRefs
-      });
-    }
+    this.checks.push({
+      id: 'iss-client-accepted-supported',
+      name: 'Client accepts matching iss when advertised',
+      description: this.tokenRequestMade
+        ? 'Client compared advertised iss against recorded issuer and proceeded to token exchange'
+        : 'Client did not proceed to token exchange after receiving a correct iss from a server that advertised support',
+      status: this.tokenRequestMade ? 'SUCCESS' : 'FAILURE',
+      timestamp,
+      specReferences: specRefs,
+      details: { tokenRequestMade: this.tokenRequestMade }
+    });
 
     return this.checks;
   }
@@ -119,9 +93,11 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private tokenRequestMade = false;
 
   async start(): Promise<ScenarioUrls> {
     this.checks = [];
+    this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -129,25 +105,9 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'omit',
-      onAuthorizationRequest: ({ timestamp }) => {
-        this.checks.push({
-          id: 'iss-not-advertised-in-metadata',
-          name: 'ISS Parameter Not Advertised',
-          description:
-            'Client accepted authorization response from server that does not advertise iss parameter support',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: specRefs
-        });
-        this.checks.push({
-          id: 'iss-not-sent-in-redirect',
-          name: 'ISS Not Sent in Redirect',
-          description:
-            'Client accepted authorization response that does not include an iss parameter',
-          status: 'SUCCESS',
-          timestamp,
-          specReferences: specRefs
-        });
+      onTokenRequest: () => {
+        this.tokenRequestMade = true;
+        return { token: `test-token-${Date.now()}`, scopes: [] };
       }
     });
     await this.authServer.start(authApp);
@@ -171,29 +131,17 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'iss-not-advertised-in-metadata')) {
-      this.checks.push({
-        id: 'iss-not-advertised-in-metadata',
-        name: 'ISS Parameter Not Advertised',
-        description:
-          'Client did not reach authorization endpoint — could not verify iss-absent handling',
-        status: 'FAILURE',
-        timestamp,
-        specReferences: specRefs
-      });
-    }
-
-    if (!this.checks.some((c) => c.id === 'iss-not-sent-in-redirect')) {
-      this.checks.push({
-        id: 'iss-not-sent-in-redirect',
-        name: 'ISS Not Sent in Redirect',
-        description:
-          'Client did not reach authorization endpoint — could not verify absent iss handling',
-        status: 'FAILURE',
-        timestamp,
-        specReferences: specRefs
-      });
-    }
+    this.checks.push({
+      id: 'iss-client-proceed-no-iss',
+      name: 'Client proceeds when iss absent and not advertised',
+      description: this.tokenRequestMade
+        ? 'Client proceeded to token exchange when neither metadata advertised iss support nor redirect contained iss'
+        : 'Client did not proceed to token exchange — should proceed when iss is absent and not advertised',
+      status: this.tokenRequestMade ? 'SUCCESS' : 'FAILURE',
+      timestamp,
+      specReferences: specRefs,
+      details: { tokenRequestMade: this.tokenRequestMade }
+    });
 
     return this.checks;
   }
