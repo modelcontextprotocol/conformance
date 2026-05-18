@@ -28,6 +28,7 @@ import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
 } from './offline-access';
+import { AuthorizationServerMigrationScenario } from './authorization-server-migration';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -61,5 +62,6 @@ export const extensionScenariosList: Scenario[] = [
 export const draftScenariosList: Scenario[] = [
   new ResourceMismatchScenario(),
   new OfflineAccessScopeScenario(),
-  new OfflineAccessNotSupportedScenario()
+  new OfflineAccessNotSupportedScenario(),
+  new AuthorizationServerMigrationScenario()
 ];

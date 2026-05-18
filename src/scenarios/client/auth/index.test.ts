@@ -14,6 +14,7 @@ import { runClient as partialScopesClient } from '../../../../examples/clients/t
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
+import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -29,7 +30,10 @@ const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
   'auth/scope-retry-limit',
   // Client is expected to error when PRM resource doesn't match server URL
-  'auth/resource-mismatch'
+  'auth/resource-mismatch',
+  // The post-migration retry path may surface as a client error after
+  // re-registering; the SEP-2352 checks are evaluated in getChecks()
+  'auth/authorization-server-migration'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -133,6 +137,22 @@ describe('Negative tests', () => {
       expectedFailureSlugs: ['scope-retry-limit'],
       allowClientError: true
     });
+  });
+
+  test('client reuses credentials across authorization servers (SEP-2352)', async () => {
+    const runner = new InlineClientRunner(reuseCredsClient);
+    await runClientAgainstScenario(
+      runner,
+      'auth/authorization-server-migration',
+      {
+        allowClientError: true,
+        expectedFailureSlugs: [
+          'sep-2352-reregister-on-as-change',
+          'sep-2352-no-reuse-on-as-change',
+          'sep-2352-no-cross-as-credential-reuse'
+        ]
+      }
+    );
   });
 
   test('client does not use PKCE', async () => {

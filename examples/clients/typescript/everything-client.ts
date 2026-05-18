@@ -22,6 +22,11 @@ import {
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import {
+  auth,
+  extractWWWAuthenticateParams
+} from '@modelcontextprotocol/sdk/client/auth.js';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
   withOAuthRetry,
   withOAuthRetryWithProvider,
   handle401
@@ -153,6 +158,73 @@ registerScenarios(
   ],
   runAuthClient
 );
+
+// SEP-2352: a well-behaved client keys credentials by issuer. Before each
+// (re-)authorization, fetch PRM and rebind the provider; bindIssuer clears
+// stale credentials when authorization_servers has changed so the SDK
+// re-registers instead of presenting the previous AS's client_id.
+async function runAuthMigrationClient(serverUrl: string): Promise<void> {
+  const provider = new ConformanceOAuthProvider(
+    'http://localhost:3000/callback',
+    {
+      client_name: 'auth-migration-client',
+      redirect_uris: ['http://localhost:3000/callback'],
+      application_type: 'native'
+    }
+  );
+
+  const issuerAware401: typeof handle401 = async (
+    response,
+    p,
+    next,
+    sUrl
+  ): Promise<void> => {
+    const { resourceMetadataUrl, scope } =
+      extractWWWAuthenticateParams(response);
+    if (resourceMetadataUrl) {
+      const prm = await (await next(resourceMetadataUrl)).json();
+      const issuer = Array.isArray(prm?.authorization_servers)
+        ? prm.authorization_servers[0]
+        : undefined;
+      if (issuer) p.bindIssuer(issuer);
+    }
+    let result = await auth(p, {
+      serverUrl: sUrl,
+      resourceMetadataUrl,
+      scope,
+      fetchFn: next as FetchLike
+    });
+    if (result === 'REDIRECT') {
+      const code = await p.getAuthCode();
+      result = await auth(p, {
+        serverUrl: sUrl,
+        resourceMetadataUrl,
+        scope,
+        authorizationCode: code,
+        fetchFn: next as FetchLike
+      });
+    }
+  };
+
+  const oauthFetch = withOAuthRetryWithProvider(
+    provider,
+    new URL(serverUrl),
+    issuerAware401
+  )(fetch);
+  const client = new Client(
+    { name: 'auth-migration-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+  await client.connect(transport);
+  await client.listTools(); // phase 1: AS₁
+  await client.callTool({ name: 'test-tool', arguments: {} }); // phase 2: AS₂
+  await transport.close();
+}
+
+registerScenario('auth/authorization-server-migration', runAuthMigrationClient);
 
 // ============================================================================
 // Elicitation defaults scenario
