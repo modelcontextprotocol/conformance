@@ -8,16 +8,11 @@
  */
 
 import http from 'http';
-import {
-  Scenario,
-  ScenarioUrls,
-  ConformanceCheck,
-  SpecVersion
-} from '../../types.js';
+import { Scenario, ScenarioUrls, ConformanceCheck } from '../../types.js';
 
 export class SSERetryScenario implements Scenario {
   name = 'sse-retry';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client respects SSE retry field timing and reconnects properly (SEP-1699)';
 

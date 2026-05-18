@@ -2,7 +2,7 @@
  * Tools test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import { connectToServer, NotificationCollector } from './client-helper';
 import {
   CallToolResultSchema,
@@ -90,7 +90,7 @@ export function buildToolsNameFormatCheck(
 
 export class ToolsListScenario implements ClientScenario {
   name = 'tools-list';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test listing available tools.
 
 **Server Implementation Requirements:**
@@ -177,7 +177,7 @@ export class ToolsListScenario implements ClientScenario {
 
 export class ToolsCallSimpleTextScenario implements ClientScenario {
   name = 'tools-call-simple-text';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test calling a tool that returns simple text.
 
 **Server Implementation Requirements:**
@@ -262,7 +262,7 @@ Implement tool \`test_simple_text\` with no arguments that returns:
 
 export class ToolsCallImageScenario implements ClientScenario {
   name = 'tools-call-image';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test calling a tool that returns image content.
 
 **Server Implementation Requirements:**
@@ -350,7 +350,7 @@ Implement tool \`test_image_content\` with no arguments that returns:
 
 export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
   name = 'tools-call-mixed-content';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool returning multiple content types.
 
 **Server Implementation Requirements:**
@@ -451,7 +451,7 @@ Implement tool \`test_multiple_content_types\` with no arguments that returns:
 
 export class ToolsCallWithLoggingScenario implements ClientScenario {
   name = 'tools-call-with-logging';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool that sends log messages during execution.
 
 **Server Implementation Requirements:**
@@ -540,7 +540,7 @@ Implement tool \`test_tool_with_logging\` with no arguments.
 
 export class ToolsCallErrorScenario implements ClientScenario {
   name = 'tools-call-error';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool error reporting.
 
 **Server Implementation Requirements:**
@@ -625,7 +625,7 @@ Implement tool \`test_error_handling\` with no arguments.
 
 export class ToolsCallWithProgressScenario implements ClientScenario {
   name = 'tools-call-with-progress';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool that reports progress notifications.
 
 **Server Implementation Requirements:**
@@ -745,7 +745,7 @@ If no progress token provided, just execute with delays.
 
 export class ToolsCallSamplingScenario implements ClientScenario {
   name = 'tools-call-sampling';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool that requests LLM sampling from client.
 
 **Server Implementation Requirements:**
@@ -873,7 +873,7 @@ Implement tool \`test_sampling\` with argument:
 
 export class ToolsCallElicitationScenario implements ClientScenario {
   name = 'tools-call-elicitation';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test tool that requests user input (elicitation) from client.
 
 **Server Implementation Requirements:**
@@ -1004,7 +1004,7 @@ Implement tool \`test_elicitation\` with argument:
 
 export class ToolsCallAudioScenario implements ClientScenario {
   name = 'tools-call-audio';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test calling a tool that returns audio content.
 
 **Server Implementation Requirements:**
@@ -1099,7 +1099,7 @@ Implement tool \`test_audio_content\` with no arguments that returns:
 
 export class ToolsCallEmbeddedResourceScenario implements ClientScenario {
   name = 'tools-call-embedded-resource';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test calling a tool that returns embedded resource content.
 
 **Server Implementation Requirements:**

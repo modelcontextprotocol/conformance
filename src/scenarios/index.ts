@@ -2,11 +2,12 @@ import {
   Scenario,
   ClientScenario,
   ClientScenarioForAuthorizationServer,
+  ScenarioSource,
   SpecVersion,
+  DatedSpecVersion,
   ScenarioSpecTag,
   DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION
+  DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
@@ -65,6 +66,11 @@ import {
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
 import {
+  HttpHeaderValidationScenario,
+  HttpCustomHeaderServerValidationScenario
+} from './server/http-standard-headers';
+
+import {
   authScenariosList,
   backcompatScenariosList,
   draftScenariosList,
@@ -72,6 +78,12 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+
+import { HttpStandardHeadersScenario } from './client/http-standard-headers';
+import {
+  HttpCustomHeadersScenario,
+  HttpInvalidToolHeadersScenario
+} from './client/http-custom-headers';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -82,7 +94,13 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario()
+  new ServerSSEPollingScenario(),
+
+  // HTTP Standardization (SEP-2243)
+  // Pending until the everything-server fully implements SEP-2243
+  // header validation (case-insensitive names, whitespace trimming, -32001 error code)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario()
 ];
 
 // All client scenarios
@@ -141,7 +159,11 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario(),
 
   // Security scenarios
-  new DNSRebindingProtectionScenario()
+  new DNSRebindingProtectionScenario(),
+
+  // HTTP Standardization scenarios (SEP-2243)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario()
 ];
 
 // Active client scenarios (excludes pending)
@@ -184,7 +206,12 @@ const scenariosList: Scenario[] = [
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,
-  ...extensionScenariosList
+  ...extensionScenariosList,
+
+  // HTTP Standardization scenarios (SEP-2243)
+  new HttpStandardHeadersScenario(),
+  new HttpCustomHeadersScenario(),
+  new HttpInvalidToolHeadersScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -281,31 +308,34 @@ export function resolveSpecVersion(value: string): SpecVersion {
   process.exit(1);
 }
 
-// The draft version selects everything in the latest dated release plus
-// scenarios tagged draft-only, so SEP authors can run the full suite against an
-// SDK tracking the in-progress spec without retagging core scenarios.
+function versionIndex(
+  v: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION
+): number {
+  return ALL_SPEC_VERSIONS.indexOf(v);
+}
+
+// Off-timeline sources (extensions etc.) are never selected by --spec-version.
 function matchesSpecVersion(
-  scenario: { specVersions: ScenarioSpecTag[] },
+  source: ScenarioSource,
   version: SpecVersion
 ): boolean {
-  if (version === DRAFT_PROTOCOL_VERSION) {
-    return (
-      scenario.specVersions.includes(DRAFT_PROTOCOL_VERSION) ||
-      scenario.specVersions.includes(LATEST_SPEC_VERSION)
-    );
-  }
-  return scenario.specVersions.includes(version);
+  if ('extensionId' in source) return false;
+  return (
+    versionIndex(source.introducedIn) <= versionIndex(version) &&
+    (source.removedIn === undefined ||
+      versionIndex(version) < versionIndex(source.removedIn))
+  );
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {
   return scenariosList
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
 export function listClientScenariosForSpec(version: SpecVersion): string[] {
   return allClientScenariosList
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
@@ -313,18 +343,24 @@ export function listClientScenariosForAuthorizationServerForSpec(
   version: SpecVersion
 ): string[] {
   return allClientScenariosListForAuthorizationServer
-    .filter((s) => matchesSpecVersion(s, version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
 export function getScenarioSpecVersions(
   name: string
 ): ScenarioSpecTag[] | undefined {
-  return (
-    scenarios.get(name)?.specVersions ??
-    clientScenarios.get(name)?.specVersions ??
-    clientScenariosForAuthorizationServer.get(name)?.specVersions
-  );
+  const s =
+    scenarios.get(name) ??
+    clientScenarios.get(name) ??
+    clientScenariosForAuthorizationServer.get(name);
+  if (!s) return undefined;
+  if ('extensionId' in s.source) return ['extension'];
+  const result: ScenarioSpecTag[] = [];
+  for (const v of ALL_SPEC_VERSIONS) {
+    if (matchesSpecVersion(s.source, v)) result.push(v);
+  }
+  return result;
 }
 
 export type { SpecVersion, ScenarioSpecTag };

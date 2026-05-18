@@ -45,6 +45,7 @@ import {
   printBaselineResults
 } from './expected-failures';
 import { createTierCheckCommand } from './tier-check';
+import { createNewSepCommand } from './new-sep';
 import packageJson from '../package.json';
 
 // Note on naming: `command` refers to which CLI command is calling this.
@@ -539,6 +540,9 @@ program
 
 // Tier check command
 program.addCommand(createTierCheckCommand());
+
+// New SEP scaffolding command
+program.addCommand(createNewSepCommand());
 
 // List scenarios command
 program

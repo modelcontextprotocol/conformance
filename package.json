@@ -21,7 +21,8 @@
     "tier-check": "node dist/index.js tier-check",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepare": "npm run build"
   },
   "files": [
     "dist"

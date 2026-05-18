@@ -1,86 +1,57 @@
 import { describe, it, expect } from 'vitest';
 import {
   listScenarios,
-  listClientScenarios,
   listScenariosForSpec,
   listDraftScenarios,
   listExtensionScenarios,
   getScenarioSpecVersions,
   resolveSpecVersion,
-  ALL_SPEC_VERSIONS
+  ALL_SPEC_VERSIONS,
+  scenarios
 } from './index';
 import {
   DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION,
-  ScenarioSpecTag
+  LATEST_SPEC_VERSION
 } from '../types';
 
-const ALL_SCENARIO_SPEC_TAGS: ScenarioSpecTag[] = [
-  ...ALL_SPEC_VERSIONS,
-  'extension'
-];
-
 describe('specVersions helpers', () => {
-  it('every Scenario has specVersions', () => {
-    for (const name of listScenarios()) {
-      const versions = getScenarioSpecVersions(name);
-      expect(
-        versions,
-        `scenario "${name}" is missing specVersions`
-      ).toBeDefined();
-      expect(versions!.length).toBeGreaterThan(0);
-      for (const v of versions!) {
-        expect(ALL_SCENARIO_SPEC_TAGS).toContain(v);
-      }
+  // The ScenarioSource union (introducedIn XOR extensionId) is enforced by the
+  // type system; no runtime invariant test is needed.
+
+  it('listScenariosForSpec returns scenarios whose range covers that version', () => {
+    const selected = listScenariosForSpec('2025-06-18');
+    expect(selected.length).toBeGreaterThan(0);
+    for (const name of selected) {
+      const tags = getScenarioSpecVersions(name);
+      expect(tags).toContain('2025-06-18');
     }
   });
 
-  it('every ClientScenario has specVersions', () => {
-    for (const name of listClientScenarios()) {
-      const versions = getScenarioSpecVersions(name);
-      expect(
-        versions,
-        `client scenario "${name}" is missing specVersions`
-      ).toBeDefined();
-      expect(versions!.length).toBeGreaterThan(0);
-      for (const v of versions!) {
-        expect(ALL_SCENARIO_SPEC_TAGS).toContain(v);
+  it('scenarios with removedIn do not appear in versions at or after the cutoff', () => {
+    for (const v of ALL_SPEC_VERSIONS) {
+      const selected = new Set(listScenariosForSpec(v));
+      const vIdx = ALL_SPEC_VERSIONS.indexOf(v);
+      for (const name of listScenarios()) {
+        const src = scenarios.get(name)!.source;
+        if ('extensionId' in src || src.removedIn === undefined) continue;
+        if (vIdx >= ALL_SPEC_VERSIONS.indexOf(src.removedIn)) {
+          expect(
+            selected.has(name),
+            `scenario "${name}" (removedIn ${src.removedIn}) should not appear in --spec-version ${v}`
+          ).toBe(false);
+        }
       }
-    }
-  });
-
-  it('listScenariosForSpec returns scenarios that include that version', () => {
-    const scenarios = listScenariosForSpec('2025-06-18');
-    expect(scenarios.length).toBeGreaterThan(0);
-    for (const name of scenarios) {
-      expect(getScenarioSpecVersions(name)).toContain('2025-06-18');
     }
   });
 
   it('2025-11-25 includes scenarios carried forward from 2025-06-18', () => {
     const base = listScenariosForSpec('2025-06-18');
     const current = listScenariosForSpec('2025-11-25');
-    // scenarios tagged with both versions should appear in both lists
     const currentSet = new Set(current);
-    // at least some overlap (carried-forward scenarios)
     const overlap = base.filter((s) => currentSet.has(s));
     expect(overlap.length).toBeGreaterThan(0);
-    // current should have more total (new 2025-11-25-only scenarios)
     expect(current.length).toBeGreaterThan(overlap.length);
-  });
-
-  it('2025-11-25 does not include 2025-03-26-only scenarios', () => {
-    const backcompat = listScenariosForSpec('2025-03-26');
-    const current = listScenariosForSpec('2025-11-25');
-    const currentSet = new Set(current);
-    // backcompat-only scenarios should not appear in 2025-11-25
-    for (const name of backcompat) {
-      const versions = getScenarioSpecVersions(name)!;
-      if (!versions.includes('2025-11-25')) {
-        expect(currentSet.has(name)).toBe(false);
-      }
-    }
   });
 
   it('the draft spec version is a superset of the latest dated release', () => {
@@ -94,14 +65,14 @@ describe('specVersions helpers', () => {
     }
   });
 
-  it('draft-tagged scenarios are not also tagged with a dated version', () => {
+  it('draft-introduced scenarios are not matched by any dated spec version', () => {
     for (const name of listDraftScenarios()) {
-      const versions = getScenarioSpecVersions(name)!;
       for (const dated of DATED_SPEC_VERSIONS) {
+        const selected = new Set(listScenariosForSpec(dated));
         expect(
-          versions,
-          `scenario "${name}" is tagged with both DRAFT_PROTOCOL_VERSION and '${dated}'`
-        ).not.toContain(dated);
+          selected.has(name),
+          `draft scenario "${name}" should not appear in --spec-version ${dated}`
+        ).toBe(false);
       }
     }
   });

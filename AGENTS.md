@@ -71,6 +71,16 @@ Verify requirement levels against the SEP's **spec diff** — the change to `doc
 gh api "repos/modelcontextprotocol/modelcontextprotocol/contents/docs/specification/draft/<path>?ref=<sep-branch>" --jq '.content' | base64 -d
 ```
 
+### Adding a new SEP
+
+Scaffold the requirement-traceability YAML with:
+
+```sh
+npx @modelcontextprotocol/conformance new-sep <NNNN>
+```
+
+The command looks up PR #`<NNNN>` in `modelcontextprotocol/modelcontextprotocol` (SEP numbers are PR numbers), derives `spec_url` from the `docs/specification/draft/*.mdx` file it changes, and writes `src/seps/sep-<NNNN>.yaml` with TODO `requirements[]` rows. Use `--spec-path` or `--spec-url` to skip the lookup. The `new-sep` Claude Code skill drives the same flow end-to-end, parses the spec diff, and fills in the requirement rows.
+
 ## Examples: prove it passes and fails
 
 A new scenario should come with:

@@ -2,7 +2,7 @@
  * Lifecycle test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import { connectToServer } from './client-helper';
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
@@ -16,7 +16,7 @@ const SESSION_SPEC_REFERENCES = [
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = `Test basic server initialization handshake.
 
 **Server Implementation Requirements:**

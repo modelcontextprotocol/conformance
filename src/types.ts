@@ -58,6 +58,29 @@ export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 // (selectable via --suite extensions, never via --spec-version). See #256.
 export type ScenarioSpecTag = SpecVersion | 'extension';
 
+/**
+ * Known protocol extensions that this suite has scenarios for.
+ * Values are SEP-2133 extension identifiers (the keys used in
+ * `capabilities.extensions`).
+ */
+export const EXTENSION_IDS = [
+  'io.modelcontextprotocol/oauth-client-credentials',
+  'io.modelcontextprotocol/enterprise-managed-authorization'
+] as const;
+export type ExtensionId = (typeof EXTENSION_IDS)[number];
+
+/**
+ * Where a scenario's requirement comes from. Either the dated spec timeline
+ * (`introducedIn`/`removedIn`) or a named protocol extension that lives
+ * outside the spec release cycle. Extensions never match `--spec-version`.
+ */
+export type ScenarioSource =
+  | {
+      introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+      removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
+    }
+  | { extensionId: ExtensionId };
+
 export interface ScenarioUrls {
   serverUrl: string;
   authUrl?: string;
@@ -71,7 +94,7 @@ export interface ScenarioUrls {
 export interface Scenario {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  source: ScenarioSource;
   /**
    * If true, a non-zero client exit code is expected and will not cause the test to fail.
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
@@ -85,13 +108,13 @@ export interface Scenario {
 export interface ClientScenario {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  source: ScenarioSource;
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {
   name: string;
   description: string;
-  specVersions: ScenarioSpecTag[];
+  source: ScenarioSource;
   run(serverUrl: string): Promise<ConformanceCheck[]>;
 }
