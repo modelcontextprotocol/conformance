@@ -386,6 +386,25 @@ export function createAuthServer(
       }
     });
 
+    // SEP-837: clients MUST specify an appropriate application_type during DCR.
+    // The harness can't know the client's real class (native vs web), so this
+    // checks presence + that the value is one of the two OIDC-defined values.
+    const appType = req.body.application_type;
+    const validAppType = appType === 'native' || appType === 'web';
+    checks.push({
+      id: 'sep-837-application-type-present',
+      name: 'DCR application_type specified',
+      description: validAppType
+        ? `Client specified application_type "${appType}" during Dynamic Client Registration`
+        : appType === undefined
+          ? 'Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); field was omitted'
+          : `Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); got "${appType}", expected "native" or "web"`,
+      status: validAppType ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      specReferences: [SpecReferences.MCP_DCR],
+      details: { application_type: appType ?? '(omitted)' }
+    });
+
     res.status(201).json({
       client_id: clientId,
       ...(clientSecret && { client_secret: clientSecret }),

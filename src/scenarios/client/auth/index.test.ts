@@ -14,6 +14,7 @@ import { runClient as partialScopesClient } from '../../../../examples/clients/t
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
+import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -132,6 +133,13 @@ describe('Negative tests', () => {
     await runClientAgainstScenario(runner, 'auth/scope-retry-limit', {
       expectedFailureSlugs: ['scope-retry-limit'],
       allowClientError: true
+    });
+  });
+
+  test('client omits application_type during DCR (SEP-837)', async () => {
+    const runner = new InlineClientRunner(noAppTypeClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      expectedFailureSlugs: ['sep-837-application-type-present']
     });
   });
 
