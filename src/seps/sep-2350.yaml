@@ -1,0 +1,11 @@
+sep: 2350
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/authorization#runtime-insufficient-scope-errors
+requirements:
+  - check: sep-2350-scope-union-on-reauth
+    text: 'When re-authorizing, clients SHOULD include these scopes alongside any previously granted scopes to avoid losing permissions needed for other operations. / Clients SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements
+  - check: sep-2350-server-single-challenge
+    text: 'Regardless of the approach chosen, servers SHOULD include all scopes required for the current operation in a single challenge.'
+
+  - text: 'When responding with insufficient scope errors, servers SHOULD include the scopes needed to satisfy the current operation in the scope parameter, consistent with RFC 6750 Section 3.1.'
+    excluded: 'reword of pre-existing requirement (request->operation, +RFC6750 cite); no normative delta; harness already emits scope= in WWW-Authenticate'
