@@ -70,7 +70,10 @@ export const withOAuthRetry = (
     'http://localhost:3000/callback',
     {
       client_name: clientName,
-      redirect_uris: ['http://localhost:3000/callback']
+      redirect_uris: ['http://localhost:3000/callback'],
+      // SEP-837: the conformance example clients are CLI tools, i.e. native
+      // applications under the OIDC client-type taxonomy.
+      application_type: 'native'
     },
     clientMetadataUrl
   );

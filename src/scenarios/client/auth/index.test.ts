@@ -15,6 +15,7 @@ import { runClient as ignore403Client } from '../../../../examples/clients/types
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
 import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
+import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -153,6 +154,13 @@ describe('Negative tests', () => {
         ]
       }
     );
+  });
+
+  test('client omits application_type during DCR (SEP-837)', async () => {
+    const runner = new InlineClientRunner(noAppTypeClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      expectedFailureSlugs: ['sep-837-application-type-present']
+    });
   });
 
   test('client does not use PKCE', async () => {

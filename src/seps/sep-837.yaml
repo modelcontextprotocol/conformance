@@ -1,0 +1,14 @@
+sep: 837
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/authorization#application-type-and-redirect-uri-constraints
+requirements:
+  - check: sep-837-application-type-present
+    text: 'MCP clients MUST specify an appropriate application_type during Dynamic Client Registration.'
+
+  - text: 'Native applications (desktop applications, mobile apps, CLI tools, and locally-hosted web applications accessed via localhost) SHOULD use application_type: "native".'
+    excluded: 'harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable'
+  - text: 'Web applications (remote browser-based applications served from a non-local host) SHOULD use application_type: "web".'
+    excluded: 'harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable'
+  - text: 'MCP clients MUST be prepared to handle registration failures due to redirect URI constraints when authorization servers implement OIDC.'
+    excluded: 'robustness requirement with no defined wire-level success criterion'
+  - text: 'When a registration request is rejected, clients SHOULD surface a meaningful error to the user or developer.'
+    excluded: 'UI/DX behavior, not protocol-observable'
