@@ -4,11 +4,28 @@ import type { SdkConfig } from './config';
  * Built-in conformance configs for official SDKs, keyed by repo name.
  *
  * These live here (not in the SDK repos) so adding an SDK to the matrix
- * doesn't require a coordinated cross-repo PR. An SDK can still ship a
- * conformance.config.yaml at its root to override these — see resolveConfig.
+ * doesn't require a coordinated cross-repo PR. Any field can be overridden
+ * per-invocation via the CLI flags (--build-cmd / --client-cmd / etc.).
  */
 export const KNOWN_SDKS: Record<string, SdkConfig> = {
+  // v2 — the monorepo on `main` (pnpm). Default ref is `main`.
   'typescript-sdk': {
+    build: 'pnpm install && pnpm run build:all',
+    client: {
+      command: 'npx tsx test/conformance/src/everythingClient.ts'
+    },
+    server: {
+      command: 'npx tsx test/conformance/src/everythingServer.ts',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: 'test/conformance/expected-failures.yaml'
+  },
+  // v1.x — the published npm line. Same fixtures as v2; differs only in the
+  // build (npm, not pnpm) and the baseline filename. Clones the typescript-sdk
+  // repo, defaulting to the `v1.x` branch.
+  'typescript-sdk-v1': {
+    repo: 'typescript-sdk',
+    defaultRef: 'v1.x',
     build: 'npm ci && npm run build',
     client: {
       command: 'npx tsx test/conformance/src/everythingClient.ts'

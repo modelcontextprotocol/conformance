@@ -7,14 +7,27 @@ export interface SdkSpec {
   ref: string;
 }
 
+/**
+ * A parsed `<name>[@<ref>]` argument. `ref` is left undefined when the user
+ * omits `@<ref>` so the caller can fall back to a per-SDK default branch
+ * (KNOWN_SDKS `defaultRef`) before settling on `main`.
+ */
+export interface ParsedSdkSpec {
+  name: string;
+  ref?: string;
+}
+
 const DEFAULT_ORG = 'modelcontextprotocol';
 
-export function parseSdkSpec(spec: string): SdkSpec {
+export function parseSdkSpec(spec: string): ParsedSdkSpec {
   const at = spec.lastIndexOf('@');
   if (at <= 0) {
-    return { name: spec, ref: 'main' };
+    return { name: spec };
   }
-  return { name: spec.slice(0, at), ref: spec.slice(at + 1) };
+  // A trailing `@` (empty ref) is treated as "no ref given" so the caller's
+  // defaultRef/main fallback applies, rather than checking out the empty ref.
+  const ref = spec.slice(at + 1);
+  return ref ? { name: spec.slice(0, at), ref } : { name: spec.slice(0, at) };
 }
 
 function repoUrl(name: string): string {
@@ -68,16 +81,20 @@ export async function ensureCheckout(
   spec: SdkSpec,
   cacheDir: string
 ): Promise<string> {
-  await fs.mkdir(cacheDir, { recursive: true });
   const safeName = spec.name.replace('/', '__');
-  const dir = path.resolve(cacheDir, safeName);
+  // Key the checkout by ref as well, so different refs of the same repo (e.g.
+  // the typescript-sdk `main` and typescript-sdk-v1 `v1.x` entries) get their
+  // own directory instead of thrashing one checkout between refs/build systems.
+  const safeRef = spec.ref.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const dir = path.resolve(cacheDir, safeName, safeRef);
+  await fs.mkdir(path.dirname(dir), { recursive: true });
 
   if (await dirExists(path.join(dir, '.git'))) {
     console.error(`[sdk] Fetching ${spec.name} (cached at ${dir})`);
     await git(['fetch', '--tags', 'origin'], dir);
   } else {
     console.error(`[sdk] Cloning ${repoUrl(spec.name)} -> ${dir}`);
-    await git(['clone', repoUrl(spec.name), dir], cacheDir);
+    await git(['clone', repoUrl(spec.name), dir], path.dirname(dir));
   }
 
   // Try the ref as a remote branch first, then fall back to a local-resolvable

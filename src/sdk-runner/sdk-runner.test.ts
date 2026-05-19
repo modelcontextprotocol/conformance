@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { promises as fs } from 'fs';
-import os from 'os';
-import path from 'path';
 import { parseSdkSpec } from './checkout';
-import { loadSdkConfig, SdkConfigSchema } from './config';
+import { SdkConfigSchema } from './config';
 import { lookupBuiltinConfig, KNOWN_SDKS } from './known-sdks';
 
 describe('parseSdkSpec', () => {
-  it('defaults ref to main when omitted', () => {
+  it('leaves ref undefined when omitted (resolved later via defaultRef/main)', () => {
     expect(parseSdkSpec('typescript-sdk')).toEqual({
-      name: 'typescript-sdk',
-      ref: 'main'
+      name: 'typescript-sdk'
     });
   });
 
@@ -30,9 +26,12 @@ describe('parseSdkSpec', () => {
 
   it('treats leading @ as part of the name', () => {
     expect(parseSdkSpec('@scope/pkg')).toEqual({
-      name: '@scope/pkg',
-      ref: 'main'
+      name: '@scope/pkg'
     });
+  });
+
+  it('treats a trailing @ as no ref (falls through to defaultRef/main)', () => {
+    expect(parseSdkSpec('typescript-sdk@')).toEqual({ name: 'typescript-sdk' });
   });
 });
 
@@ -52,47 +51,6 @@ describe('SdkConfigSchema', () => {
   });
 });
 
-describe('loadSdkConfig', () => {
-  it('loads conformance.config.yaml from a directory', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-cfg-'));
-    try {
-      await fs.writeFile(
-        path.join(dir, 'conformance.config.yaml'),
-        [
-          'build: npm ci && npm run build',
-          'client:',
-          '  command: tsx test/client.ts',
-          'server:',
-          '  command: tsx test/server.ts',
-          '  url: http://localhost:3000/mcp',
-          'expectedFailures: baseline.yml'
-        ].join('\n')
-      );
-      const cfg = await loadSdkConfig(dir);
-      expect(cfg).toEqual({
-        build: 'npm ci && npm run build',
-        client: { command: 'tsx test/client.ts' },
-        server: {
-          command: 'tsx test/server.ts',
-          url: 'http://localhost:3000/mcp'
-        },
-        expectedFailures: 'baseline.yml'
-      });
-    } finally {
-      await fs.rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('returns null when no config file is present', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-cfg-'));
-    try {
-      expect(await loadSdkConfig(dir)).toBeNull();
-    } finally {
-      await fs.rm(dir, { recursive: true, force: true });
-    }
-  });
-});
-
 describe('lookupBuiltinConfig', () => {
   it('finds an SDK by bare name', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.client?.command).toBeTruthy();
@@ -109,6 +67,16 @@ describe('lookupBuiltinConfig', () => {
 
   it('returns null for unknown SDKs', () => {
     expect(lookupBuiltinConfig('rust-sdk')).toBeNull();
+  });
+
+  it('exposes the typescript-sdk-v1 alias with repo + defaultRef', () => {
+    const v1 = lookupBuiltinConfig('typescript-sdk-v1');
+    expect(v1?.repo).toBe('typescript-sdk');
+    expect(v1?.defaultRef).toBe('v1.x');
+  });
+
+  it('bare typescript-sdk (v2) has no defaultRef', () => {
+    expect(lookupBuiltinConfig('typescript-sdk')?.defaultRef).toBeUndefined();
   });
 
   it('every built-in entry validates against SdkConfigSchema', () => {

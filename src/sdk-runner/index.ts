@@ -1,12 +1,11 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { Command, Option } from 'commander';
-import { ZodError } from 'zod';
-import { loadSdkConfig, SdkConfig } from './config';
+import { SdkConfig } from './config';
 import { parseSdkSpec, ensureCheckout } from './checkout';
 import { lookupBuiltinConfig, knownSdkNames } from './known-sdks';
 
-type Mode = 'client' | 'server' | 'both';
+type Mode = 'client' | 'server';
 
 function execShell(command: string, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -38,10 +37,16 @@ function selfInvoke(args: string[], cwd: string): Promise<number> {
 
 async function waitForReady(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  // Per-probe timeout: a server that accepts the socket but never responds must
+  // not block past the overall deadline (fetch has no timeout of its own).
+  const probeTimeoutMs = 2000;
   let lastErr: unknown;
   while (Date.now() < deadline) {
     try {
-      await fetch(url, { method: 'GET' });
+      await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(probeTimeoutMs)
+      });
       return;
     } catch (err) {
       lastErr = err;
@@ -143,9 +148,10 @@ export function createSdkCommand(): Command {
       '.sdk-under-test'
     )
     .addOption(
-      new Option('--mode <mode>', 'Which side to test')
-        .choices(['client', 'server', 'both'])
-        .default('both')
+      new Option(
+        '--mode <mode>',
+        'Which side to test (required): client or server'
+      ).choices(['client', 'server'])
     )
     .option('--scenario <name>', 'Run a single scenario (passed through)')
     .option('--suite <name>', 'Run a suite (passed through)')
@@ -159,11 +165,9 @@ export function createSdkCommand(): Command {
     .option('--verbose', 'Verbose output (passed through)')
     .action(async (sdkArg: string | undefined, options) => {
       try {
-        const mode = options.mode as Mode;
-        if (options.scenario && mode === 'both') {
-          throw new Error(
-            `--scenario requires --mode client or --mode server (a scenario belongs to exactly one side)`
-          );
+        const mode = options.mode as Mode | undefined;
+        if (!mode) {
+          throw new Error(`--mode is required (client | server)`);
         }
         if (!sdkArg && !options.path) {
           throw new Error(
@@ -172,30 +176,32 @@ export function createSdkCommand(): Command {
         }
 
         const spec = sdkArg ? parseSdkSpec(sdkArg) : undefined;
+        const sdkName =
+          spec?.name ?? path.basename(path.resolve(options.path!));
+
+        // Resolution: CLI flag > built-in entry (KNOWN_SDKS).
+        const builtinConfig: SdkConfig = lookupBuiltinConfig(sdkName) ?? {};
+
+        // The built-in entry may be an alias (e.g. typescript-sdk-v1): honor its
+        // `repo` (real clone target) and `defaultRef` (branch when no @ref given).
         const dir = options.path
           ? path.resolve(options.path)
-          : await ensureCheckout(spec!, options.cacheDir);
-        const sdkName = spec?.name ?? path.basename(dir);
-
-        // Resolution: CLI flag > config file in SDK checkout > built-in.
-        const fileConfig: SdkConfig = (await loadSdkConfig(dir)) ?? {};
-        const builtinConfig: SdkConfig = lookupBuiltinConfig(sdkName) ?? {};
+          : await ensureCheckout(
+              {
+                name: builtinConfig.repo ?? spec!.name,
+                ref: spec!.ref ?? builtinConfig.defaultRef ?? 'main'
+              },
+              options.cacheDir
+            );
         const buildCmd: string | undefined =
-          options.buildCmd ?? fileConfig.build ?? builtinConfig.build;
+          options.buildCmd ?? builtinConfig.build;
         const clientCmd: string | undefined =
-          options.clientCmd ??
-          fileConfig.client?.command ??
-          builtinConfig.client?.command;
+          options.clientCmd ?? builtinConfig.client?.command;
         const serverCmd: string | undefined =
-          options.serverCmd ??
-          fileConfig.server?.command ??
-          builtinConfig.server?.command;
+          options.serverCmd ?? builtinConfig.server?.command;
         const serverUrl: string | undefined =
-          options.serverUrl ??
-          fileConfig.server?.url ??
-          builtinConfig.server?.url;
-        const expectedFailuresRel =
-          fileConfig.expectedFailures ?? builtinConfig.expectedFailures;
+          options.serverUrl ?? builtinConfig.server?.url;
+        const expectedFailuresRel = builtinConfig.expectedFailures;
         const expectedFailures = expectedFailuresRel
           ? path.resolve(dir, expectedFailuresRel)
           : undefined;
@@ -209,9 +215,9 @@ export function createSdkCommand(): Command {
           );
         }
 
-        let exitCode = 0;
+        let exitCode: number;
 
-        if (mode === 'client' || mode === 'both') {
+        if (mode === 'client') {
           if (!clientCmd) {
             throw new Error(
               `No client command for '${sdkName}'. Pass --client-cmd, or add it to KNOWN_SDKS in src/sdk-runner/known-sdks.ts (known: ${knownSdkNames().join(', ')}).`
@@ -232,10 +238,8 @@ export function createSdkCommand(): Command {
           if (expectedFailures)
             args.push('--expected-failures', expectedFailures);
           console.error(`\n[sdk] conformance ${args.join(' ')}\n`);
-          exitCode ||= await selfInvoke(args, dir);
-        }
-
-        if (mode === 'server' || mode === 'both') {
+          exitCode = await selfInvoke(args, dir);
+        } else {
           if (!serverCmd || !serverUrl) {
             throw new Error(
               `No server command/url for '${sdkName}'. Pass --server-cmd / --server-url, or add it to KNOWN_SDKS in src/sdk-runner/known-sdks.ts (known: ${knownSdkNames().join(', ')}).`
@@ -254,13 +258,11 @@ export function createSdkCommand(): Command {
           ];
           if (expectedFailures)
             args.push('--expected-failures', expectedFailures);
-          exitCode ||= await withManagedServer(
+          exitCode = await withManagedServer(
             serverCmd,
             dir,
             serverUrl,
-            fileConfig.server?.readyTimeoutMs ??
-              builtinConfig.server?.readyTimeoutMs ??
-              15000,
+            builtinConfig.server?.readyTimeoutMs ?? 15000,
             async () => {
               console.error(`\n[sdk] conformance ${args.join(' ')}\n`);
               return selfInvoke(args, dir);
@@ -270,16 +272,9 @@ export function createSdkCommand(): Command {
 
         process.exit(exitCode);
       } catch (error) {
-        if (error instanceof ZodError) {
-          console.error('Config validation error:');
-          error.issues.forEach((e) =>
-            console.error(`  ${e.path.join('.')}: ${e.message}`)
-          );
-        } else {
-          console.error(
-            `[sdk] ${error instanceof Error ? error.message : String(error)}`
-          );
-        }
+        console.error(
+          `[sdk] ${error instanceof Error ? error.message : String(error)}`
+        );
         process.exit(1);
       }
     });

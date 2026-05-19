@@ -214,24 +214,34 @@ Run `npx @modelcontextprotocol/conformance list --server` to see all available s
 
 The `sdk` subcommand clones an SDK repository at a given ref, builds it, and runs the **local** conformance build against it. This is the inner-loop tool for scenario authors and the basis for cross-SDK CI. Examples below use `npm start --` so they run from source — no `npm run build` between edits.
 
-```bash
-# Clone and run everything against typescript-sdk@main
-npm start -- sdk typescript-sdk@main
+`--mode client` or `--mode server` is required — each invocation tests exactly one side, so client and server are run (and pass/fail) independently.
 
-# Against a specific tag, SHA, or branch
-npm start -- sdk typescript-sdk@v1.29.0
-npm start -- sdk typescript-sdk@abc123f
-npm start -- sdk python-sdk@some-feature-branch
+```bash
+# Run the client conformance suite against typescript-sdk @main (v2)
+npm start -- sdk typescript-sdk --mode client
+
+# Run the server conformance suite (separate invocation)
+npm start -- sdk typescript-sdk --mode server
+
+# A specific main-line SHA or branch (v2 monorepo)
+npm start -- sdk typescript-sdk@abc123f --mode client
+npm start -- sdk typescript-sdk@some-branch --mode server
+
+# The published v1.x line — separate entry (npm build), defaults to the v1.x branch
+npm start -- sdk typescript-sdk-v1 --mode client
+npm start -- sdk typescript-sdk-v1@v1.29.0 --mode server
 
 # Use an existing local checkout (no clone, no fetch)
-npm start -- sdk --path ../typescript-sdk --skip-build
+npm start -- sdk --path ../typescript-sdk --skip-build --mode client
 
-# Narrow to one mode / scenario / suite
+# Narrow to one scenario / suite
 npm start -- sdk --path ../typescript-sdk --mode server --scenario server-initialize
-npm start -- sdk typescript-sdk@main --mode client --suite auth
+npm start -- sdk typescript-sdk --mode client --suite auth
 ```
 
-Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > `conformance.config.yaml` in the SDK checkout (optional override) > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in:
+Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.
+
+An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias). Overriding for a one-off ref:
 
 ```bash
 npm start -- sdk owner/go-sdk@some-branch \
