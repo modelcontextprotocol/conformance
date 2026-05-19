@@ -9,6 +9,10 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-8414-metadata-request',
     url: 'https://www.rfc-editor.org/rfc/rfc8414.html#section-3.1'
   },
+  RFC_AUTH_SERVER_METADATA_VALIDATION: {
+    id: 'RFC-8414-metadata-validation',
+    url: 'https://www.rfc-editor.org/rfc/rfc8414.html#section-3.3'
+  },
   LEGACY_2025_03_26_AUTH_DISCOVERY: {
     id: 'MCP-2025-03-26-Authorization-metadata-discovery',
     url: 'https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization#server-metadata-discovery'

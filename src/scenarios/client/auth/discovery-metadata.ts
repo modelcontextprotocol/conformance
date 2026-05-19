@@ -22,8 +22,8 @@ interface MetadataScenarioConfig {
   prmLocation: string;
   inWwwAuth: boolean;
   oauthMetadataLocation: string;
-  /** Route prefix for the auth server (e.g., '/tenant1') */
-  authRoutePrefix?: string;
+  /** Issuer path component for the auth server (e.g., '/tenant1' for multi-tenant) */
+  authIssuerPath?: string;
   /** If true, add a trap for root PRM requests */
   trapRootPrm?: boolean;
 }
@@ -57,14 +57,14 @@ const SCENARIO_CONFIGS: MetadataScenarioConfig[] = [
     prmLocation: '/.well-known/oauth-protected-resource',
     inWwwAuth: false,
     oauthMetadataLocation: '/.well-known/oauth-authorization-server/tenant1',
-    authRoutePrefix: '/tenant1'
+    authIssuerPath: '/tenant1'
   },
   {
     name: 'metadata-var3',
     prmLocation: '/custom/metadata/location.json',
     inWwwAuth: true,
     oauthMetadataLocation: '/tenant1/.well-known/openid-configuration',
-    authRoutePrefix: '/tenant1'
+    authIssuerPath: '/tenant1'
   }
 ];
 
@@ -76,7 +76,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
   const server = new ServerLifecycle();
   let checks: ConformanceCheck[] = [];
 
-  const routePrefix = config.authRoutePrefix || '';
+  const issuerPath = config.authIssuerPath || '';
   const isOpenIdConfiguration = config.oauthMetadataLocation.includes(
     'openid-configuration'
   );
@@ -100,11 +100,11 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
       const authApp = createAuthServer(checks, authServer.getUrl, {
         metadataPath: config.oauthMetadataLocation,
         isOpenIdConfiguration,
-        ...(routePrefix && { routePrefix })
+        ...(issuerPath && { issuerPath })
       });
 
       // If path-based OAuth metadata, trap root requests
-      if (routePrefix) {
+      if (issuerPath) {
         authApp.get('/.well-known/oauth-authorization-server', (req, res) => {
           checks.push({
             id: 'authorization-server-metadata-wrong-path',
@@ -127,8 +127,8 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
       await authServer.start(authApp);
 
-      const getAuthServerUrl = routePrefix
-        ? () => `${authServer.getUrl()}${routePrefix}`
+      const getAuthServerUrl = issuerPath
+        ? () => `${authServer.getUrl()}${issuerPath}`
         : authServer.getUrl;
 
       const app = createServer(checks, server.getUrl, getAuthServerUrl, {

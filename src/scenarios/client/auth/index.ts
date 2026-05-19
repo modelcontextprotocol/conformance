@@ -22,6 +22,7 @@ import {
   ClientCredentialsBasicScenario
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
+import { IssuerMismatchScenario } from './issuer-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
 import { EnterpriseManagedAuthorizationScenario } from './enterprise-managed-authorization';
 import {
@@ -60,6 +61,7 @@ export const extensionScenariosList: Scenario[] = [
 // Draft scenarios (informational - not scored for tier assessment)
 export const draftScenariosList: Scenario[] = [
   new ResourceMismatchScenario(),
+  new IssuerMismatchScenario(),
   new OfflineAccessScopeScenario(),
   new OfflineAccessNotSupportedScenario()
 ];
