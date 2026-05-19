@@ -3,13 +3,14 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
-  SpecVersion
+  LATEST_SPEC_VERSION,
+  NEGOTIABLE_PROTOCOL_VERSIONS
 } from '../../types';
 import { clientChecks } from '../../checks/index';
 
 export class InitializeScenario implements Scenario {
   name = 'initialize';
-  specVersions: SpecVersion[] = ['2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests MCP client initialization handshake';
 
   private server: http.Server | null = null;
@@ -117,11 +118,10 @@ export class InitializeScenario implements Scenario {
     this.checks.push(clientChecks.createServerInfoCheck(serverInfo));
 
     // Echo back client's version if valid, otherwise use latest
-    const VALID_VERSIONS = ['2025-06-18', '2025-11-25'];
     const clientVersion = initializeRequest?.protocolVersion;
-    const responseVersion = VALID_VERSIONS.includes(clientVersion)
+    const responseVersion = NEGOTIABLE_PROTOCOL_VERSIONS.includes(clientVersion)
       ? clientVersion
-      : '2025-11-25';
+      : LATEST_SPEC_VERSION;
 
     const response = {
       jsonrpc: '2.0',

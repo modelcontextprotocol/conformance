@@ -1,4 +1,5 @@
 import { TierScorecard, CheckStatus, ConformanceResult } from './types';
+import { DATED_SPEC_VERSIONS, DRAFT_PROTOCOL_VERSION } from '../types';
 
 const COLORS = {
   RESET: '\x1b[0m',
@@ -23,9 +24,9 @@ function statusIcon(status: CheckStatus): string {
   }
 }
 
-const TIER_SPEC_VERSIONS = ['2025-03-26', '2025-06-18', '2025-11-25'] as const;
+const TIER_SPEC_VERSIONS = DATED_SPEC_VERSIONS;
 
-const INFO_SPEC_VERSIONS = ['draft', 'extension'] as const;
+const INFO_SPEC_VERSIONS = [DRAFT_PROTOCOL_VERSION, 'extension'] as const;
 
 type Cell = { passed: number; total: number };
 
@@ -121,8 +122,7 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push('');
   lines.push('## Check Results');
   lines.push('');
-  lines.push('| Check | Status | Detail |');
-  lines.push('|-------|--------|--------|');
+
   // Conformance matrix
   const matrix = buildConformanceMatrix(
     c.conformance as ConformanceResult,
@@ -176,6 +176,8 @@ export function formatMarkdown(scorecard: TierScorecard): string {
     }
   }
   lines.push('');
+  lines.push('| Check | Status | Detail |');
+  lines.push('|-------|--------|--------|');
   lines.push(
     `| Labels | ${c.labels.status} | ${c.labels.present}/${c.labels.required} required labels${c.labels.missing.length > 0 ? ` (missing: ${c.labels.missing.join(', ')})` : ''} |`
   );

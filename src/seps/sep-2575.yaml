@@ -1,0 +1,104 @@
+sep: 2575
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/lifecycle
+requirements:
+  - check: sep-2575-client-populates-meta
+    text: 'Every client request MUST include the following io.modelcontextprotocol/* fields in _meta: protocolVersion, clientInfo, clientCapabilities.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#meta
+  - check: sep-2575-server-rejects-undeclared-capability
+    text: 'A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32003).'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#meta
+  - check: sep-2575-missing-capability-http-400
+    text: 'On HTTP, the response status MUST be 400 Bad Request [for MissingRequiredClientCapabilityError].'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#meta
+  - check: sep-2575-server-tags-subscription-id
+    text: 'On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#meta
+  - check: sep-2575-server-stateless-no-prior-context
+    text: 'A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).'
+  - check: sep-2575-server-stateless-no-connection-reuse-required
+    text: 'Servers MUST NOT require that a client reuse the same connection to perform related operations.'
+  - check: sep-2575-server-unsupported-version-error
+    text: 'If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation
+  - check: sep-2575-client-retry-supported-version
+    text: 'The client SHOULD select a mutually supported version from the supported list and retry the request, or surface an error to the user if no compatible version exists.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation
+  - check: sep-2575-server-implements-discover
+    text: 'Servers MUST implement server/discover.'
+    url: https://modelcontextprotocol.io/specification/draft/server/discover
+  - check: sep-2575-http-server-no-independent-requests-on-stream
+    text: 'The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#receiving-messages-1
+  - check: sep-2575-http-server-disconnect-is-cancel
+    text: 'Closing the SSE response stream MUST be treated by the server as cancellation of that request.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
+  - check: sep-2575-http-server-stops-on-cancel
+    text: 'The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
+  - check: sep-2575-http-client-sends-version-header
+    text: 'Every POST request to the MCP endpoint MUST include an MCP-Protocol-Version header.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-http-version-header-matches-meta
+    text: 'The header value MUST match the io.modelcontextprotocol/protocolVersion field carried in the request body _meta.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-http-server-header-mismatch-400
+    text: 'If the values do not match, the server MUST reject the request with 400 Bad Request and a HeaderMismatch JSON-RPC error.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-http-server-unsupported-version-400
+    text: 'If the server does not implement the requested protocol version, it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-http-server-method-not-found-404
+    text: 'If the server does not implement the requested RPC method, it MUST respond with 404 Not Found and a JSON-RPC error with code -32601 (Method not found).'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-server-honors-notification-filter
+    text: 'The server MUST NOT send notification types the client has not explicitly requested.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#opening-a-stream
+  - check: sep-2575-server-sends-subscription-ack
+    text: 'The server MUST send notifications/subscriptions/acknowledged as the first message on the stream.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#acknowledgment
+  - check: sep-2575-client-declares-elicitation-capability
+    text: 'Clients that support elicitation MUST declare the elicitation capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.'
+    url: https://modelcontextprotocol.io/specification/draft/client/elicitation#capabilities
+  - check: sep-2575-client-declares-roots-capability
+    text: 'Clients that support roots MUST declare the roots capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.'
+    url: https://modelcontextprotocol.io/specification/draft/client/roots#capabilities
+  - check: sep-2575-client-declares-sampling-capability
+    text: 'Clients that support sampling MUST declare the sampling capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.'
+    url: https://modelcontextprotocol.io/specification/draft/client/sampling#capabilities
+  - check: sep-2575-server-declares-prompts-in-discover
+    text: 'Servers that support prompts MUST declare the prompts capability in their DiscoverResult.'
+    url: https://modelcontextprotocol.io/specification/draft/server/prompts#capabilities
+  - check: sep-2575-server-sends-prompts-list-changed-on-subscription
+    text: '[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with promptsListChanged: true.'
+    url: https://modelcontextprotocol.io/specification/draft/server/prompts#list-changed-notification
+  - check: sep-2575-server-sends-tools-list-changed-on-subscription
+    text: '[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with toolsListChanged: true.'
+    url: https://modelcontextprotocol.io/specification/draft/server/tools#list-changed-notification
+  - check: sep-2575-server-no-log-without-loglevel
+    text: 'The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].'
+    url: https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level
+
+  - text: 'State that needs to span multiple requests (e.g., long-running tasks, application-level handles) MUST be referenced by an explicit identifier the client passes on each request.'
+    excluded: 'architectural guidance, observable only via subscriptionId/task-id rows already listed'
+  - text: 'To distinguish notifications belonging to different concurrent subscriptions, clients MUST correlate notifications using the io.modelcontextprotocol/subscriptionId field carried in _meta.'
+    excluded: 'client-internal demux; not observable on the wire from the harness'
+  - text: 'The client SHOULD check the acknowledged filter against what it requested and handle any unsupported types gracefully.'
+    excluded: 'internal comparison; "gracefully" has no wire-observable definition'
+  - text: 'Because there is no per-request status code to drive fallback, a client that supports both eras SHOULD probe with server/discover first [stdio backward compatibility].'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/lifecycle#backward-compatibility-with-initialization-based-versions
+  - text: 'To cancel an in-flight request [on stdio], the client MUST send a notifications/cancelled notification referencing the request ID.'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation
+  - text: 'Servers SHOULD stop work on a cancelled request as soon as practical and MUST NOT send any further messages for it [stdio].'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation
+  - text: 'If the server process exits unexpectedly, the client SHOULD restart it.'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#unexpected-termination
+  - text: 'If the server returns UnsupportedProtocolVersionError, [the stdio client] SHOULD retry using one of the advertised supportedVersions rather than falling back to initialize.'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#backward-compatibility
+  - text: 'On stdio, if the connection is terminated and then re-established, the client MUST re-send subscriptions/listen to re-establish its subscriptions.'
+    excluded: 'stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258'
+    url: https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#cancellation

@@ -1,12 +1,7 @@
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import express, { type Request, type Response } from 'express';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
@@ -53,16 +48,18 @@ async function createIdpIdToken(
 }
 
 /**
- * Scenario: Complete Cross-App Access Flow
+ * Scenario: Enterprise-Managed Authorization (SEP-990)
  *
  * Tests the complete SEP-990 flow: IDP ID token -> authorization grant -> access token
  * This scenario combines both RFC 8693 token exchange and RFC 7523 JWT bearer grant.
  */
-export class CrossAppAccessCompleteFlowScenario implements Scenario {
-  name = 'auth/cross-app-access-complete-flow';
-  specVersions: SpecVersion[] = ['extension'];
+export class EnterpriseManagedAuthorizationScenario implements Scenario {
+  name = 'auth/enterprise-managed-authorization';
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/enterprise-managed-authorization'
+  } as const;
   description =
-    'Tests complete SEP-990 flow: token exchange + JWT bearer grant (Enterprise Managed OAuth)';
+    'Tests complete SEP-990 flow: token exchange + JWT bearer grant (Enterprise-Managed Authorization)';
 
   private idpServer = new ServerLifecycle();
   private authServer = new ServerLifecycle();

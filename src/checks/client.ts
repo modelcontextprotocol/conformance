@@ -1,4 +1,9 @@
-import { ConformanceCheck, CheckStatus } from '../types';
+import {
+  ConformanceCheck,
+  CheckStatus,
+  LATEST_SPEC_VERSION,
+  NEGOTIABLE_PROTOCOL_VERSIONS
+} from '../types';
 
 export function createServerInfoCheck(serverInfo: {
   name: string;
@@ -23,19 +28,18 @@ export function createServerInfoCheck(serverInfo: {
   };
 }
 
-// Valid MCP protocol versions
-const VALID_PROTOCOL_VERSIONS = ['2025-06-18', '2025-11-25'];
-
 export function createClientInitializationCheck(
   initializeRequest: any,
-  expectedSpecVersion: string = '2025-11-25'
+  expectedSpecVersion: string = LATEST_SPEC_VERSION
 ): ConformanceCheck {
   const protocolVersionSent = initializeRequest?.protocolVersion;
 
   // Accept known valid versions OR custom expected version (for backward compatibility)
-  const validVersions = VALID_PROTOCOL_VERSIONS.includes(expectedSpecVersion)
-    ? VALID_PROTOCOL_VERSIONS
-    : [...VALID_PROTOCOL_VERSIONS, expectedSpecVersion];
+  const validVersions = NEGOTIABLE_PROTOCOL_VERSIONS.includes(
+    expectedSpecVersion
+  )
+    ? NEGOTIABLE_PROTOCOL_VERSIONS
+    : [...NEGOTIABLE_PROTOCOL_VERSIONS, expectedSpecVersion];
   const versionMatch = validVersions.includes(protocolVersionSent);
 
   const errors: string[] = [];

@@ -2,15 +2,22 @@ import {
   Scenario,
   ClientScenario,
   ClientScenarioForAuthorizationServer,
-  SpecVersion
+  ScenarioSource,
+  SpecVersion,
+  DatedSpecVersion,
+  ScenarioSpecTag,
+  DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
+import { RequestMetadataScenario } from './client/request-metadata';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { ServerStatelessScenario } from './server/stateless';
 
 import {
   PingScenario,
@@ -45,7 +52,8 @@ import {
   ResourcesReadBinaryScenario,
   ResourcesTemplateReadScenario,
   ResourcesSubscribeScenario,
-  ResourcesUnsubscribeScenario
+  ResourcesUnsubscribeScenario,
+  ResourcesNotFoundErrorScenario
 } from './server/resources';
 
 import {
@@ -59,6 +67,11 @@ import {
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
 import {
+  HttpHeaderValidationScenario,
+  HttpCustomHeaderServerValidationScenario
+} from './server/http-standard-headers';
+
+import {
   authScenariosList,
   backcompatScenariosList,
   draftScenariosList,
@@ -66,6 +79,12 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+
+import { HttpStandardHeadersScenario } from './client/http-standard-headers';
+import {
+  HttpCustomHeadersScenario,
+  HttpInvalidToolHeadersScenario
+} from './client/http-custom-headers';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -76,13 +95,20 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
-  new ServerSSEPollingScenario()
+  new ServerSSEPollingScenario(),
+
+  // HTTP Standardization (SEP-2243)
+  // Pending until the everything-server fully implements SEP-2243
+  // header validation (case-insensitive names, whitespace trimming, -32001 error code)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario()
 ];
 
 // All client scenarios
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new ServerStatelessScenario(),
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
@@ -123,6 +149,9 @@ const allClientScenariosList: ClientScenario[] = [
   new ResourcesSubscribeScenario(),
   new ResourcesUnsubscribeScenario(),
 
+  // Resources error handling (SEP-2164)
+  new ResourcesNotFoundErrorScenario(),
+
   // Prompts scenarios
   new PromptsListScenario(),
   new PromptsGetSimpleScenario(),
@@ -131,7 +160,11 @@ const allClientScenariosList: ClientScenario[] = [
   new PromptsGetWithImageScenario(),
 
   // Security scenarios
-  new DNSRebindingProtectionScenario()
+  new DNSRebindingProtectionScenario(),
+
+  // HTTP Standardization scenarios (SEP-2243)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario()
 ];
 
 // Active client scenarios (excludes pending)
@@ -171,10 +204,16 @@ const scenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
+  new RequestMetadataScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,
-  ...extensionScenariosList
+  ...extensionScenariosList,
+
+  // HTTP Standardization scenarios (SEP-2243)
+  new HttpStandardHeadersScenario(),
+  new HttpCustomHeadersScenario(),
+  new HttpInvalidToolHeadersScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -252,32 +291,53 @@ export function listDraftScenarios(): string[] {
 export { listMetadataScenarios };
 
 // All valid spec versions, used by the CLI to validate --spec-version input.
+// 'extension' is intentionally excluded — extension scenarios are off-timeline
+// and selected via `--suite extensions`, not `--spec-version`.
 export const ALL_SPEC_VERSIONS: SpecVersion[] = [
-  '2025-03-26',
-  '2025-06-18',
-  '2025-11-25',
-  'draft',
-  'extension'
+  ...DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
 ];
 
 export function resolveSpecVersion(value: string): SpecVersion {
+  if (value === 'draft') return DRAFT_PROTOCOL_VERSION;
   if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
     return value as SpecVersion;
   }
   console.error(`Unknown spec version: ${value}`);
-  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
+  console.error(
+    `Valid versions: ${ALL_SPEC_VERSIONS.join(', ')} (or 'draft' as an alias for ${DRAFT_PROTOCOL_VERSION})`
+  );
   process.exit(1);
+}
+
+function versionIndex(
+  v: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION
+): number {
+  return ALL_SPEC_VERSIONS.indexOf(v);
+}
+
+// Off-timeline sources (extensions etc.) are never selected by --spec-version.
+function matchesSpecVersion(
+  source: ScenarioSource,
+  version: SpecVersion
+): boolean {
+  if ('extensionId' in source) return false;
+  return (
+    versionIndex(source.introducedIn) <= versionIndex(version) &&
+    (source.removedIn === undefined ||
+      versionIndex(version) < versionIndex(source.removedIn))
+  );
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {
   return scenariosList
-    .filter((s) => s.specVersions.includes(version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
 export function listClientScenariosForSpec(version: SpecVersion): string[] {
   return allClientScenariosList
-    .filter((s) => s.specVersions.includes(version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
@@ -285,18 +345,24 @@ export function listClientScenariosForAuthorizationServerForSpec(
   version: SpecVersion
 ): string[] {
   return allClientScenariosListForAuthorizationServer
-    .filter((s) => s.specVersions.includes(version))
+    .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
 
 export function getScenarioSpecVersions(
   name: string
-): SpecVersion[] | undefined {
-  return (
-    scenarios.get(name)?.specVersions ??
-    clientScenarios.get(name)?.specVersions ??
-    clientScenariosForAuthorizationServer.get(name)?.specVersions
-  );
+): ScenarioSpecTag[] | undefined {
+  const s =
+    scenarios.get(name) ??
+    clientScenarios.get(name) ??
+    clientScenariosForAuthorizationServer.get(name);
+  if (!s) return undefined;
+  if ('extensionId' in s.source) return ['extension'];
+  const result: ScenarioSpecTag[] = [];
+  for (const v of ALL_SPEC_VERSIONS) {
+    if (matchesSpecVersion(s.source, v)) result.push(v);
+  }
+  return result;
 }
 
-export type { SpecVersion };
+export type { SpecVersion, ScenarioSpecTag };

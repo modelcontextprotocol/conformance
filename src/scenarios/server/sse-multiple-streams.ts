@@ -9,14 +9,14 @@
  * Multiple concurrent streams are achieved via POST requests, each getting their own stream.
  */
 
-import { ClientScenario, ConformanceCheck, SpecVersion } from '../../types.js';
+import { ClientScenario, ConformanceCheck } from '../../types.js';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   name = 'server-sse-multiple-streams';
-  specVersions: SpecVersion[] = ['2025-11-25'];
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Test server supports multiple concurrent POST SSE streams (SEP-1699)';
 

@@ -43,6 +43,10 @@ export interface AuthServerOptions {
   disableDynamicRegistration?: boolean;
   /** PKCE code_challenge_methods_supported. Set to null to omit from metadata. Default: ['S256'] */
   codeChallengeMethodsSupported?: string[] | null;
+  /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: true. Pass null to omit. */
+  issParameterSupported?: boolean | null;
+  /** What iss value to include in authorization redirect. Default: 'correct'. */
+  issInRedirect?: 'correct' | 'wrong' | 'omit';
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -86,6 +90,8 @@ export function createAuthServer(
     clientIdMetadataDocumentSupported,
     disableDynamicRegistration = false,
     codeChallengeMethodsSupported = ['S256'],
+    issParameterSupported = true,
+    issInRedirect = 'correct',
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -145,6 +151,9 @@ export function createAuthServer(
       // PKCE support - null means omit from metadata (for negative testing)
       ...(codeChallengeMethodsSupported !== null && {
         code_challenge_methods_supported: codeChallengeMethodsSupported
+      }),
+      ...(issParameterSupported !== null && {
+        authorization_response_iss_parameter_supported: issParameterSupported
       }),
       token_endpoint_auth_methods_supported: tokenEndpointAuthMethodsSupported,
       ...(tokenEndpointAuthSigningAlgValuesSupported && {
@@ -242,6 +251,13 @@ export function createAuthServer(
     redirectUrl.searchParams.set('code', 'test-auth-code');
     if (state) {
       redirectUrl.searchParams.set('state', state);
+    }
+
+    // ISS: Include iss parameter in redirect if configured
+    if (issInRedirect === 'correct') {
+      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}`);
+    } else if (issInRedirect === 'wrong') {
+      redirectUrl.searchParams.set('iss', 'https://evil.example.com');
     }
 
     res.redirect(redirectUrl.toString());
@@ -384,6 +400,25 @@ export function createAuthServer(
         clientName: req.body.client_name,
         ...(tokenEndpointAuthMethod && { tokenEndpointAuthMethod })
       }
+    });
+
+    // SEP-837: clients MUST specify an appropriate application_type during DCR.
+    // The harness can't know the client's real class (native vs web), so this
+    // checks presence + that the value is one of the two OIDC-defined values.
+    const appType = req.body.application_type;
+    const validAppType = appType === 'native' || appType === 'web';
+    checks.push({
+      id: 'sep-837-application-type-present',
+      name: 'DCR application_type specified',
+      description: validAppType
+        ? `Client specified application_type "${appType}" during Dynamic Client Registration`
+        : appType === undefined
+          ? 'Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); field was omitted'
+          : `Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); got "${appType}", expected "native" or "web"`,
+      status: validAppType ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      specReferences: [SpecReferences.MCP_DCR],
+      details: { application_type: appType ?? '(omitted)' }
     });
 
     res.status(201).json({

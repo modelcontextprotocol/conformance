@@ -3,8 +3,7 @@
  */
 import {
   ClientScenarioForAuthorizationServer,
-  ConformanceCheck,
-  SpecVersion
+  ConformanceCheck
 } from '../../types';
 import { request } from 'undici';
 
@@ -12,7 +11,7 @@ type Status = 'SUCCESS' | 'FAILURE';
 
 export class AuthorizationServerMetadataEndpointScenario implements ClientScenarioForAuthorizationServer {
   name = 'authorization-server-metadata-endpoint';
-  specVersions: SpecVersion[] = ['2025-03-26', '2025-06-18', '2025-11-25'];
+  readonly source = { introducedIn: '2025-03-26' } as const;
   description = `Test authorization server metadata endpoint.
 
 **Authorization Server Implementation Requirements:**
@@ -139,6 +138,15 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
     ) {
       errors.push(
         'Response body does not include valid "response_types_supported" claim'
+      );
+    }
+
+    if (
+      !Array.isArray(body.code_challenge_methods_supported) ||
+      !body.code_challenge_methods_supported.includes('S256')
+    ) {
+      errors.push(
+        'Response body does not include valid "code_challenge_methods_supported" claim'
       );
     }
 

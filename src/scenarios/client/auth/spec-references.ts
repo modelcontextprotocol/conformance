@@ -89,6 +89,11 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'MCP-PKCE-requirement',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-code-protection'
   },
+  // TODO: Update to MCP spec URL once SEP-2468 (modelcontextprotocol/modelcontextprotocol#2468) is merged
+  RFC_9207_ISS_PARAMETER: {
+    id: 'RFC-9207-iss-parameter',
+    url: 'https://www.rfc-editor.org/rfc/rfc9207.html#section-2'
+  },
   RFC_8693_TOKEN_EXCHANGE: {
     id: 'RFC-8693-Token-Exchange',
     url: 'https://datatracker.ietf.org/doc/html/rfc8693'

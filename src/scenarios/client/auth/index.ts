@@ -23,11 +23,19 @@ import {
 } from './client-credentials';
 import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
-import { CrossAppAccessCompleteFlowScenario } from './cross-app-access';
+import { EnterpriseManagedAuthorizationScenario } from './enterprise-managed-authorization';
 import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
 } from './offline-access';
+import { AuthorizationServerMigrationScenario } from './authorization-server-migration';
+import {
+  IssParameterSupportedScenario,
+  IssParameterNotAdvertisedScenario,
+  IssParameterSupportedMissingScenario,
+  IssParameterWrongIssuerScenario,
+  IssParameterUnexpectedScenario
+} from './issuer-parameter';
 
 // Auth scenarios (required for tier 1)
 export const authScenariosList: Scenario[] = [
@@ -54,12 +62,18 @@ export const backcompatScenariosList: Scenario[] = [
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
-  new CrossAppAccessCompleteFlowScenario()
+  new EnterpriseManagedAuthorizationScenario()
 ];
 
 // Draft scenarios (informational - not scored for tier assessment)
 export const draftScenariosList: Scenario[] = [
   new ResourceMismatchScenario(),
   new OfflineAccessScopeScenario(),
-  new OfflineAccessNotSupportedScenario()
+  new OfflineAccessNotSupportedScenario(),
+  new AuthorizationServerMigrationScenario(),
+  new IssParameterSupportedScenario(),
+  new IssParameterNotAdvertisedScenario(),
+  new IssParameterSupportedMissingScenario(),
+  new IssParameterWrongIssuerScenario(),
+  new IssParameterUnexpectedScenario()
 ];

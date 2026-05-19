@@ -52,7 +52,9 @@ Keep scenarios separate when they're genuinely independent features or when they
 - **Same `id` for SUCCESS and FAIL.** A check should use one slug and flip `status` + `errorMessage`, not branch into `foo-success` vs `foo-failure` slugs.
 - **Optimize for Ctrl+F on the slug.** Repetitive check blocks are fine — easier to find the failing one than to unwind a clever helper.
 - Reuse `ConformanceCheck` and other types from `src/types.ts` rather than defining parallel shapes.
+- **Don't reimplement the runner.** New subcommands that need to "select scenarios → run them → print summary → compute exit code" must go through the existing `client` / `server` commands (subprocess via `process.execPath` like `tier-check` and `sdk` do) or call shared helpers — never a parallel suite-map / summary loop.
 - Include `specReferences` pointing to the relevant spec section.
+- **Severity follows the spec keyword:** MUST / MUST NOT → `FAILURE`; SHOULD / SHOULD NOT → `WARNING`. (CI treats WARNING as a failure, so Tier-1 SDKs still need to satisfy SHOULDs — see #245.)
 
 ## Descriptions and wording
 
@@ -60,12 +62,53 @@ Be precise about what's **required** vs **optional**. A scenario description tha
 
 When in doubt about spec details (OAuth parameters, audiences, grant types), check the actual spec in `modelcontextprotocol` rather than guessing.
 
+## Reviewing PRs
+
+### SEP scenarios
+
+Verify requirement levels against the SEP's **spec diff** — the change to `docs/specification/draft/` in the SEP's PR — not the SEP markdown summary or the conformance PR's description. The keyword that governs check severity is the one in the spec text; a bullet under a "Servers SHOULD…" sentence is SHOULD-level even if the SEP's title says "standardize."
+
+```sh
+gh api "repos/modelcontextprotocol/modelcontextprotocol/contents/docs/specification/draft/<path>?ref=<sep-branch>" --jq '.content' | base64 -d
+```
+
+### Adding a new SEP
+
+Scaffold the requirement-traceability YAML with:
+
+```sh
+npx @modelcontextprotocol/conformance new-sep <NNNN>
+```
+
+The command looks up PR #`<NNNN>` in `modelcontextprotocol/modelcontextprotocol` (SEP numbers are PR numbers), derives `spec_url` from the `docs/specification/draft/*.mdx` file it changes, and writes `src/seps/sep-<NNNN>.yaml` with TODO `requirements[]` rows. Use `--spec-path` or `--spec-url` to skip the lookup. The `new-sep` Claude Code skill drives the same flow end-to-end, parses the spec diff, and fills in the requirement rows.
+
+### Traceability manifest
+
+`src/seps/traceability.json` is a generated map of, per SEP, which declared `check:` IDs are actually emitted when the conformance suite runs against the reference SDK. It is consumed by plan.modelcontextprotocol.io to track SEP-2484 progress.
+
+The emitted check IDs come from a real suite run (not a source scan), so dynamic (template-literal) IDs resolve to their concrete values. Generate the manifest from a results directory:
+
+```sh
+# 1. Run the suite against the reference SDK, collecting checks.json files:
+node dist/index.js client --command '<sdk conformance client>' --suite all -o results
+node dist/index.js server --url '<sdk conformance server url>' --suite all -o results
+# 2. Build the manifest from those results:
+npm run traceability -- --results results
+npm run traceability -- --results results --strict   # exit 1 on any untested (advisory)
+```
+
+Manifest shape: `{ schemaVersion, docs, source, seps }`, where `seps` is keyed by SEP number. Each requirement is `tested` (its check ID was emitted) or `untested` (declared but never emitted — a real gap, or a check that only fires against a deliberately-broken impl, i.e. it needs a negative test). `"tested" means a scenario emitted the check ID, NOT that any SDK passes it` — per-SDK results live in `tier-check`. Matching is exact, so a scenario's emitted check IDs must match the requirement slugs in the yaml (one check ID per MUST/SHOULD, emitted once per case). `source` records what was run against (e.g. `typescript-sdk@<sha>`); the `docs` field points back here.
+
+Contract for consumers (plan.mcp.io): a SEP appears only if it has a traceability yaml or emits `sep-NNNN-*` check IDs. **A SEP absent from the manifest has no conformance artifacts — treat it as not-started** (diff against your own SEP list to find them). `untracked` lists emitted IDs with no yaml row (usually scenario gates).
+
+The manifest is refreshed by `.github/workflows/traceability.yml` (manual/scheduled), which runs the suite against typescript-sdk and opens a PR with the diff — it is **not** a PR gate. Untested checks are advisory for now; the intended future policy is that an untested check must be backed by a negative test.
+
 ## Examples: prove it passes and fails
 
 A new scenario should come with:
 
 1. **A passing example** — usually by extending `examples/clients/typescript/everything-client.ts` or the everything-server, not a new file.
-2. **Evidence it fails when it should** — ideally a negative example (a deliberately broken client), or at minimum a manual run showing the failure mode.
+2. **A negative test** — a deliberately-broken implementation in `examples/{clients,servers}/typescript/` plus a vitest case asserting the check emits `FAILURE`/`WARNING` against it. See `src/scenarios/client/auth/index.test.ts` and `src/scenarios/server/negative.test.ts` for the pattern. A passing run against the everything-server proves the check doesn't false-positive, but not that it catches anything.
 
 Delete unused example scenarios. If a scenario key in the everything-client has no corresponding test, remove it.
 
@@ -79,3 +122,4 @@ Use the existing CLI runner (`npx @modelcontextprotocol/conformance client|serve
 - `npm test` passes
 - For non-trivial scenario changes, run against at least one real SDK (typescript-sdk or python-sdk) to see actual output. For changes to shared infrastructure (runner, tier-check), test against go-sdk or csharp-sdk too.
 - Scenario is registered in the right suite in `src/scenarios/index.ts`
+- If you changed a `sep-*.yaml` or scenario check IDs, `src/seps/traceability.json` will drift; the traceability workflow refreshes it via PR (or regenerate locally with `--results` from a suite run)

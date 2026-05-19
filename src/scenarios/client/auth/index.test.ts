@@ -14,6 +14,10 @@ import { runClient as partialScopesClient } from '../../../../examples/clients/t
 import { runClient as ignore403Client } from '../../../../examples/clients/typescript/auth-test-ignore-403';
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
+import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
+import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
+import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
+import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -29,7 +33,14 @@ const allowClientErrorScenarios = new Set<string>([
   // Client is expected to give up (error) after limited retries, but check should pass
   'auth/scope-retry-limit',
   // Client is expected to error when PRM resource doesn't match server URL
-  'auth/resource-mismatch'
+  'auth/resource-mismatch',
+  // The post-migration retry path may surface as a client error after
+  // re-registering; the SEP-2352 checks are evaluated in getChecks()
+  'auth/authorization-server-migration',
+  // Client is expected to error when iss validation fails
+  'auth/iss-supported-missing',
+  'auth/iss-wrong-issuer',
+  'auth/iss-unexpected'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -116,7 +127,17 @@ describe('Negative tests', () => {
   test('client only responds to 401, not 403', async () => {
     const runner = new InlineClientRunner(ignore403Client);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
-      expectedFailureSlugs: ['scope-step-up-escalation']
+      expectedFailureSlugs: [
+        'scope-step-up-escalation',
+        'sep-2350-scope-union-on-reauth'
+      ]
+    });
+  });
+
+  test('client echoes challenge scope without accumulating prior grant (SEP-2350)', async () => {
+    const runner = new InlineClientRunner(echoScopeClient);
+    await runClientAgainstScenario(runner, 'auth/scope-step-up', {
+      expectedFailureSlugs: ['sep-2350-scope-union-on-reauth']
     });
   });
 
@@ -135,6 +156,29 @@ describe('Negative tests', () => {
     });
   });
 
+  test('client reuses credentials across authorization servers (SEP-2352)', async () => {
+    const runner = new InlineClientRunner(reuseCredsClient);
+    await runClientAgainstScenario(
+      runner,
+      'auth/authorization-server-migration',
+      {
+        allowClientError: true,
+        expectedFailureSlugs: [
+          'sep-2352-reregister-on-as-change',
+          'sep-2352-no-reuse-on-as-change',
+          'sep-2352-no-cross-as-credential-reuse'
+        ]
+      }
+    );
+  });
+
+  test('client omits application_type during DCR (SEP-837)', async () => {
+    const runner = new InlineClientRunner(noAppTypeClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      expectedFailureSlugs: ['sep-837-application-type-present']
+    });
+  });
+
   test('client does not use PKCE', async () => {
     const runner = new InlineClientRunner(noPkceClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
@@ -144,6 +188,30 @@ describe('Negative tests', () => {
         'pkce-code-verifier-sent',
         'pkce-verifier-matches-challenge'
       ]
+    });
+  });
+
+  test('client does not reject missing iss when server requires it', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-supported-missing', {
+      expectedFailureSlugs: ['sep-2468-client-reject-missing-iss'],
+      allowClientError: true
+    });
+  });
+
+  test('client does not reject mismatched iss', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-wrong-issuer', {
+      expectedFailureSlugs: ['sep-2468-client-compare-iss-supported'],
+      allowClientError: true
+    });
+  });
+
+  test('client does not reject unexpected iss', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/iss-unexpected', {
+      expectedFailureSlugs: ['sep-2468-client-compare-iss-unadvertised'],
+      allowClientError: true
     });
   });
 });

@@ -1,4 +1,4 @@
-import type { SpecVersion } from '../types';
+import type { ScenarioSpecTag } from '../types';
 
 export type CheckStatus = 'pass' | 'fail' | 'partial' | 'skipped';
 
@@ -17,7 +17,7 @@ export interface ConformanceResult extends CheckResult {
     passed: boolean;
     checks_passed: number;
     checks_failed: number;
-    specVersions?: SpecVersion[];
+    specVersions?: ScenarioSpecTag[];
   }>;
 }
 

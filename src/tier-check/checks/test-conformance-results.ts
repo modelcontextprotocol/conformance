@@ -10,14 +10,22 @@ import {
   listClientScenariosForSpec,
   getScenarioSpecVersions
 } from '../../scenarios';
-import { ConformanceCheck, SpecVersion } from '../../types';
+import {
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION,
+  ScenarioSpecTag,
+  SpecVersion
+} from '../../types';
 
-const NON_SCORING_VERSIONS: SpecVersion[] = ['draft', 'extension'];
+const NON_SCORING_TAGS: ScenarioSpecTag[] = [
+  DRAFT_PROTOCOL_VERSION,
+  'extension'
+];
 
 /** Whether a scenario counts toward tier scoring (has at least one date-versioned spec). */
-function isTierScoring(specVersions?: SpecVersion[]): boolean {
+function isTierScoring(specVersions?: ScenarioSpecTag[]): boolean {
   if (!specVersions || specVersions.length === 0) return true; // unknown = count it
-  return specVersions.some((v) => !NON_SCORING_VERSIONS.includes(v));
+  return specVersions.some((v) => !NON_SCORING_TAGS.includes(v));
 }
 
 /**
