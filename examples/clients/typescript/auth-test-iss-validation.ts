@@ -85,7 +85,8 @@ async function oauthFlowWithIssValidation(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       client_name: 'test-auth-client-iss-validation',
-      redirect_uris: ['http://localhost:3000/callback']
+      redirect_uris: ['http://localhost:3000/callback'],
+      application_type: 'native'
     })
   });
   if (!dcrResponse.ok) {
