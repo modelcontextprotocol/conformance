@@ -168,8 +168,7 @@ async function runAuthMigrationClient(serverUrl: string): Promise<void> {
     'http://localhost:3000/callback',
     {
       client_name: 'auth-migration-client',
-      redirect_uris: ['http://localhost:3000/callback'],
-      application_type: 'native'
+      redirect_uris: ['http://localhost:3000/callback']
     }
   );
 
