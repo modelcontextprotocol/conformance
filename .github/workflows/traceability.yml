@@ -52,9 +52,12 @@ jobs:
       - name: Run conformance suites against the reference SDK
         # `sdk` requires --mode client|server; run both into the same results dir
         # (the second reuses the cached checkout + build via --skip-build).
+        # `|| true`: the manifest only needs the emitted check IDs (written
+        # regardless of pass/fail), so SDK conformance failures must not fail
+        # this step. The "no results produced" guard below is the real safety net.
         run: |
-          node dist/index.js sdk "$SDK_REF" --mode client --suite all -o results
-          node dist/index.js sdk "$SDK_REF" --mode server --suite all --skip-build -o results
+          node dist/index.js sdk "$SDK_REF" --mode client --suite all -o results || true
+          node dist/index.js sdk "$SDK_REF" --mode server --suite all --skip-build -o results || true
 
       - name: Fail if no results were produced
         run: |
