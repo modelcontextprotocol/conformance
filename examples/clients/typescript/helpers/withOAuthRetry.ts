@@ -7,13 +7,33 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Middleware } from '@modelcontextprotocol/sdk/client/middleware.js';
 import { ConformanceOAuthProvider } from './ConformanceOAuthProvider';
 
+/**
+ * SEP-2350: a well-behaved client computes the union of previously-granted
+ * scopes and the newly challenged scopes when re-authorizing, so it doesn't
+ * lose permissions needed for other operations.
+ */
+const unionScopes = (
+  prior: string | undefined,
+  challenged: string | undefined
+): string | undefined => {
+  const set = new Set(
+    [...(prior?.split(' ') ?? []), ...(challenged?.split(' ') ?? [])].filter(
+      Boolean
+    )
+  );
+  return set.size > 0 ? [...set].join(' ') : undefined;
+};
+
 export const handle401 = async (
   response: Response,
   provider: ConformanceOAuthProvider,
   next: FetchLike,
   serverUrl: string | URL
 ): Promise<void> => {
-  const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
+  const { resourceMetadataUrl, scope: challengedScope } =
+    extractWWWAuthenticateParams(response);
+  const prior = (await provider.tokens())?.scope;
+  const scope = unionScopes(prior, challengedScope);
   let result = await auth(provider, {
     serverUrl,
     resourceMetadataUrl,
