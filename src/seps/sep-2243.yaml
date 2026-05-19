@@ -5,10 +5,8 @@ requirements:
     text: 'The client MUST include the standard MCP request headers on each POST request. These headers are REQUIRED for compliance.'
   - check: sep-2243-header-name-case-insensitive
     text: 'Clients and servers MUST use case-insensitive comparisons for header names.'
-  - check: sep-2243-server-reject-mismatch
-    text: 'Servers that process the request body MUST reject requests where the values specified in the headers do not match the corresponding values in the request body.'
-  - check: sep-2243-server-reject-status
-    text: 'When rejecting a request due to header validation failure, servers MUST return HTTP status 400 Bad Request.'
+  - check: sep-2243-server-reject-invalid-headers
+    text: 'Servers that process the request body MUST reject requests with mismatched or missing standard-header values, returning HTTP 400 Bad Request.'
   - check: sep-2243-server-reject-error-code
     text: 'When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32001.'
   - check: sep-2243-client-supports-custom-headers
