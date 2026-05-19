@@ -3,6 +3,44 @@
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
   "source": "typescript-sdk@4e153aef0538",
   "seps": {
+    "837": {
+      "yaml": "src/seps/sep-837.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#application-type-and-redirect-uri-constraints",
+      "requirements": [
+        {
+          "check": "sep-837-application-type-present",
+          "status": "tested",
+          "text": "MCP clients MUST specify an appropriate application_type during Dynamic Client Registration."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "Native applications (desktop applications, mobile apps, CLI tools, and locally-hosted web applications accessed via localhost) SHOULD use application_type: \"native\".",
+          "reason": "harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable"
+        },
+        {
+          "text": "Web applications (remote browser-based applications served from a non-local host) SHOULD use application_type: \"web\".",
+          "reason": "harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable"
+        },
+        {
+          "text": "MCP clients MUST be prepared to handle registration failures due to redirect URI constraints when authorization servers implement OIDC.",
+          "reason": "robustness requirement with no defined wire-level success criterion"
+        },
+        {
+          "text": "When a registration request is rejected, clients SHOULD surface a meaningful error to the user or developer.",
+          "reason": "UI/DX behavior, not protocol-observable"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 1,
+        "untested": 0,
+        "excluded": 4,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2164": {
       "yaml": "src/seps/sep-2164.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/server/resources#error-handling",
@@ -198,6 +236,38 @@
         "unkeyed": 0
       }
     },
+    "2350": {
+      "yaml": "src/seps/sep-2350.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#runtime-insufficient-scope-errors",
+      "requirements": [
+        {
+          "check": "sep-2350-scope-union-on-reauth",
+          "status": "tested",
+          "text": "When re-authorizing, clients SHOULD include these scopes alongside any previously granted scopes to avoid losing permissions needed for other operations. / Clients SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements"
+        },
+        {
+          "check": "sep-2350-server-single-challenge",
+          "status": "untested",
+          "text": "Regardless of the approach chosen, servers SHOULD include all scopes required for the current operation in a single challenge."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "When responding with insufficient scope errors, servers SHOULD include the scopes needed to satisfy the current operation in the scope parameter, consistent with RFC 6750 Section 3.1.",
+          "reason": "reword of pre-existing requirement (request->operation, +RFC6750 cite); no normative delta; harness already emits scope= in WWW-Authenticate"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 1,
+        "untested": 1,
+        "excluded": 1,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2352": {
       "yaml": "src/seps/sep-2352.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-binding",
@@ -239,6 +309,68 @@
         "tested": 3,
         "untested": 0,
         "excluded": 3,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "2468": {
+      "yaml": "src/seps/sep-2468.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-response-validation",
+      "requirements": [
+        {
+          "check": "sep-2468-client-validate-metadata-issuer",
+          "status": "untested",
+          "text": "After retrieving a metadata document, MCP clients MUST validate it as required by RFC8414 Section 3.3 or OpenID Connect Discovery Section 4.3: the issuer value in the document MUST be identical to the issuer identifier used to construct the well-known URL. If they differ, the client MUST NOT use the metadata.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery"
+        },
+        {
+          "check": "sep-2468-as-include-iss",
+          "status": "untested",
+          "text": "MCP authorization servers SHOULD include the iss parameter in authorization responses, including error responses, as defined in RFC9207 Section 2."
+        },
+        {
+          "check": "sep-2468-as-advertise-iss-supported",
+          "status": "untested",
+          "text": "Authorization servers that include the iss parameter MUST advertise this by setting authorization_response_iss_parameter_supported to true in their metadata (RFC9207 Section 2.3)."
+        },
+        {
+          "check": "sep-2468-client-compare-iss-supported",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss present -> Compare to the recorded issuer using simple string comparison / Before redirecting the user-agent, the client MUST record the issuer value from the selected authorization server validated metadata document and associate it with the same per-request record used to store the PKCE code verifier."
+        },
+        {
+          "check": "sep-2468-client-reject-missing-iss",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss absent -> Reject the response."
+        },
+        {
+          "check": "sep-2468-client-compare-iss-unadvertised",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss present -> Compare to the recorded issuer using simple string comparison."
+        },
+        {
+          "check": "sep-2468-client-proceed-no-iss",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss absent -> Proceed."
+        },
+        {
+          "check": "sep-2468-client-no-normalization",
+          "status": "untested",
+          "text": "After decoding the iss value from the application/x-www-form-urlencoded response per RFC 9207 Section 2.4, clients MUST NOT apply scheme or host case folding, default-port elision, trailing-slash, or percent-encoding normalization (RFC 3986 Sections 6.2.2-6.2.3) before comparison."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "This validation applies equally to error responses - on mismatch the client MUST NOT act on or display error, error_description, or error_uri.",
+          "reason": "display is UI-facing; act-on has no protocol-observable signal beyond the existing reject-on-mismatch checks"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 4,
+        "untested": 4,
+        "excluded": 1,
         "untracked": 0,
         "unkeyed": 0
       }
