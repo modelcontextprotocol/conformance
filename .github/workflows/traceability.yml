@@ -1,0 +1,123 @@
+name: Refresh SEP traceability manifest
+
+# Regenerates src/seps/traceability.json by running the conformance suite against
+# the reference SDK and recording which check IDs were emitted, then opens a PR
+# with the diff. NOT a PR gate — runs on demand / on a schedule and proposes an
+# update for review. plan.modelcontextprotocol.io reads the committed file from
+# main.
+#
+# Depends on the `conformance sdk` subcommand (#277), which clones+builds the SDK
+# and runs the client+server suites. The `run` job executes third-party SDK code,
+# so it has NO repo write token (read-only perms, persist-credentials: false) and
+# only uploads results as an artifact; the separate `propose` job holds the
+# write/PR permissions and never executes SDK code.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk:
+        description: 'SDK ref to run against (e.g. typescript-sdk@<sha>)'
+        default: 'typescript-sdk@main'
+  schedule:
+    - cron: '0 6 * * 1' # Weekly, Monday 06:00 UTC.
+
+concurrency:
+  group: traceability-refresh
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SDK_REF: ${{ inputs.sdk || 'typescript-sdk@main' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false # no git token while SDK code runs
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Run conformance suites against the reference SDK
+        # `sdk` requires --mode client|server; run both into the same results dir
+        # (the second reuses the cached checkout + build via --skip-build).
+        run: |
+          node dist/index.js sdk "$SDK_REF" --mode client --suite all -o results
+          node dist/index.js sdk "$SDK_REF" --mode server --suite all --skip-build -o results
+
+      - name: Fail if no results were produced
+        run: |
+          if [ -z "$(find results -name checks.json -print -quit 2>/dev/null)" ]; then
+            echo "No checks.json produced — the suite run failed; not proposing a manifest."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-results
+          path: results
+          retention-days: 7
+
+  propose:
+    needs: run
+    runs-on: ubuntu-latest
+    # Requires the repo/org setting "Allow GitHub Actions to create and approve
+    # pull requests" to be enabled, otherwise `gh pr create` fails.
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      SDK_REF: ${{ inputs.sdk || 'typescript-sdk@main' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-results
+          path: results
+
+      - name: Regenerate manifest
+        run: |
+          set -euo pipefail
+          # Record the resolved sha (stable per SDK commit) so the manifest's
+          # `source` only changes when the SDK actually advances — no per-run noise.
+          ref="${SDK_REF#*@}"
+          sha="$(git ls-remote https://github.com/modelcontextprotocol/typescript-sdk.git "$ref" | cut -f1)"
+          node dist/index.js traceability --results results \
+            --source "typescript-sdk@${sha:0:12}"
+
+      - name: Open/update the rolling refresh PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- src/seps/traceability.json; then
+            echo "traceability.json unchanged"
+            exit 0
+          fi
+          # One rolling branch/PR, force-updated each run, so the schedule does
+          # not accrue a new PR every week.
+          branch="traceability-refresh"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git checkout -B "$branch"
+          git add src/seps/traceability.json
+          git commit -m "chore: refresh SEP traceability manifest ($SDK_REF)"
+          git push --force origin "$branch"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create \
+            --head "$branch" \
+            --title 'chore: refresh SEP traceability manifest' \
+            --body 'Automated refresh from a conformance run against the reference SDK. Review the coverage diff before merging.'

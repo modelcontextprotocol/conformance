@@ -19,6 +19,7 @@
     "lint:fix": "eslint src/ examples/ --fix && prettier --write .",
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
     "tier-check": "node dist/index.js tier-check",
+    "traceability": "tsx src/index.ts traceability",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
     "prepack": "npm run build",

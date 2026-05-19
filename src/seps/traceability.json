@@ -1,0 +1,409 @@
+{
+  "schemaVersion": 1,
+  "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
+  "source": "typescript-sdk@6f0bf49d",
+  "seps": {
+    "2164": {
+      "yaml": "src/seps/sep-2164.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/server/resources#error-handling",
+      "requirements": [
+        {
+          "check": "sep-2164-no-empty-contents",
+          "status": "tested",
+          "text": "Servers MUST NOT return an empty contents array for a non-existent resource"
+        },
+        {
+          "check": "sep-2164-error-code",
+          "status": "tested",
+          "text": "Servers SHOULD return standard JSON-RPC errors for common failure cases: Resource not found: -32602 (Invalid Params)"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "clients SHOULD also accept -32002 as a resource not found error",
+          "reason": "Client-side error handling is implementation-defined; not protocol-observable"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2164-data-uri"
+      ],
+      "summary": {
+        "tested": 2,
+        "untested": 0,
+        "excluded": 1,
+        "untracked": 1,
+        "unkeyed": 0
+      }
+    },
+    "2207": {
+      "yaml": null,
+      "specUrl": null,
+      "requirements": [],
+      "excluded": [],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2207-client-metadata-grant-types",
+        "sep-2207-offline-access-not-requested",
+        "sep-2207-offline-access-requested"
+      ],
+      "summary": {
+        "tested": 0,
+        "untested": 0,
+        "excluded": 0,
+        "untracked": 3,
+        "unkeyed": 0
+      }
+    },
+    "2243": {
+      "yaml": "src/seps/sep-2243.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/transports#standard-mcp-request-headers",
+      "requirements": [
+        {
+          "check": "sep-2243-client-includes-standard-headers",
+          "status": "tested",
+          "text": "The client MUST include the standard MCP request headers on each POST request. These headers are REQUIRED for compliance."
+        },
+        {
+          "check": "sep-2243-header-name-case-insensitive",
+          "status": "tested",
+          "text": "Clients and servers MUST use case-insensitive comparisons for header names."
+        },
+        {
+          "check": "sep-2243-server-reject-invalid-headers",
+          "status": "tested",
+          "text": "Servers that process the request body MUST reject requests with mismatched or missing standard-header values, returning HTTP 400 Bad Request."
+        },
+        {
+          "check": "sep-2243-server-reject-error-code",
+          "status": "tested",
+          "text": "When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32001."
+        },
+        {
+          "check": "sep-2243-client-supports-custom-headers",
+          "status": "untested",
+          "text": "MCP clients MUST support this feature [custom headers via x-mcp-header]."
+        },
+        {
+          "check": "sep-2243-client-mirrors-designated-params",
+          "status": "untested",
+          "text": "When a client invokes a tool whose definition includes such designations, conforming clients MUST mirror the designated parameter values into HTTP headers as described below."
+        },
+        {
+          "check": "sep-2243-x-mcp-header-not-empty",
+          "status": "untested",
+          "text": "The x-mcp-header value MUST NOT be empty.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
+          "check": "sep-2243-x-mcp-header-charset",
+          "status": "untested",
+          "text": "The x-mcp-header value MUST contain only ASCII characters (excluding space and `:`).",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
+          "check": "sep-2243-x-mcp-header-unique",
+          "status": "untested",
+          "text": "The x-mcp-header value MUST be case-insensitively unique within a single tool definition.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
+          "check": "sep-2243-x-mcp-header-primitive-only",
+          "status": "untested",
+          "text": "x-mcp-header MUST only be applied to parameters with primitive types (number, string, or boolean).",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
+          "check": "sep-2243-client-reject-invalid-tool",
+          "status": "tested",
+          "text": "Clients MUST reject tool definitions where any x-mcp-header value violates these constraints. Rejection means the client MUST exclude the invalid tool from the set of tools returned by tools/list.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
+          "check": "sep-2243-client-encode-values",
+          "status": "untested",
+          "text": "Clients MUST encode parameter values before including them in HTTP headers: number values MUST be converted to their decimal string representation; boolean values MUST be converted to the lowercase strings \"true\" or \"false\"."
+        },
+        {
+          "check": "sep-2243-client-base64-unsafe",
+          "status": "untested",
+          "text": "When a value cannot be safely represented as plain ASCII (e.g., contains non-ASCII characters, control characters, or leading/trailing whitespace), clients MUST use Base64 encoding of the UTF-8 representation, wrapped as =?base64?{encoded}?=."
+        },
+        {
+          "check": "sep-2243-server-decode-base64",
+          "status": "untested",
+          "text": "Servers and intermediaries that need to inspect these values MUST decode them accordingly."
+        },
+        {
+          "check": "sep-2243-client-omit-null",
+          "status": "tested",
+          "text": "Parameter value is null or omitted: Client MUST omit the header."
+        },
+        {
+          "check": "sep-2243-server-not-expect-null",
+          "status": "untested",
+          "text": "Parameter value is null or omitted: Server MUST NOT expect the header."
+        },
+        {
+          "check": "sep-2243-server-reject-missing-required",
+          "status": "untested",
+          "text": "Required parameter is omitted: Server MUST reject with JSON-RPC error."
+        },
+        {
+          "check": "sep-2243-server-reject-invalid-param-chars",
+          "status": "untested",
+          "text": "Servers MUST reject requests with a recognized Mcp-Param-{Name} header that contain invalid characters."
+        },
+        {
+          "check": "sep-2243-server-validate-param-match",
+          "status": "untested",
+          "text": "Any server that processes the message body MUST validate that encoded header values, after decoding if Base64-encoded, match the corresponding parameter values in the body."
+        },
+        {
+          "check": "sep-2243-server-reject-param-mismatch",
+          "status": "untested",
+          "text": "Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32001 if any validation fails."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "Clients SHOULD log a warning when rejecting a tool definition due to invalid x-mcp-header, including the tool name and the reason.",
+          "reason": "Log output is not wire-observable."
+        },
+        {
+          "text": "Server developers SHOULD NOT mark sensitive parameters (such as passwords, API keys, tokens, or PII) with x-mcp-header.",
+          "reason": "Design guidance to humans; not protocol-observable."
+        },
+        {
+          "text": "Intermediaries MUST return an appropriate HTTP error status for validation failures.",
+          "reason": "Intermediary requirement; conformance harness tests clients and servers, not intermediaries."
+        },
+        {
+          "text": "Intermediate servers that do not recognize an Mcp-Param-{Name} header MUST forward it and otherwise ignore it.",
+          "reason": "Intermediary requirement; conformance harness tests clients and servers, not intermediaries."
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2243-invalid-tool-tools-list-gate",
+        "sep-2243-param-header-tool-call-gate",
+        "sep-2243-server-accepts-whitespace-header-value",
+        "sep-2243-server-no-xmcp-tool"
+      ],
+      "summary": {
+        "tested": 6,
+        "untested": 14,
+        "excluded": 4,
+        "untracked": 4,
+        "unkeyed": 0
+      }
+    },
+    "2575": {
+      "yaml": "src/seps/sep-2575.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle",
+      "requirements": [
+        {
+          "check": "sep-2575-client-populates-meta",
+          "status": "untested",
+          "text": "Every client request MUST include the following io.modelcontextprotocol/* fields in _meta: protocolVersion, clientInfo, clientCapabilities.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
+        },
+        {
+          "check": "sep-2575-server-rejects-undeclared-capability",
+          "status": "untested",
+          "text": "A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32003).",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
+        },
+        {
+          "check": "sep-2575-missing-capability-http-400",
+          "status": "untested",
+          "text": "On HTTP, the response status MUST be 400 Bad Request [for MissingRequiredClientCapabilityError].",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
+        },
+        {
+          "check": "sep-2575-server-tags-subscription-id",
+          "status": "untested",
+          "text": "On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
+        },
+        {
+          "check": "sep-2575-server-stateless-no-prior-context",
+          "status": "untested",
+          "text": "A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity)."
+        },
+        {
+          "check": "sep-2575-server-stateless-no-connection-reuse-required",
+          "status": "untested",
+          "text": "Servers MUST NOT require that a client reuse the same connection to perform related operations."
+        },
+        {
+          "check": "sep-2575-server-unsupported-version-error",
+          "status": "untested",
+          "text": "If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation"
+        },
+        {
+          "check": "sep-2575-client-retry-supported-version",
+          "status": "untested",
+          "text": "The client SHOULD select a mutually supported version from the supported list and retry the request, or surface an error to the user if no compatible version exists.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation"
+        },
+        {
+          "check": "sep-2575-server-implements-discover",
+          "status": "untested",
+          "text": "Servers MUST implement server/discover.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/discover"
+        },
+        {
+          "check": "sep-2575-http-server-no-independent-requests-on-stream",
+          "status": "untested",
+          "text": "The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#receiving-messages-1"
+        },
+        {
+          "check": "sep-2575-http-server-disconnect-is-cancel",
+          "status": "untested",
+          "text": "Closing the SSE response stream MUST be treated by the server as cancellation of that request.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
+        },
+        {
+          "check": "sep-2575-http-server-stops-on-cancel",
+          "status": "untested",
+          "text": "The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
+        },
+        {
+          "check": "sep-2575-http-client-sends-version-header",
+          "status": "untested",
+          "text": "Every POST request to the MCP endpoint MUST include an MCP-Protocol-Version header.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
+        },
+        {
+          "check": "sep-2575-http-version-header-matches-meta",
+          "status": "untested",
+          "text": "The header value MUST match the io.modelcontextprotocol/protocolVersion field carried in the request body _meta.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
+        },
+        {
+          "check": "sep-2575-http-server-header-mismatch-400",
+          "status": "untested",
+          "text": "If the values do not match, the server MUST reject the request with 400 Bad Request and a HeaderMismatch JSON-RPC error.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
+        },
+        {
+          "check": "sep-2575-http-server-unsupported-version-400",
+          "status": "untested",
+          "text": "If the server does not implement the requested protocol version, it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
+        },
+        {
+          "check": "sep-2575-http-server-method-not-found-404",
+          "status": "untested",
+          "text": "If the server does not implement the requested RPC method, it MUST respond with 404 Not Found and a JSON-RPC error with code -32601 (Method not found).",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
+        },
+        {
+          "check": "sep-2575-server-honors-notification-filter",
+          "status": "untested",
+          "text": "The server MUST NOT send notification types the client has not explicitly requested.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#opening-a-stream"
+        },
+        {
+          "check": "sep-2575-server-sends-subscription-ack",
+          "status": "untested",
+          "text": "The server MUST send notifications/subscriptions/acknowledged as the first message on the stream.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#acknowledgment"
+        },
+        {
+          "check": "sep-2575-client-declares-elicitation-capability",
+          "status": "untested",
+          "text": "Clients that support elicitation MUST declare the elicitation capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
+          "url": "https://modelcontextprotocol.io/specification/draft/client/elicitation#capabilities"
+        },
+        {
+          "check": "sep-2575-client-declares-roots-capability",
+          "status": "untested",
+          "text": "Clients that support roots MUST declare the roots capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
+          "url": "https://modelcontextprotocol.io/specification/draft/client/roots#capabilities"
+        },
+        {
+          "check": "sep-2575-client-declares-sampling-capability",
+          "status": "untested",
+          "text": "Clients that support sampling MUST declare the sampling capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
+          "url": "https://modelcontextprotocol.io/specification/draft/client/sampling#capabilities"
+        },
+        {
+          "check": "sep-2575-server-declares-prompts-in-discover",
+          "status": "untested",
+          "text": "Servers that support prompts MUST declare the prompts capability in their DiscoverResult.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/prompts#capabilities"
+        },
+        {
+          "check": "sep-2575-server-sends-prompts-list-changed-on-subscription",
+          "status": "untested",
+          "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with promptsListChanged: true.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/prompts#list-changed-notification"
+        },
+        {
+          "check": "sep-2575-server-sends-tools-list-changed-on-subscription",
+          "status": "untested",
+          "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with toolsListChanged: true.",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#list-changed-notification"
+        },
+        {
+          "check": "sep-2575-server-no-log-without-loglevel",
+          "status": "untested",
+          "text": "The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "State that needs to span multiple requests (e.g., long-running tasks, application-level handles) MUST be referenced by an explicit identifier the client passes on each request.",
+          "reason": "architectural guidance, observable only via subscriptionId/task-id rows already listed"
+        },
+        {
+          "text": "To distinguish notifications belonging to different concurrent subscriptions, clients MUST correlate notifications using the io.modelcontextprotocol/subscriptionId field carried in _meta.",
+          "reason": "client-internal demux; not observable on the wire from the harness"
+        },
+        {
+          "text": "The client SHOULD check the acknowledged filter against what it requested and handle any unsupported types gracefully.",
+          "reason": "internal comparison; \"gracefully\" has no wire-observable definition"
+        },
+        {
+          "text": "Because there is no per-request status code to drive fallback, a client that supports both eras SHOULD probe with server/discover first [stdio backward compatibility].",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        },
+        {
+          "text": "To cancel an in-flight request [on stdio], the client MUST send a notifications/cancelled notification referencing the request ID.",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        },
+        {
+          "text": "Servers SHOULD stop work on a cancelled request as soon as practical and MUST NOT send any further messages for it [stdio].",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        },
+        {
+          "text": "If the server process exits unexpectedly, the client SHOULD restart it.",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        },
+        {
+          "text": "If the server returns UnsupportedProtocolVersionError, [the stdio client] SHOULD retry using one of the advertised supportedVersions rather than falling back to initialize.",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        },
+        {
+          "text": "On stdio, if the connection is terminated and then re-established, the client MUST re-send subscriptions/listen to re-establish its subscriptions.",
+          "reason": "stdio client harness not implemented — see https://github.com/modelcontextprotocol/conformance/issues/258"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 0,
+        "untested": 26,
+        "excluded": 9,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    }
+  }
+}
