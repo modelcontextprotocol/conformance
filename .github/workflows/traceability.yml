@@ -42,6 +42,10 @@ jobs:
           node-version: 24
           cache: npm
 
+      # The SDK's own build (e.g. typescript-sdk uses `pnpm install && pnpm run
+      # build:all`) needs pnpm on PATH; corepack provides it.
+      - run: corepack enable
+
       - run: npm ci
       - run: npm run build
 
