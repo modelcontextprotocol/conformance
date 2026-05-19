@@ -403,7 +403,7 @@ export class ServerStatelessScenario implements ClientScenario {
     const responseAbsent = await sendRpc(
       'server/discover',
       { _meta: headerMismatchMeta },
-      { 'MCP-Protocol-Version': 'mismatch.version' },
+      { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION },
       302
     ).catch(() => null);
     const resAbsent: any = responseAbsent?.res ?? null;
