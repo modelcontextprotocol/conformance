@@ -15,6 +15,7 @@ import { runClient as ignore403Client } from '../../../../examples/clients/types
 import { runClient as noRetryLimitClient } from '../../../../examples/clients/typescript/auth-test-no-retry-limit';
 import { runClient as noPkceClient } from '../../../../examples/clients/typescript/auth-test-no-pkce';
 import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
+import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 
@@ -120,7 +121,17 @@ describe('Negative tests', () => {
   test('client only responds to 401, not 403', async () => {
     const runner = new InlineClientRunner(ignore403Client);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
-      expectedFailureSlugs: ['scope-step-up-escalation']
+      expectedFailureSlugs: [
+        'scope-step-up-escalation',
+        'sep-2350-scope-union-on-reauth'
+      ]
+    });
+  });
+
+  test('client echoes challenge scope without accumulating prior grant (SEP-2350)', async () => {
+    const runner = new InlineClientRunner(echoScopeClient);
+    await runClientAgainstScenario(runner, 'auth/scope-step-up', {
+      expectedFailureSlugs: ['sep-2350-scope-union-on-reauth']
     });
   });
 
