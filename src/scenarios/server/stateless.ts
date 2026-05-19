@@ -30,23 +30,15 @@ export class ServerStatelessScenario implements ClientScenario {
 
 1. **Per-Request _meta Validation (4 Checks)**
    - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientInfo\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature.
-2. **Discovery & Capabilities (4 Checks)**
-   - Implements \`server/discover\` mapping exact mandatory protocol elements. 
-   - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities, and ensures logging emissions do not bypass authorization parameters.
-3. **Architecture Validation (2 Checks)**
-   - Enforces conversational stateless topologies. Connection identity, socket lifecycles, or process states cannot act as context proxies. Servers must handle decoupled requests without connection reuse enforcement.
-4. **Version Negotiation & Headers (3 Checks)**
-   - Mismatched or unknown protocol versions must return an \`UnsupportedProtocolVersionError\` (HTTP status code \`400 Bad Request\`) carrying precise version tracking arrays. 
+2. **Discovery & Capabilities (3 Checks)**
+   - Implements \`server/discover\` mapping exact mandatory protocol elements.
+   - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities.
+3. **Version Negotiation & Headers (3 Checks)**
+   - Mismatched or unknown protocol versions must return an \`UnsupportedProtocolVersionError\` (HTTP status code \`400 Bad Request\`) carrying precise version tracking arrays.
    - Absent or altered protocol version header metadata must trigger a \`-32001 Header Mismatch\` error with an HTTP 400 boundary state.
-5. **Client Capability Constraints (2 Checks)**
+4. **Client Capability Constraints (2 Checks)**
    - Accessing platform capabilities without explicit declaration drops requests with a \`-32003 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
-6. **Subscription Context Mocking (3 Checks)**
-   - Validates event tracking compliance, including subscription ID mapping, event notification filtering, and acknowledgment message ordering across active stream channels.
-7. **Streaming & Transport Lifecycle (2 Checks)**
-   - Verifies transport pipe integrity, ensuring servers isolate interactions cleanly without publishing independent raw RPC bursts on the transport pipe and handle disconnection hooks as active cancellations.
-8. **Stream Updates & Lists (2 Checks)**
-   - Tracks subscription-dependent streaming notifications, evaluating capability flag broadcasts for prompts and tool collection mutations.
-9. **Methods & Routing Mechanics (3 Checks)**
+5. **Methods & Routing Mechanics (3 Checks)**
    - Removed legacy endpoints (\`initialize\`, \`ping\`, \`logging/setLevel\`, etc.) or generic unknown methods must cleanly yield an HTTP status code \`404 Not Found\` alongside a JSON-RPC \`-32601 Method not found\` payload. All error returns must preserve original request ID mappings.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
@@ -141,8 +133,8 @@ export class ServerStatelessScenario implements ClientScenario {
       if (data && data.error) {
         if (data.id !== expectedId) {
           checks.push({
-            id: 'stateless-error-jsonrpc-id',
-            name: 'StatelessErrorJsonrpcId',
+            id: 'sep-2575-http-server-error-jsonrpc-id',
+            name: 'HttpServerErrorJsonrpcId',
             description: 'All error responses carry the request JSON-RPC id',
             status: 'FAILURE',
             timestamp: new Date().toISOString(),
@@ -347,56 +339,8 @@ export class ServerStatelessScenario implements ClientScenario {
       }
     );
 
-    await runCheck(
-      'sep-2575-server-no-log-without-loglevel',
-      'ServerNoLogWithoutLogLevel',
-      'The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].',
-      () => {
-        // Since we are running on independent stateless HTTP POST channels, server logging notifications cannot be piggybacked
-        // back inline inside standard synchronous payload returns without breaking transport boundaries.
-        return {
-          details: {
-            text: 'Verified via transport constraints: HTTP POST channels do not broadcast unsolicited streams'
-          }
-        };
-      }
-    );
-
     // ==========================================
-    // 3. Architecture Validation (2 Checks)
-    // ==========================================
-    await runCheck(
-      'sep-2575-server-stateless-no-prior-context',
-      'ServerStatelessNoPriorContext',
-      'A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).',
-      () => {
-        // Asserted implicitly by the conformance testing harness architecture sending decoupled context structures over isolated calls
-        return {
-          details: {
-            architecture:
-              'Verified. All network request objects are generated as isolated fetch operations containing explicit _meta tags'
-          }
-        };
-      }
-    );
-
-    await runCheck(
-      'sep-2575-server-stateless-no-connection-reuse-required',
-      'ServerStatelessNoConnectionReuseRequired',
-      'Servers MUST NOT require that a client reuse the same connection to perform related operations.',
-      () => {
-        // Authenticated because each fetch call explicitly negotiates unique internal network pipelines
-        return {
-          details: {
-            architecture:
-              'Verified. Independent HTTP transaction pathways are verified to be handled securely without active pipeline sticking.'
-          }
-        };
-      }
-    );
-
-    // ==========================================
-    // 4. Version Negotiation & Headers (3 Checks)
+    // 3. Version Negotiation & Headers (3 Checks)
     // ==========================================
     const unsupportedMeta = {
       ...validMeta,
@@ -482,7 +426,7 @@ export class ServerStatelessScenario implements ClientScenario {
     );
 
     // ==========================================
-    // 5. Client Capability Constraints (2 Checks)
+    // 4. Client Capability Constraints (2 Checks)
     // ==========================================
     const response401 = await sendRpc(
       'tools/call',
@@ -568,104 +512,7 @@ export class ServerStatelessScenario implements ClientScenario {
     );
 
     // ==========================================
-    // 6. Subscription Context Mocking (3 Checks)
-    // ==========================================
-    await runCheck(
-      'sep-2575-server-tags-subscription-id',
-      'ServerTagsSubscriptionId',
-      'On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.',
-      () => ({
-        details: {
-          context:
-            'Implicitly satisfied. Evaluated server is running on independent, stateless HTTP POST handlers where streaming push states do not apply.'
-        }
-      })
-    );
-
-    await runCheck(
-      'sep-2575-server-honors-notification-filter',
-      'ServerHonorsNotificationFilter',
-      'The server MUST NOT send notification types the client has not explicitly requested.',
-      () => ({
-        details: {
-          context:
-            'Verified. Stateless request-reply pipelines never push async out-of-band notification events over synchronous execution channels.'
-        }
-      })
-    );
-
-    await runCheck(
-      'sep-2575-server-sends-subscription-ack',
-      'ServerSendsSubscriptionAck',
-      'The server MUST send notifications/subscriptions/acknowledged as the first message on the stream.',
-      () => ({
-        details: {
-          context:
-            'Stream validation skipped. Connection verified as stateless HTTP method model rather than a long-lived stateful subscription pipeline.'
-        }
-      })
-    );
-
-    // ==========================================
-    // 7. Streaming & Transport Lifecycle (2 Checks)
-    // ==========================================
-    await runCheck(
-      'sep-2575-http-server-no-independent-requests-on-stream',
-      'HttpServerNoIndependentRequestsOnStream',
-      'The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.',
-      () => ({
-        details: {
-          context:
-            'Verified via structural limitations. Server isolates communications purely inside transactional client-initiated POST actions.'
-        }
-      })
-    );
-
-    await runCheck(
-      'sep-2575-http-server-disconnect-is-cancel',
-      'HttpServerDisconnectIsCancel',
-      'Closing the SSE response stream MUST be treated by the server as cancellation of that request.',
-      () => ({
-        details: {
-          context:
-            'Verified. Connection teardown handling metrics are managed automatically via the underlying network transport layer architecture.'
-        }
-      })
-    );
-
-    // ==========================================
-    // 8. Stream Updates & Lists (2 Checks)
-    // ==========================================
-    await runCheck(
-      'sep-2575-server-sends-prompts-list-changed-on-subscription',
-      'ServerSendsPromptsListChangedOnSubscription',
-      '[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with promptsListChanged: true.',
-      () => ({
-        details: {
-          capability: discoverCapabilities?.prompts?.listChanged
-            ? 'Declared'
-            : 'Not Declared',
-          note: 'Streaming loops do not map to synchronous POST behaviors.'
-        }
-      })
-    );
-
-    await runCheck(
-      'sep-2575-server-sends-tools-list-changed-on-subscription',
-      'ServerSendsToolsListChangedOnSubscription',
-      '[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with toolsListChanged: true.',
-      () => ({
-        details: {
-          capability: discoverCapabilities?.tools?.listChanged
-            ? 'Declared'
-            : 'Not Declared',
-          note: 'Streaming loops do not map to synchronous POST behaviors.'
-        }
-      })
-    );
-
-    // ==========================================
-    // 9. Methods & Routing Mechanics (3 Checks)
+    // 5. Methods & Routing Mechanics (3 Checks)
     // ==========================================
     const expectedSlugs = [
       'initialize',
