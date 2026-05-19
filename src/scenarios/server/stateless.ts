@@ -5,7 +5,6 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  SpecVersion,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 
@@ -18,7 +17,7 @@ const SPEC_REF = [
 
 export class ServerStatelessScenario implements ClientScenario {
   name = 'server-stateless';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = `Test stateless MCP server architecture (SEP-2575).
 
 **Server Implementation Requirements:**
@@ -60,20 +59,24 @@ export class ServerStatelessScenario implements ClientScenario {
       name: string,
       description: string,
       fn: () =>
-        | Promise<{ error?: string; details?: any } | void>
-        | ({ error?: string; details?: any } | void),
+        | Promise<{ error?: string; skipped?: boolean; details?: any } | void>
+        | ({ error?: string; skipped?: boolean; details?: any } | void),
       fallbackDetails = {}
     ) {
       try {
         const result = await fn();
         const errorMessage = result?.error;
-        const passed = !errorMessage;
+        const status = errorMessage
+          ? 'FAILURE'
+          : result?.skipped
+            ? 'SKIPPED'
+            : 'SUCCESS';
 
         checks.push({
           id,
           name,
           description,
-          status: passed ? 'SUCCESS' : 'FAILURE',
+          status,
           timestamp,
           errorMessage: errorMessage || undefined,
           specReferences: SPEC_REF,
@@ -506,8 +509,10 @@ export class ServerStatelessScenario implements ClientScenario {
           };
 
         if (!serverRequiresCapability) {
-          // If the server doesn't enforce client capabilities, this check is a PASS by omission
+          // The server didn't return -32003, so this requirement isn't
+          // exercised for this method. Report SKIPPED rather than a green PASS.
           return {
+            skipped: true,
             details: {
               note: 'Skipped requirement tracking: Server returned a non-32003 response, indicating it does not require explicit client capability authorization constraints for this method.',
               response: data401
@@ -539,8 +544,10 @@ export class ServerStatelessScenario implements ClientScenario {
           };
 
         if (!serverRequiresCapability) {
-          // If the server doesn't enforce capability errors, the HTTP status check doesn't apply
+          // No -32003 means the HTTP-400 requirement doesn't apply here.
+          // Report SKIPPED rather than a green PASS.
           return {
+            skipped: true,
             details: {
               note: 'Skipped status tracking: Server did not return a MissingRequiredClientCapabilityError.',
               httpStatus: res401.status
