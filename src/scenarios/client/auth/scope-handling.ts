@@ -443,7 +443,12 @@ export class ScopeStepUpAuthScenario implements Scenario {
       {
         prmPath: '/.well-known/oauth-protected-resource/mcp',
         requiredScopes: escalatedScopes,
-        scopesSupported: [initialScope],
+        // Deliberately disjoint from initialScope/stepUpScope so the SEP-2350
+        // union check can't be satisfied by a client that unions
+        // scopes_supported ∪ challenge instead of prior-grant ∪ challenge.
+        // The spec allows this: clients MUST NOT assume any set relationship
+        // between challenged scopes and scopes_supported.
+        scopesSupported: ['mcp:profile'],
         includeScopeInWwwAuth: true,
         authMiddleware: stepUpMiddleware,
         tokenVerifier
