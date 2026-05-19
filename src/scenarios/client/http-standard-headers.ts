@@ -53,7 +53,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     for (const method of expectedMethods) {
       if (!this.methodHeaderChecks.has(method)) {
         result.push({
-          id: `sep-2243-mcp-method-header-${method.replace(/\//g, '-')}`,
+          id: 'sep-2243-client-includes-standard-headers',
           name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
           description: `Client sends correct Mcp-Method header on ${method} request`,
           status: 'SKIPPED',
@@ -68,7 +68,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     for (const method of expectedNameMethods) {
       if (!this.nameHeaderChecks.has(method)) {
         result.push({
-          id: `sep-2243-mcp-name-header-${method.replace(/\//g, '-')}`,
+          id: 'sep-2243-client-includes-standard-headers',
           name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
           description: `Client sends correct Mcp-Name header on ${method} request`,
           status: 'SKIPPED',
@@ -141,7 +141,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     this.methodHeaderChecks.set(method, errors.length === 0);
 
     this.checks.push({
-      id: `sep-2243-mcp-method-header-${method.replace(/\//g, '-')}`,
+      id: 'sep-2243-client-includes-standard-headers',
       name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
       description: `Client sends correct Mcp-Method header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -186,7 +186,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     this.nameHeaderChecks.set(method, errors.length === 0);
 
     this.checks.push({
-      id: `sep-2243-mcp-name-header-${method.replace(/\//g, '-')}`,
+      id: 'sep-2243-client-includes-standard-headers',
       name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
       description: `Client sends correct Mcp-Name header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',

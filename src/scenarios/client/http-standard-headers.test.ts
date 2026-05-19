@@ -31,14 +31,19 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     });
   }
 
-  it('FAILs sep-2243-mcp-method-header-initialize when Mcp-Method is missing', async () => {
+  // The coarse check id is emitted once per method/name case, so we narrow to
+  // the initialize Mcp-Method emission via its (case-specific) name.
+  const COARSE_ID = 'sep-2243-client-includes-standard-headers';
+  const INIT_METHOD_NAME = 'ClientMcpMethodHeader_initialize';
+
+  it('FAILs the initialize Mcp-Method emission when Mcp-Method is missing', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start();
     try {
       await postInitialize(serverUrl, {}); // no Mcp-Method header
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === 'sep-2243-mcp-method-header-initialize'
+        (c) => c.id === COARSE_ID && c.name === INIT_METHOD_NAME
       );
       expect(check?.status).toBe('FAILURE');
     } finally {
@@ -46,14 +51,14 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     }
   });
 
-  it('SUCCEEDs sep-2243-mcp-method-header-initialize when Mcp-Method matches', async () => {
+  it('SUCCEEDs the initialize Mcp-Method emission when Mcp-Method matches', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start();
     try {
       await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === 'sep-2243-mcp-method-header-initialize'
+        (c) => c.id === COARSE_ID && c.name === INIT_METHOD_NAME
       );
       expect(check?.status).toBe('SUCCESS');
     } finally {

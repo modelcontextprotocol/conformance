@@ -1,0 +1,236 @@
+import { describe, test, expect } from 'vitest';
+import {
+  runClientAgainstScenario,
+  InlineClientRunner
+} from './auth/test_helpers/testClient';
+import { getHandler } from '../../../examples/clients/typescript/everything-client';
+import { getScenario } from '../index';
+
+// A bad client that does not send _meta
+async function badClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {} // Missing _meta
+    })
+  });
+  return response.json();
+}
+
+const goodMeta = {
+  'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+  'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
+  'io.modelcontextprotocol/clientCapabilities': {}
+};
+
+// A client that misses the HTTP header
+async function missingHeaderClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, // Missing MCP-Protocol-Version header
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: goodMeta }
+    })
+  });
+  return response.json();
+}
+
+// A client whose header disagrees with _meta.protocolVersion
+async function mismatchedHeaderClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': '2025-11-25' // != _meta.protocolVersion
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: goodMeta }
+    })
+  });
+  return response.json();
+}
+
+// A client that fails to negotiate/retry on a 400 response
+async function nonRetryingClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: goodMeta }
+    })
+  });
+  return response.json();
+}
+
+// A client that has empty version intersection and terminates
+async function incompatibleVersionClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'UNSUPPORTED-VERSION'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          ...goodMeta,
+          'io.modelcontextprotocol/protocolVersion': 'UNSUPPORTED-VERSION'
+        }
+      }
+    })
+  });
+
+  if (response.status === 400) {
+    const body = await response.json();
+    if (body.error?.code === -32001) {
+      return body; // Abort cleanly
+    }
+  }
+  return response.json();
+}
+
+// A client that sends invalid (non-object) capabilities
+async function malformedCapabilitiesClient(serverUrl: string) {
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          ...goodMeta,
+          'io.modelcontextprotocol/clientCapabilities': {
+            roots: 'malformed-string',
+            sampling: {},
+            elicitation: true
+          }
+        }
+      }
+    })
+  });
+  return response.json();
+}
+
+describe('request-metadata client scenario — positive test', () => {
+  test('everything-client passes request-metadata scenario with success status for optional capabilities', async () => {
+    const clientFn = getHandler('request-metadata');
+    if (!clientFn) {
+      throw new Error('No handler registered for scenario: request-metadata');
+    }
+
+    const scenario = getScenario('request-metadata');
+    if (!scenario) {
+      throw new Error('Scenario not found');
+    }
+
+    const runner = new InlineClientRunner(clientFn);
+    await runClientAgainstScenario(runner, 'request-metadata');
+
+    // Extract checks directly from the scenario instance
+    const checks = scenario.getChecks();
+
+    // 4-Line Bulk Assertion Loop
+    for (const check of checks) {
+      expect(check.status).not.toBe('FAILURE');
+      expect(check.status).not.toBe('WARNING');
+    }
+
+    // Strategic Targeted Optional Assertions
+    expect(
+      checks.find((c) => c.id === 'sep-2575-client-declares-roots-capability')
+        ?.status
+    ).toBe('SUCCESS');
+    expect(
+      checks.find(
+        (c) => c.id === 'sep-2575-client-declares-sampling-capability'
+      )?.status
+    ).toBe('SUCCESS');
+    expect(
+      checks.find(
+        (c) => c.id === 'sep-2575-client-declares-elicitation-capability'
+      )?.status
+    ).toBe('SUCCESS');
+
+    // Assert version negotiation retry succeeded
+    expect(
+      checks.find((c) => c.id === 'sep-2575-client-retry-supported-version')
+        ?.status
+    ).toBe('SUCCESS');
+  });
+});
+
+describe('request-metadata client scenario — negative tests', () => {
+  test('client fails when omitting _meta', async () => {
+    const runner = new InlineClientRunner(badClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: [
+        'sep-2575-client-populates-meta',
+        'sep-2575-http-client-sends-version-header'
+      ]
+    });
+  });
+
+  test('client fails when missing version header', async () => {
+    const runner = new InlineClientRunner(missingHeaderClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: ['sep-2575-http-client-sends-version-header']
+    });
+  });
+
+  test('client fails when header disagrees with _meta', async () => {
+    const runner = new InlineClientRunner(mismatchedHeaderClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: ['sep-2575-http-version-header-matches-meta']
+    });
+  });
+
+  test('client fails retry check when it does not handle 400 rejection', async () => {
+    const runner = new InlineClientRunner(nonRetryingClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: ['sep-2575-client-retry-supported-version']
+    });
+  });
+
+  test('client aborts cleanly without hanging when negotiation has empty version intersection', async () => {
+    const runner = new InlineClientRunner(incompatibleVersionClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: ['sep-2575-client-retry-supported-version']
+    });
+  });
+
+  test('client triggers failures for malformed capabilities', async () => {
+    const runner = new InlineClientRunner(malformedCapabilitiesClient);
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      expectedFailureSlugs: [
+        'sep-2575-client-declares-roots-capability',
+        'sep-2575-client-declares-elicitation-capability'
+      ]
+    });
+  });
+});
