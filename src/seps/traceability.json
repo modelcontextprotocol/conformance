@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@6f0bf49d",
+  "source": "typescript-sdk@4e153aef0538",
   "seps": {
     "2164": {
       "yaml": "src/seps/sep-2164.yaml",
@@ -198,6 +198,51 @@
         "unkeyed": 0
       }
     },
+    "2352": {
+      "yaml": "src/seps/sep-2352.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-binding",
+      "requirements": [
+        {
+          "check": "sep-2352-no-cross-as-credential-reuse",
+          "status": "tested",
+          "text": "Clients MUST NOT assume that credentials valid for one authorization server will be accepted by another.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-location"
+        },
+        {
+          "check": "sep-2352-no-reuse-on-as-change",
+          "status": "tested",
+          "text": "When the authorization server changes (detected via updated protected resource metadata), clients MUST NOT reuse client credentials from a different authorization server."
+        },
+        {
+          "check": "sep-2352-reregister-on-as-change",
+          "status": "tested",
+          "text": "When the authorization server changes (detected via updated protected resource metadata), clients MUST re-register with the new authorization server."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "Clients MUST maintain separate registration state (client credentials, tokens) per authorization server.",
+          "reason": "internal storage requirement; not directly observable on the wire"
+        },
+        {
+          "text": "Clients that use pre-registered credentials, or persist client credentials obtained via Dynamic Client Registration, MUST associate those credentials with the specific authorization server that issued them, keyed by the authorization server issuer identifier.",
+          "reason": "internal state-keying requirement; not protocol-observable"
+        },
+        {
+          "text": "If the authorization server indicated by protected resource metadata no longer matches the one the credentials were registered with, clients SHOULD surface an error rather than silently attempting to use mismatched credentials.",
+          "reason": "UI behavior; the negative half (do not send mismatched credentials) is covered by sep-2352-no-reuse-on-as-change"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 3,
+        "untested": 0,
+        "excluded": 3,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2575": {
       "yaml": "src/seps/sep-2575.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle",
@@ -210,13 +255,13 @@
         },
         {
           "check": "sep-2575-server-rejects-undeclared-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32003).",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
         },
         {
           "check": "sep-2575-missing-capability-http-400",
-          "status": "untested",
+          "status": "tested",
           "text": "On HTTP, the response status MUST be 400 Bad Request [for MissingRequiredClientCapabilityError].",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
         },
@@ -238,7 +283,7 @@
         },
         {
           "check": "sep-2575-server-unsupported-version-error",
-          "status": "untested",
+          "status": "tested",
           "text": "If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation"
         },
@@ -250,7 +295,7 @@
         },
         {
           "check": "sep-2575-server-implements-discover",
-          "status": "untested",
+          "status": "tested",
           "text": "Servers MUST implement server/discover.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/discover"
         },
@@ -286,19 +331,19 @@
         },
         {
           "check": "sep-2575-http-server-header-mismatch-400",
-          "status": "untested",
+          "status": "tested",
           "text": "If the values do not match, the server MUST reject the request with 400 Bad Request and a HeaderMismatch JSON-RPC error.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
         {
           "check": "sep-2575-http-server-unsupported-version-400",
-          "status": "untested",
+          "status": "tested",
           "text": "If the server does not implement the requested protocol version, it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
         {
           "check": "sep-2575-http-server-method-not-found-404",
-          "status": "untested",
+          "status": "tested",
           "text": "If the server does not implement the requested RPC method, it MUST respond with 404 Not Found and a JSON-RPC error with code -32601 (Method not found).",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
@@ -334,7 +379,7 @@
         },
         {
           "check": "sep-2575-server-declares-prompts-in-discover",
-          "status": "untested",
+          "status": "tested",
           "text": "Servers that support prompts MUST declare the prompts capability in their DiscoverResult.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/prompts#capabilities"
         },
@@ -396,12 +441,24 @@
         }
       ],
       "unkeyed": [],
-      "untracked": [],
+      "untracked": [
+        "sep-2575-discover-capabilities-match-handlers",
+        "sep-2575-http-server-error-jsonrpc-id",
+        "sep-2575-http-server-method-not-found-404-initialize",
+        "sep-2575-http-server-method-not-found-404-logging-setlevel",
+        "sep-2575-http-server-method-not-found-404-ping",
+        "sep-2575-http-server-method-not-found-404-resources-subscribe",
+        "sep-2575-http-server-method-not-found-404-resources-unsubscribe",
+        "sep-2575-request-meta-invalid-missing-client-capabilities",
+        "sep-2575-request-meta-invalid-missing-client-info",
+        "sep-2575-request-meta-invalid-missing-meta",
+        "sep-2575-request-meta-invalid-missing-protocol-version"
+      ],
       "summary": {
-        "tested": 0,
-        "untested": 26,
+        "tested": 8,
+        "untested": 18,
         "excluded": 9,
-        "untracked": 0,
+        "untracked": 11,
         "unkeyed": 0
       }
     }
