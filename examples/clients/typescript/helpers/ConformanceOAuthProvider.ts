@@ -6,6 +6,16 @@ import {
   OAuthTokens
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
+/**
+ * SEP-837 adds `application_type` to DCR; the SDK's OAuthClientMetadataSchema
+ * doesn't include it yet. The SDK spreads clientMetadata verbatim into the
+ * /register POST body, so widening the type here is sufficient to get the
+ * field on the wire. Drop this once the SDK schema is updated.
+ */
+type ConformanceClientMetadata = OAuthClientMetadata & {
+  application_type?: 'native' | 'web';
+};
+
 export class ConformanceOAuthProvider implements OAuthClientProvider {
   private _clientInformation?: OAuthClientInformationFull;
   private _tokens?: OAuthTokens;
@@ -17,7 +27,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
 
   constructor(
     private readonly _redirectUrl: string | URL,
-    private readonly _clientMetadata: OAuthClientMetadata,
+    private readonly _clientMetadata: ConformanceClientMetadata,
     private readonly _clientMetadataUrl?: string | URL
   ) {}
 
@@ -25,7 +35,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
     return this._redirectUrl;
   }
 
-  get clientMetadata(): OAuthClientMetadata {
+  get clientMetadata(): ConformanceClientMetadata {
     return this._clientMetadata;
   }
 
