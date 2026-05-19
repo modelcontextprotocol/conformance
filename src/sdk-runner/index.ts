@@ -160,6 +160,10 @@ export function createSdkCommand(): Command {
     .option('--client-cmd <cmd>', 'Override the client command from config')
     .option('--server-cmd <cmd>', 'Override the server command from config')
     .option('--server-url <url>', 'Override the server URL from config')
+    .option(
+      '--expected-failures <path>',
+      'Override the expected-failures baseline file from config'
+    )
     .option('--timeout <ms>', 'Per-scenario client timeout (passed through)')
     .option('-o, --output <dir>', 'Output directory (passed through)')
     .option('--verbose', 'Verbose output (passed through)')
@@ -201,9 +205,17 @@ export function createSdkCommand(): Command {
           options.serverCmd ?? builtinConfig.server?.command;
         const serverUrl: string | undefined =
           options.serverUrl ?? builtinConfig.server?.url;
-        const expectedFailuresRel = builtinConfig.expectedFailures;
-        const expectedFailures = expectedFailuresRel
-          ? path.resolve(dir, expectedFailuresRel)
+        // CLI override resolves relative to the user's invocation cwd; the
+        // built-in default resolves relative to the SDK checkout.
+        const expectedFailures = options.expectedFailures
+          ? path.resolve(options.expectedFailures)
+          : builtinConfig.expectedFailures
+            ? path.resolve(dir, builtinConfig.expectedFailures)
+            : undefined;
+        // Resolve -o to an absolute path so it lands where the user expects,
+        // not relative to the SDK checkout (selfInvoke runs with cwd = dir).
+        const output = options.output
+          ? path.resolve(options.output)
           : undefined;
 
         if (buildCmd && !options.skipBuild) {
@@ -232,7 +244,7 @@ export function createSdkCommand(): Command {
               suite: options.suite ?? 'all',
               timeout: options.timeout,
               verbose: options.verbose,
-              output: options.output
+              output
             })
           ];
           if (expectedFailures)
@@ -253,7 +265,7 @@ export function createSdkCommand(): Command {
               scenario: options.scenario,
               suite: options.suite,
               verbose: options.verbose,
-              output: options.output
+              output
             })
           ];
           if (expectedFailures)

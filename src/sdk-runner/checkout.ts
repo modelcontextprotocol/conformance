@@ -81,7 +81,7 @@ export async function ensureCheckout(
   spec: SdkSpec,
   cacheDir: string
 ): Promise<string> {
-  const safeName = spec.name.replace('/', '__');
+  const safeName = spec.name.replace(/\//g, '__');
   // Key the checkout by ref as well, so different refs of the same repo (e.g.
   // the typescript-sdk `main` and typescript-sdk-v1 `v1.x` entries) get their
   // own directory instead of thrashing one checkout between refs/build systems.
