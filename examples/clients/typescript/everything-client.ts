@@ -727,6 +727,134 @@ registerScenario(
 );
 
 // ============================================================================
+// MRTR client conformance (SEP-2322)
+// ============================================================================
+
+async function runMRTRClient(serverUrl: string): Promise<void> {
+  let nextId = 1;
+
+  async function sendRpc(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<{
+    id: number;
+    result?: Record<string, unknown>;
+    error?: { code: number; message: string };
+  }> {
+    const id = nextId++;
+    const body: Record<string, unknown> = {
+      jsonrpc: '2.0',
+      id,
+      method
+    };
+    if (params) body.params = params;
+
+    const resp = await fetch(serverUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (resp.status === 204) return { id, result: {} };
+    return (await resp.json()) as {
+      id: number;
+      result?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
+  }
+
+  // List tools
+  const toolsResp = await sendRpc('tools/list');
+  const tools =
+    (toolsResp.result as { tools: Array<{ name: string }> })?.tools ?? [];
+  logger.debug(
+    'Available tools:',
+    tools.map((t) => t.name)
+  );
+
+  // Tool 1: test_mrtr_echo_state — call, get InputRequiredResult with requestState, retry
+  const r1 = await sendRpc('tools/call', {
+    name: 'test_mrtr_echo_state',
+    arguments: {}
+  });
+
+  const r1Result = r1.result as Record<string, unknown> | undefined;
+  if (r1Result?.resultType === 'input_required') {
+    const inputRequests = r1Result.inputRequests as Record<string, unknown>;
+    const requestState = r1Result.requestState as string | undefined;
+
+    // Build inputResponses by fulfilling each inputRequest
+    const inputResponses: Record<string, unknown> = {};
+    for (const [key, req] of Object.entries(inputRequests)) {
+      const request = req as { method: string; params: unknown };
+      if (request.method === 'elicitation/create') {
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
+      }
+    }
+
+    // Call an unrelated tool BEFORE retrying — must NOT carry over inputResponses/requestState
+    await sendRpc('tools/call', {
+      name: 'test_mrtr_unrelated',
+      arguments: {}
+    });
+    logger.debug(
+      'test_mrtr_unrelated: called without MRTR state (isolation check)'
+    );
+
+    // Retry with inputResponses + requestState echoed back unchanged
+    const retryParams: Record<string, unknown> = {
+      name: 'test_mrtr_echo_state',
+      arguments: {},
+      inputResponses
+    };
+    if (requestState !== undefined) {
+      retryParams.requestState = requestState;
+    }
+
+    await sendRpc('tools/call', retryParams);
+    logger.debug('test_mrtr_echo_state: MRTR flow completed');
+  }
+
+  // Tool 2: test_mrtr_no_state — call, get InputRequiredResult WITHOUT requestState, retry without it
+  const r2 = await sendRpc('tools/call', {
+    name: 'test_mrtr_no_state',
+    arguments: {}
+  });
+
+  const r2Result = r2.result as Record<string, unknown> | undefined;
+  if (r2Result?.resultType === 'input_required') {
+    const inputRequests = r2Result.inputRequests as Record<string, unknown>;
+
+    // Build inputResponses
+    const inputResponses: Record<string, unknown> = {};
+    for (const [key, req] of Object.entries(inputRequests)) {
+      const request = req as { method: string; params: unknown };
+      if (request.method === 'elicitation/create') {
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
+      }
+    }
+
+    // Retry WITHOUT requestState (server didn't send one)
+    await sendRpc('tools/call', {
+      name: 'test_mrtr_no_state',
+      arguments: {},
+      inputResponses
+    });
+    logger.debug('test_mrtr_no_state: MRTR flow completed');
+  }
+
+  logger.debug('MRTR client scenario completed');
+}
+
+registerScenario('mrtr-client-request-state', runMRTRClient);
+
+// ============================================================================
 // Main entry point
 // ============================================================================
 

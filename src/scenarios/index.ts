@@ -14,6 +14,7 @@ import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
+import { MRTRClientScenario } from './client/mrtr-client';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
@@ -66,23 +67,17 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 
-// IncompleteResult scenarios from (SEP-2322)
+// InputRequiredResult scenarios from (SEP-2322)
 import {
-  IncompleteResultBasicElicitationScenario,
-  IncompleteResultBasicSamplingScenario,
-  IncompleteResultBasicListRootsScenario,
-  IncompleteResultRequestStateScenario,
-  IncompleteResultMultipleInputRequestsScenario,
-  IncompleteResultMultiRoundScenario,
-  IncompleteResultMissingInputResponseScenario,
-  IncompleteResultNonToolRequestScenario
-} from './server/incomplete-result';
-
-import {
-  IncompleteResultTaskBasicScenario,
-  IncompleteResultTaskBadInputResponseScenario,
-  IncompleteResultTaskInputResponseIncompleteScenario
-} from './server/incomplete-result-tasks';
+  InputRequiredResultBasicElicitationScenario,
+  InputRequiredResultBasicSamplingScenario,
+  InputRequiredResultBasicListRootsScenario,
+  InputRequiredResultRequestStateScenario,
+  InputRequiredResultMultipleInputRequestsScenario,
+  InputRequiredResultMultiRoundScenario,
+  InputRequiredResultMissingInputResponseScenario,
+  InputRequiredResultNonToolRequestScenario
+} from './server/input-required-result';
 
 import {
   HttpHeaderValidationScenario,
@@ -122,20 +117,24 @@ const pendingClientScenariosList: ClientScenario[] = [
   new HttpCustomHeaderServerValidationScenario(),
   new ServerSSEPollingScenario(),
 
-  // IncompleteResult scenarios (SEP-2322) — pending until a conformance test
-  // server implements IncompleteResult tools. These are draft spec scenarios
-  // intended to be run via `--spec-version draft` against capable servers.
-  new IncompleteResultBasicElicitationScenario(),
-  new IncompleteResultBasicSamplingScenario(),
-  new IncompleteResultBasicListRootsScenario(),
-  new IncompleteResultRequestStateScenario(),
-  new IncompleteResultMultipleInputRequestsScenario(),
-  new IncompleteResultMultiRoundScenario(),
-  new IncompleteResultMissingInputResponseScenario(),
-  new IncompleteResultNonToolRequestScenario(),
-  new IncompleteResultTaskBasicScenario(),
-  new IncompleteResultTaskBadInputResponseScenario(),
-  new IncompleteResultTaskInputResponseIncompleteScenario()
+  // HTTP Standardization (SEP-2243)
+  // Pending until the everything-server fully implements SEP-2243
+  // header validation (case-insensitive names, whitespace trimming, -32001 error code)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario(),
+  new ServerSSEPollingScenario(),
+
+  // InputRequiredResult scenarios (SEP-2322) — pending in the everything-server
+  // because McpServer.registerTool cannot return resultType: "input_required".
+  // These are tested against the dedicated sep-2322-mrtr-server instead.
+  new InputRequiredResultBasicElicitationScenario(),
+  new InputRequiredResultBasicSamplingScenario(),
+  new InputRequiredResultBasicListRootsScenario(),
+  new InputRequiredResultRequestStateScenario(),
+  new InputRequiredResultMultipleInputRequestsScenario(),
+  new InputRequiredResultMultiRoundScenario(),
+  new InputRequiredResultMissingInputResponseScenario(),
+  new InputRequiredResultNonToolRequestScenario()
 ];
 
 // All client scenarios
@@ -201,20 +200,20 @@ const allClientScenariosList: ClientScenario[] = [
   new HttpCustomHeaderServerValidationScenario(),
   new DNSRebindingProtectionScenario(),
 
-  // IncompleteResult scenarios (SEP-2322)
-  new IncompleteResultBasicElicitationScenario(),
-  new IncompleteResultBasicSamplingScenario(),
-  new IncompleteResultBasicListRootsScenario(),
-  new IncompleteResultRequestStateScenario(),
-  new IncompleteResultMultipleInputRequestsScenario(),
-  new IncompleteResultMultiRoundScenario(),
-  new IncompleteResultMissingInputResponseScenario(),
-  new IncompleteResultNonToolRequestScenario(),
+  // HTTP Standardization scenarios (SEP-2243)
+  new HttpHeaderValidationScenario(),
+  new HttpCustomHeaderServerValidationScenario(),
+  new DNSRebindingProtectionScenario(),
 
-  // IncompleteResult Task scenarios (SEP-2322)
-  new IncompleteResultTaskBasicScenario(),
-  new IncompleteResultTaskBadInputResponseScenario(),
-  new IncompleteResultTaskInputResponseIncompleteScenario()
+  // InputRequiredResult scenarios (SEP-2322)
+  new InputRequiredResultBasicElicitationScenario(),
+  new InputRequiredResultBasicSamplingScenario(),
+  new InputRequiredResultBasicListRootsScenario(),
+  new InputRequiredResultRequestStateScenario(),
+  new InputRequiredResultMultipleInputRequestsScenario(),
+  new InputRequiredResultMultiRoundScenario(),
+  new InputRequiredResultMissingInputResponseScenario(),
+  new InputRequiredResultNonToolRequestScenario()
 ];
 
 // Active client scenarios (excludes pending)
@@ -259,6 +258,9 @@ const scenariosList: Scenario[] = [
   ...backcompatScenariosList,
   ...draftScenariosList,
   ...extensionScenariosList,
+
+  // MRTR client conformance (SEP-2322)
+  new MRTRClientScenario(),
 
   // HTTP Standardization scenarios (SEP-2243)
   new HttpStandardHeadersScenario(),

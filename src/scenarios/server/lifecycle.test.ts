@@ -15,6 +15,7 @@ describe('ServerInitializeScenario', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.mocked(connectToServer).mockResolvedValue({
       client: {} as any,
+      transport: {} as any,
       close: closeMock
     });
   });
