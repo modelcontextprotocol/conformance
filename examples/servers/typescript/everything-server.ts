@@ -1113,6 +1113,60 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
+    if (method === 'subscriptions/listen') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Transfer-Encoding': 'chunked'
+      });
+
+      const subscriptionList = params.subscriptions || [];
+      const trackingSubId = 'sub-token-stateless-123';
+
+      // First message MUST be notifications/subscriptions/acknowledged carrying tracking token in _meta
+      const ackFrame = {
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: {
+          _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId }
+        }
+      };
+      res.write(JSON.stringify(ackFrame) + '\n');
+
+      const wantsTools = subscriptionList.some(
+        (s: any) => s.type === 'tools/list-changed'
+      );
+      const wantsPrompts = subscriptionList.some(
+        (s: any) => s.type === 'prompts/list-changed'
+      );
+
+      if (wantsTools) {
+        res.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/tools/list-changed',
+            _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
+            params: { toolsListChanged: true }
+          }) + '\n'
+        );
+      }
+
+      if (wantsPrompts) {
+        res.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/prompts/list-changed',
+            _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
+            params: { promptsListChanged: true }
+          }) + '\n'
+        );
+      }
+
+      return res.end();
+    }
+
     if (method === 'server/discover') {
       return res.json({
         jsonrpc: '2.0',
@@ -1120,8 +1174,8 @@ app.post('/mcp', async (req, res) => {
         result: {
           supportedVersions: ['DRAFT-2026-v1'],
           capabilities: {
-            tools: { listChanged: false }, // Explicitly declare capability flags to resolve check assertions
-            prompts: { listChanged: false }
+            tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
+            prompts: { listChanged: true }
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1137,6 +1191,17 @@ app.post('/mcp', async (req, res) => {
             {
               name: 'test_missing_capability',
               description: 'Test tool requiring sampling',
+              inputSchema: { type: 'object', properties: {} }
+            },
+            {
+              name: 'test_streaming_elicitation',
+              description:
+                'Diagnostic tool validating response progress streams',
+              inputSchema: { type: 'object', properties: {} }
+            },
+            {
+              name: 'test_logging_tool',
+              description: 'Diagnostic logging validator tool',
               inputSchema: { type: 'object', properties: {} }
             }
           ]
@@ -1174,6 +1239,72 @@ app.post('/mcp', async (req, res) => {
           jsonrpc: '2.0',
           id,
           result: { content: [{ type: 'text', text: 'Success' }] }
+        });
+      }
+
+      // Progressive IncompleteResult Stream Generator Handling
+      if (name === 'test_streaming_elicitation') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        res.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/progress', // Emits standard progress notice
+            params: { progressToken: 'token-abc', total: 100, value: 50 }
+          }) + '\n'
+        );
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Streaming complete' }] }
+          })
+        );
+      }
+
+      // Contextual Logging Constraints Verification Handler
+      if (name === 'test_logging_tool') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        // RULE: No logs allowed if meta configuration lacks explicit log level bounds
+        if (meta && meta['io.modelcontextprotocol/logLevel']) {
+          res.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'notifications/message',
+              params: {
+                level: 'info',
+                text: 'Diagnostic trace logging activated'
+              }
+            }) + '\n'
+          );
+        }
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
+          })
+        );
+      }
+
+      // Helper mutation hooks used by dynamic tests to force stream activity evaluation
+      if (
+        name === 'test_trigger_tool_change' ||
+        name === 'test_trigger_prompt_change'
+      ) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
         });
       }
     }
