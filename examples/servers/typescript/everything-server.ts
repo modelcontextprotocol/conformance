@@ -123,6 +123,8 @@ const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
   type: 'object' as const,
   $defs: {
     address: {
+      // SEP-2106: reference keyword ($anchor) must be preserved
+      $anchor: 'addressDef',
       type: 'object',
       properties: {
         street: { type: 'string' },
@@ -132,8 +134,25 @@ const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
   },
   properties: {
     name: { type: 'string' },
-    address: { $ref: '#/$defs/address' }
+    address: { $ref: '#/$defs/address' },
+    contactMethod: { type: 'string', enum: ['phone', 'email'] },
+    phone: { type: 'string' },
+    email: { type: 'string' }
   },
+  // SEP-2106: the full JSON Schema 2020-12 vocabulary is permitted in
+  // inputSchema (alongside the required root `type: "object"`). These keywords
+  // exercise that SDKs preserve them through tools/list rather than stripping
+  // them down to properties/required.
+  //
+  // Composition keywords (allOf / anyOf):
+  allOf: [{ anyOf: [{ required: ['phone'] }, { required: ['email'] }] }],
+  // Conditional keywords (if / then / else):
+  if: {
+    properties: { contactMethod: { const: 'phone' } },
+    required: ['contactMethod']
+  },
+  then: { required: ['phone'] },
+  else: { required: ['email'] },
   additionalProperties: false
 };
 

@@ -1,9 +1,14 @@
 /**
- * JSON Schema 2020-12 conformance test scenario (SEP-1613)
+ * JSON Schema 2020-12 conformance test scenario (SEP-1613, SEP-2106)
  *
  * Validates that MCP servers correctly preserve JSON Schema 2020-12 keywords
  * in tool definitions, ensuring implementations don't strip $schema, $defs,
- * or additionalProperties fields.
+ * or additionalProperties fields (SEP-1613).
+ *
+ * SEP-2106 broadened inputSchema to permit the full JSON Schema 2020-12
+ * vocabulary alongside the required root `type: "object"`. This scenario also
+ * verifies that composition (allOf/anyOf), conditional (if/then/else), and
+ * reference ($anchor) keywords survive tools/list rather than being stripped.
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
@@ -46,7 +51,13 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
 }
 \`\`\`
 
-**Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved in the tool listing response.`;
+The \`inputSchema\` should also exercise the broader JSON Schema 2020-12 vocabulary permitted by SEP-2106:
+
+- a \`$defs\` subschema with an \`$anchor\`
+- composition keywords (\`allOf\` containing \`anyOf\`)
+- conditional keywords (\`if\`/\`then\`/\`else\`)
+
+**Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition, conditional, and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -54,6 +65,12 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       {
         id: 'SEP-1613',
         url: 'https://github.com/modelcontextprotocol/specification/pull/655'
+      }
+    ];
+    const sep2106References = [
+      {
+        id: 'SEP-2106',
+        url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2106'
       }
     ];
 
@@ -161,6 +178,88 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
           hasAdditionalProps,
           additionalPropsValue,
           expected: false
+        }
+      });
+
+      // SEP-2106: the full JSON Schema 2020-12 vocabulary is permitted in
+      // inputSchema and must survive tools/list rather than being stripped to
+      // properties/required.
+
+      // Check 5: composition keywords (allOf / anyOf) preserved
+      const allOf = inputSchema['allOf'];
+      const hasAllOf = Array.isArray(allOf) && allOf.length > 0;
+      const hasNestedAnyOf =
+        Array.isArray(allOf) &&
+        allOf.some(
+          (sub) =>
+            typeof sub === 'object' &&
+            sub !== null &&
+            Array.isArray((sub as Record<string, unknown>)['anyOf'])
+        );
+
+      checks.push({
+        id: 'sep-2106-composition-keywords-preserved',
+        name: 'JsonSchema2020_12CompositionKeywords',
+        description:
+          'inputSchema composition keywords (allOf/anyOf) preserved (SEP-2106)',
+        status: hasAllOf && hasNestedAnyOf ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: !hasAllOf
+          ? 'allOf keyword missing from inputSchema - composition keyword was likely stripped'
+          : !hasNestedAnyOf
+            ? 'nested anyOf missing from allOf - composition keyword was likely stripped'
+            : undefined,
+        specReferences: sep2106References,
+        details: {
+          hasAllOf,
+          hasNestedAnyOf
+        }
+      });
+
+      // Check 6: conditional keywords (if / then / else) preserved
+      const hasIf = 'if' in inputSchema;
+      const hasThen = 'then' in inputSchema;
+      const hasElse = 'else' in inputSchema;
+
+      checks.push({
+        id: 'sep-2106-conditional-keywords-preserved',
+        name: 'JsonSchema2020_12ConditionalKeywords',
+        description:
+          'inputSchema conditional keywords (if/then/else) preserved (SEP-2106)',
+        status: hasIf && hasThen && hasElse ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          !hasIf || !hasThen || !hasElse
+            ? `Conditional keywords missing (if=${hasIf}, then=${hasThen}, else=${hasElse}) - likely stripped`
+            : undefined,
+        specReferences: sep2106References,
+        details: {
+          hasIf,
+          hasThen,
+          hasElse
+        }
+      });
+
+      // Check 7: reference keyword ($anchor) preserved within $defs.address
+      const addressDef = defsValue?.['address'] as
+        | Record<string, unknown>
+        | undefined;
+      const hasAnchor = !!addressDef && '$anchor' in addressDef;
+
+      checks.push({
+        id: 'sep-2106-anchor-keyword-preserved',
+        name: 'JsonSchema2020_12AnchorKeyword',
+        description:
+          'inputSchema reference keyword ($anchor) preserved in $defs (SEP-2106)',
+        status: hasAnchor ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: hasAnchor
+          ? undefined
+          : '$anchor missing from $defs.address - reference keyword was likely stripped',
+        specReferences: sep2106References,
+        details: {
+          hasAnchor,
+          anchorValue: addressDef?.['$anchor']
         }
       });
 
