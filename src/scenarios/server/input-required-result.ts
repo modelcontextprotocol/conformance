@@ -6,7 +6,12 @@
  * clients retry with inputResponses and echoed requestState.
  */
 
-import { ClientScenario, ConformanceCheck, DRAFT_PROTOCOL_VERSION, SpecVersion } from '../../types';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION,
+  SpecVersion
+} from '../../types';
 import { createRawSession } from './client-helper';
 import {
   isInputRequiredResult,

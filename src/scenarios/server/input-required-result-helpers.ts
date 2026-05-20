@@ -46,8 +46,8 @@ export function isCompleteResult(
   result: Record<string, unknown> | undefined
 ): boolean {
   if (!result) return false;
-  if (result.resultType === 'complete') return true;
-  return false;
+  if (result.resultType === 'input_required') return false;
+  return true;
 }
 
 /**

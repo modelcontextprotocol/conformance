@@ -4,10 +4,10 @@
  * Provides two connection modes:
  *  1. SDK-based (connectToServer) — uses the MCP TypeScript SDK for standard
  *     protocol operations.
- *  2. Raw JSON-RPC (RawMcpSession) — uses undici HTTP for draft/experimental
- *     features that the SDK does not yet support.
+ *  2. Raw JSON-RPC (RawMcpSession) — uses stateless fetch for draft/experimental
+ *     features (SEP-2575 pattern: no initialize, no session ID, _meta per request).
  *
- * Both modes share the same SDK-based initialize handshake and session ID.
+ * Both modes share a common client identity.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -16,7 +16,7 @@ import {
   LoggingMessageNotificationSchema,
   ProgressNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import { request } from 'undici';
+import { DRAFT_PROTOCOL_VERSION } from '../../types';
 
 // ─── JSON-RPC Types ──────────────────────────────────────────────────────────
 
@@ -68,12 +68,12 @@ export async function connectToServer(
   };
 }
 
-// ─── Raw JSON-RPC Session ────────────────────────────────────────────────────
+// ─── Raw JSON-RPC Session (Stateless, SEP-2575 pattern) ──────────────────────
 
 /**
- * A raw MCP session for testing draft/experimental protocol features that the
- * SDK does not yet support. Uses the SDK for the standard initialize handshake,
- * then sends raw JSON-RPC over HTTP via undici for subsequent requests.
+ * A raw MCP session for testing draft/experimental protocol features.
+ * Uses stateless HTTP requests with _meta on every request (SEP-2575 pattern).
+ * No initialize handshake, no session ID.
  *
  * Usage:
  *   const session = await createRawSession(serverUrl);
@@ -82,26 +82,22 @@ export async function connectToServer(
 export class RawMcpSession {
   private nextId = 1;
   private serverUrl: string;
-  private connection: MCPClientConnection | null = null;
-  private sessionId: string | undefined = undefined;
 
   constructor(serverUrl: string) {
     this.serverUrl = serverUrl;
   }
 
   /**
-   * Initialize the MCP session using the SDK's connectToServer(),
-   * then extract the session ID for subsequent raw requests.
+   * Initialize the session. For stateless servers this is a no-op,
+   * but kept for API compatibility.
    */
   async initialize(): Promise<void> {
-    this.connection = await connectToServer(this.serverUrl);
-    this.sessionId = this.connection.transport.sessionId;
+    // Stateless: no handshake needed
   }
 
   /**
-   * Send a JSON-RPC request via raw HTTP.
-   * Automatically manages session ID and auto-incrementing JSON-RPC IDs.
-   * Handles both JSON and SSE response formats.
+   * Send a JSON-RPC request via raw HTTP (stateless, SEP-2575 pattern).
+   * Automatically injects _meta with protocolVersion, clientInfo, clientCapabilities.
    */
   async send(
     method: string,
@@ -111,44 +107,48 @@ export class RawMcpSession {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream'
+      Accept: 'application/json',
+      'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+    };
+
+    // Inject _meta into params per SEP-2575
+    const enrichedParams = {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+        'io.modelcontextprotocol/clientInfo': {
+          name: 'conformance-test-client',
+          version: '1.0.0'
+        },
+        'io.modelcontextprotocol/clientCapabilities': {
+          sampling: {},
+          elicitation: {}
+        },
+        ...(params?._meta as Record<string, unknown> | undefined)
+      }
     };
 
     const body = JSON.stringify({
       jsonrpc: '2.0',
       id,
       method,
-      params
+      params: enrichedParams
     });
 
-    const response = await request(this.serverUrl, {
+    const response = await fetch(this.serverUrl, {
       method: 'POST',
       headers,
       body
     });
 
-    const contentType = response.headers['content-type'] ?? '';
-
-    // Handle SSE responses — parse the last JSON-RPC message from the stream
-    // Not doing proper handling of SSE here since none of the MRTR features under test currently require it.
-    // This can be expanded if necessary for new features.
-    if (contentType.includes('text/event-stream')) {
-      const text = await response.body.text();
-      return parseSseResponse(text);
-    }
-
-    // Handle direct JSON responses
-    return (await response.body.json()) as JsonRpcResponse;
+    return (await response.json()) as JsonRpcResponse;
   }
 
   /**
-   * Close the underlying SDK connection.
+   * Close the session. No-op for stateless sessions.
    */
   async close(): Promise<void> {
-    if (this.connection) {
-      await this.connection.close();
-      this.connection = null;
-    }
+    // Stateless: nothing to close
   }
 }
 
