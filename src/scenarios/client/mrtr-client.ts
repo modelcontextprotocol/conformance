@@ -408,7 +408,9 @@ export class MRTRClientScenario implements Scenario {
           description: `MRTR client check: ${slug}`,
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          details: { message: 'Tool was not called by client or MRTR flow not completed' },
+          details: {
+            message: 'Tool was not called by client or MRTR flow not completed'
+          },
           specReferences: MRTR_SPEC_REFERENCES
         });
       }

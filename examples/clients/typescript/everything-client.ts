@@ -736,7 +736,11 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
   async function sendRpc(
     method: string,
     params?: Record<string, unknown>
-  ): Promise<{ id: number; result?: Record<string, unknown>; error?: { code: number; message: string } }> {
+  ): Promise<{
+    id: number;
+    result?: Record<string, unknown>;
+    error?: { code: number; message: string };
+  }> {
     const id = nextId++;
     const body: Record<string, unknown> = {
       jsonrpc: '2.0',
@@ -752,13 +756,21 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
     });
 
     if (resp.status === 204) return { id, result: {} };
-    return (await resp.json()) as { id: number; result?: Record<string, unknown>; error?: { code: number; message: string } };
+    return (await resp.json()) as {
+      id: number;
+      result?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
   }
 
   // List tools
   const toolsResp = await sendRpc('tools/list');
-  const tools = (toolsResp.result as { tools: Array<{ name: string }> })?.tools ?? [];
-  logger.debug('Available tools:', tools.map((t) => t.name));
+  const tools =
+    (toolsResp.result as { tools: Array<{ name: string }> })?.tools ?? [];
+  logger.debug(
+    'Available tools:',
+    tools.map((t) => t.name)
+  );
 
   // Tool 1: test_mrtr_echo_state — call, get InputRequiredResult with requestState, retry
   const r1 = await sendRpc('tools/call', {
@@ -776,7 +788,10 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
     for (const [key, req] of Object.entries(inputRequests)) {
       const request = req as { method: string; params: unknown };
       if (request.method === 'elicitation/create') {
-        inputResponses[key] = { action: 'accept', content: { confirmed: true } };
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
       }
     }
 
@@ -785,7 +800,9 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
       name: 'test_mrtr_unrelated',
       arguments: {}
     });
-    logger.debug('test_mrtr_unrelated: called without MRTR state (isolation check)');
+    logger.debug(
+      'test_mrtr_unrelated: called without MRTR state (isolation check)'
+    );
 
     // Retry with inputResponses + requestState echoed back unchanged
     const retryParams: Record<string, unknown> = {
@@ -816,7 +833,10 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
     for (const [key, req] of Object.entries(inputRequests)) {
       const request = req as { method: string; params: unknown };
       if (request.method === 'elicitation/create') {
-        inputResponses[key] = { action: 'accept', content: { confirmed: true } };
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
       }
     }
 
