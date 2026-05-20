@@ -46,6 +46,8 @@ import {
 } from './expected-failures';
 import { createTierCheckCommand } from './tier-check';
 import { createNewSepCommand } from './new-sep';
+import { createSdkCommand } from './sdk-runner';
+import { createTraceabilityCommand } from './traceability';
 import packageJson from '../package.json';
 
 // Note on naming: `command` refers to which CLI command is calling this.
@@ -543,6 +545,12 @@ program.addCommand(createTierCheckCommand());
 
 // New SEP scaffolding command
 program.addCommand(createNewSepCommand());
+
+// SDK command - run local conformance against an SDK at a specific ref
+program.addCommand(createSdkCommand());
+
+// SEP traceability manifest command
+program.addCommand(createTraceabilityCommand());
 
 // List scenarios command
 program

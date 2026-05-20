@@ -626,7 +626,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     // Check that valid_tool WAS called — proves client kept valid tools
     const validToolCalled = this.calledTools.has('valid_tool');
     this.checks.push({
-      id: 'sep-2243-keep-valid-tool',
+      id: 'sep-2243-client-reject-invalid-tool',
       name: 'ClientKeepsValidTool',
       description: 'Client MUST keep valid tools while excluding invalid ones',
       status: validToolCalled ? 'SUCCESS' : 'FAILURE',
@@ -654,7 +654,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     for (const toolName of invalidTools) {
       const called = this.calledTools.has(toolName);
       this.checks.push({
-        id: `sep-2243-reject-invalid-tool-${toolName.replace(/_/g, '-')}`,
+        id: 'sep-2243-client-reject-invalid-tool',
         name: `ClientRejectsInvalidTool_${toolName}`,
         description: `Client MUST NOT call tool '${toolName}' with invalid x-mcp-header`,
         status: called ? 'FAILURE' : 'SUCCESS',

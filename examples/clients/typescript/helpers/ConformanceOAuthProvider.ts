@@ -6,16 +6,28 @@ import {
   OAuthTokens
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 
+/**
+ * SEP-837 adds `application_type` to DCR; the SDK's OAuthClientMetadataSchema
+ * doesn't include it yet. The SDK spreads clientMetadata verbatim into the
+ * /register POST body, so widening the type here is sufficient to get the
+ * field on the wire. Drop this once the SDK schema is updated.
+ */
+type ConformanceClientMetadata = OAuthClientMetadata & {
+  application_type?: 'native' | 'web';
+};
+
 export class ConformanceOAuthProvider implements OAuthClientProvider {
   private _clientInformation?: OAuthClientInformationFull;
   private _tokens?: OAuthTokens;
   private _codeVerifier?: string;
   private _authCode?: string;
   private _authCodePromise?: Promise<string>;
+  /** Issuer the current credentials were obtained from (SEP-2352 keying). */
+  private _boundIssuer?: string;
 
   constructor(
     private readonly _redirectUrl: string | URL,
-    private readonly _clientMetadata: OAuthClientMetadata,
+    private readonly _clientMetadata: ConformanceClientMetadata,
     private readonly _clientMetadataUrl?: string | URL
   ) {}
 
@@ -23,7 +35,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
     return this._redirectUrl;
   }
 
-  get clientMetadata(): OAuthClientMetadata {
+  get clientMetadata(): ConformanceClientMetadata {
     return this._clientMetadata;
   }
 
@@ -91,5 +103,31 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
       throw new Error('No code verifier saved');
     }
     return this._codeVerifier;
+  }
+
+  /** SDK calls this on auth errors; also used by bindIssuer below. */
+  invalidateCredentials(scope: 'all' | 'tokens'): void {
+    this._tokens = undefined;
+    this._authCode = undefined;
+    if (scope === 'all') {
+      this._clientInformation = undefined;
+      this._codeVerifier = undefined;
+    }
+  }
+
+  /**
+   * SEP-2352: associate stored credentials with the AS issuer that issued them.
+   * If the issuer changes (PRM migrated to a new authorization server), clear
+   * everything so the SDK re-registers instead of reusing stale credentials.
+   * Returns true when a change was detected and credentials were cleared.
+   */
+  bindIssuer(issuer: string): boolean {
+    if (this._boundIssuer !== undefined && this._boundIssuer !== issuer) {
+      this.invalidateCredentials('all');
+      this._boundIssuer = issuer;
+      return true;
+    }
+    this._boundIssuer = issuer;
+    return false;
   }
 }

@@ -13,9 +13,11 @@ import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
+import { RequestMetadataScenario } from './client/request-metadata';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { ServerStatelessScenario } from './server/stateless';
 
 import {
   PingScenario,
@@ -106,6 +108,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new ServerStatelessScenario(),
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
@@ -201,6 +204,7 @@ const scenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
+  new RequestMetadataScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,

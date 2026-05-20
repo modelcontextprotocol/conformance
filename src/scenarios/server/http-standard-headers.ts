@@ -53,6 +53,14 @@ const SPEC_REFERENCE_CUSTOM = {
 
 const HEADER_MISMATCH_ERROR_CODE = -32001;
 
+// Coarse, requirement-level check IDs (SEP-2243) for STANDARD-header
+// rejections. Every standard-header rejection case emits this same pair of IDs;
+// the per-case name/description carry the detail of which case was exercised,
+// matching the repo's "same id, vary status/message" convention. (Custom-header
+// /Base64 rejections map to different requirements and keep their own IDs.)
+const REJECT_STATUS_CHECK_ID = 'sep-2243-server-reject-invalid-headers';
+const REJECT_ERROR_CODE_CHECK_ID = 'sep-2243-server-reject-error-code';
+
 /**
  * Helper to send a raw HTTP POST request with custom headers.
  * Uses Node.js http.request to preserve exact header casing and values,
@@ -119,9 +127,16 @@ async function sendRawRequest(
  * but -32001 is SHOULD for *standard* headers (and MUST for *custom* headers,
  * §Server Behavior for Custom Headers) — so a server returning 400 with a
  * different error code is compliant for standard headers and must not FAIL.
+ *
+ * The two emitted check IDs are supplied explicitly by the caller: standard-
+ * header callers pass the coarse REJECT_STATUS_CHECK_ID/REJECT_ERROR_CODE_CHECK_ID
+ * so all standard-header cases collapse onto one requirement, while custom-header
+ * /Base64 callers pass their own per-case ids. The per-case `name`/`description`
+ * distinguish which rejection case was exercised.
  */
 function createRejectionChecks(
-  id: string,
+  statusId: string,
+  errorCodeId: string,
   name: string,
   description: string,
   response: { status: number; body: any },
@@ -141,7 +156,7 @@ function createRejectionChecks(
 
   return [
     {
-      id,
+      id: statusId,
       name,
       description,
       status: statusOk ? 'SUCCESS' : 'FAILURE',
@@ -153,7 +168,7 @@ function createRejectionChecks(
       details: fullDetails
     },
     {
-      id: `${id}-error-code`,
+      id: errorCodeId,
       name: `${name}ErrorCode`,
       description: `${description} — uses JSON-RPC error code -32001 (HeaderMismatch)`,
       status: codeOk ? 'SUCCESS' : opts.errorCodeSeverity,
@@ -397,7 +412,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'accept',
-        'sep-2243-server-accepts-lowercase-header-name',
+        'sep-2243-header-name-case-insensitive',
         'ServerAcceptsLowercaseHeaderName',
         'Server MUST accept lowercase header name (mcp-method)',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -412,7 +427,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'accept',
-        'sep-2243-server-accepts-uppercase-header-name',
+        'sep-2243-header-name-case-insensitive',
         'ServerAcceptsUppercaseHeaderName',
         'Server MUST accept uppercase header name (MCP-METHOD)',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -471,10 +486,13 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         ...extraHeaders
       });
       if (expectation === 'reject') {
-        // Standard-header rejection: 400 is MUST, -32001 is SHOULD.
+        // Standard-header rejection: 400 is MUST, -32001 is SHOULD. All
+        // standard-header rejection cases collapse onto the coarse requirement
+        // ids; checkId/checkName still distinguish the case via name/details.
         checks.push(
           ...createRejectionChecks(
-            checkId,
+            REJECT_STATUS_CHECK_ID,
+            REJECT_ERROR_CODE_CHECK_ID,
             checkName,
             description,
             response,
@@ -840,10 +858,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         );
       } else {
         // Custom-header rejection: both 400 and -32001 are MUST per
-        // §Server Behavior for Custom Headers.
+        // §Server Behavior for Custom Headers. These map to param-validation
+        // requirements, so they keep their per-case ids (status + -error-code).
         checks.push(
           ...createRejectionChecks(
             checkId,
+            `${checkId}-error-code`,
             checkName,
             description,
             response,
@@ -899,10 +919,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         }
       );
 
-      // Custom-header rejection: both 400 and -32001 are MUST.
+      // Custom-header rejection: both 400 and -32001 are MUST. Keeps its own
+      // per-case ids (status + -error-code).
       checks.push(
         ...createRejectionChecks(
           'sep-2243-server-rejects-missing-custom-header',
+          'sep-2243-server-rejects-missing-custom-header-error-code',
           'ServerRejectsMissingCustomHeader',
           'Server MUST reject request where custom header is omitted but value is present in body',
           response,

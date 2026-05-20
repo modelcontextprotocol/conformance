@@ -22,11 +22,17 @@ import {
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import {
+  auth,
+  extractWWWAuthenticateParams
+} from '@modelcontextprotocol/sdk/client/auth.js';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
   withOAuthRetry,
   withOAuthRetryWithProvider,
   handle401
 } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
+import { runClient as issValidationClient } from './auth-test-iss-validation.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -86,6 +92,122 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 }
 
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
+
+// ============================================================================
+// request-metadata scenario (SEP-2575)
+// ============================================================================
+
+async function runRequestMetadataClient(serverUrl: string): Promise<void> {
+  logger.debug('Starting request-metadata client flow...');
+
+  const meta = {
+    'io.modelcontextprotocol/clientInfo': {
+      name: 'conformance-test-client',
+      version: '1.0.0'
+    },
+    'io.modelcontextprotocol/clientCapabilities': {
+      tools: {},
+      roots: {},
+      sampling: {},
+      elicitation: {}
+    }
+  };
+
+  let activeVersion = 'DRAFT-2026-v1';
+
+  const sendRequestWithNegotiation = async (
+    method: string,
+    requestId: string | number,
+    params: any
+  ): Promise<any> => {
+    const getPayload = (version: string) => ({
+      jsonrpc: '2.0',
+      id: requestId,
+      method,
+      params: {
+        ...params,
+        _meta: {
+          ...params?._meta,
+          'io.modelcontextprotocol/protocolVersion': version
+        }
+      }
+    });
+
+    const send = async (version: string) => {
+      return fetch(serverUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'MCP-Protocol-Version': version
+        },
+        body: JSON.stringify(getPayload(version))
+      });
+    };
+
+    let response = await send(activeVersion);
+    if (response.status === 400) {
+      const clone = response.clone();
+      try {
+        const errorResult = await clone.json();
+        if (errorResult.error?.code === -32001) {
+          logger.debug(
+            'Received UnsupportedProtocolVersionError, starting negotiation...'
+          );
+          const serverSupported: string[] =
+            errorResult.error.data?.supported || [];
+          const clientSupported = ['DRAFT-2026-v1'];
+          const mutuallySupported = clientSupported.filter((v) =>
+            serverSupported.includes(v)
+          );
+          if (mutuallySupported.length > 0) {
+            activeVersion = mutuallySupported[0];
+            logger.debug(
+              `Mutually supported version found: ${activeVersion}. Retrying...`
+            );
+            response = await send(activeVersion);
+          } else {
+            logger.debug('No mutually supported version found. Aborting.');
+          }
+        }
+      } catch (err) {
+        logger.debug('Failed to parse error response as JSON:', err);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(`${method} failed: ${response.status}`);
+    }
+    return response.json();
+  };
+
+  // Call server/discover (optional for clients, but every POST still needs
+  // the header + _meta).
+  logger.debug('Calling server/discover...');
+  const discoverResult = await sendRequestWithNegotiation(
+    'server/discover',
+    'discover-1',
+    { _meta: meta }
+  );
+  logger.debug(
+    'Successfully discovered server capabilities:',
+    JSON.stringify(discoverResult.result)
+  );
+
+  // Call tools/list with required inline _meta tags and header
+  logger.debug('Calling tools/list with inline _meta...');
+  const toolsResult = await sendRequestWithNegotiation('tools/list', 2, {
+    _meta: meta
+  });
+  logger.debug(
+    'Successfully listed tools statelessly:',
+    JSON.stringify(toolsResult.result)
+  );
+
+  logger.debug('request-metadata client flow completed successfully');
+}
+
+// Register the scenario handler
+registerScenario('request-metadata', runRequestMetadataClient);
 
 // ============================================================================
 // Auth scenarios - well-behaved client
@@ -149,9 +271,89 @@ registerScenarios(
     'auth/resource-mismatch',
     // SEP-2207: Offline access / refresh token guidance (draft)
     'auth/offline-access-scope',
-    'auth/offline-access-not-supported'
+    'auth/offline-access-not-supported',
+    // SEP-2468: ISS parameter - positive scenarios (standard client is fine)
+    'auth/iss-supported',
+    'auth/iss-not-advertised'
   ],
   runAuthClient
+);
+
+// SEP-2352: a well-behaved client keys credentials by issuer. Before each
+// (re-)authorization, fetch PRM and rebind the provider; bindIssuer clears
+// stale credentials when authorization_servers has changed so the SDK
+// re-registers instead of presenting the previous AS's client_id.
+async function runAuthMigrationClient(serverUrl: string): Promise<void> {
+  const provider = new ConformanceOAuthProvider(
+    'http://localhost:3000/callback',
+    {
+      client_name: 'auth-migration-client',
+      redirect_uris: ['http://localhost:3000/callback'],
+      application_type: 'native'
+    }
+  );
+
+  const issuerAware401: typeof handle401 = async (
+    response,
+    p,
+    next,
+    sUrl
+  ): Promise<void> => {
+    const { resourceMetadataUrl, scope } =
+      extractWWWAuthenticateParams(response);
+    if (resourceMetadataUrl) {
+      const prm = await (await next(resourceMetadataUrl)).json();
+      const issuer = Array.isArray(prm?.authorization_servers)
+        ? prm.authorization_servers[0]
+        : undefined;
+      if (issuer) p.bindIssuer(issuer);
+    }
+    let result = await auth(p, {
+      serverUrl: sUrl,
+      resourceMetadataUrl,
+      scope,
+      fetchFn: next as FetchLike
+    });
+    if (result === 'REDIRECT') {
+      const code = await p.getAuthCode();
+      result = await auth(p, {
+        serverUrl: sUrl,
+        resourceMetadataUrl,
+        scope,
+        authorizationCode: code,
+        fetchFn: next as FetchLike
+      });
+    }
+  };
+
+  const oauthFetch = withOAuthRetryWithProvider(
+    provider,
+    new URL(serverUrl),
+    issuerAware401
+  )(fetch);
+  const client = new Client(
+    { name: 'auth-migration-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+  await client.connect(transport);
+  await client.listTools(); // phase 1: AS₁
+  await client.callTool({ name: 'test-tool', arguments: {} }); // phase 2: AS₂
+  await transport.close();
+}
+
+registerScenario('auth/authorization-server-migration', runAuthMigrationClient);
+
+// SEP-2468: ISS parameter - rejection scenarios use iss-validating client
+registerScenarios(
+  [
+    'auth/iss-supported-missing',
+    'auth/iss-wrong-issuer',
+    'auth/iss-unexpected'
+  ],
+  issValidationClient
 );
 
 // ============================================================================
