@@ -153,7 +153,8 @@ export class WifJwtBearerScenario implements Scenario {
             this.failedOnce = true;
             return {
               error: 'invalid_scope',
-              errorDescription: 'Requested scope is not permitted for this grant'
+              errorDescription:
+                'Requested scope is not permitted for this grant'
             };
           }
           return {
