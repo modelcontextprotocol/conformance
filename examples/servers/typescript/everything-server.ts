@@ -1072,6 +1072,38 @@ function isInitializeRequest(body: any): boolean {
 // Use createMcpExpressApp for DNS rebinding protection on localhost
 const app = createMcpExpressApp();
 
+// Open subscriptions/listen streams (SEP-2575). Notifications are delivered
+// to whichever streams are open *at the time of the change* and whose filter
+// requested that notification type.
+interface ListenStream {
+  res: import('express').Response;
+  subscriptionId: string;
+  wantsTools: boolean;
+  wantsPrompts: boolean;
+}
+const activeListenStreams: ListenStream[] = [];
+
+function notifyListenStreams(
+  type: 'tools' | 'prompts',
+  notificationMethod: string
+) {
+  for (const stream of activeListenStreams) {
+    const wants = type === 'tools' ? stream.wantsTools : stream.wantsPrompts;
+    if (!wants) continue;
+    stream.res.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: notificationMethod,
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/subscriptionId': stream.subscriptionId
+          }
+        }
+      }) + '\n'
+    );
+  }
+}
+
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
 app.use(
   cors({
@@ -1144,6 +1176,54 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
+    if (method === 'subscriptions/listen') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Transfer-Encoding': 'chunked'
+      });
+
+      const requestedNotifications = params.notifications || {};
+      // The subscription ID matches the JSON-RPC id of the listen request.
+      const trackingSubId = String(id ?? 'sub-token-stateless-123');
+
+      const wantsTools = requestedNotifications.toolsListChanged === true;
+      const wantsPrompts = requestedNotifications.promptsListChanged === true;
+
+      // First message MUST be notifications/subscriptions/acknowledged carrying tracking token in _meta
+      // The `notifications` field echoes the subset of the requested filter the server honors.
+      const ackFrame = {
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: {
+          _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
+          notifications: {
+            ...(wantsTools ? { toolsListChanged: true } : {}),
+            ...(wantsPrompts ? { promptsListChanged: true } : {})
+          }
+        }
+      };
+      res.write(JSON.stringify(ackFrame) + '\n');
+
+      // Keep the stream open and register it so list-changed notifications
+      // triggered by later requests are delivered to it. The stream ends when
+      // the client disconnects (which is also how the client cancels it).
+      const stream: ListenStream = {
+        res,
+        subscriptionId: trackingSubId,
+        wantsTools,
+        wantsPrompts
+      };
+      activeListenStreams.push(stream);
+      res.on('close', () => {
+        const index = activeListenStreams.indexOf(stream);
+        if (index !== -1) activeListenStreams.splice(index, 1);
+      });
+      return;
+    }
+
     if (method === 'server/discover') {
       return res.json({
         jsonrpc: '2.0',
@@ -1151,8 +1231,8 @@ app.post('/mcp', async (req, res) => {
         result: {
           supportedVersions: ['DRAFT-2026-v1'],
           capabilities: {
-            tools: { listChanged: false }, // Explicitly declare capability flags to resolve check assertions
-            prompts: { listChanged: false }
+            tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
+            prompts: { listChanged: true }
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1214,6 +1294,14 @@ app.post('/mcp', async (req, res) => {
               name: 'test_input_required_result_capabilities',
               description:
                 'MRTR: respects client capabilities in inputRequests',
+              name: 'test_streaming_elicitation',
+              description:
+                'Diagnostic tool validating response progress streams',
+              inputSchema: { type: 'object', properties: {} }
+            },
+            {
+              name: 'test_logging_tool',
+              description: 'Diagnostic logging validator tool',
               inputSchema: { type: 'object', properties: {} }
             }
           ]
@@ -1750,18 +1838,76 @@ app.post('/mcp', async (req, res) => {
               ]
             }
           });
+      // Progressive IncompleteResult Stream Generator Handling
+      if (name === 'test_streaming_elicitation') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        res.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/progress', // Emits standard progress notice
+            params: { progressToken: 'token-abc', total: 100, value: 50 }
+          }) + '\n'
+        );
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Streaming complete' }] }
+          })
+        );
+      }
+
+      // Contextual Logging Constraints Verification Handler
+      if (name === 'test_logging_tool') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        // RULE: No logs allowed if meta configuration lacks explicit log level bounds
+        if (meta && meta['io.modelcontextprotocol/logLevel']) {
+          res.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'notifications/message',
+              params: {
+                level: 'info',
+                text: 'Diagnostic trace logging activated'
+              }
+            }) + '\n'
+          );
+        }
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
+          })
+        );
+      }
+
+      // Helper mutation hooks used by dynamic tests to force stream activity
+      // evaluation. The list change is fanned out to whichever
+      // subscriptions/listen streams are currently open and asked for it.
+      if (
+        name === 'test_trigger_tool_change' ||
+        name === 'test_trigger_prompt_change'
+      ) {
+        if (name === 'test_trigger_tool_change') {
+          notifyListenStreams('tools', 'notifications/tools/list_changed');
+        } else {
+          notifyListenStreams('prompts', 'notifications/prompts/list_changed');
         }
         return res.json({
           jsonrpc: '2.0',
           id,
-          result: {
-            resultType: 'input_required',
-            inputRequests,
-            requestState: signMrtState({
-              kind: 'capabilities-test',
-              nonce: randomUUID()
-            })
-          }
+          result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
         });
       }
     }

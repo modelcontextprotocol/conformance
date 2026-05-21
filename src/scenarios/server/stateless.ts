@@ -38,8 +38,14 @@ export class ServerStatelessScenario implements ClientScenario {
    - Absent or altered protocol version header metadata must trigger a \`-32001 Header Mismatch\` error with an HTTP 400 boundary state.
 4. **Client Capability Constraints (2 Checks)**
    - Accessing platform capabilities without explicit declaration drops requests with a \`-32003 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
-5. **Methods & Routing Mechanics (3 Checks)**
-   - Removed legacy endpoints (\`initialize\`, \`ping\`, \`logging/setLevel\`, etc.) or generic unknown methods must cleanly yield an HTTP status code \`404 Not Found\` alongside a JSON-RPC \`-32601 Method not found\` payload. All error returns must preserve original request ID mappings.`;
+5. **Methods & Routing Mechanics (5 Checks)**
+   - Removed legacy endpoints (\`initialize\`, \`ping\`, \`logging/setLevel\`, etc.) or generic unknown methods must cleanly yield an HTTP status code \`404 Not Found\` alongside a JSON-RPC \`-32601 Method not found\` payload. All error returns must preserve original request ID mappings.
+   - Validates response streams contain only \`IncompleteResult\` chunks and never independent top-level JSON-RPC requests, while enforcing that no log messages are emitted when \`_meta.../logLevel\` is omitted.
+6. **Subscription Streams & Filtering (3 Checks)**
+   - Mandates that \`notifications/subscriptions/acknowledged\` is the first message on a \`subscriptions/listen\` stream, and that subsequent notifications carry a matching \`_meta.../subscriptionId\`.
+   - Verifies strict containment where servers do not dispatch notification types that fall outside the client's explicit requested subscription filter list.
+7. **Dynamic List Mutations (2 Checks)**
+   - Evaluates that list-changed capable servers notify active listen streams with \`promptsListChanged: true\` or \`toolsListChanged: true\` upon live configuration or capability modifications.  `;
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -51,15 +57,29 @@ export class ServerStatelessScenario implements ClientScenario {
       name: string,
       description: string,
       fn: () =>
-        | Promise<{ error?: string; skipped?: boolean; details?: any } | void>
-        | ({ error?: string; skipped?: boolean; details?: any } | void),
+        | Promise<{
+            error?: string;
+            warning?: boolean;
+            skipped?: boolean;
+            details?: any;
+          } | void>
+        | ({
+            error?: string;
+            warning?: boolean;
+            skipped?: boolean;
+            details?: any;
+          } | void),
       fallbackDetails = {}
     ) {
       try {
         const result = await fn();
         const errorMessage = result?.error;
+        // SHOULD-level requirements report WARNING rather than FAILURE
+        // (severity follows the spec keyword).
         const status = errorMessage
-          ? 'FAILURE'
+          ? result?.warning
+            ? 'WARNING'
+            : 'FAILURE'
           : result?.skipped
             ? 'SKIPPED'
             : 'SUCCESS';
@@ -117,6 +137,126 @@ export class ServerStatelessScenario implements ClientScenario {
         // Response might not be JSON
       }
       return { res, data };
+    };
+
+    // Helper to read multi-frame streaming endpoints (like subscriptions/listen).
+    // `onFirstFrame` runs once after the first frame arrives (i.e. after the
+    // server has acknowledged the subscription) so callers can trigger
+    // side effects on a separate connection while this stream is still open.
+    const listenToStream = async (
+      method: string,
+      params?: any,
+      maxFrames = 3,
+      timeoutMs = 1000,
+      onFirstFrame?: () => Promise<void>
+    ): Promise<any[]> => {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+      };
+
+      const body = JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method,
+        ...(params !== undefined ? { params } : {})
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
+
+      try {
+        const res = await fetch(serverUrl, {
+          method: 'POST',
+          headers,
+          body,
+          signal: controller.signal
+        });
+
+        if (!res.body) {
+          clearTimeout(timeoutId);
+          return [];
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        const frames: any[] = [];
+        let buffer = '';
+        let firstFrameCallbackFired = false;
+        const maybeFireFirstFrameCallback = async () => {
+          if (firstFrameCallbackFired || frames.length === 0 || !onFirstFrame)
+            return;
+          firstFrameCallbackFired = true;
+          try {
+            await onFirstFrame();
+          } catch {
+            // The trigger failed; the caller inspects its own captured result.
+          }
+        };
+
+        try {
+          while (frames.length < maxFrames) {
+            let value: Uint8Array | undefined;
+            let done = false;
+            try {
+              ({ value, done } = await reader.read());
+            } catch {
+              // The stream was aborted (timeout) or dropped. A compliant
+              // server holds a subscriptions/listen stream open indefinitely,
+              // so hitting the timeout is the normal way these reads end —
+              // return whatever frames arrived before it fired.
+              break;
+            }
+
+            if (value) {
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split(/\r?\n/);
+              buffer = lines.pop() || '';
+
+              for (const line of lines) {
+                const cleanLine = line.trim();
+                if (!cleanLine) continue;
+
+                const jsonText = cleanLine.startsWith('data:')
+                  ? cleanLine.replace(/^data:\s*/, '')
+                  : cleanLine;
+                try {
+                  frames.push(JSON.parse(jsonText));
+                } catch {
+                  // Keep segment buffering
+                }
+              }
+              await maybeFireFirstFrameCallback();
+            }
+
+            if (done) {
+              const finalLine = buffer.trim();
+              if (finalLine) {
+                const jsonText = finalLine.startsWith('data:')
+                  ? finalLine.replace(/^data:\s*/, '')
+                  : finalLine;
+                try {
+                  frames.push(JSON.parse(jsonText));
+                } catch {
+                  // Trailing formatting mismatch
+                }
+              }
+              break;
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        clearTimeout(timeoutId);
+        return frames;
+      } catch {
+        clearTimeout(timeoutId);
+        return [];
+      }
     };
 
     const validMeta = {
@@ -512,7 +652,7 @@ export class ServerStatelessScenario implements ClientScenario {
     );
 
     // ==========================================
-    // 5. Methods & Routing Mechanics (3 Checks)
+    // 5. Methods & Routing Mechanics (5 Checks)
     // ==========================================
     const expectedSlugs = [
       'initialize',
@@ -580,7 +720,418 @@ export class ServerStatelessScenario implements ClientScenario {
       }
     );
 
-    // Final catchall ensuring JSON-RPC id integrity validation rules ran successfully
+    await runCheck(
+      'sep-2575-http-server-no-independent-requests-on-stream',
+      'HttpServerNoIndependentRequestsOnStream',
+      'Request stream contains only IncompleteResult, never independent JSON-RPC requests',
+      async () => {
+        const frames = await listenToStream(
+          'tools/call',
+          {
+            name: 'test_streaming_elicitation',
+            arguments: {},
+            _meta: validMeta
+          },
+          3,
+          600
+        );
+
+        if (frames.length === 0) {
+          return {
+            error:
+              'Failed to receive progressive stream chunk execution frames from tools/call handler endpoint'
+          };
+        }
+
+        // If the call was rejected outright (e.g. the diagnostic tool does
+        // not exist), nothing was streamed and the requirement was not
+        // exercised - report SKIPPED rather than a vacuous SUCCESS.
+        if (frames.every((f) => f?.error !== undefined)) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic tool test_streaming_elicitation; the response stream could not be exercised.',
+              response: frames[0]
+            }
+          };
+        }
+
+        const hasIndependentRequest = frames.some(
+          (f) => f.method && !f.method.startsWith('notifications/')
+        );
+        if (hasIndependentRequest) {
+          return {
+            error:
+              'Server emitted an independent standard request layout inside a response progress execution block stream context',
+            details: { frames }
+          };
+        }
+        return { details: { inspectedFramesCount: frames.length } };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-no-log-without-loglevel',
+      'ServerNoLogWithoutLogLevel',
+      "No notifications/message for requests that didn't set _meta.../logLevel",
+      async () => {
+        const frames = await listenToStream(
+          'tools/call',
+          { name: 'test_logging_tool', arguments: {}, _meta: validMeta },
+          3,
+          500
+        );
+
+        if (frames.length === 0) {
+          return {
+            error:
+              'Logging target endpoint context dropped or failed to yield frame structures'
+          };
+        }
+
+        // If the call was rejected outright (e.g. the diagnostic tool does
+        // not exist), the server never had anything to log and the
+        // requirement was not exercised - report SKIPPED rather than a
+        // vacuous SUCCESS.
+        if (frames.every((f) => f?.error !== undefined)) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic tool test_logging_tool; the no-log-without-logLevel requirement could not be exercised.',
+              response: frames[0]
+            }
+          };
+        }
+
+        const logFrame = frames.find(
+          (f) => f.method === 'notifications/message'
+        );
+        if (logFrame) {
+          return {
+            error:
+              'Server dispatched a notifications/message payload chunk even though the client request did not authorize a log level context descriptor',
+            details: { logFrame }
+          };
+        }
+        return { details: { framesFound: frames.length } };
+      }
+    );
+
+    // ==========================================
+    // 6. Subscription Streams & Filtering (3 Checks)
+    // ==========================================
+    const subscriptionParams = {
+      _meta: validMeta,
+      notifications: { toolsListChanged: true }
+    };
+
+    // Open a tools-filtered stream and (best-effort) trigger a tool-list
+    // change once it is acknowledged, so the stream carries at least one
+    // post-acknowledgment notification for the subscription-id check.
+    let streamFrames: any[] = [];
+    try {
+      streamFrames = await listenToStream(
+        'subscriptions/listen',
+        subscriptionParams,
+        2,
+        800,
+        async () => {
+          await sendRpc('tools/call', {
+            name: 'test_trigger_tool_change',
+            arguments: {},
+            _meta: validMeta
+          });
+        }
+      );
+    } catch {
+      // Stream pipeline tracking failed
+    }
+
+    await runCheck(
+      'sep-2575-server-sends-subscription-ack',
+      'ServerSendsSubscriptionAck',
+      'notifications/subscriptions/acknowledged is the first message on a subscriptions/listen stream',
+      () => {
+        if (streamFrames[0]?.error?.code === -32601) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not support subscriptions/listen (Method not found)'
+            }
+          };
+        }
+        if (streamFrames.length === 0) {
+          return {
+            error:
+              'Failed to open or receive frames from the subscriptions/listen stream endpoint'
+          };
+        }
+        const firstFrame = streamFrames[0];
+        if (firstFrame?.method !== 'notifications/subscriptions/acknowledged') {
+          return {
+            error: `Expected first frame method to be 'notifications/subscriptions/acknowledged', got '${firstFrame?.method}'`,
+            details: { firstFrame }
+          };
+        }
+        return { details: { firstFrame } };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-tags-subscription-id',
+      'ServerTagsSubscriptionId',
+      'Listen-stream notifications carry _meta.../subscriptionId',
+      () => {
+        if (streamFrames[0]?.error?.code === -32601) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not support subscriptions/listen (Method not found)'
+            }
+          };
+        }
+        if (streamFrames.length === 0) {
+          return {
+            error:
+              'Failed to open stream line or tracking frames are missing completely'
+          };
+        }
+
+        // Every notification delivered on the stream (the acknowledgment and
+        // anything after it) must carry the subscription id in params._meta.
+        const notificationFrames = streamFrames.filter(
+          (f) =>
+            typeof f?.method === 'string' &&
+            f.method.startsWith('notifications/')
+        );
+        if (notificationFrames.length === 0) {
+          return {
+            error:
+              'subscriptions/listen stream carried no notification frames to inspect',
+            details: { streamFrames }
+          };
+        }
+
+        const untaggedFrames = notificationFrames.filter(
+          (f) => !f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
+        );
+        if (untaggedFrames.length > 0) {
+          return {
+            error: `${untaggedFrames.length} of ${notificationFrames.length} listen-stream notification(s) are missing io.modelcontextprotocol/subscriptionId in params._meta`,
+            details: { untaggedFrames }
+          };
+        }
+
+        const subId =
+          notificationFrames[0]?.params?._meta?.[
+            'io.modelcontextprotocol/subscriptionId'
+          ];
+        return {
+          details: {
+            subscriptionId: subId,
+            inspectedNotificationCount: notificationFrames.length
+          }
+        };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-honors-notification-filter',
+      'ServerHonorsNotificationFilter',
+      "Server doesn't send notification types the client didn't request",
+      async () => {
+        const narrowParams = {
+          _meta: validMeta,
+          notifications: { promptsListChanged: true }
+        };
+
+        // Open a stream filtered to prompts only, then mutate the *tool* list
+        // on a separate connection once the subscription is acknowledged. A
+        // compliant server must not deliver the resulting tools notification
+        // to this stream.
+        const narrowFrames = await listenToStream(
+          'subscriptions/listen',
+          narrowParams,
+          3,
+          1500,
+          async () => {
+            await sendRpc('tools/call', {
+              name: 'test_trigger_tool_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
+        );
+
+        if (narrowFrames[0]?.error?.code === -32601) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not support subscriptions/listen (Method not found)'
+            }
+          };
+        }
+        if (narrowFrames.length === 0) {
+          return {
+            error:
+              'Strict subscription filtering line failed to return communication frames'
+          };
+        }
+
+        const leakedToolFrame = narrowFrames.find(
+          (f) => f?.method === 'notifications/tools/list_changed'
+        );
+
+        if (leakedToolFrame) {
+          return {
+            error:
+              'Server leaked a tools/list-changed notification over a stream explicitly filtered to prompts only',
+            details: { leakedToolFrame }
+          };
+        }
+        return { details: { narrowFramesCount: narrowFrames.length } };
+      }
+    );
+
+    // ==========================================
+    // 7. Dynamic List Mutations (2 Checks)
+    // ==========================================
+    await runCheck(
+      'sep-2575-server-sends-prompts-list-changed-on-subscription',
+      'ServerSendsPromptsListChangedOnSubscription',
+      'List-changed-capable servers notify listen streams with promptsListChanged: true (SHOULD)',
+      async () => {
+        // Automatically pass/skip if the server didn't declare this capability during discovery
+        if (!discoverCapabilities?.prompts?.listChanged) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server did not declare prompts.listChanged capability in server/discover'
+            }
+          };
+        }
+
+        const promptsParams = {
+          _meta: validMeta,
+          notifications: { promptsListChanged: true }
+        };
+
+        // Open the subscription first; mutate the prompt list on a separate
+        // connection once it is acknowledged. A compliant server only
+        // notifies streams that are open at the time of the change.
+        let trigger: any = null;
+        const frames = await listenToStream(
+          'subscriptions/listen',
+          promptsParams,
+          2,
+          1500,
+          async () => {
+            trigger = await sendRpc('tools/call', {
+              name: 'test_trigger_prompt_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
+        );
+        if (trigger?.data?.error?.code === -32601) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic hook test_trigger_prompt_change to mutate lists'
+            }
+          };
+        }
+
+        if (frames.length === 0) {
+          return {
+            warning: true,
+            error:
+              'Failed to open or receive frames from the subscriptions/listen stream endpoint'
+          };
+        }
+
+        const changeFrame = frames.find(
+          (f) => f.method === 'notifications/prompts/list_changed'
+        );
+        if (!changeFrame) {
+          return {
+            warning: true,
+            error:
+              'Mutated the prompt list but no notifications/prompts/list_changed arrived on the open subscription stream. This is a SHOULD requirement.'
+          };
+        }
+        return { details: { changeFrame } };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-sends-tools-list-changed-on-subscription',
+      'ServerSendsToolsListChangedOnSubscription',
+      'List-changed-capable servers notify listen streams with toolsListChanged: true (SHOULD)',
+      async () => {
+        // Automatically pass/skip if the server didn't declare this capability during discovery
+        if (!discoverCapabilities?.tools?.listChanged) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server did not declare tools.listChanged capability in server/discover'
+            }
+          };
+        }
+
+        const toolsParams = {
+          _meta: validMeta,
+          notifications: { toolsListChanged: true }
+        };
+
+        // Open the subscription first; mutate the tool list on a separate
+        // connection once it is acknowledged. A compliant server only
+        // notifies streams that are open at the time of the change.
+        let trigger: any = null;
+        const frames = await listenToStream(
+          'subscriptions/listen',
+          toolsParams,
+          2,
+          1500,
+          async () => {
+            trigger = await sendRpc('tools/call', {
+              name: 'test_trigger_tool_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
+        );
+        if (trigger?.data?.error?.code === -32601) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic hook test_trigger_tool_change to mutate lists'
+            }
+          };
+        }
+
+        if (frames.length === 0) {
+          return {
+            warning: true,
+            error:
+              'Failed to open or receive frames from the subscriptions/listen stream endpoint'
+          };
+        }
+
+        const changeFrame = frames.find(
+          (f) => f.method === 'notifications/tools/list_changed'
+        );
+        if (!changeFrame) {
+          return {
+            warning: true,
+            error:
+              'Mutated the tool list but no notifications/tools/list_changed arrived on the open subscription stream. This is a SHOULD requirement.'
+          };
+        }
+        return { details: { changeFrame } };
+      }
+    );
+
     if (!checks.some((c) => c.id === 'sep-2575-http-server-error-jsonrpc-id')) {
       checks.push({
         id: 'sep-2575-http-server-error-jsonrpc-id',
