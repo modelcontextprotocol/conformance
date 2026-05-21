@@ -78,6 +78,12 @@ export class InitializeScenario implements Scenario {
           this.handleInitialize(request, res);
         } else if (request.method === 'tools/list') {
           this.handleToolsList(request, res);
+        } else if (request.method === 'notifications/initialized') {
+          // Per MCP spec 2025-11-25 section 2.1 (Sending Messages to the Server),
+          // point 4: "If the input is a JSON-RPC response or notification ...
+          // the server MUST return HTTP status code 202 Accepted with no body."
+          res.writeHead(202);
+          res.end();
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
