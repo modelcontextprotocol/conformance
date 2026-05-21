@@ -881,10 +881,9 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        const leakedToolFrame = narrowFrames.find((f) => {
-          const m = f?.method ?? f?.body?.method ?? f?.params?.method;
-          return m === 'notifications/tools/list-changed';
-        });
+        const leakedToolFrame = narrowFrames.find(
+          (f) => f?.method === 'notifications/tools/list_changed'
+        );
 
         if (leakedToolFrame) {
           return {
@@ -948,9 +947,7 @@ export class ServerStatelessScenario implements ClientScenario {
         }
 
         const changeFrame = frames.find(
-          (f) =>
-            f.method === 'notifications/prompts/list-changed' ||
-            f.params?.promptsListChanged === true
+          (f) => f.method === 'notifications/prompts/list_changed'
         );
         if (!changeFrame) {
           return {
@@ -1010,9 +1007,7 @@ export class ServerStatelessScenario implements ClientScenario {
         }
 
         const changeFrame = frames.find(
-          (f) =>
-            f.method === 'notifications/tools/list-changed' ||
-            f.params?.toolsListChanged === true
+          (f) => f.method === 'notifications/tools/list_changed'
         );
         if (!changeFrame) {
           return {

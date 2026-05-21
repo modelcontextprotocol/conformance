@@ -1147,7 +1147,7 @@ app.post('/mcp', async (req, res) => {
         res.write(
           JSON.stringify({
             jsonrpc: '2.0',
-            method: 'notifications/tools/list-changed',
+            method: 'notifications/tools/list_changed',
             _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
             params: { toolsListChanged: true }
           }) + '\n'
@@ -1158,7 +1158,7 @@ app.post('/mcp', async (req, res) => {
         res.write(
           JSON.stringify({
             jsonrpc: '2.0',
-            method: 'notifications/prompts/list-changed',
+            method: 'notifications/prompts/list_changed',
             _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
             params: { promptsListChanged: true }
           }) + '\n'

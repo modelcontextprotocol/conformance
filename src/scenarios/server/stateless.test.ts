@@ -307,10 +307,10 @@ describe('Stateless Server Scenario Negative Tests', () => {
                 'io.modelcontextprotocol/subscriptionId': 'sub-leak-test'
               }
             },
-            // LEAK VIOLATION: Server sends tools/list-changed on a prompt-only stream
+            // LEAK VIOLATION: Server sends tools/list_changed on a prompt-only stream
             {
               jsonrpc: '2.0',
-              method: 'notifications/tools/list-changed',
+              method: 'notifications/tools/list_changed',
               _meta: {
                 'io.modelcontextprotocol/subscriptionId': 'sub-leak-test'
               }
