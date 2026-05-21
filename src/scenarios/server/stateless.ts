@@ -57,15 +57,12 @@ export class ServerStatelessScenario implements ClientScenario {
       name: string,
       description: string,
       fn: () =>
-        | Promise<
-            | {
-                error?: string;
-                warning?: boolean;
-                skipped?: boolean;
-                details?: any;
-              }
-            | void
-          >
+        | Promise<{
+            error?: string;
+            warning?: boolean;
+            skipped?: boolean;
+            details?: any;
+          } | void>
         | ({
             error?: string;
             warning?: boolean;
@@ -746,6 +743,19 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
+        // If the call was rejected outright (e.g. the diagnostic tool does
+        // not exist), nothing was streamed and the requirement was not
+        // exercised - report SKIPPED rather than a vacuous SUCCESS.
+        if (frames.every((f) => f?.error !== undefined)) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic tool test_streaming_elicitation; the response stream could not be exercised.',
+              response: frames[0]
+            }
+          };
+        }
+
         const hasIndependentRequest = frames.some(
           (f) => f.method && !f.method.startsWith('notifications/')
         );
@@ -776,6 +786,20 @@ export class ServerStatelessScenario implements ClientScenario {
           return {
             error:
               'Logging target endpoint context dropped or failed to yield frame structures'
+          };
+        }
+
+        // If the call was rejected outright (e.g. the diagnostic tool does
+        // not exist), the server never had anything to log and the
+        // requirement was not exercised - report SKIPPED rather than a
+        // vacuous SUCCESS.
+        if (frames.every((f) => f?.error !== undefined)) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic tool test_logging_tool; the no-log-without-logLevel requirement could not be exercised.',
+              response: frames[0]
+            }
           };
         }
 
@@ -843,9 +867,7 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
         const firstFrame = streamFrames[0];
-        if (
-          firstFrame?.method !== 'notifications/subscriptions/acknowledged'
-        ) {
+        if (firstFrame?.method !== 'notifications/subscriptions/acknowledged') {
           return {
             error: `Expected first frame method to be 'notifications/subscriptions/acknowledged', got '${firstFrame?.method}'`,
             details: { firstFrame }
@@ -891,8 +913,7 @@ export class ServerStatelessScenario implements ClientScenario {
         }
 
         const untaggedFrames = notificationFrames.filter(
-          (f) =>
-            !f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
+          (f) => !f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
         );
         if (untaggedFrames.length > 0) {
           return {
