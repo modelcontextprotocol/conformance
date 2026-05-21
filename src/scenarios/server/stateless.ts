@@ -125,12 +125,16 @@ export class ServerStatelessScenario implements ClientScenario {
       return { res, data };
     };
 
-    // Helper to read multi-frame streaming endpoints (like subscriptions/listen)
+    // Helper to read multi-frame streaming endpoints (like subscriptions/listen).
+    // `onFirstFrame` runs once after the first frame arrives (i.e. after the
+    // server has acknowledged the subscription) so callers can trigger
+    // side effects on a separate connection while this stream is still open.
     const listenToStream = async (
       method: string,
       params?: any,
       maxFrames = 3,
-      timeoutMs = 1000
+      timeoutMs = 1000,
+      onFirstFrame?: () => Promise<void>
     ): Promise<any[]> => {
       const headers = {
         'Content-Type': 'application/json',
@@ -167,6 +171,17 @@ export class ServerStatelessScenario implements ClientScenario {
         const decoder = new TextDecoder();
         const frames: any[] = [];
         let buffer = '';
+        let firstFrameCallbackFired = false;
+        const maybeFireFirstFrameCallback = async () => {
+          if (firstFrameCallbackFired || frames.length === 0 || !onFirstFrame)
+            return;
+          firstFrameCallbackFired = true;
+          try {
+            await onFirstFrame();
+          } catch {
+            // The trigger failed; the caller inspects its own captured result.
+          }
+        };
 
         try {
           while (frames.length < maxFrames) {
@@ -200,6 +215,7 @@ export class ServerStatelessScenario implements ClientScenario {
                   // Keep segment buffering
                 }
               }
+              await maybeFireFirstFrameCallback();
             }
 
             if (done) {
@@ -864,16 +880,22 @@ export class ServerStatelessScenario implements ClientScenario {
           notifications: { promptsListChanged: true }
         };
 
-        await sendRpc('tools/call', {
-          name: 'test_trigger_tool_change',
-          arguments: {},
-          _meta: validMeta
-        });
+        // Open a stream filtered to prompts only, then mutate the *tool* list
+        // on a separate connection once the subscription is acknowledged. A
+        // compliant server must not deliver the resulting tools notification
+        // to this stream.
         const narrowFrames = await listenToStream(
           'subscriptions/listen',
           narrowParams,
           3,
-          500
+          1500,
+          async () => {
+            await sendRpc('tools/call', {
+              name: 'test_trigger_tool_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
         );
 
         if (narrowFrames[0]?.error?.code === -32601) {
@@ -928,12 +950,25 @@ export class ServerStatelessScenario implements ClientScenario {
           _meta: validMeta,
           notifications: { promptsListChanged: true }
         };
-        const trigger = await sendRpc('tools/call', {
-          name: 'test_trigger_prompt_change',
-          arguments: {},
-          _meta: validMeta
-        });
-        if (trigger.data?.error?.code === -32601) {
+
+        // Open the subscription first; mutate the prompt list on a separate
+        // connection once it is acknowledged. A compliant server only
+        // notifies streams that are open at the time of the change.
+        let trigger: any = null;
+        const frames = await listenToStream(
+          'subscriptions/listen',
+          promptsParams,
+          2,
+          1500,
+          async () => {
+            trigger = await sendRpc('tools/call', {
+              name: 'test_trigger_prompt_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
+        );
+        if (trigger?.data?.error?.code === -32601) {
           return {
             skipped: true,
             details: {
@@ -942,17 +977,10 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        const frames = await listenToStream(
-          'subscriptions/listen',
-          promptsParams,
-          3,
-          600
-        );
-
         if (frames.length === 0) {
           return {
             error:
-              'Mutated configuration parameters but subscription event monitoring stream returned zero frames'
+              'Failed to open or receive frames from the subscriptions/listen stream endpoint'
           };
         }
 
@@ -988,12 +1016,25 @@ export class ServerStatelessScenario implements ClientScenario {
           _meta: validMeta,
           notifications: { toolsListChanged: true }
         };
-        const trigger = await sendRpc('tools/call', {
-          name: 'test_trigger_tool_change',
-          arguments: {},
-          _meta: validMeta
-        });
-        if (trigger.data?.error?.code === -32601) {
+
+        // Open the subscription first; mutate the tool list on a separate
+        // connection once it is acknowledged. A compliant server only
+        // notifies streams that are open at the time of the change.
+        let trigger: any = null;
+        const frames = await listenToStream(
+          'subscriptions/listen',
+          toolsParams,
+          2,
+          1500,
+          async () => {
+            trigger = await sendRpc('tools/call', {
+              name: 'test_trigger_tool_change',
+              arguments: {},
+              _meta: validMeta
+            });
+          }
+        );
+        if (trigger?.data?.error?.code === -32601) {
           return {
             skipped: true,
             details: {
@@ -1002,17 +1043,10 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        const frames = await listenToStream(
-          'subscriptions/listen',
-          toolsParams,
-          3,
-          600
-        );
-
         if (frames.length === 0) {
           return {
             error:
-              'Mutated underlying tooling array indexes but listener subscription returned zero chunks'
+              'Failed to open or receive frames from the subscriptions/listen stream endpoint'
           };
         }
 

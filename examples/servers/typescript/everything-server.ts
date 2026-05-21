@@ -1041,6 +1041,38 @@ function isInitializeRequest(body: any): boolean {
 // Use createMcpExpressApp for DNS rebinding protection on localhost
 const app = createMcpExpressApp();
 
+// Open subscriptions/listen streams (SEP-2575). Notifications are delivered
+// to whichever streams are open *at the time of the change* and whose filter
+// requested that notification type.
+interface ListenStream {
+  res: import('express').Response;
+  subscriptionId: string;
+  wantsTools: boolean;
+  wantsPrompts: boolean;
+}
+const activeListenStreams: ListenStream[] = [];
+
+function notifyListenStreams(
+  type: 'tools' | 'prompts',
+  notificationMethod: string
+) {
+  for (const stream of activeListenStreams) {
+    const wants = type === 'tools' ? stream.wantsTools : stream.wantsPrompts;
+    if (!wants) continue;
+    stream.res.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: notificationMethod,
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/subscriptionId': stream.subscriptionId
+          }
+        }
+      }) + '\n'
+    );
+  }
+}
+
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
 app.use(
   cors({
@@ -1123,7 +1155,8 @@ app.post('/mcp', async (req, res) => {
       });
 
       const requestedNotifications = params.notifications || {};
-      const trackingSubId = 'sub-token-stateless-123';
+      // The subscription ID matches the JSON-RPC id of the listen request.
+      const trackingSubId = String(id ?? 'sub-token-stateless-123');
 
       const wantsTools = requestedNotifications.toolsListChanged === true;
       const wantsPrompts = requestedNotifications.promptsListChanged === true;
@@ -1143,29 +1176,21 @@ app.post('/mcp', async (req, res) => {
       };
       res.write(JSON.stringify(ackFrame) + '\n');
 
-      if (wantsTools) {
-        res.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'notifications/tools/list_changed',
-            _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
-            params: { toolsListChanged: true }
-          }) + '\n'
-        );
-      }
-
-      if (wantsPrompts) {
-        res.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'notifications/prompts/list_changed',
-            _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
-            params: { promptsListChanged: true }
-          }) + '\n'
-        );
-      }
-
-      return res.end();
+      // Keep the stream open and register it so list-changed notifications
+      // triggered by later requests are delivered to it. The stream ends when
+      // the client disconnects (which is also how the client cancels it).
+      const stream: ListenStream = {
+        res,
+        subscriptionId: trackingSubId,
+        wantsTools,
+        wantsPrompts
+      };
+      activeListenStreams.push(stream);
+      res.on('close', () => {
+        const index = activeListenStreams.indexOf(stream);
+        if (index !== -1) activeListenStreams.splice(index, 1);
+      });
+      return;
     }
 
     if (method === 'server/discover') {
@@ -1297,11 +1322,18 @@ app.post('/mcp', async (req, res) => {
         );
       }
 
-      // Helper mutation hooks used by dynamic tests to force stream activity evaluation
+      // Helper mutation hooks used by dynamic tests to force stream activity
+      // evaluation. The list change is fanned out to whichever
+      // subscriptions/listen streams are currently open and asked for it.
       if (
         name === 'test_trigger_tool_change' ||
         name === 'test_trigger_prompt_change'
       ) {
+        if (name === 'test_trigger_tool_change') {
+          notifyListenStreams('tools', 'notifications/tools/list_changed');
+        } else {
+          notifyListenStreams('prompts', 'notifications/prompts/list_changed');
+        }
         return res.json({
           jsonrpc: '2.0',
           id,
