@@ -330,7 +330,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     expect(filterCheck?.status).toBe('FAILURE');
   });
 
-  test('Fails validation when server drops tools or prompts list changed notifications despite declaring capabilities', async () => {
+  test('Warns when server drops tools or prompts list changed notifications despite declaring capabilities', async () => {
     const mockUrl = mockFetchTarget((reqBody) => {
       // 1. Declare BOTH capabilities so neither check is skipped
       if (reqBody.method === 'server/discover') {
@@ -404,7 +404,8 @@ describe('Stateless Server Scenario Negative Tests', () => {
       'sep-2575-server-sends-tools-list-changed-on-subscription'
     );
 
-    expect(promptsCheck?.status).toBe('FAILURE');
-    expect(toolsCheck?.status).toBe('FAILURE');
+    // These map to SHOULD requirements, so severity is WARNING not FAILURE.
+    expect(promptsCheck?.status).toBe('WARNING');
+    expect(toolsCheck?.status).toBe('WARNING');
   });
 });

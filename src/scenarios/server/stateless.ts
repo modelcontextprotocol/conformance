@@ -57,15 +57,32 @@ export class ServerStatelessScenario implements ClientScenario {
       name: string,
       description: string,
       fn: () =>
-        | Promise<{ error?: string; skipped?: boolean; details?: any } | void>
-        | ({ error?: string; skipped?: boolean; details?: any } | void),
+        | Promise<
+            | {
+                error?: string;
+                warning?: boolean;
+                skipped?: boolean;
+                details?: any;
+              }
+            | void
+          >
+        | ({
+            error?: string;
+            warning?: boolean;
+            skipped?: boolean;
+            details?: any;
+          } | void),
       fallbackDetails = {}
     ) {
       try {
         const result = await fn();
         const errorMessage = result?.error;
+        // SHOULD-level requirements report WARNING rather than FAILURE
+        // (severity follows the spec keyword).
         const status = errorMessage
-          ? 'FAILURE'
+          ? result?.warning
+            ? 'WARNING'
+            : 'FAILURE'
           : result?.skipped
             ? 'SKIPPED'
             : 'SUCCESS';
@@ -961,7 +978,7 @@ export class ServerStatelessScenario implements ClientScenario {
     await runCheck(
       'sep-2575-server-sends-prompts-list-changed-on-subscription',
       'ServerSendsPromptsListChangedOnSubscription',
-      'List-changed-capable servers notify listen streams with promptsListChanged: true',
+      'List-changed-capable servers notify listen streams with promptsListChanged: true (SHOULD)',
       async () => {
         // Automatically pass/skip if the server didn't declare this capability during discovery
         if (!discoverCapabilities?.prompts?.listChanged) {
@@ -1006,6 +1023,7 @@ export class ServerStatelessScenario implements ClientScenario {
 
         if (frames.length === 0) {
           return {
+            warning: true,
             error:
               'Failed to open or receive frames from the subscriptions/listen stream endpoint'
           };
@@ -1016,8 +1034,9 @@ export class ServerStatelessScenario implements ClientScenario {
         );
         if (!changeFrame) {
           return {
+            warning: true,
             error:
-              'Mutated prompt fields on target SUT but no list verification event popped on subscription listener'
+              'Mutated the prompt list but no notifications/prompts/list_changed arrived on the open subscription stream. This is a SHOULD requirement.'
           };
         }
         return { details: { changeFrame } };
@@ -1027,7 +1046,7 @@ export class ServerStatelessScenario implements ClientScenario {
     await runCheck(
       'sep-2575-server-sends-tools-list-changed-on-subscription',
       'ServerSendsToolsListChangedOnSubscription',
-      'List-changed-capable servers notify listen streams with toolsListChanged: true',
+      'List-changed-capable servers notify listen streams with toolsListChanged: true (SHOULD)',
       async () => {
         // Automatically pass/skip if the server didn't declare this capability during discovery
         if (!discoverCapabilities?.tools?.listChanged) {
@@ -1072,6 +1091,7 @@ export class ServerStatelessScenario implements ClientScenario {
 
         if (frames.length === 0) {
           return {
+            warning: true,
             error:
               'Failed to open or receive frames from the subscriptions/listen stream endpoint'
           };
@@ -1082,8 +1102,9 @@ export class ServerStatelessScenario implements ClientScenario {
         );
         if (!changeFrame) {
           return {
+            warning: true,
             error:
-              'Mutated tool entries on target SUT but no notification found on streaming line'
+              'Mutated the tool list but no notifications/tools/list_changed arrived on the open subscription stream. This is a SHOULD requirement.'
           };
         }
         return { details: { changeFrame } };
