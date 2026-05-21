@@ -902,7 +902,8 @@ class WifJwtBearerProvider implements OAuthClientProvider {
   // Pass null for assertion to deliberately omit it (missing-assertion negative tests).
   constructor(
     private readonly assertion: string | null,
-    clientId: string
+    clientId: string,
+    private readonly scope?: string
   ) {
     this._clientInfo = { client_id: clientId };
     this._clientMetadata = {
@@ -954,7 +955,8 @@ class WifJwtBearerProvider implements OAuthClientProvider {
     this.hasAttempted = true;
     const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
     if (this.assertion !== null) params.set('assertion', this.assertion);
-    if (scope) params.set('scope', scope);
+    const effectiveScope = this.scope ?? scope;
+    if (effectiveScope) params.set('scope', effectiveScope);
     return params;
   }
 }
@@ -1052,6 +1054,35 @@ export async function runWifJwtBearerExpiredAssertion(
 
   const client = new Client(
     { name: 'conformance-wif-jwt-bearer-expired', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  await client.listTools();
+  await transport.close();
+}
+
+export async function runWifJwtBearerScopeRejected(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  // BUG: requests a scope the AS does not permit for JWT-bearer grant
+  const provider = new WifJwtBearerProvider(
+    ctx.valid_jwt,
+    ctx.client_id,
+    'wif.rejected'
+  );
+
+  const client = new Client(
+    { name: 'conformance-wif-scope-rejected', version: '1.0.0' },
     { capabilities: {} }
   );
 

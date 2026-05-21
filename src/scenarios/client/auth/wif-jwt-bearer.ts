@@ -3,8 +3,9 @@ import type {
   Scenario,
   ConformanceCheck,
   ScenarioUrls,
-  ScenarioSpecTag
+  SpecVersion
 } from '../../../types';
+import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
@@ -19,10 +20,12 @@ import {
 const WIF_ISSUER = 'https://wif-idp.conformance-test.local';
 const WIF_SUBJECT = 'conformance:test-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
+const WIF_REJECTED_SCOPE = 'wif.rejected';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
-  specVersions: ScenarioSpecTag[] = ['extension'];
+  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests OAuth JWT-bearer grant (RFC 7523 §2.1) for workload identity federation (SEP-1933)';
 
@@ -133,10 +136,29 @@ export class WifJwtBearerScenario implements Scenario {
             ]
           });
 
-          const scopes = body.scope ? body.scope.split(' ') : [];
+          const scopeList = body.scope ? body.scope.split(' ') : [];
+          if (scopeList.includes(WIF_REJECTED_SCOPE)) {
+            this.checks.push({
+              id: 'wif-assertion-scope-rejected',
+              name: 'WifAssertionScopeRejected',
+              description:
+                'AS returned invalid_scope for a valid JWT-bearer assertion; client should surface the error and not retry',
+              status: 'FAILURE',
+              timestamp,
+              specReferences: [
+                SpecReferences.RFC_7523_JWT_BEARER,
+                SpecReferences.SEP_1933_WIF
+              ]
+            });
+            this.failedOnce = true;
+            return {
+              error: 'invalid_scope',
+              errorDescription: 'Requested scope is not permitted for this grant'
+            };
+          }
           return {
             token: `test-token-${Date.now()}`,
-            scopes
+            scopes: scopeList
           };
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);

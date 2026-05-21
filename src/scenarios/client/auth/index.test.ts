@@ -12,7 +12,8 @@ import { runClient as badPrmClient } from '../../../../examples/clients/typescri
 import {
   runWifJwtBearerWrongAudience,
   runWifJwtBearerMissingAssertion,
-  runWifJwtBearerExpiredAssertion
+  runWifJwtBearerExpiredAssertion,
+  runWifJwtBearerScopeRejected
 } from '../../../../examples/clients/typescript/everything-client';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
@@ -276,6 +277,14 @@ describe('WIF JWT-bearer negative tests', () => {
     const runner = new InlineClientRunner(runWifJwtBearerExpiredAssertion);
     await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
       expectedFailureSlugs: ['wif-assertion-expired'],
+      allowClientError: true
+    });
+  });
+
+  test('client requests a scope the AS rejects for JWT-bearer grant', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerScopeRejected);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-scope-rejected'],
       allowClientError: true
     });
   });
