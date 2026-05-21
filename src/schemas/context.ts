@@ -38,8 +38,6 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     issuer: z.string(),
     subject: z.string(),
     audience: z.string().url(),
-    k8s_issuer: z.string(),
-    k8s_subject: z.string(),
     valid_jwt: z.string(),
     wrong_audience_jwt: z.string(),
     expired_jwt: z.string(),

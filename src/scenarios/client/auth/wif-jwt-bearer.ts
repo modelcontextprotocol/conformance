@@ -305,8 +305,6 @@ export class WifJwtBearerScenario implements Scenario {
         issuer: WIF_ISSUER,
         subject: WIF_SUBJECT,
         audience: authServerUrl,
-        k8s_issuer: WIF_K8S_ISSUER,
-        k8s_subject: WIF_K8S_SUBJECT,
         valid_jwt: validJwt,
         wrong_audience_jwt: wrongAudienceJwt,
         expired_jwt: expiredJwt,
