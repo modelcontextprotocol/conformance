@@ -1188,6 +1188,92 @@ export async function runWifJwtBearerGrantFallback(
   await transport.close();
 }
 
+// BUG: retries JWT-bearer after receiving unauthorized_client
+class WifRetryProvider implements OAuthClientProvider {
+  private attemptCount = 0;
+  private _clientInfo: OAuthClientInformation;
+  private readonly _clientMetadata: OAuthClientMetadata;
+
+  constructor(
+    private readonly assertion: string,
+    clientId: string
+  ) {
+    this._clientInfo = { client_id: clientId };
+    this._clientMetadata = {
+      client_name: 'conformance-wif-retry',
+      redirect_uris: [],
+      grant_types: [JWT_BEARER_GRANT_TYPE],
+      token_endpoint_auth_method: 'none'
+    };
+  }
+
+  get redirectUrl(): undefined {
+    return undefined;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this._clientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformation {
+    return this._clientInfo;
+  }
+
+  saveClientInformation(info: OAuthClientInformation): void {
+    this._clientInfo = info;
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return undefined;
+  }
+
+  saveTokens(): void {}
+
+  redirectToAuthorization(): void {
+    throw new Error('redirectToAuthorization is not used for JWT-bearer flow');
+  }
+
+  saveCodeVerifier(): void {}
+
+  codeVerifier(): string {
+    throw new Error('codeVerifier is not used for JWT-bearer flow');
+  }
+
+  prepareTokenRequest(_scope?: string): URLSearchParams {
+    this.attemptCount++;
+    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
+    params.set('assertion', this.assertion);
+    if (this.attemptCount === 1) {
+      // Trigger unauthorized_client on first attempt
+      params.set('scope', WIF_TRIGGER_UNAUTHORIZED_SCOPE);
+    }
+    // BUG: retries JWT-bearer instead of surfacing the error
+    return params;
+  }
+}
+
+export async function runWifJwtBearerRetry(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifRetryProvider(ctx.valid_jwt, ctx.client_id);
+
+  const client = new Client(
+    { name: 'conformance-wif-retry', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  await client.listTools();
+  await transport.close();
+}
+
 // ============================================================================
 // Main entry point
 // ============================================================================

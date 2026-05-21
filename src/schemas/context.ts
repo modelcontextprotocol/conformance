@@ -37,10 +37,13 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     client_id: z.string(),
     issuer: z.string(),
     subject: z.string(),
+    // RFC 7523 does not require aud to be a URL, but this scenario's test AS
+    // is always addressed by URL, so the constraint is intentional here.
     audience: z.string().url(),
     valid_jwt: z.string(),
     wrong_audience_jwt: z.string(),
     expired_jwt: z.string(),
+    // Tightly locked to ES256 because the scenario generates only ES256 keypairs.
     signing_algorithm: z.literal('ES256')
   })
 ]);

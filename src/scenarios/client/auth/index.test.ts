@@ -14,7 +14,8 @@ import {
   runWifJwtBearerMissingAssertion,
   runWifJwtBearerExpiredAssertion,
   runWifJwtBearerScopeRejected,
-  runWifJwtBearerGrantFallback
+  runWifJwtBearerGrantFallback,
+  runWifJwtBearerRetry
 } from '../../../../examples/clients/typescript/everything-client';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
@@ -257,6 +258,9 @@ describe('Client Extension Scenarios', () => {
   }
 });
 
+// allowClientError: true because broken clients receive an error response from
+// the AS and will throw. The AS-side check is the authoritative conformance
+// signal; client process exit behaviour is not asserted here.
 describe('WIF JWT-bearer negative tests', () => {
   test('client presents JWT with wrong audience', async () => {
     const runner = new InlineClientRunner(runWifJwtBearerWrongAudience);
@@ -294,6 +298,14 @@ describe('WIF JWT-bearer negative tests', () => {
     const runner = new InlineClientRunner(runWifJwtBearerGrantFallback);
     await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
       expectedFailureSlugs: ['wif-grant-fallback'],
+      allowClientError: true
+    });
+  });
+
+  test('client retries JWT-bearer after unauthorized_client', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerRetry);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-no-retry'],
       allowClientError: true
     });
   });
