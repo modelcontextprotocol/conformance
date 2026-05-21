@@ -170,7 +170,17 @@ export class ServerStatelessScenario implements ClientScenario {
 
         try {
           while (frames.length < maxFrames) {
-            const { value, done } = await reader.read();
+            let value: Uint8Array | undefined;
+            let done = false;
+            try {
+              ({ value, done } = await reader.read());
+            } catch {
+              // The stream was aborted (timeout) or dropped. A compliant
+              // server holds a subscriptions/listen stream open indefinitely,
+              // so hitting the timeout is the normal way these reads end —
+              // return whatever frames arrived before it fired.
+              break;
+            }
 
             if (value) {
               buffer += decoder.decode(value, { stream: true });
