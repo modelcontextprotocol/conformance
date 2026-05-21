@@ -25,7 +25,11 @@ import type {
   OAuthClientMetadata,
   OAuthTokens
 } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
+import {
+  JWT_BEARER_GRANT_TYPE,
+  WIF_TRIGGER_UNAUTHORIZED_SCOPE,
+  WIF_REJECTED_SCOPE
+} from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import {
@@ -1078,7 +1082,7 @@ export async function runWifJwtBearerScopeRejected(
   const provider = new WifJwtBearerProvider(
     ctx.valid_jwt,
     ctx.client_id,
-    'wif.rejected'
+    WIF_REJECTED_SCOPE
   );
 
   const client = new Client(
@@ -1096,8 +1100,6 @@ export async function runWifJwtBearerScopeRejected(
 }
 
 // BUG: falls back to authorization_code after receiving unauthorized_client
-const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
-
 class WifGrantFallbackProvider implements OAuthClientProvider {
   private attemptCount = 0;
   private _clientInfo: OAuthClientInformation;

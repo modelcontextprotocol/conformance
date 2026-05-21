@@ -13,6 +13,8 @@ import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import {
   JWT_BEARER_GRANT_TYPE,
+  WIF_TRIGGER_UNAUTHORIZED_SCOPE,
+  WIF_REJECTED_SCOPE,
   generateWorkloadKeypair,
   createWorkloadJwt
 } from './helpers/createWorkloadJwt.js';
@@ -20,8 +22,6 @@ import {
 const WIF_ISSUER = 'https://idp.conformance-test.local';
 const WIF_SUBJECT = 'conformance-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
-const WIF_REJECTED_SCOPE = 'wif.rejected';
-const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
@@ -48,10 +48,11 @@ export class WifJwtBearerScenario implements Scenario {
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
       grantTypesSupported: [JWT_BEARER_GRANT_TYPE],
       tokenEndpointAuthMethodsSupported: ['none'],
-      tokenEndpointAuthSigningAlgValuesSupported: ['ES256'],
       tokenVerifier,
       disableDynamicRegistration: true,
       onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
+        // wif-no-retry and wif-grant-fallback fire on any second request after
+        // any first failure, not only after unauthorized_client specifically.
         if (this.tokenRequestReceived && this.failedOnce) {
           if (grantType !== JWT_BEARER_GRANT_TYPE) {
             this.checks.push({
