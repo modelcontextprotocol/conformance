@@ -13,10 +13,6 @@ requirements:
   - check: sep-2575-server-tags-subscription-id
     text: 'On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.'
     url: https://modelcontextprotocol.io/specification/draft/basic/index#meta
-  - check: sep-2575-server-stateless-no-prior-context
-    text: 'A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).'
-  - check: sep-2575-server-stateless-no-connection-reuse-required
-    text: 'Servers MUST NOT require that a client reuse the same connection to perform related operations.'
   - check: sep-2575-server-unsupported-version-error
     text: 'If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support.'
     url: https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation
@@ -29,12 +25,6 @@ requirements:
   - check: sep-2575-http-server-no-independent-requests-on-stream
     text: 'The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.'
     url: https://modelcontextprotocol.io/specification/draft/basic/transports#receiving-messages-1
-  - check: sep-2575-http-server-disconnect-is-cancel
-    text: 'Closing the SSE response stream MUST be treated by the server as cancellation of that request.'
-    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
-  - check: sep-2575-http-server-stops-on-cancel
-    text: 'The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].'
-    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
   - check: sep-2575-http-client-sends-version-header
     text: 'Every POST request to the MCP endpoint MUST include an MCP-Protocol-Version header.'
     url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
@@ -78,6 +68,16 @@ requirements:
     text: 'The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].'
     url: https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level
 
+  - text: 'A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).'
+    excluded: 'internal server state, not directly wire-observable; the observable consequence (rejecting requests with incomplete _meta rather than falling back to remembered state) is covered by sep-2575-request-meta-invalid-* — see https://github.com/modelcontextprotocol/conformance/issues/296'
+  - text: 'Servers MUST NOT require that a client reuse the same connection to perform related operations.'
+    excluded: 'not observable from a black-box harness; every harness request already arrives on an independent connection — see https://github.com/modelcontextprotocol/conformance/issues/296'
+  - text: 'Closing the SSE response stream MUST be treated by the server as cancellation of that request.'
+    excluded: '"treated as cancellation" is internal server state; once the stream is closed there is no channel left on which to observe the effect — see https://github.com/modelcontextprotocol/conformance/issues/296'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
+  - text: 'The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].'
+    excluded: '"stop work as soon as practical" is unobservable from a black-box harness, and "no further messages" cannot be verified once the response stream is closed — see https://github.com/modelcontextprotocol/conformance/issues/296'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1
   - text: 'State that needs to span multiple requests (e.g., long-running tasks, application-level handles) MUST be referenced by an explicit identifier the client passes on each request.'
     excluded: 'architectural guidance, observable only via subscriptionId/task-id rows already listed'
   - text: 'To distinguish notifications belonging to different concurrent subscriptions, clients MUST correlate notifications using the io.modelcontextprotocol/subscriptionId field carried in _meta.'
