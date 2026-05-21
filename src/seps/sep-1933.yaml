@@ -29,7 +29,7 @@ requirements:
     text: 'When the authorization server returns unauthorized_client for a JWT-bearer token request, the client should not fall back to a different grant type (WARNING until SEP-1933 lands normative spec text; RFC 7523 §2.1 defines the grant but does not forbid grant-type switching after failure)'
 
   - text: 'The JWT MUST include an iss (issuer) claim identifying the workload identity provider (RFC 7523 §3)'
-    excluded: 'Issuer validation is an AS policy decision; the client cannot control or observe which issuers the AS trusts. The scenario uses a run-scoped keypair whose public key is shared directly, making iss validation redundant for client conformance testing.'
+    excluded: 'Issuer validation is AS policy; the client presents a pre-signed token and cannot vary the iss value. The scenario does not expose issuer in context because it is not a client-observable parameter — the client has no mechanism to select or alter the iss of an assertion it did not construct.'
 
   - text: 'The JWT MUST include a sub (subject) claim identifying the workload (RFC 7523 §3)'
     excluded: 'Subject allowlist enforcement is AS policy; the client has no control over the subject in a pre-signed IdP token. From the client perspective this collapses to a generic invalid_grant response, already covered by existing checks.'

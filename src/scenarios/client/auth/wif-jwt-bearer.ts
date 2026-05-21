@@ -17,11 +17,8 @@ import {
   createWorkloadJwt
 } from './helpers/createWorkloadJwt.js';
 
-const WIF_ISSUER = 'https://spire.conformance-test.local';
-const WIF_SUBJECT =
-  'spiffe://conformance-test.local/ns/default/sa/conformance-workload';
-const WIF_K8S_ISSUER = 'https://kubernetes.default.svc.cluster.local';
-const WIF_K8S_SUBJECT = 'system:serviceaccount:default:conformance-workload';
+const WIF_ISSUER = 'https://idp.conformance-test.local';
+const WIF_SUBJECT = 'conformance-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
 const WIF_REJECTED_SCOPE = 'wif.rejected';
 const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
@@ -274,16 +271,10 @@ export class WifJwtBearerScenario implements Scenario {
         privateKey
       }),
       createWorkloadJwt({
-        issuer: WIF_K8S_ISSUER,
-        subject: WIF_K8S_SUBJECT,
+        issuer: WIF_ISSUER,
+        subject: WIF_SUBJECT,
         audience: 'https://wrong.example',
-        privateKey,
-        additionalClaims: {
-          'kubernetes.io': {
-            namespace: 'default',
-            serviceaccount: { name: 'conformance-workload' }
-          }
-        }
+        privateKey
       }),
       createWorkloadJwt({
         issuer: WIF_ISSUER,
@@ -309,8 +300,6 @@ export class WifJwtBearerScenario implements Scenario {
       serverUrl: `${this.server.getUrl()}/mcp`,
       context: {
         client_id: WIF_CLIENT_ID,
-        issuer: WIF_ISSUER,
-        subject: WIF_SUBJECT,
         audience: authServerUrl,
         valid_jwt: validJwt,
         wrong_audience_jwt: wrongAudienceJwt,
