@@ -17,8 +17,10 @@ import {
   createWorkloadJwt
 } from './helpers/createWorkloadJwt.js';
 
-const WIF_ISSUER = 'https://wif-idp.conformance-test.local';
-const WIF_SUBJECT = 'conformance:test-workload';
+const WIF_ISSUER = 'https://spire.conformance-test.local';
+const WIF_SUBJECT = 'spiffe://conformance-test.local/ns/default/sa/conformance-workload';
+const WIF_K8S_ISSUER = 'https://kubernetes.default.svc.cluster.local';
+const WIF_K8S_SUBJECT = 'system:serviceaccount:default:conformance-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
 const WIF_REJECTED_SCOPE = 'wif.rejected';
 const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
@@ -264,17 +266,23 @@ export class WifJwtBearerScenario implements Scenario {
         privateKey
       }),
       createWorkloadJwt({
-        issuer: WIF_ISSUER,
-        subject: WIF_SUBJECT,
+        issuer: WIF_K8S_ISSUER,
+        subject: WIF_K8S_SUBJECT,
         audience: 'https://wrong.example',
-        privateKey
+        privateKey,
+        additionalClaims: {
+          'kubernetes.io': {
+            namespace: 'default',
+            serviceaccount: { name: 'conformance-workload' }
+          }
+        }
       }),
       createWorkloadJwt({
         issuer: WIF_ISSUER,
         subject: WIF_SUBJECT,
         audience: authServerUrl,
         privateKey,
-        // Absolute epoch seconds in the past — jose treats a number as an absolute
+        // Absolute epoch seconds in the past; jose treats a number as an absolute
         // epoch timestamp, producing a token that is already expired.
         expiresIn: Math.floor(Date.now() / 1000) - 60
       })
@@ -296,6 +304,8 @@ export class WifJwtBearerScenario implements Scenario {
         issuer: WIF_ISSUER,
         subject: WIF_SUBJECT,
         audience: authServerUrl,
+        k8s_issuer: WIF_K8S_ISSUER,
+        k8s_subject: WIF_K8S_SUBJECT,
         valid_jwt: validJwt,
         wrong_audience_jwt: wrongAudienceJwt,
         expired_jwt: expiredJwt,
