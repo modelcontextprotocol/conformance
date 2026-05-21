@@ -784,13 +784,23 @@ export class ServerStatelessScenario implements ClientScenario {
       notifications: { toolsListChanged: true }
     };
 
+    // Open a tools-filtered stream and (best-effort) trigger a tool-list
+    // change once it is acknowledged, so the stream carries at least one
+    // post-acknowledgment notification for the subscription-id check.
     let streamFrames: any[] = [];
     try {
       streamFrames = await listenToStream(
         'subscriptions/listen',
         subscriptionParams,
         2,
-        800
+        800,
+        async () => {
+          await sendRpc('tools/call', {
+            name: 'test_trigger_tool_change',
+            arguments: {},
+            _meta: validMeta
+          });
+        }
       );
     } catch {
       // Stream pipeline tracking failed
@@ -816,14 +826,11 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
         const firstFrame = streamFrames[0];
-        const resolvedMethod =
-          firstFrame?.method ??
-          firstFrame?.body?.method ??
-          firstFrame?.params?.method;
-
-        if (resolvedMethod !== 'notifications/subscriptions/acknowledged') {
+        if (
+          firstFrame?.method !== 'notifications/subscriptions/acknowledged'
+        ) {
           return {
-            error: `Expected first frame method to be 'notifications/subscriptions/acknowledged', got '${resolvedMethod}'`,
+            error: `Expected first frame method to be 'notifications/subscriptions/acknowledged', got '${firstFrame?.method}'`,
             details: { firstFrame }
           };
         }
@@ -850,23 +857,43 @@ export class ServerStatelessScenario implements ClientScenario {
               'Failed to open stream line or tracking frames are missing completely'
           };
         }
-        const ackFrame =
-          streamFrames.find((f) => {
-            const m = f?.method ?? f?.body?.method ?? f?.params?.method;
-            return m === 'notifications/subscriptions/acknowledged';
-          }) ?? streamFrames[0];
 
-        const subId =
-          ackFrame?.params?._meta?.['io.modelcontextprotocol/subscriptionId'];
-
-        if (!subId) {
+        // Every notification delivered on the stream (the acknowledgment and
+        // anything after it) must carry the subscription id in params._meta.
+        const notificationFrames = streamFrames.filter(
+          (f) =>
+            typeof f?.method === 'string' &&
+            f.method.startsWith('notifications/')
+        );
+        if (notificationFrames.length === 0) {
           return {
             error:
-              'Subscription acknowledgment frame is missing the tracking subscriptionId in _meta',
-            details: { ackFrame }
+              'subscriptions/listen stream carried no notification frames to inspect',
+            details: { streamFrames }
           };
         }
-        return { details: { subscriptionId: subId, ackFrame } };
+
+        const untaggedFrames = notificationFrames.filter(
+          (f) =>
+            !f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
+        );
+        if (untaggedFrames.length > 0) {
+          return {
+            error: `${untaggedFrames.length} of ${notificationFrames.length} listen-stream notification(s) are missing io.modelcontextprotocol/subscriptionId in params._meta`,
+            details: { untaggedFrames }
+          };
+        }
+
+        const subId =
+          notificationFrames[0]?.params?._meta?.[
+            'io.modelcontextprotocol/subscriptionId'
+          ];
+        return {
+          details: {
+            subscriptionId: subId,
+            inspectedNotificationCount: notificationFrames.length
+          }
+        };
       }
     );
 
