@@ -219,7 +219,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     }
 
     checks.push({
-      id: 'mrtr-client-request-state-echoed',
+      id: 'sep-2322-client-request-state-echoed',
       name: 'MRTRClientRequestStateEchoed',
       description:
         'Client MUST echo back the exact value of requestState when retrying',
@@ -242,7 +242,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     }
 
     checks.push({
-      id: 'mrtr-client-jsonrpc-id-different',
+      id: 'sep-2322-client-jsonrpc-id-different',
       name: 'MRTRClientJsonRpcIdDifferent',
       description:
         'The JSON-RPC id MUST be different between the initial request and the retry',
@@ -309,7 +309,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     }
 
     checks.push({
-      id: 'mrtr-client-no-state-omitted',
+      id: 'sep-2322-client-no-state-omitted',
       name: 'MRTRClientNoStateOmitted',
       description:
         'If InputRequiredResult does not contain requestState, client MUST NOT include one in the retry',
@@ -354,7 +354,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     }
 
     checks.push({
-      id: 'mrtr-client-parallel-isolation',
+      id: 'sep-2322-client-parallel-isolation',
       name: 'MRTRClientParallelIsolation',
       description:
         'inputRequests and requestState MUST NOT be used for any other request the client may be sending',
@@ -384,10 +384,16 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     checks: ConformanceCheck[],
     res: Response
   ) {
+    const checkId = 'sep-2322-default-result-type-complete';
+
     // If the client retries this tool, it means it did NOT treat the result as complete
     if (inputResponses) {
+      // Remove any prior SUCCESS for this check (emitted when we first sent the response)
+      const existingIdx = checks.findIndex((c) => c.id === checkId);
+      if (existingIdx !== -1) checks.splice(existingIdx, 1);
+
       checks.push({
-        id: 'sep-2322-default-result-type-complete',
+        id: checkId,
         name: 'DefaultResultTypeComplete',
         description:
           'Client MUST assume resultType "complete" when not specified',
@@ -407,7 +413,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
 
     // Return a result WITHOUT resultType — client should treat as complete
     checks.push({
-      id: 'sep-2322-default-result-type-complete',
+      id: checkId,
       name: 'DefaultResultTypeComplete',
       description:
         'Client MUST assume resultType "complete" when not specified',
@@ -430,7 +436,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
 }
 
 export class MRTRClientScenario implements Scenario {
-  name = 'mrtr-client-request-state';
+  name = 'sep-2322-client-request-state';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests client MRTR behavior: requestState echo, no-state omission, and JSON-RPC id uniqueness (SEP-2322)';
@@ -457,10 +463,10 @@ export class MRTRClientScenario implements Scenario {
 
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = [
-      'mrtr-client-request-state-echoed',
-      'mrtr-client-jsonrpc-id-different',
-      'mrtr-client-no-state-omitted',
-      'mrtr-client-parallel-isolation',
+      'sep-2322-client-request-state-echoed',
+      'sep-2322-client-jsonrpc-id-different',
+      'sep-2322-client-no-state-omitted',
+      'sep-2322-client-parallel-isolation',
       'sep-2322-default-result-type-complete'
     ];
 

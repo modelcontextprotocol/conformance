@@ -13,21 +13,21 @@ import { getHandler } from '../../../examples/clients/typescript/everything-clie
 import { getScenario } from '../index';
 
 describe('MRTR client scenario (SEP-2322)', () => {
-  test('everything-client passes mrtr-client-request-state scenario', async () => {
-    const clientFn = getHandler('mrtr-client-request-state');
+  test('everything-client passes sep-2322-client-request-state scenario', async () => {
+    const clientFn = getHandler('sep-2322-client-request-state');
     if (!clientFn) {
       throw new Error(
-        'No handler registered for scenario: mrtr-client-request-state'
+        'No handler registered for scenario: sep-2322-client-request-state'
       );
     }
 
-    const scenario = getScenario('mrtr-client-request-state');
+    const scenario = getScenario('sep-2322-client-request-state');
     if (!scenario) {
-      throw new Error('Scenario not found: mrtr-client-request-state');
+      throw new Error('Scenario not found: sep-2322-client-request-state');
     }
 
     const runner = new InlineClientRunner(clientFn);
-    await runClientAgainstScenario(runner, 'mrtr-client-request-state');
+    await runClientAgainstScenario(runner, 'sep-2322-client-request-state');
 
     const checks = scenario.getChecks();
 

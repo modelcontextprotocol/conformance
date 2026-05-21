@@ -37,50 +37,62 @@ requirements:
     text: 'Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities.'
 
   # ── Client Requirements (Basic Workflow) ───────────────────────────────────
-  - check: mrtr-client-request-state-echoed
+  - check: sep-2322-client-request-state-echoed
     text: 'If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents.'
 
-  - check: mrtr-client-no-state-omitted
+  - check: sep-2322-client-no-state-omitted
     text: 'If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry.'
 
-  - check: mrtr-client-jsonrpc-id-different
+  - check: sep-2322-client-jsonrpc-id-different
     text: 'The JSON-RPC id MUST be different between the initial request and the retry, as they are independent requests.'
 
-  - check: mrtr-client-parallel-isolation
+  - check: sep-2322-client-parallel-isolation
     text: "Both the inputRequests and requestState fields affect only the client's retry of the original request. They MUST NOT be used for any other request that the client may be sending in parallel."
 
-  # ── Ephemeral Workflow: Complete Result After Retry ─────────────────────────
+  # ── Scenario flow gates (non-normative) ───────────────────────────────────
+  # These checks verify the MRTR flow works end-to-end but are not direct
+  # RFC-2119 sentences from the spec. They serve as conformance test gates.
   - check: sep-2322-elicitation-complete
     text: 'Server returns complete result after retry with inputResponses (elicitation)'
+    note: 'Scenario gate — verifies end-to-end flow, not a standalone normative requirement'
 
   - check: sep-2322-sampling-complete
     text: 'Server returns complete result after retry with inputResponses (sampling)'
+    note: 'Scenario gate — verifies end-to-end flow, not a standalone normative requirement'
 
   - check: sep-2322-list-roots-complete
     text: 'Server returns complete result after retry with inputResponses (list roots)'
+    note: 'Scenario gate — verifies end-to-end flow, not a standalone normative requirement'
 
   - check: sep-2322-request-state-complete
     text: 'Server returns complete result after retry with requestState echoed back'
+    note: 'Scenario gate — verifies end-to-end flow, not a standalone normative requirement'
 
   - check: sep-2322-multiple-inputs-complete
     text: 'Server returns complete result after retry with multiple inputResponses'
+    note: 'Scenario gate — verifies end-to-end flow, not a standalone normative requirement'
 
   # ── Multi-Round Flow ───────────────────────────────────────────────────────
   - check: sep-2322-multi-round-r1
     text: 'Server returns InputRequiredResult on first round of multi-round flow'
+    note: 'Scenario gate — verifies multi-round pattern works'
 
   - check: sep-2322-multi-round-r2
     text: 'Server returns InputRequiredResult on second round (re-requesting with new requestState)'
+    note: 'Scenario gate — verifies multi-round pattern works'
 
   - check: sep-2322-multi-round-r3
     text: 'Server returns complete result on third round of multi-round flow'
+    note: 'Scenario gate — verifies multi-round pattern works'
 
   # ── Non-Tool Request (prompts/get) ─────────────────────────────────────────
   - check: sep-2322-non-tool-incomplete
     text: 'Server returns InputRequiredResult on prompts/get request'
+    note: 'Scenario gate — verifies MRTR works on non-tool requests'
 
   - check: sep-2322-non-tool-complete
     text: 'Server returns complete GetPromptResult after retry with inputResponses'
+    note: 'Scenario gate — verifies MRTR works on non-tool requests'
 
   # ── Error Handling ─────────────────────────────────────────────────────────
   - check: sep-2322-validate-input-responses

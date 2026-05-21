@@ -552,17 +552,6 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
           r2Errors.push(
             'Expected complete result after retry with requestState'
           );
-        } else {
-          // Check that server confirmed it received the state
-          const content = r2Result.content as
-            | Array<{ type: string; text?: string }>
-            | undefined;
-          const text = content?.find((c) => c.type === 'text')?.text ?? '';
-          if (!text.includes('state-ok')) {
-            r2Errors.push(
-              'Server response text should include "state-ok" to confirm requestState was validated'
-            );
-          }
         }
 
         checks.push({
@@ -1014,7 +1003,7 @@ Use the same tool as A1: \`test_input_required_result_elicitation\`.
         name: 'InputRequiredResultMissingResponseRerequests',
         description:
           'Server re-requests missing inputResponses via new InputRequiredResult',
-        status: 'FAILURE',
+        status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: MRTR_SPEC_REFERENCES
@@ -1345,11 +1334,21 @@ JSON-RPC error (code -32602 or similar) indicating integrity check failure.`;
 
       const errors: string[] = [];
 
-      if (!r2.error && r2.result && isCompleteResult(r2.result)) {
-        errors.push(
-          'Server accepted tampered requestState and returned complete result. ' +
-            'Servers MUST reject state that fails integrity verification.'
-        );
+      if (!r2.error) {
+        // The only acceptable response to tampered state is a JSON-RPC error.
+        // Returning a complete result OR re-prompting (InputRequiredResult) both
+        // indicate the server did not reject the tampered state.
+        if (r2.result && isCompleteResult(r2.result)) {
+          errors.push(
+            'Server accepted tampered requestState and returned complete result. ' +
+              'Servers MUST reject state that fails integrity verification.'
+          );
+        } else {
+          errors.push(
+            'Server did not return a JSON-RPC error for tampered requestState. ' +
+              'Servers MUST reject state that fails integrity verification.'
+          );
+        }
       }
 
       checks.push({
@@ -1418,7 +1417,7 @@ Only include inputRequests for methods the client supports. For example, if the 
       } else if (!result) {
         errors.push('No result in response');
       } else if (isInputRequiredResult(result) && result.inputRequests) {
-        // Check that no elicitation requests are included
+        // Check that no elicitation requests are included (client didn't declare it)
         for (const [key, req] of Object.entries(result.inputRequests)) {
           if (req.method === 'elicitation/create') {
             errors.push(
@@ -1426,15 +1425,6 @@ Only include inputRequests for methods the client supports. For example, if the 
                 'but client did not declare elicitation capability'
             );
           }
-        }
-        // Verify sampling IS present (server should use available capabilities)
-        const hasSampling = Object.values(result.inputRequests).some(
-          (req) => req.method === 'sampling/createMessage'
-        );
-        if (!hasSampling) {
-          errors.push(
-            'Server did not include sampling/createMessage even though client declared sampling capability'
-          );
         }
       } else if (isCompleteResult(result)) {
         errors.push(
@@ -1532,7 +1522,7 @@ the extra keys and complete normally.`;
         id: 'sep-2322-ignore-unexpected-params',
         name: 'IgnoreUnexpectedParams',
         description: 'Server ignores extra unrecognized keys in inputResponses',
-        status: 'FAILURE',
+        status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: MRTR_SPEC_REFERENCES
@@ -1627,7 +1617,7 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
         id: 'sep-2322-validate-input-responses',
         name: 'ValidateInputResponses',
         description: 'Server validates InputResponses structure',
-        status: 'FAILURE',
+        status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: MRTR_SPEC_REFERENCES

@@ -867,7 +867,7 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
   logger.debug('MRTR client scenario completed');
 }
 
-registerScenario('mrtr-client-request-state', runMRTRClient);
+registerScenario('sep-2322-client-request-state', runMRTRClient);
 
 // ============================================================================
 // Main entry point
