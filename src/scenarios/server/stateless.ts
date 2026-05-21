@@ -755,7 +755,7 @@ export class ServerStatelessScenario implements ClientScenario {
     // ==========================================
     const subscriptionParams = {
       _meta: validMeta,
-      subscriptions: [{ type: 'tools/list-changed' }]
+      notifications: { toolsListChanged: true }
     };
 
     let streamFrames: any[] = [];
@@ -851,7 +851,7 @@ export class ServerStatelessScenario implements ClientScenario {
       async () => {
         const narrowParams = {
           _meta: validMeta,
-          subscriptions: [{ type: 'prompts/list-changed' }]
+          notifications: { promptsListChanged: true }
         };
 
         await sendRpc('tools/call', {
@@ -917,7 +917,7 @@ export class ServerStatelessScenario implements ClientScenario {
 
         const promptsParams = {
           _meta: validMeta,
-          subscriptions: [{ type: 'prompts/list-changed' }]
+          notifications: { promptsListChanged: true }
         };
         const trigger = await sendRpc('tools/call', {
           name: 'test_trigger_prompt_change',
@@ -979,7 +979,7 @@ export class ServerStatelessScenario implements ClientScenario {
 
         const toolsParams = {
           _meta: validMeta,
-          subscriptions: [{ type: 'tools/list-changed' }]
+          notifications: { toolsListChanged: true }
         };
         const trigger = await sendRpc('tools/call', {
           name: 'test_trigger_tool_change',

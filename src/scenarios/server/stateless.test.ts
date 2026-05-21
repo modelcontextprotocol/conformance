@@ -291,10 +291,10 @@ describe('Stateless Server Scenario Negative Tests', () => {
 
   test('Fails validation when server leaks out-of-filter notifications on a subscription stream', async () => {
     const mockUrl = mockFetchTarget((reqBody) => {
-      // The scenario subscribes ONLY to prompts/list-changed
+      // The scenario subscribes ONLY to prompts list-changed notifications
       if (
         reqBody.method === 'subscriptions/listen' &&
-        reqBody.params?.subscriptions?.[0]?.type === 'prompts/list-changed'
+        reqBody.params?.notifications?.promptsListChanged === true
       ) {
         return {
           isStream: true,
@@ -369,10 +369,10 @@ describe('Stateless Server Scenario Negative Tests', () => {
 
       // 3. Provide the streams but withhold the required notifications for BOTH channels
       if (reqBody.method === 'subscriptions/listen') {
-        const subType = reqBody.params?.subscriptions?.[0]?.type;
+        const filter = reqBody.params?.notifications;
         if (
-          subType === 'prompts/list-changed' ||
-          subType === 'tools/list-changed'
+          filter?.promptsListChanged === true ||
+          filter?.toolsListChanged === true
         ) {
           return {
             isStream: true,
@@ -382,10 +382,10 @@ describe('Stateless Server Scenario Negative Tests', () => {
                 jsonrpc: '2.0',
                 method: 'notifications/subscriptions/acknowledged',
                 _meta: {
-                  'io.modelcontextprotocol/subscriptionId': `sub-${subType}-test`
+                  'io.modelcontextprotocol/subscriptionId': 'sub-drop-test'
                 }
               }
-              // MISSING VIOLATION: We never send the expected notifications/[type]/list-changed
+              // MISSING VIOLATION: We never send the expected notifications/*/list_changed
             ]
           };
         }

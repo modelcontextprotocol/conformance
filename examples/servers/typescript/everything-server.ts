@@ -1122,25 +1122,26 @@ app.post('/mcp', async (req, res) => {
         'Transfer-Encoding': 'chunked'
       });
 
-      const subscriptionList = params.subscriptions || [];
+      const requestedNotifications = params.notifications || {};
       const trackingSubId = 'sub-token-stateless-123';
 
+      const wantsTools = requestedNotifications.toolsListChanged === true;
+      const wantsPrompts = requestedNotifications.promptsListChanged === true;
+
       // First message MUST be notifications/subscriptions/acknowledged carrying tracking token in _meta
+      // The `notifications` field echoes the subset of the requested filter the server honors.
       const ackFrame = {
         jsonrpc: '2.0',
         method: 'notifications/subscriptions/acknowledged',
         params: {
-          _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId }
+          _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
+          notifications: {
+            ...(wantsTools ? { toolsListChanged: true } : {}),
+            ...(wantsPrompts ? { promptsListChanged: true } : {})
+          }
         }
       };
       res.write(JSON.stringify(ackFrame) + '\n');
-
-      const wantsTools = subscriptionList.some(
-        (s: any) => s.type === 'tools/list-changed'
-      );
-      const wantsPrompts = subscriptionList.some(
-        (s: any) => s.type === 'prompts/list-changed'
-      );
 
       if (wantsTools) {
         res.write(
