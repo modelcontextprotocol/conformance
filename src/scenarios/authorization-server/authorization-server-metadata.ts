@@ -9,7 +9,9 @@ import { request } from 'undici';
 
 type Status = 'SUCCESS' | 'FAILURE';
 
-export class AuthorizationServerMetadataEndpointScenario implements ClientScenarioForAuthorizationServer {
+export class AuthorizationServerMetadataEndpointScenario
+  implements ClientScenarioForAuthorizationServer
+{
   name = 'authorization-server-metadata-endpoint';
   readonly source = { introducedIn: '2025-03-26' } as const;
   description = `Test authorization server metadata endpoint.
