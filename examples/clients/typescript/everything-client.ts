@@ -1148,7 +1148,7 @@ class WifGrantFallbackProvider implements OAuthClientProvider {
     throw new Error('codeVerifier is not used for JWT-bearer flow');
   }
 
-  prepareTokenRequest(scope?: string): URLSearchParams {
+  prepareTokenRequest(_scope?: string): URLSearchParams {
     this.attemptCount++;
     if (this.attemptCount === 1) {
       const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
