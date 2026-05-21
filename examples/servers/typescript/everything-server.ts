@@ -144,20 +144,16 @@ function createMcpServer() {
   ]);
   mcpServer.server.setRequestHandler = ((schema: any, handler: any) => {
     if (listSchemasForCaching.has(schema)) {
-      return originalSetRequestHandler(
-        schema,
-        async (...args: any[]) => {
-          const result = await handler(...args);
-          return { ...result, ttlMs: 300000, cacheScope: 'public' as const };
-        }
-      );
+      return originalSetRequestHandler(schema, async (...args: any[]) => {
+        const result = await handler(...args);
+        return { ...result, ttlMs: 300000, cacheScope: 'public' as const };
+      });
     }
     return originalSetRequestHandler(schema, handler);
   }) as typeof mcpServer.server.setRequestHandler;
 
-  const registerResourceWithCacheHints = mcpServer.registerResource.bind(
-    mcpServer
-  );
+  const registerResourceWithCacheHints =
+    mcpServer.registerResource.bind(mcpServer);
   mcpServer.registerResource = ((
     name: string,
     uriOrTemplate: string | ResourceTemplate,
@@ -1070,7 +1066,7 @@ function createMcpServer() {
               annotations: tool.annotations,
               _meta: tool._meta
             };
-          }),
+          })
         // Note: SEP-2549 caching hints are added automatically by the
         // setRequestHandler wrapper above
       };
