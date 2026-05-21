@@ -21,6 +21,7 @@ const WIF_ISSUER = 'https://wif-idp.conformance-test.local';
 const WIF_SUBJECT = 'conformance:test-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
 const WIF_REJECTED_SCOPE = 'wif.rejected';
+const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
@@ -52,6 +53,23 @@ export class WifJwtBearerScenario implements Scenario {
       disableDynamicRegistration: true,
       onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
         if (this.tokenRequestReceived && this.failedOnce) {
+          if (grantType !== JWT_BEARER_GRANT_TYPE) {
+            this.checks.push({
+              id: 'wif-grant-fallback',
+              name: 'WifGrantFallback',
+              description: `Client fell back to ${grantType} grant after receiving unauthorized_client; client MUST NOT switch grant types after a JWT-bearer failure`,
+              status: 'FAILURE',
+              timestamp,
+              specReferences: [
+                SpecReferences.RFC_7523_JWT_BEARER,
+                SpecReferences.SEP_1933_WIF
+              ]
+            });
+            return {
+              error: 'unsupported_grant_type',
+              errorDescription: 'Only JWT-bearer grant is supported'
+            };
+          }
           this.checks.push({
             id: 'wif-no-retry',
             name: 'WifNoRetry',
@@ -137,6 +155,13 @@ export class WifJwtBearerScenario implements Scenario {
           });
 
           const scopeList = body.scope ? body.scope.split(' ') : [];
+          if (scopeList.includes(WIF_TRIGGER_UNAUTHORIZED_SCOPE)) {
+            this.failedOnce = true;
+            return {
+              error: 'unauthorized_client',
+              errorDescription: 'Client not authorized for JWT-bearer grant'
+            };
+          }
           if (scopeList.includes(WIF_REJECTED_SCOPE)) {
             this.checks.push({
               id: 'wif-assertion-scope-rejected',

@@ -1095,6 +1095,99 @@ export async function runWifJwtBearerScopeRejected(
   await transport.close();
 }
 
+// BUG: falls back to authorization_code after receiving unauthorized_client
+const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
+
+class WifGrantFallbackProvider implements OAuthClientProvider {
+  private attemptCount = 0;
+  private _clientInfo: OAuthClientInformation;
+  private readonly _clientMetadata: OAuthClientMetadata;
+
+  constructor(
+    private readonly assertion: string,
+    clientId: string
+  ) {
+    this._clientInfo = { client_id: clientId };
+    this._clientMetadata = {
+      client_name: 'conformance-wif-grant-fallback',
+      redirect_uris: [],
+      grant_types: [JWT_BEARER_GRANT_TYPE],
+      token_endpoint_auth_method: 'none'
+    };
+  }
+
+  get redirectUrl(): undefined {
+    return undefined;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this._clientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformation {
+    return this._clientInfo;
+  }
+
+  saveClientInformation(info: OAuthClientInformation): void {
+    this._clientInfo = info;
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return undefined;
+  }
+
+  saveTokens(): void {}
+
+  redirectToAuthorization(): void {
+    throw new Error('redirectToAuthorization is not used for JWT-bearer flow');
+  }
+
+  saveCodeVerifier(): void {}
+
+  codeVerifier(): string {
+    throw new Error('codeVerifier is not used for JWT-bearer flow');
+  }
+
+  prepareTokenRequest(scope?: string): URLSearchParams {
+    this.attemptCount++;
+    if (this.attemptCount === 1) {
+      const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
+      params.set('assertion', this.assertion);
+      params.set('scope', WIF_TRIGGER_UNAUTHORIZED_SCOPE);
+      return params;
+    }
+    // BUG: switches to authorization_code instead of surfacing the error
+    return new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: 'fake-fallback-code'
+    });
+  }
+}
+
+export async function runWifJwtBearerGrantFallback(
+  serverUrl: string
+): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifGrantFallbackProvider(ctx.valid_jwt, ctx.client_id);
+
+  const client = new Client(
+    { name: 'conformance-wif-grant-fallback', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  await client.listTools();
+  await transport.close();
+}
+
 // ============================================================================
 // Main entry point
 // ============================================================================
