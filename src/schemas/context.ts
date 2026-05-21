@@ -40,9 +40,7 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     audience: z.string().url(),
     valid_jwt: z.string(),
     wrong_audience_jwt: z.string(),
-    expired_jwt: z.string(),
-    // Tightly locked to ES256 because the scenario generates only ES256 keypairs.
-    signing_algorithm: z.literal('ES256')
+    expired_jwt: z.string()
   })
 ]);
 

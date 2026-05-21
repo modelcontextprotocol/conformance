@@ -1188,7 +1188,9 @@ export async function runWifJwtBearerGrantFallback(
   await transport.close();
 }
 
-// BUG: retries JWT-bearer after receiving unauthorized_client
+// BUG: retries JWT-bearer after receiving unauthorized_client.
+// Deliberately omits the hasAttempted guard used by WifJwtBearerProvider so
+// the SDK retry reaches the AS and the wif-no-retry check fires.
 class WifRetryProvider implements OAuthClientProvider {
   private attemptCount = 0;
   private _clientInfo: OAuthClientInformation;

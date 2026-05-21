@@ -25,10 +25,6 @@ const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
-  // SEP-1933 has no docs/specification/draft/ diff yet, so extensionId would
-  // be the right tag. DRAFT_PROTOCOL_VERSION is used here as a workaround to
-  // make the scenario reachable via --spec-version draft until the runner
-  // supports extensions under that flag. Track: follow-up issue needed.
   specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
@@ -303,8 +299,7 @@ export class WifJwtBearerScenario implements Scenario {
         audience: authServerUrl,
         valid_jwt: validJwt,
         wrong_audience_jwt: wrongAudienceJwt,
-        expired_jwt: expiredJwt,
-        signing_algorithm: 'ES256'
+        expired_jwt: expiredJwt
       }
     };
   }
