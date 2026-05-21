@@ -18,7 +18,8 @@ import {
 } from './helpers/createWorkloadJwt.js';
 
 const WIF_ISSUER = 'https://spire.conformance-test.local';
-const WIF_SUBJECT = 'spiffe://conformance-test.local/ns/default/sa/conformance-workload';
+const WIF_SUBJECT =
+  'spiffe://conformance-test.local/ns/default/sa/conformance-workload';
 const WIF_K8S_ISSUER = 'https://kubernetes.default.svc.cluster.local';
 const WIF_K8S_SUBJECT = 'system:serviceaccount:default:conformance-workload';
 const WIF_CLIENT_ID = 'conformance-wif-workload';
