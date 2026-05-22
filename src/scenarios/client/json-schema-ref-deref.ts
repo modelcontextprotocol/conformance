@@ -79,12 +79,10 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
 
   private app: express.Application | null = null;
   private httpServer: ReturnType<express.Application['listen']> | null = null;
-  private checks: ConformanceCheck[] = [];
   private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
   private toolsListed = false;
 
   async start(): Promise<ScenarioUrls> {
-    this.checks = [];
     this.canaryRequests = [];
     this.toolsListed = false;
 
@@ -107,15 +105,28 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     });
 
     app.post('/mcp', async (req: Request, res: Response) => {
-      // Stateless: fresh server and transport per request
-      const server = createMcpServer(this.canaryUrl(), () => {
-        this.toolsListed = true;
-      });
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined
-      });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      try {
+        // Stateless: fresh server and transport per request
+        const server = createMcpServer(this.canaryUrl(), () => {
+          this.toolsListed = true;
+        });
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined
+        });
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+      } catch (error) {
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32603,
+              message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
+            },
+            id: null
+          });
+        }
+      }
     });
 
     this.app = app;
@@ -144,44 +155,47 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
   }
 
   getChecks(): ConformanceCheck[] {
+    // Built fresh on every call so getChecks() is idempotent — the runner may
+    // call it more than once and we must not accumulate duplicates.
     const timestamp = new Date().toISOString();
     const fetched = this.canaryRequests.length > 0;
 
     if (!this.toolsListed) {
-      this.checks.push({
-        id: CHECK_ID,
-        name: 'NoNetworkRefDereference',
-        description:
-          'Client never requested tools/list, so $ref handling could not be evaluated',
-        status: 'FAILURE',
-        timestamp,
-        errorMessage:
-          'Client did not call tools/list against a server advertising a tool with a network $ref',
-        specReferences: SPEC_REFERENCES,
-        details: { toolsListed: false }
-      });
-      return this.checks;
+      return [
+        {
+          id: CHECK_ID,
+          name: 'NoNetworkRefDereference',
+          description:
+            'Client never requested tools/list, so $ref handling could not be evaluated',
+          status: 'FAILURE',
+          timestamp,
+          errorMessage:
+            'Client did not call tools/list against a server advertising a tool with a network $ref',
+          specReferences: SPEC_REFERENCES,
+          details: { toolsListed: false }
+        }
+      ];
     }
 
-    this.checks.push({
-      id: CHECK_ID,
-      name: 'NoNetworkRefDereference',
-      description: fetched
-        ? 'Client automatically dereferenced a network-URI $ref in a tool inputSchema. Implementations MUST NOT automatically dereference $ref values that resolve to a network URI (SEP-2106).'
-        : 'Client did not dereference the network-URI $ref in the tool inputSchema',
-      status: fetched ? 'FAILURE' : 'SUCCESS',
-      timestamp,
-      errorMessage: fetched
-        ? `Canary URL ${CANARY_PATH} was fetched ${this.canaryRequests.length} time(s)`
-        : undefined,
-      specReferences: SPEC_REFERENCES,
-      details: {
-        toolsListed: true,
-        canaryRequestCount: this.canaryRequests.length,
-        canaryRequests: this.canaryRequests
+    return [
+      {
+        id: CHECK_ID,
+        name: 'NoNetworkRefDereference',
+        description: fetched
+          ? 'Client automatically dereferenced a network-URI $ref in a tool inputSchema. Implementations MUST NOT automatically dereference $ref values that resolve to a network URI (SEP-2106).'
+          : 'Client did not dereference the network-URI $ref in the tool inputSchema',
+        status: fetched ? 'FAILURE' : 'SUCCESS',
+        timestamp,
+        errorMessage: fetched
+          ? `Canary URL ${CANARY_PATH} was fetched ${this.canaryRequests.length} time(s)`
+          : undefined,
+        specReferences: SPEC_REFERENCES,
+        details: {
+          toolsListed: true,
+          canaryRequestCount: this.canaryRequests.length,
+          canaryRequests: this.canaryRequests
+        }
       }
-    });
-
-    return this.checks;
+    ];
   }
 }

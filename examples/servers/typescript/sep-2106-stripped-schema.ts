@@ -76,7 +76,7 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-const PORT = parseInt(process.env.PORT || '3006', 10);
+const PORT = parseInt(process.env.PORT || '3007', 10);
 app.listen(PORT, '127.0.0.1', () => {
   console.log(
     `SEP-2106 negative test server running on http://localhost:${PORT}/mcp`
