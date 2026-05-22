@@ -65,6 +65,7 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { CachingScenario } from './server/caching';
 
 import {
   HttpHeaderValidationScenario,
@@ -162,6 +163,8 @@ const allClientScenariosList: ClientScenario[] = [
   // Security scenarios
   new DNSRebindingProtectionScenario(),
 
+  // Caching scenarios (SEP-2549)
+  new CachingScenario(),
   // HTTP Standardization scenarios (SEP-2243)
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario()

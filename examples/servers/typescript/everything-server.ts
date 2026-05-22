@@ -22,6 +22,9 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import {
   ElicitResultSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   type ListToolsResult,
   type Tool
 } from '@modelcontextprotocol/sdk/types.js';
@@ -127,6 +130,46 @@ function createMcpServer() {
       }
     }
   );
+
+  // SEP-2549: Wrap setRequestHandler so the SDK's own list handlers
+  // automatically get caching hints appended to their responses.
+  const originalSetRequestHandler = mcpServer.server.setRequestHandler.bind(
+    mcpServer.server
+  );
+  const listSchemasForCaching = new Set([
+    ListToolsRequestSchema,
+    ListPromptsRequestSchema,
+    ListResourcesRequestSchema,
+    ListResourceTemplatesRequestSchema
+  ]);
+  mcpServer.server.setRequestHandler = ((schema: any, handler: any) => {
+    if (listSchemasForCaching.has(schema)) {
+      return originalSetRequestHandler(schema, async (...args: any[]) => {
+        const result = await handler(...args);
+        return { ...result, ttlMs: 300000, cacheScope: 'public' as const };
+      });
+    }
+    return originalSetRequestHandler(schema, handler);
+  }) as typeof mcpServer.server.setRequestHandler;
+
+  const registerResourceWithCacheHints =
+    mcpServer.registerResource.bind(mcpServer);
+  mcpServer.registerResource = ((
+    name: string,
+    uriOrTemplate: string | ResourceTemplate,
+    config: any,
+    readCallback: any
+  ) =>
+    registerResourceWithCacheHints(
+      name,
+      uriOrTemplate as any,
+      config,
+      async (...args: any[]) => ({
+        ...(await readCallback(...args)),
+        ttlMs: 300000,
+        cacheScope: 'private' as const
+      })
+    )) as typeof mcpServer.registerResource;
 
   // Helper to send log messages using the underlying server
   function sendLog(
@@ -1024,6 +1067,8 @@ function createMcpServer() {
               _meta: tool._meta
             };
           })
+        // Note: SEP-2549 caching hints are added automatically by the
+        // setRequestHandler wrapper above
       };
     }
   );

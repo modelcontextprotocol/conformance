@@ -1,0 +1,12 @@
+sep: 2207
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/authorization#refresh-tokens
+requirements:
+  - check: sep-2207-client-metadata-grant-types
+    text: 'MCP Clients that desire refresh tokens SHOULD include `refresh_token` in their `grant_types` client metadata'
+  - check: sep-2207-server-no-offline-access
+    text: 'MCP Servers (Protected Resources) SHOULD NOT include `offline_access` in `WWW-Authenticate` scope or Protected Resource Metadata `scopes_supported`, as refresh tokens are not a resource requirement'
+
+  - text: 'MCP Clients that desire refresh tokens MUST keep refresh tokens confidential in transit and storage as specified in OAuth 2.1 Section 4.3'
+    excluded: 'Confidentiality of refresh tokens in storage is client-internal state, and in-transit (TLS) confidentiality is not exercised by the harness over localhost HTTP; not protocol-observable'
+  - text: 'MCP Clients that desire refresh tokens MUST NOT assume refresh tokens will be issued; the AS retains discretion'
+    excluded: 'A client "assuming" refresh tokens will be issued is mental-state; only manifests as general authorization-flow completion, which other checks already cover; not directly protocol-observable'
