@@ -137,6 +137,51 @@ const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
   additionalProperties: false
 };
 
+// SEP-2106: array-at-root outputSchema for conformance testing.
+// Tests that SDKs preserve non-object outputSchema instead of wrapping it.
+const SEP_2106_ARRAY_OUTPUT_SCHEMA = {
+  type: 'array' as const,
+  items: {
+    type: 'object',
+    properties: {
+      hour: { type: 'string' },
+      temp: { type: 'number' },
+      conditions: { type: 'string' }
+    },
+    required: ['hour', 'temp', 'conditions']
+  }
+};
+
+// SEP-2106: oneOf composition inputSchema. type: "object" is required
+// (tool args are always objects), but the oneOf alternates between two
+// required keys — exactly the pattern SEP-2106's Specification §1 enables.
+const SEP_2106_ONEOF_INPUT_SCHEMA = {
+  type: 'object' as const,
+  oneOf: [
+    {
+      properties: { id: { type: 'string', format: 'uuid' } },
+      required: ['id']
+    },
+    {
+      properties: { name: { type: 'string', minLength: 1 } },
+      required: ['name']
+    }
+  ]
+};
+
+// SEP-2106: primitive-at-root outputSchema (raw number).
+const SEP_2106_PRIMITIVE_OUTPUT_SCHEMA = { type: 'number' as const };
+
+// Fixed payload for the array-output tool so the conformance check can
+// compare structuredContent against the TextContent fallback verbatim.
+const SEP_2106_FORECAST_PAYLOAD = [
+  { hour: '09:00', temp: 68, conditions: 'sunny' },
+  { hour: '10:00', temp: 72, conditions: 'partly cloudy' },
+  { hour: '11:00', temp: 75, conditions: 'cloudy' }
+];
+
+const SEP_2106_COUNT_PAYLOAD = 42;
+
 // Function to create a new MCP server instance (one per session)
 function createMcpServer() {
   const mcpServer = new McpServer(
@@ -782,6 +827,88 @@ function createMcpServer() {
     }
   );
 
+  // SEP-2106 tools are gated behind an env flag because their loosened
+  // outputSchema (type: "array", type: "number") is rejected by SDK Client
+  // versions that pre-date SEP-2106 — and the SDK Client is used by every
+  // other scenario in the suite. Enable via SEP_2106_ENABLED=1 when running
+  // the SEP-2106 scenario specifically.
+  if (process.env.SEP_2106_ENABLED === '1') {
+    // SEP-2106: array-at-root outputSchema + array structuredContent.
+    // The tool ignores inputs and returns a fixed forecast so the conformance
+    // scenario can deterministically diff structuredContent against the
+    // TextContent fallback (the existing SHOULD that is newly load-bearing
+    // for non-object structuredContent).
+    mcpServer.registerTool(
+      'sep_2106_array_output_tool',
+      {
+        description:
+          'Returns an array of hourly forecasts directly in structuredContent (SEP-2106)'
+      },
+      async () => {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(SEP_2106_FORECAST_PAYLOAD)
+            }
+          ],
+          structuredContent: SEP_2106_FORECAST_PAYLOAD as unknown as {
+            [key: string]: unknown;
+          }
+        };
+      }
+    );
+
+    // SEP-2106: oneOf composition inputSchema. Zod can't express oneOf
+    // natively, so the Zod schema accepts both fields as optional and the
+    // ListToolsRequestSchema override below re-injects the raw oneOf shape.
+    mcpServer.registerTool(
+      'sep_2106_oneof_input_tool',
+      {
+        description:
+          'Accepts either {id} OR {name} via inputSchema.oneOf composition (SEP-2106)',
+        inputSchema: {
+          id: z.string().optional(),
+          name: z.string().optional()
+        }
+      },
+      async (args: { id?: string; name?: string }) => {
+        const branch = args.id ? 'id' : args.name ? 'name' : 'none';
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Matched oneOf branch: ${branch} (args=${JSON.stringify(args)})`
+            }
+          ]
+        };
+      }
+    );
+
+    // SEP-2106: primitive-at-root outputSchema. structuredContent is a
+    // raw number, not wrapped in an object.
+    mcpServer.registerTool(
+      'sep_2106_primitive_output_tool',
+      {
+        description:
+          'Returns a raw number in structuredContent (SEP-2106 primitive output)'
+      },
+      async () => {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: String(SEP_2106_COUNT_PAYLOAD)
+            }
+          ],
+          structuredContent: SEP_2106_COUNT_PAYLOAD as unknown as {
+            [key: string]: unknown;
+          }
+        };
+      }
+    );
+  } // end SEP-2106 env gate
+
   // Dynamic tool (registered later via timer)
 
   // ===== RESOURCES =====
@@ -1078,6 +1205,40 @@ function createMcpServer() {
                 description: tool.description,
                 inputSchema: JSON_SCHEMA_2020_12_INPUT_SCHEMA
               };
+            }
+
+            // SEP-2106: re-inject raw schemas the Zod converter would strip
+            // or wrap. Gated by SEP_2106_ENABLED to match the tool-registration
+            // gate above (without the env flag these tools aren't registered,
+            // so these branches are unreachable — explicit guard keeps intent
+            // visible).
+            if (process.env.SEP_2106_ENABLED === '1') {
+              if (name === 'sep_2106_array_output_tool') {
+                return {
+                  name,
+                  description: tool.description,
+                  inputSchema: { type: 'object' as const, properties: {} },
+                  outputSchema:
+                    SEP_2106_ARRAY_OUTPUT_SCHEMA as unknown as Tool['outputSchema']
+                };
+              }
+              if (name === 'sep_2106_oneof_input_tool') {
+                return {
+                  name,
+                  description: tool.description,
+                  inputSchema:
+                    SEP_2106_ONEOF_INPUT_SCHEMA as unknown as Tool['inputSchema']
+                };
+              }
+              if (name === 'sep_2106_primitive_output_tool') {
+                return {
+                  name,
+                  description: tool.description,
+                  inputSchema: { type: 'object' as const, properties: {} },
+                  outputSchema:
+                    SEP_2106_PRIMITIVE_OUTPUT_SCHEMA as unknown as Tool['outputSchema']
+                };
+              }
             }
 
             // For other tools, use the SDK's own JSON Schema conversion

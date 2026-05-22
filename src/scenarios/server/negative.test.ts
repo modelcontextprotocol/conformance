@@ -3,6 +3,7 @@ import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
+import { Sep2106Scenario } from './sep-2106';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -145,6 +146,107 @@ describe('Server scenario negative tests', () => {
         const check = checks.find((c) => c.id === checkId);
         expect(check).toBeDefined();
         expect(check?.status).toBe('FAILURE');
+      }
+    }, 15000);
+  });
+
+  describe('sep-2106-broken-schema', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3008;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2106-broken-schema.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits FAILURE/WARNING against a server that flattens loosened SEP-2106 schemas', async () => {
+      const scenario = new Sep2106Scenario();
+      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+
+      // Tools are advertised, so the *-tool-found checks pass.
+      // The shape/value checks should all fail.
+      const expectedFailures = [
+        'sep-2106-array-output-schema-preserved',
+        'sep-2106-array-structured-content',
+        'sep-2106-oneof-input-schema-preserved',
+        'sep-2106-primitive-output-schema-preserved',
+        'sep-2106-primitive-structured-content'
+      ];
+      for (const id of expectedFailures) {
+        const check = checks.find((c) => c.id === id);
+        expect(check, `check ${id} should exist`).toBeDefined();
+        expect(check?.status, `check ${id} should fail`).toBe('FAILURE');
+      }
+
+      // The TextContent fallback SHOULD: WARNING when missing.
+      const fallback = checks.find(
+        (c) => c.id === 'sep-2106-array-text-fallback'
+      );
+      expect(fallback).toBeDefined();
+      expect(fallback?.status).toBe('WARNING');
+    }, 15000);
+  });
+
+  describe('sep-2106-compliant-positive', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3009;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2106-compliant-server.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits all SUCCESS against a SEP-2106-compliant server (positive case)', async () => {
+      const scenario = new Sep2106Scenario();
+      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+
+      // Every check should be SUCCESS (no FAILURE, no WARNING).
+      const failures = checks.filter((c) => c.status === 'FAILURE');
+      const warnings = checks.filter((c) => c.status === 'WARNING');
+      expect(
+        failures,
+        `unexpected failures: ${failures.map((f) => `${f.id}: ${f.errorMessage}`).join('; ')}`
+      ).toHaveLength(0);
+      expect(
+        warnings,
+        `unexpected warnings: ${warnings.map((w) => `${w.id}: ${w.errorMessage}`).join('; ')}`
+      ).toHaveLength(0);
+
+      // Sanity: all 9 expected check IDs are present.
+      const expectedIds = [
+        'sep-2106-array-output-tool-found',
+        'sep-2106-array-output-schema-preserved',
+        'sep-2106-array-structured-content',
+        'sep-2106-array-text-fallback',
+        'sep-2106-oneof-input-tool-found',
+        'sep-2106-oneof-input-schema-preserved',
+        'sep-2106-primitive-output-tool-found',
+        'sep-2106-primitive-output-schema-preserved',
+        'sep-2106-primitive-structured-content'
+      ];
+      for (const id of expectedIds) {
+        expect(
+          checks.find((c) => c.id === id),
+          `${id} missing`
+        ).toBeDefined();
       }
     }, 15000);
   });

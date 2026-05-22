@@ -41,6 +41,7 @@ import {
 } from './server/tools';
 
 import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
+import { Sep2106Scenario } from './server/sep-2106';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
@@ -113,6 +114,12 @@ const pendingClientScenariosList: ClientScenario[] = [
   // $schema, $defs, and additionalProperties fields in tool schemas.
   new JsonSchema2020_12Scenario(),
 
+  // SEP-2106: loosened inputSchema/outputSchema/structuredContent.
+  // Pending until SDKs preserve composition keywords (oneOf/anyOf/allOf) and
+  // non-object outputSchema in tools/list, and accept array/primitive
+  // structuredContent on the wire. Reference impl: olaservo/typescript-sdk@sep-834-v1x.
+  new Sep2106Scenario(),
+
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
   new ServerSSEPollingScenario(),
@@ -150,6 +157,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // JSON Schema 2020-12 support (SEP-1613)
   new JsonSchema2020_12Scenario(),
+
+  // SEP-2106: loosened tool schemas (inputSchema composition, non-object outputSchema)
+  new Sep2106Scenario(),
 
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),

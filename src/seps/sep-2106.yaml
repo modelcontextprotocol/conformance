@@ -1,0 +1,8 @@
+sep: 2106
+spec_url: https://modelcontextprotocol.io/specification/draft/server/tools#structured-content
+requirements:
+  - check: sep-2106-array-text-fallback
+    text: 'For backwards compatibility, a tool that returns structured content SHOULD also return the serialized JSON in a TextContent block'
+
+  - text: 'SEP-2106 loosens inputSchema/outputSchema/structuredContent restrictions but adds no new RFC 2119 sentences to the spec text; SEP-2106 conformance is asserted by capability checks (sep-2106-*-tool-found, sep-2106-*-schema-preserved, sep-2106-*-structured-content) emitted by src/scenarios/server/sep-2106.ts and tracked in the manifest under untracked.'
+    excluded: 'descriptive-only spec change; capability-test SEP modeled after SEP-1613'
