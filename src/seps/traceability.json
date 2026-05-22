@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@22595b96",
+  "source": "typescript-sdk@5fc42e9be115",
   "seps": {
     "837": {
       "yaml": "src/seps/sep-837.yaml",
@@ -75,21 +75,40 @@
       }
     },
     "2207": {
-      "yaml": null,
-      "specUrl": null,
-      "requirements": [],
-      "excluded": [],
+      "yaml": "src/seps/sep-2207.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#refresh-tokens",
+      "requirements": [
+        {
+          "check": "sep-2207-client-metadata-grant-types",
+          "status": "tested",
+          "text": "MCP Clients that desire refresh tokens SHOULD include `refresh_token` in their `grant_types` client metadata"
+        },
+        {
+          "check": "sep-2207-server-no-offline-access",
+          "status": "untested",
+          "text": "MCP Servers (Protected Resources) SHOULD NOT include `offline_access` in `WWW-Authenticate` scope or Protected Resource Metadata `scopes_supported`, as refresh tokens are not a resource requirement"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "MCP Clients that desire refresh tokens MUST keep refresh tokens confidential in transit and storage as specified in OAuth 2.1 Section 4.3",
+          "reason": "Confidentiality of refresh tokens in storage is client-internal state, and in-transit (TLS) confidentiality is not exercised by the harness over localhost HTTP; not protocol-observable"
+        },
+        {
+          "text": "MCP Clients that desire refresh tokens MUST NOT assume refresh tokens will be issued; the AS retains discretion",
+          "reason": "A client \"assuming\" refresh tokens will be issued is mental-state; only manifests as general authorization-flow completion, which other checks already cover; not directly protocol-observable"
+        }
+      ],
       "unkeyed": [],
       "untracked": [
-        "sep-2207-client-metadata-grant-types",
         "sep-2207-offline-access-not-requested",
         "sep-2207-offline-access-requested"
       ],
       "summary": {
-        "tested": 0,
-        "untested": 0,
-        "excluded": 0,
-        "untracked": 3,
+        "tested": 1,
+        "untested": 1,
+        "excluded": 2,
+        "untracked": 2,
         "unkeyed": 0
       }
     },
@@ -236,6 +255,242 @@
         "unkeyed": 0
       }
     },
+    "2260": {
+      "yaml": "src/seps/sep-2260.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/transports#streamable-http",
+      "requirements": [],
+      "excluded": [
+        {
+          "text": "roots/list, sampling/createMessage, and elicitation/create requests MUST NOT be sent on standalone streams.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients MUST return standard JSON-RPC errors for common failure cases: Server sends an elicitation/create request with no associated client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients SHOULD return standard JSON-RPC errors for common failure cases: Server sends a roots/list request with no associated client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients SHOULD return errors for common failure cases: Sampling request not associated with a client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "These messages MUST relate to the originating client request.",
+          "reason": "Semantic association (\"relate to\") is not protocol-observable. The harness cannot determine whether a server request conceptually relates to the client request without understanding application logic."
+        },
+        {
+          "text": "Implementations SHOULD prefer transport-level SSE keepalive mechanisms for idle-connection maintenance.",
+          "reason": "Implementation preference for keepalive mechanism choice; not observable on the wire."
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Servers MUST send sampling/createMessage requests only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated sampling on independent communication streams (unrelated to any client request) is not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 0,
+        "untested": 0,
+        "excluded": 12,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "2322": {
+      "yaml": "src/seps/sep-2322.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/utilities/mrtr",
+      "requirements": [
+        {
+          "check": "sep-2322-result-type-included",
+          "status": "tested",
+          "text": "The resultType field MUST be included to indicate the type of the result.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#resulttype"
+        },
+        {
+          "check": "sep-2322-default-result-type-complete",
+          "status": "tested",
+          "text": "If resultType is not specified, clients MUST assume a default value of \"complete\" for backwards compatibility.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#resulttype"
+        },
+        {
+          "check": "sep-2322-not-on-unsupported-requests",
+          "status": "tested",
+          "text": "Servers MUST NOT send InputRequiredResult responses on any other client requests."
+        },
+        {
+          "check": "sep-2322-elicitation-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (elicitation variant)"
+        },
+        {
+          "check": "sep-2322-sampling-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (sampling variant)"
+        },
+        {
+          "check": "sep-2322-list-roots-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (list roots variant)"
+        },
+        {
+          "check": "sep-2322-reject-tampered-state",
+          "status": "tested",
+          "text": "If requestState influences authorization, resource access, or business logic, servers MUST protect its integrity and MUST reject state that fails verification."
+        },
+        {
+          "check": "sep-2322-request-state-incomplete",
+          "status": "tested",
+          "text": "Servers MUST include at least one of inputRequests or requestState in every InputRequiredResult response."
+        },
+        {
+          "check": "sep-2322-respect-client-capabilities",
+          "status": "tested",
+          "text": "Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities."
+        },
+        {
+          "check": "sep-2322-client-request-state-echoed",
+          "status": "tested",
+          "text": "If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents."
+        },
+        {
+          "check": "sep-2322-client-no-state-omitted",
+          "status": "tested",
+          "text": "If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry."
+        },
+        {
+          "check": "sep-2322-client-jsonrpc-id-different",
+          "status": "tested",
+          "text": "The JSON-RPC id MUST be different between the initial request and the retry, as they are independent requests."
+        },
+        {
+          "check": "sep-2322-client-parallel-isolation",
+          "status": "tested",
+          "text": "Both the inputRequests and requestState fields affect only the client's retry of the original request. They MUST NOT be used for any other request that the client may be sending in parallel."
+        },
+        {
+          "check": "sep-2322-validate-input-responses",
+          "status": "tested",
+          "text": "Servers SHOULD validate that the data provided by the client is a valid InputResponses object and that the information inside can be correctly parsed."
+        },
+        {
+          "check": "sep-2322-error-on-protocol-error",
+          "status": "tested",
+          "text": "Protocol errors (malformed JSON, invalid schema, internal server errors) SHOULD return a JSON-RPC error response with an appropriate error code and message."
+        },
+        {
+          "check": "sep-2322-ignore-unexpected-params",
+          "status": "tested",
+          "text": "If additional, unexpected parameters are provided in the InputResponses object, the server SHOULD ignore any information it does not recognize or need."
+        },
+        {
+          "check": "sep-2322-missing-response-rerequests",
+          "status": "tested",
+          "text": "If the client fails to send all the information requested in a previous InputRequests, and the missing information is necessary for the server to process the request, the server SHOULD respond with a new InputRequiredResult requesting the missing information again, rather than returning an error."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "inputRequests keys are server assigned identifiers and MUST be unique within the scope of the request.",
+          "reason": "inputRequests is a JSON object; duplicate keys are collapsed by JSON parsing before the harness can observe them, so key uniqueness is not testable at the protocol level"
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) using the MRTR pattern.",
+          "reason": "Architectural migration statement; tested indirectly through all MRTR scenarios"
+        },
+        {
+          "text": "servers MUST treat requestState as an attacker-controlled input",
+          "reason": "Internal security posture; not observable at protocol level"
+        },
+        {
+          "text": "servers MUST protect its integrity (e.g. HMAC or AEAD)",
+          "reason": "Internal implementation choice about encryption/signing; not observable at protocol level"
+        },
+        {
+          "text": "servers SHOULD include the authenticated principal, a short expiry (TTL), and an identifier for the originating request inside the integrity-protected requestState payload and verify each on receipt",
+          "reason": "Internal requestState format; not observable at protocol level"
+        },
+        {
+          "text": "Servers for which a given requestState must be consumed at most once MUST enforce that invariant server-side",
+          "reason": "Internal enforcement policy; conformance harness cannot determine which servers require single-use semantics"
+        },
+        {
+          "text": "Servers MUST NOT assume that clients will fulfill the inputRequests or retry the original request",
+          "reason": "Server-internal robustness assumption; not observable at protocol level"
+        },
+        {
+          "text": "Servers MUST validate request state as described in the server requirements above.",
+          "reason": "Duplicates integrity-protection requirements above; internal security detail"
+        },
+        {
+          "text": "Servers MUST include an inputRequests field in the tasks/result response when the task is in status input_required.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "inputRequests keys are server assigned identifiers and MUST be unique within the scope of a Task.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When tasks/get shows status input_required, clients MUST call tasks/result to get the inputRequests and optional requestState.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "Clients SHOULD construct the results of those requests and call tasks/input_response with the inputResponses & requestState (if present).",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "Receivers MUST reject tasks/input_response requests for tasks that are not in input_required status with error code -32602 (Invalid params).",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When a receiver receives a tasks/result request for a task in working status, it MUST block the response until the task reaches a terminal status or input_required status.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When a receiver receives a tasks/result request for a task in input_required status, it MUST return an InputRequiredResult containing the inputRequests that the requestor must fulfill.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "After sending tasks/input_response, the requestor SHOULD resume polling via tasks/get.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2322-multi-round-r1",
+        "sep-2322-multiple-inputs-incomplete",
+        "sep-2322-non-tool-incomplete"
+      ],
+      "summary": {
+        "tested": 17,
+        "untested": 0,
+        "excluded": 16,
+        "untracked": 3,
+        "unkeyed": 0
+      }
+    },
     "2350": {
       "yaml": "src/seps/sep-2350.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#runtime-insufficient-scope-errors",
@@ -371,6 +626,110 @@
         "tested": 4,
         "untested": 4,
         "excluded": 1,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "2549": {
+      "yaml": "src/seps/sep-2549.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/server/utilities/caching",
+      "requirements": [
+        {
+          "check": "sep-2549-tools-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by tools/list"
+        },
+        {
+          "check": "sep-2549-prompts-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by prompts/list"
+        },
+        {
+          "check": "sep-2549-resources-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/list"
+        },
+        {
+          "check": "sep-2549-resources-templates-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/templates/list"
+        },
+        {
+          "check": "sep-2549-resources-read-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/read"
+        },
+        {
+          "check": "sep-2549-ttl-non-negative",
+          "status": "tested",
+          "text": "Servers MUST provide a ttlMs value that is >= 0"
+        },
+        {
+          "check": "sep-2549-cache-scope-valid",
+          "status": "tested",
+          "text": "cacheScope indicates the intended scope of the cached response, either \"public\" or \"private\""
+        }
+      ],
+      "excluded": [
+        {
+          "text": "If ttlMs is 0, the response SHOULD be considered immediately stale.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is positive, the client SHOULD consider the result fresh for that many milliseconds after receiving the response.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is absent, clients SHOULD assume a default of 0 (immediately stale) and rely on their own caching heuristics or notifications.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is negative, clients SHOULD ignore it and treat it as 0.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Once the TTL expires, the response is stale and the client SHOULD re-fetch on next access.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD NOT treat TTL as a polling interval that triggers automatic background refetches.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Implementations that do choose to poll MUST apply jitter and backoff.",
+          "reason": "Client-side polling behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Cached responses MAY be reused for the same authorization context. Caches MUST NOT be shared across authorization contexts (e.g. a different access token requires a different cache).",
+          "reason": "Client/cache-side behavior; not observable at the protocol level"
+        },
+        {
+          "text": "When a cached page expires, the client SHOULD re-fetch that page using its cursor.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Clients that require a consistent snapshot of the full list SHOULD re-fetch from the beginning (without a cursor).",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If a cursor becomes invalid (e.g., the server returns an error for a previously valid cursor), the client SHOULD discard all cached pages and re-fetch from the beginning.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Servers MUST be aware that responses with a \"public\" cacheScope may be shared between callers even if the Result is coming from an authenticated endpoint.",
+          "reason": "Server-side awareness requirement; implementation guidance not testable via protocol messages"
+        },
+        {
+          "text": "Server implementors MUST apply appropriate per-primitive access controls, and MUST NOT rely on cacheScope alone to prevent unauthorized access to primitives.",
+          "reason": "Server-side access control; implementation guidance not testable via protocol messages"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 7,
+        "untested": 0,
+        "excluded": 13,
         "untracked": 0,
         "unkeyed": 0
       }
