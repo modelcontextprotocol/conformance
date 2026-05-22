@@ -30,6 +30,52 @@ const SPEC_REFERENCE_TOOL_DEF = {
 };
 
 /**
+ * Every requirement-level check ID HttpCustomHeadersScenario can emit
+ * (SEP-2243). Declared-but-unemitted checks are backfilled as FAILURE by
+ * getChecks() — same pattern as request-metadata.ts — so the emitted ID set
+ * is stable for traceability even when the client never exercises the
+ * feature.
+ */
+export const CUSTOM_HEADERS_DECLARED_CHECK_IDS = [
+  'sep-2243-client-supports-custom-headers',
+  'sep-2243-client-mirrors-designated-params',
+  'sep-2243-client-encode-values',
+  'sep-2243-client-base64-unsafe',
+  'sep-2243-client-omit-null'
+] as const;
+
+/**
+ * Every requirement-level check ID HttpInvalidToolHeadersScenario can emit
+ * (SEP-2243).
+ */
+export const INVALID_TOOL_DECLARED_CHECK_IDS = [
+  'sep-2243-client-reject-invalid-tool',
+  'sep-2243-x-mcp-header-not-empty',
+  'sep-2243-x-mcp-header-charset',
+  'sep-2243-x-mcp-header-unique',
+  'sep-2243-x-mcp-header-primitive-only'
+] as const;
+
+/**
+ * Invalid tool definitions served by HttpInvalidToolHeadersScenario, keyed by
+ * tool name, mapped to the SEP-2243 x-mcp-header constraint each one
+ * violates. The check for "client did not call this tool" is emitted under
+ * the constraint's requirement ID so each constraint traces to a check.
+ */
+const INVALID_TOOL_CONSTRAINT_IDS: Record<string, string> = {
+  invalid_empty_header: 'sep-2243-x-mcp-header-not-empty',
+  invalid_object_header: 'sep-2243-x-mcp-header-primitive-only',
+  invalid_array_header: 'sep-2243-x-mcp-header-primitive-only',
+  invalid_null_header: 'sep-2243-x-mcp-header-primitive-only',
+  invalid_duplicate_same_case: 'sep-2243-x-mcp-header-unique',
+  invalid_duplicate_diff_case: 'sep-2243-x-mcp-header-unique',
+  invalid_space_in_name: 'sep-2243-x-mcp-header-charset',
+  invalid_colon_in_name: 'sep-2243-x-mcp-header-charset',
+  invalid_non_ascii_name: 'sep-2243-x-mcp-header-charset',
+  invalid_control_char_name: 'sep-2243-x-mcp-header-charset'
+};
+
+/**
  * Decodes a header value that may be Base64-encoded.
  * Base64-encoded values use the format: =?base64?{Base64EncodedValue}?=
  */
@@ -182,28 +228,24 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    if (!this.toolCallReceived) {
+    // Declared-but-unemitted -> FAILURE (request-metadata.ts pattern). Keeps
+    // the emitted ID set stable for traceability even when the client never
+    // calls the annotated tools. The `some()` guard makes this idempotent.
+    for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
+      if (this.checks.some((c) => c.id === id)) continue;
+      const missingNullCall =
+        id === 'sep-2243-client-omit-null' && !this.nullToolCallReceived;
       this.checks.push({
-        id: 'sep-2243-param-header-tool-call-gate',
-        name: 'ClientCustomHeaderToolCall',
-        description: 'Client calls the tool with x-mcp-header annotations',
+        id,
+        name: 'NotObserved',
+        description: `Declared check ${id} was never emitted`,
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage:
-          'Client did not send a tools/call request for test_custom_headers.',
-        specReferences: [SPEC_REFERENCE_CUSTOM]
-      });
-    }
-    if (!this.nullToolCallReceived) {
-      this.checks.push({
-        id: 'sep-2243-client-omit-null',
-        name: 'ClientCustomHeaderOmitNull',
-        description:
-          'Client MUST omit Mcp-Param header when parameter value is null or not provided',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage:
-          'Client did not send a tools/call request for test_custom_headers_null to test null/omitted parameter handling.',
+        errorMessage: missingNullCall
+          ? 'Client did not send a tools/call request for test_custom_headers_null to test null/omitted parameter handling.'
+          : this.toolCallReceived
+            ? 'Check was not observed: no tool call exercised it.'
+            : 'Client did not send a tools/call request for test_custom_headers.',
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
     }
@@ -380,6 +422,26 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     if (toolName === 'test_custom_headers') {
       this.toolCallReceived = true;
 
+      // SEP-2243 "MCP clients MUST support this feature": observable as the
+      // client calling the annotated tool with at least one mirrored
+      // Mcp-Param-* header. The per-parameter checks below then validate each
+      // mirrored value individually.
+      const hasAnyParamHeader = Object.keys(req.headers).some((h) =>
+        h.startsWith('mcp-param-')
+      );
+      this.checks.push({
+        id: 'sep-2243-client-supports-custom-headers',
+        name: 'ClientSupportsCustomHeaders',
+        description:
+          'Client supports custom headers: calls the x-mcp-header annotated tool and mirrors at least one parameter',
+        status: hasAnyParamHeader ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: hasAnyParamHeader
+          ? undefined
+          : 'Client called test_custom_headers but sent no Mcp-Param-* headers.',
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
+
       // Check Mcp-Param-Region header (plain ASCII string)
       this.checkParamHeader(req, 'Region', args.region, 'string');
 
@@ -486,10 +548,11 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         this.checkParamHeader(req, 'Tab', args.tab_val, 'string');
       }
 
-      // Check that 'query' (no x-mcp-header) is NOT mirrored
+      // Check that 'query' (no x-mcp-header) is NOT mirrored — the negative
+      // half of "mirror the *designated* parameter values".
       const queryHeader = req.headers['mcp-param-query'] as string | undefined;
       this.checks.push({
-        id: 'sep-2243-no-mirror-unannotated',
+        id: 'sep-2243-client-mirrors-designated-params',
         name: 'ClientCustomHeaderNoMirrorUnannotated',
         description:
           'Client MUST NOT add Mcp-Param headers for parameters without x-mcp-header',
@@ -576,8 +639,20 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       }
     }
 
+    // One check ID per SEP-2243 requirement, picked by what this parameter
+    // actually exercises: Base64 wrapping for unsafe values, primitive
+    // (number/boolean) string encoding, or plain mirroring. The per-parameter
+    // detail lives in `name`/`details`.
+    const needsBase64 =
+      typeof bodyValue === 'string' && needsBase64Encoding(String(bodyValue));
+    const checkId = needsBase64
+      ? 'sep-2243-client-base64-unsafe'
+      : valueType === 'number' || valueType === 'boolean'
+        ? 'sep-2243-client-encode-values'
+        : 'sep-2243-client-mirrors-designated-params';
+
     this.checks.push({
-      id: `sep-2243-param-header-${headerName.toLowerCase()}`,
+      id: checkId,
       name: `ClientCustomHeader_${headerName}`,
       description: `Client sends correct Mcp-Param-${headerName} header (${valueType} value)`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
@@ -589,9 +664,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         rawHeaderValue,
         bodyValue,
         valueType,
-        needsBase64:
-          typeof bodyValue === 'string' &&
-          needsBase64Encoding(String(bodyValue))
+        needsBase64
       }
     });
   }
@@ -637,24 +710,16 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       specReferences: [SPEC_REFERENCE_TOOL_DEF]
     });
 
-    // Check that the client did NOT call any of the invalid tools
-    const invalidTools = [
-      'invalid_empty_header',
-      'invalid_object_header',
-      'invalid_array_header',
-      'invalid_null_header',
-      'invalid_duplicate_same_case',
-      'invalid_duplicate_diff_case',
-      'invalid_space_in_name',
-      'invalid_colon_in_name',
-      'invalid_non_ascii_name',
-      'invalid_control_char_name'
-    ];
-
-    for (const toolName of invalidTools) {
+    // Check that the client did NOT call any of the invalid tools. Each
+    // invalid tool violates one specific x-mcp-header constraint, so the
+    // check is emitted under that constraint's requirement ID — the client
+    // rejecting the tool is how the constraint is enforced on the wire.
+    for (const [toolName, constraintId] of Object.entries(
+      INVALID_TOOL_CONSTRAINT_IDS
+    )) {
       const called = this.calledTools.has(toolName);
       this.checks.push({
-        id: 'sep-2243-client-reject-invalid-tool',
+        id: constraintId,
         name: `ClientRejectsInvalidTool_${toolName}`,
         description: `Client MUST NOT call tool '${toolName}' with invalid x-mcp-header`,
         status: called ? 'FAILURE' : 'SUCCESS',
