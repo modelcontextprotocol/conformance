@@ -1,8 +1,46 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@4e153aef0538",
+  "source": "typescript-sdk@22595b96",
   "seps": {
+    "837": {
+      "yaml": "src/seps/sep-837.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#application-type-and-redirect-uri-constraints",
+      "requirements": [
+        {
+          "check": "sep-837-application-type-present",
+          "status": "tested",
+          "text": "MCP clients MUST specify an appropriate application_type during Dynamic Client Registration."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "Native applications (desktop applications, mobile apps, CLI tools, and locally-hosted web applications accessed via localhost) SHOULD use application_type: \"native\".",
+          "reason": "harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable"
+        },
+        {
+          "text": "Web applications (remote browser-based applications served from a non-local host) SHOULD use application_type: \"web\".",
+          "reason": "harness cannot determine the client-under-test application class (native vs web) out-of-band; only presence and value validity are wire-observable"
+        },
+        {
+          "text": "MCP clients MUST be prepared to handle registration failures due to redirect URI constraints when authorization servers implement OIDC.",
+          "reason": "robustness requirement with no defined wire-level success criterion"
+        },
+        {
+          "text": "When a registration request is rejected, clients SHOULD surface a meaningful error to the user or developer.",
+          "reason": "UI/DX behavior, not protocol-observable"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 1,
+        "untested": 0,
+        "excluded": 4,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2164": {
       "yaml": "src/seps/sep-2164.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/server/resources#error-handling",
@@ -198,6 +236,38 @@
         "unkeyed": 0
       }
     },
+    "2350": {
+      "yaml": "src/seps/sep-2350.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#runtime-insufficient-scope-errors",
+      "requirements": [
+        {
+          "check": "sep-2350-scope-union-on-reauth",
+          "status": "tested",
+          "text": "When re-authorizing, clients SHOULD include these scopes alongside any previously granted scopes to avoid losing permissions needed for other operations. / Clients SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements"
+        },
+        {
+          "check": "sep-2350-server-single-challenge",
+          "status": "untested",
+          "text": "Regardless of the approach chosen, servers SHOULD include all scopes required for the current operation in a single challenge."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "When responding with insufficient scope errors, servers SHOULD include the scopes needed to satisfy the current operation in the scope parameter, consistent with RFC 6750 Section 3.1.",
+          "reason": "reword of pre-existing requirement (request->operation, +RFC6750 cite); no normative delta; harness already emits scope= in WWW-Authenticate"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 1,
+        "untested": 1,
+        "excluded": 1,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2352": {
       "yaml": "src/seps/sep-2352.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-binding",
@@ -243,13 +313,75 @@
         "unkeyed": 0
       }
     },
+    "2468": {
+      "yaml": "src/seps/sep-2468.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-response-validation",
+      "requirements": [
+        {
+          "check": "sep-2468-client-validate-metadata-issuer",
+          "status": "untested",
+          "text": "After retrieving a metadata document, MCP clients MUST validate it as required by RFC8414 Section 3.3 or OpenID Connect Discovery Section 4.3: the issuer value in the document MUST be identical to the issuer identifier used to construct the well-known URL. If they differ, the client MUST NOT use the metadata.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery"
+        },
+        {
+          "check": "sep-2468-as-include-iss",
+          "status": "untested",
+          "text": "MCP authorization servers SHOULD include the iss parameter in authorization responses, including error responses, as defined in RFC9207 Section 2."
+        },
+        {
+          "check": "sep-2468-as-advertise-iss-supported",
+          "status": "untested",
+          "text": "Authorization servers that include the iss parameter MUST advertise this by setting authorization_response_iss_parameter_supported to true in their metadata (RFC9207 Section 2.3)."
+        },
+        {
+          "check": "sep-2468-client-compare-iss-supported",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss present -> Compare to the recorded issuer using simple string comparison / Before redirecting the user-agent, the client MUST record the issuer value from the selected authorization server validated metadata document and associate it with the same per-request record used to store the PKCE code verifier."
+        },
+        {
+          "check": "sep-2468-client-reject-missing-iss",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported true, iss absent -> Reject the response."
+        },
+        {
+          "check": "sep-2468-client-compare-iss-unadvertised",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss present -> Compare to the recorded issuer using simple string comparison."
+        },
+        {
+          "check": "sep-2468-client-proceed-no-iss",
+          "status": "tested",
+          "text": "On receiving the authorization response, MCP clients MUST apply the validation in RFC9207 Section 2.4 before transmitting the authorization code to any token endpoint: authorization_response_iss_parameter_supported false or absent, iss absent -> Proceed."
+        },
+        {
+          "check": "sep-2468-client-no-normalization",
+          "status": "untested",
+          "text": "After decoding the iss value from the application/x-www-form-urlencoded response per RFC 9207 Section 2.4, clients MUST NOT apply scheme or host case folding, default-port elision, trailing-slash, or percent-encoding normalization (RFC 3986 Sections 6.2.2-6.2.3) before comparison."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "This validation applies equally to error responses - on mismatch the client MUST NOT act on or display error, error_description, or error_uri.",
+          "reason": "display is UI-facing; act-on has no protocol-observable signal beyond the existing reject-on-mismatch checks"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 4,
+        "untested": 4,
+        "excluded": 1,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
     "2575": {
       "yaml": "src/seps/sep-2575.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle",
       "requirements": [
         {
           "check": "sep-2575-client-populates-meta",
-          "status": "untested",
+          "status": "tested",
           "text": "Every client request MUST include the following io.modelcontextprotocol/* fields in _meta: protocolVersion, clientInfo, clientCapabilities.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
         },
@@ -267,19 +399,9 @@
         },
         {
           "check": "sep-2575-server-tags-subscription-id",
-          "status": "untested",
+          "status": "tested",
           "text": "On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
-        },
-        {
-          "check": "sep-2575-server-stateless-no-prior-context",
-          "status": "untested",
-          "text": "A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity)."
-        },
-        {
-          "check": "sep-2575-server-stateless-no-connection-reuse-required",
-          "status": "untested",
-          "text": "Servers MUST NOT require that a client reuse the same connection to perform related operations."
         },
         {
           "check": "sep-2575-server-unsupported-version-error",
@@ -289,7 +411,7 @@
         },
         {
           "check": "sep-2575-client-retry-supported-version",
-          "status": "untested",
+          "status": "tested",
           "text": "The client SHOULD select a mutually supported version from the supported list and retry the request, or surface an error to the user if no compatible version exists.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation"
         },
@@ -301,31 +423,19 @@
         },
         {
           "check": "sep-2575-http-server-no-independent-requests-on-stream",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#receiving-messages-1"
         },
         {
-          "check": "sep-2575-http-server-disconnect-is-cancel",
-          "status": "untested",
-          "text": "Closing the SSE response stream MUST be treated by the server as cancellation of that request.",
-          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
-        },
-        {
-          "check": "sep-2575-http-server-stops-on-cancel",
-          "status": "untested",
-          "text": "The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].",
-          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
-        },
-        {
           "check": "sep-2575-http-client-sends-version-header",
-          "status": "untested",
+          "status": "tested",
           "text": "Every POST request to the MCP endpoint MUST include an MCP-Protocol-Version header.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
         {
           "check": "sep-2575-http-version-header-matches-meta",
-          "status": "untested",
+          "status": "tested",
           "text": "The header value MUST match the io.modelcontextprotocol/protocolVersion field carried in the request body _meta.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
@@ -349,31 +459,31 @@
         },
         {
           "check": "sep-2575-server-honors-notification-filter",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT send notification types the client has not explicitly requested.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#opening-a-stream"
         },
         {
           "check": "sep-2575-server-sends-subscription-ack",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST send notifications/subscriptions/acknowledged as the first message on the stream.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#acknowledgment"
         },
         {
           "check": "sep-2575-client-declares-elicitation-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support elicitation MUST declare the elicitation capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/elicitation#capabilities"
         },
         {
           "check": "sep-2575-client-declares-roots-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support roots MUST declare the roots capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/roots#capabilities"
         },
         {
           "check": "sep-2575-client-declares-sampling-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support sampling MUST declare the sampling capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/sampling#capabilities"
         },
@@ -385,24 +495,40 @@
         },
         {
           "check": "sep-2575-server-sends-prompts-list-changed-on-subscription",
-          "status": "untested",
+          "status": "tested",
           "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with promptsListChanged: true.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/prompts#list-changed-notification"
         },
         {
           "check": "sep-2575-server-sends-tools-list-changed-on-subscription",
-          "status": "untested",
+          "status": "tested",
           "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with toolsListChanged: true.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#list-changed-notification"
         },
         {
           "check": "sep-2575-server-no-log-without-loglevel",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].",
           "url": "https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level"
         }
       ],
       "excluded": [
+        {
+          "text": "A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).",
+          "reason": "internal server state, not directly wire-observable; the observable consequence (rejecting requests with incomplete _meta rather than falling back to remembered state) is covered by sep-2575-request-meta-invalid-* — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "Servers MUST NOT require that a client reuse the same connection to perform related operations.",
+          "reason": "not observable from a black-box harness; every harness request already arrives on an independent connection — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "Closing the SSE response stream MUST be treated by the server as cancellation of that request.",
+          "reason": "\"treated as cancellation\" is internal server state; once the stream is closed there is no channel left on which to observe the effect — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].",
+          "reason": "\"stop work as soon as practical\" is unobservable from a black-box harness, and \"no further messages\" cannot be verified once the response stream is closed — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
         {
           "text": "State that needs to span multiple requests (e.g., long-running tasks, application-level handles) MUST be referenced by an explicit identifier the client passes on each request.",
           "reason": "architectural guidance, observable only via subscriptionId/task-id rows already listed"
@@ -455,9 +581,9 @@
         "sep-2575-request-meta-invalid-missing-protocol-version"
       ],
       "summary": {
-        "tested": 8,
-        "untested": 18,
-        "excluded": 9,
+        "tested": 22,
+        "untested": 0,
+        "excluded": 13,
         "untracked": 11,
         "unkeyed": 0
       }
