@@ -3,7 +3,11 @@ import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
-import { JsonSchema2020_12Scenario } from './json-schema-2020-12';
+import {
+  JsonSchema2020_12Scenario,
+  sep2106KeywordCheckStatus
+} from './json-schema-2020-12';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -168,7 +172,7 @@ describe('Server scenario negative tests', () => {
       await stopServer(serverProcess);
     });
 
-    it('emits FAILURE for SEP-2106 keyword-preservation checks against a server that strips the 2020-12 vocabulary', async () => {
+    it('flags SEP-2106 keyword-preservation checks against a server that strips the 2020-12 vocabulary', async () => {
       const scenario = new JsonSchema2020_12Scenario();
       const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
 
@@ -178,21 +182,46 @@ describe('Server scenario negative tests', () => {
       );
       expect(found?.status).toBe('SUCCESS');
 
-      // ...but the stripped 2020-12 keywords must be reported as FAILURE.
+      // ...but the stripped 2020-12 keywords must be flagged. The stripped
+      // server negotiates 2025-11-25 (the published SDK does not advertise the
+      // draft protocol version), so the soft version gate reports SKIPPED
+      // rather than FAILURE — see sep2106KeywordCheckStatus.
       const composition = checks.find(
         (c) => c.id === 'sep-2106-composition-keywords-preserved'
       );
-      expect(composition?.status).toBe('FAILURE');
+      expect(composition?.status).toBe('SKIPPED');
 
       const conditional = checks.find(
         (c) => c.id === 'sep-2106-conditional-keywords-preserved'
       );
-      expect(conditional?.status).toBe('FAILURE');
+      expect(conditional?.status).toBe('SKIPPED');
 
       const anchor = checks.find(
         (c) => c.id === 'sep-2106-anchor-keyword-preserved'
       );
-      expect(anchor?.status).toBe('FAILURE');
+      expect(anchor?.status).toBe('SKIPPED');
     }, 10000);
+  });
+
+  describe('sep2106KeywordCheckStatus (soft version gate)', () => {
+    it('passes preserved keywords at any negotiated version', () => {
+      expect(sep2106KeywordCheckStatus(true, DRAFT_PROTOCOL_VERSION)).toBe(
+        'SUCCESS'
+      );
+      expect(sep2106KeywordCheckStatus(true, LATEST_SPEC_VERSION)).toBe(
+        'SUCCESS'
+      );
+      expect(sep2106KeywordCheckStatus(true, undefined)).toBe('SUCCESS');
+    });
+
+    it('fails stripped keywords only when the server negotiated the draft version', () => {
+      expect(sep2106KeywordCheckStatus(false, DRAFT_PROTOCOL_VERSION)).toBe(
+        'FAILURE'
+      );
+      expect(sep2106KeywordCheckStatus(false, LATEST_SPEC_VERSION)).toBe(
+        'SKIPPED'
+      );
+      expect(sep2106KeywordCheckStatus(false, undefined)).toBe('SKIPPED');
+    });
   });
 });
