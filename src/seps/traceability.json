@@ -41,6 +41,48 @@
         "unkeyed": 0
       }
     },
+    "2106": {
+      "yaml": "src/seps/sep-2106.yaml",
+      "specUrl": "https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#security-implications",
+      "requirements": [
+        {
+          "check": "sep-2106-no-network-ref-deref",
+          "status": "tested",
+          "text": "Implementations MUST NOT automatically dereference `$ref` values that resolve to a network URI (i.e. anything that is not a same-document JSON Pointer such as `#/$defs/Foo` or an internal `$anchor`); an opt-in mode that fetches non-local `$ref`s MUST be disabled by default / Schemas that fail to validate due to an unresolved external `$ref` SHOULD be rejected rather than silently treated as permissive"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "SDK maintainers SHOULD: Document the migration in SDK release notes; Where ergonomic, provide typed helpers (e.g. generics over a tool's `outputSchema`) so consumers do not need to write narrowing guards by hand",
+          "reason": "Migration/deprecation guidance for SDK maintainers; about SDK source code, not protocol-observable wire behavior"
+        },
+        {
+          "text": "JSON Schema validation already handles type checking, value constraints, and required field validation, and implementations MUST continue to validate all inputs and outputs against declared schemas",
+          "reason": "Restates pre-existing schema-validation behavior and is too broad to attribute to a specific observable SEP-2106 check; input/output validation overlaps existing tool scenarios"
+        },
+        {
+          "text": "An opt-in mode that fetches non-local `$ref`s SHOULD enforce an allowlist of hosts (or at minimum reject loopback, link-local, and private network addresses), apply timeouts and size limits, and log dereferenced URIs",
+          "reason": "Applies only when the non-default opt-in network-$ref fetch mode is enabled; not observable in default conformance runs"
+        },
+        {
+          "text": "Implementations SHOULD apply reasonable bounds — for example, a maximum schema depth, a cap on the total number of subschemas, or a per-validation time budget — to prevent a malicious tool definition from acting as a CPU DoS vector against the validator",
+          "reason": "Internal validator resource limits (max schema depth, subschema cap, per-validation time budget); a defensive measure not observable on the wire"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2106-anchor-keyword-preserved",
+        "sep-2106-composition-keywords-preserved",
+        "sep-2106-conditional-keywords-preserved"
+      ],
+      "summary": {
+        "tested": 1,
+        "untested": 0,
+        "excluded": 4,
+        "untracked": 3,
+        "unkeyed": 0
+      }
+    },
     "2164": {
       "yaml": "src/seps/sep-2164.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/server/resources#error-handling",
