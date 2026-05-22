@@ -1,21 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Well-behaved client that validates the iss parameter in authorization responses.
+ * Misbehaving client that normalizes URLs before comparing the iss parameter.
  *
- * Per RFC 8414 §3.3:
- * - The issuer in the retrieved AS metadata document MUST be identical to the
- *   issuer identifier used to construct the well-known URL; otherwise the
- *   metadata MUST NOT be used.
+ * Per RFC 9207 / SEP-2468, iss comparison must be a simple string comparison
+ * with no URL normalization. This client instead compares
+ * `new URL(received).href` against `new URL(expected).href`, so a
+ * normalization-equivalent variant of the issuer (e.g. a trailing slash on an
+ * empty path) is incorrectly accepted and the client proceeds to the token
+ * endpoint. It also does not validate the AS metadata issuer against the
+ * issuer identifier used to construct the well-known URL.
  *
- * Per RFC 9207:
- * - If the AS advertises authorization_response_iss_parameter_supported: true,
- *   the client MUST require iss in the redirect and MUST validate it against
- *   the AS metadata issuer.
- * - If the AS does NOT advertise support but the redirect contains iss anyway,
- *   the client MUST still compare it to the recorded issuer and reject on
- *   mismatch (SEP-2468 validation table row 3).
- * - Comparison is simple string comparison — no URL normalization.
+ * Used as a negative fixture for the auth/iss-normalized scenario.
  */
 
 import { createHash, randomBytes } from 'crypto';
@@ -53,9 +49,17 @@ function computeS256Challenge(codeVerifier: string): string {
 }
 
 /**
- * OAuth flow that correctly validates the iss parameter per RFC 9207.
+ * Returns true when the two URLs are equal after URL normalization. This is
+ * the incorrect comparison this fixture deliberately performs.
  */
-async function oauthFlowWithIssValidation(
+function urlsMatchAfterNormalization(a: string, b: string): boolean {
+  return new URL(a).href === new URL(b).href;
+}
+
+/**
+ * OAuth flow that incorrectly normalizes URLs before comparing iss.
+ */
+async function oauthFlowWithIssNormalization(
   _serverUrl: string | URL,
   resourceMetadataUrl: string | URL,
   fetchFn: FetchLike
@@ -82,14 +86,7 @@ async function oauthFlowWithIssValidation(
   }
   const asMetadata = await asResponse.json();
 
-  // RFC 8414 §3.3: the issuer in the metadata document must be identical
-  // (simple string comparison) to the issuer identifier used to construct
-  // the well-known URL. On mismatch the metadata must not be used.
-  if (asMetadata.issuer !== authServerUrl) {
-    throw new Error(
-      `AS metadata issuer mismatch: expected '${authServerUrl}', got '${asMetadata.issuer}'`
-    );
-  }
+  // NOTE: deliberately no RFC 8414 §3.3 metadata-issuer validation here.
 
   const expectedIssuer: string = asMetadata.issuer;
   const issParameterSupported: boolean =
@@ -100,7 +97,7 @@ async function oauthFlowWithIssValidation(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      client_name: 'test-auth-client-iss-validation',
+      client_name: 'test-auth-client-iss-normalize',
       redirect_uris: ['http://localhost:3000/callback'],
       application_type: 'native'
     })
@@ -136,29 +133,29 @@ async function oauthFlowWithIssValidation(
     throw new Error('No auth code in redirect');
   }
 
-  // 6. Validate iss parameter per RFC 9207
+  // 6. Validate iss parameter — INCORRECTLY normalizing both sides first
   const issInRedirect = redirectUrl.searchParams.get('iss');
 
   if (issParameterSupported) {
-    // Server advertised support: iss MUST be present and MUST match metadata issuer
+    // Server advertised support: iss must be present, but this client
+    // accepts any normalization-equivalent value.
     if (!issInRedirect) {
       throw new Error(
         'Server advertised authorization_response_iss_parameter_supported but iss is absent from redirect'
       );
     }
-    if (issInRedirect !== expectedIssuer) {
+    if (!urlsMatchAfterNormalization(issInRedirect, expectedIssuer)) {
       throw new Error(
         `iss mismatch: expected '${expectedIssuer}', got '${issInRedirect}'`
       );
     }
-  } else {
-    // Server did NOT advertise support: if iss is present, compare anyway
-    // (SEP-2468 spec table row 3 — local-policy provision per RFC 9207 §2.4)
-    if (issInRedirect && issInRedirect !== expectedIssuer) {
-      throw new Error(
-        `iss mismatch: expected '${expectedIssuer}', got '${issInRedirect}'`
-      );
-    }
+  } else if (
+    issInRedirect &&
+    !urlsMatchAfterNormalization(issInRedirect, expectedIssuer)
+  ) {
+    throw new Error(
+      `iss mismatch: expected '${expectedIssuer}', got '${issInRedirect}'`
+    );
   }
 
   // 7. Exchange code for token with PKCE code_verifier
@@ -183,9 +180,9 @@ async function oauthFlowWithIssValidation(
 }
 
 /**
- * Creates a fetch wrapper that uses OAuth with iss parameter validation.
+ * Creates a fetch wrapper that uses OAuth with normalized iss comparison.
  */
-function withOAuthIssValidation(baseUrl: string | URL): Middleware {
+function withOAuthIssNormalization(baseUrl: string | URL): Middleware {
   let tokens: OAuthTokens | undefined;
 
   return (next: FetchLike) => {
@@ -208,7 +205,7 @@ function withOAuthIssValidation(baseUrl: string | URL): Middleware {
         if (!resourceMetadataUrl) {
           throw new Error('No resource_metadata in WWW-Authenticate');
         }
-        tokens = await oauthFlowWithIssValidation(
+        tokens = await oauthFlowWithIssNormalization(
           baseUrl,
           resourceMetadataUrl,
           next
@@ -223,11 +220,11 @@ function withOAuthIssValidation(baseUrl: string | URL): Middleware {
 
 export async function runClient(serverUrl: string): Promise<void> {
   const client = new Client(
-    { name: 'test-auth-client-iss-validation', version: '1.0.0' },
+    { name: 'test-auth-client-iss-normalize', version: '1.0.0' },
     { capabilities: {} }
   );
 
-  const oauthFetch = withOAuthIssValidation(new URL(serverUrl))(fetch);
+  const oauthFetch = withOAuthIssNormalization(new URL(serverUrl))(fetch);
 
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
     fetch: oauthFetch
@@ -243,4 +240,4 @@ export async function runClient(serverUrl: string): Promise<void> {
   logger.debug('Connection closed successfully');
 }
 
-runAsCli(runClient, import.meta.url, 'auth-test-iss-validation <server-url>');
+runAsCli(runClient, import.meta.url, 'auth-test-iss-normalize <server-url>');

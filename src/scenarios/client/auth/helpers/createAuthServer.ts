@@ -45,8 +45,20 @@ export interface AuthServerOptions {
   codeChallengeMethodsSupported?: string[] | null;
   /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: true. Pass null to omit. */
   issParameterSupported?: boolean | null;
-  /** What iss value to include in authorization redirect. Default: 'correct'. */
-  issInRedirect?: 'correct' | 'wrong' | 'omit';
+  /**
+   * What iss value to include in authorization redirect. Default: 'correct'.
+   * 'normalized' sends a normalization-equivalent variant of the correct
+   * issuer (trailing slash appended, exactly what `new URL(x).href`
+   * round-tripping produces) — equal under RFC 3986 §6.2.2–6.2.3
+   * normalization but not under simple string comparison.
+   */
+  issInRedirect?: 'correct' | 'wrong' | 'omit' | 'normalized';
+  /**
+   * Override the `issuer` value served in the AS metadata document. Used to
+   * test that clients validate the metadata issuer against the issuer
+   * identifier used to construct the well-known URL (RFC 8414 §3.3).
+   */
+  metadataIssuer?: string;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -92,6 +104,7 @@ export function createAuthServer(
     codeChallengeMethodsSupported = ['S256'],
     issParameterSupported = true,
     issInRedirect = 'correct',
+    metadataIssuer,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -140,7 +153,7 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: `${getAuthBaseUrl()}${routePrefix}`,
+      issuer: metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`,
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
@@ -258,6 +271,11 @@ export function createAuthServer(
       redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}`);
     } else if (issInRedirect === 'wrong') {
       redirectUrl.searchParams.set('iss', 'https://evil.example.com');
+    } else if (issInRedirect === 'normalized') {
+      // Normalization-equivalent variant of the correct issuer: identical
+      // after RFC 3986 scheme-based normalization (trailing slash on an
+      // empty path) but different under simple string comparison.
+      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}/`);
     }
 
     res.redirect(redirectUrl.toString());

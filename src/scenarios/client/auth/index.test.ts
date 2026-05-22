@@ -17,6 +17,7 @@ import { runClient as noPkceClient } from '../../../../examples/clients/typescri
 import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
 import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
 import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
+import { runClient as issNormalizeClient } from '../../../../examples/clients/typescript/auth-test-iss-normalize';
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
@@ -40,7 +41,10 @@ const allowClientErrorScenarios = new Set<string>([
   // Client is expected to error when iss validation fails
   'auth/iss-supported-missing',
   'auth/iss-wrong-issuer',
-  'auth/iss-unexpected'
+  'auth/iss-unexpected',
+  'auth/iss-normalized',
+  // Client is expected to error when AS metadata issuer validation fails
+  'auth/metadata-issuer-mismatch'
 ]);
 
 describe('Client Auth Scenarios', () => {
@@ -211,6 +215,22 @@ describe('Negative tests', () => {
     const runner = new InlineClientRunner(noIssValidationClient);
     await runClientAgainstScenario(runner, 'auth/iss-unexpected', {
       expectedFailureSlugs: ['sep-2468-client-compare-iss-unadvertised'],
+      allowClientError: true
+    });
+  });
+
+  test('client normalizes iss before comparison and accepts a trailing-slash variant', async () => {
+    const runner = new InlineClientRunner(issNormalizeClient);
+    await runClientAgainstScenario(runner, 'auth/iss-normalized', {
+      expectedFailureSlugs: ['sep-2468-client-no-normalization'],
+      allowClientError: true
+    });
+  });
+
+  test('client uses AS metadata whose issuer does not match the well-known URL', async () => {
+    const runner = new InlineClientRunner(noIssValidationClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-issuer-mismatch', {
+      expectedFailureSlugs: ['sep-2468-client-validate-metadata-issuer'],
       allowClientError: true
     });
   });

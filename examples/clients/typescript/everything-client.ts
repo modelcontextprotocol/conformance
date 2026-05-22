@@ -351,7 +351,9 @@ registerScenarios(
   [
     'auth/iss-supported-missing',
     'auth/iss-wrong-issuer',
-    'auth/iss-unexpected'
+    'auth/iss-unexpected',
+    'auth/iss-normalized',
+    'auth/metadata-issuer-mismatch'
   ],
   issValidationClient
 );
