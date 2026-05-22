@@ -93,6 +93,12 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 
 registerScenarios(['initialize', 'tools-call'], runBasicClient);
 
+// SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
+// contains a network-URI $ref. A conformant client lists tools normally and
+// simply never fetches that URI, so the basic connect+listTools flow is the
+// correct behavior here.
+registerScenario('json-schema-ref-no-deref', runBasicClient);
+
 // ============================================================================
 // request-metadata scenario (SEP-2575)
 // ============================================================================
