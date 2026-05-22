@@ -82,14 +82,14 @@
           "check": "sep-2207-client-metadata-grant-types",
           "status": "tested",
           "text": "MCP Clients that desire refresh tokens SHOULD include `refresh_token` in their `grant_types` client metadata"
-        },
-        {
-          "check": "sep-2207-server-no-offline-access",
-          "status": "untested",
-          "text": "MCP Servers (Protected Resources) SHOULD NOT include `offline_access` in `WWW-Authenticate` scope or Protected Resource Metadata `scopes_supported`, as refresh tokens are not a resource requirement"
         }
       ],
       "excluded": [
+        {
+          "text": "MCP Servers (Protected Resources) SHOULD NOT include `offline_access` in `WWW-Authenticate` scope or Protected Resource Metadata `scopes_supported`, as refresh tokens are not a resource requirement",
+          "reason": "The server suite does not yet exercise the SDK server as an OAuth protected resource (no Protected Resource Metadata or WWW-Authenticate probing); revisit once server-side authorization scenarios exist",
+          "issue": "https://github.com/modelcontextprotocol/conformance/issues/116"
+        },
         {
           "text": "MCP Clients that desire refresh tokens MUST keep refresh tokens confidential in transit and storage as specified in OAuth 2.1 Section 4.3",
           "reason": "Confidentiality of refresh tokens in storage is client-internal state, and in-transit (TLS) confidentiality is not exercised by the harness over localhost HTTP; not protocol-observable"
@@ -106,8 +106,8 @@
       ],
       "summary": {
         "tested": 1,
-        "untested": 1,
-        "excluded": 2,
+        "untested": 0,
+        "excluded": 3,
         "untracked": 2,
         "unkeyed": 0
       }
