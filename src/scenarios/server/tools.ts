@@ -21,7 +21,7 @@ const TOOLS_NAME_FORMAT_SPEC_REFS = [
   },
   {
     id: 'SEP-986',
-    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/SEP/SEP-986.md'
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986'
   }
 ];
 
