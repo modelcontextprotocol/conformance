@@ -7,6 +7,7 @@ import {
   JsonSchema2020_12Scenario,
   sep2106KeywordCheckStatus
 } from './json-schema-2020-12';
+import { Sep2106StructuredContentScenario } from './sep-2106-structured-content';
 import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
@@ -223,5 +224,57 @@ describe('Server scenario negative tests', () => {
       );
       expect(sep2106KeywordCheckStatus(false, undefined)).toBe('SKIPPED');
     });
+  });
+
+  describe('sep-2106-structured-content (positive against compliant server)', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3009;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2106-compliant-server.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits all SUCCESS against the SEP-2106-compliant reference server', async () => {
+      const scenario = new Sep2106StructuredContentScenario();
+      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+
+      // Every check should be SUCCESS — no FAILURE, no WARNING.
+      const failures = checks.filter((c) => c.status === 'FAILURE');
+      const warnings = checks.filter((c) => c.status === 'WARNING');
+      expect(
+        failures,
+        `unexpected failures: ${failures.map((f) => `${f.id}: ${f.errorMessage}`).join('; ')}`
+      ).toHaveLength(0);
+      expect(
+        warnings,
+        `unexpected warnings: ${warnings.map((w) => `${w.id}: ${w.errorMessage}`).join('; ')}`
+      ).toHaveLength(0);
+
+      // Sanity: all expected check IDs are present.
+      const expectedIds = [
+        'sep-2106-array-output-tool-found',
+        'sep-2106-array-output-schema-preserved',
+        'sep-2106-array-structured-content',
+        'sep-2106-primitive-output-tool-found',
+        'sep-2106-primitive-output-schema-preserved',
+        'sep-2106-primitive-structured-content'
+      ];
+      for (const id of expectedIds) {
+        expect(
+          checks.find((c) => c.id === id),
+          `${id} missing`
+        ).toBeDefined();
+      }
+    }, 15000);
   });
 });

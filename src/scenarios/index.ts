@@ -41,6 +41,7 @@ import {
 } from './server/tools';
 
 import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
+import { Sep2106StructuredContentScenario } from './server/sep-2106-structured-content';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
@@ -114,6 +115,13 @@ const pendingClientScenariosList: ClientScenario[] = [
   // $schema, $defs, and additionalProperties fields in tool schemas.
   new JsonSchema2020_12Scenario(),
 
+  // SEP-2106: structuredContent wire shape (array / primitive at root).
+  // Pending until the SDK widens CallToolResultSchema.structuredContent to
+  // `unknown`; until then the in-repo everything-server cannot emit non-object
+  // structuredContent (the SDK Server's outgoing validator rejects it). The
+  // compliant reference target is examples/servers/typescript/sep-2106-compliant-server.ts.
+  new Sep2106StructuredContentScenario(),
+
   // On hold until server-side SSE improvements are made
   // https://github.com/modelcontextprotocol/typescript-sdk/pull/1129
   new ServerSSEPollingScenario(),
@@ -151,6 +159,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // JSON Schema 2020-12 support (SEP-1613)
   new JsonSchema2020_12Scenario(),
+
+  // SEP-2106 structuredContent wire shape (pending)
+  new Sep2106StructuredContentScenario(),
 
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
