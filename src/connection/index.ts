@@ -15,35 +15,14 @@
 import type { SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
 
-/**
- * Handler for a server-to-client request that arrives on the response stream
- * during a `request()` call (e.g. `sampling/createMessage`,
- * `elicitation/create`). Only meaningful under the stateful lifecycle; the
- * stateless lifecycle uses MRTR instead and ignores handlers.
- */
-export type ServerRequestHandler = (
-  params: unknown
-) => unknown | Promise<unknown>;
-
-export interface RequestOptions {
-  /** Map of method name to handler for server-to-client requests. */
-  handlers?: Record<string, ServerRequestHandler>;
-  /**
-   * Extra `_meta` fields to merge into the request (e.g.
-   * `'io.modelcontextprotocol/logLevel': 'debug'` for the 2026 logging path).
-   */
-  meta?: Record<string, unknown>;
-}
-
 export interface Connection {
   /**
    * Send a JSON-RPC request and return its result.
-   * Throws on JSON-RPC error responses; the thrown error has `.code` and `.data`.
+   * Throws `JsonRpcError` on JSON-RPC error responses.
    */
   request<R = unknown>(
     method: string,
-    params?: Record<string, unknown>,
-    opts?: RequestOptions
+    params?: Record<string, unknown>
   ): Promise<R>;
 
   /**

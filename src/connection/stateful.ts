@@ -13,9 +13,9 @@ import {
   ProgressNotificationSchema,
   LoggingMessageNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import { connectToServer } from '../scenarios/server/client-helper';
+import { connectToServer } from './sdk-client';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { JsonRpcError, type Connection, type RequestOptions } from './index';
+import { JsonRpcError, type Connection } from './index';
 
 export async function connectStateful(serverUrl: string): Promise<Connection> {
   const { client, close } = await connectToServer(serverUrl);
@@ -41,28 +41,10 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
 
     async request<R>(
       method: string,
-      params: Record<string, unknown> = {},
-      opts?: RequestOptions
+      params: Record<string, unknown> = {}
     ): Promise<R> {
-      if (opts?.handlers) {
-        client.fallbackRequestHandler = async (req) => {
-          const h = opts.handlers?.[req.method];
-          if (!h) {
-            throw new Error(
-              `No handler registered for server request '${req.method}'`
-            );
-          }
-          return (await h(req.params)) as Record<string, unknown>;
-        };
-      }
-      const reqParams = opts?.meta
-        ? { ...params, _meta: { ...(params._meta as object), ...opts.meta } }
-        : params;
       try {
-        return (await client.request(
-          { method, params: reqParams },
-          ResultSchema
-        )) as R;
+        return (await client.request({ method, params }, ResultSchema)) as R;
       } catch (e) {
         // Normalize so scenarios always see JsonRpcError regardless of impl.
         if (e instanceof McpError) {

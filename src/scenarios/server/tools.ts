@@ -12,7 +12,10 @@ import type {
   ListToolsResult,
   CallToolResult
 } from '../../spec-types/2025-06-18';
-import { connectToServer, NotificationCollector } from './client-helper';
+import {
+  connectToServer,
+  NotificationCollector
+} from '../../connection/sdk-client';
 import {
   CreateMessageRequestSchema,
   ElicitRequestSchema

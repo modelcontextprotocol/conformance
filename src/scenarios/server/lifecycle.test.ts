@@ -1,8 +1,8 @@
 import { testContext } from '../../connection/testing';
 import { ServerInitializeScenario } from './lifecycle';
-import { connectToServer } from './client-helper';
+import { connectToServer } from '../../connection/sdk-client';
 
-vi.mock('./client-helper', () => ({
+vi.mock('../../connection/sdk-client', () => ({
   connectToServer: vi.fn()
 }));
 

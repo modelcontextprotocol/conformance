@@ -8,8 +8,8 @@
  */
 
 import { DRAFT_PROTOCOL_VERSION } from '../types';
-import type { JSONRPCNotification } from '../spec-types/draft';
-import { JsonRpcError, type Connection, type RequestOptions } from './index';
+import type { JSONRPCNotification } from '../spec-types/2025-11-25';
+import { JsonRpcError, type Connection } from './index';
 
 const CLIENT_INFO = { name: 'conformance-test-client', version: '1.0.0' };
 const CLIENT_CAPABILITIES = {
@@ -24,16 +24,14 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
 
   async function request<R>(
     method: string,
-    params: Record<string, unknown> = {},
-    opts?: RequestOptions
+    params: Record<string, unknown> = {}
   ): Promise<R> {
     const id = nextId++;
     const _meta = {
       'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
       'io.modelcontextprotocol/clientInfo': CLIENT_INFO,
       'io.modelcontextprotocol/clientCapabilities': CLIENT_CAPABILITIES,
-      ...(params._meta as Record<string, unknown> | undefined),
-      ...opts?.meta
+      ...(params._meta as Record<string, unknown> | undefined)
     };
 
     const response = await fetch(serverUrl, {
@@ -52,6 +50,15 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
     });
 
     const contentType = response.headers.get('content-type') ?? '';
+    if (
+      !contentType.includes('json') &&
+      !contentType.includes('text/event-stream')
+    ) {
+      throw new Error(
+        `HTTP ${response.status} ${response.statusText}: ` +
+          `expected JSON or SSE response, got '${contentType || '(none)'}'`
+      );
+    }
     const message = contentType.includes('text/event-stream')
       ? await readFinalSseMessage(response, id, notifications)
       : await response.json();
@@ -93,12 +100,13 @@ async function readFinalSseMessage(
     if (done) break;
     buf += decoder.decode(value, { stream: true });
 
-    let sep: number;
-    while ((sep = buf.indexOf('\n\n')) >= 0) {
+    let m: RegExpMatchArray | null;
+    while ((m = buf.match(/\r?\n\r?\n/))) {
+      const sep = m.index!;
       const event = buf.slice(0, sep);
-      buf = buf.slice(sep + 2);
+      buf = buf.slice(sep + m[0].length);
       const data = event
-        .split('\n')
+        .split(/\r?\n/)
         .filter((l) => l.startsWith('data:'))
         .map((l) => l.slice(5).trimStart())
         .join('');

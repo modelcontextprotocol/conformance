@@ -8,7 +8,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import type { RunContext } from '../../connection';
-import { connectToServer } from './client-helper';
+import { connectToServer } from '../../connection/sdk-client';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 export class ElicitationDefaultsScenario implements ClientScenario {
