@@ -69,6 +69,14 @@ describe('connectStateless', () => {
     );
   });
 
+  it('throws on non-2xx JSON without a JSON-RPC error envelope', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ detail: 'gateway rejected' }, 502)
+    );
+    const conn = await connectStateless('http://test/mcp');
+    await expect(conn.request('tools/list')).rejects.toThrow(/HTTP 502/);
+  });
+
   it('throws a useful error for non-JSON non-SSE responses', async () => {
     mockFetch.mockResolvedValue(
       new Response('<html>500</html>', {

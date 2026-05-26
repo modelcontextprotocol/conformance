@@ -70,6 +70,14 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
         message.error.data
       );
     }
+    if (!response.ok) {
+      // Non-2xx without a JSON-RPC error envelope (e.g. gateway or framework
+      // error body). Surface the HTTP status rather than returning undefined.
+      throw new Error(
+        `HTTP ${response.status} ${response.statusText}: ` +
+          JSON.stringify(message)
+      );
+    }
     return message.result as R;
   }
 

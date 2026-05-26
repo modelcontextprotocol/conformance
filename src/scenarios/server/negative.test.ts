@@ -191,10 +191,9 @@ describe('Server scenario negative tests', () => {
       );
       expect(found?.status).toBe('SUCCESS');
 
-      // ...but the stripped 2020-12 keywords must be flagged. The stripped
-      // server negotiates 2025-11-25 (the published SDK does not advertise the
-      // draft protocol version), so the soft version gate reports SKIPPED
-      // rather than FAILURE — see sep2106KeywordCheckStatus.
+      // ...but the stripped 2020-12 keywords must be flagged. testContext()
+      // defaults to LATEST_SPEC_VERSION (2025-11-25), so the soft version gate
+      // reports SKIPPED rather than FAILURE; see sep2106KeywordCheckStatus.
       const composition = checks.find(
         (c) => c.id === 'sep-2106-composition-keywords-preserved'
       );
@@ -213,24 +212,22 @@ describe('Server scenario negative tests', () => {
   });
 
   describe('sep2106KeywordCheckStatus (soft version gate)', () => {
-    it('passes preserved keywords at any negotiated version', () => {
+    it('passes preserved keywords at any target version', () => {
       expect(sep2106KeywordCheckStatus(true, DRAFT_PROTOCOL_VERSION)).toBe(
         'SUCCESS'
       );
       expect(sep2106KeywordCheckStatus(true, LATEST_SPEC_VERSION)).toBe(
         'SUCCESS'
       );
-      expect(sep2106KeywordCheckStatus(true, undefined)).toBe('SUCCESS');
     });
 
-    it('fails stripped keywords only when the server negotiated the draft version', () => {
+    it('fails stripped keywords only when targeting the draft version', () => {
       expect(sep2106KeywordCheckStatus(false, DRAFT_PROTOCOL_VERSION)).toBe(
         'FAILURE'
       );
       expect(sep2106KeywordCheckStatus(false, LATEST_SPEC_VERSION)).toBe(
         'SKIPPED'
       );
-      expect(sep2106KeywordCheckStatus(false, undefined)).toBe('SKIPPED');
     });
   });
 });
