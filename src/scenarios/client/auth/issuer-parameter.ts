@@ -31,7 +31,7 @@ export class IssParameterSupportedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
@@ -49,6 +49,7 @@ export class IssParameterSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -100,7 +101,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
@@ -118,6 +119,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -171,7 +173,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -193,6 +195,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -257,7 +260,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -279,6 +282,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -344,7 +348,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -366,6 +370,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -436,7 +441,7 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -458,6 +463,7 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -523,7 +529,7 @@ export class MetadataIssuerMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private metadataEndpointsUsed = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.metadataEndpointsUsed = false;
 
@@ -556,6 +562,7 @@ export class MetadataIssuerMismatchScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

@@ -63,7 +63,7 @@ class TokenEndpointAuthScenario implements Scenario {
     this.description = `Tests that client uses ${AUTH_METHOD_NAMES[expectedAuthMethod]} when server only supports ${expectedAuthMethod}`;
   }
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationResource = undefined;
     this.tokenResource = undefined;
@@ -138,6 +138,7 @@ class TokenEndpointAuthScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

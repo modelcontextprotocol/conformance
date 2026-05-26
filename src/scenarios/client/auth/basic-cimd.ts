@@ -30,7 +30,7 @@ export class AuthBasicCIMDScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
@@ -61,6 +61,7 @@ export class AuthBasicCIMDScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl

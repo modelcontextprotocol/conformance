@@ -95,7 +95,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 **OAuth metadata:** ${config.oauthMetadataLocation}
 `,
 
-    async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+    async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
 
       const authApp = createAuthServer(checks, authServer.getUrl, {
@@ -132,7 +132,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
         ? () => `${authServer.getUrl()}${routePrefix}`
         : authServer.getUrl;
 
-      const app = createServer(checks, server.getUrl, getAuthServerUrl, {
+      const app = createServer(ctx, checks, server.getUrl, getAuthServerUrl, {
         prmPath: config.prmLocation,
         includePrmInWwwAuth: config.inWwwAuth
       });

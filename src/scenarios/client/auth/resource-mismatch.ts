@@ -38,7 +38,7 @@ export class ResourceMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private authorizationRequestMade = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationRequestMade = false;
 
@@ -61,6 +61,7 @@ export class ResourceMismatchScenario implements Scenario {
 
     // Create server that returns a mismatched resource in PRM
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

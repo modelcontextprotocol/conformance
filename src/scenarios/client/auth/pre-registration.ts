@@ -28,7 +28,7 @@ export class PreRegistrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -106,6 +106,7 @@ export class PreRegistrationScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

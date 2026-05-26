@@ -43,7 +43,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate a fresh keypair for this test run
@@ -202,6 +202,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl
@@ -264,7 +265,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
@@ -365,6 +366,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl

@@ -70,7 +70,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
   private idpPrivateKey?: CryptoKey;
   private grantKeypairs: Map<string, CryptoKey> = new Map();
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate IDP keypair
@@ -121,6 +121,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
 
     // Start MCP server with shared token verifier
     const mcpApp = createServer(
+      ctx,
       this.checks,
       this.mcpServer.getUrl,
       this.authServer.getUrl,

@@ -10,6 +10,8 @@ import {
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
+import { DRAFT_PROTOCOL_VERSION } from '../../../../types';
+import type { ScenarioContext } from '../../../../mock-server';
 import { createRequestLogger } from '../../../request-logger';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import { SpecReferences } from '../spec-references';
@@ -27,6 +29,7 @@ export interface ServerOptions {
 }
 
 export function createServer(
+  ctx: ScenarioContext,
   checks: ConformanceCheck[],
   getBaseUrl: () => string,
   getAuthServerUrl: () => string,
@@ -157,6 +160,9 @@ export function createServer(
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);
+      if (ctx.specVersion === DRAFT_PROTOCOL_VERSION) {
+        return handleStateless(req, res);
+      }
       const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined
@@ -185,6 +191,66 @@ export function createServer(
       }
     });
   });
+
+  // Stateless lifecycle for the /mcp route: validate _meta + header, serve
+  // server/discover, route the same tools handlers as createMcpServer.
+  // The bearer-auth middleware and PRM route above are version-independent.
+  function handleStateless(req: Request, res: Response) {
+    const body = req.body ?? {};
+    const id = body.id ?? null;
+    const meta = body.params?._meta;
+    const hv = req.headers['mcp-protocol-version'];
+    if (!hv) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
+      });
+    }
+    if (
+      !meta?.['io.modelcontextprotocol/protocolVersion'] ||
+      !meta?.['io.modelcontextprotocol/clientInfo'] ||
+      !meta?.['io.modelcontextprotocol/clientCapabilities']
+    ) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32602, message: 'Invalid params: missing _meta keys' }
+      });
+    }
+    if (body.method === 'server/discover') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          supportedVersions: [DRAFT_PROTOCOL_VERSION],
+          capabilities: { tools: {} },
+          serverInfo: { name: 'auth-prm-pathbased-server', version: '1.0.0' }
+        }
+      });
+    }
+    if (body.method === 'tools/list') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
+        }
+      });
+    }
+    if (body.method === 'tools/call') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: { content: [{ type: 'text', text: 'test' }] }
+      });
+    }
+    return res.status(404).json({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: 'Method not found' }
+    });
+  }
 
   return app;
 }

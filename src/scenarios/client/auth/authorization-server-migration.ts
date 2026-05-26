@@ -26,7 +26,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 
@@ -126,6 +126,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     };
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       currentAuthServerUrl,

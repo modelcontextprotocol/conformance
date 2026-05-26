@@ -34,7 +34,7 @@ export class OfflineAccessScopeScenario implements Scenario {
   private grantTypesChecked = false;
   private capturedCimdUrl: string | undefined;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.grantTypesChecked = false;
     this.capturedCimdUrl = undefined;
@@ -102,6 +102,7 @@ export class OfflineAccessScopeScenario implements Scenario {
     // PRM does NOT include offline_access (per SEP-2207 server guidance:
     // servers SHOULD NOT include offline_access in PRM scopes_supported)
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -236,7 +237,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, [
@@ -269,6 +270,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
