@@ -4,6 +4,7 @@ import {
   listScenariosForSpec,
   listDraftScenarios,
   listExtensionScenarios,
+  getScenario,
   getScenarioSpecVersions,
   resolveSpecVersion,
   ALL_SPEC_VERSIONS,
@@ -54,11 +55,17 @@ describe('specVersions helpers', () => {
     expect(current.length).toBeGreaterThan(overlap.length);
   });
 
-  it('the draft spec version is a superset of the latest dated release', () => {
+  it('every scenario in latest but not in draft is explicitly removedIn: DRAFT', () => {
     const latest = new Set(listScenariosForSpec(LATEST_SPEC_VERSION));
     const draft = new Set(listScenariosForSpec(DRAFT_PROTOCOL_VERSION));
     for (const name of latest) {
-      expect(draft.has(name)).toBe(true);
+      if (!draft.has(name)) {
+        const s = getScenario(name)!;
+        expect(
+          'removedIn' in s.source && s.source.removedIn,
+          `"${name}" is in ${LATEST_SPEC_VERSION} but not in draft without removedIn`
+        ).toBe(DRAFT_PROTOCOL_VERSION);
+      }
     }
     for (const name of listDraftScenarios()) {
       expect(draft.has(name)).toBe(true);
