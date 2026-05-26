@@ -21,20 +21,18 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-
 import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
 import {
-  TASKS_EXTENSION_ID,
   SEP_2663_REF,
-  AnyResult,
+  TASKS_EXTENSION_ID,
   errMsg,
-  failureCheck
+  failureCheck,
+  initRawSession,
+  type RawSession
 } from './helpers';
 
 export class TasksRequestStateRemovalScenario implements ClientScenario {
@@ -63,17 +61,11 @@ foreseeable mistake for fresh implementations.`;
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let client: Client;
+    let session: RawSession;
     try {
-      client = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        {
-          capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
-        }
-      );
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      session = await initRawSession(serverUrl, {
+        capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
+      });
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -94,16 +86,10 @@ foreseeable mistake for fresh implementations.`;
     let taskId: string | undefined;
     let createdTask: any;
     try {
-      createdTask = (await client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: 'slow_compute',
-            arguments: { seconds: 60, label: 'request-state-removal' }
-          }
-        },
-        AnyResult
-      )) as any;
+      createdTask = (await session.request('tools/call', {
+        name: 'slow_compute',
+        arguments: { seconds: 60, label: 'request-state-removal' }
+      })) as any;
       taskId = createdTask?.taskId;
     } catch (error) {
       checks.push(
@@ -115,7 +101,7 @@ foreseeable mistake for fresh implementations.`;
           [SEP_2663_REF]
         )
       );
-      await client.close().catch(() => {});
+      await session.close().catch(() => {});
       return checks;
     }
     if (!taskId) {
@@ -129,7 +115,7 @@ foreseeable mistake for fresh implementations.`;
         errorMessage: 'no taskId in tools/call response',
         specReferences: [SEP_2663_REF]
       });
-      await client.close().catch(() => {});
+      await session.close().catch(() => {});
       return checks;
     }
 
@@ -163,10 +149,9 @@ foreseeable mistake for fresh implementations.`;
       const description =
         'tasks/get response (DetailedTask) MUST NOT carry `requestState` for any status (per SEP-2663)';
       try {
-        const detailed = (await client.request(
-          { method: 'tasks/get', params: { taskId } },
-          AnyResult
-        )) as any;
+        const detailed = (await session.request('tasks/get', {
+          taskId
+        })) as any;
         const has = Object.prototype.hasOwnProperty.call(
           detailed,
           'requestState'
@@ -189,15 +174,12 @@ foreseeable mistake for fresh implementations.`;
     }
 
     try {
-      await client.request(
-        { method: 'tasks/cancel', params: { taskId } },
-        AnyResult
-      );
+      await session.request('tasks/cancel', { taskId });
     } catch {
       /* swallow */
     }
 
-    await client.close().catch(() => {});
+    await session.close().catch(() => {});
     return checks;
   }
 }

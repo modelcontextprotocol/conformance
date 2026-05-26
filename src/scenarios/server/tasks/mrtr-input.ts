@@ -11,21 +11,19 @@
  *                       parallel so two keys are pending at once
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-
 import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
 import {
-  TASKS_EXTENSION_ID,
   SEP_2322_REF,
   SEP_2663_REF,
-  AnyResult,
+  TASKS_EXTENSION_ID,
   errMsg,
   failureCheck,
+  initRawSession,
+  type RawSession,
   waitForStatus,
   waitForTerminal
 } from './helpers';
@@ -66,21 +64,15 @@ export class TasksMRTRInputScenario implements ClientScenario {
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let client: Client;
+    let session: RawSession;
     try {
-      client = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        {
-          capabilities: {
-            elicitation: {},
-            sampling: {},
-            extensions: { [TASKS_EXTENSION_ID]: {} }
-          }
+      session = await initRawSession(serverUrl, {
+        capabilities: {
+          elicitation: {},
+          sampling: {},
+          extensions: { [TASKS_EXTENSION_ID]: {} }
         }
-      );
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      });
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -102,16 +94,10 @@ export class TasksMRTRInputScenario implements ClientScenario {
       const description =
         'tasks/get on an input_required task MUST surface a non-empty inputRequests map';
       try {
-        const created = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'confirm_delete',
-              arguments: { filename: 'mrtr-input.txt' }
-            }
-          },
-          AnyResult
-        )) as any;
+        const created = (await session.request('tools/call', {
+          name: 'confirm_delete',
+          arguments: { filename: 'mrtr-input.txt' }
+        })) as any;
         const taskId = created.taskId;
         if (!taskId) {
           checks.push({
@@ -125,7 +111,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
           });
         } else {
           const task = await waitForStatus(
-            client,
+            session,
             taskId,
             'input_required',
             5_000
@@ -157,10 +143,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
           }
           // Cancel so we don't leave the task parked.
           try {
-            await client.request(
-              { method: 'tasks/cancel', params: { taskId } },
-              AnyResult
-            );
+            await session.request('tasks/cancel', { taskId });
           } catch {
             /* swallow */
           }
@@ -186,16 +169,10 @@ export class TasksMRTRInputScenario implements ClientScenario {
       const description =
         'tasks/update with matching inputResponses MUST be acked with {resultType:"complete"} and resume the task to a terminal state';
       try {
-        const created = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'confirm_delete',
-              arguments: { filename: 'mrtr-resume.txt' }
-            }
-          },
-          AnyResult
-        )) as any;
+        const created = (await session.request('tools/call', {
+          name: 'confirm_delete',
+          arguments: { filename: 'mrtr-resume.txt' }
+        })) as any;
         const taskId = created.taskId;
         if (!taskId) {
           checks.push({
@@ -209,7 +186,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
           });
         } else {
           const inputTask = await waitForStatus(
-            client,
+            session,
             taskId,
             'input_required',
             5_000
@@ -222,16 +199,10 @@ export class TasksMRTRInputScenario implements ClientScenario {
               content: { confirm: true }
             };
           }
-          const ack = (await client.request(
-            {
-              method: 'tasks/update',
-              params: {
-                taskId,
-                inputResponses: responses
-              }
-            },
-            AnyResult
-          )) as any;
+          const ack = (await session.request('tasks/update', {
+            taskId,
+            inputResponses: responses
+          })) as any;
           if (ack?.resultType !== 'complete') {
             errs.push(
               `tasks/update ack MUST carry resultType:"complete"; got resultType=${ack?.resultType}`
@@ -245,7 +216,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
               `tasks/update ack MUST NOT carry task-envelope fields; got: ${updateAckOffenders.join(', ')}`
             );
           }
-          const terminal = await waitForTerminal(client, taskId);
+          const terminal = await waitForTerminal(session, taskId);
           if (terminal.status !== 'completed') {
             errs.push(
               `task MUST resume to completed after tasks/update; got status ${JSON.stringify(terminal.status)}`
@@ -278,13 +249,10 @@ export class TasksMRTRInputScenario implements ClientScenario {
       const description =
         'tasks/update with a subset of keys MUST keep the task in input_required with only the unanswered key remaining';
       try {
-        const created = (await client.request(
-          {
-            method: 'tools/call',
-            params: { name: 'multi_input', arguments: {} }
-          },
-          AnyResult
-        )) as any;
+        const created = (await session.request('tools/call', {
+          name: 'multi_input',
+          arguments: {}
+        })) as any;
         const taskId = created.taskId;
         if (!taskId) {
           checks.push({
@@ -302,10 +270,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
           let inputTask: any;
           const start = Date.now();
           while (Date.now() - start < 5_000) {
-            inputTask = (await client.request(
-              { method: 'tasks/get', params: { taskId } },
-              AnyResult
-            )) as any;
+            inputTask = (await session.request('tasks/get', { taskId })) as any;
             if (
               inputTask.status === 'input_required' &&
               inputTask.inputRequests &&
@@ -330,21 +295,15 @@ export class TasksMRTRInputScenario implements ClientScenario {
             const [firstKey, secondKey] = keys;
 
             // Answer first key only.
-            const firstAck = (await client.request(
-              {
-                method: 'tasks/update',
-                params: {
-                  taskId,
-                  inputResponses: {
-                    [firstKey]: {
-                      action: 'accept',
-                      content: { name: 'partial-1', confirm: true }
-                    }
-                  }
+            const firstAck = (await session.request('tasks/update', {
+              taskId,
+              inputResponses: {
+                [firstKey]: {
+                  action: 'accept',
+                  content: { name: 'partial-1', confirm: true }
                 }
-              },
-              AnyResult
-            )) as any;
+              }
+            })) as any;
             if (firstAck.resultType !== 'complete') {
               errs.push(
                 `partial tasks/update ack MUST carry resultType:"complete"; got ${JSON.stringify(firstAck)}`
@@ -353,10 +312,9 @@ export class TasksMRTRInputScenario implements ClientScenario {
 
             // Status MUST still be input_required with only the second
             // key remaining.
-            const afterFirst = (await client.request(
-              { method: 'tasks/get', params: { taskId } },
-              AnyResult
-            )) as any;
+            const afterFirst = (await session.request('tasks/get', {
+              taskId
+            })) as any;
             if (afterFirst.status !== 'input_required') {
               errs.push(
                 `task MUST stay input_required while another input is still pending; got ${JSON.stringify(afterFirst.status)}`
@@ -375,22 +333,16 @@ export class TasksMRTRInputScenario implements ClientScenario {
             }
 
             // Answer second key — task resumes and finishes.
-            await client.request(
-              {
-                method: 'tasks/update',
-                params: {
-                  taskId,
-                  inputResponses: {
-                    [secondKey]: {
-                      action: 'accept',
-                      content: { name: 'partial-2', confirm: true }
-                    }
-                  }
+            await session.request('tasks/update', {
+              taskId,
+              inputResponses: {
+                [secondKey]: {
+                  action: 'accept',
+                  content: { name: 'partial-2', confirm: true }
                 }
-              },
-              AnyResult
-            );
-            const terminal = await waitForTerminal(client, taskId);
+              }
+            });
+            const terminal = await waitForTerminal(session, taskId);
             if (terminal.status !== 'completed') {
               errs.push(
                 `task MUST complete after both inputs are satisfied; got ${JSON.stringify(terminal.status)}`
@@ -417,7 +369,7 @@ export class TasksMRTRInputScenario implements ClientScenario {
       }
     }
 
-    await client.close().catch(() => {});
+    await session.close().catch(() => {});
     return checks;
   }
 }

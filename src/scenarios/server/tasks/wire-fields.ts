@@ -10,21 +10,19 @@
  *   - slow_compute — task-supporting, sleeps N seconds
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-
 import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
 import {
-  TASKS_EXTENSION_ID,
   SEP_2663_REF,
-  AnyResult,
+  TASKS_EXTENSION_ID,
   errMsg,
   failureCheck,
+  initRawSession,
   skipCheck,
+  type RawSession,
   waitForTerminal
 } from './helpers';
 
@@ -60,19 +58,13 @@ export class TasksWireFieldsScenario implements ClientScenario {
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let client: Client;
+    let session: RawSession;
     try {
-      client = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        {
-          capabilities: {
-            extensions: { [TASKS_EXTENSION_ID]: {} }
-          }
+      session = await initRawSession(serverUrl, {
+        capabilities: {
+          extensions: { [TASKS_EXTENSION_ID]: {} }
         }
-      );
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      });
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -95,16 +87,10 @@ export class TasksWireFieldsScenario implements ClientScenario {
       const description =
         'CreateTaskResult uses ttlMs + pollIntervalMs (integer milliseconds); legacy ttl / pollInterval keys absent';
       try {
-        const result = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'slow_compute',
-              arguments: { seconds: 1, label: 'wire-fields' }
-            }
-          },
-          AnyResult
-        )) as any;
+        const result = (await session.request('tools/call', {
+          name: 'slow_compute',
+          arguments: { seconds: 1, label: 'wire-fields' }
+        })) as any;
         createdTaskId = result.taskId;
         const errs: string[] = [];
         // ttlMs — required, positive integer milliseconds (or null =
@@ -177,18 +163,14 @@ export class TasksWireFieldsScenario implements ClientScenario {
         checks.push(skipCheck(id, name, description, 'no task created'));
       } else {
         try {
-          await waitForTerminal(client, createdTaskId);
+          await waitForTerminal(session, createdTaskId);
           // Sanity probe well before TTL elapses. ttlMs is integer
           // milliseconds and servers typically pick order-of-minutes
           // defaults, so a 500ms wait is comfortably inside any sane TTL.
           await new Promise((r) => setTimeout(r, 500));
-          const after = (await client.request(
-            {
-              method: 'tasks/get',
-              params: { taskId: createdTaskId }
-            },
-            AnyResult
-          )) as any;
+          const after = (await session.request('tasks/get', {
+            taskId: createdTaskId
+          })) as any;
           const errs: string[] = [];
           if (after.taskId !== createdTaskId) {
             errs.push(
@@ -219,21 +201,15 @@ export class TasksWireFieldsScenario implements ClientScenario {
       const description =
         'tasks/get inlined result MUST NOT include the v1 io.modelcontextprotocol/related-task _meta key (taskId is at the root)';
       try {
-        const created = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'slow_compute',
-              arguments: { seconds: 1, label: 'wire-fields-meta' }
-            }
-          },
-          AnyResult
-        )) as any;
+        const created = (await session.request('tools/call', {
+          name: 'slow_compute',
+          arguments: { seconds: 1, label: 'wire-fields-meta' }
+        })) as any;
         const taskId = created.taskId;
         if (!taskId) {
           checks.push(skipCheck(id, name, description, 'no task created'));
         } else {
-          const terminal = await waitForTerminal(client, taskId);
+          const terminal = await waitForTerminal(session, taskId);
           const errs: string[] = [];
           const meta = terminal.result?._meta;
           if (meta && meta['io.modelcontextprotocol/related-task']) {
@@ -262,7 +238,7 @@ export class TasksWireFieldsScenario implements ClientScenario {
       }
     }
 
-    await client.close().catch(() => {});
+    await session.close().catch(() => {});
     return checks;
   }
 }

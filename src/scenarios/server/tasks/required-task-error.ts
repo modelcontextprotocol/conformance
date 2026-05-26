@@ -27,8 +27,6 @@
  *                   middleware before the handler runs.
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 
 import {
@@ -37,11 +35,12 @@ import {
   ScenarioSource
 } from '../../../types';
 import {
-  TASKS_EXTENSION_ID,
   SEP_2575_REF,
   SEP_2663_REF,
-  AnyResult,
-  errMsg
+  TASKS_EXTENSION_ID,
+  errMsg,
+  initRawSession,
+  type RawSession
 } from './helpers';
 
 const MISSING_REQUIRED_CLIENT_CAPABILITY = -32003;
@@ -84,17 +83,11 @@ conformant server MUST reject with \`-32003\`.`;
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let client: Client;
+    let session: RawSession;
     try {
       // Intentionally declare NO capabilities — the point of the test is
       // to exercise the "did not negotiate the tasks extension" path.
-      client = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        { capabilities: {} }
-      );
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      session = await initRawSession(serverUrl, { capabilities: {} });
     } catch (error) {
       checks.push({
         id: 'tasks-required-error-bootstrap',
@@ -117,16 +110,10 @@ conformant server MUST reject with \`-32003\`.`;
     let observed: { code?: number; data?: unknown } = {};
     let errored = false;
     try {
-      await client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: REQUIRED_TASK_TOOL,
-            arguments: {}
-          }
-        },
-        AnyResult
-      );
+      await session.request('tools/call', {
+        name: REQUIRED_TASK_TOOL,
+        arguments: {}
+      });
     } catch (error) {
       errored = true;
       if (error instanceof McpError) {
@@ -150,7 +137,7 @@ conformant server MUST reject with \`-32003\`.`;
         errorMessage: `tools/call for ${REQUIRED_TASK_TOOL} returned a successful response from a client that did not declare ${TASKS_EXTENSION_ID}; spec requires -32003 rejection in this case.`,
         specReferences: [SEP_2575_REF, SEP_2663_REF]
       });
-      await client.close().catch(() => {});
+      await session.close().catch(() => {});
       return checks;
     }
 
@@ -165,7 +152,7 @@ conformant server MUST reject with \`-32003\`.`;
         specReferences: [SEP_2575_REF, SEP_2663_REF],
         details: { observedCode: observed.code }
       });
-      await client.close().catch(() => {});
+      await session.close().catch(() => {});
       return checks;
     }
 
@@ -228,7 +215,7 @@ conformant server MUST reject with \`-32003\`.`;
       }
     }
 
-    await client.close().catch(() => {});
+    await session.close().catch(() => {});
     return checks;
   }
 }

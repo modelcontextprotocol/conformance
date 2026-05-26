@@ -10,21 +10,19 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-
 import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
 import {
-  TASKS_EXTENSION_ID,
-  SEP_2663_REF,
   SEP_2575_REF,
-  AnyResult,
+  SEP_2663_REF,
+  TASKS_EXTENSION_ID,
   errMsg,
-  failureCheck
+  failureCheck,
+  initRawSession,
+  type RawSession
 } from './helpers';
 
 export class TasksCapabilityNegotiationScenario implements ClientScenario {
@@ -61,31 +59,18 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    // Two parallel clients: one declares the extension, one does NOT.
-    let withExt: Client;
-    let withoutExt: Client;
+    // Two parallel sessions: one declares the extension, one does NOT.
+    let withExt: RawSession;
+    let withoutExt: RawSession;
     try {
-      withExt = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        {
-          capabilities: {
-            elicitation: {},
-            sampling: {},
-            extensions: { [TASKS_EXTENSION_ID]: {} }
-          }
+      withExt = await initRawSession(serverUrl, {
+        capabilities: {
+          elicitation: {},
+          sampling: {},
+          extensions: { [TASKS_EXTENSION_ID]: {} }
         }
-      );
-      await withExt.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
-
-      withoutExt = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        { capabilities: {} }
-      );
-      await withoutExt.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      });
+      withoutExt = await initRawSession(serverUrl, { capabilities: {} });
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',
@@ -104,7 +89,7 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       const id = 'tasks-extension-advertised';
       const name = 'TasksExtensionAdvertised';
       const description = `Server advertises ${TASKS_EXTENSION_ID} under capabilities.extensions (and not capabilities.tasks)`;
-      const caps: any = withExt.getServerCapabilities() ?? {};
+      const caps: any = (withExt.initializeResult.capabilities as any) ?? {};
       const errs: string[] = [];
       if (caps.tasks) {
         errs.push(
@@ -155,10 +140,7 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       const errs: string[] = [];
       for (const tc of cases) {
         try {
-          await withoutExt.request(
-            { method: tc.method, params: tc.params },
-            AnyResult
-          );
+          await withoutExt.request(tc.method, tc.params);
           errs.push(`${tc.method} MUST reject (it returned a result)`);
         } catch (e: any) {
           if (e.code !== -32003) {
@@ -186,16 +168,10 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       const description =
         'tools/call from a session without the extension MUST fall through to sync (no CreateTaskResult, even for task-supporting tools)';
       try {
-        const result = (await withoutExt.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'slow_compute',
-              arguments: { seconds: 0, label: 'capability-no-ext' }
-            }
-          },
-          AnyResult
-        )) as any;
+        const result = (await withoutExt.request('tools/call', {
+          name: 'slow_compute',
+          arguments: { seconds: 0, label: 'capability-no-ext' }
+        })) as any;
         const errs: string[] = [];
         if (result.resultType === 'task') {
           errs.push(
@@ -242,21 +218,15 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       const description =
         'tools/call with extension declared in _meta.io.modelcontextprotocol/clientCapabilities produces a CreateTaskResult even when the session did not negotiate the extension';
       try {
-        const result = (await withoutExt.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'slow_compute',
-              arguments: { seconds: 1, label: 'capability-meta-opt' },
-              _meta: {
-                'io.modelcontextprotocol/clientCapabilities': {
-                  extensions: { [TASKS_EXTENSION_ID]: {} }
-                }
-              }
+        const result = (await withoutExt.request('tools/call', {
+          name: 'slow_compute',
+          arguments: { seconds: 1, label: 'capability-meta-opt' },
+          _meta: {
+            'io.modelcontextprotocol/clientCapabilities': {
+              extensions: { [TASKS_EXTENSION_ID]: {} }
             }
-          },
-          AnyResult
-        )) as any;
+          }
+        })) as any;
         const errs: string[] = [];
         if (result.resultType !== 'task') {
           errs.push(
@@ -277,13 +247,7 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
         // background goroutine on the server.
         if (result.taskId) {
           try {
-            await withExt.request(
-              {
-                method: 'tasks/cancel',
-                params: { taskId: result.taskId }
-              },
-              AnyResult
-            );
+            await withExt.request('tasks/cancel', { taskId: result.taskId });
           } catch {
             /* swallow — cleanup best-effort */
           }

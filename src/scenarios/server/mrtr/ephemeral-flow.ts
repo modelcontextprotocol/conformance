@@ -19,16 +19,13 @@
  *                                               server re-requests on wrong key
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-
 import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource,
   DRAFT_PROTOCOL_VERSION
 } from '../../../types';
-import { AnyResult } from '../tasks/helpers';
+import { initRawSession, type RawSession } from '../tasks/helpers';
 import {
   MRTR_INPUT_REQUIRED_RESULT_TYPE,
   SEP_2322_REF,
@@ -89,21 +86,15 @@ Every \`tools/call\` response in the MRTR contract is one of:
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
-    let client: Client;
+    let session: RawSession;
     try {
-      client = new Client(
-        { name: 'mcp-conformance', version: '1.0' },
-        {
-          capabilities: {
-            elicitation: {},
-            sampling: {},
-            roots: {}
-          }
+      session = await initRawSession(serverUrl, {
+        capabilities: {
+          elicitation: {},
+          sampling: {},
+          roots: {}
         }
-      );
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(serverUrl))
-      );
+      });
     } catch (error) {
       checks.push({
         id: 'mrtr-session-bootstrap',
@@ -125,13 +116,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'tools/call returns InputRequiredResult on round 1 (elicitation/create); completes on round 2 with the answer reflected in the result';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: { name: 'test_tool_with_elicitation', arguments: {} }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_tool_with_elicitation',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push(
@@ -153,22 +141,16 @@ Every \`tools/call\` response in the MRTR contract is one of:
           );
         }
 
-        const r2 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_tool_with_elicitation',
-              arguments: {},
-              inputResponses: {
-                user_name: mockElicitResponse({ name: 'Alice' })
-              },
-              ...(r1.requestState !== undefined
-                ? { requestState: r1.requestState }
-                : {})
-            }
+        const r2 = (await session.request('tools/call', {
+          name: 'test_tool_with_elicitation',
+          arguments: {},
+          inputResponses: {
+            user_name: mockElicitResponse({ name: 'Alice' })
           },
-          AnyResult
-        )) as any;
+          ...(r1.requestState !== undefined
+            ? { requestState: r1.requestState }
+            : {})
+        })) as any;
         if (!isCompleteResult(r2)) {
           errs.push(`round 2 MUST be complete; got ${JSON.stringify(r2)}`);
         }
@@ -199,13 +181,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'InputRequiredResult with sampling/createMessage round-trips through the inputResponses retry';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: { name: 'test_incomplete_result_sampling', arguments: {} }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_sampling',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push('round 1 MUST be InputRequiredResult');
@@ -216,20 +195,14 @@ Every \`tools/call\` response in the MRTR contract is one of:
               `inputRequest method MUST be "sampling/createMessage"; got ${JSON.stringify(r1.inputRequests[key].method)}`
             );
           }
-          const r2 = (await client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: 'test_incomplete_result_sampling',
-                arguments: {},
-                inputResponses: { [key]: mockSamplingResponse('Paris') },
-                ...(r1.requestState !== undefined
-                  ? { requestState: r1.requestState }
-                  : {})
-              }
-            },
-            AnyResult
-          )) as any;
+          const r2 = (await session.request('tools/call', {
+            name: 'test_incomplete_result_sampling',
+            arguments: {},
+            inputResponses: { [key]: mockSamplingResponse('Paris') },
+            ...(r1.requestState !== undefined
+              ? { requestState: r1.requestState }
+              : {})
+          })) as any;
           if (!isCompleteResult(r2)) {
             errs.push('round 2 MUST be complete');
           }
@@ -255,13 +228,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'InputRequiredResult with roots/list round-trips through the inputResponses retry';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: { name: 'test_incomplete_result_list_roots', arguments: {} }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_list_roots',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push('round 1 MUST be InputRequiredResult');
@@ -272,20 +242,14 @@ Every \`tools/call\` response in the MRTR contract is one of:
               `inputRequest method MUST be "roots/list"; got ${JSON.stringify(r1.inputRequests[key].method)}`
             );
           }
-          const r2 = (await client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: 'test_incomplete_result_list_roots',
-                arguments: {},
-                inputResponses: { [key]: mockListRootsResponse() },
-                ...(r1.requestState !== undefined
-                  ? { requestState: r1.requestState }
-                  : {})
-              }
-            },
-            AnyResult
-          )) as any;
+          const r2 = (await session.request('tools/call', {
+            name: 'test_incomplete_result_list_roots',
+            arguments: {},
+            inputResponses: { [key]: mockListRootsResponse() },
+            ...(r1.requestState !== undefined
+              ? { requestState: r1.requestState }
+              : {})
+          })) as any;
           if (!isCompleteResult(r2)) {
             errs.push('round 2 MUST be complete');
           }
@@ -311,16 +275,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'When server emits requestState on round 1, it MUST be a non-empty string and the server MUST validate the echo on round 2';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_request_state',
-              arguments: {}
-            }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_request_state',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push('round 1 MUST be InputRequiredResult');
@@ -336,18 +294,12 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const key = Object.keys(r1.inputRequests ?? {})[0];
         if (key) {
-          const r2 = (await client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: 'test_incomplete_result_request_state',
-                arguments: {},
-                inputResponses: { [key]: mockElicitResponse({ ok: true }) },
-                requestState: r1.requestState
-              }
-            },
-            AnyResult
-          )) as any;
+          const r2 = (await session.request('tools/call', {
+            name: 'test_incomplete_result_request_state',
+            arguments: {},
+            inputResponses: { [key]: mockElicitResponse({ ok: true }) },
+            requestState: r1.requestState
+          })) as any;
           if (!isCompleteResult(r2)) {
             errs.push('round 2 MUST be complete after valid requestState echo');
           }
@@ -380,16 +332,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'A single InputRequiredResult MAY carry inputRequests for elicitation/create + sampling/createMessage + roots/list together';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_multiple_inputs',
-              arguments: {}
-            }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_multiple_inputs',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push('round 1 MUST be InputRequiredResult');
@@ -421,20 +367,14 @@ Every \`tools/call\` response in the MRTR contract is one of:
             else if (req.method === 'roots/list')
               inputResponses[key] = mockListRootsResponse();
           }
-          const r2 = (await client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: 'test_incomplete_result_multiple_inputs',
-                arguments: {},
-                inputResponses,
-                ...(r1.requestState !== undefined
-                  ? { requestState: r1.requestState }
-                  : {})
-              }
-            },
-            AnyResult
-          )) as any;
+          const r2 = (await session.request('tools/call', {
+            name: 'test_incomplete_result_multiple_inputs',
+            arguments: {},
+            inputResponses,
+            ...(r1.requestState !== undefined
+              ? { requestState: r1.requestState }
+              : {})
+          })) as any;
           if (!isCompleteResult(r2)) {
             errs.push('round 2 MUST be complete with all three answers');
           }
@@ -460,16 +400,10 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'A handler may take 2+ MRTR rounds; each round mints a fresh requestState; final result MUST reflect answers from every round';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_multi_round',
-              arguments: {}
-            }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_multi_round',
+          arguments: {}
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push('round 1 MUST be InputRequiredResult');
@@ -479,18 +413,12 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const k1 = Object.keys(r1.inputRequests ?? {})[0];
 
-        const r2 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_multi_round',
-              arguments: {},
-              inputResponses: { [k1]: mockElicitResponse({ name: 'Alice' }) },
-              requestState: r1.requestState
-            }
-          },
-          AnyResult
-        )) as any;
+        const r2 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_multi_round',
+          arguments: {},
+          inputResponses: { [k1]: mockElicitResponse({ name: 'Alice' }) },
+          requestState: r1.requestState
+        })) as any;
         if (!isInputRequiredResult(r2)) {
           errs.push(
             'round 2 MUST still be InputRequiredResult (asks for step2)'
@@ -506,18 +434,12 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const k2 = Object.keys(r2.inputRequests ?? {})[0];
 
-        const r3 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_multi_round',
-              arguments: {},
-              inputResponses: { [k2]: mockElicitResponse({ color: 'blue' }) },
-              requestState: r2.requestState
-            }
-          },
-          AnyResult
-        )) as any;
+        const r3 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_multi_round',
+          arguments: {},
+          inputResponses: { [k2]: mockElicitResponse({ color: 'blue' }) },
+          requestState: r2.requestState
+        })) as any;
         if (!isCompleteResult(r3)) {
           errs.push('round 3 MUST be complete');
         }
@@ -551,19 +473,13 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'When the client sends inputResponses with a key the server did not emit, the server SHOULD re-request via InputRequiredResult';
       try {
-        const r1 = (await client.request(
-          {
-            method: 'tools/call',
-            params: {
-              name: 'test_incomplete_result_elicitation',
-              arguments: {},
-              inputResponses: {
-                wrong_key: mockElicitResponse({ data: 'wrong' })
-              }
-            }
-          },
-          AnyResult
-        )) as any;
+        const r1 = (await session.request('tools/call', {
+          name: 'test_incomplete_result_elicitation',
+          arguments: {},
+          inputResponses: {
+            wrong_key: mockElicitResponse({ data: 'wrong' })
+          }
+        })) as any;
         const errs: string[] = [];
         if (!isInputRequiredResult(r1)) {
           errs.push(
@@ -621,7 +537,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       });
     }
 
-    await client.close().catch(() => {});
+    await session.close().catch(() => {});
     return checks;
   }
 }
