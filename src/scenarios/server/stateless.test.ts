@@ -1,3 +1,4 @@
+import { testContext } from '../../connection/testing';
 import { ServerStatelessScenario } from './stateless';
 import { describe, test, expect } from 'vitest';
 import { ConformanceCheck } from '../../types';
@@ -110,7 +111,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     // The test scenario should flag this server as a FAILURE for skipping meta validation
     const missingMetaCheck = findCheck(
@@ -153,7 +154,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const pingRouteCheck = findCheck(
       checks,
@@ -189,7 +190,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const negotiationMatchCheck = findCheck(
       checks,
@@ -216,7 +217,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const ackCheck = findCheck(
       checks,
@@ -250,7 +251,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const independentRequestCheck = findCheck(
       checks,
@@ -280,7 +281,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const logWithoutLevelCheck = findCheck(
       checks,
@@ -321,7 +322,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const filterCheck = findCheck(
       checks,
@@ -393,7 +394,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
     });
 
     const scenario = new ServerStatelessScenario();
-    const checks = await scenario.run(mockUrl);
+    const checks = await scenario.run(testContext(mockUrl));
 
     const promptsCheck = findCheck(
       checks,

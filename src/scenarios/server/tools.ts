@@ -3,6 +3,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer, NotificationCollector } from './client-helper';
 import {
   CallToolResultSchema,
@@ -104,7 +105,8 @@ export class ToolsListScenario implements ClientScenario {
   - \`description\` (string)
   - \`inputSchema\` (valid JSON Schema object)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -195,7 +197,8 @@ Implement tool \`test_simple_text\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -283,7 +286,8 @@ Implement tool \`test_image_content\` with no arguments that returns:
 
 **Implementation Note**: Use a minimal test image (e.g., 1x1 red pixel PNG)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -381,7 +385,8 @@ Implement tool \`test_multiple_content_types\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -467,7 +472,8 @@ Implement tool \`test_tool_with_logging\` with no arguments.
 
 **Implementation Note**: The delays are important to test that clients can receive multiple log notifications during tool execution`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -563,7 +569,8 @@ Implement tool \`test_error_handling\` with no arguments.
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -656,7 +663,8 @@ If no progress token provided, just execute with delays.
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -790,7 +798,8 @@ Implement tool \`test_sampling\` with argument:
 
 **Implementation Note**: If the client doesn't support sampling (no \`sampling\` capability), return an error.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -923,7 +932,8 @@ Implement tool \`test_elicitation\` with argument:
 
 **Implementation Note**: If the client doesn't support elicitation (no \`elicitation\` capability), return an error.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1025,7 +1035,8 @@ Implement tool \`test_audio_content\` with no arguments that returns:
 
 **Implementation Note**: Use a minimal test audio file`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1121,7 +1132,8 @@ Implement tool \`test_embedded_resource\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

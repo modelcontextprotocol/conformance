@@ -3,6 +3,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
@@ -32,7 +33,8 @@ export class ServerInitializeScenario implements ClientScenario {
 This test verifies the server can complete the two-phase initialization handshake successfully,
 and validates session ID format if one is assigned.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

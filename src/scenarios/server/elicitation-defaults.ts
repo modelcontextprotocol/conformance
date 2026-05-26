@@ -3,6 +3,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
@@ -33,7 +34,8 @@ Implement a tool named \`test_elicitation_sep1034_defaults\` (no arguments) that
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

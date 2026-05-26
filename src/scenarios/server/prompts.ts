@@ -3,6 +3,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 
 export class PromptsListScenario implements ClientScenario {
@@ -21,7 +22,8 @@ export class PromptsListScenario implements ClientScenario {
   - \`description\` (string)
   - \`arguments\` (array, optional) - list of required arguments`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -109,7 +111,8 @@ Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -198,7 +201,8 @@ Returns (with args \`{arg1: "hello", arg2: "world"}\`):
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -304,7 +308,8 @@ Returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -404,7 +409,8 @@ Implement a prompt named \`test_prompt_with_image\` with no arguments that retur
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

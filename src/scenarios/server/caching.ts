@@ -10,6 +10,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 import {
   ListToolsResultSchema,
@@ -94,7 +95,8 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 - \`resources/templates/list\`
 - \`resources/read\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 

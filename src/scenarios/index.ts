@@ -221,15 +221,16 @@ export const clientScenarios = new Map<string, ClientScenario>(
 );
 
 // All client scenarios for authorization server
-const allClientScenariosListForAuthorizationServer: ClientScenario[] = [
-  // Authorization server scenarios
-  new AuthorizationServerMetadataEndpointScenario()
-];
+const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizationServer[] =
+  [
+    // Authorization server scenarios
+    new AuthorizationServerMetadataEndpointScenario()
+  ];
 
 // Client scenarios map for authorization server - built from list
 export const clientScenariosForAuthorizationServer = new Map<
   string,
-  ClientScenario
+  ClientScenarioForAuthorizationServer
 >(
   allClientScenariosListForAuthorizationServer.map((scenario) => [
     scenario.name,

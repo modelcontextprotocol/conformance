@@ -50,6 +50,6 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
       )) as R;
     },
 
-    close,
+    close
   };
 }

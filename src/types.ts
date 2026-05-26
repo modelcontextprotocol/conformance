@@ -109,7 +109,7 @@ export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(ctx: import('./connection').RunContext): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {

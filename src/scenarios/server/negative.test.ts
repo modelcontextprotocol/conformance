@@ -1,3 +1,4 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
@@ -74,7 +75,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE against a server without rebinding protection', async () => {
       const scenario = new DNSRebindingProtectionScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       const rebindingCheck = checks.find(
         (c) => c.id === 'localhost-host-rebinding-rejected'
@@ -103,7 +106,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE for no-empty-contents and WARNING for error-code against a server returning empty contents', async () => {
       const scenario = new ResourcesNotFoundErrorScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       const noEmpty = checks.find((c) => c.id === 'sep-2164-no-empty-contents');
       expect(noEmpty?.status).toBe('FAILURE');
@@ -133,7 +138,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE for presence checks against a server without caching hints', async () => {
       const scenario = new CachingScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       // Should have at least 7 checks (5 presence + 2 aggregate)
       expect(checks.length).toBeGreaterThanOrEqual(7);
@@ -174,7 +181,9 @@ describe('Server scenario negative tests', () => {
 
     it('flags SEP-2106 keyword-preservation checks against a server that strips the 2020-12 vocabulary', async () => {
       const scenario = new JsonSchema2020_12Scenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       // The tool is still advertised, so it must be found...
       const found = checks.find(

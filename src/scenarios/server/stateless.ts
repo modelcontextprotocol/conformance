@@ -7,6 +7,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+import type { RunContext } from '../../connection';
 
 const SPEC_REF = [
   {
@@ -47,7 +48,8 @@ export class ServerStatelessScenario implements ClientScenario {
 7. **Dynamic List Mutations (2 Checks)**
    - Evaluates that list-changed capable servers notify active listen streams with \`promptsListChanged: true\` or \`toolsListChanged: true\` upon live configuration or capability modifications.  `;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 

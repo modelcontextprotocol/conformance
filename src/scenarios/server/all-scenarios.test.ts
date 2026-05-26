@@ -1,3 +1,4 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import { createServer } from 'net';
 import { getClientScenario, listActiveClientScenarios } from '../index';
@@ -128,7 +129,7 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario ${scenarioName} not found`);
       }
 
-      const checks = await scenario.run(serverUrl);
+      const checks = await scenario.run(testContext(serverUrl));
 
       // Verify checks were returned
       expect(checks.length).toBeGreaterThan(0);

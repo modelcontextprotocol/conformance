@@ -1,7 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
+import { ConformanceCheck, SpecVersion, LATEST_SPEC_VERSION } from '../types';
 import { getClientScenario } from '../scenarios';
+import { connectFor, type RunContext } from '../connection';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 /**
@@ -20,7 +21,8 @@ function formatMarkdown(text: string): string {
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
-  outputDir?: string
+  outputDir?: string,
+  specVersion: SpecVersion = LATEST_SPEC_VERSION
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -40,7 +42,12 @@ export async function runServerConformanceTest(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
-  const checks = await scenario.run(serverUrl);
+  const ctx: RunContext = {
+    serverUrl,
+    specVersion,
+    connect: () => connectFor(specVersion)(serverUrl)
+  };
+  const checks = await scenario.run(ctx);
 
   if (resultDir) {
     await fs.writeFile(

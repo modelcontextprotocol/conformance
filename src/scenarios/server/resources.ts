@@ -7,6 +7,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 import {
   TextResourceContents,
@@ -31,7 +32,8 @@ export class ResourcesListScenario implements ClientScenario {
   - \`description\` (string)
   - \`mimeType\` (string, optional)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -116,7 +118,8 @@ Implement resource \`test://static-text\` that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -203,7 +206,8 @@ Implement resource \`test://static-binary\` that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -292,7 +296,8 @@ Returns (for \`uri: "test://template/123/data"\`):
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -394,7 +399,8 @@ Example request:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -473,7 +479,8 @@ Example error response:
 
 This scenario does not require the server to register any specific resource — it tests behavior when reading a URI the server does not recognize.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const nonexistentUri =
       'test://nonexistent-resource-for-conformance-testing';
@@ -614,7 +621,8 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
 - Stop sending update notifications for that URI
 - Return empty object \`{}\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

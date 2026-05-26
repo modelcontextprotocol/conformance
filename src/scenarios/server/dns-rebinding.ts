@@ -6,6 +6,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -109,7 +110,8 @@ website tricks a user's browser into making requests to the local server.
 
 See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 

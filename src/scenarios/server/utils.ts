@@ -3,6 +3,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 
 export class LoggingSetLevelScenario implements ClientScenario {
@@ -29,7 +30,8 @@ export class LoggingSetLevelScenario implements ClientScenario {
 - \`alert\`
 - \`emergency\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -119,7 +121,8 @@ export class PingScenario implements ClientScenario {
 
 **Implementation Note**: The ping utility allows either party to verify that their counterpart is still responsive and the connection is alive.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -220,7 +223,8 @@ export class CompletionCompleteScenario implements ClientScenario {
 
 **Implementation Note**: For conformance testing, completion support can be minimal or return empty arrays. The capability just needs to be declared and the endpoint must respond correctly.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

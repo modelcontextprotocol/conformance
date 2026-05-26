@@ -17,6 +17,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
+import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper.js';
 
 const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
@@ -93,7 +94,8 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
 
 **Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition (\`allOf\`/\`anyOf\`), conditional (\`if\`/\`then\`/\`else\`), and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const specReferences = [
       {

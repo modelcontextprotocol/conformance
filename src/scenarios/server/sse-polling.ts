@@ -9,6 +9,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
+import type { RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -71,7 +72,8 @@ export class ServerSSEPollingScenario implements ClientScenario {
   description =
     'Test server SSE polling via test_reconnection tool that closes stream mid-call (SEP-1699)';
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     let sessionId: string | undefined;

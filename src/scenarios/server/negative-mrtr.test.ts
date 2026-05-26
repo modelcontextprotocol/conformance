@@ -1,3 +1,4 @@
+import { testContext } from '../../connection/testing';
 /**
  * SEP-2322 MRTR negative tests.
  *
@@ -92,7 +93,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-result-type-included against server that omits resultType', async () => {
     const scenario = new InputRequiredResultResultTypeScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const resultTypeCheck = checks.find(
       (c) => c.id === 'sep-2322-result-type-included'
@@ -103,7 +104,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-not-on-unsupported-requests against server returning InputRequiredResult on tools/list', async () => {
     const scenario = new InputRequiredResultUnsupportedMethodsScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const unsupportedCheck = checks.find(
       (c) => c.id === 'sep-2322-not-on-unsupported-requests'
@@ -114,7 +115,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-reject-tampered-state against server that accepts tampered state', async () => {
     const scenario = new InputRequiredResultTamperedStateScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const tamperedCheck = checks.find(
       (c) => c.id === 'sep-2322-reject-tampered-state'

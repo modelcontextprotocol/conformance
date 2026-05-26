@@ -343,7 +343,8 @@ program
         const result = await runServerConformanceTest(
           validated.url,
           validated.scenario,
-          outputDir
+          outputDir,
+          specVersionFilter
         );
 
         const { failed } = printServerResults(
@@ -405,7 +406,8 @@ program
             const result = await runServerConformanceTest(
               validated.url,
               scenarioName,
-              outputDir
+              outputDir,
+              specVersionFilter
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {

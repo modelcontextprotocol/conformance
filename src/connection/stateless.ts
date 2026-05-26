@@ -15,7 +15,7 @@ const CLIENT_INFO = { name: 'conformance-test-client', version: '1.0.0' };
 const CLIENT_CAPABILITIES = {
   sampling: {},
   elicitation: {},
-  roots: { listChanged: true },
+  roots: { listChanged: true }
 };
 
 export async function connectStateless(serverUrl: string): Promise<Connection> {
@@ -33,7 +33,7 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
       'io.modelcontextprotocol/clientInfo': CLIENT_INFO,
       'io.modelcontextprotocol/clientCapabilities': CLIENT_CAPABILITIES,
       ...(params._meta as Record<string, unknown> | undefined),
-      ...opts?.meta,
+      ...opts?.meta
     };
 
     const response = await fetch(serverUrl, {
@@ -41,14 +41,14 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION,
+        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id,
         method,
-        params: { ...params, _meta },
-      }),
+        params: { ...params, _meta }
+      })
     });
 
     const contentType = response.headers.get('content-type') ?? '';
@@ -69,7 +69,7 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
   return {
     notifications,
     request,
-    close: async () => {},
+    close: async () => {}
   };
 }
 

@@ -10,6 +10,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types.js';
+import type { RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -20,7 +21,8 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   description =
     'Test server supports multiple concurrent POST SSE streams (SEP-1699)';
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     let sessionId: string | undefined;

@@ -10,7 +10,8 @@ import { mkdirSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const VERSIONS = ['2025-03-26', '2025-06-18', '2025-11-25', 'draft'] as const;
-const SPEC_REPO = 'https://github.com/modelcontextprotocol/modelcontextprotocol.git';
+const SPEC_REPO =
+  'https://github.com/modelcontextprotocol/modelcontextprotocol.git';
 const OUT_DIR = join(process.cwd(), 'src', 'spec-types');
 
 const ref = process.argv[2];
@@ -36,10 +37,7 @@ try {
   const sha = git(['rev-parse', 'HEAD']).trim();
 
   for (const v of VERSIONS) {
-    copyFileSync(
-      join(tmp, 'schema', v, 'schema.ts'),
-      join(OUT_DIR, `${v}.ts`)
-    );
+    copyFileSync(join(tmp, 'schema', v, 'schema.ts'), join(OUT_DIR, `${v}.ts`));
     console.log(`  ${v} -> src/spec-types/${v}.ts`);
   }
 
