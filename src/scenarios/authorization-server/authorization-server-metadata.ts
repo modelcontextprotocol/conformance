@@ -1,11 +1,13 @@
 /**
  * Authorization server metadata endpoint test scenarios for MCP authorization servers
  */
+import { AuthorizationServerOptions } from '../../schemas';
 import {
   ClientScenarioForAuthorizationServer,
   ConformanceCheck
 } from '../../types';
 import { request } from 'undici';
+import { SpecReferences } from '../authorization-server/auth/spec-references';
 
 type Status = 'SUCCESS' | 'FAILURE';
 
@@ -24,13 +26,16 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 - Return a JSON response including issuer, authorization_endpoint, token_endpoint and response_types_supported
 - The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    option: AuthorizationServerOptions,
+    _details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]> {
     let status: Status = 'SUCCESS';
     let errorMessage: string | undefined;
     let details: any;
     let response: any | null = null;
     try {
-      const wellKnownUrls = this.createWellKnownUrl(serverUrl);
+      const wellKnownUrls = this.createWellKnownUrl(option.url);
 
       for (const url of wellKnownUrls) {
         try {
@@ -54,7 +59,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 
       const body = await this.parseJson(response);
       const errors: string[] = [];
-      this.validateMetadataBody(body, serverUrl, errors);
+      this.validateMetadataBody(body, option.url, errors);
 
       if (errors.length > 0) {
         status = 'FAILURE';
@@ -78,12 +83,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
         status,
         timestamp: new Date().toISOString(),
         errorMessage,
-        specReferences: [
-          {
-            id: 'Authorization-Server-Metadata',
-            url: 'https://datatracker.ietf.org/doc/html/rfc8414'
-          }
-        ],
+        specReferences: [SpecReferences.MCP_AUTH_DISCOVERY],
         ...(details ? { details } : {})
       }
     ];

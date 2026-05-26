@@ -471,6 +471,14 @@ program
     'Run conformance tests against an authorization server implementation'
   )
   .requiredOption('--url <url>', 'URL of the authorization server issuer')
+  .requiredOption('--client-id <client>', 'Client ID')
+  .requiredOption('--secret <secret>', 'Client Secret')
+  .option(
+    '-p, --port <port>',
+    'redirect uri port',
+    (value) => Number(value),
+    3000
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
     '--spec-version <version>',
@@ -499,14 +507,22 @@ program
       );
 
       const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+      const details: Record<string, unknown> = {};
       for (const scenarioName of scenarios) {
         console.log(`\n=== Running scenario: ${scenarioName} ===`);
         try {
           const result = await runAuthorizationServerConformanceTest(
-            validated.url,
+            validated,
             scenarioName,
+            details,
             outputDir
           );
+          if (
+            result.checks[0].status === 'SUCCESS' &&
+            result.checks[0].details
+          ) {
+            details[scenarioName] = result.checks[0].details;
+          }
           allResults.push({ scenario: scenarioName, checks: result.checks });
         } catch (error) {
           console.error(`Failed to run scenario ${scenarioName}:`, error);

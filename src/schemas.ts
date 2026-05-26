@@ -40,7 +40,14 @@ export type ServerOptions = z.infer<typeof ServerOptionsSchema>;
 
 // Authorization server command options schema
 export const AuthorizationServerOptionsSchema = z.object({
-  url: z.string().url('Invalid authorization server URL')
+  url: z.string().url('Invalid authorization server URL'),
+  clientId: z.string().min(1, 'Client id cannot be empty'),
+  secret: z.string().min(1, 'Client secret cannot be empty'),
+  port: z
+    .number()
+    .int('Port must be an integer')
+    .min(1, 'Port must be >= 1')
+    .max(65535, 'Port must be <= 65535')
 });
 
 export type AuthorizationServerOptions = z.infer<
