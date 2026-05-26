@@ -63,7 +63,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
-- `--suite` - Run a suite of tests in parallel (e.g., "auth")
+- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
 - `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `DRAFT-2026-v1`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
@@ -81,7 +81,7 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `--url` - URL of the server to test
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
-- `--suite <suite>` - Suite to run: "active" (default), "all", or "pending"
+- `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
 

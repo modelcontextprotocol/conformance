@@ -1,6 +1,11 @@
 import { spawn, ChildProcess } from 'child_process';
 import { createServer } from 'net';
-import { getClientScenario, listActiveClientScenarios } from '../index';
+import {
+  getClientScenario,
+  listActiveClientScenarios,
+  listDraftClientScenarios,
+  listPendingClientScenarios
+} from '../index';
 import path from 'path';
 
 function getFreePort(): Promise<number> {
@@ -116,8 +121,14 @@ describe('Server Scenarios', () => {
     }
   });
 
-  // Generate individual test for each scenario
-  const scenarios = listActiveClientScenarios();
+  // Generate individual test for each scenario: the active suite plus the
+  // draft-spec scenarios that aren't parked in `pending` — the same set this
+  // file covered before draft scenarios were split out of `active`.
+  const pendingScenarios = new Set(listPendingClientScenarios());
+  const scenarios = [
+    ...listActiveClientScenarios(),
+    ...listDraftClientScenarios().filter((name) => !pendingScenarios.has(name))
+  ];
 
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {

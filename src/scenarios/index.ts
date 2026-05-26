@@ -206,13 +206,24 @@ const allClientScenariosList: ClientScenario[] = [
   new InputRequiredResultValidateInputScenario()
 ];
 
-// Active client scenarios (excludes pending)
+// Scenarios that test requirements introduced in the in-progress draft spec.
+// They run via `--suite draft` (or `--suite all`) and are excluded from the
+// default `active` suite until the draft is published as a dated release.
+const draftClientScenariosList: ClientScenario[] =
+  allClientScenariosList.filter(
+    (scenario) =>
+      'introducedIn' in scenario.source &&
+      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+  );
+
+// Active client scenarios (excludes pending and draft)
 const activeClientScenariosList: ClientScenario[] =
   allClientScenariosList.filter(
     (scenario) =>
       !pendingClientScenariosList.some(
         (pending) => pending.name === scenario.name
-      )
+      ) &&
+      !draftClientScenariosList.some((draft) => draft.name === scenario.name)
   );
 
 // Client scenarios map - built from list
@@ -329,8 +340,21 @@ export function listClientScenariosForAuthorizationServer(): string[] {
   return Array.from(clientScenariosForAuthorizationServer.keys());
 }
 
+// All client-testing scenarios that target the draft spec, derived from the
+// declared `source.introducedIn` rather than a hand-maintained list (covers
+// both the auth draft scenarios and the non-auth ones, e.g. SEP-2243/2575).
+const draftSpecScenariosList: Scenario[] = scenariosList.filter(
+  (scenario) =>
+    'introducedIn' in scenario.source &&
+    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+);
+
 export function listDraftScenarios(): string[] {
-  return draftScenariosList.map((scenario) => scenario.name);
+  return draftSpecScenariosList.map((scenario) => scenario.name);
+}
+
+export function listDraftClientScenarios(): string[] {
+  return draftClientScenariosList.map((scenario) => scenario.name);
 }
 
 export { listMetadataScenarios };

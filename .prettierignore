@@ -3,3 +3,7 @@
 # repo's `prettier --check .` would reformat the file and fight the generator's
 # output (and the refresh workflow's `git diff` check).
 src/seps/traceability.json
+
+# Local tooling workspaces (not part of the repo).
+.claude/
+.sdk-under-test/
