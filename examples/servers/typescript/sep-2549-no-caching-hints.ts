@@ -3,7 +3,7 @@
 /**
  * SEP-2549 Negative Test Server
  *
- * Speaks the stateless draft wire protocol (SEP-2575) but returns list and
+ * Speaks the stateless wire protocol (SEP-2575) but returns list and
  * read results WITHOUT ttlMs and cacheScope fields, violating the SEP-2549
  * MUST. The caching scenario should emit FAILURE for presence checks against
  * this server.

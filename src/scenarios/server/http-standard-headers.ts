@@ -20,7 +20,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { buildDraftParams, sendDraftRequest } from './draft-client';
+import { withRequestMeta, sendStatelessRequest } from './stateless-client';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -266,10 +266,31 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     const checks: ConformanceCheck[] = [];
 
     try {
-      // Discover the server's tools with a fully-conformant stateless draft
-      // request — the draft protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendDraftRequest(serverUrl, 'tools/list');
-      const toolsResult = (toolsResponse.body?.result ?? {}) as {
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure instead of misleading
+        // per-case results against a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-standard-setup',
+          name: 'HttpHeaderValidationSetup',
+          description: 'Setup for header validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        return checks;
+      }
+      const toolsResult = toolsResponse.body.result as {
         tools?: Array<{ name: string; inputSchema?: unknown }>;
       };
 
@@ -473,7 +494,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
       const requestBody = {
         ...body,
         id: body.id === 0 ? nextId() : body.id,
-        params: buildDraftParams(body.params, {})
+        params: withRequestMeta(body.params, {})
       };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
@@ -540,10 +561,33 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     const checks: ConformanceCheck[] = [];
 
     try {
-      // Discover the server's tools with a fully-conformant stateless draft
-      // request — the draft protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendDraftRequest(serverUrl, 'tools/list');
-      const toolsResult = (toolsResponse.body?.result ?? {}) as {
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure (and backfill the declared
+        // checks, mirroring the catch path) instead of pretending the
+        // requirements are not applicable to a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-custom-setup',
+          name: 'HttpCustomHeaderServerValidationSetup',
+          description: 'Setup for custom header server validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE_CUSTOM],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        this.failDeclaredChecks(checks);
+        return checks;
+      }
+      const toolsResult = toolsResponse.body.result as {
         tools?: Array<{ name: string; inputSchema?: unknown }>;
       };
 
@@ -769,6 +813,16 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     // Declared-but-unemitted -> FAILURE. Reached only when setup threw partway
     // through (the gate-out paths emit SKIPPED rows and the happy path emits
     // every declared ID).
+    this.failDeclaredChecks(checks);
+
+    return checks;
+  }
+
+  /**
+   * Backfill every declared-but-unemitted check ID as FAILURE when setup
+   * failed before the cases could run, keeping the emitted ID set stable.
+   */
+  private failDeclaredChecks(checks: ConformanceCheck[]): void {
     for (const id of CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS) {
       if (checks.some((c) => c.id === id)) continue;
       checks.push({
@@ -782,8 +836,6 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
     }
-
-    return checks;
   }
 
   /**
@@ -833,7 +885,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // these cases only vary the Mcp-Param header value.
-          params: buildDraftParams(
+          params: withRequestMeta(
             {
               name: toolName,
               arguments: { ...defaultArgs, [paramName]: bodyValue }
@@ -922,7 +974,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // this case only omits the Mcp-Param header.
-          params: buildDraftParams(
+          params: withRequestMeta(
             {
               name: toolName,
               arguments: { ...defaultArgs, [paramName]: 'test-value' }

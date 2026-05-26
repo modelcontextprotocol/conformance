@@ -10,7 +10,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { sendDraftRequest } from './draft-client';
+import { sendStatelessRequest } from './stateless-client';
 
 const SPEC_REFS = [
   {
@@ -92,7 +92,7 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 
     // SEP-2549 only exists in the draft spec, so each cacheable endpoint is
-    // queried with a stateless draft request: protocolVersion DRAFT-2026-v1
+    // queried over the stateless path (SEP-2575): protocolVersion DRAFT-2026-v1
     // plus the cross-cutting _meta and standard headers (issue #315).
     const queryEndpoint = async (
       checkId: string,
@@ -102,7 +102,11 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
     ): Promise<Record<string, unknown> | undefined> => {
       const description = `${endpoint} response includes ttlMs and cacheScope caching hints`;
       try {
-        const response = await sendDraftRequest(serverUrl, endpoint, params);
+        const response = await sendStatelessRequest(
+          serverUrl,
+          endpoint,
+          params
+        );
         const result = response.body?.result;
         if (!result) {
           const error = response.body?.error;

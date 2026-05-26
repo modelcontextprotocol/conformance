@@ -7,20 +7,15 @@
 
 // ─── JSON-RPC Types ──────────────────────────────────────────────────────────
 
-export interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: number;
-  result?: Record<string, unknown>;
-  error?: { code: number; message: string; data?: unknown };
-}
+export type { JsonRpcResponse } from './stateless-client';
 
 // ─── Stateless RPC Helper ────────────────────────────────────────────────────
 
-import { sendDraftRequest } from './draft-client';
+import { sendStatelessRequest, JsonRpcResponse } from './stateless-client';
 
 /**
  * Send a stateless JSON-RPC request (SEP-2575 pattern).
- * The shared draft helper injects the cross-cutting requirements: _meta
+ * The shared stateless helper injects the cross-cutting requirements: _meta
  * (protocolVersion, clientInfo, clientCapabilities) and the standard
  * MCP-Protocol-Version / Mcp-Method / Mcp-Name headers (SEP-2243).
  */
@@ -29,7 +24,7 @@ export async function sendRpc(
   method: string,
   params?: Record<string, unknown>
 ): Promise<JsonRpcResponse> {
-  const response = await sendDraftRequest(serverUrl, method, params);
+  const response = await sendStatelessRequest(serverUrl, method, params);
   if (!response.body) {
     throw new Error(
       `Expected a JSON-RPC response for ${method}, got HTTP ${response.status} (${response.contentType ?? 'no content-type'})`

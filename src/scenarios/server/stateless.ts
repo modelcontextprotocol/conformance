@@ -7,7 +7,10 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { buildDraftHeaders } from './draft-client';
+import {
+  buildStandardHeaders,
+  readSseJsonRpcResponse
+} from './stateless-client';
 
 const SPEC_REF = [
   {
@@ -120,7 +123,7 @@ export class ServerStatelessScenario implements ClientScenario {
       // MCP-Protocol-Version) are not what this scenario exercises, so they
       // are always sent conformantly; overrides only alter the dimension a
       // test case is about (issue #312).
-      const headers = buildDraftHeaders(method, params, {
+      const headers = buildStandardHeaders(method, params, {
         headers: headersOverrides
       });
 
@@ -133,10 +136,22 @@ export class ServerStatelessScenario implements ClientScenario {
 
       const res = await fetch(serverUrl, { method: 'POST', headers, body });
       let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        // Response might not be JSON
+      // Servers may answer single requests over text/event-stream; pick the
+      // JSON-RPC message matching this request id instead of failing to parse
+      // the stream as JSON.
+      const contentType =
+        typeof res.headers?.get === 'function'
+          ? (res.headers.get('content-type') ?? '')
+          : '';
+      if (contentType.includes('text/event-stream')) {
+        const { body: matched } = await readSseJsonRpcResponse(res, id);
+        data = matched ?? null;
+      } else {
+        try {
+          data = await res.json();
+        } catch {
+          // Response might not be JSON
+        }
       }
       return { res, data };
     };
@@ -152,7 +167,7 @@ export class ServerStatelessScenario implements ClientScenario {
       timeoutMs = 1000,
       onFirstFrame?: () => Promise<void>
     ): Promise<any[]> => {
-      const headers = buildDraftHeaders(method, params);
+      const headers = buildStandardHeaders(method, params);
 
       const body = JSON.stringify({
         jsonrpc: '2.0',

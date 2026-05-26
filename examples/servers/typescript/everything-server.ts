@@ -1227,13 +1227,13 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32602, HTTP 400)
+    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
     if (metaVersion !== 'DRAFT-2026-v1') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32602,
+          code: -32004,
           message: 'UnsupportedProtocolVersionError',
           data: { supported: ['DRAFT-2026-v1'] }
         }
@@ -1296,7 +1296,10 @@ app.post('/mcp', async (req, res) => {
           supportedVersions: ['DRAFT-2026-v1'],
           capabilities: {
             tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
-            prompts: { listChanged: true }
+            prompts: { listChanged: true },
+            // resources/list, resources/templates/list and resources/read are
+            // served on this path, so the capability must be declared too.
+            resources: {}
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1447,7 +1450,7 @@ app.post('/mcp', async (req, res) => {
       }
     }
 
-    // Resources on the stateless draft path (SEP-2549 hints + SEP-2164 errors).
+    // Resources on the stateless path (SEP-2575): SEP-2549 hints + SEP-2164 errors.
     if (method === 'resources/list') {
       return res.json({
         jsonrpc: '2.0',

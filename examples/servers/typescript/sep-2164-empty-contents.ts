@@ -3,7 +3,7 @@
 /**
  * SEP-2164 Negative Test Server
  *
- * Speaks the stateless draft wire protocol (SEP-2575) but returns an empty
+ * Speaks the stateless wire protocol (SEP-2575) but returns an empty
  * contents array for any resources/read request, violating the SEP-2164 MUST
  * NOT. The sep-2164-resource-not-found scenario should emit FAILURE for
  * sep-2164-no-empty-contents against this server.

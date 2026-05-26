@@ -8,7 +8,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { connectToServer } from './client-helper';
-import { sendDraftRequest } from './draft-client';
+import { sendStatelessRequest } from './stateless-client';
 import {
   TextResourceContents,
   BlobResourceContents
@@ -488,7 +488,7 @@ This scenario does not require the server to register any specific resource — 
     // with the draft protocol version and the cross-cutting _meta/headers.
     let response;
     try {
-      response = await sendDraftRequest(serverUrl, 'resources/read', {
+      response = await sendStatelessRequest(serverUrl, 'resources/read', {
         uri: nonexistentUri
       });
     } catch (error) {
