@@ -48,6 +48,88 @@ function extractCachingFields(result: Record<string, unknown>): CachingFields {
   };
 }
 
+// listCachingFieldsForAllEndpoints opens a fresh connection to the given
+// fixture URL and returns the extracted caching-field tuples for each of
+// the five SEP-2549 endpoints. Per-endpoint failures are silenced — the
+// caller is interested in the wire-shape observable (presence/absence of
+// `ttlMs` / `cacheScope`), not whether every endpoint round-trips. The
+// connection is closed before returning, regardless of partial failure.
+//
+// Used by the two opt-in edge-case checks (`cache-fields-absent-when-unset`
+// and `ttl-ms-explicit-zero-distinct`) so the default seven-check path
+// against the everything-server stays exactly as written upstream.
+async function listCachingFieldsForAllEndpoints(
+  serverUrl: string
+): Promise<Array<{ endpoint: string; fields: CachingFields }>> {
+  const connection = await connectToServer(serverUrl);
+  const out: Array<{ endpoint: string; fields: CachingFields }> = [];
+  try {
+    const stages: Array<{
+      endpoint: string;
+      method: string;
+      schema: unknown;
+    }> = [
+      {
+        endpoint: 'tools/list',
+        method: 'tools/list',
+        schema: ListToolsResultSchema
+      },
+      {
+        endpoint: 'prompts/list',
+        method: 'prompts/list',
+        schema: ListPromptsResultSchema
+      },
+      {
+        endpoint: 'resources/list',
+        method: 'resources/list',
+        schema: ListResourcesResultSchema
+      },
+      {
+        endpoint: 'resources/templates/list',
+        method: 'resources/templates/list',
+        schema: ListResourceTemplatesResultSchema
+      }
+    ];
+    let firstResourceUri: string | undefined;
+    for (const stage of stages) {
+      try {
+        const result = await connection.client.request(
+          { method: stage.method, params: {} },
+          stage.schema as never
+        );
+        if (stage.endpoint === 'resources/list') {
+          const listed = result as { resources?: Array<{ uri?: string }> };
+          firstResourceUri = listed.resources?.[0]?.uri;
+        }
+        out.push({
+          endpoint: stage.endpoint,
+          fields: extractCachingFields(result as Record<string, unknown>)
+        });
+      } catch {
+        // observable is the wire shape on the endpoints that respond; a
+        // missing endpoint just contributes no row.
+      }
+    }
+    if (firstResourceUri) {
+      try {
+        const readResult = await connection.client.request(
+          { method: 'resources/read', params: { uri: firstResourceUri } },
+          ReadResourceResultSchema
+        );
+        out.push({
+          endpoint: 'resources/read',
+          fields: extractCachingFields(readResult as Record<string, unknown>)
+        });
+      } catch {
+        // absence-asserts work fine without resources/read in the set.
+      }
+    }
+  } finally {
+    await connection.close();
+  }
+  return out;
+}
+
 function buildPresenceCheck(
   id: string,
   name: string,
@@ -349,6 +431,144 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
         errorMessage: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: SPEC_REFS
       });
+    }
+
+    // === Opt-in wire-shape edge cases ===
+    // Both checks activate via optional secondary fixture URLs and SKIP
+    // cleanly when their env var is unset. The default run against the
+    // everything-server gets the seven checks above unchanged.
+
+    // 8. Cache fields absent when server has no hints configured.
+    //    Spec: ttlMs and cacheScope are OPTIONAL on cacheable results —
+    //    a server that has no cache hints to publish MUST NOT emit them.
+    const noHintsUrl = process.env.CACHING_NO_HINTS_URL;
+    if (!noHintsUrl) {
+      checks.push({
+        id: 'sep-2549-cache-fields-absent-when-unset',
+        name: 'CacheFieldsAbsentWhenUnset',
+        description:
+          'When server has no cache hints configured, ttlMs and cacheScope MUST NOT appear on cacheable list responses',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          'CACHING_NO_HINTS_URL env var not set. Activate by pointing it at a fixture configured without cache hints.',
+        specReferences: SPEC_REFS
+      });
+    } else {
+      try {
+        const fields = await listCachingFieldsForAllEndpoints(noHintsUrl);
+        const offenders = fields.filter(
+          (f) => f.fields.hasTtlMs || f.fields.hasCacheScope
+        );
+        checks.push({
+          id: 'sep-2549-cache-fields-absent-when-unset',
+          name: 'CacheFieldsAbsentWhenUnset',
+          description:
+            'When server has no cache hints configured, ttlMs and cacheScope MUST NOT appear on cacheable list responses',
+          status: offenders.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            offenders.length > 0
+              ? offenders
+                  .map((f) => {
+                    const carried = [
+                      f.fields.hasTtlMs ? 'ttlMs' : null,
+                      f.fields.hasCacheScope ? 'cacheScope' : null
+                    ]
+                      .filter(Boolean)
+                      .join(' + ');
+                    return `${f.endpoint} carried ${carried} when fixture has no hints configured`;
+                  })
+                  .join('; ')
+              : undefined,
+          specReferences: SPEC_REFS,
+          details: {
+            fixtureUrl: noHintsUrl,
+            endpoints: fields.map((f) => ({
+              endpoint: f.endpoint,
+              hasTtlMs: f.fields.hasTtlMs,
+              hasCacheScope: f.fields.hasCacheScope
+            }))
+          }
+        });
+      } catch (error) {
+        checks.push({
+          id: 'sep-2549-cache-fields-absent-when-unset',
+          name: 'CacheFieldsAbsentWhenUnset',
+          description:
+            'When server has no cache hints configured, ttlMs and cacheScope MUST NOT appear on cacheable list responses',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: `Failed to connect to CACHING_NO_HINTS_URL (${noHintsUrl}): ${error instanceof Error ? error.message : String(error)}`,
+          specReferences: SPEC_REFS
+        });
+      }
+    }
+
+    // 9. Explicit ttlMs:0 distinct from absent on the wire.
+    //    The merged spec treats absent ≡ 0 client-side. A server
+    //    configured to emit explicit ttlMs:0 MUST do so on the wire (not
+    //    omit), distinguishing "explicitly stale" from "no hint at all".
+    //    Stricter than the spec mandates client-side, useful for
+    //    implementations that intentionally surface the wire distinction.
+    const explicitZeroUrl = process.env.CACHING_EXPLICIT_ZERO_URL;
+    if (!explicitZeroUrl) {
+      checks.push({
+        id: 'sep-2549-ttl-ms-explicit-zero-distinct',
+        name: 'TtlMsExplicitZeroDistinct',
+        description:
+          'When server is configured to emit explicit ttlMs:0, the field MUST appear on the wire with value 0 (not omitted)',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          'CACHING_EXPLICIT_ZERO_URL env var not set. Activate by pointing it at a fixture configured to emit explicit ttlMs:0.',
+        specReferences: SPEC_REFS
+      });
+    } else {
+      try {
+        const fields = await listCachingFieldsForAllEndpoints(explicitZeroUrl);
+        const offenders = fields.filter(
+          (f) => !f.fields.hasTtlMs || f.fields.ttlMs !== 0
+        );
+        checks.push({
+          id: 'sep-2549-ttl-ms-explicit-zero-distinct',
+          name: 'TtlMsExplicitZeroDistinct',
+          description:
+            'When server is configured to emit explicit ttlMs:0, the field MUST appear on the wire with value 0 (not omitted)',
+          status: offenders.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            offenders.length > 0
+              ? offenders
+                  .map((f) =>
+                    !f.fields.hasTtlMs
+                      ? `${f.endpoint}: ttlMs absent (expected explicit 0)`
+                      : `${f.endpoint}: ttlMs=${JSON.stringify(f.fields.ttlMs)} (expected 0)`
+                  )
+                  .join('; ')
+              : undefined,
+          specReferences: SPEC_REFS,
+          details: {
+            fixtureUrl: explicitZeroUrl,
+            endpoints: fields.map((f) => ({
+              endpoint: f.endpoint,
+              hasTtlMs: f.fields.hasTtlMs,
+              ttlMs: f.fields.ttlMs
+            }))
+          }
+        });
+      } catch (error) {
+        checks.push({
+          id: 'sep-2549-ttl-ms-explicit-zero-distinct',
+          name: 'TtlMsExplicitZeroDistinct',
+          description:
+            'When server is configured to emit explicit ttlMs:0, the field MUST appear on the wire with value 0 (not omitted)',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: `Failed to connect to CACHING_EXPLICIT_ZERO_URL (${explicitZeroUrl}): ${error instanceof Error ? error.message : String(error)}`,
+          specReferences: SPEC_REFS
+        });
+      }
     }
 
     return checks;
