@@ -70,10 +70,82 @@ export function getHandler(scenarioName: string): ScenarioHandler | undefined {
 }
 
 // ============================================================================
-// Basic scenarios (initialize, tools-call)
+// Stateless requester (SEP-2575 / 2026-x lifecycle)
+//
+// Shim for the fact that the SDK Client doesn't support stateless mode yet.
+// Carry-forward handlers below pick this when MCP_CONFORMANCE_PROTOCOL_VERSION
+// is the draft version, so the same handler exercises both lifecycles.
+// ============================================================================
+
+const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
+const DRAFT_VERSION = 'DRAFT-2026-v1';
+
+const STATELESS_META_BASE = {
+  'io.modelcontextprotocol/clientInfo': {
+    name: 'conformance-test-client',
+    version: '1.0.0'
+  },
+  'io.modelcontextprotocol/clientCapabilities': {
+    tools: {},
+    roots: {},
+    sampling: {},
+    elicitation: {}
+  }
+};
+
+let _nextStatelessId = 1;
+async function statelessRequest(
+  serverUrl: string,
+  method: string,
+  params: Record<string, unknown> = {}
+): Promise<any> {
+  const _meta = {
+    'io.modelcontextprotocol/protocolVersion': DRAFT_VERSION,
+    ...STATELESS_META_BASE,
+    ...((params._meta as object | undefined) ?? {})
+  };
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': DRAFT_VERSION
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: _nextStatelessId++,
+      method,
+      params: { ...params, _meta }
+    })
+  });
+  const body = await response.json();
+  if (body.error) {
+    throw new Error(
+      `${method} failed: ${body.error.code} ${body.error.message}`
+    );
+  }
+  return body.result;
+}
+
+// ============================================================================
+// Basic scenarios (initialize, tools_call)
 // ============================================================================
 
 async function runBasicClient(serverUrl: string): Promise<void> {
+  if (PROTOCOL_VERSION === DRAFT_VERSION) {
+    logger.debug('Stateless lifecycle: calling tools/list + tools/call');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    const tool = list?.tools?.[0];
+    if (tool) {
+      const result = await statelessRequest(serverUrl, 'tools/call', {
+        name: tool.name,
+        arguments: { a: 2, b: 3 }
+      });
+      logger.debug('Successfully called tool:', JSON.stringify(result));
+    }
+    return;
+  }
+
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
     { capabilities: {} }
@@ -84,14 +156,20 @@ async function runBasicClient(serverUrl: string): Promise<void> {
   await client.connect(transport);
   logger.debug('Successfully connected to MCP server');
 
-  await client.listTools();
+  const list = await client.listTools();
   logger.debug('Successfully listed tools');
+
+  const tool = list.tools[0];
+  if (tool) {
+    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+    logger.debug('Successfully called tool');
+  }
 
   await transport.close();
   logger.debug('Connection closed successfully');
 }
 
-registerScenarios(['initialize', 'tools-call'], runBasicClient);
+registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
 
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and
@@ -106,20 +184,9 @@ registerScenario('json-schema-ref-no-deref', runBasicClient);
 async function runRequestMetadataClient(serverUrl: string): Promise<void> {
   logger.debug('Starting request-metadata client flow...');
 
-  const meta = {
-    'io.modelcontextprotocol/clientInfo': {
-      name: 'conformance-test-client',
-      version: '1.0.0'
-    },
-    'io.modelcontextprotocol/clientCapabilities': {
-      tools: {},
-      roots: {},
-      sampling: {},
-      elicitation: {}
-    }
-  };
+  const meta = STATELESS_META_BASE;
 
-  let activeVersion = 'DRAFT-2026-v1';
+  let activeVersion = DRAFT_VERSION;
 
   const sendRequestWithNegotiation = async (
     method: string,
@@ -161,7 +228,7 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
           );
           const serverSupported: string[] =
             errorResult.error.data?.supported || [];
-          const clientSupported = ['DRAFT-2026-v1'];
+          const clientSupported = [DRAFT_VERSION];
           const mutuallySupported = clientSupported.filter((v) =>
             serverSupported.includes(v)
           );
