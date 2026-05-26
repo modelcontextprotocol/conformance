@@ -1,35 +1,17 @@
 /**
- * Stateless request helpers for server scenarios: stateless requests per
- * SEP-2575 plus the standard HTTP headers per SEP-2243.
+ * Stateless request helpers for server scenarios (SEP-2575 + SEP-2243).
  *
- * Every request the harness sends to a server under test has cross-cutting
- * obligations that are independent of whatever a scenario is actually testing:
- *
- * - `MCP-Protocol-Version` header on every POST, matching
- *   `_meta["io.modelcontextprotocol/protocolVersion"]` in the body
- * - `Mcp-Method` header mirroring the JSON-RPC `method`
- * - `Mcp-Name` header mirroring `params.name` (tools/call, prompts/get) or
- *   `params.uri` (resources/read)
- * - `_meta` carrying protocolVersion, clientInfo and clientCapabilities
- * - an `Accept` header listing both `application/json` and `text/event-stream`
- *
- * Scenarios that exercise these SEPs MUST build their requests through these
- * helpers so a strictly-conformant server never rejects harness traffic for
- * reasons unrelated to the behaviour under test (issues #311, #312, #315).
- * Negative tests can override or omit exactly the dimension they exercise via
- * the options. The advertised protocol version defaults to
- * `DRAFT_PROTOCOL_VERSION` and can be overridden per request.
- *
- * The harness's own conformance is enforced by
- * `src/scenarios/harness-traffic-conformance.test.ts`.
+ * Every request the harness sends to a server under test carries the
+ * cross-cutting obligations regardless of what a scenario actually tests:
+ * the standard headers (MCP-Protocol-Version, Mcp-Method, Mcp-Name, Accept)
+ * and the `_meta` fields (protocolVersion, clientInfo, clientCapabilities),
+ * pinned to `DRAFT_PROTOCOL_VERSION`. Scenarios exercising these SEPs MUST
+ * build their requests through these helpers so a strictly-conformant server
+ * never rejects harness traffic for reasons unrelated to the behaviour under
+ * test (issues #311, #312, #315).
  */
 
-import {
-  DRAFT_PROTOCOL_VERSION,
-  NEGOTIABLE_PROTOCOL_VERSIONS
-} from '../../types';
-
-// ─── JSON-RPC types ──────────────────────────────────────────────────────────
+import { DRAFT_PROTOCOL_VERSION } from '../../types';
 
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
@@ -37,8 +19,6 @@ export interface JsonRpcResponse {
   result?: Record<string, unknown>;
   error?: { code: number; message: string; data?: unknown };
 }
-
-// ─── Defaults ────────────────────────────────────────────────────────────────
 
 export const CONFORMANCE_CLIENT_INFO = {
   name: 'conformance-test-client',
@@ -51,63 +31,19 @@ export const DEFAULT_CLIENT_CAPABILITIES = {
   roots: { listChanged: true }
 } as const;
 
-// ─── Options ─────────────────────────────────────────────────────────────────
-
-export interface RequestHeaderOptions {
-  /** Wire protocol version to advertise (header + _meta). */
-  protocolVersion?: string;
-  /** Extra or overriding headers (later wins; case preserved as given). */
-  headers?: Record<string, string>;
-  /** Default header names to drop entirely (case-insensitive). */
-  omitHeaders?: string[];
-}
-
-export interface StatelessRequestOptions extends RequestHeaderOptions {
-  /** JSON-RPC id; auto-incremented when omitted. */
-  id?: number | string;
-  /**
-   * Extra `_meta` keys merged over the conformant defaults, or `false` to
-   * omit `_meta` entirely (negative tests only). Keys already present in
-   * `params._meta` also override the defaults.
-   */
-  meta?: Record<string, unknown> | false;
-  /** Client capabilities advertised in `_meta`; defaults to all optional ones. */
-  clientCapabilities?: Record<string, unknown>;
-  /**
-   * Retry once with a server-supported version when the request is rejected
-   * as an unsupported protocol version (the spec SHOULD for clients).
-   * Defaults to true.
-   */
-  retryOnUnsupportedVersion?: boolean;
-  /** Abort the request after this many milliseconds. Defaults to 10s. */
-  timeoutMs?: number;
-}
-
 export interface StatelessResponse {
   status: number;
   headers: Headers;
   contentType?: string;
-  /**
-   * The parsed JSON-RPC message: the JSON body, or — for `text/event-stream`
-   * responses — the event matching the request id (falling back to the last
-   * response-shaped event).
-   */
+  /** The parsed JSON-RPC message (for SSE: the event matching the request id). */
   body?: JsonRpcResponse;
   /** All parsed events when the response was an SSE / chunked stream. */
   events?: unknown[];
   /** Raw response text when it could not be parsed as JSON. */
   text?: string;
-  /** Populated when the request was retried after an unsupported-version 400. */
-  versionRetry?: {
-    rejectedStatus: number;
-    rejectedError?: { code: number; message: string };
-    retriedWith: string;
-  };
 }
 
 let nextRequestId = 1;
-
-// ─── Header construction ─────────────────────────────────────────────────────
 
 /**
  * The `Mcp-Name` source field per SEP-2243: `params.name` for tools/call and
@@ -127,72 +63,25 @@ export function mcpNameForRequest(
 }
 
 /**
- * The protocol version a request's `_meta` would carry when the caller passes
- * an override via `options.meta` or `params._meta` (string overrides only).
- */
-function metaProtocolVersionOverride(
-  params?: Record<string, unknown>,
-  meta?: Record<string, unknown> | false
-): string | undefined {
-  const fromOptions = meta
-    ? meta['io.modelcontextprotocol/protocolVersion']
-    : undefined;
-  const fromParams = (params?._meta as Record<string, unknown> | undefined)?.[
-    'io.modelcontextprotocol/protocolVersion'
-  ];
-  const override = fromOptions ?? fromParams;
-  return typeof override === 'string' ? override : undefined;
-}
-
-/**
- * The single effective protocol version for a request: an explicit
- * `options.protocolVersion` wins, then a `_meta` override (from `options.meta`
- * or `params._meta`), then `DRAFT_PROTOCOL_VERSION`. The MCP-Protocol-Version
- * header and `_meta` are both built from this value so they always agree
- * unless the caller sets contradictory `headers`/`omitHeaders` overrides.
- */
-function resolveProtocolVersion(
-  params: Record<string, unknown> | undefined,
-  options: StatelessRequestOptions
-): string {
-  return (
-    options.protocolVersion ??
-    metaProtocolVersionOverride(params, options.meta) ??
-    DRAFT_PROTOCOL_VERSION
-  );
-}
-
-/**
  * Build the conformant header set for a stateless request: Content-Type,
  * Accept (both content types), MCP-Protocol-Version, Mcp-Method and (when the
- * method carries one) Mcp-Name. Overrides win over defaults; omitHeaders
- * removes defaults entirely.
+ * method carries one) Mcp-Name. `options.headers` overrides or extends the
+ * defaults, replacing any default whose name matches case-insensitively.
  */
 export function buildStandardHeaders(
   method: string,
   params?: Record<string, unknown>,
-  options: RequestHeaderOptions = {}
+  options: { headers?: Record<string, string> } = {}
 ): Record<string, string> {
-  const protocolVersion =
-    options.protocolVersion ??
-    metaProtocolVersionOverride(params) ??
-    DRAFT_PROTOCOL_VERSION;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
-    'MCP-Protocol-Version': protocolVersion,
+    'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION,
     'Mcp-Method': method
   };
   const name = mcpNameForRequest(method, params);
   if (name !== undefined) {
     headers['Mcp-Name'] = name;
-  }
-
-  if (options.omitHeaders) {
-    const omit = new Set(options.omitHeaders.map((h) => h.toLowerCase()));
-    for (const key of Object.keys(headers)) {
-      if (omit.has(key.toLowerCase())) delete headers[key];
-    }
   }
 
   if (options.headers) {
@@ -210,52 +99,23 @@ export function buildStandardHeaders(
   return headers;
 }
 
-// ─── Body construction ───────────────────────────────────────────────────────
-
-/** Build the conformant `_meta` object required on every stateless request. */
-export function buildRequestMeta(
-  overrides?: Record<string, unknown>,
-  protocolVersion: string = DRAFT_PROTOCOL_VERSION,
-  clientCapabilities: Record<string, unknown> = DEFAULT_CLIENT_CAPABILITIES
+/**
+ * Merge params with the conformant `_meta` required on every stateless
+ * request. Keys already present in `params._meta` win over the defaults.
+ */
+export function withRequestMeta(
+  params?: Record<string, unknown>
 ): Record<string, unknown> {
   return {
-    'io.modelcontextprotocol/protocolVersion': protocolVersion,
-    'io.modelcontextprotocol/clientInfo': CONFORMANCE_CLIENT_INFO,
-    'io.modelcontextprotocol/clientCapabilities': clientCapabilities,
-    ...overrides
-  };
-}
-
-/** Merge params with the conformant `_meta` (or omit it when meta === false). */
-export function withRequestMeta(
-  params: Record<string, unknown> | undefined,
-  options: StatelessRequestOptions = {}
-): Record<string, unknown> | undefined {
-  if (options.meta === false) {
-    return params;
-  }
-  const protocolVersion = resolveProtocolVersion(params, options);
-  return {
     ...params,
-    _meta: buildRequestMeta(
-      {
-        ...(params?._meta as Record<string, unknown> | undefined),
-        ...(options.meta ?? undefined),
-        // An explicit options.protocolVersion wins over any meta override so
-        // the MCP-Protocol-Version header and `_meta` always agree.
-        ...(options.protocolVersion !== undefined
-          ? {
-              'io.modelcontextprotocol/protocolVersion': options.protocolVersion
-            }
-          : {})
-      },
-      protocolVersion,
-      options.clientCapabilities ?? DEFAULT_CLIENT_CAPABILITIES
-    )
+    _meta: {
+      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/clientInfo': CONFORMANCE_CLIENT_INFO,
+      'io.modelcontextprotocol/clientCapabilities': DEFAULT_CLIENT_CAPABILITIES,
+      ...(params?._meta as Record<string, unknown> | undefined)
+    }
   };
 }
-
-// ─── Response parsing ────────────────────────────────────────────────────────
 
 function isJsonRpcResponseShaped(event: unknown): event is JsonRpcResponse {
   return (
@@ -280,10 +140,9 @@ function parseSseLineInto(events: unknown[], rawLine: string): void {
 
 /**
  * Read an SSE / chunked-stream response incrementally and resolve as soon as
- * the JSON-RPC response matching `requestId` arrives — without waiting for the
- * server to close the stream. If the stream ends (or the request is aborted)
- * before a matching event is seen, returns whatever events were parsed, with
- * `body` set to the last response-shaped event if any.
+ * the JSON-RPC response matching `requestId` arrives, without waiting for the
+ * stream to close. If the stream ends (or is aborted) first, returns whatever
+ * events were parsed, with `body` set to the last response-shaped event.
  */
 export async function readSseJsonRpcResponse(
   res: Response,
@@ -347,113 +206,25 @@ export async function readSseJsonRpcResponse(
   return finish();
 }
 
-// Error codes a server may use to reject an unsupported protocol version:
-// -32004 is the dedicated UnsupportedProtocolVersionError code in the draft
-// schema; -32001 and -32602 are tolerated for servers that predate it.
-const UNSUPPORTED_VERSION_ERROR_CODES = new Set([-32004, -32001, -32602]);
-
-function parseUnsupportedVersionRejection(
-  status: number,
-  body: JsonRpcResponse | undefined
-): { supported: string[] } | undefined {
-  if (status !== 400 || !body?.error) return undefined;
-  if (!UNSUPPORTED_VERSION_ERROR_CODES.has(body.error.code)) return undefined;
-  const data = body.error.data as { supported?: unknown } | undefined;
-  if (!Array.isArray(data?.supported) || data.supported.length === 0) {
-    return undefined;
-  }
-  const supported = data.supported.filter(
-    (v): v is string => typeof v === 'string'
-  );
-  return supported.length > 0 ? { supported } : undefined;
-}
-
-/**
- * Pick the version to retry with after an unsupported-version rejection. Only
- * versions the harness recognizes are eligible; returns undefined (no retry)
- * when the server's supported list has no usable entry.
- */
-function pickRetryVersion(
-  requested: string,
-  supported: string[]
-): string | undefined {
-  if (supported.includes(requested)) return requested;
-  if (supported.includes(DRAFT_PROTOCOL_VERSION)) return DRAFT_PROTOCOL_VERSION;
-  return supported.find((v) => NEGOTIABLE_PROTOCOL_VERSIONS.includes(v));
-}
-
-// ─── Requests ────────────────────────────────────────────────────────────────
-
 /**
  * Send a single stateless JSON-RPC request with the full set of cross-cutting
- * headers and `_meta`. Handles both JSON and SSE responses and (by default)
- * retries once with a mutually supported version when the server rejects the
- * advertised protocol version.
+ * headers and `_meta`. Handles both JSON and SSE responses.
  */
 export async function sendStatelessRequest(
   serverUrl: string,
   method: string,
   params?: Record<string, unknown>,
-  options: StatelessRequestOptions = {}
+  options: { headers?: Record<string, string>; timeoutMs?: number } = {}
 ): Promise<StatelessResponse> {
-  const id = options.id ?? nextRequestId++;
-  const response = await sendOnce(serverUrl, method, params, options, id);
-
-  if (options.retryOnUnsupportedVersion === false) {
-    return response;
-  }
-  const rejection = parseUnsupportedVersionRejection(
-    response.status,
-    response.body
-  );
-  if (!rejection) {
-    return response;
-  }
-  const requested = resolveProtocolVersion(params, options);
-  const retryVersion = pickRetryVersion(requested, rejection.supported);
-  if (!retryVersion) {
-    // The server offered no version the harness recognizes — surface the
-    // original rejection rather than guessing.
-    return response;
-  }
-  const retried = await sendOnce(
-    serverUrl,
-    method,
-    params,
-    { ...options, protocolVersion: retryVersion },
-    id
-  );
-  retried.versionRetry = {
-    rejectedStatus: response.status,
-    rejectedError: response.body?.error
-      ? {
-          code: response.body.error.code,
-          message: response.body.error.message
-        }
-      : undefined,
-    retriedWith: retryVersion
-  };
-  return retried;
-}
-
-async function sendOnce(
-  serverUrl: string,
-  method: string,
-  params: Record<string, unknown> | undefined,
-  options: StatelessRequestOptions,
-  id: number | string
-): Promise<StatelessResponse> {
-  const protocolVersion = resolveProtocolVersion(params, options);
+  const id = nextRequestId++;
   const headers = buildStandardHeaders(method, params, {
-    ...options,
-    protocolVersion
+    headers: options.headers
   });
-  const enrichedParams = withRequestMeta(params, options);
   const body = JSON.stringify({
     jsonrpc: '2.0',
     id,
     method,
-    ...(enrichedParams !== undefined ? { params: enrichedParams } : {})
+    params: withRequestMeta(params)
   });
 
   const controller = new AbortController();

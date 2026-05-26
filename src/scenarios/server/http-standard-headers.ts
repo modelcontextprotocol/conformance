@@ -494,7 +494,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
       const requestBody = {
         ...body,
         id: body.id === 0 ? nextId() : body.id,
-        params: withRequestMeta(body.params, {})
+        params: withRequestMeta(body.params)
       };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
@@ -885,13 +885,10 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // these cases only vary the Mcp-Param header value.
-          params: withRequestMeta(
-            {
-              name: toolName,
-              arguments: { ...defaultArgs, [paramName]: bodyValue }
-            },
-            {}
-          )
+          params: withRequestMeta({
+            name: toolName,
+            arguments: { ...defaultArgs, [paramName]: bodyValue }
+          })
         },
         {
           ...baseHeaders,
@@ -974,13 +971,10 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // this case only omits the Mcp-Param header.
-          params: withRequestMeta(
-            {
-              name: toolName,
-              arguments: { ...defaultArgs, [paramName]: 'test-value' }
-            },
-            {}
-          )
+          params: withRequestMeta({
+            name: toolName,
+            arguments: { ...defaultArgs, [paramName]: 'test-value' }
+          })
         },
         {
           ...baseHeaders,
