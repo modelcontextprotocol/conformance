@@ -7,6 +7,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+import { buildDraftHeaders } from './draft-client';
 
 const SPEC_REF = [
   {
@@ -115,12 +116,13 @@ export class ServerStatelessScenario implements ClientScenario {
       headersOverrides?: Record<string, string>,
       id: string | number | null = 1
     ) => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION,
-        ...headersOverrides
-      };
+      // The cross-cutting SEP-2243 headers (Mcp-Method, Mcp-Name, Accept,
+      // MCP-Protocol-Version) are not what this scenario exercises, so they
+      // are always sent conformantly; overrides only alter the dimension a
+      // test case is about (issue #312).
+      const headers = buildDraftHeaders(method, params, {
+        headers: headersOverrides
+      });
 
       const body = JSON.stringify({
         jsonrpc: '2.0',
@@ -150,11 +152,7 @@ export class ServerStatelessScenario implements ClientScenario {
       timeoutMs = 1000,
       onFirstFrame?: () => Promise<void>
     ): Promise<any[]> => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
-      };
+      const headers = buildDraftHeaders(method, params);
 
       const body = JSON.stringify({
         jsonrpc: '2.0',

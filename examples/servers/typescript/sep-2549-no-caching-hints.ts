@@ -3,151 +3,96 @@
 /**
  * SEP-2549 Negative Test Server
  *
- * Returns list and read results WITHOUT ttlMs and cacheScope fields,
- * violating the SEP-2549 MUST. The caching scenario should emit FAILURE
- * for presence checks against this server.
+ * Speaks the stateless draft wire protocol (SEP-2575) but returns list and
+ * read results WITHOUT ttlMs and cacheScope fields, violating the SEP-2549
+ * MUST. The caching scenario should emit FAILURE for presence checks against
+ * this server.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import {
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ReadResourceRequestSchema
-} from '@modelcontextprotocol/sdk/types.js';
 import express from 'express';
-import { randomUUID } from 'crypto';
-
-const transports: Record<string, StreamableHTTPServerTransport> = {};
-
-function isInitializeRequest(body: any): boolean {
-  return body?.method === 'initialize';
-}
-
-function createServer() {
-  const server = new Server(
-    { name: 'sep-2549-no-caching-hints', version: '1.0.0' },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {}
-      }
-    }
-  );
-
-  // Deliberately omit ttlMs and cacheScope from all responses
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'test_tool',
-        description: 'A test tool',
-        inputSchema: { type: 'object' as const }
-      }
-    ]
-  }));
-
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-    prompts: [
-      {
-        name: 'test_prompt',
-        description: 'A test prompt'
-      }
-    ]
-  }));
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [
-      {
-        uri: 'test://static-text',
-        name: 'Static Text',
-        description: 'A static text resource'
-      }
-    ]
-  }));
-
-  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-    resourceTemplates: []
-  }));
-
-  server.setRequestHandler(ReadResourceRequestSchema, async () => ({
-    contents: [
-      {
-        uri: 'test://static-text',
-        mimeType: 'text/plain',
-        text: 'Static text content.'
-      }
-    ]
-  }));
-
-  return server;
-}
 
 const app = express();
 app.use(express.json());
 
-app.post('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
+app.post('/mcp', (req, res) => {
+  const body = req.body || {};
+  const id = body.id ?? null;
+  const method = body.method;
 
-  try {
-    if (sessionId && transports[sessionId]) {
-      await transports[sessionId].handleRequest(req, res, req.body);
-      return;
-    }
-
-    if (!sessionId && isInitializeRequest(req.body)) {
-      const server = createServer();
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (newSessionId) => {
-          transports[newSessionId] = transport;
+  // Deliberately omit ttlMs and cacheScope from every result below.
+  switch (method) {
+    case 'server/discover':
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          supportedVersions: ['DRAFT-2026-v1'],
+          capabilities: { tools: {}, resources: {}, prompts: {} },
+          serverInfo: { name: 'sep-2549-no-caching-hints', version: '1.0.0' }
         }
       });
-      transport.onclose = () => {
-        const sid = transport.sessionId;
-        if (sid) delete transports[sid];
-      };
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
-
-    res.status(400).json({
-      jsonrpc: '2.0',
-      error: { code: -32000, message: 'Invalid or missing session ID' },
-      id: null
-    });
-  } catch (error) {
-    if (!res.headersSent) {
-      res.status(500).json({
+    case 'tools/list':
+      return res.json({
         jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
-        },
-        id: null
+        id,
+        result: {
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'A test tool',
+              inputSchema: { type: 'object' }
+            }
+          ]
+        }
       });
-    }
-  }
-});
-
-app.get('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  if (sessionId && transports[sessionId]) {
-    await transports[sessionId].handleRequest(req, res);
-  } else {
-    res.status(400).json({ error: 'Invalid or missing session ID' });
-  }
-});
-
-app.delete('/mcp', async (req, res) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  if (sessionId && transports[sessionId]) {
-    await transports[sessionId].handleRequest(req, res);
-  } else {
-    res.status(400).json({ error: 'Invalid or missing session ID' });
+    case 'prompts/list':
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          prompts: [{ name: 'test_prompt', description: 'A test prompt' }]
+        }
+      });
+    case 'resources/list':
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          resources: [
+            {
+              uri: 'test://static-text',
+              name: 'Static Text',
+              description: 'A static text resource'
+            }
+          ]
+        }
+      });
+    case 'resources/templates/list':
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: { resourceTemplates: [] }
+      });
+    case 'resources/read':
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          contents: [
+            {
+              uri: 'test://static-text',
+              mimeType: 'text/plain',
+              text: 'Static text content.'
+            }
+          ]
+        }
+      });
+    default:
+      return res.status(404).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32601, message: 'Method not found' }
+      });
   }
 });
 

@@ -20,7 +20,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { connectToServer } from './client-helper';
+import { buildDraftParams, sendDraftRequest } from './draft-client';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -264,51 +264,18 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      // Establish a session via normal SDK initialization
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
-
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-raw-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid) ? rawSid[0] : rawSid) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
-        );
-      }
+      // Discover the server's tools with a fully-conformant stateless draft
+      // request — the draft protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendDraftRequest(serverUrl, 'tools/list');
+      const toolsResult = (toolsResponse.body?.result ?? {}) as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       let idCounter = 100;
       const nextId = () => idCounter++;
@@ -501,7 +468,13 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     details: Record<string, unknown>
   ): Promise<void> {
     try {
-      const requestBody = { ...body, id: body.id === 0 ? nextId() : body.id };
+      // Issue #311: every raw request carries the SEP-2575 _meta fields — the
+      // header-validation cases only mangle headers, never the body metadata.
+      const requestBody = {
+        ...body,
+        id: body.id === 0 ? nextId() : body.id,
+        params: buildDraftParams(body.params, {})
+      };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
         ...extraHeaders
@@ -565,12 +538,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
   async run(serverUrl: string): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
+      // Discover the server's tools with a fully-conformant stateless draft
+      // request — the draft protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendDraftRequest(serverUrl, 'tools/list');
+      const toolsResult = (toolsResponse.body?.result ?? {}) as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       // Find a tool with x-mcp-header annotations
       const xMcpTool = toolsResult.tools?.find((tool) => {
@@ -602,43 +577,9 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         return checks;
       }
 
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-base64-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid2 = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid2) ? rawSid2[0] : rawSid2) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
-        );
-      }
-
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       // Find the first x-mcp-header annotated STRING property
       // that is callable with minimal arguments to avoid schema validation failures
@@ -890,10 +831,15 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: bodyValue }
-          }
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // these cases only vary the Mcp-Param header value.
+          params: buildDraftParams(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: bodyValue }
+            },
+            {}
+          )
         },
         {
           ...baseHeaders,
@@ -974,10 +920,15 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: 'test-value' }
-          }
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // this case only omits the Mcp-Param header.
+          params: buildDraftParams(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: 'test-value' }
+            },
+            {}
+          )
         },
         {
           ...baseHeaders,

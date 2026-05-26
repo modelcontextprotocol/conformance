@@ -5,8 +5,6 @@
  * and a stateless JSON-RPC transport helper.
  */
 
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
-
 // ─── JSON-RPC Types ──────────────────────────────────────────────────────────
 
 export interface JsonRpcResponse {
@@ -18,47 +16,26 @@ export interface JsonRpcResponse {
 
 // ─── Stateless RPC Helper ────────────────────────────────────────────────────
 
-let nextId = 1;
+import { sendDraftRequest } from './draft-client';
 
 /**
  * Send a stateless JSON-RPC request (SEP-2575 pattern).
- * Automatically injects _meta with protocolVersion, clientInfo, clientCapabilities.
+ * The shared draft helper injects the cross-cutting requirements: _meta
+ * (protocolVersion, clientInfo, clientCapabilities) and the standard
+ * MCP-Protocol-Version / Mcp-Method / Mcp-Name headers (SEP-2243).
  */
 export async function sendRpc(
   serverUrl: string,
   method: string,
   params?: Record<string, unknown>
 ): Promise<JsonRpcResponse> {
-  const id = nextId++;
-
-  const enrichedParams = {
-    ...params,
-    _meta: {
-      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
-      'io.modelcontextprotocol/clientInfo': {
-        name: 'conformance-test-client',
-        version: '1.0.0'
-      },
-      'io.modelcontextprotocol/clientCapabilities': {
-        sampling: {},
-        elicitation: {},
-        roots: { listChanged: true }
-      },
-      ...(params?._meta as Record<string, unknown> | undefined)
-    }
-  };
-
-  const response = await fetch(serverUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
-    },
-    body: JSON.stringify({ jsonrpc: '2.0', id, method, params: enrichedParams })
-  });
-
-  return (await response.json()) as JsonRpcResponse;
+  const response = await sendDraftRequest(serverUrl, method, params);
+  if (!response.body) {
+    throw new Error(
+      `Expected a JSON-RPC response for ${method}, got HTTP ${response.status} (${response.contentType ?? 'no content-type'})`
+    );
+  }
+  return response.body as JsonRpcResponse;
 }
 
 // ─── InputRequiredResult Types ───────────────────────────────────────────────

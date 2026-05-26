@@ -256,7 +256,8 @@ export class RequestMetadataScenario implements Scenario {
             jsonrpc: '2.0',
             id: request.id ?? null,
             error: {
-              code: -32001,
+              // UnsupportedProtocolVersionError per the draft schema.
+              code: -32004,
               message: 'Unsupported protocol version',
               data: {
                 supported: [DRAFT_PROTOCOL_VERSION]

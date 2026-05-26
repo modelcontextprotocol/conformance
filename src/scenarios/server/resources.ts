@@ -8,10 +8,10 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { connectToServer } from './client-helper';
+import { sendDraftRequest } from './draft-client';
 import {
   TextResourceContents,
-  BlobResourceContents,
-  McpError
+  BlobResourceContents
 } from '@modelcontextprotocol/sdk/types.js';
 
 export class ResourcesListScenario implements ClientScenario {
@@ -484,9 +484,13 @@ This scenario does not require the server to register any specific resource — 
       }
     ];
 
-    let connection;
+    // SEP-2164 is a draft-spec requirement, so the request is sent statelessly
+    // with the draft protocol version and the cross-cutting _meta/headers.
+    let response;
     try {
-      connection = await connectToServer(serverUrl);
+      response = await sendDraftRequest(serverUrl, 'resources/read', {
+        uri: nonexistentUri
+      });
     } catch (error) {
       checks.push({
         id: 'sep-2164-error-code',
@@ -495,19 +499,16 @@ This scenario does not require the server to register any specific resource — 
           'Server returns -32602 (Invalid Params) for non-existent resource',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: `Failed to connect: ${error instanceof Error ? error.message : String(error)}`,
+        errorMessage: `resources/read request failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences
       });
       return checks;
     }
 
-    let caughtError: unknown;
-    let result: { contents: unknown[] } | undefined;
-    try {
-      result = await connection.client.readResource({ uri: nonexistentUri });
-    } catch (error) {
-      caughtError = error;
-    }
+    const result = response.body?.result as
+      | { contents?: unknown[] }
+      | undefined;
+    const rpcError = response.body?.error;
 
     // Check 1: MUST NOT return an empty contents array
     const returnedEmptyContents =
@@ -531,13 +532,12 @@ This scenario does not require the server to register any specific resource — 
     });
 
     // Check 2: SHOULD return JSON-RPC error with code -32602
-    const errorCode =
-      caughtError instanceof McpError ? caughtError.code : undefined;
+    const errorCode = rpcError?.code;
     let errorCodeMessage: string | undefined;
     if (result !== undefined) {
       errorCodeMessage = `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers SHOULD return a JSON-RPC error for non-existent resources.`;
-    } else if (!(caughtError instanceof McpError)) {
-      errorCodeMessage = `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`;
+    } else if (!rpcError) {
+      errorCodeMessage = `Expected a JSON-RPC error, got HTTP ${response.status} with no JSON-RPC error in the body.`;
     } else if (errorCode !== -32602) {
       errorCodeMessage =
         `Expected error code -32602 (Invalid Params), got ${errorCode}. ` +
@@ -563,10 +563,7 @@ This scenario does not require the server to register any specific resource — 
     });
 
     // Check 3: SHOULD include uri in error data field
-    const errorData =
-      caughtError instanceof McpError
-        ? (caughtError.data as { uri?: string } | undefined)
-        : undefined;
+    const errorData = rpcError?.data as { uri?: string } | undefined;
     const dataUriMatches = errorData?.uri === nonexistentUri;
 
     checks.push({
@@ -574,19 +571,13 @@ This scenario does not require the server to register any specific resource — 
       name: 'ResourcesNotFoundDataUri',
       description:
         'Server includes the requested URI in the error data field (SHOULD)',
-      status:
-        caughtError instanceof McpError
-          ? dataUriMatches
-            ? 'SUCCESS'
-            : 'WARNING'
-          : 'FAILURE',
+      status: rpcError ? (dataUriMatches ? 'SUCCESS' : 'WARNING') : 'FAILURE',
       timestamp: new Date().toISOString(),
-      errorMessage:
-        caughtError instanceof McpError
-          ? dataUriMatches
-            ? undefined
-            : `Error data.uri is ${JSON.stringify(errorData?.uri)}, expected "${nonexistentUri}". This is a SHOULD requirement.`
-          : 'No JSON-RPC error received; cannot evaluate data field.',
+      errorMessage: rpcError
+        ? dataUriMatches
+          ? undefined
+          : `Error data.uri is ${JSON.stringify(errorData?.uri)}, expected "${nonexistentUri}". This is a SHOULD requirement.`
+        : 'No JSON-RPC error received; cannot evaluate data field.',
       specReferences,
       details: {
         requestedUri: nonexistentUri,
@@ -594,7 +585,6 @@ This scenario does not require the server to register any specific resource — 
       }
     });
 
-    await connection.close();
     return checks;
   }
 }
