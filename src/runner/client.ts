@@ -36,9 +36,7 @@ async function executeClient(
   // 3. Semantic separation: scenario identifies "which test", context provides "test data"
   const env = { ...process.env };
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
-  if (specVersion) {
-    env.MCP_CONFORMANCE_PROTOCOL_VERSION = specVersion;
-  }
+  env.MCP_CONFORMANCE_PROTOCOL_VERSION = specVersion ?? LATEST_SPEC_VERSION;
   if (context) {
     // Include scenario name in context for discriminated union parsing
     env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
@@ -118,8 +116,7 @@ export async function runConformanceTest(
   const resolvedVersion = specVersion ?? LATEST_SPEC_VERSION;
   const ctx: ScenarioContext = {
     specVersion: resolvedVersion,
-    createServer: (handlers, opts) =>
-      createServerFor(resolvedVersion)(handlers, opts)
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
   };
 
   console.error(`Starting scenario: ${scenarioName}`);
@@ -137,7 +134,7 @@ export async function runConformanceTest(
       urls.serverUrl,
       timeout,
       urls.context,
-      specVersion
+      resolvedVersion
     );
 
     // Print stdout/stderr if client exited with nonzero code
@@ -277,7 +274,8 @@ export function printClientResults(
 export async function runInteractiveMode(
   scenarioName: string,
   verbose: boolean = false,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion
 ): Promise<void> {
   let resultDir: string | undefined;
 
@@ -289,10 +287,10 @@ export async function runInteractiveMode(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
+  const resolvedVersion = specVersion ?? LATEST_SPEC_VERSION;
   const ctx: ScenarioContext = {
-    specVersion: LATEST_SPEC_VERSION,
-    createServer: (handlers, opts) =>
-      createServerFor(LATEST_SPEC_VERSION)(handlers, opts)
+    specVersion: resolvedVersion,
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
   };
 
   console.log(`Starting scenario: ${scenarioName}`);

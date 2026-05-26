@@ -13,14 +13,37 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
-import type { MockServer, MockServerOptions, RequestHandlers } from './index';
+import type { MockServer, RequestHandlers } from './index';
+
+const CAPABILITY_BY_PREFIX: Record<string, string> = {
+  tools: 'tools',
+  prompts: 'prompts',
+  resources: 'resources',
+  completion: 'completions',
+  logging: 'logging'
+};
+
+/**
+ * Derive the server `capabilities` object from the registered handler method
+ * names so the SDK's `assertRequestHandlerCapability` gate is always satisfied.
+ * Shared with the stateless impl for `server/discover`.
+ */
+export function capabilitiesFromHandlers(
+  handlers: RequestHandlers
+): Record<string, object> {
+  const out: Record<string, object> = {};
+  for (const method of Object.keys(handlers)) {
+    const cap = CAPABILITY_BY_PREFIX[method.split('/')[0]];
+    if (cap) out[cap] = {};
+  }
+  return out;
+}
 
 export async function createServerStateful(
-  handlers: RequestHandlers,
-  opts: MockServerOptions = {}
+  handlers: RequestHandlers
 ): Promise<MockServer> {
   const recorded: JSONRPCRequest[] = [];
-  const capabilities = opts.capabilities ?? { tools: {} };
+  const capabilities = capabilitiesFromHandlers(handlers);
 
   // Fresh SDK Server per HTTP request (the SDK transport is single-shot in
   // sessionless mode after GHSA-345p-7cg4-v4c7).
@@ -37,7 +60,6 @@ export async function createServerStateful(
         params: z.unknown().optional()
       });
       server.setRequestHandler(schema, async (request) => {
-        recorded.push(request as JSONRPCRequest);
         try {
           return (await handler(
             (request.params ?? {}) as Record<string, unknown>,
@@ -57,14 +79,24 @@ export async function createServerStateful(
 
   const app = express();
   app.use(express.json());
-  opts.configure?.(app);
 
   app.post('/mcp', async (req, res) => {
-    const server = newServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined
-    });
+    // Record every JSON-RPC request the client sends (excluding the lifecycle
+    // preamble) at the HTTP layer so unregistered methods are captured too,
+    // matching the stateless impl and the MockServer.recorded contract.
+    const body = req.body;
+    if (
+      body?.method &&
+      body.method !== 'initialize' &&
+      body.method !== 'notifications/initialized'
+    ) {
+      recorded.push(body as JSONRPCRequest);
+    }
     try {
+      const server = newServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined
+      });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
       res.on('close', () => {

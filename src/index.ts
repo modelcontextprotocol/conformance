@@ -254,7 +254,12 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario, verbose, outputDir);
+        await runInteractiveMode(
+          validated.scenario,
+          verbose,
+          outputDir,
+          specVersionFilter
+        );
         process.exit(0);
       }
 

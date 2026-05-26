@@ -14,10 +14,12 @@ const STATEFUL_VERSIONS: ReadonlySet<string> = new Set([
   '2025-11-25'
 ]);
 
+export function isStatefulVersion(v: SpecVersion): boolean {
+  return STATEFUL_VERSIONS.has(v);
+}
+
 export function connectFor(
   specVersion: SpecVersion
 ): (serverUrl: string) => Promise<Connection> {
-  return STATEFUL_VERSIONS.has(specVersion)
-    ? connectStateful
-    : connectStateless;
+  return isStatefulVersion(specVersion) ? connectStateful : connectStateless;
 }

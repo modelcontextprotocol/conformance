@@ -98,7 +98,10 @@ async function readFinalSseMessage(
   response: Response,
   id: number,
   sink: JSONRPCNotification[]
-): Promise<{ result?: unknown; error?: { code: number; message: string } }> {
+): Promise<{
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}> {
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buf = '';

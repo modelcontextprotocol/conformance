@@ -9,7 +9,6 @@
  * This is the client-conformance mirror of `Connection` in `../connection`.
  */
 
-import type express from 'express';
 import type { SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 
@@ -25,20 +24,6 @@ export type RequestHandlers = Record<
     request: JSONRPCRequest
   ) => unknown | Promise<unknown>
 >;
-
-export interface MockServerOptions {
-  /**
-   * Capabilities advertised in InitializeResult / server/discover. Defaults to
-   * `{ tools: {} }`.
-   */
-  capabilities?: Record<string, unknown>;
-  /**
-   * Hook to add routes/middleware to the underlying express app before the
-   * `/mcp` route is registered. Auth scenarios use this for the PRM endpoint
-   * and bearer-auth middleware.
-   */
-  configure?: (app: express.Application) => void;
-}
 
 export interface MockServer {
   /** Full URL of the `/mcp` endpoint. */
@@ -65,12 +50,9 @@ export interface ScenarioContext {
    * lifecycle itself (initialize, SSE-retry) bypass this and build a raw
    * `http.createServer`.
    */
-  createServer(
-    handlers: RequestHandlers,
-    opts?: MockServerOptions
-  ): Promise<MockServer>;
+  createServer(handlers: RequestHandlers): Promise<MockServer>;
 }
 
 export { createServerStateful } from './stateful';
-export { createServerStateless } from './stateless';
+export { createServerStateless, validateStatelessRequest } from './stateless';
 export { createServerFor } from './select';

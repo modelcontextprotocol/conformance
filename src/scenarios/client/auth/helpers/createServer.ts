@@ -10,8 +10,11 @@ import {
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
-import { DRAFT_PROTOCOL_VERSION } from '../../../../types';
-import type { ScenarioContext } from '../../../../mock-server';
+import {
+  validateStatelessRequest,
+  type ScenarioContext
+} from '../../../../mock-server';
+import { isStatefulVersion } from '../../../../connection/select';
 import { createRequestLogger } from '../../../request-logger';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import { SpecReferences } from '../spec-references';
@@ -160,7 +163,7 @@ export function createServer(
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);
-      if (ctx.specVersion === DRAFT_PROTOCOL_VERSION) {
+      if (!isStatefulVersion(ctx.specVersion)) {
         return handleStateless(req, res);
       }
       const server = createMcpServer();
@@ -192,44 +195,17 @@ export function createServer(
     });
   });
 
-  // Stateless lifecycle for the /mcp route: validate _meta + header, serve
-  // server/discover, route the same tools handlers as createMcpServer.
-  // The bearer-auth middleware and PRM route above are version-independent.
+  // Stateless lifecycle for the /mcp route: shared SEP-2575 validation +
+  // server/discover from mock-server/stateless, then the same tools handlers
+  // as createMcpServer. Bearer-auth middleware and PRM route above are
+  // version-independent.
   function handleStateless(req: Request, res: Response) {
-    const body = req.body ?? {};
-    const id = body.id ?? null;
-    const meta = body.params?._meta;
-    const hv = req.headers['mcp-protocol-version'];
-    if (!hv) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
-      });
+    const v = validateStatelessRequest(req, { tools: {} });
+    if (!v.ok) {
+      return res.status(v.status).json(v.body);
     }
-    if (
-      !meta?.['io.modelcontextprotocol/protocolVersion'] ||
-      !meta?.['io.modelcontextprotocol/clientInfo'] ||
-      !meta?.['io.modelcontextprotocol/clientCapabilities']
-    ) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32602, message: 'Invalid params: missing _meta keys' }
-      });
-    }
-    if (body.method === 'server/discover') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          supportedVersions: [DRAFT_PROTOCOL_VERSION],
-          capabilities: { tools: {} },
-          serverInfo: { name: 'auth-prm-pathbased-server', version: '1.0.0' }
-        }
-      });
-    }
-    if (body.method === 'tools/list') {
+    const { id, method } = v;
+    if (method === 'tools/list') {
       return res.json({
         jsonrpc: '2.0',
         id,
@@ -238,7 +214,7 @@ export function createServer(
         }
       });
     }
-    if (body.method === 'tools/call') {
+    if (method === 'tools/call') {
       return res.json({
         jsonrpc: '2.0',
         id,

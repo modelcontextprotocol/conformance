@@ -122,6 +122,30 @@ describe('createServerStateless', () => {
 });
 
 describe('createServerStateful', () => {
+  async function postInit(url: string) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 't', version: '1' }
+        }
+      })
+    });
+    return {
+      status: r.status,
+      contentType: r.headers.get('content-type') ?? ''
+    };
+  }
+
   it('accepts initialize and routes to handlers, recording non-preamble', async () => {
     const srv = await createServerStateful({
       'tools/list': () => ({ tools: [] })
@@ -141,6 +165,48 @@ describe('createServerStateful', () => {
       await client.listTools();
       await client.close();
       expect(srv.recorded.map((r) => r.method)).toEqual(['tools/list']);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('derives capabilities from handler keys; non-tools handler does not 500 initialize', async () => {
+    const srv = await createServerStateful({
+      'prompts/list': () => ({ prompts: [] })
+    });
+    try {
+      const { status, contentType } = await postInit(srv.url);
+      expect(status).toBe(200);
+      expect(contentType).not.toContain('text/html');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('records requests for unregistered methods (parity with stateless)', async () => {
+    const srv = await createServerStateful({
+      'tools/list': () => ({ tools: [] })
+    });
+    try {
+      const { Client } =
+        await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } =
+        await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+      const { ResultSchema } =
+        await import('@modelcontextprotocol/sdk/types.js');
+      const client = new Client(
+        { name: 't', version: '1' },
+        { capabilities: {} }
+      );
+      await client.connect(new StreamableHTTPClientTransport(new URL(srv.url)));
+      await client
+        .request(
+          { method: 'tools/call', params: { name: 'nope' } },
+          ResultSchema
+        )
+        .catch(() => {});
+      await client.close();
+      expect(srv.recorded.map((r) => r.method)).toContain('tools/call');
     } finally {
       await srv.close();
     }

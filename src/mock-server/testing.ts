@@ -12,7 +12,6 @@ export function testScenarioContext(
 ): ScenarioContext {
   return {
     specVersion,
-    createServer: (handlers, opts) =>
-      createServerFor(specVersion)(handlers, opts)
+    createServer: (handlers) => createServerFor(specVersion)(handlers)
   };
 }
