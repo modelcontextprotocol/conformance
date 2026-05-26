@@ -11,14 +11,14 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import type { RunContext } from '../../connection';
-import { connectToServer } from './client-helper';
-import {
-  ListToolsResultSchema,
-  ListPromptsResultSchema,
-  ListResourcesResultSchema,
-  ListResourceTemplatesResultSchema,
-  ReadResourceResultSchema
-} from '@modelcontextprotocol/sdk/types.js';
+import type {
+  CacheableResult,
+  ListToolsResult,
+  ListPromptsResult,
+  ListResourcesResult,
+  ListResourceTemplatesResult,
+  ReadResourceResult
+} from '../../spec-types/draft';
 
 const SPEC_REFS = [
   {
@@ -38,12 +38,12 @@ interface CachingFields {
   hasCacheScope: boolean;
 }
 
-function extractCachingFields(result: Record<string, unknown>): CachingFields {
+function extractCachingFields(result: Partial<CacheableResult>): CachingFields {
   const hasTtlMs = 'ttlMs' in result;
   const hasCacheScope = 'cacheScope' in result;
   return {
-    ttlMs: hasTtlMs ? result.ttlMs : undefined,
-    cacheScope: hasCacheScope ? result.cacheScope : undefined,
+    ttlMs: result.ttlMs,
+    cacheScope: result.cacheScope,
     hasTtlMs,
     hasCacheScope
   };
@@ -96,22 +96,16 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 - \`resources/read\``;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
       // 1. tools/list
       try {
-        const toolsResult = await connection.client.request(
-          { method: 'tools/list', params: {} },
-          ListToolsResultSchema
-        );
-        const fields = extractCachingFields(
-          toolsResult as Record<string, unknown>
-        );
+        const toolsResult = await conn.request<ListToolsResult>('tools/list');
+        const fields = extractCachingFields(toolsResult);
         allFields.push({ endpoint: 'tools/list', fields });
         checks.push(
           buildPresenceCheck(
@@ -136,13 +130,9 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 
       // 2. prompts/list
       try {
-        const promptsResult = await connection.client.request(
-          { method: 'prompts/list', params: {} },
-          ListPromptsResultSchema
-        );
-        const fields = extractCachingFields(
-          promptsResult as Record<string, unknown>
-        );
+        const promptsResult =
+          await conn.request<ListPromptsResult>('prompts/list');
+        const fields = extractCachingFields(promptsResult);
         allFields.push({ endpoint: 'prompts/list', fields });
         checks.push(
           buildPresenceCheck(
@@ -168,13 +158,9 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
       // 3. resources/list
       let firstResourceUri: string | undefined;
       try {
-        const resourcesResult = await connection.client.request(
-          { method: 'resources/list', params: {} },
-          ListResourcesResultSchema
-        );
-        const fields = extractCachingFields(
-          resourcesResult as Record<string, unknown>
-        );
+        const resourcesResult =
+          await conn.request<ListResourcesResult>('resources/list');
+        const fields = extractCachingFields(resourcesResult);
         allFields.push({ endpoint: 'resources/list', fields });
         checks.push(
           buildPresenceCheck(
@@ -203,13 +189,10 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 
       // 4. resources/templates/list
       try {
-        const templatesResult = await connection.client.request(
-          { method: 'resources/templates/list', params: {} },
-          ListResourceTemplatesResultSchema
+        const templatesResult = await conn.request<ListResourceTemplatesResult>(
+          'resources/templates/list'
         );
-        const fields = extractCachingFields(
-          templatesResult as Record<string, unknown>
-        );
+        const fields = extractCachingFields(templatesResult);
         allFields.push({ endpoint: 'resources/templates/list', fields });
         checks.push(
           buildPresenceCheck(
@@ -235,16 +218,11 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
       // 5. resources/read — use first resource from resources/list
       if (firstResourceUri) {
         try {
-          const readResult = await connection.client.request(
-            {
-              method: 'resources/read',
-              params: { uri: firstResourceUri }
-            },
-            ReadResourceResultSchema
+          const readResult = await conn.request<ReadResourceResult>(
+            'resources/read',
+            { uri: firstResourceUri }
           );
-          const fields = extractCachingFields(
-            readResult as Record<string, unknown>
-          );
+          const fields = extractCachingFields(readResult);
           allFields.push({ endpoint: 'resources/read', fields });
           checks.push(
             buildPresenceCheck(
@@ -339,7 +317,7 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       // Connection-level failure — push a single failure check
       checks.push({

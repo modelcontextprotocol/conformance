@@ -21,7 +21,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import type { RunContext } from '../../connection';
-import { connectToServer } from './client-helper';
+import type { ListToolsResult } from '../../spec-types/draft';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -269,10 +269,10 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     let sessionId: string | null = null;
 
     try {
-      // Establish a session via normal SDK initialization
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
+      // Discover tools via the version-appropriate connection
+      const conn = await ctx.connect();
+      const toolsResult = await conn.request<ListToolsResult>('tools/list');
+      await conn.close();
 
       // Get a fresh session for raw requests
       const initResponse = await sendRawRequest(
@@ -571,9 +571,9 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     let sessionId: string | null = null;
 
     try {
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
+      const conn = await ctx.connect();
+      const toolsResult = await conn.request<ListToolsResult>('tools/list');
+      await conn.close();
 
       // Find a tool with x-mcp-header annotations
       const xMcpTool = toolsResult.tools?.find((tool) => {

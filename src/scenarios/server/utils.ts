@@ -2,13 +2,20 @@
  * Utilities test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types';
 import type { RunContext } from '../../connection';
-import { connectToServer } from './client-helper';
+import type { CompleteResult, EmptyResult } from '../../spec-types/2025-06-18';
 
 export class LoggingSetLevelScenario implements ClientScenario {
   name = 'logging-set-level';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test setting logging level.
 
 **Server Implementation Requirements:**
@@ -31,14 +38,15 @@ export class LoggingSetLevelScenario implements ClientScenario {
 - \`emergency\``;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
       // Send logging/setLevel request
-      const result = await connection.client.setLoggingLevel('info');
+      const result = await conn.request<EmptyResult>('logging/setLevel', {
+        level: 'info'
+      });
 
       // Validate response (should return empty object {})
       const errors: string[] = [];
@@ -64,7 +72,7 @@ export class LoggingSetLevelScenario implements ClientScenario {
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'logging-set-level',
@@ -88,7 +96,10 @@ export class LoggingSetLevelScenario implements ClientScenario {
 
 export class PingScenario implements ClientScenario {
   name = 'ping';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test ping utility for connection health check.
 
 **Server Implementation Requirements:**
@@ -122,14 +133,13 @@ export class PingScenario implements ClientScenario {
 **Implementation Note**: The ping utility allows either party to verify that their counterpart is still responsive and the connection is alive.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
       // Send ping request
-      const result = await connection.client.ping();
+      const result = await conn.request<EmptyResult>('ping');
 
       // Validate response (should return empty object {})
       const errors: string[] = [];
@@ -155,7 +165,7 @@ export class PingScenario implements ClientScenario {
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'ping',
@@ -224,14 +234,13 @@ export class CompletionCompleteScenario implements ClientScenario {
 **Implementation Note**: For conformance testing, completion support can be minimal or return empty arrays. The capability just needs to be declared and the endpoint must respond correctly.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
       // Send completion/complete request
-      const result = await connection.client.complete({
+      const result = await conn.request<CompleteResult>('completion/complete', {
         ref: {
           type: 'ref/prompt',
           name: 'test_prompt_with_arguments'
@@ -271,7 +280,7 @@ export class CompletionCompleteScenario implements ClientScenario {
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'completion-complete',

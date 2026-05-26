@@ -18,7 +18,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
 import type { RunContext } from '../../connection';
-import { connectToServer } from './client-helper.js';
+import type { ListToolsResult } from '../../spec-types/2025-11-25';
 
 const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
 const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
@@ -95,7 +95,6 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
 **Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition (\`allOf\`/\`anyOf\`), conditional (\`if\`/\`then\`/\`else\`), and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const specReferences = [
       {
@@ -111,13 +110,10 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
     ];
 
     try {
-      const connection = await connectToServer(serverUrl);
-      // Negotiated wire protocolVersion from the initialize handshake; used to
-      // soft-gate the SEP-2106 checks below.
-      const negotiatedVersion = (
-        connection.client.transport as { protocolVersion?: string } | undefined
-      )?.protocolVersion;
-      const result = await connection.client.listTools();
+      const conn = await ctx.connect();
+      // Spec version under test; used to soft-gate the SEP-2106 checks below.
+      const negotiatedVersion = ctx.specVersion;
+      const result = await conn.request<ListToolsResult>('tools/list');
 
       // Find the test tool
       const tool = result.tools?.find((t) => t.name === EXPECTED_TOOL_NAME);
@@ -140,7 +136,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       });
 
       if (!tool) {
-        await connection.close();
+        await conn.close();
         return checks;
       }
 
@@ -326,7 +322,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'json-schema-2020-12-error',

@@ -2,7 +2,11 @@
  * Lifecycle test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types';
 import type { RunContext } from '../../connection';
 import { connectToServer } from './client-helper';
 
@@ -17,7 +21,10 @@ const SESSION_SPEC_REFERENCES = [
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test basic server initialization handshake.
 
 **Server Implementation Requirements:**
