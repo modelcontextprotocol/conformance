@@ -21,6 +21,9 @@ import {
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
   ElicitResultSchema,
+  ResultSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
   ListToolsRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
@@ -30,6 +33,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
 import { randomUUID, createHmac } from 'crypto';
 
@@ -71,6 +76,49 @@ function getMrtInputText(inputResponse: unknown, field: string): string {
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory client connected to a fully-registered McpServer. Used by the
+// stateless POST handler to serve carry-forward methods (tools/call,
+// resources/*, prompts/get, completion/complete) without duplicating the
+// registrations. The SDK doesn't yet support a stateless server natively,
+// so this bridges via the in-memory transport after a one-time initialize.
+//
+// A fresh server+client pair is built per request so concurrent requests
+// can't observe each other's notifications.
+type DispatchClient = {
+  client: Client;
+  drainNotifications: () => unknown[];
+  close: () => Promise<void>;
+};
+async function getStatelessDispatchClient(): Promise<DispatchClient> {
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer();
+  await server.connect(serverT);
+  const client = new Client(
+    { name: 'stateless-dispatch', version: '1.0.0' },
+    { capabilities: { sampling: {}, elicitation: {} } }
+  );
+  await client.connect(clientT);
+
+  // Buffer notifications so the stateless handler can flush them to the SSE
+  // response after the request completes. The SDK pre-registers a handler for
+  // notifications/progress so a fallback alone would miss it.
+  const buffer: unknown[] = [];
+  const collect = async (n: unknown) =>
+    void buffer.push({ jsonrpc: '2.0', ...(n as object) });
+  client.setNotificationHandler(ProgressNotificationSchema, collect);
+  client.setNotificationHandler(LoggingMessageNotificationSchema, collect);
+  client.fallbackNotificationHandler = collect;
+
+  return {
+    client,
+    drainNotifications: () => buffer.splice(0, buffer.length),
+    close: async () => {
+      await client.close();
+      await server.close();
+    }
+  };
+}
 
 // In-memory event store for SEP-1699 resumability
 const eventStoreData = new Map<
@@ -1304,11 +1352,19 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'tools/list') {
+      const dispatch = await getStatelessDispatchClient();
+      const fromServer = (await dispatch.client.request(
+        { method: 'tools/list', params: {} },
+        ResultSchema as any
+      )) as { tools: any[]; [k: string]: unknown };
+      await dispatch.close();
       return res.json({
         jsonrpc: '2.0',
         id,
         result: {
+          ...fromServer,
           tools: [
+            ...fromServer.tools,
             {
               name: 'test_missing_capability',
               description: 'Test tool requiring sampling',
@@ -1378,11 +1434,19 @@ app.post('/mcp', async (req, res) => {
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
+      const dispatch = await getStatelessDispatchClient();
+      const fromServer = (await dispatch.client.request(
+        { method: 'prompts/list', params: {} },
+        ResultSchema as any
+      )) as { prompts: any[]; [k: string]: unknown };
+      await dispatch.close();
       return res.json({
         jsonrpc: '2.0',
         id,
         result: {
+          ...fromServer,
           prompts: [
+            ...fromServer.prompts,
             {
               name: 'test_input_required_result_prompt',
               description: 'MRTR: prompt that requires elicitation input'
@@ -1991,6 +2055,68 @@ app.post('/mcp', async (req, res) => {
           id,
           result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
         });
+      }
+    }
+
+    // Carry-forward methods that fell through the MRTR-specific handlers above
+    // (tools/call for non-MRTR tools, resources/*, prompts/get for non-MRTR
+    // prompts, completion/complete) are dispatched to the same McpServer the
+    // stateful path uses, via an in-memory client. This avoids duplicating the
+    // tool/resource/prompt registrations for the stateless path.
+    //
+    // tools/call is served as text/event-stream so progress and logging
+    // notifications from the underlying tool reach the conformance client.
+    if (method === 'tools/call') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      const write = (msg: unknown) =>
+        res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+      return res.end();
+    }
+    if (
+      [
+        'resources/list',
+        'resources/read',
+        'resources/templates/list',
+        'prompts/get',
+        'completion/complete'
+      ].includes(method)
+    ) {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        return res.json({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
       }
     }
 
