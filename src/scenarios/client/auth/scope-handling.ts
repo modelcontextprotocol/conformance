@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -22,7 +23,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const expectedScope = 'mcp:basic';
@@ -108,7 +109,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
@@ -204,7 +205,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
@@ -291,7 +292,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const initialScope = 'mcp:basic';
@@ -528,7 +529,7 @@ export class ScopeRetryLimitScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const requiredScope = 'mcp:admin';

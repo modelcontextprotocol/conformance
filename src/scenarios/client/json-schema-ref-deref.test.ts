@@ -1,3 +1,4 @@
+import { testScenarioContext } from '../../mock-server/testing';
 import { describe, test, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -92,7 +93,7 @@ describe('json-schema-ref-no-deref (SEP-2106)', () => {
 
   test('client that never lists tools fails: requirement cannot be evaluated', async () => {
     const scenario = new JsonSchemaRefDerefScenario();
-    await scenario.start();
+    await scenario.start(testScenarioContext());
     try {
       const checks = scenario.getChecks();
       const check = checks.find(

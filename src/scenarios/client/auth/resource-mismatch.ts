@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -37,7 +38,7 @@ export class ResourceMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private authorizationRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationRequestMade = false;
 

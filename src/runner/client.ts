@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck, SpecVersion } from '../types';
+import { ConformanceCheck, SpecVersion, LATEST_SPEC_VERSION } from '../types';
 import { getScenario } from '../scenarios';
+import { createServerFor, type ScenarioContext } from '../mock-server';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 export interface ClientExecutionResult {
@@ -114,8 +115,15 @@ export async function runConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
+  const resolvedVersion = specVersion ?? LATEST_SPEC_VERSION;
+  const ctx: ScenarioContext = {
+    specVersion: resolvedVersion,
+    createServer: (handlers, opts) =>
+      createServerFor(resolvedVersion)(handlers, opts)
+  };
+
   console.error(`Starting scenario: ${scenarioName}`);
-  const urls = await scenario.start();
+  const urls = await scenario.start(ctx);
 
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
   if (urls.context) {
@@ -281,8 +289,14 @@ export async function runInteractiveMode(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getScenario(scenarioName)!;
 
+  const ctx: ScenarioContext = {
+    specVersion: LATEST_SPEC_VERSION,
+    createServer: (handlers, opts) =>
+      createServerFor(LATEST_SPEC_VERSION)(handlers, opts)
+  };
+
   console.log(`Starting scenario: ${scenarioName}`);
-  const urls = await scenario.start();
+  const urls = await scenario.start(ctx);
 
   console.log(`Server URL: ${urls.serverUrl}`);
   console.log('Press Ctrl+C to stop...');

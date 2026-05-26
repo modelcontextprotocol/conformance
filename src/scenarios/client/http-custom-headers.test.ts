@@ -1,3 +1,4 @@
+import { testScenarioContext } from '../../mock-server/testing';
 import { describe, it, expect } from 'vitest';
 import {
   HttpCustomHeadersScenario,
@@ -43,7 +44,7 @@ function statusesFor(
 describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
   it('emits exactly the declared requirement IDs as FAILURE when the client never connects', async () => {
     const scenario = new HttpCustomHeadersScenario();
-    await scenario.start();
+    await scenario.start(testScenarioContext());
     try {
       const checks = scenario.getChecks();
       expect(idsOf(checks)).toEqual(new Set(CUSTOM_HEADERS_DECLARED_CHECK_IDS));
@@ -57,7 +58,7 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
 
   it('maps each parameter kind to its requirement ID on a conforming tool call', async () => {
     const scenario = new HttpCustomHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       const nonAscii = 'Hello, 世界';
       const nonAsciiB64 = Buffer.from(nonAscii, 'utf-8').toString('base64');
@@ -123,7 +124,7 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
 
   it('FAILs client-mirrors-designated-params when an annotated header is missing', async () => {
     const scenario = new HttpCustomHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await post(
         serverUrl,
@@ -154,7 +155,7 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
 describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
   it('emits every x-mcp-header constraint ID, SUCCESS when only valid_tool is called', async () => {
     const scenario = new HttpInvalidToolHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await post(serverUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
       await post(serverUrl, {
@@ -176,7 +177,7 @@ describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
 
   it('FAILs the violated constraint ID when the client calls an invalid tool', async () => {
     const scenario = new HttpInvalidToolHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await post(serverUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
       await post(serverUrl, {

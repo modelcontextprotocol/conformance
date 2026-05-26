@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -121,7 +122,7 @@ export class ToolsCallScenario implements Scenario {
   private httpServer: any = null;
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.app = createServerApp(this.checks);
     this.httpServer = this.app.listen(0);

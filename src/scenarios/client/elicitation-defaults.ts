@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * SEP-1034: Elicitation defaults test
  * Validates that clients properly apply default values for omitted fields
@@ -482,7 +483,7 @@ export class ElicitationClientDefaultsScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private cleanup: (() => void) | null = null;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const { app, cleanup } = createServer(this.checks);
     this.app = app;

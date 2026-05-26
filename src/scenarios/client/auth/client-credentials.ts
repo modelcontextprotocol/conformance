@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
@@ -42,7 +43,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate a fresh keypair for this test run
@@ -263,7 +264,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {

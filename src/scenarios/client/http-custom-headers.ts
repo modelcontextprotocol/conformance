@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * HTTP Custom Headers conformance test scenario for MCP clients (SEP-2243)
  *
@@ -186,8 +187,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
   private toolCallReceived: boolean = false;
   private nullToolCallReceived: boolean = false;
 
-  async start(): Promise<ScenarioUrls> {
-    const urls = await super.start();
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+    const urls = await super.start(_ctx);
     // Pass test values via context for encoding edge cases.
     // The conformance client should use these values when calling test_custom_headers.
     urls.context = {

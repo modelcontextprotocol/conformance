@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -30,7 +31,7 @@ export class IssParameterSupportedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
@@ -99,7 +100,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
@@ -170,7 +171,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -256,7 +257,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -343,7 +344,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -435,7 +436,7 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
@@ -522,7 +523,7 @@ export class MetadataIssuerMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private metadataEndpointsUsed = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.metadataEndpointsUsed = false;
 

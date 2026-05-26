@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -29,7 +30,7 @@ export class AuthBasicCIMDScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const authApp = createAuthServer(this.checks, this.authServer.getUrl, {

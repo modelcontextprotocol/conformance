@@ -6,6 +6,7 @@
  * generated from them.
  */
 
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -94,7 +95,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 **OAuth metadata:** ${config.oauthMetadataLocation}
 `,
 
-    async start(): Promise<ScenarioUrls> {
+    async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
 
       const authApp = createAuthServer(checks, authServer.getUrl, {

@@ -1,4 +1,5 @@
 import { getScenario } from '../../../index';
+import { testScenarioContext } from '../../../../mock-server/testing';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -103,7 +104,7 @@ export async function runClientAgainstScenario(
   }
 
   // Start the scenario server
-  const urls = await scenario.start();
+  const urls = await scenario.start(testScenarioContext());
   const serverUrl = urls.serverUrl;
 
   try {

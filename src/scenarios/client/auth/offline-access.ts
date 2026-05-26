@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -33,7 +34,7 @@ export class OfflineAccessScopeScenario implements Scenario {
   private grantTypesChecked = false;
   private capturedCimdUrl: string | undefined;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.grantTypesChecked = false;
     this.capturedCimdUrl = undefined;
@@ -235,7 +236,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, [

@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 import http from 'http';
 import {
   Scenario,
@@ -32,7 +33,7 @@ export class RequestMetadataScenario implements Scenario {
   private hasSimulatedRejection = false;
   private requestsObserved = 0;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.hasSimulatedRejection = false;
     this.checks = [];
     this.requestsObserved = 0;

@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
@@ -27,7 +28,7 @@ export class PreRegistrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 

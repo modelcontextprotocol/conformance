@@ -6,6 +6,7 @@
  * to AS₂. On the next 401 the client re-discovers PRM, sees a new issuer, and
  * MUST re-register with AS₂ rather than reuse AS₁'s client credentials.
  */
+import type { ScenarioContext } from '../../../mock-server';
 import type { Request, Response, NextFunction } from 'express';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -25,7 +26,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 

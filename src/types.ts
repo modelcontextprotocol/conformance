@@ -1,4 +1,5 @@
 import type { RunContext } from './connection';
+import type { ScenarioContext } from './mock-server';
 
 export type CheckStatus =
   | 'SUCCESS'
@@ -102,7 +103,7 @@ export interface Scenario {
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
    */
   allowClientError?: boolean;
-  start(): Promise<ScenarioUrls>;
+  start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
 }

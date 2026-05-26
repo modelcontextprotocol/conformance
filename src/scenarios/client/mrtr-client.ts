@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * SEP-2322: MRTR Client Conformance Tests
  *
@@ -440,7 +441,7 @@ export class MRTRClientScenario implements Scenario {
   private httpServer: ReturnType<express.Application['listen']> | null = null;
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.app = createMRTRServer(this.checks);
     this.httpServer = this.app.listen(0);

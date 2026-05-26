@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import express, { type Request, type Response } from 'express';
@@ -69,7 +70,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
   private idpPrivateKey?: CryptoKey;
   private grantKeypairs: Map<string, CryptoKey> = new Map();
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate IDP keypair

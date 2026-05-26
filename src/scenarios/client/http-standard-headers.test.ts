@@ -1,3 +1,4 @@
+import { testScenarioContext } from '../../mock-server/testing';
 import { describe, it, expect } from 'vitest';
 import { HttpStandardHeadersScenario } from './http-standard-headers';
 
@@ -38,7 +39,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
 
   it('FAILs the initialize Mcp-Method emission when Mcp-Method is missing', async () => {
     const scenario = new HttpStandardHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await postInitialize(serverUrl, {}); // no Mcp-Method header
       const checks = scenario.getChecks();
@@ -53,7 +54,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
 
   it('SUCCEEDs the initialize Mcp-Method emission when Mcp-Method matches', async () => {
     const scenario = new HttpStandardHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
       const checks = scenario.getChecks();
@@ -68,7 +69,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
 
   it('getChecks() is idempotent', async () => {
     const scenario = new HttpStandardHeadersScenario();
-    const { serverUrl } = await scenario.start();
+    const { serverUrl } = await scenario.start(testScenarioContext());
     try {
       await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
       const first = scenario.getChecks();

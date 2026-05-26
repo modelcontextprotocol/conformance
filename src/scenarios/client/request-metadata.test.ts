@@ -1,3 +1,4 @@
+import { testScenarioContext } from '../../mock-server/testing';
 import { describe, test, expect } from 'vitest';
 import {
   runClientAgainstScenario,
@@ -206,7 +207,7 @@ describe('request-metadata client scenario — client never connects', () => {
       throw new Error('Scenario not found');
     }
 
-    await scenario.start();
+    await scenario.start(testScenarioContext());
     try {
       const checks = scenario.getChecks();
       const byId = new Map(checks.map((c) => [c.id, c]));
