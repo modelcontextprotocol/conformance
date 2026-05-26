@@ -1,3 +1,5 @@
+import type { RunContext } from './connection';
+
 export type CheckStatus =
   | 'SUCCESS'
   | 'FAILURE'
@@ -109,7 +111,7 @@ export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(ctx: import('./connection').RunContext): Promise<ConformanceCheck[]>;
+  run(ctx: RunContext): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {

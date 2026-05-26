@@ -9,12 +9,13 @@
 
 import {
   ResultSchema,
+  McpError,
   ProgressNotificationSchema,
   LoggingMessageNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
 import { connectToServer } from '../scenarios/server/client-helper';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import type { Connection, RequestOptions } from './index';
+import { JsonRpcError, type Connection, type RequestOptions } from './index';
 
 export async function connectStateful(serverUrl: string): Promise<Connection> {
   const { client, close } = await connectToServer(serverUrl);
@@ -57,12 +58,18 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
       const reqParams = opts?.meta
         ? { ...params, _meta: { ...(params._meta as object), ...opts.meta } }
         : params;
-      // SDK validates against the supplied result schema and throws McpError on
-      // JSON-RPC error responses; ResultSchema is the permissive base.
-      return (await client.request(
-        { method, params: reqParams },
-        ResultSchema
-      )) as R;
+      try {
+        return (await client.request(
+          { method, params: reqParams },
+          ResultSchema
+        )) as R;
+      } catch (e) {
+        // Normalize so scenarios always see JsonRpcError regardless of impl.
+        if (e instanceof McpError) {
+          throw new JsonRpcError(e.code, e.message, e.data);
+        }
+        throw e;
+      }
     },
 
     close

@@ -7,7 +7,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
+import { JsonRpcError, type RunContext } from '../../connection';
 import type {
   ListResourcesResult,
   ReadResourceResult,
@@ -538,12 +538,8 @@ This scenario does not require the server to register any specific resource — 
     });
 
     // Check 2: SHOULD return JSON-RPC error with code -32602
-    // Both Connection impls surface JSON-RPC errors as Error subclasses with
-    // .code/.data (JsonRpcError under stateless, SDK McpError under stateful).
     const rpcError =
-      caughtError instanceof Error && 'code' in caughtError
-        ? (caughtError as Error & { code: number; data?: unknown })
-        : undefined;
+      caughtError instanceof JsonRpcError ? caughtError : undefined;
     const errorCode = rpcError?.code;
     let errorCodeMessage: string | undefined;
     if (result !== undefined) {
