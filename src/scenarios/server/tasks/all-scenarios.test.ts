@@ -38,6 +38,7 @@ import { TasksRequestHeadersScenario } from './headers';
 import { TasksDispatchScenario } from './dispatch';
 import { TasksStatusNotificationsScenario } from './notifications';
 import { TasksRequiredTaskErrorScenario } from './required-task-error';
+import { parseWireModes, type WireMode } from '../_shared/wire-mode';
 import { waitForServerReady } from '../_shared/test-runner';
 
 const SERVER_URL = process.env.TASKS_SERVER_URL;
@@ -60,29 +61,9 @@ const TASKS_SCENARIOS = [
 
 // Tasks behavior is wire-independent in spec: SEP-2663 semantics
 // hold on both the legacy session wire AND the SEP-2575 stateless
-// wire. The harness runs every scenario against both by default so
-// any SDK adopting this suite validates both code paths. Pin with
-// MCP_WIRE_MODES=legacy or MCP_WIRE_MODES=stateless when an SDK has
-// only one wire implemented (e.g. for early development or to focus
-// a CI run on one path). One env var drives both the tasks and mrtr
-// harnesses since the wire-mode choice is a cross-cutting
-// conformance concern, not a per-suite knob.
-type WireMode = 'legacy' | 'stateless';
-
-const VALID_MODES: ReadonlySet<WireMode> = new Set(['legacy', 'stateless']);
-
-const DEFAULT_WIRE_MODES: WireMode[] = ['legacy', 'stateless'];
-
-function parseWireModes(): WireMode[] {
-  const raw = process.env.MCP_WIRE_MODES;
-  if (!raw) return DEFAULT_WIRE_MODES;
-  const modes = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase() as WireMode)
-    .filter((m) => VALID_MODES.has(m));
-  return modes.length > 0 ? modes : DEFAULT_WIRE_MODES;
-}
-
+// wire. parseWireModes returns both by default; pin via
+// MCP_WIRE_MODES=legacy or =stateless when an SDK has only one wire
+// implemented. The same parser drives the mrtr harness.
 const WIRE_MODES: WireMode[] = parseWireModes();
 
 // describe.each / it.each table shape: tuple of (label, statelessFlag) so

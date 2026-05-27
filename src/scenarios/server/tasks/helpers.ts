@@ -16,6 +16,17 @@
  *
  * The `AnyResult` Zod schema is retained as an export for ad-hoc
  * passthrough validation; the raw session does not depend on it.
+ *
+ * TODO: most of this module is not actually tasks-specific —
+ * `initRawSession`, `RawSession`, `routingHeaders`,
+ * `SEP_2243_ENFORCED_VERSIONS`, `readJsonRpcResponse`, plus the
+ * `failureCheck` / `skipCheck` / `errMsg` test helpers and the
+ * `AnyResult` schema — and would naturally live under
+ * `src/scenarios/server/_shared/` (alongside `wire-mode.ts`,
+ * `wire-format.ts`, `test-runner.ts`) so other server suites can
+ * import them without going through `tasks/`. Holding the move for a
+ * focused follow-up PR after this one merges so the file reshuffle
+ * gets its own review thread.
  */
 
 import { McpError } from '@modelcontextprotocol/sdk/types.js';

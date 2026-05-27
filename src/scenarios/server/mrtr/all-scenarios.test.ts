@@ -24,6 +24,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MrtrEphemeralFlowScenario } from './ephemeral-flow';
+import { parseWireModes, type WireMode } from '../_shared/wire-mode';
 import { waitForServerReady } from '../_shared/test-runner';
 
 const SERVER_URL = process.env.MRTR_SERVER_URL;
@@ -35,29 +36,10 @@ const HAVE_TARGET = Boolean(SERVER_URL);
 const MRTR_SCENARIOS = [new MrtrEphemeralFlowScenario()];
 
 // SEP-2322 ephemeral MRTR (InputRequiredResult on tools/call) is
-// wire-independent in spec, so the harness runs every scenario
-// against both the legacy session wire AND the SEP-2575 stateless
-// wire by default. Pin with MCP_WIRE_MODES=legacy or
-// MCP_WIRE_MODES=stateless when an SDK has only one wire
-// implemented. Shares the env var and the setDefaultWireStateless
-// hook with the tasks suite — wire mode is a cross-cutting
-// conformance concern, one knob drives both.
-type WireMode = 'legacy' | 'stateless';
-
-const VALID_MODES: ReadonlySet<WireMode> = new Set(['legacy', 'stateless']);
-
-const DEFAULT_WIRE_MODES: WireMode[] = ['legacy', 'stateless'];
-
-function parseWireModes(): WireMode[] {
-  const raw = process.env.MCP_WIRE_MODES;
-  if (!raw) return DEFAULT_WIRE_MODES;
-  const modes = raw
-    .split(',')
-    .map((s) => s.trim().toLowerCase() as WireMode)
-    .filter((m) => VALID_MODES.has(m));
-  return modes.length > 0 ? modes : DEFAULT_WIRE_MODES;
-}
-
+// wire-independent in spec. parseWireModes returns both wires by
+// default; pin via MCP_WIRE_MODES=legacy or =stateless when an SDK
+// has only one wire implemented. Same parser drives the tasks
+// harness.
 const WIRE_MODES: WireMode[] = parseWireModes();
 
 // describe.each / it.each table shape: tuple of (label, statelessFlag) so
