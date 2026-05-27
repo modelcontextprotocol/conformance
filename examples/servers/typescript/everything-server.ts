@@ -2129,6 +2129,18 @@ app.post('/mcp', async (req, res) => {
       await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
       return;
+    } else if (sessionId) {
+      // Session ID was provided but no transport matches it — the session
+      // has been terminated or was never issued. Spec: HTTP 404.
+      res.status(404).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Session not found'
+        },
+        id: null
+      });
+      return;
     } else {
       res.status(400).json({
         jsonrpc: '2.0',
@@ -2188,8 +2200,14 @@ app.get('/mcp', async (req, res) => {
 app.delete('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
-  if (!sessionId || !transports[sessionId]) {
+  if (!sessionId) {
     res.status(400).send('Invalid or missing session ID');
+    return;
+  }
+
+  if (!transports[sessionId]) {
+    // Session has been terminated or was never issued. Spec: HTTP 404.
+    res.status(404).send('Session not found');
     return;
   }
 
