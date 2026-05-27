@@ -9,56 +9,25 @@
 
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
+  HandlerScenario,
+  RequestListener,
   ConformanceCheck,
   ScenarioSource,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
 
-export abstract class BaseHttpScenario implements Scenario {
+export abstract class BaseHttpScenario extends HandlerScenario {
   abstract name: string;
   abstract description: string;
   readonly source: ScenarioSource = { introducedIn: DRAFT_PROTOCOL_VERSION };
-  allowClientError?: boolean;
 
-  protected server: http.Server | null = null;
   protected checks: ConformanceCheck[] = [];
-  protected port: number = 0;
   protected sessionId: string = `session-${Date.now()}`;
 
-  async start(): Promise<ScenarioUrls> {
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-      this.server.on('error', reject);
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          this.port = address.port;
-          resolve({ serverUrl: `http://localhost:${this.port}` });
-        } else {
-          reject(new Error('Failed to get server address'));
-        }
-      });
-    });
-  }
-
-  async stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.server) {
-        this.server.close((err) => {
-          if (err) reject(err);
-          else {
-            this.server = null;
-            resolve();
-          }
-        });
-      } else {
-        resolve();
-      }
-    });
+  handler(_getBaseUrl: () => string): RequestListener {
+    this.checks = [];
+    this.sessionId = `session-${Date.now()}`;
+    return (req, res) => this.handleRequest(req, res);
   }
 
   abstract getChecks(): ConformanceCheck[];

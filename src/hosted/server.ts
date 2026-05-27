@@ -1,22 +1,23 @@
 /**
- * Hosted conformance server.
+ * Hosted conformance server — direct-mount, no loopback proxy.
  *
- * Mounts every (non-auth) client-testing scenario at a stable path:
+ * URL scheme (run-id is path-embedded so stateless-transport clients work):
  *
- *   POST /s/<scenario>      MCP endpoint — first request creates a session,
- *                           subsequent requests reuse it via mcp-session-id
- *   GET  /results/<id>      JSON ConformanceCheck[] for that session
- *   GET  /results/<id>.html Pretty HTML report
- *   GET  /scenarios         JSON list of hostable scenarios
- *   GET  /                  Landing page with usage instructions
- *   POST /mcp               The hosted server is itself an MCP server
- *                           exposing list_scenarios / start_session /
- *                           get_results tools.
+ *   ALL  /s/<scenario>/<run-id>[/<suffix>]  Mounted scenario handler. The run
+ *                                           is created lazily on first hit;
+ *                                           pick any <run-id> you like.
+ *   GET  /s/<scenario>                      Convenience: mints a fresh run-id
+ *                                           and returns {mcpUrl, resultsUrl}.
+ *   GET  /results/<run-id>                  JSON {summary, checks}
+ *   GET  /results/<run-id>.html             Pretty HTML report
+ *   GET  /scenarios                         JSON list of hostable scenarios
+ *   GET  /                                  Landing page
+ *   POST /mcp                               Meta-MCP: list_scenarios,
+ *                                           start_run, get_results
  *
- * Under the hood each session is a real Scenario instance listening on a
- * loopback port; requests are proxied. That means ~90% of scenarios work
- * unchanged. Auth scenarios are excluded because they need a second
- * publicly-reachable origin for the authorization server.
+ * Scenarios are mounted via Scenario.handler() — the same RequestListener the
+ * CLI runner wraps in http.createServer — so there is no loopback port and
+ * this works on serverless hosts. Each run gets a fresh Scenario instance.
  */
 
 import express, { Request } from 'express';
@@ -30,18 +31,20 @@ import {
 import {
   SessionManager,
   UnknownScenarioError,
+  NotHostableError,
   listHostableScenarios
 } from './session';
-import { proxyToSession, SESSION_HEADER } from './proxy';
 import { renderLanding, renderResults } from './html';
 import { getScenario } from '../scenarios';
 import { ConformanceCheck } from '../types';
 
 export interface HostedServerOptions {
-  /** Public origin (scheme+host+port) used in generated links. Auto-detected from Host header if omitted. */
   publicOrigin?: string;
   ttlMs?: number;
 }
+
+/** Only allow run-ids that are safe in a single path segment. */
+const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export function createHostedApp(opts: HostedServerOptions = {}): {
   app: express.Application;
@@ -49,10 +52,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 } {
   const sessions = new SessionManager({ ttlMs: opts.ttlMs });
   const app = express();
-
-  // Only parse JSON on the routes that need it; keep the proxy route raw so
-  // streaming bodies (and non-JSON content types) pass through untouched.
-  const jsonBody = express.json();
+  const hostable = new Set(listHostableScenarios());
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;
@@ -61,86 +61,152 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     return `${proto}://${host}`;
   }
 
+  function runBaseUrl(req: Request, scenario: string, runId: string): string {
+    return `${origin(req)}/s/${scenario}/${runId}`;
+  }
+
   // ---------- discovery ----------
 
   app.get('/', (req, res) => {
-    res.type('html').send(renderLanding(origin(req), listHostableScenarios()));
+    res.type('html').send(renderLanding(origin(req), Array.from(hostable)));
   });
 
   app.get('/scenarios', (_req, res) => {
-    const list = listHostableScenarios().map((name) => {
-      const s = getScenario(name)!;
-      return { name, description: s.description, source: s.source };
-    });
-    res.json(list);
+    res.json(
+      Array.from(hostable).map((name) => {
+        const s = getScenario(name)!;
+        return {
+          name,
+          description: s.description,
+          source: s.source,
+          mcpPath: s.mcpPath ?? ''
+        };
+      })
+    );
   });
 
-  // ---------- scenario proxy ----------
+  // ---------- scenario mounting ----------
+  //
+  // We can't pre-register an express route per (scenario, run-id) because
+  // run-ids are open-ended. Instead a single catch-all route resolves the
+  // run, rewrites req.url to strip the /s/<scenario>/<id> prefix, and hands
+  // off to the run's listener — exactly what app.use(prefix, fn) would do,
+  // but with a dynamic prefix.
 
-  // Match the scenario name plus any trailing sub-path (some scenarios serve
-  // /mcp, others /, some auth-adjacent ones serve well-known paths).
-  // Use a regex param so names containing '/' still work as a single segment
-  // group while the suffix captures everything after it.
-  app.all(/^\/s\/(.+?)(\/.*)?$/, jsonBody, async (req, res) => {
-    const scenarioName = req.params[0];
-    const suffix = req.params[1] ?? '';
+  app.all(/^\/s\/(.+)$/, (req, res, next) => {
+    const rest = req.params[0]; // "<scenario...>/<runId>/<suffix...>"
 
-    if (!getScenario(scenarioName)) {
-      res.status(404).json({ error: `unknown scenario '${scenarioName}'` });
+    // Scenario names can contain '/', so try progressively longer prefixes
+    // until one matches a known scenario.
+    const segments = rest.split('/');
+    let nameLen = 0;
+    let scenarioName = '';
+    for (let i = 1; i <= segments.length; i++) {
+      const candidate = segments.slice(0, i).join('/');
+      if (hostable.has(candidate)) {
+        scenarioName = candidate;
+        nameLen = i;
+        break;
+      }
+    }
+    if (!scenarioName) {
+      // Distinguish "exists but not hostable" from "unknown"
+      for (let i = 1; i <= segments.length; i++) {
+        if (getScenario(segments.slice(0, i).join('/'))) {
+          res.status(501).json({
+            error: `scenario '${segments.slice(0, i).join('/')}' is not hostable (no handler())`
+          });
+          return;
+        }
+      }
+      res.status(404).json({ error: `unknown scenario '${segments[0]}'` });
       return;
     }
 
-    const incomingId = req.header(SESSION_HEADER);
-    let session = incomingId ? sessions.get(incomingId) : undefined;
+    const runId = segments[nameLen];
+    const suffix = '/' + segments.slice(nameLen + 1).join('/');
 
-    if (session && session.scenarioName !== scenarioName) {
-      // Client is reusing a session id against a different scenario path.
-      // Treat as a new session rather than silently mixing checks.
-      session = undefined;
-    }
-
-    if (!session) {
-      try {
-        session = await sessions.create(scenarioName);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        res.status(500).json({ error: msg });
+    // GET /s/<scenario> with no run-id → mint one and tell the caller where
+    // to point their client.
+    if (!runId) {
+      if (req.method !== 'GET') {
+        res.status(400).json({
+          error:
+            'Missing run-id. Use /s/<scenario>/<run-id>, or GET /s/<scenario> to mint one.'
+        });
         return;
       }
-      // Tell the client where to find its results without making it parse the
-      // session id out of the response headers.
-      res.setHeader(
-        'link',
-        `<${origin(req)}/results/${session.id}>; rel="conformance-results"`
-      );
+      try {
+        const run = sessions.getOrCreate(scenarioName, undefined, (id) =>
+          runBaseUrl(req, scenarioName, id)
+        );
+        res.json({
+          runId: run.id,
+          mcpUrl: `${runBaseUrl(req, scenarioName, run.id)}${run.mcpPath}`,
+          resultsUrl: `${origin(req)}/results/${run.id}`,
+          resultsHtmlUrl: `${origin(req)}/results/${run.id}.html`,
+          context: run.context
+        });
+      } catch (e) {
+        next(e);
+      }
+      return;
     }
 
-    // If the client appended a sub-path (/.well-known/..., /mcp, ...) honour
-    // it; otherwise hit whatever path the scenario advertised in serverUrl.
-    const targetPath = suffix || undefined;
-    proxyToSession(session, req, res, targetPath);
+    if (!RUN_ID_RE.test(runId)) {
+      res.status(400).json({ error: 'invalid run-id' });
+      return;
+    }
+
+    let run;
+    try {
+      run = sessions.getOrCreate(scenarioName, runId, (id) =>
+        runBaseUrl(req, scenarioName, id)
+      );
+    } catch (e) {
+      if (e instanceof UnknownScenarioError || e instanceof NotHostableError) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
+      throw e;
+    }
+
+    // Advertise where results live so a client can discover them without
+    // out-of-band knowledge of the URL scheme.
+    res.setHeader(
+      'link',
+      `<${origin(req)}/results/${run.id}>; rel="conformance-results"`
+    );
+
+    // Rewrite to the path the scenario expects (it thinks it's at root).
+    // The query string is preserved because we keep the express req object.
+    req.url = suffix === '/' ? run.mcpPath || '/' : suffix;
+    run.listener(req, res);
   });
 
   // ---------- results ----------
 
   app.get('/results/:id.html', (req, res) => {
-    const id = req.params.id;
-    const session = sessions.get(id);
-    const checks = sessions.results(id);
-    if (!session || !checks) {
-      res.status(404).type('html').send(`<p>No session <code>${id}</code></p>`);
+    const run = sessions.get(req.params.id);
+    const checks = sessions.results(req.params.id);
+    if (!run || !checks) {
+      res
+        .status(404)
+        .type('html')
+        .send(`<p>No run <code>${req.params.id}</code></p>`);
       return;
     }
-    res.type('html').send(renderResults(session.scenarioName, id, checks));
+    res.type('html').send(renderResults(run.scenarioName, run.id, checks));
   });
 
   app.get('/results/:id', (req, res) => {
+    const run = sessions.get(req.params.id);
     const checks = sessions.results(req.params.id);
-    if (!checks) {
-      res.status(404).json({ error: 'unknown session' });
+    if (!run || !checks) {
+      res.status(404).json({ error: 'unknown run' });
       return;
     }
-    res.json(summarise(req.params.id, checks));
+    res.json(summarise(run.scenarioName, run.id, checks));
   });
 
   app.delete('/results/:id', async (req, res) => {
@@ -150,8 +216,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
   // ---------- meta MCP server ----------
 
-  app.post('/mcp', jsonBody, async (req, res) => {
-    const server = createMetaMcpServer(sessions, origin(req));
+  app.post('/mcp', express.json(), async (req, res) => {
+    const server = createMetaMcpServer(sessions, origin(req), (s, id) =>
+      runBaseUrl(req, s, id)
+    );
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined
     });
@@ -166,11 +234,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   return { app, sessions };
 }
 
-function summarise(id: string, checks: ConformanceCheck[]) {
+function summarise(scenario: string, id: string, checks: ConformanceCheck[]) {
   const counts = { SUCCESS: 0, FAILURE: 0, WARNING: 0, SKIPPED: 0, INFO: 0 };
   for (const c of checks) counts[c.status]++;
   return {
-    sessionId: id,
+    runId: id,
+    scenario,
     summary: {
       passed: counts.SUCCESS,
       failed: counts.FAILURE,
@@ -183,16 +252,13 @@ function summarise(id: string, checks: ConformanceCheck[]) {
   };
 }
 
-/**
- * The hosted server is itself an MCP server so an agent can drive the whole
- * flow over MCP: discover scenarios, mint a session URL, then fetch results.
- */
 function createMetaMcpServer(
   sessions: SessionManager,
-  publicOrigin: string
+  publicOrigin: string,
+  runBaseUrl: (scenario: string, runId: string) => string
 ): Server {
   const server = new Server(
-    { name: 'mcp-conformance-hosted', version: '0.1.0' },
+    { name: 'mcp-conformance-hosted', version: '0.2.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -205,15 +271,23 @@ function createMetaMcpServer(
         inputSchema: { type: 'object', properties: {} }
       },
       {
-        name: 'start_session',
+        name: 'start_run',
         description:
-          'Create a fresh session for a scenario and return the MCP URL to point the client-under-test at, plus the results URL.',
+          'Create a fresh run for a scenario and return the MCP URL to point ' +
+          'the client-under-test at, plus the results URL. The run-id is ' +
+          'embedded in the path so this works with stateless transports.',
         inputSchema: {
           type: 'object',
           properties: {
             scenario: {
               type: 'string',
               description: 'Scenario name, e.g. "initialize" or "tools_call".'
+            },
+            run_id: {
+              type: 'string',
+              description:
+                'Optional. Supply your own [A-Za-z0-9_-]{1,64} id; ' +
+                'otherwise one is generated.'
             }
           },
           required: ['scenario']
@@ -222,13 +296,12 @@ function createMetaMcpServer(
       {
         name: 'get_results',
         description:
-          'Fetch the conformance checks recorded for a session. Returns the same shape as GET /results/<id>.',
+          'Fetch the conformance checks recorded for a run. Same shape as ' +
+          'GET /results/<id>.',
         inputSchema: {
           type: 'object',
-          properties: {
-            session_id: { type: 'string' }
-          },
-          required: ['session_id']
+          properties: { run_id: { type: 'string' } },
+          required: ['run_id']
         }
       }
     ]
@@ -239,63 +312,61 @@ function createMetaMcpServer(
     async (request): Promise<CallToolResult> => {
       const args = (request.params.arguments ?? {}) as Record<string, string>;
       switch (request.params.name) {
-        case 'list_scenarios': {
-          const list = listHostableScenarios().map((name) => ({
-            name,
-            description: getScenario(name)!.description
-          }));
-          return text(JSON.stringify(list, null, 2));
-        }
-        case 'start_session': {
+        case 'list_scenarios':
+          return text(
+            JSON.stringify(
+              listHostableScenarios().map((name) => ({
+                name,
+                description: getScenario(name)!.description
+              })),
+              null,
+              2
+            )
+          );
+
+        case 'start_run': {
+          if (args.run_id && !RUN_ID_RE.test(args.run_id)) {
+            return errorText(`invalid run_id (must match ${RUN_ID_RE})`);
+          }
           try {
-            const session = await sessions.create(args.scenario);
+            const run = sessions.getOrCreate(args.scenario, args.run_id, (id) =>
+              runBaseUrl(args.scenario, id)
+            );
             return text(
               JSON.stringify(
                 {
-                  sessionId: session.id,
-                  mcpUrl: `${publicOrigin}/s/${session.scenarioName}`,
-                  resultsUrl: `${publicOrigin}/results/${session.id}`,
-                  resultsHtmlUrl: `${publicOrigin}/results/${session.id}.html`,
-                  context: session.context,
-                  note:
-                    'Point your client at mcpUrl and include header ' +
-                    `"${SESSION_HEADER}: ${session.id}" on every request.`
+                  runId: run.id,
+                  mcpUrl: `${runBaseUrl(run.scenarioName, run.id)}${run.mcpPath}`,
+                  resultsUrl: `${publicOrigin}/results/${run.id}`,
+                  resultsHtmlUrl: `${publicOrigin}/results/${run.id}.html`,
+                  context: run.context
                 },
                 null,
                 2
               )
             );
           } catch (e) {
-            if (e instanceof UnknownScenarioError) {
-              return {
-                content: [{ type: 'text', text: e.message }],
-                isError: true
-              };
+            if (
+              e instanceof UnknownScenarioError ||
+              e instanceof NotHostableError
+            ) {
+              return errorText(e.message);
             }
             throw e;
           }
         }
+
         case 'get_results': {
-          const checks = sessions.results(args.session_id);
-          if (!checks) {
-            return {
-              content: [
-                { type: 'text', text: `No session '${args.session_id}'` }
-              ],
-              isError: true
-            };
-          }
+          const run = sessions.get(args.run_id);
+          const checks = sessions.results(args.run_id);
+          if (!run || !checks) return errorText(`no run '${args.run_id}'`);
           return text(
-            JSON.stringify(summarise(args.session_id, checks), null, 2)
+            JSON.stringify(summarise(run.scenarioName, run.id, checks), null, 2)
           );
         }
+
         default:
-          return {
-            content: [
-              { type: 'text', text: `Unknown tool ${request.params.name}` }
-            ],
-            isError: true
-          };
+          return errorText(`unknown tool ${request.params.name}`);
       }
     }
   );
@@ -305,4 +376,8 @@ function createMetaMcpServer(
 
 function text(t: string): CallToolResult {
   return { content: [{ type: 'text', text: t }] };
+}
+
+function errorText(t: string): CallToolResult {
+  return { content: [{ type: 'text', text: t }], isError: true };
 }

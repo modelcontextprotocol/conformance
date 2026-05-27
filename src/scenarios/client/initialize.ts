@@ -1,59 +1,23 @@
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
+  HandlerScenario,
+  RequestListener,
   ConformanceCheck,
   LATEST_SPEC_VERSION,
   NEGOTIABLE_PROTOCOL_VERSIONS
 } from '../../types';
 import { clientChecks } from '../../checks/index';
 
-export class InitializeScenario implements Scenario {
+export class InitializeScenario extends HandlerScenario {
   name = 'initialize';
   readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests MCP client initialization handshake';
 
-  private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
-  private port: number = 0;
 
-  async start(): Promise<ScenarioUrls> {
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
-      this.server.on('error', reject);
-
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          this.port = address.port;
-          resolve({
-            serverUrl: `http://localhost:${this.port}`
-          });
-        } else {
-          reject(new Error('Failed to get server address'));
-        }
-      });
-    });
-  }
-
-  async stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.server) {
-        this.server.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            this.server = null;
-            resolve();
-          }
-        });
-      } else {
-        resolve();
-      }
-    });
+  handler(_getBaseUrl: () => string): RequestListener {
+    this.checks = [];
+    return (req, res) => this.handleRequest(req, res);
   }
 
   getChecks(): ConformanceCheck[] {

@@ -36,24 +36,29 @@ export function renderLanding(origin: string, scenarios: string[]): string {
     .map(
       (n) =>
         `<tr><td><code>${esc(n)}</code></td>` +
-        `<td><code>${esc(origin)}/s/${esc(n)}</code></td></tr>`
+        `<td><code>${esc(origin)}/s/${esc(n)}/&lt;run-id&gt;</code></td>` +
+        `<td><a href="/s/${esc(n)}">mint</a></td></tr>`
     )
     .join('');
   return `<!doctype html><meta charset=utf-8>
 <title>MCP Conformance — hosted</title><style>${css}</style>
 <h1>MCP Conformance — hosted</h1>
-<p>Point your MCP client at one of the scenario URLs below. The first request
-creates a session; the response carries an <code>mcp-session-id</code> header
-and a <code>Link: &lt;.../results/ID&gt;; rel="conformance-results"</code>
-header. Fetch that URL (or append <code>.html</code>) for your checks.</p>
+<p>Point your MCP client at <code>/s/&lt;scenario&gt;/&lt;run-id&gt;</code>.
+Pick any <code>&lt;run-id&gt;</code> (e.g. <code>local-1</code>) — the run is
+created on first request, and because the id is in the path it works with
+<b>stateless</b> transports too. Then GET
+<code>/results/&lt;run-id&gt;</code> (append <code>.html</code> for a
+report).</p>
+<p>Too lazy to pick an id? <code>GET /s/&lt;scenario&gt;</code> mints one and
+returns <code>{mcpUrl, resultsUrl}</code>.</p>
 <p>This server is also an MCP server at <code>${esc(origin)}/mcp</code> with
-<code>list_scenarios</code> / <code>start_session</code> /
+<code>list_scenarios</code> / <code>start_run</code> /
 <code>get_results</code> tools.</p>
 <h2>Scenarios (${scenarios.length})</h2>
-<table><tr><th>name</th><th>MCP URL</th></tr>${rows}</table>
+<table><tr><th>name</th><th>MCP URL pattern</th><th></th></tr>${rows}</table>
 <h2>Example</h2>
-<pre>$ npx @modelcontextprotocol/inspector ${esc(origin)}/s/initialize
-# then open ${esc(origin)}/results/&lt;mcp-session-id&gt;.html</pre>`;
+<pre>$ npx @modelcontextprotocol/inspector ${esc(origin)}/s/initialize/demo
+$ curl ${esc(origin)}/results/demo | jq .summary</pre>`;
 }
 
 export function renderResults(

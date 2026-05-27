@@ -4,9 +4,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { ConformanceCheck, RequestListener } from '../../types';
+import { HandlerScenario } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
 
 function createMcpServer(checks: ConformanceCheck[]): Server {
@@ -113,28 +113,16 @@ function createServerApp(checks: ConformanceCheck[]): express.Application {
   return app;
 }
 
-export class ToolsCallScenario implements Scenario {
+export class ToolsCallScenario extends HandlerScenario {
   name = 'tools_call';
   readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests calling tools with various parameter types';
-  private app: express.Application | null = null;
-  private httpServer: any = null;
+  mcpPath = '/mcp';
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  handler(_getBaseUrl: () => string): RequestListener {
     this.checks = [];
-    this.app = createServerApp(this.checks);
-    this.httpServer = this.app.listen(0);
-    const port = this.httpServer.address().port;
-    return { serverUrl: `http://localhost:${port}/mcp` };
-  }
-
-  async stop() {
-    if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer.close(resolve));
-      this.httpServer = null;
-    }
-    this.app = null;
+    return createServerApp(this.checks);
   }
 
   getChecks(): ConformanceCheck[] {

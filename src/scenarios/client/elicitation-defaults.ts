@@ -11,9 +11,9 @@ import {
   ListToolsRequestSchema,
   ElicitResultSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { ConformanceCheck, RequestListener } from '../../types';
+import { HandlerScenario } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
 import { randomUUID } from 'crypto';
 
@@ -472,36 +472,26 @@ function createServer(checks: ConformanceCheck[]): {
   return { app, cleanup };
 }
 
-export class ElicitationClientDefaultsScenario implements Scenario {
+export class ElicitationClientDefaultsScenario extends HandlerScenario {
   name = 'elicitation-sep1034-client-defaults';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests client applies default values for omitted elicitation fields (SEP-1034)';
-  private app: express.Application | null = null;
-  private httpServer: any = null;
+  mcpPath = '/mcp';
   private checks: ConformanceCheck[] = [];
   private cleanup: (() => void) | null = null;
 
-  async start(): Promise<ScenarioUrls> {
+  handler(_getBaseUrl: () => string): RequestListener {
     this.checks = [];
     const { app, cleanup } = createServer(this.checks);
-    this.app = app;
     this.cleanup = cleanup;
-    this.httpServer = this.app.listen(0);
-    const port = this.httpServer.address().port;
-    return { serverUrl: `http://localhost:${port}/mcp` };
+    return app;
   }
 
   async stop() {
-    if (this.cleanup) {
-      this.cleanup();
-      this.cleanup = null;
-    }
-    if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer.close(resolve));
-      this.httpServer = null;
-    }
-    this.app = null;
+    this.cleanup?.();
+    this.cleanup = null;
+    await super.stop();
   }
 
   getChecks(): ConformanceCheck[] {

@@ -8,7 +8,12 @@
  */
 
 import http from 'http';
-import { Scenario, ScenarioUrls, ConformanceCheck } from '../../types.js';
+import {
+  Scenario,
+  ScenarioUrls,
+  ConformanceCheck,
+  RequestListener
+} from '../../types.js';
 
 export class SSERetryScenario implements Scenario {
   name = 'sse-retry';
@@ -38,14 +43,24 @@ export class SSERetryScenario implements Scenario {
   private readonly LATE_TOLERANCE = 200; // Allow 200ms late for network/event loop
   private readonly VERY_LATE_MULTIPLIER = 2; // If >2x retry value, client is likely ignoring it
 
+  handler(_getBaseUrl: () => string): RequestListener {
+    this.checks = [];
+    this.toolStreamCloseTime = null;
+    this.getReconnectionTime = null;
+    this.getConnectionCount = 0;
+    this.lastEventIds = [];
+    this.eventIdCounter = 0;
+    this.sessionId = `session-${Date.now()}`;
+    this.pendingToolCallId = null;
+    this.getResponseStream = null;
+    return (req, res) => this.handleRequest(req, res);
+  }
+
   async start(): Promise<ScenarioUrls> {
+    const listener = this.handler(() => `http://localhost:${this.port}`);
     return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
+      this.server = http.createServer(listener);
       this.server.on('error', reject);
-
       this.server.listen(0, () => {
         const address = this.server!.address();
         if (address && typeof address === 'object') {

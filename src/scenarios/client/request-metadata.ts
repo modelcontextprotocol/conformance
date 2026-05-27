@@ -1,7 +1,7 @@
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
+  HandlerScenario,
+  RequestListener,
   ConformanceCheck,
   CheckStatus,
   DRAFT_PROTOCOL_VERSION
@@ -35,45 +35,21 @@ export const DECLARED_CHECK_IDS = [
   'sep-2575-client-retry-supported-version'
 ] as const;
 
-export class RequestMetadataScenario implements Scenario {
+export class RequestMetadataScenario extends HandlerScenario {
   name = 'request-metadata';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Per-request _meta and MCP-Protocol-Version header obligations (SEP-2575)';
 
-  private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
   private hasSimulatedRejection = false;
   private requestsObserved = 0;
 
-  async start(): Promise<ScenarioUrls> {
+  handler(_getBaseUrl: () => string): RequestListener {
     this.hasSimulatedRejection = false;
     this.checks = [];
     this.requestsObserved = 0;
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-      this.server.on('error', reject);
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          resolve({ serverUrl: `http://localhost:${address.port}` });
-        }
-      });
-    });
-  }
-
-  async stop(): Promise<void> {
-    return new Promise((resolve) => {
-      if (this.server) {
-        this.server.close(() => {
-          resolve();
-        });
-      } else {
-        resolve();
-      }
-    });
+    return (req, res) => this.handleRequest(req, res);
   }
 
   getChecks(): ConformanceCheck[] {

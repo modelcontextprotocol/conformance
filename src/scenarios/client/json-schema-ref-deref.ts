@@ -1,9 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { ConformanceCheck, RequestListener } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
+import { HandlerScenario, DRAFT_PROTOCOL_VERSION } from '../../types';
 
 /**
  * Scenario: JSON Schema network $ref dereferencing (SEP-2106)
@@ -70,19 +70,18 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
   return server;
 }
 
-export class JsonSchemaRefDerefScenario implements Scenario {
+export class JsonSchemaRefDerefScenario extends HandlerScenario {
   name = 'json-schema-ref-no-deref';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = `Tests that a client does not automatically dereference a network-URI \`$ref\` in a tool's inputSchema (SEP-2106).
 
 The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at a canary URL. The client should list tools (and may otherwise process the schema), but must not fetch the canary URL. Same-document refs (\`#/$defs/...\`) remain safe to resolve.`;
+  mcpPath = '/mcp';
 
-  private app: express.Application | null = null;
-  private httpServer: ReturnType<express.Application['listen']> | null = null;
   private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
   private toolsListed = false;
 
-  async start(): Promise<ScenarioUrls> {
+  handler(getBaseUrl: () => string): RequestListener {
     this.canaryRequests = [];
     this.toolsListed = false;
 
@@ -107,7 +106,8 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     app.post('/mcp', async (req: Request, res: Response) => {
       try {
         // Stateless: fresh server and transport per request
-        const server = createMcpServer(this.canaryUrl(), () => {
+        const canaryUrl = `${getBaseUrl()}${CANARY_PATH}`;
+        const server = createMcpServer(canaryUrl, () => {
           this.toolsListed = true;
         });
         const transport = new StreamableHTTPServerTransport({
@@ -129,29 +129,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
       }
     });
 
-    this.app = app;
-    this.httpServer = app.listen(0);
-    return { serverUrl: `${this.baseUrl()}/mcp` };
-  }
-
-  private baseUrl(): string {
-    const address = this.httpServer?.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Scenario server is not listening');
-    }
-    return `http://localhost:${address.port}`;
-  }
-
-  private canaryUrl(): string {
-    return `${this.baseUrl()}${CANARY_PATH}`;
-  }
-
-  async stop() {
-    if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer!.close(resolve));
-      this.httpServer = null;
-    }
-    this.app = null;
+    return app;
   }
 
   getChecks(): ConformanceCheck[] {

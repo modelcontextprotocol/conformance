@@ -1,41 +1,38 @@
 /**
  * Session management for the hosted conformance server.
  *
- * A "session" is one isolated run of a scenario. Each session owns its own
- * Scenario instance (and therefore its own underlying http.Server bound to a
- * loopback port). The hosted server proxies path-prefixed requests to that
- * port and harvests checks via getChecks().
- *
- * Sessions are keyed by a short id (also surfaced as mcp-session-id) so a
- * client can hit a stable scenario URL like /s/initialize and still get
- * isolated results at /results/<id>.
+ * A "run" is one isolated exercise of a scenario. Each run owns a fresh
+ * Scenario instance and the RequestListener it returns from handler() — no
+ * loopback port, no proxy. Runs are keyed by a path-embedded id so
+ * correlation works for stateless-transport clients that never echo
+ * mcp-session-id.
  */
 
 import { randomBytes } from 'crypto';
-import { Scenario, ConformanceCheck } from '../types';
-import { getScenario, listScenarios } from '../scenarios';
+import { Scenario, ConformanceCheck, RequestListener } from '../types';
+import { getScenario, scenarios } from '../scenarios';
 
-export interface HostedSession {
+export interface HostedRun {
   id: string;
   scenarioName: string;
   scenario: Scenario;
-  /** Loopback URL the scenario is listening on (e.g. http://localhost:54321/mcp) */
-  targetUrl: URL;
+  /** The mounted handler — invoke directly with (req, res). */
+  listener: RequestListener;
+  /** Sub-path under the run prefix where the MCP endpoint lives. */
+  mcpPath: string;
   createdAt: number;
   lastSeenAt: number;
-  /** Optional context the scenario wants delivered to the client */
   context?: Record<string, unknown>;
 }
 
 export interface SessionManagerOptions {
-  /** Idle ms after which a session is reaped. Default 5 minutes. */
+  /** Idle ms after which a run is reaped. Default 5 minutes. */
   ttlMs?: number;
-  /** How often to sweep for expired sessions. Default 30s. */
   sweepIntervalMs?: number;
 }
 
 export class SessionManager {
-  private sessions = new Map<string, HostedSession>();
+  private runs = new Map<string, HostedRun>();
   private readonly ttlMs: number;
   private sweeper: ReturnType<typeof setInterval>;
 
@@ -43,75 +40,88 @@ export class SessionManager {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;
     this.sweeper = setInterval(() => this.sweep(), sweepIntervalMs);
-    // Don't keep the process alive just for the sweeper.
     this.sweeper.unref?.();
   }
 
-  /** Create a fresh scenario instance and start it on a loopback port. */
-  async create(scenarioName: string): Promise<HostedSession> {
-    const factory = getScenario(scenarioName);
-    if (!factory) {
-      throw new UnknownScenarioError(scenarioName);
+  /**
+   * Get the run for (scenario, id), creating it on first reference. The id is
+   * caller-chosen so URLs are predictable; pass undefined to mint one.
+   */
+  getOrCreate(
+    scenarioName: string,
+    id: string | undefined,
+    baseUrlFor: (runId: string) => string
+  ): HostedRun {
+    if (id) {
+      const existing = this.runs.get(id);
+      if (existing && existing.scenarioName === scenarioName) {
+        existing.lastSeenAt = Date.now();
+        return existing;
+      }
+      // Same id reused for a different scenario → replace, don't merge checks.
+      if (existing) void this.destroy(id);
     }
-    // Each call to getScenario returns the same singleton, so re-instantiate
-    // via its constructor to get isolated state.
-    const ScenarioCtor = factory.constructor as new () => Scenario;
-    const scenario = new ScenarioCtor();
 
-    const urls = await scenario.start();
-    const id = randomBytes(6).toString('base64url');
-    const session: HostedSession = {
-      id,
+    const proto = getScenario(scenarioName);
+    if (!proto) throw new UnknownScenarioError(scenarioName);
+    if (!proto.handler) throw new NotHostableError(scenarioName);
+
+    const Ctor = proto.constructor as new () => Scenario;
+    const scenario = new Ctor();
+    const runId = id ?? randomBytes(6).toString('base64url');
+    const listener = scenario.handler!(() => baseUrlFor(runId));
+
+    const run: HostedRun = {
+      id: runId,
       scenarioName,
       scenario,
-      targetUrl: new URL(urls.serverUrl),
+      listener,
+      mcpPath: scenario.mcpPath ?? '',
       createdAt: Date.now(),
-      lastSeenAt: Date.now(),
-      context: urls.context
+      lastSeenAt: Date.now()
     };
-    this.sessions.set(id, session);
-    return session;
+    this.runs.set(runId, run);
+    return run;
   }
 
-  get(id: string): HostedSession | undefined {
-    const s = this.sessions.get(id);
-    if (s) s.lastSeenAt = Date.now();
-    return s;
-  }
-
-  list(): HostedSession[] {
-    return Array.from(this.sessions.values());
+  get(id: string): HostedRun | undefined {
+    const r = this.runs.get(id);
+    if (r) r.lastSeenAt = Date.now();
+    return r;
   }
 
   results(id: string): ConformanceCheck[] | undefined {
-    const s = this.sessions.get(id);
-    return s?.scenario.getChecks();
+    return this.runs.get(id)?.scenario.getChecks();
+  }
+
+  list(): HostedRun[] {
+    return Array.from(this.runs.values());
   }
 
   async destroy(id: string): Promise<void> {
-    const s = this.sessions.get(id);
-    if (!s) return;
-    this.sessions.delete(id);
+    const r = this.runs.get(id);
+    if (!r) return;
+    this.runs.delete(id);
+    // handler() never started a server, but some scenarios hold timers/streams
+    // that stop() cleans up. Safe to call even though start() wasn't.
     try {
-      await s.scenario.stop();
+      await r.scenario.stop();
     } catch {
-      // best-effort; the loopback server may already be gone
+      // best-effort
     }
   }
 
   async close(): Promise<void> {
     clearInterval(this.sweeper);
     await Promise.all(
-      Array.from(this.sessions.keys()).map((id) => this.destroy(id))
+      Array.from(this.runs.keys()).map((id) => this.destroy(id))
     );
   }
 
   private sweep(): void {
     const now = Date.now();
-    for (const [id, s] of this.sessions) {
-      if (now - s.lastSeenAt > this.ttlMs) {
-        void this.destroy(id);
-      }
+    for (const [id, r] of this.runs) {
+      if (now - r.lastSeenAt > this.ttlMs) void this.destroy(id);
     }
   }
 }
@@ -119,24 +129,23 @@ export class SessionManager {
 export class UnknownScenarioError extends Error {
   constructor(name: string) {
     super(
-      `Unknown scenario '${name}'. Available: ${listScenarios().join(', ')}`
+      `Unknown scenario '${name}'. Available: ${Array.from(scenarios.keys()).join(', ')}`
     );
   }
 }
 
-/**
- * Scenarios that the hosted runner can serve via path-proxy.
- *
- * Excluded: scenarios whose ScenarioUrls.authUrl is set (they spin up a
- * second auth server on another port that the client must reach directly,
- * which a single-origin proxy can't expose) and scenarios that depend on
- * the runner spawning the client process.
- */
+export class NotHostableError extends Error {
+  constructor(name: string) {
+    super(
+      `Scenario '${name}' does not implement handler() and cannot run hosted ` +
+        `(typically auth scenarios that need a second origin).`
+    );
+  }
+}
+
+/** Scenarios that expose handler() and so can run without a loopback port. */
 export function listHostableScenarios(): string[] {
-  return listScenarios().filter((name) => {
-    const s = getScenario(name);
-    // No good static way to know if authUrl will be set without starting it,
-    // so use the naming convention all auth scenarios share.
-    return s !== undefined && !name.startsWith('auth/');
-  });
+  return Array.from(scenarios.entries())
+    .filter(([, s]) => typeof s.handler === 'function')
+    .map(([name]) => name);
 }

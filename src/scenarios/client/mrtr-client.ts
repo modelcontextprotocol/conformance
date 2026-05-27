@@ -10,8 +10,8 @@
  * fulfills the elicitation, and retries. The server verifies correct client behavior.
  */
 
-import type { Scenario, ConformanceCheck } from '../../types';
-import { DRAFT_PROTOCOL_VERSION, ScenarioUrls } from '../../types';
+import type { ConformanceCheck, RequestListener } from '../../types';
+import { HandlerScenario, DRAFT_PROTOCOL_VERSION } from '../../types';
 import express, { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 
@@ -431,30 +431,17 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
   return app;
 }
 
-export class MRTRClientScenario implements Scenario {
+export class MRTRClientScenario extends HandlerScenario {
   name = 'sep-2322-client-request-state';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests client MRTR behavior: requestState echo, no-state omission, and JSON-RPC id uniqueness (SEP-2322)';
-  private app: express.Application | null = null;
-  private httpServer: ReturnType<express.Application['listen']> | null = null;
+  mcpPath = '/mcp';
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  handler(_getBaseUrl: () => string): RequestListener {
     this.checks = [];
-    this.app = createMRTRServer(this.checks);
-    this.httpServer = this.app.listen(0);
-    const addr = this.httpServer.address();
-    const port = typeof addr === 'object' && addr ? addr.port : 0;
-    return { serverUrl: `http://localhost:${port}/mcp` };
-  }
-
-  async stop() {
-    if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer!.close(resolve));
-      this.httpServer = null;
-    }
-    this.app = null;
+    return createMRTRServer(this.checks);
   }
 
   getChecks(): ConformanceCheck[] {

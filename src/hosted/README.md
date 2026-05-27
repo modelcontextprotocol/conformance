@@ -6,51 +6,75 @@ runner.
 
 ```bash
 npx @modelcontextprotocol/conformance hosted --port 3000
-# or with a public origin behind a proxy:
+# behind a reverse proxy:
 npx @modelcontextprotocol/conformance hosted --port 3000 --public-origin https://conformance.example.com
 ```
 
 ## Routes
 
-| Route                          | Purpose                                                                                                                                                                                       |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /`                        | Landing page with usage + scenario list                                                                                                                                                       |
-| `GET /scenarios`               | JSON list of hostable scenarios                                                                                                                                                               |
-| `ALL /s/<scenario>[/<suffix>]` | MCP endpoint for `<scenario>`. First request without `mcp-session-id` creates a session; the response carries `mcp-session-id` and a `Link: </results/ID>; rel="conformance-results"` header. |
-| `GET /results/<id>`            | JSON `{summary, checks}`                                                                                                                                                                      |
-| `GET /results/<id>.html`       | Pretty HTML report                                                                                                                                                                            |
-| `DELETE /results/<id>`         | Tear down the session early                                                                                                                                                                   |
-| `POST /mcp`                    | The hosted server is itself an MCP server with `list_scenarios`, `start_session`, `get_results` tools                                                                                         |
+| Route                                   | Purpose                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `GET /`                                 | Landing page with usage + scenario list                                                           |
+| `GET /scenarios`                        | JSON list of hostable scenarios                                                                   |
+| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id.          |
+| `GET /s/<scenario>`                     | Mints a fresh run-id and returns `{runId, mcpUrl, resultsUrl}`.                                   |
+| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                                |
+| `GET /results/<run-id>.html`            | Pretty HTML report                                                                                |
+| `DELETE /results/<run-id>`              | Tear down the run early                                                                           |
+| `POST /mcp`                             | The hosted server is itself an MCP server with `list_scenarios`, `start_run`, `get_results` tools |
 
 ## How it works
 
-Each session is a real `Scenario` instance started on a loopback port; the
-hosted server proxies `/s/<name>` to it and overlays the session id. That
-means every scenario works **unchanged** as long as it only needs one origin.
+Each scenario implements `handler(): RequestListener` (see `HandlerScenario`
+in `src/types.ts`). The hosted server instantiates a fresh scenario per
+`(scenario, run-id)`, mounts its handler under `/s/<scenario>/<run-id>`, and
+rewrites `req.url` to strip the prefix — **no loopback port, no proxy**. The
+CLI runner's `start()`/`stop()` are now thin wrappers around the same
+`handler()`, so both modes exercise identical code.
 
-Excluded (`auth/*`): scenarios that spin up a separate authorization server
-on a second port. The proxy can't expose two origins, and OAuth discovery
-metadata hard-codes absolute URLs. Run those with the CLI runner.
+### Stateless transport
 
-Sessions are reaped after `--ttl` ms idle (default 5 min).
+The run-id lives in the **URL path**, not the `mcp-session-id` header, so
+correlation works for stateless-transport clients (every draft-spec scenario
+that uses `sessionIdGenerator: undefined`). A client that never echoes a
+session id still hits the same `/s/<scenario>/<run-id>` and its checks
+accumulate on that run.
 
-## val.town
+### Coverage
 
-`examples/hosted/valtown.ts` is a self-contained fetch-handler version with
-the same URL shape but no loopback proxy — scenarios are reimplemented as
-`Request → Response` functions. It ships with `initialize` and `tools_call`;
-add more entries to its `scenarios` map as needed.
+Hostable = any scenario that implements `handler()`. Currently that's
+everything **except** `auth/*` (need a second public origin for the
+authorization server). `listHostableScenarios()` derives the list at runtime
+from which scenarios expose `handler()`.
+
+`sse-retry` implements `handler()` and works under `conformance hosted`, but
+its connection-close-timing checks won't be meaningful through a buffered
+fetch bridge — see below.
+
+## Serverless / val.town
+
+`examples/hosted/valtown.ts` wraps `createHostedApp()` in a
+`(Request) => Promise<Response>` bridge so the **same scenarios** run on
+fetch-based runtimes (val.town, Deno Deploy, Bun, Workers with
+`nodejs_compat`):
+
+```ts
+import handler from 'npm:@modelcontextprotocol/conformance/examples/hosted/valtown';
+export default handler;
+```
+
+The bridge buffers the response, so streaming-SSE scenarios (`sse-retry`) are
+returned as 501; everything else — including the SDK's
+`StreamableHTTPServerTransport` in stateless mode — works.
 
 ## Example
 
 ```bash
-# 1. point your client at the scenario URL
-$ my-mcp-client https://conformance.example.com/s/tools_call
-
-# 2. read mcp-session-id from any response header, then:
-$ curl https://conformance.example.com/results/TJeZ63Bw | jq .summary
+# pick any run-id; results live at the matching path
+$ npx @modelcontextprotocol/inspector https://conformance.example.com/s/tools_call/demo/mcp
+$ curl https://conformance.example.com/results/demo | jq .summary
 { "passed": 1, "failed": 0, "warnings": 0, "info": 4, "skipped": 0, "total": 5 }
 ```
 
-Or drive the whole flow over MCP by connecting to `/mcp` and calling
-`start_session` → run client → `get_results`.
+Or drive it over MCP: connect to `/mcp`, call `start_run` → run client →
+`get_results`.
