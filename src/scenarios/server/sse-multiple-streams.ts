@@ -21,62 +21,93 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   name = 'server-sse-multiple-streams';
-  readonly source = {
-    introducedIn: '2025-11-25',
-    removedIn: DRAFT_PROTOCOL_VERSION
-  } as const;
+  readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Test server supports multiple concurrent POST SSE streams (SEP-1699)';
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
+
+    // Concurrent POSTs (each answered with JSON or its own SSE stream) are
+    // core transport behavior in every spec version. Only the request
+    // scaffolding differs: the stateful lifecycle needs a session id from an
+    // initialize handshake, the stateless lifecycle carries _meta + the
+    // MCP-Protocol-Version header on each request instead.
+    const stateless = specVersion === DRAFT_PROTOCOL_VERSION;
 
     let sessionId: string | undefined;
     let client: Client | undefined;
     let transport: StreamableHTTPClientTransport | undefined;
 
     try {
-      // Step 1: Initialize session with the server
-      client = new Client(
-        {
-          name: 'conformance-test-client',
-          version: '1.0.0'
-        },
-        {
-          capabilities: {
-            sampling: {},
-            elicitation: {}
-          }
-        }
-      );
-
-      transport = new StreamableHTTPClientTransport(new URL(serverUrl));
-      await client.connect(transport);
-
-      // Extract session ID from transport
-      sessionId = (transport as unknown as { sessionId?: string }).sessionId;
-
-      if (!sessionId) {
-        checks.push({
-          id: 'server-sse-multiple-streams-session',
-          name: 'ServerSSEMultipleStreamsSession',
-          description: 'Server provides session ID for multiple streams test',
-          status: 'WARNING',
-          timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-1699',
-              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+      if (!stateless) {
+        // Step 1 (stateful): Initialize session with the server
+        client = new Client(
+          {
+            name: 'conformance-test-client',
+            version: '1.0.0'
+          },
+          {
+            capabilities: {
+              sampling: {},
+              elicitation: {}
             }
-          ],
-          details: {
-            message:
-              'Server did not provide session ID - multiple streams test may not work correctly'
           }
-        });
-        return checks;
+        );
+
+        transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+        await client.connect(transport);
+
+        // Extract session ID from transport
+        sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+
+        if (!sessionId) {
+          checks.push({
+            id: 'server-sse-multiple-streams-session',
+            name: 'ServerSSEMultipleStreamsSession',
+            description: 'Server provides session ID for multiple streams test',
+            status: 'WARNING',
+            timestamp: new Date().toISOString(),
+            specReferences: [
+              {
+                id: 'SEP-1699',
+                url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+              }
+            ],
+            details: {
+              message:
+                'Server did not provide session ID - multiple streams test may not work correctly'
+            }
+          });
+          return checks;
+        }
       }
+
+      const requestHeaders: Record<string, string> = stateless
+        ? {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream, application/json',
+            'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+          }
+        : {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream, application/json',
+            'mcp-session-id': sessionId!,
+            'mcp-protocol-version': '2025-03-26'
+          };
+      const requestParams = stateless
+        ? {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+              'io.modelcontextprotocol/clientInfo': {
+                name: 'conformance-test-client',
+                version: '1.0.0'
+              },
+              'io.modelcontextprotocol/clientCapabilities': {}
+            }
+          }
+        : {};
 
       // Step 2: Open multiple POST SSE streams concurrently
       // Each POST request gets its own stream with unique streamId
@@ -89,17 +120,12 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
       for (let i = 0; i < numStreams; i++) {
         const promise = fetch(serverUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream, application/json',
-            'mcp-session-id': sessionId,
-            'mcp-protocol-version': '2025-03-26'
-          },
+          headers: requestHeaders,
           body: JSON.stringify({
             jsonrpc: '2.0',
             id: 1000 + i, // Different request IDs for each stream
             method: 'tools/list',
-            params: {}
+            params: requestParams
           })
         });
         postPromises.push(promise);
