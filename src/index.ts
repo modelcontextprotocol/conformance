@@ -49,6 +49,7 @@ import { createTierCheckCommand } from './tier-check';
 import { createNewSepCommand } from './new-sep';
 import { createSdkCommand } from './sdk-runner';
 import { createTraceabilityCommand } from './traceability';
+import { runHostedServer } from './hosted';
 import packageJson from '../package.json';
 
 // Note on naming: `command` refers to which CLI command is calling this.
@@ -556,6 +557,27 @@ program.addCommand(createSdkCommand());
 
 // SEP traceability manifest command
 program.addCommand(createTraceabilityCommand());
+
+// Hosted server — mount scenarios on URL paths for remote clients
+program
+  .command('hosted')
+  .description(
+    'Run a long-lived HTTP server that exposes every (non-auth) client ' +
+      'scenario at /s/<name> and serves results at /results/<session-id>.'
+  )
+  .option('--port <port>', 'Port to listen on', '3000')
+  .option(
+    '--public-origin <url>',
+    'Origin to use in generated links (default: derived from Host header)'
+  )
+  .option('--ttl <ms>', 'Idle session TTL in milliseconds', '300000')
+  .action(async (options) => {
+    await runHostedServer({
+      port: parseInt(options.port, 10),
+      publicOrigin: options.publicOrigin,
+      ttlMs: parseInt(options.ttl, 10)
+    });
+  });
 
 // List scenarios command
 program
