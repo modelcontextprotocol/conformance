@@ -10,8 +10,8 @@ import {
   sendStatelessRequest,
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES
-} from './stateless-client';
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
+} from './stateless';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
 
 describe('buildStandardHeaders', () => {
   test('sets the standard headers pinned to the draft protocol version', () => {

@@ -7,11 +7,11 @@
 
 // ─── JSON-RPC Types ──────────────────────────────────────────────────────────
 
-export type { JsonRpcResponse } from './stateless-client';
+export type { JsonRpcResponse } from '../../connection';
 
 // ─── Stateless RPC Helper ────────────────────────────────────────────────────
 
-import { sendStatelessRequest, JsonRpcResponse } from './stateless-client';
+import { sendStatelessRequest, JsonRpcResponse } from '../../connection';
 
 /**
  * Send a stateless JSON-RPC request (SEP-2575 pattern).

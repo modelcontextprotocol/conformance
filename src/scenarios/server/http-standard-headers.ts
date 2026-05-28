@@ -20,8 +20,11 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
-import { withRequestMeta, sendStatelessRequest } from './stateless-client';
+import {
+  withRequestMeta,
+  sendStatelessRequest,
+  type RunContext
+} from '../../connection';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',

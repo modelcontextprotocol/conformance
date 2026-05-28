@@ -7,11 +7,11 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
 import {
   buildStandardHeaders,
-  readSseJsonRpcResponse
-} from './stateless-client';
+  readSseJsonRpcResponse,
+  type RunContext
+} from '../../connection';
 
 const SPEC_REF = [
   {
