@@ -24,6 +24,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MrtrEphemeralFlowScenario } from './ephemeral-flow';
+import { parseWireModes, type WireMode } from '../_shared/wire-mode';
 import { waitForServerReady } from '../_shared/test-runner';
 
 const SERVER_URL = process.env.MRTR_SERVER_URL;
@@ -33,6 +34,19 @@ const SHOULD_SPAWN = Boolean(SERVER_URL && SERVER_CMD);
 const HAVE_TARGET = Boolean(SERVER_URL);
 
 const MRTR_SCENARIOS = [new MrtrEphemeralFlowScenario()];
+
+// SEP-2322 ephemeral MRTR (InputRequiredResult on tools/call) is
+// wire-independent in spec. parseWireModes returns both wires by
+// default; pin via MCP_WIRE_MODES=legacy or =stateless when an SDK
+// has only one wire implemented. Same parser drives the tasks
+// harness.
+const WIRE_MODES: WireMode[] = parseWireModes();
+
+// describe.each / it.each table shape: tuple of (label, statelessFlag) so
+// vitest reports the wire as a clean parameter row.
+const WIRE_TABLE: ReadonlyArray<readonly [WireMode, boolean]> = WIRE_MODES.map(
+  (m) => [m, m === 'stateless'] as const
+);
 
 const describeIfTarget = HAVE_TARGET ? describe : describe.skip;
 
@@ -95,21 +109,24 @@ describeIfTarget('SEP-2322 MRTR — server conformance', () => {
     serverProcess = null;
   });
 
-  for (const scenario of MRTR_SCENARIOS) {
-    it(`${scenario.name} — all checks succeed against fixture`, async () => {
-      const checks = await scenario.run(SERVER_URL!);
-      expect(checks.length).toBeGreaterThan(0);
-      const failures = checks.filter(
-        (c) => c.status === 'FAILURE' || c.status === 'WARNING'
-      );
-      if (failures.length > 0) {
-        const detail = failures
-          .map((c) => `  - ${c.id}: ${c.errorMessage ?? '(no message)'}`)
-          .join('\n');
-        throw new Error(
-          `${failures.length}/${checks.length} checks failed:\n${detail}`
+  describe.each(WIRE_TABLE)('%s wire', (_wireLabel, stateless) => {
+    it.each(MRTR_SCENARIOS)(
+      '$name — all checks succeed against fixture',
+      async (scenario) => {
+        const checks = await scenario.run(SERVER_URL!, { stateless });
+        expect(checks.length).toBeGreaterThan(0);
+        const failures = checks.filter(
+          (c) => c.status === 'FAILURE' || c.status === 'WARNING'
         );
+        if (failures.length > 0) {
+          const detail = failures
+            .map((c) => `  - ${c.id}: ${c.errorMessage ?? '(no message)'}`)
+            .join('\n');
+          throw new Error(
+            `${failures.length}/${checks.length} checks failed:\n${detail}`
+          );
+        }
       }
-    });
-  }
+    );
+  });
 });

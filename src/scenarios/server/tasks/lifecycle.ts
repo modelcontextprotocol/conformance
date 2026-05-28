@@ -16,7 +16,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   TASKS_EXTENSION_ID,
@@ -77,12 +78,16 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
 - \`tasks/cancel\` against a terminal task MUST return JSON-RPC
   \`-32602\` (InvalidParams). Clarified upstream in spec commit d963ad0.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           elicitation: {},
           sampling: {},

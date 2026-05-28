@@ -38,6 +38,7 @@ import { TasksRequestHeadersScenario } from './headers';
 import { TasksDispatchScenario } from './dispatch';
 import { TasksStatusNotificationsScenario } from './notifications';
 import { TasksRequiredTaskErrorScenario } from './required-task-error';
+import { parseWireModes, type WireMode } from '../_shared/wire-mode';
 import { waitForServerReady } from '../_shared/test-runner';
 
 const SERVER_URL = process.env.TASKS_SERVER_URL;
@@ -57,6 +58,20 @@ const TASKS_SCENARIOS = [
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario()
 ];
+
+// Tasks behavior is wire-independent in spec: SEP-2663 semantics
+// hold on both the legacy session wire AND the SEP-2575 stateless
+// wire. parseWireModes returns both by default; pin via
+// MCP_WIRE_MODES=legacy or =stateless when an SDK has only one wire
+// implemented. The same parser drives the mrtr harness.
+const WIRE_MODES: WireMode[] = parseWireModes();
+
+// describe.each / it.each table shape: tuple of (label, statelessFlag) so
+// vitest reports the wire as a clean parameter row (`legacy wire`,
+// `stateless wire`) without us re-deriving the boolean inside each test.
+const WIRE_TABLE: ReadonlyArray<readonly [WireMode, boolean]> = WIRE_MODES.map(
+  (m) => [m, m === 'stateless'] as const
+);
 
 const describeIfTarget = HAVE_TARGET ? describe : describe.skip;
 
@@ -119,21 +134,24 @@ describeIfTarget('SEP-2663 Tasks — server conformance', () => {
     serverProcess = null;
   });
 
-  for (const scenario of TASKS_SCENARIOS) {
-    it(`${scenario.name} — all checks succeed against fixture`, async () => {
-      const checks = await scenario.run(SERVER_URL!);
-      expect(checks.length).toBeGreaterThan(0);
-      const failures = checks.filter(
-        (c) => c.status === 'FAILURE' || c.status === 'WARNING'
-      );
-      if (failures.length > 0) {
-        const detail = failures
-          .map((c) => `  - ${c.id}: ${c.errorMessage ?? '(no message)'}`)
-          .join('\n');
-        throw new Error(
-          `${failures.length}/${checks.length} checks failed:\n${detail}`
+  describe.each(WIRE_TABLE)('%s wire', (_wireLabel, stateless) => {
+    it.each(TASKS_SCENARIOS)(
+      '$name — all checks succeed against fixture',
+      async (scenario) => {
+        const checks = await scenario.run(SERVER_URL!, { stateless });
+        expect(checks.length).toBeGreaterThan(0);
+        const failures = checks.filter(
+          (c) => c.status === 'FAILURE' || c.status === 'WARNING'
         );
+        if (failures.length > 0) {
+          const detail = failures
+            .map((c) => `  - ${c.id}: ${c.errorMessage ?? '(no message)'}`)
+            .join('\n');
+          throw new Error(
+            `${failures.length}/${checks.length} checks failed:\n${detail}`
+          );
+        }
       }
-    });
-  }
+    );
+  });
 });

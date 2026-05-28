@@ -24,7 +24,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2322_REF,
@@ -86,12 +87,16 @@ export class TasksDispatchScenario implements ClientScenario {
   JSON-RPC \`-32602\` (InvalidParams). Mirrors the same rule for
   \`tasks/cancel\` (clarified upstream in spec commit d963ad0).`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           elicitation: {},
           sampling: {},

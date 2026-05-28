@@ -14,7 +14,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2322_REF,
@@ -61,12 +62,16 @@ export class TasksMRTRInputScenario implements ClientScenario {
   - tasks/get after a partial update MUST surface only the still-pending
     keys; the answered key MUST be removed.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           elicitation: {},
           sampling: {},

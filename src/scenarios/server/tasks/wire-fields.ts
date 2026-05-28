@@ -13,7 +13,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2663_REF,
@@ -55,12 +56,16 @@ export class TasksWireFieldsScenario implements ClientScenario {
   at the root level of the \`tasks/get\` response, so the metadata is
   redundant.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           extensions: { [TASKS_EXTENSION_ID]: {} }
         }

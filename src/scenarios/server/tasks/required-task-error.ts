@@ -32,7 +32,8 @@ import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2575_REF,
@@ -80,14 +81,20 @@ The scenario calls \`tools/call\` for a tool registered with task support
 \`required\` from a client that did NOT declare the extension. A
 conformant server MUST reject with \`-32003\`.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       // Intentionally declare NO capabilities — the point of the test is
       // to exercise the "did not negotiate the tasks extension" path.
-      session = await initRawSession(serverUrl, { capabilities: {} });
+      session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
+        capabilities: {}
+      });
     } catch (error) {
       checks.push({
         id: 'tasks-required-error-bootstrap',

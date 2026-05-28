@@ -13,7 +13,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2575_REF,
@@ -56,7 +57,10 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
   The server MUST honor the per-request opt-in and produce a
   \`CreateTaskResult\` for that call.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     // Two parallel sessions: one declares the extension, one does NOT.
@@ -64,13 +68,17 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
     let withoutExt: RawSession;
     try {
       withExt = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           elicitation: {},
           sampling: {},
           extensions: { [TASKS_EXTENSION_ID]: {} }
         }
       });
-      withoutExt = await initRawSession(serverUrl, { capabilities: {} });
+      withoutExt = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
+        capabilities: {}
+      });
     } catch (error) {
       checks.push({
         id: 'tasks-session-bootstrap',

@@ -1,25 +1,32 @@
 /**
- * SEP-2243 Mcp-Method / Mcp-Name request-header tolerance.
+ * SEP-2243 Mcp-Method / Mcp-Name request-header validation, tasks
+ * surface.
  *
  * SEP-2243 defines Mcp-Method and Mcp-Name as REQUEST headers (client →
  * server) used by HTTP infrastructure (proxies, gateways, observability)
- * to route or shape JSON-RPC traffic without parsing the body. They are
- * informational; the JSON-RPC body is authoritative. A conformant
- * server MUST tolerate the headers without changing dispatch.
+ * to route or shape JSON-RPC traffic without parsing the body. The
+ * server MUST reject requests where the routing headers disagree with
+ * (or are missing for a name-carrying body) the JSON-RPC envelope, with
+ * HTTP 400 + JSON-RPC `-32001 HeaderMismatch`.
  *
- * Whether the server *also* echoes these headers on responses for
- * downstream observability is implementation-defined and out of scope
- * for SEP-2243 conformance.
+ * This scenario exercises the validation on the tasks surface
+ * specifically — the upstream `http-header-validation` scenario covers
+ * the general case; here we verify mcpkit's tasks/* methods route
+ * through the same validator (matched headers → success; mismatched
+ * header → -32001).
  *
  * Required server fixtures:
  *   - greet         — sync-only, returns "Hello, {name}!"
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
+
 import {
   ClientScenario,
   ConformanceCheck,
-  ScenarioSource
+  ScenarioSource,
+  ScenarioRunOptions
 } from '../../../types';
 import {
   SEP_2243_REF,
@@ -29,6 +36,8 @@ import {
   initRawSession,
   type RawSession
 } from './helpers';
+
+const HEADER_MISMATCH_ERROR_CODE = -32001;
 
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
@@ -49,12 +58,16 @@ The JSON-RPC body is authoritative. The server MUST tolerate the
 headers, MUST NOT require them, and MUST NOT change dispatch behavior
 based on them — including when the headers disagree with the body.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
       });
     } catch (error) {
@@ -171,44 +184,52 @@ based on them — including when the headers disagree with the body.`;
       }
     }
 
-    // Check 3: Body method is authoritative when Mcp-Method header
-    // disagrees with body.
+    // Check 3: Mismatched Mcp-Method header is rejected on the tasks
+    // surface (SEP-2243 §Server Validation, tasks dispatch path).
     {
-      const id = 'tasks-headers-body-method-authoritative';
-      const name = 'TasksHeadersBodyMethodAuthoritative';
+      const id = 'tasks-headers-reject-mismatched-method';
+      const name = 'TasksHeadersRejectMismatchedMethod';
       const description =
-        'When Mcp-Method header disagrees with body, server MUST dispatch on body method (header is informational)';
+        'When Mcp-Method header disagrees with body on a tools/call, server MUST reject with -32001 HeaderMismatch (SEP-2243 §Server Validation)';
       try {
-        const result = (await session.request(
+        await session.request(
           'tools/call',
           { name: 'greet', arguments: { name: 'header-mismatch' } },
           { 'Mcp-Method': 'tasks/get' }
-        )) as any;
-        const errs: string[] = [];
-        if (result.resultType !== 'complete') {
-          errs.push(
-            `server MUST dispatch on body method (tools/call → resultType:"complete"); got ${JSON.stringify(result.resultType)}`
-          );
-        }
-        if (
-          !Array.isArray(result.content) ||
-          result.content[0]?.text !== 'Hello, header-mismatch!'
-        ) {
-          errs.push(
-            'tool result MUST reflect the body method, not the header claim'
-          );
-        }
+        );
         checks.push({
           id,
           name,
           description,
-          status: errs.length === 0 ? 'SUCCESS' : 'FAILURE',
+          status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          errorMessage: errs.length > 0 ? errs.join('; ') : undefined,
+          errorMessage:
+            'tools/call with Mcp-Method: tasks/get returned a successful response; SEP-2243 requires -32001 rejection',
           specReferences: [SEP_2243_REF]
         });
       } catch (error) {
-        checks.push(failureCheck(id, name, description, error, [SEP_2243_REF]));
+        const code =
+          error instanceof McpError ? error.code : (error as any)?.code;
+        if (code === HEADER_MISMATCH_ERROR_CODE) {
+          checks.push({
+            id,
+            name,
+            description,
+            status: 'SUCCESS',
+            timestamp: new Date().toISOString(),
+            specReferences: [SEP_2243_REF]
+          });
+        } else {
+          checks.push({
+            id,
+            name,
+            description,
+            status: 'FAILURE',
+            timestamp: new Date().toISOString(),
+            errorMessage: `expected -32001 HeaderMismatch; got ${code ?? errMsg(error)}`,
+            specReferences: [SEP_2243_REF]
+          });
+        }
       }
     }
 

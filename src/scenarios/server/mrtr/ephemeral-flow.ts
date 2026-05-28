@@ -23,7 +23,8 @@ import {
   ClientScenario,
   ConformanceCheck,
   ScenarioSource,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  ScenarioRunOptions
 } from '../../../types';
 import { initRawSession, type RawSession } from '../tasks/helpers';
 import {
@@ -83,12 +84,16 @@ Every \`tools/call\` response in the MRTR contract is one of:
   rather than erroring. (The spec is soft here; this scenario asserts
   the re-request path.)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     let session: RawSession;
     try {
       session = await initRawSession(serverUrl, {
+        stateless: opts?.stateless,
         capabilities: {
           elicitation: {},
           sampling: {},

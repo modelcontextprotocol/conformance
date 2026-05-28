@@ -106,11 +106,32 @@ export interface Scenario {
   getChecks(): ConformanceCheck[];
 }
 
+/**
+ * Optional knobs the harness can pass through to a scenario. Each
+ * field is opt-in — scenarios that don't care for a given knob
+ * ignore the options bag entirely. Added rather than threading
+ * standalone parameters so the surface stays additive when future
+ * cross-cutting concerns appear (timeouts, fixture flags, etc.).
+ */
+export interface ScenarioRunOptions {
+  /**
+   * Force the wire mode for scenarios that route through
+   * `initRawSession`. `false` (or absent) means the legacy session
+   * wire; `true` means the SEP-2575 stateless wire. The tasks/mrtr
+   * harnesses drive this from `MCP_WIRE_MODES`; other suites ignore
+   * it.
+   */
+  stateless?: boolean;
+}
+
 export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(
+    serverUrl: string,
+    opts?: ScenarioRunOptions
+  ): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {
