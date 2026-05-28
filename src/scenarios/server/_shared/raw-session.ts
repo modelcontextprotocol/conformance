@@ -26,6 +26,7 @@
  */
 
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
+import { createParser } from 'eventsource-parser';
 
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 
@@ -642,9 +643,14 @@ function wrapBase64(s: string): string {
 
 /**
  * Parse a JSON-RPC response from a Streamable HTTP response. Handles
- * both application/json and text/event-stream content types; in the SSE
- * case scans events until it finds the frame whose id matches the
+ * both application/json and text/event-stream content types; in the
+ * SSE case scans events until it finds the frame whose id matches the
  * expected id. Throws on malformed or empty responses.
+ *
+ * SSE parsing delegates to `eventsource-parser` (the same parser the
+ * official TS SDK uses) so we inherit spec-compliant handling of
+ * multi-line `data:` continuations, CRLF/CR line endings, comments,
+ * and the `event:`/`id:`/`retry:` fields the WHATWG SSE spec defines.
  */
 export async function readJsonRpcResponse(
   resp: Response,
@@ -653,24 +659,26 @@ export async function readJsonRpcResponse(
   const ct = (resp.headers.get('content-type') || '').toLowerCase();
   if (ct.includes('text/event-stream')) {
     const text = await resp.text();
-    for (const block of text.split(/\n\n+/)) {
-      const dataLines: string[] = [];
-      for (const line of block.split('\n')) {
-        if (line.startsWith('data:')) {
-          dataLines.push(line.slice(5).replace(/^ /, ''));
+    let match: JsonRpcResponse | undefined;
+    const parser = createParser({
+      onEvent(evt) {
+        if (match) return;
+        const data = evt.data;
+        if (!data || !data.startsWith('{')) return;
+        const parsed = JSON.parse(data) as JsonRpcResponse;
+        if (parsed.id === expectedId && (parsed.result || parsed.error)) {
+          match = parsed;
         }
       }
-      if (dataLines.length === 0) continue;
-      const payload = dataLines.join('\n');
-      if (!payload.startsWith('{')) continue;
-      const parsed = JSON.parse(payload) as JsonRpcResponse;
-      if (parsed.id === expectedId && (parsed.result || parsed.error)) {
-        return parsed;
-      }
+    });
+    parser.feed(text);
+    parser.reset({ consume: true });
+    if (!match) {
+      throw new Error(
+        `No JSON-RPC frame with id=${expectedId} in SSE response (status ${resp.status})`
+      );
     }
-    throw new Error(
-      `No JSON-RPC frame with id=${expectedId} in SSE response (status ${resp.status})`
-    );
+    return match;
   }
   // application/json (or anything else that yielded a JSON body)
   const body = (await resp.json()) as JsonRpcResponse;
