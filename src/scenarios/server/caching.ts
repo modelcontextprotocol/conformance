@@ -10,15 +10,12 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
-import type {
-  CacheableResult,
-  ListToolsResult,
-  ListPromptsResult,
-  ListResourcesResult,
-  ListResourceTemplatesResult,
-  ReadResourceResult
-} from '../../spec-types/draft';
+import {
+  JsonRpcError,
+  type Connection,
+  type RunContext
+} from '../../connection';
+import type { CacheableResult } from '../../spec-types/draft';
 
 const SPEC_REFS = [
   {
@@ -99,227 +96,15 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
     const checks: ConformanceCheck[] = [];
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 
+    // SEP-2549 only exists in the draft spec, so each cacheable endpoint is
+    // queried over the version-appropriate connection. Under --spec-version
+    // draft that resolves to the stateless impl (SEP-2575): protocolVersion
+    // DRAFT-2026-v1 plus the cross-cutting _meta and standard headers
+    // (issue #315).
+    let conn: Connection;
     try {
-      const conn = await ctx.connect();
-
-      // 1. tools/list
-      try {
-        const toolsResult = await conn.request<ListToolsResult>('tools/list');
-        const fields = extractCachingFields(toolsResult);
-        allFields.push({ endpoint: 'tools/list', fields });
-        checks.push(
-          buildPresenceCheck(
-            'sep-2549-tools-list-caching-hints',
-            'ToolsListCachingHints',
-            'tools/list',
-            fields
-          )
-        );
-      } catch (error) {
-        checks.push({
-          id: 'sep-2549-tools-list-caching-hints',
-          name: 'ToolsListCachingHints',
-          description:
-            'tools/list response includes ttlMs and cacheScope caching hints',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: `tools/list request failed: ${error instanceof Error ? error.message : String(error)}`,
-          specReferences: SPEC_REFS
-        });
-      }
-
-      // 2. prompts/list
-      try {
-        const promptsResult =
-          await conn.request<ListPromptsResult>('prompts/list');
-        const fields = extractCachingFields(promptsResult);
-        allFields.push({ endpoint: 'prompts/list', fields });
-        checks.push(
-          buildPresenceCheck(
-            'sep-2549-prompts-list-caching-hints',
-            'PromptsListCachingHints',
-            'prompts/list',
-            fields
-          )
-        );
-      } catch (error) {
-        checks.push({
-          id: 'sep-2549-prompts-list-caching-hints',
-          name: 'PromptsListCachingHints',
-          description:
-            'prompts/list response includes ttlMs and cacheScope caching hints',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: `prompts/list request failed: ${error instanceof Error ? error.message : String(error)}`,
-          specReferences: SPEC_REFS
-        });
-      }
-
-      // 3. resources/list
-      let firstResourceUri: string | undefined;
-      try {
-        const resourcesResult =
-          await conn.request<ListResourcesResult>('resources/list');
-        const fields = extractCachingFields(resourcesResult);
-        allFields.push({ endpoint: 'resources/list', fields });
-        checks.push(
-          buildPresenceCheck(
-            'sep-2549-resources-list-caching-hints',
-            'ResourcesListCachingHints',
-            'resources/list',
-            fields
-          )
-        );
-        // Capture the first resource URI for the resources/read check
-        if (resourcesResult.resources && resourcesResult.resources.length > 0) {
-          firstResourceUri = resourcesResult.resources[0].uri;
-        }
-      } catch (error) {
-        checks.push({
-          id: 'sep-2549-resources-list-caching-hints',
-          name: 'ResourcesListCachingHints',
-          description:
-            'resources/list response includes ttlMs and cacheScope caching hints',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: `resources/list request failed: ${error instanceof Error ? error.message : String(error)}`,
-          specReferences: SPEC_REFS
-        });
-      }
-
-      // 4. resources/templates/list
-      try {
-        const templatesResult = await conn.request<ListResourceTemplatesResult>(
-          'resources/templates/list'
-        );
-        const fields = extractCachingFields(templatesResult);
-        allFields.push({ endpoint: 'resources/templates/list', fields });
-        checks.push(
-          buildPresenceCheck(
-            'sep-2549-resources-templates-list-caching-hints',
-            'ResourcesTemplatesListCachingHints',
-            'resources/templates/list',
-            fields
-          )
-        );
-      } catch (error) {
-        checks.push({
-          id: 'sep-2549-resources-templates-list-caching-hints',
-          name: 'ResourcesTemplatesListCachingHints',
-          description:
-            'resources/templates/list response includes ttlMs and cacheScope caching hints',
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          errorMessage: `resources/templates/list request failed: ${error instanceof Error ? error.message : String(error)}`,
-          specReferences: SPEC_REFS
-        });
-      }
-
-      // 5. resources/read — use first resource from resources/list
-      if (firstResourceUri) {
-        try {
-          const readResult = await conn.request<ReadResourceResult>(
-            'resources/read',
-            { uri: firstResourceUri }
-          );
-          const fields = extractCachingFields(readResult);
-          allFields.push({ endpoint: 'resources/read', fields });
-          checks.push(
-            buildPresenceCheck(
-              'sep-2549-resources-read-caching-hints',
-              'ResourcesReadCachingHints',
-              'resources/read',
-              fields
-            )
-          );
-        } catch (error) {
-          checks.push({
-            id: 'sep-2549-resources-read-caching-hints',
-            name: 'ResourcesReadCachingHints',
-            description:
-              'resources/read response includes ttlMs and cacheScope caching hints',
-            status: 'FAILURE',
-            timestamp: new Date().toISOString(),
-            errorMessage: `resources/read request failed: ${error instanceof Error ? error.message : String(error)}`,
-            specReferences: SPEC_REFS
-          });
-        }
-      }
-
-      // 6. Aggregate: ttlMs must be a non-negative integer
-      const ttlErrors: string[] = [];
-      const endpointsWithTtl = allFields.filter((f) => f.fields.hasTtlMs);
-      if (endpointsWithTtl.length === 0) {
-        ttlErrors.push('no endpoints returned ttlMs');
-      } else {
-        for (const { endpoint, fields } of endpointsWithTtl) {
-          const val = fields.ttlMs;
-          if (typeof val !== 'number') {
-            ttlErrors.push(
-              `${endpoint}: ttlMs is ${typeof val}, expected number`
-            );
-          } else if (!Number.isInteger(val)) {
-            ttlErrors.push(`${endpoint}: ttlMs is ${val}, expected integer`);
-          } else if (val < 0) {
-            ttlErrors.push(`${endpoint}: ttlMs is ${val}, must be >= 0`);
-          }
-        }
-      }
-
-      checks.push({
-        id: 'sep-2549-ttl-non-negative',
-        name: 'TtlNonNegative',
-        description: 'All ttlMs values are non-negative integers',
-        status: ttlErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: ttlErrors.length > 0 ? ttlErrors.join('; ') : undefined,
-        specReferences: SPEC_REFS,
-        details: {
-          endpoints: allFields.map((f) => ({
-            endpoint: f.endpoint,
-            ttlMs: f.fields.ttlMs
-          }))
-        }
-      });
-
-      // 7. Aggregate: cacheScope must be "public" or "private"
-      const scopeErrors: string[] = [];
-      const endpointsWithScope = allFields.filter(
-        (f) => f.fields.hasCacheScope
-      );
-      if (endpointsWithScope.length === 0) {
-        scopeErrors.push('no endpoints returned cacheScope');
-      } else {
-        for (const { endpoint, fields } of endpointsWithScope) {
-          const val = fields.cacheScope;
-          if (val !== 'public' && val !== 'private') {
-            scopeErrors.push(
-              `${endpoint}: cacheScope is ${JSON.stringify(val)}, expected "public" or "private"`
-            );
-          }
-        }
-      }
-
-      checks.push({
-        id: 'sep-2549-cache-scope-valid',
-        name: 'CacheScopeValid',
-        description: 'All cacheScope values are "public" or "private"',
-        status: scopeErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage:
-          scopeErrors.length > 0 ? scopeErrors.join('; ') : undefined,
-        specReferences: SPEC_REFS,
-        details: {
-          endpoints: allFields.map((f) => ({
-            endpoint: f.endpoint,
-            cacheScope: f.fields.cacheScope
-          }))
-        }
-      });
-
-      await conn.close();
+      conn = await ctx.connect();
     } catch (error) {
-      // Connection-level failure — push a single failure check
       checks.push({
         id: 'sep-2549-caching-connection',
         name: 'CachingConnection',
@@ -329,7 +114,169 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
         errorMessage: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: SPEC_REFS
       });
+      return checks;
     }
+
+    const queryEndpoint = async (
+      checkId: string,
+      checkName: string,
+      endpoint: string,
+      params?: Record<string, unknown>
+    ): Promise<(CacheableResult & Record<string, unknown>) | undefined> => {
+      const description = `${endpoint} response includes ttlMs and cacheScope caching hints`;
+      try {
+        const result = await conn.request<
+          CacheableResult & Record<string, unknown>
+        >(endpoint, params);
+        const fields = extractCachingFields(result);
+        allFields.push({ endpoint, fields });
+        checks.push(buildPresenceCheck(checkId, checkName, endpoint, fields));
+        return result;
+      } catch (error) {
+        const rpcError = error instanceof JsonRpcError ? error : undefined;
+        checks.push({
+          id: checkId,
+          name: checkName,
+          description,
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: rpcError
+            ? `${endpoint} returned JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+            : `${endpoint} request failed: ${error instanceof Error ? error.message : String(error)}`,
+          specReferences: SPEC_REFS,
+          details: rpcError
+            ? { error: { code: rpcError.code, message: rpcError.message } }
+            : undefined
+        });
+        return undefined;
+      }
+    };
+
+    // 1. tools/list
+    await queryEndpoint(
+      'sep-2549-tools-list-caching-hints',
+      'ToolsListCachingHints',
+      'tools/list'
+    );
+
+    // 2. prompts/list
+    await queryEndpoint(
+      'sep-2549-prompts-list-caching-hints',
+      'PromptsListCachingHints',
+      'prompts/list'
+    );
+
+    // 3. resources/list
+    const resourcesResult = await queryEndpoint(
+      'sep-2549-resources-list-caching-hints',
+      'ResourcesListCachingHints',
+      'resources/list'
+    );
+
+    // 4. resources/templates/list
+    await queryEndpoint(
+      'sep-2549-resources-templates-list-caching-hints',
+      'ResourcesTemplatesListCachingHints',
+      'resources/templates/list'
+    );
+
+    // 5. resources/read — use first resource from resources/list
+    const resources = resourcesResult?.resources as
+      | Array<{ uri?: string }>
+      | undefined;
+    const firstResourceUri = resources?.[0]?.uri;
+    if (firstResourceUri) {
+      await queryEndpoint(
+        'sep-2549-resources-read-caching-hints',
+        'ResourcesReadCachingHints',
+        'resources/read',
+        { uri: firstResourceUri }
+      );
+    } else {
+      // Keep the emitted check-ID set stable even when there is nothing to
+      // read (resources/list failed or the server exposes no resources).
+      checks.push({
+        id: 'sep-2549-resources-read-caching-hints',
+        name: 'ResourcesReadCachingHints',
+        description:
+          'resources/read response includes ttlMs and cacheScope caching hints',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          'resources/read was not exercised: resources/list failed or returned no resources.',
+        specReferences: SPEC_REFS
+      });
+    }
+
+    await conn.close();
+
+    // 6. Aggregate: ttlMs must be a non-negative integer
+    const ttlErrors: string[] = [];
+    const endpointsWithTtl = allFields.filter((f) => f.fields.hasTtlMs);
+    if (endpointsWithTtl.length === 0) {
+      ttlErrors.push('no endpoints returned ttlMs');
+    } else {
+      for (const { endpoint, fields } of endpointsWithTtl) {
+        const val = fields.ttlMs;
+        if (typeof val !== 'number') {
+          ttlErrors.push(
+            `${endpoint}: ttlMs is ${typeof val}, expected number`
+          );
+        } else if (!Number.isInteger(val)) {
+          ttlErrors.push(`${endpoint}: ttlMs is ${val}, expected integer`);
+        } else if (val < 0) {
+          ttlErrors.push(`${endpoint}: ttlMs is ${val}, must be >= 0`);
+        }
+      }
+    }
+
+    checks.push({
+      id: 'sep-2549-ttl-non-negative',
+      name: 'TtlNonNegative',
+      description: 'All ttlMs values are non-negative integers',
+      status: ttlErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: ttlErrors.length > 0 ? ttlErrors.join('; ') : undefined,
+      specReferences: SPEC_REFS,
+      details: {
+        endpoints: allFields.map((f) => ({
+          endpoint: f.endpoint,
+          ttlMs: f.fields.ttlMs
+        }))
+      }
+    });
+
+    // 7. Aggregate: cacheScope must be "public" or "private"
+    const scopeErrors: string[] = [];
+    const endpointsWithScope = allFields.filter((f) => f.fields.hasCacheScope);
+    if (endpointsWithScope.length === 0) {
+      scopeErrors.push('no endpoints returned cacheScope');
+    } else {
+      for (const { endpoint, fields } of endpointsWithScope) {
+        const val = fields.cacheScope;
+        if (val !== 'public' && val !== 'private') {
+          scopeErrors.push(
+            `${endpoint}: cacheScope is ${JSON.stringify(val)}, expected "public" or "private"`
+          );
+        }
+      }
+    }
+
+    checks.push({
+      id: 'sep-2549-cache-scope-valid',
+      name: 'CacheScopeValid',
+      description: 'All cacheScope values are "public" or "private"',
+      status: scopeErrors.length === 0 ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: scopeErrors.length > 0 ? scopeErrors.join('; ') : undefined,
+      specReferences: SPEC_REFS,
+      details: {
+        endpoints: allFields.map((f) => ({
+          endpoint: f.endpoint,
+          cacheScope: f.fields.cacheScope
+        }))
+      }
+    });
 
     return checks;
   }

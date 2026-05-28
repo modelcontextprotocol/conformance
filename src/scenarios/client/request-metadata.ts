@@ -3,8 +3,22 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
+  CheckStatus,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+
+/**
+ * Severity ranking used to latch per-id check results: a single
+ * non-conformant request is a violation even if later requests are
+ * conformant, so a later better status must never overwrite a worse one.
+ */
+const STATUS_SEVERITY: Record<CheckStatus, number> = {
+  FAILURE: 3,
+  WARNING: 2,
+  SUCCESS: 1,
+  INFO: 1,
+  SKIPPED: 0
+};
 
 /**
  * Every check ID this scenario can emit. Declared-but-unemitted checks are
@@ -92,10 +106,17 @@ export class RequestMetadataScenario implements Scenario {
 
   private addOrUpdateCheck(check: ConformanceCheck): void {
     const index = this.checks.findIndex((c) => c.id === check.id);
-    if (index !== -1) {
-      this.checks[index] = check;
-    } else {
+    if (index === -1) {
       this.checks.push(check);
+      return;
+    }
+    // Keep the worst status observed for this id (FAILURE > WARNING > SUCCESS
+    // > SKIPPED): an equal-or-worse result replaces the stored check (so its
+    // details stay fresh), but a better result must not erase a violation
+    // recorded from an earlier request.
+    const existing = this.checks[index];
+    if (STATUS_SEVERITY[check.status] >= STATUS_SEVERITY[existing.status]) {
+      this.checks[index] = check;
     }
   }
 
@@ -256,7 +277,8 @@ export class RequestMetadataScenario implements Scenario {
             jsonrpc: '2.0',
             id: request.id ?? null,
             error: {
-              code: -32001,
+              // UnsupportedProtocolVersionError per the draft schema.
+              code: -32004,
               message: 'Unsupported protocol version',
               data: {
                 supported: [DRAFT_PROTOCOL_VERSION]

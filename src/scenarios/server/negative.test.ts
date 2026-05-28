@@ -107,7 +107,7 @@ describe('Server scenario negative tests', () => {
     it('emits FAILURE for no-empty-contents and WARNING for error-code against a server returning empty contents', async () => {
       const scenario = new ResourcesNotFoundErrorScenario();
       const checks = await scenario.run(
-        testContext(`http://localhost:${PORT}/mcp`)
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
       );
 
       const noEmpty = checks.find((c) => c.id === 'sep-2164-no-empty-contents');
@@ -139,7 +139,7 @@ describe('Server scenario negative tests', () => {
     it('emits FAILURE for presence checks against a server without caching hints', async () => {
       const scenario = new CachingScenario();
       const checks = await scenario.run(
-        testContext(`http://localhost:${PORT}/mcp`)
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
       );
 
       // Should have at least 7 checks (5 presence + 2 aggregate)

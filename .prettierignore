@@ -8,3 +8,7 @@ src/seps/traceability.json
 # `npm run sync-schema`. Keep byte-identical with upstream so the SOURCE pin
 # is meaningful and re-syncing produces a clean diff.
 src/spec-types/*.ts
+
+# Local tooling workspaces (not part of the repo).
+.claude/
+.sdk-under-test/

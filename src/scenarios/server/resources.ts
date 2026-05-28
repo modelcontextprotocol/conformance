@@ -489,6 +489,9 @@ This scenario does not require the server to register any specific resource — 
       }
     ];
 
+    // SEP-2164 is a draft-spec requirement; under --spec-version draft the
+    // RunContext-provided connect() resolves to the stateless impl, so the
+    // request goes out with the draft protocol version and _meta/headers.
     let conn;
     try {
       conn = await ctx.connect();
@@ -500,7 +503,7 @@ This scenario does not require the server to register any specific resource — 
           'Server returns -32602 (Invalid Params) for non-existent resource',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        errorMessage: `Failed to connect: ${error instanceof Error ? error.message : String(error)}`,
+        errorMessage: `resources/read request failed: ${error instanceof Error ? error.message : String(error)}`,
         specReferences
       });
       return checks;
@@ -579,19 +582,13 @@ This scenario does not require the server to register any specific resource — 
       name: 'ResourcesNotFoundDataUri',
       description:
         'Server includes the requested URI in the error data field (SHOULD)',
-      status:
-        rpcError !== undefined
-          ? dataUriMatches
-            ? 'SUCCESS'
-            : 'WARNING'
-          : 'FAILURE',
+      status: rpcError ? (dataUriMatches ? 'SUCCESS' : 'WARNING') : 'FAILURE',
       timestamp: new Date().toISOString(),
-      errorMessage:
-        rpcError !== undefined
-          ? dataUriMatches
-            ? undefined
-            : `Error data.uri is ${JSON.stringify(errorData?.uri)}, expected "${nonexistentUri}". This is a SHOULD requirement.`
-          : 'No JSON-RPC error received; cannot evaluate data field.',
+      errorMessage: rpcError
+        ? dataUriMatches
+          ? undefined
+          : `Error data.uri is ${JSON.stringify(errorData?.uri)}, expected "${nonexistentUri}". This is a SHOULD requirement.`
+        : 'No JSON-RPC error received; cannot evaluate data field.',
       specReferences,
       details: {
         requestedUri: nonexistentUri,
