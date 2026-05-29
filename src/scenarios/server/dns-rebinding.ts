@@ -10,7 +10,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
+import { buildStandardHeaders, type RunContext } from '../../connection';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -51,7 +51,12 @@ function getHostFromUrl(serverUrl: string): string {
  * accept without prior setup (initialize for the stateful lifecycle,
  * server/discover with _meta for the stateless lifecycle).
  */
-function probeBody(specVersion: string): unknown {
+function probeBody(specVersion: string): {
+  jsonrpc: '2.0';
+  id: number;
+  method: string;
+  params: Record<string, unknown>;
+} {
   const clientInfo = {
     name: 'conformance-dns-rebinding-test',
     version: '1.0.0'
@@ -92,16 +97,21 @@ async function sendRequestWithHostAndOrigin(
   hostOrOrigin: string,
   specVersion: string
 ): Promise<{ statusCode: number; body: unknown }> {
+  // Build the SEP-2243 standard headers (Mcp-Method, Accept, ...) for the
+  // probe's JSON-RPC method so a strictly-conformant server only rejects the
+  // request for the Host/Origin values under test, then layer the
+  // scenario-specific headers on top.
+  const probe = probeBody(specVersion);
   const response = await request(serverUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Host: hostOrOrigin,
-      Origin: `http://${hostOrOrigin}`,
-      Accept: 'application/json, text/event-stream',
-      'MCP-Protocol-Version': specVersion
-    },
-    body: JSON.stringify(probeBody(specVersion))
+    headers: buildStandardHeaders(probe.method, probe.params, {
+      headers: {
+        Host: hostOrOrigin,
+        Origin: `http://${hostOrOrigin}`,
+        'MCP-Protocol-Version': specVersion
+      }
+    }),
+    body: JSON.stringify(probe)
   });
 
   let body: unknown;
