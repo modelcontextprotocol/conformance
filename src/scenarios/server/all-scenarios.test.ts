@@ -7,6 +7,7 @@ import {
   listDraftClientScenarios,
   listPendingClientScenarios
 } from '../index';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 import path from 'path';
 
 function getFreePort(): Promise<number> {
@@ -140,7 +141,15 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario ${scenarioName} not found`);
       }
 
-      const checks = await scenario.run(testContext(serverUrl));
+      // Draft-only scenarios expect the draft (stateless) connection, so
+      // derive the spec version from the scenario's declared source.
+      const specVersion =
+        'introducedIn' in scenario.source &&
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+          ? DRAFT_PROTOCOL_VERSION
+          : LATEST_SPEC_VERSION;
+
+      const checks = await scenario.run(testContext(serverUrl, specVersion));
 
       // Verify checks were returned
       expect(checks.length).toBeGreaterThan(0);

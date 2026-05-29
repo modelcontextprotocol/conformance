@@ -1,6 +1,11 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck, SpecVersion, LATEST_SPEC_VERSION } from '../types';
+import {
+  ConformanceCheck,
+  SpecVersion,
+  LATEST_SPEC_VERSION,
+  DRAFT_PROTOCOL_VERSION
+} from '../types';
 import { getClientScenario } from '../scenarios';
 import { connectFor, type RunContext } from '../connection';
 import { createResultDir, formatPrettyChecks } from './utils';
@@ -22,7 +27,7 @@ export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
   outputDir?: string,
-  specVersion: SpecVersion = LATEST_SPEC_VERSION
+  specVersion?: SpecVersion
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -38,14 +43,24 @@ export async function runServerConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
 
+  // When --spec-version is omitted, infer the version from the scenario's
+  // declared source so draft-only scenarios get the draft (stateless)
+  // connection rather than the stateful latest-spec default.
+  const resolvedSpecVersion =
+    specVersion ??
+    ('introducedIn' in scenario.source &&
+    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ? DRAFT_PROTOCOL_VERSION
+      : LATEST_SPEC_VERSION);
+
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
   const ctx: RunContext = {
     serverUrl,
-    specVersion,
-    connect: () => connectFor(specVersion)(serverUrl)
+    specVersion: resolvedSpecVersion,
+    connect: () => connectFor(resolvedSpecVersion)(serverUrl)
   };
   const checks = await scenario.run(ctx);
 
