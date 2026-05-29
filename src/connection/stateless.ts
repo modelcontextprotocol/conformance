@@ -311,9 +311,16 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
       }
     }
 
-    if (response.body?.error) {
-      const { code, message, data } = response.body.error;
-      throw new JsonRpcError(code, message, data);
+    const rpcError = response.body?.error;
+    // Only a properly-shaped JSON-RPC error becomes a JsonRpcError; anything
+    // else (e.g. a proxy's `{"error": "upstream timeout"}`) falls through so
+    // the HTTP status and raw body are surfaced below.
+    if (
+      typeof rpcError === 'object' &&
+      rpcError !== null &&
+      typeof rpcError.code === 'number'
+    ) {
+      throw new JsonRpcError(rpcError.code, rpcError.message, rpcError.data);
     }
     if (response.body?.result === undefined) {
       throw new Error(
@@ -321,7 +328,9 @@ export async function connectStateless(serverUrl: string): Promise<Connection> {
           `expected a JSON-RPC result for '${method}', got ` +
           (response.text !== undefined
             ? `non-JSON body (content-type ${response.contentType ?? '(none)'})`
-            : 'no result in response body')
+            : response.body !== undefined
+              ? `unexpected body ${JSON.stringify(response.body)}`
+              : 'no result in response body')
       );
     }
     return response.body.result as R;

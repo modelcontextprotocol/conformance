@@ -8,6 +8,7 @@ import {
   buildStandardHeaders,
   withRequestMeta,
   sendStatelessRequest,
+  connectStateless,
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES
 } from './stateless';
@@ -100,6 +101,28 @@ describe('sendStatelessRequest', () => {
       );
       expect(response.status).toBe(200);
       expect(response.body?.result).toEqual({ tools: [] });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('connectStateless', () => {
+  test('surfaces HTTP status and body when the error field is not JSON-RPC shaped', async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'upstream timeout' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const conn = await connectStateless(`http://localhost:${port}/`);
+      await expect(conn.request('tools/list')).rejects.toThrow(
+        /HTTP 502.*upstream timeout/
+      );
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
