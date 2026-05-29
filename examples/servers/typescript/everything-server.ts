@@ -1356,112 +1356,118 @@ app.post('/mcp', async (req, res) => {
 
     if (method === 'tools/list') {
       const dispatch = await getStatelessDispatchClient();
-      const fromServer = (await dispatch.client.request(
-        { method: 'tools/list', params: {} },
-        ResultSchema as any
-      )) as { tools: any[]; [k: string]: unknown };
-      await dispatch.close();
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          ...fromServer,
-          tools: [
-            ...fromServer.tools,
-            {
-              name: 'test_missing_capability',
-              description: 'Test tool requiring sampling',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_elicitation',
-              description:
-                'MRTR: returns InputRequiredResult with elicitation request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_sampling',
-              description:
-                'MRTR: returns InputRequiredResult with sampling request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_list_roots',
-              description:
-                'MRTR: returns InputRequiredResult with roots/list request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_request_state',
-              description:
-                'MRTR: returns InputRequiredResult with requestState',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multiple_inputs',
-              description:
-                'MRTR: returns InputRequiredResult with multiple input requests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multi_round',
-              description: 'MRTR: multi-round InputRequiredResult workflow',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_tampered_state',
-              description: 'MRTR: HMAC-signed requestState integrity test',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_capabilities',
-              description:
-                'MRTR: respects client capabilities in inputRequests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_streaming_elicitation',
-              description:
-                'Diagnostic tool validating response progress streams',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_logging_tool',
-              description: 'Diagnostic logging validator tool',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ],
-          // SEP-2549 caching hints are required on cacheable list results.
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'tools/list', params: {} },
+          ResultSchema as any
+        )) as { tools: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            tools: [
+              ...fromServer.tools,
+              {
+                name: 'test_missing_capability',
+                description: 'Test tool requiring sampling',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_elicitation',
+                description:
+                  'MRTR: returns InputRequiredResult with elicitation request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_sampling',
+                description:
+                  'MRTR: returns InputRequiredResult with sampling request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_list_roots',
+                description:
+                  'MRTR: returns InputRequiredResult with roots/list request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_request_state',
+                description:
+                  'MRTR: returns InputRequiredResult with requestState',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multiple_inputs',
+                description:
+                  'MRTR: returns InputRequiredResult with multiple input requests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multi_round',
+                description: 'MRTR: multi-round InputRequiredResult workflow',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_tampered_state',
+                description: 'MRTR: HMAC-signed requestState integrity test',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_capabilities',
+                description:
+                  'MRTR: respects client capabilities in inputRequests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_streaming_elicitation',
+                description:
+                  'Diagnostic tool validating response progress streams',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_logging_tool',
+                description: 'Diagnostic logging validator tool',
+                inputSchema: { type: 'object', properties: {} }
+              }
+            ],
+            // SEP-2549 caching hints are required on cacheable list results.
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
       const dispatch = await getStatelessDispatchClient();
-      const fromServer = (await dispatch.client.request(
-        { method: 'prompts/list', params: {} },
-        ResultSchema as any
-      )) as { prompts: any[]; [k: string]: unknown };
-      await dispatch.close();
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          ...fromServer,
-          prompts: [
-            ...fromServer.prompts,
-            {
-              name: 'test_input_required_result_prompt',
-              description: 'MRTR: prompt that requires elicitation input'
-            }
-          ],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'prompts/list', params: {} },
+          ResultSchema as any
+        )) as { prompts: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            prompts: [
+              ...fromServer.prompts,
+              {
+                name: 'test_input_required_result_prompt',
+                description: 'MRTR: prompt that requires elicitation input'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // SEP-2322 MRTR: prompts/get handler
@@ -1514,36 +1520,59 @@ app.post('/mcp', async (req, res) => {
       }
     }
 
-    // Resources on the stateless path (SEP-2575): SEP-2549 hints + SEP-2164 errors.
+    // Resources on the stateless path (SEP-2575): the McpServer-registered
+    // resources are merged with the stateless-only resource, mirroring the
+    // tools/list and prompts/list handlers above (SEP-2549 hints + SEP-2164
+    // errors via the carry-forward dispatch below).
     if (method === 'resources/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          resources: [
-            {
-              uri: 'test://stateless-static-text',
-              name: 'Stateless Static Text',
-              description: 'A static text resource served on the draft path',
-              mimeType: 'text/plain'
-            }
-          ],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/list', params: {} },
+          ResultSchema as any
+        )) as { resources: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            resources: [
+              ...fromServer.resources,
+              {
+                uri: 'test://stateless-static-text',
+                name: 'Stateless Static Text',
+                description: 'A static text resource served on the draft path',
+                mimeType: 'text/plain'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     if (method === 'resources/templates/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          resourceTemplates: [],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/templates/list', params: {} },
+          ResultSchema as any
+        )) as { resourceTemplates: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     if (method === 'resources/read') {
@@ -1565,16 +1594,8 @@ app.post('/mcp', async (req, res) => {
           }
         });
       }
-      // SEP-2164: unknown resources get -32602 with the requested uri in data.
-      return res.status(200).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32602,
-          message: 'Resource not found',
-          data: { uri }
-        }
-      });
+      // Other URIs (including unknown ones) fall through to the carry-forward
+      // dispatch below, which serves the McpServer-registered resources.
     }
 
     if (method === 'tools/call') {
@@ -2181,10 +2202,15 @@ app.post('/mcp', async (req, res) => {
         );
         return res.json({ jsonrpc: '2.0', id, result });
       } catch (e: any) {
+        // SEP-2164: unknown resources get -32602 with the requested uri in
+        // data; the SDK's McpError does not populate data itself.
+        const data =
+          e.data ??
+          (method === 'resources/read' ? { uri: params.uri } : undefined);
         return res.json({
           jsonrpc: '2.0',
           id,
-          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+          error: { code: e.code ?? -32603, message: e.message, data }
         });
       } finally {
         await dispatch.close();
