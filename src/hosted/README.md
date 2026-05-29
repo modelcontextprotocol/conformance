@@ -42,14 +42,69 @@ accumulate on that run.
 
 ### Coverage
 
-Hostable = any scenario that implements `handler()`. Currently that's
-everything **except** `auth/*` (need a second public origin for the
-authorization server). `listHostableScenarios()` derives the list at runtime
-from which scenarios expose `handler()`.
+Hostable = any scenario that implements `handler()` (single origin) or
+`authHandlers()` (multi-origin, see below). `listHostableScenarios()` derives
+the list at runtime, gated by which aux origins are configured.
 
 `sse-retry` implements `handler()` and works under `conformance hosted`, but
 its connection-close-timing checks won't be meaningful through a buffered
 fetch bridge — see below.
+
+## Auth scenarios — second-origin relay
+
+`auth/*` scenarios stand up two cross-referencing HTTP apps: a resource
+server (the MCP endpoint + PRM) and an OAuth authorization server. The
+`.well-known/*` discovery paths and RFC 8414 `issuer` validation are
+**origin-rooted**, so the AS can't live under `/s/<scenario>/<id>/` — it
+needs its own public origin.
+
+```
+client                    RS origin                      AS-relay origin
+  │  POST /s/auth/.../mcp     │                              │
+  │──────────────────────────▶│ 401 + WWW-Authenticate       │
+  │  GET /.well-known/oauth-protected-resource/s/auth/...    │
+  │──────────────────────────▶│ {authorization_servers:      │
+  │                           │  [<as>/r/<id>]}              │
+  │  GET /.well-known/oauth-authorization-server/r/<id>      │
+  │──────────────────────────────────────────────────────────▶│
+  │                           │◀── /__aux/as/.well-known/... │
+  │                           │    (x-relay-secret)          │
+```
+
+The AS relay (`examples/hosted/valtown-relay.ts`) is **stateless** — it just
+forwards every request to `<rs-origin>/__aux/<role><path>` with a shared
+secret. All scenario state (closures, checks) stays on the RS process; the
+per-run AS issuer is `<as-origin>/r/<run-id>` so the run-id is recoverable
+from any path the client constructs from it. The RS app extracts that
+`/r/<id>` segment, strips it, and dispatches to the run's AS handler with the
+path `createAuthServer()` registered.
+
+```bash
+# CLI — also reads CONFORMANCE_RELAY_SECRET from env
+npx @modelcontextprotocol/conformance hosted \
+  --port 3000 \
+  --as-origin https://conformance-as.example.com \
+  --relay-secret "$(openssl rand -hex 32)"
+```
+
+Two extra routes appear when `--as-origin` is set:
+
+| Route                                               | Purpose                                                              |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /.well-known/oauth-protected-resource/s/<...>` | RFC 9728 root-level PRM dispatch — recovers run from the path suffix |
+| `ALL /__aux/<role>/*`                               | Relay backchannel; 403 without `x-relay-secret`                      |
+
+The three-origin scenarios (`authorization-server-migration` needs `--as2-origin`,
+`enterprise-managed-authorization` needs `--idp-origin`) are mounted only
+when those flags are set; deploy one more relay per role with
+`CONFORMANCE_RELAY_ROLE=as2|idp`.
+
+**Fidelity note:** the hosted AS issuer always carries a `/r/<id>` path
+component, so scenarios that locally test root-issuer discovery
+(`auth/metadata-default`, `auth/metadata-var1`) become path-issuer tests when
+hosted. The RFC 8414 mechanics are identical.
+`auth/2025-03-26-endpoint-fallback` (no-metadata fallback to `/authorize` at
+the MCP origin) is not hostable.
 
 ## Serverless / val.town
 
@@ -66,6 +121,17 @@ export default handler;
 The bridge buffers the response, so streaming-SSE scenarios (`sse-retry`) are
 returned as 501; everything else — including the SDK's
 `StreamableHTTPServerTransport` in stateless mode — works.
+
+### Two-val auth setup
+
+| Val              | File                               | Env                                                                                      |
+| ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| `conformance`    | `examples/hosted/valtown.ts`       | `CONFORMANCE_AS_ORIGIN=https://<you>-conformance-as.val.run`, `CONFORMANCE_RELAY_SECRET` |
+| `conformance-as` | `examples/hosted/valtown-relay.ts` | `CONFORMANCE_RS_ORIGIN=https://<you>-conformance.val.run`, `CONFORMANCE_RELAY_SECRET`    |
+
+Same `CONFORMANCE_RELAY_SECRET` on both. Run state lives in the RS val's
+process memory, so a run must complete within one warm isolate (~minutes on
+val.town — fine for a conformance flow).
 
 ## Example
 

@@ -26,7 +26,18 @@ import { createHostedApp } from '../../src/hosted/server';
 
 const NOT_FETCH_SAFE = new Set(['sse-retry']);
 
-const { app } = createHostedApp();
+// Auth scenarios need a second public origin (RFC 8414 well-known is
+// origin-rooted). Deploy examples/hosted/valtown-relay.ts as a separate val
+// and point CONFORMANCE_AS_ORIGIN at it; both vals share
+// CONFORMANCE_RELAY_SECRET so /__aux can't be hit directly.
+const { app } = createHostedApp({
+  auxOrigins: {
+    as: process.env.CONFORMANCE_AS_ORIGIN,
+    as2: process.env.CONFORMANCE_AS2_ORIGIN,
+    idp: process.env.CONFORMANCE_IDP_ORIGIN
+  },
+  relaySecret: process.env.CONFORMANCE_RELAY_SECRET
+});
 
 export default async function (request: Request): Promise<Response> {
   const url = new URL(request.url);

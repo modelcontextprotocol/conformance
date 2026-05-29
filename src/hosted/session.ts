@@ -9,15 +9,23 @@
  */
 
 import { randomBytes } from 'crypto';
-import { Scenario, ConformanceCheck, RequestListener } from '../types';
+import {
+  Scenario,
+  ConformanceCheck,
+  RequestListener,
+  AuthHandlerScenario,
+  AuxOriginRole
+} from '../types';
 import { getScenario, scenarios } from '../scenarios';
 
 export interface HostedRun {
   id: string;
   scenarioName: string;
   scenario: Scenario;
-  /** The mounted handler — invoke directly with (req, res). */
+  /** The mounted RS handler — invoke directly with (req, res). */
   listener: RequestListener;
+  /** Aux-origin handlers (AS, IdP, …) for auth scenarios. */
+  auxListeners?: Partial<Record<AuxOriginRole, RequestListener>>;
   /** Sub-path under the run prefix where the MCP endpoint lives. */
   mcpPath: string;
   createdAt: number;
@@ -29,15 +37,23 @@ export interface SessionManagerOptions {
   /** Idle ms after which a run is reaped. Default 5 minutes. */
   ttlMs?: number;
   sweepIntervalMs?: number;
+  /**
+   * Public origins of the relay deployments, keyed by role. Required for any
+   * scenario that exposes `authHandlers()`. Each value is the relay's public
+   * URL (no trailing slash); per-run AS issuer becomes `<origin>/r/<run-id>`.
+   */
+  auxOrigins?: Partial<Record<AuxOriginRole, string>>;
 }
 
 export class SessionManager {
   private runs = new Map<string, HostedRun>();
   private readonly ttlMs: number;
+  private readonly auxOrigins: Partial<Record<AuxOriginRole, string>>;
   private sweeper: ReturnType<typeof setInterval>;
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
+    this.auxOrigins = opts.auxOrigins ?? {};
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;
     this.sweeper = setInterval(() => this.sweep(), sweepIntervalMs);
     this.sweeper.unref?.();
@@ -64,21 +80,53 @@ export class SessionManager {
 
     const proto = getScenario(scenarioName);
     if (!proto) throw new UnknownScenarioError(scenarioName);
-    if (!proto.handler) throw new NotHostableError(scenarioName);
 
     const Ctor = proto.constructor as new () => Scenario;
     const scenario = new Ctor();
     const runId = id ?? randomBytes(6).toString('base64url');
-    const listener = scenario.handler!(() => baseUrlFor(runId));
+
+    let listener: RequestListener;
+    let auxListeners: HostedRun['auxListeners'];
+    let context: Record<string, unknown> | undefined;
+
+    if (scenario instanceof AuthHandlerScenario) {
+      // Multi-origin scenario: build RS + aux handlers from authHandlers().
+      // Aux issuer is <relay-origin>/r/<runId> so the run-id is recoverable
+      // from any RFC 8414 well-known path the client constructs from it.
+      const missing = scenario.auxRoles.filter((r) => !this.auxOrigins[r]);
+      if (missing.length) {
+        throw new NotHostableError(
+          scenarioName,
+          `needs aux origin(s) [${missing.join(', ')}] — start with --as-origin`
+        );
+      }
+      const handlers = scenario.authHandlers({
+        getRsBaseUrl: () => baseUrlFor(runId),
+        getAuxBaseUrl: (role) => `${this.auxOrigins[role]}/r/${runId}`
+      });
+      listener = handlers.rs;
+      auxListeners = handlers.aux;
+      context = (
+        scenario as unknown as {
+          scenarioContext?: () => Record<string, unknown>;
+        }
+      ).scenarioContext?.();
+    } else if (scenario.handler) {
+      listener = scenario.handler(() => baseUrlFor(runId));
+    } else {
+      throw new NotHostableError(scenarioName);
+    }
 
     const run: HostedRun = {
       id: runId,
       scenarioName,
       scenario,
       listener,
+      auxListeners,
       mcpPath: scenario.mcpPath ?? '',
       createdAt: Date.now(),
-      lastSeenAt: Date.now()
+      lastSeenAt: Date.now(),
+      context
     };
     this.runs.set(runId, run);
     return run;
@@ -135,17 +183,28 @@ export class UnknownScenarioError extends Error {
 }
 
 export class NotHostableError extends Error {
-  constructor(name: string) {
+  constructor(name: string, why?: string) {
     super(
-      `Scenario '${name}' does not implement handler() and cannot run hosted ` +
-        `(typically auth scenarios that need a second origin).`
+      `Scenario '${name}' cannot run hosted` +
+        (why
+          ? `: ${why}`
+          : ` (no handler() or authHandlers() — typically backcompat scenarios that need root-of-origin endpoints).`)
     );
   }
 }
 
-/** Scenarios that expose handler() and so can run without a loopback port. */
-export function listHostableScenarios(): string[] {
+/** Scenarios that can run hosted, partitioned by what they need. */
+export function listHostableScenarios(
+  withAuxOrigins: readonly AuxOriginRole[] = []
+): string[] {
+  const have = new Set(withAuxOrigins);
   return Array.from(scenarios.entries())
-    .filter(([, s]) => typeof s.handler === 'function')
+    .filter(([, s]) => {
+      if (typeof s.handler === 'function') return true;
+      if (s instanceof AuthHandlerScenario) {
+        return s.auxRoles.every((r) => have.has(r));
+      }
+      return false;
+    })
     .map(([name]) => name);
 }

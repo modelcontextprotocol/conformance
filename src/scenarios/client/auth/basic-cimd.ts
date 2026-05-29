@@ -1,8 +1,11 @@
-import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls } from '../../../types';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 
 /**
@@ -20,19 +23,18 @@ export const CIMD_CLIENT_METADATA_URL =
  * clients SHOULD use a URL as their client_id instead of using dynamic client
  * registration.
  */
-export class AuthBasicCIMDScenario implements Scenario {
+export class AuthBasicCIMDScenario extends AuthHandlerScenario {
   name = 'auth/basic-cimd';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests OAuth flow with Client ID Metadata Documents (SEP-991/URL-based client IDs). Server advertises client_id_metadata_document_supported=true and client should use URL as client_id instead of DCR.';
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(this.checks, getAsUrl, {
       clientIdMetadataDocumentSupported: true,
       onAuthorizationRequest: (data) => {
         // Check if client used URL-based client ID
@@ -57,22 +59,9 @@ export class AuthBasicCIMDScenario implements Scenario {
       }
     });
 
-    await this.authServer.start(authApp);
+    const rsApp = createServer(this.checks, ctx.getRsBaseUrl, getAsUrl);
 
-    const app = createServer(
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl
-    );
-
-    await this.server.start(app);
-
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {

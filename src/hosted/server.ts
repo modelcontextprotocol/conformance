@@ -20,7 +20,8 @@
  * this works on serverless hosts. Each run gets a fresh Scenario instance.
  */
 
-import express, { Request } from 'express';
+import express, { Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -30,29 +31,46 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import {
   SessionManager,
+  HostedRun,
   UnknownScenarioError,
   NotHostableError,
   listHostableScenarios
 } from './session';
 import { renderLanding, renderResults } from './html';
 import { getScenario } from '../scenarios';
-import { ConformanceCheck } from '../types';
+import { ConformanceCheck, AuxOriginRole } from '../types';
 
 export interface HostedServerOptions {
   publicOrigin?: string;
   ttlMs?: number;
+  /**
+   * Public origins of the AS/IdP relay deployments. When set, scenarios that
+   * implement `authHandlers()` become hostable; their per-run AS issuer is
+   * `<auxOrigins.as>/r/<run-id>`. See examples/hosted/valtown-relay.ts.
+   */
+  auxOrigins?: Partial<Record<AuxOriginRole, string>>;
+  /**
+   * Shared secret the relay sends in `x-relay-secret`. `/__aux/*` rejects
+   * requests without it so the aux backchannel can't be hit directly. Set
+   * the same value in the relay's env.
+   */
+  relaySecret?: string;
 }
 
 /** Only allow run-ids that are safe in a single path segment. */
 const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
+
 export function createHostedApp(opts: HostedServerOptions = {}): {
   app: express.Application;
   sessions: SessionManager;
 } {
-  const sessions = new SessionManager({ ttlMs: opts.ttlMs });
+  const auxOrigins = opts.auxOrigins ?? {};
+  const haveAux = AUX_ROLES.filter((r) => auxOrigins[r]);
+  const sessions = new SessionManager({ ttlMs: opts.ttlMs, auxOrigins });
   const app = express();
-  const hostable = new Set(listHostableScenarios());
+  const hostable = new Set(listHostableScenarios(haveAux));
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;
@@ -63,6 +81,51 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
   function runBaseUrl(req: Request, scenario: string, runId: string): string {
     return `${origin(req)}/s/${scenario}/${runId}`;
+  }
+
+  /**
+   * Resolve "<scenario...>/<runId>/<suffix...>" against the hostable set.
+   * Scenario names may contain '/', so try progressively longer prefixes.
+   * Returns undefined if no hostable scenario matches the prefix.
+   */
+  function resolveRun(rest: string):
+    | {
+        scenarioName: string;
+        runId: string | undefined;
+        suffix: string;
+      }
+    | undefined {
+    const segments = rest.split('/');
+    for (let i = 1; i <= segments.length; i++) {
+      const candidate = segments.slice(0, i).join('/');
+      if (hostable.has(candidate)) {
+        const runId = segments[i] || undefined;
+        const suffix = '/' + segments.slice(i + 1).join('/');
+        return { scenarioName: candidate, runId, suffix };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Dispatch (req, res) to `listener` after rewriting `req.url` so the
+   * scenario sees the path it would have under start()/stop() — i.e. with
+   * the run-prefix stripped and (for well-known dispatch) the well-known
+   * prefix re-prepended.
+   */
+  function dispatch(
+    run: HostedRun,
+    listener: (req: Request, res: Response) => void,
+    req: Request,
+    res: Response,
+    rewrittenUrl: string
+  ) {
+    res.setHeader(
+      'link',
+      `<${origin(req)}/results/${run.id}>; rel="conformance-results"`
+    );
+    req.url = rewrittenUrl;
+    listener(req, res);
   }
 
   // ---------- discovery ----------
@@ -95,26 +158,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
   app.all(/^\/s\/(.+)$/, (req, res, next) => {
     const rest = req.params[0]; // "<scenario...>/<runId>/<suffix...>"
-
-    // Scenario names can contain '/', so try progressively longer prefixes
-    // until one matches a known scenario.
-    const segments = rest.split('/');
-    let nameLen = 0;
-    let scenarioName = '';
-    for (let i = 1; i <= segments.length; i++) {
-      const candidate = segments.slice(0, i).join('/');
-      if (hostable.has(candidate)) {
-        scenarioName = candidate;
-        nameLen = i;
-        break;
-      }
-    }
-    if (!scenarioName) {
+    const resolved = resolveRun(rest);
+    if (!resolved) {
       // Distinguish "exists but not hostable" from "unknown"
+      const segments = rest.split('/');
       for (let i = 1; i <= segments.length; i++) {
         if (getScenario(segments.slice(0, i).join('/'))) {
           res.status(501).json({
-            error: `scenario '${segments.slice(0, i).join('/')}' is not hostable (no handler())`
+            error: `scenario '${segments.slice(0, i).join('/')}' is not hostable here`
           });
           return;
         }
@@ -122,9 +173,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       res.status(404).json({ error: `unknown scenario '${segments[0]}'` });
       return;
     }
-
-    const runId = segments[nameLen];
-    const suffix = '/' + segments.slice(nameLen + 1).join('/');
+    const { scenarioName, runId, suffix } = resolved;
 
     // GET /s/<scenario> with no run-id → mint one and tell the caller where
     // to point their client.
@@ -171,18 +220,107 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       throw e;
     }
 
-    // Advertise where results live so a client can discover them without
-    // out-of-band knowledge of the URL scheme.
-    res.setHeader(
-      'link',
-      `<${origin(req)}/results/${run.id}>; rel="conformance-results"`
-    );
-
     // Rewrite to the path the scenario expects (it thinks it's at root).
     // The query string is preserved because we keep the express req object.
-    req.url = suffix === '/' ? run.mcpPath || '/' : suffix;
-    run.listener(req, res);
+    dispatch(
+      run,
+      run.listener,
+      req,
+      res,
+      suffix === '/' ? run.mcpPath || '/' : suffix
+    );
   });
+
+  // ---------- root well-known dispatch (RS side) ----------
+  //
+  // RFC 9728: a client given MCP URL <origin>/s/<scn>/<id>/mcp derives the PRM
+  // URL as <origin>/.well-known/oauth-protected-resource/s/<scn>/<id>/mcp —
+  // i.e. at the *origin root*, not under the run prefix. We catch that here,
+  // recover (scenario, run-id) from the path suffix, and re-dispatch to the
+  // run's RS handler with the path it would have seen on its own origin.
+  //
+  // Requests that arrive *under* the run prefix (because the WWW-Authenticate
+  // header points there) already work via the /s/* mount above.
+
+  app.get(/^\/\.well-known\/oauth-protected-resource\/s\/(.+)$/, (req, res) => {
+    const resolved = resolveRun(req.params[0]);
+    if (!resolved?.runId || !RUN_ID_RE.test(resolved.runId)) {
+      res.status(404).json({ error: 'no run for this resource path' });
+      return;
+    }
+    const run = sessions.get(resolved.runId);
+    if (!run) {
+      res.status(404).json({ error: 'no run for this resource path' });
+      return;
+    }
+    // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
+    const rewritten =
+      '/.well-known/oauth-protected-resource' +
+      (resolved.suffix === '/' ? '' : resolved.suffix);
+    dispatch(run, run.listener, req, res, rewritten);
+  });
+
+  // ---------- aux-origin backchannel (relay target) ----------
+  //
+  // The AS relay (examples/hosted/valtown-relay.ts) forwards every request it
+  // receives to <this-origin>/__aux/<role><path>. The per-run AS issuer is
+  // <relay-origin>/r/<run-id>, so every path the client hits — endpoints
+  // (/r/<id>/authorize) and RFC 8414 well-known
+  // (/.well-known/oauth-authorization-server/r/<id>[/tenant]) — carries
+  // `/r/<id>` somewhere in it. We extract the id, strip that segment, and
+  // dispatch to the run's aux handler so it sees exactly the path
+  // createAuthServer registered.
+  //
+  // Guarded by a shared secret so this internal mount can't be hit directly
+  // to forge checks into someone else's run.
+
+  if (haveAux.length) {
+    const secret = opts.relaySecret ?? process.env.CONFORMANCE_RELAY_SECRET;
+    const guard = (req: Request, res: Response): boolean => {
+      const got = req.header('x-relay-secret') ?? '';
+      // Constant-time compare; mismatch length → fast 403 is fine.
+      const ok =
+        !!secret &&
+        got.length === secret.length &&
+        timingSafeEqual(Buffer.from(got), Buffer.from(secret));
+      if (!ok) {
+        res
+          .status(403)
+          .json({ error: 'forbidden: /__aux is the relay backchannel' });
+      }
+      return ok;
+    };
+
+    app.all(/^\/__aux\/([a-z0-9]+)(\/.*)$/, (req, res) => {
+      if (!guard(req, res)) return;
+      const role = req.params[0] as AuxOriginRole;
+      const path = req.params[1];
+      if (!AUX_ROLES.includes(role)) {
+        res.status(404).json({ error: `unknown aux role '${role}'` });
+        return;
+      }
+
+      // Find /r/<run-id> anywhere in the path and excise it.
+      const m = path.match(/^(.*?)\/r\/([A-Za-z0-9_-]{1,64})(\/.*)?$/);
+      if (!m) {
+        res
+          .status(404)
+          .json({ error: 'aux request path missing /r/<run-id> segment' });
+        return;
+      }
+      const [, prefix, runId, suffix = ''] = m;
+      const run = sessions.get(runId);
+      const listener = run?.auxListeners?.[role];
+      if (!run || !listener) {
+        res.status(404).json({ error: `no aux '${role}' handler for run` });
+        return;
+      }
+      const search = req.url.includes('?')
+        ? req.url.slice(req.url.indexOf('?'))
+        : '';
+      dispatch(run, listener, req, res, (prefix + suffix || '/') + search);
+    });
+  }
 
   // ---------- results ----------
 

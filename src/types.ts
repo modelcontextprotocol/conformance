@@ -177,6 +177,114 @@ export abstract class HandlerScenario implements Scenario {
   }
 }
 
+/**
+ * Named extra origins a multi-origin scenario needs beyond the resource
+ * server. `as` is the OAuth authorization server; `as2`/`idp` cover the
+ * three-origin scenarios (authorization-server-migration, EMA).
+ */
+export type AuxOriginRole = 'as' | 'as2' | 'idp';
+
+export interface AuthHandlerContext {
+  /** Public URL of the resource-server mount (no trailing slash). */
+  getRsBaseUrl: () => string;
+  /**
+   * Public URL of an aux origin for this run (no trailing slash). When
+   * hosted, this is `<relay-origin>/r/<run-id>` so the run-id is recoverable
+   * from any path the client constructs from it (RFC 8414 well-known
+   * insertion, endpoint paths, etc.).
+   */
+  getAuxBaseUrl: (role: AuxOriginRole) => string;
+}
+
+export interface AuthHandlers {
+  /** Resource-server handler — serves /mcp and PRM. */
+  rs: RequestListener;
+  /** Aux-origin handlers keyed by role. */
+  aux: Partial<Record<AuxOriginRole, RequestListener>>;
+}
+
+/**
+ * Convenience: implement `authHandlers()` and get `start()`/`stop()` for
+ * free. `start()` binds one ephemeral localhost port per origin, exactly as
+ * the auth scenarios did with `ServerLifecycle` before; the hosted runner
+ * mounts the same handlers behind path prefixes + an AS relay instead.
+ */
+export abstract class AuthHandlerScenario implements Scenario {
+  abstract name: string;
+  abstract description: string;
+  abstract readonly source: ScenarioSource;
+  allowClientError?: boolean;
+  mcpPath = '/mcp';
+
+  /** Aux origins this scenario needs. Override for 3-origin scenarios. */
+  readonly auxRoles: readonly AuxOriginRole[] = ['as'];
+
+  private _servers: import('http').Server[] = [];
+  private _urls: { rs: string; aux: Partial<Record<AuxOriginRole, string>> } = {
+    rs: '',
+    aux: {}
+  };
+
+  abstract authHandlers(ctx: AuthHandlerContext): AuthHandlers;
+  abstract getChecks(): ConformanceCheck[];
+
+  /** Optional context to pass to the client (credentials etc). */
+  protected scenarioContext?(): Record<string, unknown>;
+
+  async start(): Promise<ScenarioUrls> {
+    const http = await import('http');
+    const handlers = this.authHandlers({
+      getRsBaseUrl: () => this._urls.rs,
+      getAuxBaseUrl: (role) => {
+        const u = this._urls.aux[role];
+        if (!u) throw new Error(`aux role '${role}' not started`);
+        return u;
+      }
+    });
+
+    const listen = (h: RequestListener): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const srv = http.createServer(h);
+        srv.on('error', reject);
+        srv.listen(0, () => {
+          const addr = srv.address();
+          if (!addr || typeof addr !== 'object') {
+            return reject(new Error('Failed to get server address'));
+          }
+          this._servers.push(srv);
+          resolve(`http://localhost:${addr.port}`);
+        });
+      });
+
+    // Aux origins must come up first — RS handlers reference their URLs.
+    for (const role of this.auxRoles) {
+      const h = handlers.aux[role];
+      if (!h) throw new Error(`authHandlers() missing aux role '${role}'`);
+      this._urls.aux[role] = await listen(h);
+    }
+    this._urls.rs = await listen(handlers.rs);
+
+    return {
+      serverUrl: `${this._urls.rs}${this.mcpPath}`,
+      ...(this.scenarioContext && { context: this.scenarioContext() })
+    };
+  }
+
+  async stop(): Promise<void> {
+    await Promise.all(
+      this._servers.map(
+        (s) =>
+          new Promise<void>((resolve) => {
+            s.closeAllConnections?.();
+            s.close(() => resolve());
+          })
+      )
+    );
+    this._servers = [];
+    this._urls = { rs: '', aux: {} };
+  }
+}
+
 export interface ClientScenario {
   name: string;
   description: string;
