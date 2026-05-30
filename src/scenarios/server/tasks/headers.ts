@@ -28,7 +28,7 @@ import {
   ScenarioSource,
   ScenarioRunOptions
 } from '../../../types';
-import { SEP_2243_REF } from '../_shared/sep-refs';
+import { SEP_2243_REF, SEP_2663_REF } from '../_shared/sep-refs';
 import { errMsg, failureCheck } from '../_shared/checks';
 import { initRawSession, type RawSession } from '../_shared/raw-session';
 import { TASKS_EXTENSION_ID } from './helpers';
@@ -38,21 +38,28 @@ const HEADER_MISMATCH_ERROR_CODE = -32001;
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
   source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
-  description = `Test SEP-2243 Mcp-Method / Mcp-Name request-header tolerance.
+  description = `Test SEP-2243 Mcp-Method / Mcp-Name request-header validation, tasks surface.
 
 **Server Implementation Requirements:**
 
-SEP-2243 defines two informational request headers used by HTTP
-infrastructure (proxies, gateways, observability) to route or shape
-JSON-RPC traffic without parsing the body:
+SEP-2243 defines two required request headers that mirror body fields
+into the HTTP layer for routing intermediaries:
 
-- \`Mcp-Method: <jsonrpc-method>\` — set on every JSON-RPC request.
-- \`Mcp-Name: <task-id>\` — set on resume operations (\`tasks/get\`,
-  \`tasks/update\`, \`tasks/cancel\`).
+- \`Mcp-Method: <jsonrpc-method>\` — REQUIRED on every JSON-RPC request,
+  matching the body \`method\`.
+- \`Mcp-Name: <name-shaped-identifier>\` — REQUIRED on requests with a
+  name-shaped body field. Per SEP-2243 §"Standard Headers" this covers
+  \`tools/call\` (\`params.name\`), \`resources/read\` (\`params.uri\`), and
+  \`prompts/get\` (\`params.name\`). SEP-2663 §"Streamable HTTP: Routing
+  Headers" extends the requirement to tasks-namespace methods:
+  \`tasks/get\`, \`tasks/update\`, and \`tasks/cancel\` MUST carry
+  \`Mcp-Name: <taskId>\` matching \`params.taskId\`.
 
-The JSON-RPC body is authoritative. The server MUST tolerate the
-headers, MUST NOT require them, and MUST NOT change dispatch behavior
-based on them — including when the headers disagree with the body.`;
+Per SEP-2243 §"Server Behavior", servers that process the request body
+MUST validate that header values match the body. Per its "Validation
+Failure Conditions", both missing required headers and mismatched
+values trigger rejection with JSON-RPC error code \`-32001\`
+(HeaderMismatch) and HTTP 400.`;
 
   async run(
     serverUrl: string,
@@ -122,13 +129,15 @@ based on them — including when the headers disagree with the body.`;
     }
 
     // Check 2: Mcp-Method + Mcp-Name on tasks/get (drive a task first
-    // so we have a real taskId to route on).
+    // so we have a real taskId to route on). With matched routing
+    // headers the server MUST dispatch normally; this is the positive
+    // case complementing the negative-path mismatch checks below.
     let routingTaskId: string | undefined;
     {
-      const id = 'tasks-headers-tolerate-routing-headers-on-tasks-get';
-      const name = 'TasksHeadersTolerateRoutingHeadersOnTasksGet';
+      const id = 'sep-2663-routing-headers-accepted-on-tasks-get';
+      const name = 'Sep2663RoutingHeadersAcceptedOnTasksGet';
       const description =
-        'Server tolerates Mcp-Method + Mcp-Name request headers on tasks/get (body taskId resolves regardless of routing headers)';
+        'Server accepts matched Mcp-Method + Mcp-Name request headers on tasks/get and dispatches normally';
       try {
         const created = (await session.request('tools/call', {
           name: 'slow_compute',
@@ -225,6 +234,73 @@ based on them — including when the headers disagree with the body.`;
             errorMessage: `expected -32001 HeaderMismatch; got ${code ?? errMsg(error)}`,
             specReferences: [SEP_2243_REF]
           });
+        }
+      }
+    }
+
+    // Check 4: Mismatched Mcp-Name header on tasks/get is rejected.
+    // Per SEP-2663 §"Streamable HTTP: Routing Headers" the client MUST
+    // set Mcp-Name to params.taskId on tasks/get / tasks/update /
+    // tasks/cancel; per SEP-2243 §"Server Behavior" the server MUST
+    // reject any header that disagrees with the body. tasks/get is the
+    // representative probe — the same rule applies to update/cancel by
+    // extension. Confirmed by SEP-2663 author on conformance#262.
+    {
+      const id = 'sep-2663-server-rejects-mismatched-mcp-name-on-tasks-get';
+      const name = 'Sep2663ServerRejectsMismatchedMcpNameOnTasksGet';
+      const description =
+        'When Mcp-Name header disagrees with params.taskId on tasks/get, server MUST reject with -32001 HeaderMismatch';
+      if (!routingTaskId) {
+        checks.push({
+          id,
+          name,
+          description,
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            'routing-task fixture from Check 2 unavailable; cannot drive negative-path probe',
+          specReferences: [SEP_2243_REF, SEP_2663_REF]
+        });
+      } else {
+        try {
+          await session.request(
+            'tasks/get',
+            { taskId: routingTaskId },
+            { 'Mcp-Name': 'sep-2663-wrong-task-id-for-routing-header-mismatch' }
+          );
+          checks.push({
+            id,
+            name,
+            description,
+            status: 'FAILURE',
+            timestamp: new Date().toISOString(),
+            errorMessage:
+              'tasks/get with mismatched Mcp-Name returned a result; SEP-2243 requires -32001 rejection',
+            specReferences: [SEP_2243_REF, SEP_2663_REF]
+          });
+        } catch (error) {
+          const code =
+            error instanceof McpError ? error.code : (error as any)?.code;
+          if (code === HEADER_MISMATCH_ERROR_CODE) {
+            checks.push({
+              id,
+              name,
+              description,
+              status: 'SUCCESS',
+              timestamp: new Date().toISOString(),
+              specReferences: [SEP_2243_REF, SEP_2663_REF]
+            });
+          } else {
+            checks.push({
+              id,
+              name,
+              description,
+              status: 'FAILURE',
+              timestamp: new Date().toISOString(),
+              errorMessage: `expected -32001 HeaderMismatch; got ${code ?? errMsg(error)}`,
+              specReferences: [SEP_2243_REF, SEP_2663_REF]
+            });
+          }
         }
       }
     }
