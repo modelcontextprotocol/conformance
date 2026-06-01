@@ -9,7 +9,12 @@
  * Multiple concurrent streams are achieved via POST requests, each getting their own stream.
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types.js';
+import { buildStandardHeaders, type RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -20,54 +25,91 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   description =
     'Test server supports multiple concurrent POST SSE streams (SEP-1699)';
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
+
+    // Concurrent POSTs (each answered with JSON or its own SSE stream) are
+    // core transport behavior in every spec version. Only the request
+    // scaffolding differs: the stateful lifecycle needs a session id from an
+    // initialize handshake, the stateless lifecycle carries _meta + the
+    // MCP-Protocol-Version header on each request instead.
+    const stateless = specVersion === DRAFT_PROTOCOL_VERSION;
 
     let sessionId: string | undefined;
     let client: Client | undefined;
     let transport: StreamableHTTPClientTransport | undefined;
 
     try {
-      // Step 1: Initialize session with the server
-      client = new Client(
-        {
-          name: 'conformance-test-client',
-          version: '1.0.0'
-        },
-        {
-          capabilities: {
-            sampling: {},
-            elicitation: {}
-          }
-        }
-      );
-
-      transport = new StreamableHTTPClientTransport(new URL(serverUrl));
-      await client.connect(transport);
-
-      // Extract session ID from transport
-      sessionId = (transport as unknown as { sessionId?: string }).sessionId;
-
-      if (!sessionId) {
-        checks.push({
-          id: 'server-sse-multiple-streams-session',
-          name: 'ServerSSEMultipleStreamsSession',
-          description: 'Server provides session ID for multiple streams test',
-          status: 'WARNING',
-          timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-1699',
-              url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+      if (!stateless) {
+        // Step 1 (stateful): Initialize session with the server
+        client = new Client(
+          {
+            name: 'conformance-test-client',
+            version: '1.0.0'
+          },
+          {
+            capabilities: {
+              sampling: {},
+              elicitation: {}
             }
-          ],
-          details: {
-            message:
-              'Server did not provide session ID - multiple streams test may not work correctly'
           }
-        });
-        return checks;
+        );
+
+        transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+        await client.connect(transport);
+
+        // Extract session ID from transport
+        sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+
+        if (!sessionId) {
+          checks.push({
+            id: 'server-sse-multiple-streams-session',
+            name: 'ServerSSEMultipleStreamsSession',
+            description: 'Server provides session ID for multiple streams test',
+            status: 'WARNING',
+            timestamp: new Date().toISOString(),
+            specReferences: [
+              {
+                id: 'SEP-1699',
+                url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
+              }
+            ],
+            details: {
+              message:
+                'Server did not provide session ID - multiple streams test may not work correctly'
+            }
+          });
+          return checks;
+        }
       }
+
+      // Stateless requests carry the full SEP-2243 header set (Mcp-Method,
+      // MCP-Protocol-Version, ...) so a strictly-conformant server doesn't
+      // reject them before the multi-stream behaviour under test is exercised.
+      const requestHeaders: Record<string, string> = stateless
+        ? buildStandardHeaders('tools/list', undefined, {
+            headers: { Accept: 'text/event-stream, application/json' },
+            specVersion
+          })
+        : {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream, application/json',
+            'mcp-session-id': sessionId!,
+            'mcp-protocol-version': '2025-03-26'
+          };
+      const requestParams = stateless
+        ? {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+              'io.modelcontextprotocol/clientInfo': {
+                name: 'conformance-test-client',
+                version: '1.0.0'
+              },
+              'io.modelcontextprotocol/clientCapabilities': {}
+            }
+          }
+        : {};
 
       // Step 2: Open multiple POST SSE streams concurrently
       // Each POST request gets its own stream with unique streamId
@@ -80,17 +122,12 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
       for (let i = 0; i < numStreams; i++) {
         const promise = fetch(serverUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream, application/json',
-            'mcp-session-id': sessionId,
-            'mcp-protocol-version': '2025-03-26'
-          },
+          headers: requestHeaders,
           body: JSON.stringify({
             jsonrpc: '2.0',
             id: 1000 + i, // Different request IDs for each stream
             method: 'tools/list',
-            params: {}
+            params: requestParams
           })
         });
         postPromises.push(promise);

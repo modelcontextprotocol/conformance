@@ -21,6 +21,9 @@ import {
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
   ElicitResultSchema,
+  ResultSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
   ListToolsRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
@@ -30,6 +33,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
 import { randomUUID, createHmac } from 'crypto';
 
@@ -71,6 +76,49 @@ function getMrtInputText(inputResponse: unknown, field: string): string {
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory client connected to a fully-registered McpServer. Used by the
+// stateless POST handler to serve carry-forward methods (tools/call,
+// resources/*, prompts/get, completion/complete) without duplicating the
+// registrations. The SDK doesn't yet support a stateless server natively,
+// so this bridges via the in-memory transport after a one-time initialize.
+//
+// A fresh server+client pair is built per request so concurrent requests
+// can't observe each other's notifications.
+type DispatchClient = {
+  client: Client;
+  drainNotifications: () => unknown[];
+  close: () => Promise<void>;
+};
+async function getStatelessDispatchClient(): Promise<DispatchClient> {
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer();
+  await server.connect(serverT);
+  const client = new Client(
+    { name: 'stateless-dispatch', version: '1.0.0' },
+    { capabilities: { sampling: {}, elicitation: {} } }
+  );
+  await client.connect(clientT);
+
+  // Buffer notifications so the stateless handler can flush them to the SSE
+  // response after the request completes. The SDK pre-registers a handler for
+  // notifications/progress so a fallback alone would miss it.
+  const buffer: unknown[] = [];
+  const collect = async (n: unknown) =>
+    void buffer.push({ jsonrpc: '2.0', ...(n as object) });
+  client.setNotificationHandler(ProgressNotificationSchema, collect);
+  client.setNotificationHandler(LoggingMessageNotificationSchema, collect);
+  client.fallbackNotificationHandler = collect;
+
+  return {
+    client,
+    drainNotifications: () => buffer.splice(0, buffer.length),
+    close: async () => {
+      await client.close();
+      await server.close();
+    }
+  };
+}
 
 // In-memory event store for SEP-1699 resumability
 const eventStoreData = new Map<
@@ -1227,13 +1275,13 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32602, HTTP 400)
+    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
     if (metaVersion !== 'DRAFT-2026-v1') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32602,
+          code: -32004,
           message: 'UnsupportedProtocolVersionError',
           data: { supported: ['DRAFT-2026-v1'] }
         }
@@ -1296,7 +1344,10 @@ app.post('/mcp', async (req, res) => {
           supportedVersions: ['DRAFT-2026-v1'],
           capabilities: {
             tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
-            prompts: { listChanged: true }
+            prompts: { listChanged: true },
+            // resources/list, resources/templates/list and resources/read are
+            // served on this path, so the capability must be declared too.
+            resources: {}
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1304,92 +1355,119 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'tools/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          tools: [
-            {
-              name: 'test_missing_capability',
-              description: 'Test tool requiring sampling',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_elicitation',
-              description:
-                'MRTR: returns InputRequiredResult with elicitation request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_sampling',
-              description:
-                'MRTR: returns InputRequiredResult with sampling request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_list_roots',
-              description:
-                'MRTR: returns InputRequiredResult with roots/list request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_request_state',
-              description:
-                'MRTR: returns InputRequiredResult with requestState',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multiple_inputs',
-              description:
-                'MRTR: returns InputRequiredResult with multiple input requests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multi_round',
-              description: 'MRTR: multi-round InputRequiredResult workflow',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_tampered_state',
-              description: 'MRTR: HMAC-signed requestState integrity test',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_capabilities',
-              description:
-                'MRTR: respects client capabilities in inputRequests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_streaming_elicitation',
-              description:
-                'Diagnostic tool validating response progress streams',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_logging_tool',
-              description: 'Diagnostic logging validator tool',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'tools/list', params: {} },
+          ResultSchema as any
+        )) as { tools: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            tools: [
+              ...fromServer.tools,
+              {
+                name: 'test_missing_capability',
+                description: 'Test tool requiring sampling',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_elicitation',
+                description:
+                  'MRTR: returns InputRequiredResult with elicitation request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_sampling',
+                description:
+                  'MRTR: returns InputRequiredResult with sampling request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_list_roots',
+                description:
+                  'MRTR: returns InputRequiredResult with roots/list request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_request_state',
+                description:
+                  'MRTR: returns InputRequiredResult with requestState',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multiple_inputs',
+                description:
+                  'MRTR: returns InputRequiredResult with multiple input requests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multi_round',
+                description: 'MRTR: multi-round InputRequiredResult workflow',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_tampered_state',
+                description: 'MRTR: HMAC-signed requestState integrity test',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_capabilities',
+                description:
+                  'MRTR: respects client capabilities in inputRequests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_streaming_elicitation',
+                description:
+                  'Diagnostic tool validating response progress streams',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_logging_tool',
+                description: 'Diagnostic logging validator tool',
+                inputSchema: { type: 'object', properties: {} }
+              }
+            ],
+            // SEP-2549 caching hints are required on cacheable list results.
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          prompts: [
-            {
-              name: 'test_input_required_result_prompt',
-              description: 'MRTR: prompt that requires elicitation input'
-            }
-          ]
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'prompts/list', params: {} },
+          ResultSchema as any
+        )) as { prompts: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            prompts: [
+              ...fromServer.prompts,
+              {
+                name: 'test_input_required_result_prompt',
+                description: 'MRTR: prompt that requires elicitation input'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // SEP-2322 MRTR: prompts/get handler
@@ -1440,6 +1518,84 @@ app.post('/mcp', async (req, res) => {
           }
         });
       }
+    }
+
+    // Resources on the stateless path (SEP-2575): the McpServer-registered
+    // resources are merged with the stateless-only resource, mirroring the
+    // tools/list and prompts/list handlers above (SEP-2549 hints + SEP-2164
+    // errors via the carry-forward dispatch below).
+    if (method === 'resources/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/list', params: {} },
+          ResultSchema as any
+        )) as { resources: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            resources: [
+              ...fromServer.resources,
+              {
+                uri: 'test://stateless-static-text',
+                name: 'Stateless Static Text',
+                description: 'A static text resource served on the draft path',
+                mimeType: 'text/plain'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/templates/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/templates/list', params: {} },
+          ResultSchema as any
+        )) as { resourceTemplates: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/read') {
+      const uri = params.uri as string | undefined;
+      if (uri === 'test://stateless-static-text') {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'text/plain',
+                text: 'Static text content from the stateless draft path.'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'private'
+          }
+        });
+      }
+      // Other URIs (including unknown ones) fall through to the carry-forward
+      // dispatch below, which serves the McpServer-registered resources.
     }
 
     if (method === 'tools/call') {
@@ -1991,6 +2147,73 @@ app.post('/mcp', async (req, res) => {
           id,
           result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
         });
+      }
+    }
+
+    // Carry-forward methods that fell through the MRTR-specific handlers above
+    // (tools/call for non-MRTR tools, resources/*, prompts/get for non-MRTR
+    // prompts, completion/complete) are dispatched to the same McpServer the
+    // stateful path uses, via an in-memory client. This avoids duplicating the
+    // tool/resource/prompt registrations for the stateless path.
+    //
+    // tools/call is served as text/event-stream so progress and logging
+    // notifications from the underlying tool reach the conformance client.
+    if (method === 'tools/call') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      const write = (msg: unknown) =>
+        res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+      return res.end();
+    }
+    if (
+      [
+        'resources/list',
+        'resources/read',
+        'resources/templates/list',
+        'prompts/get',
+        'completion/complete'
+      ].includes(method)
+    ) {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        return res.json({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        // SEP-2164: unknown resources get -32602 with the requested uri in
+        // data; the SDK's McpError does not populate data itself.
+        const data =
+          e.data ??
+          (method === 'resources/read' ? { uri: params.uri } : undefined);
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data }
+        });
+      } finally {
+        await dispatch.close();
       }
     }
 

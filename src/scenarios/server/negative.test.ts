@@ -1,3 +1,4 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
@@ -74,7 +75,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE against a server without rebinding protection', async () => {
       const scenario = new DNSRebindingProtectionScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       const rebindingCheck = checks.find(
         (c) => c.id === 'localhost-host-rebinding-rejected'
@@ -103,7 +106,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE for no-empty-contents and WARNING for error-code against a server returning empty contents', async () => {
       const scenario = new ResourcesNotFoundErrorScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+      );
 
       const noEmpty = checks.find((c) => c.id === 'sep-2164-no-empty-contents');
       expect(noEmpty?.status).toBe('FAILURE');
@@ -133,7 +138,9 @@ describe('Server scenario negative tests', () => {
 
     it('emits FAILURE for presence checks against a server without caching hints', async () => {
       const scenario = new CachingScenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+      );
 
       // Should have at least 7 checks (5 presence + 2 aggregate)
       expect(checks.length).toBeGreaterThanOrEqual(7);
@@ -174,7 +181,9 @@ describe('Server scenario negative tests', () => {
 
     it('flags SEP-2106 keyword-preservation checks against a server that strips the 2020-12 vocabulary', async () => {
       const scenario = new JsonSchema2020_12Scenario();
-      const checks = await scenario.run(`http://localhost:${PORT}/mcp`);
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
 
       // The tool is still advertised, so it must be found...
       const found = checks.find(
@@ -182,10 +191,9 @@ describe('Server scenario negative tests', () => {
       );
       expect(found?.status).toBe('SUCCESS');
 
-      // ...but the stripped 2020-12 keywords must be flagged. The stripped
-      // server negotiates 2025-11-25 (the published SDK does not advertise the
-      // draft protocol version), so the soft version gate reports SKIPPED
-      // rather than FAILURE — see sep2106KeywordCheckStatus.
+      // ...but the stripped 2020-12 keywords must be flagged. testContext()
+      // defaults to LATEST_SPEC_VERSION (2025-11-25), so the soft version gate
+      // reports SKIPPED rather than FAILURE; see sep2106KeywordCheckStatus.
       const composition = checks.find(
         (c) => c.id === 'sep-2106-composition-keywords-preserved'
       );
@@ -204,24 +212,22 @@ describe('Server scenario negative tests', () => {
   });
 
   describe('sep2106KeywordCheckStatus (soft version gate)', () => {
-    it('passes preserved keywords at any negotiated version', () => {
+    it('passes preserved keywords at any target version', () => {
       expect(sep2106KeywordCheckStatus(true, DRAFT_PROTOCOL_VERSION)).toBe(
         'SUCCESS'
       );
       expect(sep2106KeywordCheckStatus(true, LATEST_SPEC_VERSION)).toBe(
         'SUCCESS'
       );
-      expect(sep2106KeywordCheckStatus(true, undefined)).toBe('SUCCESS');
     });
 
-    it('fails stripped keywords only when the server negotiated the draft version', () => {
+    it('fails stripped keywords only when targeting the draft version', () => {
       expect(sep2106KeywordCheckStatus(false, DRAFT_PROTOCOL_VERSION)).toBe(
         'FAILURE'
       );
       expect(sep2106KeywordCheckStatus(false, LATEST_SPEC_VERSION)).toBe(
         'SKIPPED'
       );
-      expect(sep2106KeywordCheckStatus(false, undefined)).toBe('SKIPPED');
     });
   });
 });

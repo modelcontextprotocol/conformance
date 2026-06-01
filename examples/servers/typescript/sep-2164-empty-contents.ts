@@ -3,58 +3,44 @@
 /**
  * SEP-2164 Negative Test Server
  *
- * Returns an empty contents array for any resources/read request, violating
- * the SEP-2164 MUST NOT. The sep-2164-resource-not-found scenario should
- * emit FAILURE for sep-2164-no-empty-contents against this server.
+ * Speaks the stateless wire protocol (SEP-2575) but returns an empty
+ * contents array for any resources/read request, violating the SEP-2164 MUST
+ * NOT. The sep-2164-resource-not-found scenario should emit FAILURE for
+ * sep-2164-no-empty-contents against this server.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import {
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema
-} from '@modelcontextprotocol/sdk/types.js';
 import express from 'express';
-
-function createServer() {
-  const server = new Server(
-    { name: 'sep-2164-empty-contents', version: '1.0.0' },
-    { capabilities: { resources: {} } }
-  );
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: []
-  }));
-
-  server.setRequestHandler(ReadResourceRequestSchema, async () => ({
-    contents: []
-  }));
-
-  return server;
-}
 
 const app = express();
 app.use(express.json());
 
-app.post('/mcp', async (req, res) => {
-  try {
-    const server = createServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined
-    });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    if (!res.headersSent) {
-      res.status(500).json({
+app.post('/mcp', (req, res) => {
+  const body = req.body || {};
+  const id = body.id ?? null;
+  const method = body.method;
+
+  switch (method) {
+    case 'server/discover':
+      return res.json({
         jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
-        },
-        id: null
+        id,
+        result: {
+          supportedVersions: ['DRAFT-2026-v1'],
+          capabilities: { resources: {} },
+          serverInfo: { name: 'sep-2164-empty-contents', version: '1.0.0' }
+        }
       });
-    }
+    case 'resources/list':
+      return res.json({ jsonrpc: '2.0', id, result: { resources: [] } });
+    case 'resources/read':
+      // Deliberately return an empty contents array instead of an error.
+      return res.json({ jsonrpc: '2.0', id, result: { contents: [] } });
+    default:
+      return res.status(404).json({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32601, message: 'Method not found' }
+      });
   }
 });
 

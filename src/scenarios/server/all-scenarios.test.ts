@@ -1,6 +1,13 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import { createServer } from 'net';
-import { getClientScenario, listActiveClientScenarios } from '../index';
+import {
+  getClientScenario,
+  listActiveClientScenarios,
+  listDraftClientScenarios,
+  listPendingClientScenarios
+} from '../index';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 import path from 'path';
 
 function getFreePort(): Promise<number> {
@@ -116,8 +123,14 @@ describe('Server Scenarios', () => {
     }
   });
 
-  // Generate individual test for each scenario
-  const scenarios = listActiveClientScenarios();
+  // Generate individual test for each scenario: the active suite plus the
+  // draft-spec scenarios that aren't parked in `pending` — the same set this
+  // file covered before draft scenarios were split out of `active`.
+  const pendingScenarios = new Set(listPendingClientScenarios());
+  const scenarios = [
+    ...listActiveClientScenarios(),
+    ...listDraftClientScenarios().filter((name) => !pendingScenarios.has(name))
+  ];
 
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {
@@ -128,7 +141,15 @@ describe('Server Scenarios', () => {
         throw new Error(`Scenario ${scenarioName} not found`);
       }
 
-      const checks = await scenario.run(serverUrl);
+      // Draft-only scenarios expect the draft (stateless) connection, so
+      // derive the spec version from the scenario's declared source.
+      const specVersion =
+        'introducedIn' in scenario.source &&
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+          ? DRAFT_PROTOCOL_VERSION
+          : LATEST_SPEC_VERSION;
+
+      const checks = await scenario.run(testContext(serverUrl, specVersion));
 
       // Verify checks were returned
       expect(checks.length).toBeGreaterThan(0);

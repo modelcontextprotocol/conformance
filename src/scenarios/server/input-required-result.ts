@@ -12,6 +12,7 @@ import {
   DRAFT_PROTOCOL_VERSION,
   SpecVersion
 } from '../../types';
+import type { RunContext } from '../../connection';
 import {
   sendRpc,
   isInputRequiredResult,
@@ -65,7 +66,8 @@ Implement a tool named \`test_input_required_result_elicitation\` (no arguments 
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -210,7 +212,8 @@ Implement a tool named \`test_input_required_result_sampling\` (no arguments req
 
 **Behavior (Round 2):** When called with \`inputResponses\` containing the key \`"capital_question"\`, return a complete result with the sampling response text.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -345,7 +348,8 @@ Implement a tool named \`test_input_required_result_list_roots\` (no arguments r
 
 **Behavior (Round 2):** When called with \`inputResponses\` containing the key \`"client_roots"\` (a ListRootsResult with a \`roots\` array), return a complete result that references the provided roots.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -488,7 +492,8 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
 
 **Behavior (Round 2):** When called with \`inputResponses\` AND the echoed \`requestState\`, validate the state and return a complete result. The text content MUST include the word "state-ok" to confirm the server received and validated the requestState.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -630,7 +635,8 @@ Implement a tool named \`test_input_required_result_multiple_inputs\` (no argume
 
 **Behavior (Round 2):** When called with \`inputResponses\` containing ALL keys and the echoed \`requestState\`, return a complete result.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -815,7 +821,8 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
 
 **Behavior (Round 3):** When called with \`inputResponses\` for step2 + updated requestState, return a complete result.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -955,7 +962,8 @@ Use the same tool as A1: \`test_input_required_result_elicitation\`.
 
 **Behavior:** When the client retries with \`inputResponses\` that are missing required keys or contain wrong keys, the server SHOULD respond with a new \`InputRequiredResult\` re-requesting the missing information (NOT a JSON-RPC error).`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1049,7 +1057,8 @@ Implement a prompt named \`test_input_required_result_prompt\` that requires eli
 
 **Behavior (Round 2):** When called with \`inputResponses\`, return a complete \`GetPromptResult\`.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1152,7 +1161,8 @@ Uses the same tool as A1: \`test_input_required_result_elicitation\`.
 
 This scenario verifies that the resultType field is explicitly present in the response (not just inferred).`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1216,7 +1226,8 @@ export class InputRequiredResultUnsupportedMethodsScenario implements ClientScen
 
 Servers MUST NOT send InputRequiredResult responses on any client requests other than the supported ones (prompts/get, resources/read, tools/call, tasks/result).`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
     const errors: string[] = [];
 
@@ -1281,7 +1292,8 @@ integrity-protected requestState (e.g. HMAC-signed).
 **Behavior (Round 2 - tampered):** When called with a modified/tampered requestState, return a
 JSON-RPC error (code -32602 or similar) indicating integrity check failure.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1393,7 +1405,8 @@ Implement a tool named \`test_input_required_result_capabilities\` (no arguments
 Only include inputRequests for methods the client supports. For example, if the client declares
 \`sampling: {}\` but NOT \`elicitation\`, only include \`sampling/createMessage\` inputRequests.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1475,7 +1488,8 @@ Uses the same tool as A1: \`test_input_required_result_elicitation\`.
 This scenario sends correct inputResponses PLUS extra unrecognized keys. The server SHOULD ignore
 the extra keys and complete normally.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1548,7 +1562,8 @@ Uses the same tool as A1: \`test_input_required_result_elicitation\`.
 This scenario sends completely invalid inputResponses structures. The server SHOULD validate them
 and return a JSON-RPC error or a new InputRequiredResult.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

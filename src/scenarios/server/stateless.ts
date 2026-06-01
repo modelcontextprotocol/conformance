@@ -7,6 +7,11 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+import {
+  buildStandardHeaders,
+  readSseJsonRpcResponse,
+  type RunContext
+} from '../../connection';
 
 const SPEC_REF = [
   {
@@ -47,7 +52,8 @@ export class ServerStatelessScenario implements ClientScenario {
 7. **Dynamic List Mutations (2 Checks)**
    - Evaluates that list-changed capable servers notify active listen streams with \`promptsListChanged: true\` or \`toolsListChanged: true\` upon live configuration or capability modifications.  `;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
@@ -115,12 +121,14 @@ export class ServerStatelessScenario implements ClientScenario {
       headersOverrides?: Record<string, string>,
       id: string | number | null = 1
     ) => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION,
-        ...headersOverrides
-      };
+      // The cross-cutting SEP-2243 headers (Mcp-Method, Mcp-Name, Accept,
+      // MCP-Protocol-Version) are not what this scenario exercises, so they
+      // are always sent conformantly; overrides only alter the dimension a
+      // test case is about (issue #312).
+      const headers = buildStandardHeaders(method, params, {
+        headers: headersOverrides,
+        specVersion
+      });
 
       const body = JSON.stringify({
         jsonrpc: '2.0',
@@ -131,10 +139,22 @@ export class ServerStatelessScenario implements ClientScenario {
 
       const res = await fetch(serverUrl, { method: 'POST', headers, body });
       let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        // Response might not be JSON
+      // Servers may answer single requests over text/event-stream; pick the
+      // JSON-RPC message matching this request id instead of failing to parse
+      // the stream as JSON.
+      const contentType =
+        typeof res.headers?.get === 'function'
+          ? (res.headers.get('content-type') ?? '')
+          : '';
+      if (contentType.includes('text/event-stream')) {
+        const { body: matched } = await readSseJsonRpcResponse(res, id);
+        data = matched ?? null;
+      } else {
+        try {
+          data = await res.json();
+        } catch {
+          // Response might not be JSON
+        }
       }
       return { res, data };
     };
@@ -150,11 +170,7 @@ export class ServerStatelessScenario implements ClientScenario {
       timeoutMs = 1000,
       onFirstFrame?: () => Promise<void>
     ): Promise<any[]> => {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
-      };
+      const headers = buildStandardHeaders(method, params, { specVersion });
 
       const body = JSON.stringify({
         jsonrpc: '2.0',
@@ -260,7 +276,7 @@ export class ServerStatelessScenario implements ClientScenario {
     };
 
     const validMeta = {
-      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/protocolVersion': specVersion,
       'io.modelcontextprotocol/clientInfo': {
         name: 'conformance-client',
         version: '1.0.0'
@@ -543,7 +559,7 @@ export class ServerStatelessScenario implements ClientScenario {
     const responseAbsent = await sendRpc(
       'server/discover',
       { _meta: headerMismatchMeta },
-      { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION },
+      { 'MCP-Protocol-Version': specVersion },
       302
     ).catch(() => null);
     const resAbsent: any = responseAbsent?.res ?? null;
