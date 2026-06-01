@@ -10,6 +10,7 @@ import {
 import type { RunContext } from '../../connection';
 import {
   connectToServer,
+  reportSetupFailure,
   terminateSessionRaw
 } from '../../connection/sdk-client';
 
@@ -73,22 +74,10 @@ and validates session ID format if one is assigned.`;
 
       await connection.close();
     } catch (error) {
-      checks.push({
-        id: 'server-initialize',
-        name: 'ServerInitialize',
-        description:
-          'Server responds to initialize request with valid structure',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: `Failed to initialize: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: [
-          {
-            id: 'MCP-Initialize',
-            url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
-          }
-        ]
-      });
-      return checks;
+      // The handshake never completed, so neither the initialize check nor the
+      // session-id check below can be evaluated. Report a single setup failure
+      // rather than mislabeling it as one specific check failing (#248).
+      return reportSetupFailure(this.name, error);
     }
 
     // Check: Session ID visible ASCII validation

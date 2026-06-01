@@ -7,14 +7,15 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
+import type { Connection, RunContext } from '../../connection';
 import type {
   ListToolsResult,
   CallToolResult
 } from '../../spec-types/2025-06-18';
 import {
   connectToServer,
-  NotificationCollector
+  NotificationCollector,
+  reportSetupFailure
 } from '../../connection/sdk-client';
 import {
   CreateMessageRequestSchema,
@@ -117,9 +118,17 @@ export class ToolsListScenario implements ClientScenario {
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
+    let conn: Connection;
     try {
-      const conn = await ctx.connect();
+      conn = await ctx.connect();
+    } catch (error) {
+      // A connect failure isn't a `tools-list` failure; pinning it there would
+      // also drop the `tools-name-format` check entirely. Report it as setup
+      // (#248).
+      return reportSetupFailure(this.name, error);
+    }
 
+    try {
       const result = await conn.request<ListToolsResult>('tools/list');
 
       // Validate response structure
