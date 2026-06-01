@@ -3,7 +3,8 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../types';
-import type { RunContext } from '../../connection';
+import type { Connection, RunContext } from '../../connection';
+import { reportSetupFailure } from '../../connection/sdk-client';
 import type {
   ListPromptsResult,
   GetPromptResult
@@ -28,9 +29,16 @@ export class PromptsListScenario implements ClientScenario {
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
+    let conn: Connection;
     try {
-      const conn = await ctx.connect();
+      conn = await ctx.connect();
+    } catch (error) {
+      // A connect failure isn't a `prompts-list` failure; report it as a setup
+      // failure rather than mislabeling the check (#248).
+      return reportSetupFailure(this.name, error);
+    }
 
+    try {
       const result = await conn.request<ListPromptsResult>('prompts/list');
 
       // Validate response structure
