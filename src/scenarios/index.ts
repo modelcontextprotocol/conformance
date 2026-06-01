@@ -399,6 +399,18 @@ function matchesSpecVersion(
   );
 }
 
+/**
+ * Whether a scenario's applicability window covers `version`. Used by the
+ * runner to skip explicitly-requested scenario/spec-version combinations
+ * that contradict (e.g. a draft-only scenario at a dated spec version).
+ */
+export function isScenarioApplicableAt(
+  source: ScenarioSource,
+  version: SpecVersion
+): boolean {
+  return matchesSpecVersion(source, version);
+}
+
 export function listScenariosForSpec(version: SpecVersion): string[] {
   return scenariosList
     .filter((s) => matchesSpecVersion(s.source, version))

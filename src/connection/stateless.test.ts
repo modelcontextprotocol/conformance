@@ -107,6 +107,34 @@ describe('sendStatelessRequest', () => {
   });
 });
 
+describe('spec version plumbing', () => {
+  test('buildStandardHeaders sends the requested spec version', () => {
+    const headers = buildStandardHeaders('tools/list', undefined, {
+      specVersion: '2025-11-25'
+    });
+    expect(headers['MCP-Protocol-Version']).toBe('2025-11-25');
+  });
+
+  test('buildStandardHeaders defaults to the draft version', () => {
+    const headers = buildStandardHeaders('tools/list');
+    expect(headers['MCP-Protocol-Version']).toBe(DRAFT_PROTOCOL_VERSION);
+  });
+
+  test('withRequestMeta declares the requested spec version in _meta', () => {
+    const params = withRequestMeta({}, '2025-11-25');
+    const meta = params._meta as Record<string, unknown>;
+    expect(meta['io.modelcontextprotocol/protocolVersion']).toBe('2025-11-25');
+  });
+
+  test('withRequestMeta defaults to the draft version', () => {
+    const params = withRequestMeta({});
+    const meta = params._meta as Record<string, unknown>;
+    expect(meta['io.modelcontextprotocol/protocolVersion']).toBe(
+      DRAFT_PROTOCOL_VERSION
+    );
+  });
+});
+
 describe('connectStateless', () => {
   test('surfaces HTTP status and body when the error field is not JSON-RPC shaped', async () => {
     const server = http.createServer((req, res) => {

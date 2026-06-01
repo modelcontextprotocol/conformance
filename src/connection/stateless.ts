@@ -20,7 +20,7 @@
  * (issues #311, #312, #315).
  */
 
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
 import { JsonRpcError, type Connection } from './index';
 
@@ -78,16 +78,18 @@ export function mcpNameForRequest(
  * Accept (both content types), MCP-Protocol-Version, Mcp-Method and (when the
  * method carries one) Mcp-Name. `options.headers` overrides or extends the
  * defaults, replacing any default whose name matches case-insensitively.
+ * `options.specVersion` sets the MCP-Protocol-Version header (default: draft),
+ * so scenarios can send the spec version the run was invoked with.
  */
 export function buildStandardHeaders(
   method: string,
   params?: Record<string, unknown>,
-  options: { headers?: Record<string, string> } = {}
+  options: { headers?: Record<string, string>; specVersion?: SpecVersion } = {}
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
-    'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION,
+    'MCP-Protocol-Version': options.specVersion ?? DRAFT_PROTOCOL_VERSION,
     'Mcp-Method': method
   };
   const name = mcpNameForRequest(method, params);
@@ -113,14 +115,16 @@ export function buildStandardHeaders(
 /**
  * Merge params with the conformant `_meta` required on every stateless
  * request. Keys already present in `params._meta` win over the defaults.
+ * `specVersion` sets the declared protocolVersion (default: draft).
  */
 export function withRequestMeta(
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
 ): Record<string, unknown> {
   return {
     ...params,
     _meta: {
-      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/protocolVersion': specVersion,
       'io.modelcontextprotocol/clientInfo': CONFORMANCE_CLIENT_INFO,
       'io.modelcontextprotocol/clientCapabilities': DEFAULT_CLIENT_CAPABILITIES,
       ...(params?._meta as Record<string, unknown> | undefined)
@@ -225,17 +229,22 @@ export async function sendStatelessRequest(
   serverUrl: string,
   method: string,
   params?: Record<string, unknown>,
-  options: { headers?: Record<string, string>; timeoutMs?: number } = {}
+  options: {
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+    specVersion?: SpecVersion;
+  } = {}
 ): Promise<StatelessResponse> {
   const id = nextRequestId++;
   const headers = buildStandardHeaders(method, params, {
-    headers: options.headers
+    headers: options.headers,
+    specVersion: options.specVersion
   });
   const body = JSON.stringify({
     jsonrpc: '2.0',
     id,
     method,
-    params: withRequestMeta(params)
+    params: withRequestMeta(params, options.specVersion)
   });
 
   const controller = new AbortController();
@@ -290,14 +299,19 @@ export async function sendStatelessRequest(
  * sink, surfaces server→client *requests* on the response stream as a spec
  * violation, and throws `JsonRpcError` on error responses.
  */
-export async function connectStateless(serverUrl: string): Promise<Connection> {
+export async function connectStateless(
+  serverUrl: string,
+  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
+): Promise<Connection> {
   const notifications: JSONRPCNotification[] = [];
 
   async function request<R>(
     method: string,
     params?: Record<string, unknown>
   ): Promise<R> {
-    const response = await sendStatelessRequest(serverUrl, method, params);
+    const response = await sendStatelessRequest(serverUrl, method, params, {
+      specVersion
+    });
 
     for (const event of response.events ?? []) {
       if (typeof event !== 'object' || event === null) continue;

@@ -53,7 +53,7 @@ export class ServerStatelessScenario implements ClientScenario {
    - Evaluates that list-changed capable servers notify active listen streams with \`promptsListChanged: true\` or \`toolsListChanged: true\` upon live configuration or capability modifications.  `;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
@@ -126,7 +126,8 @@ export class ServerStatelessScenario implements ClientScenario {
       // are always sent conformantly; overrides only alter the dimension a
       // test case is about (issue #312).
       const headers = buildStandardHeaders(method, params, {
-        headers: headersOverrides
+        headers: headersOverrides,
+        specVersion
       });
 
       const body = JSON.stringify({
@@ -169,7 +170,7 @@ export class ServerStatelessScenario implements ClientScenario {
       timeoutMs = 1000,
       onFirstFrame?: () => Promise<void>
     ): Promise<any[]> => {
-      const headers = buildStandardHeaders(method, params);
+      const headers = buildStandardHeaders(method, params, { specVersion });
 
       const body = JSON.stringify({
         jsonrpc: '2.0',
@@ -275,7 +276,7 @@ export class ServerStatelessScenario implements ClientScenario {
     };
 
     const validMeta = {
-      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/protocolVersion': specVersion,
       'io.modelcontextprotocol/clientInfo': {
         name: 'conformance-client',
         version: '1.0.0'
@@ -558,7 +559,7 @@ export class ServerStatelessScenario implements ClientScenario {
     const responseAbsent = await sendRpc(
       'server/discover',
       { _meta: headerMismatchMeta },
-      { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION },
+      { 'MCP-Protocol-Version': specVersion },
       302
     ).catch(() => null);
     const resAbsent: any = responseAbsent?.res ?? null;

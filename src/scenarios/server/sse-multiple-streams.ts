@@ -89,7 +89,8 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
       // reject them before the multi-stream behaviour under test is exercised.
       const requestHeaders: Record<string, string> = stateless
         ? buildStandardHeaders('tools/list', undefined, {
-            headers: { Accept: 'text/event-stream, application/json' }
+            headers: { Accept: 'text/event-stream, application/json' },
+            specVersion
           })
         : {
             'Content-Type': 'application/json',

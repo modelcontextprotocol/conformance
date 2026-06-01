@@ -11,7 +11,12 @@ describe('connectFor', () => {
     expect(connectFor('2025-11-25')).toBe(connectStateful);
   });
   it('returns stateless for the draft version', () => {
-    expect(connectFor('DRAFT-2026-v1')).toBe(connectStateless);
+    // connectFor wraps connectStateless in a closure (to pass the spec
+    // version through), so identity with connectStateless no longer holds;
+    // assert it did not select the stateful implementation. The wire-level
+    // behaviour of the wrapper is covered in stateless.test.ts.
+    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
+    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
   });
 });
 
