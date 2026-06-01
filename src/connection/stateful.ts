@@ -22,7 +22,13 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
 
   const notifications: JSONRPCNotification[] = [];
   const collect = (n: unknown) => {
-    notifications.push(n as JSONRPCNotification);
+    // The SDK's Zod parsing strips the jsonrpc field; restore it so collected
+    // notifications match the JSONRPCNotification wire shape, as
+    // connectStateless provides.
+    notifications.push({
+      jsonrpc: '2.0',
+      ...(n as object)
+    } as JSONRPCNotification);
   };
   // The SDK pre-registers a handler for notifications/progress (to drive the
   // onprogress callback feature), so it never reaches the fallback. Register
@@ -47,8 +53,14 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
         return (await client.request({ method, params }, ResultSchema)) as R;
       } catch (e) {
         // Normalize so scenarios always see JsonRpcError regardless of impl.
+        // The SDK prefixes messages with "MCP error <code>: "; strip it so
+        // the message matches what connectStateless surfaces.
         if (e instanceof McpError) {
-          throw new JsonRpcError(e.code, e.message, e.data);
+          throw new JsonRpcError(
+            e.code,
+            e.message.replace(/^MCP error -?\d+: /, ''),
+            e.data
+          );
         }
         throw e;
       }

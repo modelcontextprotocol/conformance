@@ -685,7 +685,17 @@ If no progress token provided, just execute with delays.
 
       const progressUpdates = conn.notifications
         .filter((n) => n.method === 'notifications/progress')
-        .map((n) => n.params as { progress: number; total?: number });
+        .map(
+          (n) =>
+            n.params as {
+              progressToken?: string | number;
+              progress: number;
+              total?: number;
+            }
+        )
+        // The server must echo the request's progressToken back; ignore
+        // notifications for other tokens.
+        .filter((p) => p.progressToken === 'progress-test-1');
 
       const errors: string[] = [];
       if (progressUpdates.length === 0) {
