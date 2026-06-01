@@ -78,7 +78,9 @@ export const CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS = [
   'sep-2243-server-decode-base64',
   'sep-2243-server-validate-param-match',
   'sep-2243-server-reject-invalid-param-chars',
-  'sep-2243-server-reject-param-mismatch'
+  'sep-2243-server-reject-param-mismatch',
+  'sep-2243-server-not-expect-null',
+  'sep-2243-server-reject-missing-required'
 ] as const;
 
 /**
@@ -798,6 +800,29 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         defaultArgs,
         defaultHeaders
       );
+
+      // --- Parameter Presence (SEP-2243 §value-encoding) ---
+      // Optional param value omitted: the client omits the Mcp-Param header, so
+      // the server MUST NOT expect/require it (sep-2243-server-not-expect-null).
+      await this.testOptionalParamHeaderNotExpected(
+        checks,
+        serverUrl,
+        baseHeaders,
+        nextId,
+        xMcpTool.name,
+        schema
+      );
+
+      // Required param omitted entirely: the server MUST reject with a JSON-RPC
+      // error (sep-2243-server-reject-missing-required).
+      await this.testMissingRequiredParam(
+        checks,
+        serverUrl,
+        baseHeaders,
+        nextId,
+        xMcpTool.name,
+        schema
+      );
     } catch (error) {
       checks.push({
         id: 'sep-2243-server-custom-setup',
@@ -1012,6 +1037,224 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         name: 'ServerRejectsMissingCustomHeader',
         description:
           'Server MUST reject request where custom header is omitted but value is present in body',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
+    }
+  }
+
+  /**
+   * Build a body-args object and the matching Mcp-Param-* headers for every
+   * REQUIRED tool parameter (optionally omitting one). Mirrors the inline
+   * required-param defaulting in run(): number/integer -> 0, boolean -> false,
+   * otherwise a placeholder string; annotated params also get their header so
+   * the request is otherwise fully conformant.
+   */
+  private buildRequiredArgsAndHeaders(
+    schema: any,
+    omit?: string
+  ): {
+    args: Record<string, string | number | boolean>;
+    headers: Record<string, string>;
+  } {
+    const required: string[] = schema.required || [];
+    const args: Record<string, string | number | boolean> = {};
+    const headers: Record<string, string> = {};
+    for (const name of required) {
+      if (name === omit) continue;
+      const def = schema.properties?.[name];
+      const type = def?.type || 'string';
+      const value: string | number | boolean =
+        type === 'number' || type === 'integer'
+          ? 0
+          : type === 'boolean'
+            ? false
+            : 'test-default';
+      args[name] = value;
+      if (def?.['x-mcp-header']) {
+        headers[`Mcp-Param-${def['x-mcp-header']}`] = String(value);
+      }
+    }
+    return { args, headers };
+  }
+
+  /**
+   * sep-2243-server-not-expect-null: "Parameter value is null or omitted:
+   * Server MUST NOT expect the header." When an OPTIONAL x-mcp-header parameter
+   * is absent from the body, a conformant client omits its Mcp-Param header, so
+   * the server must accept the request rather than requiring the header. Skips
+   * (still emitting the ID) when the tool has no optional annotated parameter.
+   */
+  private async testOptionalParamHeaderNotExpected(
+    checks: ConformanceCheck[],
+    serverUrl: string,
+    baseHeaders: Record<string, string>,
+    nextId: () => number,
+    toolName: string,
+    schema: any
+  ): Promise<void> {
+    const checkId = 'sep-2243-server-not-expect-null';
+    const checkName = 'ServerNotExpectOmittedParamHeader';
+    const description =
+      'Server MUST NOT expect the Mcp-Param header when the parameter value is null or omitted (optional param absent from body and headers)';
+    const required: string[] = schema.required || [];
+    const properties = schema.properties || {};
+
+    const optional = Object.entries(properties).find(
+      ([name, def]: [string, any]) =>
+        def?.['x-mcp-header'] !== undefined && !required.includes(name)
+    );
+    if (!optional) {
+      checks.push({
+        id: checkId,
+        name: checkName,
+        description,
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REFERENCE_CUSTOM],
+        details: {
+          reason:
+            'Server exposes no optional x-mcp-header parameter that can be omitted.'
+        }
+      });
+      return;
+    }
+    const [optName, optDef] = optional as [string, any];
+
+    try {
+      // All required params present and conformant; the optional annotated
+      // param (and its Mcp-Param header) are deliberately omitted.
+      const { args, headers } = this.buildRequiredArgsAndHeaders(schema);
+      const response = await sendRawRequest(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: nextId(),
+          method: 'tools/call',
+          params: withRequestMeta({ name: toolName, arguments: args })
+        },
+        {
+          ...baseHeaders,
+          ...headers,
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': toolName
+          // Deliberately omit Mcp-Param-{optName} for the absent optional param.
+        }
+      );
+      checks.push(
+        createAcceptanceCheck(
+          checkId,
+          checkName,
+          description,
+          response,
+          {
+            id: SPEC_REFERENCE_CUSTOM.id,
+            url: SPEC_REFERENCE_CUSTOM.url
+          },
+          {
+            omittedParam: optName,
+            omittedHeader: `Mcp-Param-${optDef['x-mcp-header']}`
+          }
+        )
+      );
+    } catch (error) {
+      checks.push({
+        id: checkId,
+        name: checkName,
+        description,
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
+    }
+  }
+
+  /**
+   * sep-2243-server-reject-missing-required: "Required parameter is omitted:
+   * Server MUST reject with JSON-RPC error." Omits one required parameter
+   * entirely (body + header) and asserts the server rejects with a JSON-RPC
+   * error (or an HTTP error status). Prefers omitting an annotated required
+   * param; skips (still emitting the ID) when the tool has no required params.
+   */
+  private async testMissingRequiredParam(
+    checks: ConformanceCheck[],
+    serverUrl: string,
+    baseHeaders: Record<string, string>,
+    nextId: () => number,
+    toolName: string,
+    schema: any
+  ): Promise<void> {
+    const checkId = 'sep-2243-server-reject-missing-required';
+    const checkName = 'ServerRejectsMissingRequiredParam';
+    const description =
+      'Server MUST reject a request that omits a required parameter with a JSON-RPC error';
+    const required: string[] = schema.required || [];
+    const properties = schema.properties || {};
+
+    if (required.length === 0) {
+      checks.push({
+        id: checkId,
+        name: checkName,
+        description,
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REFERENCE_CUSTOM],
+        details: { reason: 'Tool has no required parameters to omit.' }
+      });
+      return;
+    }
+    const omit =
+      required.find((n) => properties[n]?.['x-mcp-header'] !== undefined) ??
+      required[0];
+
+    try {
+      const { args, headers } = this.buildRequiredArgsAndHeaders(schema, omit);
+      const response = await sendRawRequest(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: nextId(),
+          method: 'tools/call',
+          params: withRequestMeta({ name: toolName, arguments: args })
+        },
+        {
+          ...baseHeaders,
+          ...headers,
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': toolName
+          // The omitted required param contributes neither body value nor header.
+        }
+      );
+      const hasJsonRpcError =
+        response.body &&
+        typeof response.body === 'object' &&
+        'error' in response.body &&
+        response.body.error != null;
+      const rejected = Boolean(hasJsonRpcError) || response.status >= 400;
+      checks.push({
+        id: checkId,
+        name: checkName,
+        description,
+        status: rejected ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: rejected
+          ? undefined
+          : `Expected the server to reject the request (JSON-RPC error or HTTP >=400) when required parameter '${omit}' is omitted, got HTTP ${response.status} with no error in body.`,
+        specReferences: [SPEC_REFERENCE_CUSTOM],
+        details: {
+          omittedRequiredParam: omit,
+          responseStatus: response.status,
+          responseBody: response.body
+        }
+      });
+    } catch (error) {
+      checks.push({
+        id: checkId,
+        name: checkName,
+        description,
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
