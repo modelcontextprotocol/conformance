@@ -120,6 +120,9 @@ async function statelessRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // Servers built on the SDK's StreamableHTTPServerTransport reject
+      // requests that don't accept both JSON and SSE responses.
+      Accept: 'application/json, text/event-stream',
       'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
     },
     body: JSON.stringify({
