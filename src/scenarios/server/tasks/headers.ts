@@ -27,11 +27,9 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2243_REF, SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2243_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 const HEADER_MISMATCH_ERROR_CODE = -32001;
@@ -60,16 +58,19 @@ Per SEP-2243 §"Server Behavior", servers that process the request body
 MUST validate that header values match the body. Per its "Validation
 Failure Conditions", both missing required headers and mismatched
 values trigger rejection with JSON-RPC error code \`-32001\`
-(HeaderMismatch) and HTTP 400.`;
+(HeaderMismatch) and HTTP 400.
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`greet\` — sync-only, returns \`Hello, {name}!\`.
+- \`slow_compute\` — task-supporting, \`seconds\`-second sleep then a
+  result.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
       });
     } catch (error) {
@@ -93,7 +94,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
       const description =
         'Server tolerates Mcp-Method request header on tools/call (sync tool dispatch unaffected)';
       try {
-        const result = (await session.request(
+        const result = (await conn.request(
           'tools/call',
           { name: 'greet', arguments: { name: 'sep-2243' } },
           { 'Mcp-Method': 'tools/call' }
@@ -138,7 +139,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
       const description =
         'Server accepts matched Mcp-Method + Mcp-Name request headers on tasks/get and dispatches normally';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 60, label: 'headers-tasks-get' }
         })) as any;
@@ -154,7 +155,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
             specReferences: [SEP_2243_REF]
           });
         } else {
-          const got = (await session.request(
+          const got = (await conn.request(
             'tasks/get',
             { taskId: routingTaskId },
             {
@@ -196,7 +197,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
       const description =
         'When Mcp-Method header disagrees with body on a tools/call, server MUST reject with -32001 HeaderMismatch (SEP-2243 §Server Validation)';
       try {
-        await session.request(
+        await conn.request(
           'tools/call',
           { name: 'greet', arguments: { name: 'header-mismatch' } },
           { 'Mcp-Method': 'tasks/get' }
@@ -262,7 +263,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
         });
       } else {
         try {
-          await session.request(
+          await conn.request(
             'tasks/get',
             { taskId: routingTaskId },
             { 'Mcp-Name': 'sep-2663-wrong-task-id-for-routing-header-mismatch' }
@@ -307,13 +308,13 @@ values trigger rejection with JSON-RPC error code \`-32001\`
     // Cleanup the long-lived task.
     if (routingTaskId) {
       try {
-        await session.request('tasks/cancel', { taskId: routingTaskId });
+        await conn.request('tasks/cancel', { taskId: routingTaskId });
       } catch {
         /* swallow */
       }
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }

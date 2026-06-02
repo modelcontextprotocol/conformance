@@ -22,8 +22,8 @@ import {
   ScenarioSource
 } from '../../../types';
 import type { RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../_shared/sep-refs';
-import { skipCheck } from '../_shared/checks';
+import { SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { skipCheck } from '../tasks-mrtr-helpers';
 
 export class TasksStatusNotificationsScenario implements ClientScenario {
   name = 'tasks-status-notifications';

@@ -18,13 +18,11 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck, skipCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck, skipCheck } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
-import { isIso8601 } from '../_shared/wire-format';
+import { isIso8601 } from '../tasks-mrtr-helpers';
 
 export class TasksLifecycleScenario implements ClientScenario {
   name = 'tasks-lifecycle';
@@ -70,16 +68,26 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
   discriminator). The cancelled status is observed via the next
   \`tasks/get\`.
 - \`tasks/cancel\` against a terminal task MUST return JSON-RPC
-  \`-32602\` (InvalidParams). Clarified upstream in spec commit d963ad0.`;
+  \`-32602\` (InvalidParams). Clarified upstream in spec commit d963ad0.
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`greet\` — sync-only, returns \`Hello, {name}!\`.
+- \`slow_compute\` — task-supporting, \`seconds\`-second sleep then a
+  result. \`seconds: 0\` for the immediate path. MUST settle to
+  \`cancelled\` (not \`completed\`/\`failed\`) when \`tasks/cancel\`
+  arrives while running, so the lifecycle cancel check has a
+  deterministic terminal status.
+- \`failing_job\` — task-supporting, always returns a tool execution
+  error after ~1s.
+- \`protocol_error_job\` — task-supporting, panics into a protocol
+  error.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: {
           elicitation: {},
           sampling: {},
@@ -107,7 +115,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const description =
         'Sync tool returns ToolResult (resultType:"complete"), no taskId at top level';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'greet',
           arguments: { name: 'World' }
         })) as any;
@@ -150,7 +158,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const description =
         'Task-supporting tool returns flat CreateTaskResult (no nested `task` wrapper)';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 2, label: 'lifecycle-create' }
         })) as any;
@@ -188,7 +196,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         }
         // Timestamps — both keys present, both ISO-8601 formatted. Per
         // SEP-2663 these are required on every TaskInfoV2. See
-        // `_shared/wire-format.ts` for the regex rationale.
+        // `tasks-mrtr-helpers.ts` for the regex rationale.
         if (!isIso8601(result.createdAt)) {
           errs.push(
             `createdAt MUST be an ISO-8601 string; got ${JSON.stringify(result.createdAt)}`
@@ -231,7 +239,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         );
       } else {
         try {
-          const task = (await session.request('tasks/get', {
+          const task = (await conn.request('tasks/get', {
             taskId: workingTaskId
           })) as any;
           const errs: string[] = [];
@@ -271,7 +279,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         );
       } else {
         try {
-          const terminal = await waitForTerminal(session, workingTaskId);
+          const terminal = await waitForTerminal(conn, workingTaskId);
           const errs: string[] = [];
           if (terminal.status !== 'completed') {
             errs.push(
@@ -317,7 +325,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const description =
         'Tool execution error reports as completed + result.isError (NOT failed)';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'failing_job',
           arguments: {}
         })) as any;
@@ -325,7 +333,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         if (!created.taskId) {
           errs.push('failing_job MUST create a task');
         } else {
-          const terminal = await waitForTerminal(session, created.taskId);
+          const terminal = await waitForTerminal(conn, created.taskId);
           if (terminal.status !== 'completed') {
             errs.push(
               `tool error MUST surface as completed (not "${terminal.status}")`
@@ -358,7 +366,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const description =
         'Protocol-level error reports as failed + inlined error{code,message}, no result';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'protocol_error_job',
           arguments: {}
         })) as any;
@@ -366,7 +374,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         if (!created.taskId) {
           errs.push('protocol_error_job MUST create a task');
         } else {
-          const terminal = await waitForTerminal(session, created.taskId);
+          const terminal = await waitForTerminal(conn, created.taskId);
           if (terminal.status !== 'failed') {
             errs.push(
               `protocol error MUST surface as failed (not "${terminal.status}")`
@@ -409,7 +417,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         'tasks/cancel returns {resultType:"complete"} ack; status settles to cancelled';
       let cancelTaskId: string | undefined;
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 60, label: 'lifecycle-cancel' }
         })) as any;
@@ -425,7 +433,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
             specReferences: [SEP_2663_REF, SEP_2322_REF]
           });
         } else {
-          const ack = (await session.request('tasks/cancel', {
+          const ack = (await conn.request('tasks/cancel', {
             taskId: cancelTaskId
           })) as any;
           const errs: string[] = [];
@@ -447,7 +455,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
           // Cancellation is eventually-consistent — poll to terminal
           // before asserting the cancelled status. The slow_compute
           // fixture contract requires settling to `cancelled`.
-          const after = await waitForTerminal(session, cancelTaskId);
+          const after = await waitForTerminal(conn, cancelTaskId);
           if (after.status !== 'cancelled') {
             errs.push(
               `terminal status after cancel MUST be cancelled; got ${after.status}`
@@ -480,7 +488,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const description =
         'tasks/cancel on a terminal task returns the same empty-ack as on an active task (idempotent)';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 1, label: 'lifecycle-cancel-terminal' }
         })) as any;
@@ -496,8 +504,8 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
             specReferences: [SEP_2663_REF]
           });
         } else {
-          await waitForTerminal(session, completedTaskId);
-          const ack = (await session.request('tasks/cancel', {
+          await waitForTerminal(conn, completedTaskId);
+          const ack = (await conn.request('tasks/cancel', {
             taskId: completedTaskId
           })) as any;
           const errs: string[] = [];
@@ -530,7 +538,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       }
     }
 
-    await session.close();
+    await conn.close();
     return checks;
   }
 }

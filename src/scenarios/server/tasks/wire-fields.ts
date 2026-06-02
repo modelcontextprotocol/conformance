@@ -15,11 +15,9 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck, skipCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck, skipCheck } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
 
 export class TasksWireFieldsScenario implements ClientScenario {
@@ -49,16 +47,18 @@ export class TasksWireFieldsScenario implements ClientScenario {
 - The v1 \`io.modelcontextprotocol/related-task\` \`_meta\` key MUST NOT
   appear on tasks/get's inlined \`result\` — the \`taskId\` is already
   at the root level of the \`tasks/get\` response, so the metadata is
-  redundant.`;
+  redundant.
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`slow_compute\` — task-supporting, \`seconds\`-second sleep then a
+  result.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: {
           extensions: { [TASKS_EXTENSION_ID]: {} }
         }
@@ -85,7 +85,7 @@ export class TasksWireFieldsScenario implements ClientScenario {
       const description =
         'CreateTaskResult uses ttlMs + pollIntervalMs (integer milliseconds); legacy ttl / pollInterval keys absent';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 1, label: 'wire-fields' }
         })) as any;
@@ -163,12 +163,12 @@ export class TasksWireFieldsScenario implements ClientScenario {
         );
       } else {
         try {
-          await waitForTerminal(session, createdTaskId);
+          await waitForTerminal(conn, createdTaskId);
           // Sanity probe well before TTL elapses. ttlMs is integer
           // milliseconds and servers typically pick order-of-minutes
           // defaults, so a 500ms wait is comfortably inside any sane TTL.
           await new Promise((r) => setTimeout(r, 500));
-          const after = (await session.request('tasks/get', {
+          const after = (await conn.request('tasks/get', {
             taskId: createdTaskId
           })) as any;
           const errs: string[] = [];
@@ -201,7 +201,7 @@ export class TasksWireFieldsScenario implements ClientScenario {
       const description =
         'tasks/get inlined result MUST NOT include the v1 io.modelcontextprotocol/related-task _meta key (taskId is at the root)';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 1, label: 'wire-fields-meta' }
         })) as any;
@@ -211,7 +211,7 @@ export class TasksWireFieldsScenario implements ClientScenario {
             skipCheck(id, name, description, 'no task created', [SEP_2663_REF])
           );
         } else {
-          const terminal = await waitForTerminal(session, taskId);
+          const terminal = await waitForTerminal(conn, taskId);
           const errs: string[] = [];
           const meta = terminal.result?._meta;
           if (meta && meta['io.modelcontextprotocol/related-task']) {
@@ -240,7 +240,7 @@ export class TasksWireFieldsScenario implements ClientScenario {
       }
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }

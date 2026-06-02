@@ -102,16 +102,17 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  test('emits SEP-2575 stateless wire (server/discover + _meta envelope) on tasks-lifecycle', async () => {
+  test('emits SEP-2575 stateless wire (no initialize, _meta envelope) on tasks-lifecycle', async () => {
     await runServerConformanceTest(url, 'tasks-lifecycle');
 
     expect(captured.length).toBeGreaterThan(0);
+
+    // The legacy wire opens with an `initialize` handshake; SEP-2575
+    // removes it. The scenario MUST NOT have sent one.
+    expect(captured.some((c) => c.method === 'initialize')).toBe(false);
+
+    // Every body MUST carry the SEP-2575 `_meta` envelope.
     const first = captured[0];
-
-    // The legacy wire would send `initialize` here; SEP-2575 replaces
-    // the handshake with `server/discover`.
-    expect(first.method).toBe('server/discover');
-
     const meta = first.params?._meta as Record<string, unknown> | undefined;
     expect(meta).toBeDefined();
     expect(meta?.['io.modelcontextprotocol/protocolVersion']).toBe(

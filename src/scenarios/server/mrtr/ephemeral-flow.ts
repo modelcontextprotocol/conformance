@@ -25,11 +25,9 @@ import {
   ScenarioSource,
   DRAFT_PROTOCOL_VERSION
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from '../tasks/helpers';
 import {
   MRTR_INPUT_REQUIRED_RESULT_TYPE,
@@ -83,16 +81,31 @@ Every \`tools/call\` response in the MRTR contract is one of:
 - When a client retries with an \`inputResponses\` key the server did
   not emit, the server SHOULD re-request via \`InputRequiredResult\`
   rather than erroring. (The spec is soft here; this scenario asserts
-  the re-request path.)`;
+  the re-request path.)
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`test_tool_with_elicitation\` — single \`elicitation/create\` round;
+  completes with the answer reflected.
+- \`test_incomplete_result_sampling\` — single \`sampling/createMessage\` round.
+- \`test_incomplete_result_list_roots\` — single \`roots/list\` round.
+- \`test_incomplete_result_request_state\` — exercises \`requestState\`
+  validation; final result includes \`state-ok\` to confirm validation.
+- \`test_incomplete_result_multiple_inputs\` — emits 3+ inputRequests of
+  different methods in one round.
+- \`test_incomplete_result_multi_round\` — drives 2+ MRTR rounds, final
+  result references every answer.
+- \`test_incomplete_result_elicitation\` — emits inputRequest for
+  \`user_name\`; server re-requests on wrong-key responses.
+
+A reference implementation lives at
+\`https://github.com/panyam/mcpkit/tree/main/examples/mrtr\`.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: {
           elicitation: {},
           sampling: {},
@@ -120,7 +133,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'tools/call returns InputRequiredResult on round 1 (elicitation/create); completes on round 2 with the answer reflected in the result';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_tool_with_elicitation',
           arguments: {}
         })) as any;
@@ -145,7 +158,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
           );
         }
 
-        const r2 = (await session.request('tools/call', {
+        const r2 = (await conn.request('tools/call', {
           name: 'test_tool_with_elicitation',
           arguments: {},
           inputResponses: {
@@ -185,7 +198,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'InputRequiredResult with sampling/createMessage round-trips through the inputResponses retry';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_sampling',
           arguments: {}
         })) as any;
@@ -199,7 +212,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
               `inputRequest method MUST be "sampling/createMessage"; got ${JSON.stringify(r1.inputRequests[key].method)}`
             );
           }
-          const r2 = (await session.request('tools/call', {
+          const r2 = (await conn.request('tools/call', {
             name: 'test_incomplete_result_sampling',
             arguments: {},
             inputResponses: { [key]: mockSamplingResponse('Paris') },
@@ -232,7 +245,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'InputRequiredResult with roots/list round-trips through the inputResponses retry';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_list_roots',
           arguments: {}
         })) as any;
@@ -246,7 +259,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
               `inputRequest method MUST be "roots/list"; got ${JSON.stringify(r1.inputRequests[key].method)}`
             );
           }
-          const r2 = (await session.request('tools/call', {
+          const r2 = (await conn.request('tools/call', {
             name: 'test_incomplete_result_list_roots',
             arguments: {},
             inputResponses: { [key]: mockListRootsResponse() },
@@ -279,7 +292,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'When server emits requestState on round 1, it MUST be a non-empty string and the server MUST validate the echo on round 2';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_request_state',
           arguments: {}
         })) as any;
@@ -298,7 +311,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const key = Object.keys(r1.inputRequests ?? {})[0];
         if (key) {
-          const r2 = (await session.request('tools/call', {
+          const r2 = (await conn.request('tools/call', {
             name: 'test_incomplete_result_request_state',
             arguments: {},
             inputResponses: { [key]: mockElicitResponse({ ok: true }) },
@@ -336,7 +349,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'A single InputRequiredResult MAY carry inputRequests for elicitation/create + sampling/createMessage + roots/list together';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_multiple_inputs',
           arguments: {}
         })) as any;
@@ -371,7 +384,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
             else if (req.method === 'roots/list')
               inputResponses[key] = mockListRootsResponse();
           }
-          const r2 = (await session.request('tools/call', {
+          const r2 = (await conn.request('tools/call', {
             name: 'test_incomplete_result_multiple_inputs',
             arguments: {},
             inputResponses,
@@ -404,7 +417,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'A handler may take 2+ MRTR rounds; each round mints a fresh requestState; final result MUST reflect answers from every round';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_multi_round',
           arguments: {}
         })) as any;
@@ -417,7 +430,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const k1 = Object.keys(r1.inputRequests ?? {})[0];
 
-        const r2 = (await session.request('tools/call', {
+        const r2 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_multi_round',
           arguments: {},
           inputResponses: { [k1]: mockElicitResponse({ name: 'Alice' }) },
@@ -438,7 +451,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
         }
         const k2 = Object.keys(r2.inputRequests ?? {})[0];
 
-        const r3 = (await session.request('tools/call', {
+        const r3 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_multi_round',
           arguments: {},
           inputResponses: { [k2]: mockElicitResponse({ color: 'blue' }) },
@@ -477,7 +490,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'When the client sends inputResponses with a key the server did not emit, the server SHOULD re-request via InputRequiredResult';
       try {
-        const r1 = (await session.request('tools/call', {
+        const r1 = (await conn.request('tools/call', {
           name: 'test_incomplete_result_elicitation',
           arguments: {},
           inputResponses: {
@@ -530,14 +543,13 @@ Every \`tools/call\` response in the MRTR contract is one of:
       const description =
         'MRTR loop gathers input then escalates to a task on the final round (SEP-2322 + SEP-2663 451f5e1).';
       const specRefs = [SEP_2322_REF, SEP_2663_REF];
-      let compSession: RawSession | undefined;
+      let compSession: Connection | undefined;
       try {
         // The other checks above used a session without negotiating the
         // tasks extension. Round 2's CreateTaskResult requires the client to
         // declare io.modelcontextprotocol/tasks (SEP-2663), so we open a
         // dedicated session for this check.
-        compSession = await initRawSession(serverUrl, {
-          stateless: isStateless(ctx),
+        compSession = await ctx.connect({
           capabilities: {
             elicitation: {},
             extensions: { [TASKS_EXTENSION_ID]: {} }
@@ -640,7 +652,7 @@ Every \`tools/call\` response in the MRTR contract is one of:
       }
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }

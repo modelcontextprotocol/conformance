@@ -5,16 +5,17 @@ import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
 
 describe('connectFor', () => {
-  it('returns stateful for dated 2025-x versions', () => {
-    expect(connectFor('2025-03-26')).toBe(connectStateful);
-    expect(connectFor('2025-06-18')).toBe(connectStateful);
-    expect(connectFor('2025-11-25')).toBe(connectStateful);
+  // connectFor now always wraps the underlying impl in a closure (to thread
+  // ConnectOptions through), so identity with connectStateful/connectStateless
+  // no longer holds; assert wire-shape behaviour in the dedicated suites
+  // below and via stateless.test.ts.
+  it('returns a function for dated 2025-x versions', () => {
+    expect(typeof connectFor('2025-03-26')).toBe('function');
+    expect(typeof connectFor('2025-06-18')).toBe('function');
+    expect(typeof connectFor('2025-11-25')).toBe('function');
   });
-  it('returns stateless for the draft version', () => {
-    // connectFor wraps connectStateless in a closure (to pass the spec
-    // version through), so identity with connectStateless no longer holds;
-    // assert it did not select the stateful implementation. The wire-level
-    // behaviour of the wrapper is covered in stateless.test.ts.
+  it('returns a function for the draft version', () => {
+    expect(typeof connectFor('DRAFT-2026-v1')).toBe('function');
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
   });

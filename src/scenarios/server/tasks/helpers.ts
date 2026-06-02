@@ -1,22 +1,14 @@
 /**
  * Tasks-specific helpers for SEP-2663 server-conformance scenarios.
  *
- * Only the bits that are genuinely tasks-shaped live here:
- *
  *   - `TASKS_EXTENSION_ID`: the extension identifier scenarios assert
  *     when checking server capabilities.
- *   - `waitForTerminal` / `waitForStatus`: tasks/get polling loops used
- *     by lifecycle, dispatch, and notification scenarios.
- *
- * Everything else that used to live here (the raw fetch session, the
- * SEP-2243 routing headers, the SEP refs, and the test scaffolding
- * helpers) has moved to `../_shared/` so other server suites can pull
- * them in without going through `tasks/`. Scenarios still import from
- * this file for `waitForTerminal` / `waitForStatus` and re-import the
- * shared primitives from their new locations.
+ *   - `validTasksParams`: well-formed body shapes for negative-path
+ *     checks that need to isolate a single failure dimension.
+ *   - `waitForTerminal` / `waitForStatus`: tasks/get polling loops.
  */
 
-import type { RawSession } from '../_shared/raw-session';
+import type { Connection } from '../../../connection';
 
 export const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
 
@@ -32,7 +24,7 @@ export const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
  * `_meta`, malformed params) and the assertion fires on the wrong
  * dimension, producing misleading conformance results.
  *
- * The raw-session already auto-populates SEP-2243 routing headers
+ * The Connection already auto-populates SEP-2243 routing headers
  * and the SEP-2322 `_meta` envelope based on the method and params,
  * so this helper's job is to supply a sensible *body* — a params
  * object whose shape would be acceptable on the v1 surface — and
@@ -42,11 +34,11 @@ export const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
  *
  *   // tasks/result is removed in v2; everything else is valid, so
  *   // -32601 is the only error that can fire on a compliant server.
- *   await session.request('tasks/result', validTasksParams('tasks/result'));
+ *   await conn.request('tasks/result', validTasksParams('tasks/result'));
  *
  *   // tasks/get with an unknown taskId — the taskId is the property
  *   // under test; the rest of the envelope is valid.
- *   await session.request(
+ *   await conn.request(
  *     'tasks/get',
  *     validTasksParams('tasks/get', { taskId: 'nonexistent-12345' })
  *   );
@@ -77,13 +69,13 @@ export function validTasksParams(
 
 /** Poll tasks/get until the task reaches a terminal state. */
 export async function waitForTerminal(
-  session: RawSession,
+  conn: Connection,
   taskId: string,
   timeoutMs = 10_000
 ): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const task = (await session.request('tasks/get', { taskId })) as any;
+    const task = (await conn.request('tasks/get', { taskId })) as any;
     if (['completed', 'failed', 'cancelled'].includes(task.status)) {
       return task;
     }
@@ -96,14 +88,14 @@ export async function waitForTerminal(
 
 /** Poll tasks/get until a specific status (or any terminal state). */
 export async function waitForStatus(
-  session: RawSession,
+  conn: Connection,
   taskId: string,
   status: string,
   timeoutMs = 10_000
 ): Promise<any> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const task = (await session.request('tasks/get', { taskId })) as any;
+    const task = (await conn.request('tasks/get', { taskId })) as any;
     if (
       task.status === status ||
       ['completed', 'failed', 'cancelled'].includes(task.status)

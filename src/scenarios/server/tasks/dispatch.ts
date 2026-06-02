@@ -26,11 +26,9 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
 import {
   TASKS_EXTENSION_ID,
   validTasksParams,
@@ -100,16 +98,21 @@ export class TasksDispatchScenario implements ClientScenario {
 **Unknown taskId on tasks/get (SEP-2663):**
 - \`tasks/get\` for a taskId the server doesn't recognize MUST return
   JSON-RPC \`-32602\` (InvalidParams). Mirrors the same rule for
-  \`tasks/cancel\` (clarified upstream in spec commit d963ad0).`;
+  \`tasks/cancel\` (clarified upstream in spec commit d963ad0).
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`greet\` — sync-only.
+- \`slow_compute\` — task-supporting (\`seconds: 0\` for the immediate
+  shortcut path).
+- \`confirm_delete\` — task-supporting, parks for elicitation.
+- \`failing_job\` — task-supporting, returns a tool execution error.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: {
           elicitation: {},
           sampling: {},
@@ -142,7 +145,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/result is removed in v2 and MUST reject with -32601';
       try {
-        await session.request('tasks/result', validTasksParams('tasks/result'));
+        await conn.request('tasks/result', validTasksParams('tasks/result'));
         checks.push({
           id,
           name,
@@ -175,14 +178,14 @@ export class TasksDispatchScenario implements ClientScenario {
     //
     // Isolation: v1 tasks/list took no required params; the empty
     // body is fully valid. Routing headers + _meta come from raw-
-    // session. Only the method name itself is wrong.
+    // conn. Only the method name itself is wrong.
     {
       const id = 'tasks-removed-tasks-list';
       const name = 'TasksRemovedTasksList';
       const description =
         'tasks/list is removed in v2 and MUST reject with -32601';
       try {
-        await session.request('tasks/list', validTasksParams('tasks/list'));
+        await conn.request('tasks/list', validTasksParams('tasks/list'));
         checks.push({
           id,
           name,
@@ -218,7 +221,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tools/call with no client `task` hint param MUST still produce CreateTaskResult for task-supporting tools';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'failing_job',
           arguments: {}
         })) as any;
@@ -231,7 +234,7 @@ export class TasksDispatchScenario implements ClientScenario {
         // Best-effort wait so we don't leak.
         if (result.taskId) {
           try {
-            await waitForTerminal(session, result.taskId);
+            await waitForTerminal(conn, result.taskId);
           } catch {
             /* swallow */
           }
@@ -257,7 +260,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tools/call with legacy `task` param against a sync tool MUST NOT error and MUST NOT be promoted to a task';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'greet',
           arguments: { name: 'legacy-hint' },
           // Legacy v1 hint that the server MUST ignore.
@@ -299,7 +302,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'For a fast operation, a task-supporting tool MAY skip task creation and return a sync ToolResult; either path is valid';
       try {
-        const result = (await session.request('tools/call', {
+        const result = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 0, label: 'instant' }
         })) as any;
@@ -342,7 +345,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const errs: string[] = [];
       try {
         // Sync tools/call.
-        const sync = (await session.request('tools/call', {
+        const sync = (await conn.request('tools/call', {
           name: 'greet',
           arguments: { name: 'rt' }
         })) as any;
@@ -353,14 +356,14 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/get against a fresh task.
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 0, label: 'rt-get' }
         })) as any;
         const taskIdForGet = created.taskId;
         if (taskIdForGet) {
-          await waitForTerminal(session, taskIdForGet);
-          const got = (await session.request('tasks/get', {
+          await waitForTerminal(conn, taskIdForGet);
+          const got = (await conn.request('tasks/get', {
             taskId: taskIdForGet
           })) as any;
           if (got.resultType !== 'complete') {
@@ -371,12 +374,12 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/cancel ack on a fresh long-running task.
-        const longLived = (await session.request('tools/call', {
+        const longLived = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 60, label: 'rt-cancel' }
         })) as any;
         if (longLived.taskId) {
-          const cancelAck = (await session.request('tasks/cancel', {
+          const cancelAck = (await conn.request('tasks/cancel', {
             taskId: longLived.taskId
           })) as any;
           if (cancelAck.resultType !== 'complete') {
@@ -387,14 +390,14 @@ export class TasksDispatchScenario implements ClientScenario {
         }
 
         // tasks/update ack on a parked elicitation task.
-        const elicit = (await session.request('tools/call', {
+        const elicit = (await conn.request('tools/call', {
           name: 'confirm_delete',
           arguments: { filename: 'rt.txt' }
         })) as any;
         const elicitTaskId = elicit.taskId;
         if (elicitTaskId) {
-          await waitForStatus(session, elicitTaskId, 'input_required', 5_000);
-          const updateAck = (await session.request('tasks/update', {
+          await waitForStatus(conn, elicitTaskId, 'input_required', 5_000);
+          const updateAck = (await conn.request('tasks/update', {
             taskId: elicitTaskId,
             inputResponses: { 'unknown-key': { ignored: true } }
           })) as any;
@@ -404,7 +407,7 @@ export class TasksDispatchScenario implements ClientScenario {
             );
           }
           try {
-            await session.request('tasks/cancel', { taskId: elicitTaskId });
+            await conn.request('tasks/cancel', { taskId: elicitTaskId });
           } catch {
             /* swallow */
           }
@@ -430,7 +433,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/get issued immediately after CreateTaskResult arrives MUST resolve (server MUST NOT return CreateTaskResult before the task is durably created)';
       try {
-        const created = (await session.request('tools/call', {
+        const created = (await conn.request('tools/call', {
           name: 'slow_compute',
           arguments: { seconds: 60, label: 'consistency' }
         })) as any;
@@ -448,7 +451,7 @@ export class TasksDispatchScenario implements ClientScenario {
         } else {
           // No await/sleep between create and get — codifies the
           // strong-consistency ordering.
-          const got = (await session.request('tasks/get', { taskId })) as any;
+          const got = (await conn.request('tasks/get', { taskId })) as any;
           const errs: string[] = [];
           if (got.taskId !== taskId) {
             errs.push(
@@ -457,7 +460,7 @@ export class TasksDispatchScenario implements ClientScenario {
           }
           // Cleanup.
           try {
-            await session.request('tasks/cancel', { taskId });
+            await conn.request('tasks/cancel', { taskId });
           } catch {
             /* swallow */
           }
@@ -490,7 +493,7 @@ export class TasksDispatchScenario implements ClientScenario {
       const description =
         'tasks/get for a taskId the server does not recognize MUST return -32602';
       try {
-        await session.request(
+        await conn.request(
           'tasks/get',
           validTasksParams('tasks/get', {
             taskId: 'tasks-conformance-nonexistent-12345'
@@ -524,7 +527,7 @@ export class TasksDispatchScenario implements ClientScenario {
       }
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }

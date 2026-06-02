@@ -34,11 +34,9 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2575_REF, SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2575_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 const MISSING_REQUIRED_CLIENT_CAPABILITY = -32003;
@@ -76,18 +74,22 @@ shape mirrors \`InitializeRequest.capabilities\`, e.g.
 
 The scenario calls \`tools/call\` for a tool registered with task support
 \`required\` from a client that did NOT declare the extension. A
-conformant server MUST reject with \`-32003\`.`;
+conformant server MUST reject with \`-32003\`.
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`failing_job\` — registered with task support declared as \`required\`.
+  The tool's payload behavior is irrelevant; only the registration-time
+  declaration matters, because the error is returned by the middleware
+  before the handler runs.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
       // Intentionally declare NO capabilities — the point of the test is
       // to exercise the "did not negotiate the tasks extension" path.
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: {}
       });
     } catch (error) {
@@ -112,7 +114,7 @@ conformant server MUST reject with \`-32003\`.`;
     let observed: { code?: number; data?: unknown } = {};
     let errored = false;
     try {
-      await session.request('tools/call', {
+      await conn.request('tools/call', {
         name: REQUIRED_TASK_TOOL,
         arguments: {}
       });
@@ -139,7 +141,7 @@ conformant server MUST reject with \`-32003\`.`;
         errorMessage: `tools/call for ${REQUIRED_TASK_TOOL} returned a successful response from a client that did not declare ${TASKS_EXTENSION_ID}; spec requires -32003 rejection in this case.`,
         specReferences: [SEP_2575_REF, SEP_2663_REF]
       });
-      await session.close().catch(() => {});
+      await conn.close().catch(() => {});
       return checks;
     }
 
@@ -154,7 +156,7 @@ conformant server MUST reject with \`-32003\`.`;
         specReferences: [SEP_2575_REF, SEP_2663_REF],
         details: { observedCode: observed.code }
       });
-      await session.close().catch(() => {});
+      await conn.close().catch(() => {});
       return checks;
     }
 
@@ -217,7 +219,7 @@ conformant server MUST reject with \`-32003\`.`;
       }
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }

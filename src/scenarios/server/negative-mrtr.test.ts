@@ -2,7 +2,7 @@ import { testContext } from '../../connection/testing';
 /**
  * SEP-2322 MRTR negative tests.
  *
- * Positive tests run via all-scenarios.test.ts against the everything-server
+ * Positive tests run via the CLI runner against the everything-server
  * (which implements MRTR in its stateless path). These negative tests run
  * against a deliberately broken server to verify checks emit FAILURE.
  */

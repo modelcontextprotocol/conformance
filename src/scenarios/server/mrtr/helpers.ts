@@ -1,17 +1,16 @@
 /**
  * MRTR (SEP-2322 ephemeral) scenario helpers.
  *
- * Reuses the raw-rpc + session bootstrap from `_shared/raw-session.ts`
- * since MRTR's wire shape (resultType discriminator, requestState,
+ * MRTR's wire shape (resultType discriminator, requestState,
  * inputRequests) is the SEP-2322 base that SEP-2663 builds on.
  * SEP-2322 merged on 2026-05-06 with the MRTR result type renamed
  * from IncompleteResult to InputRequiredResult and the wire literal
  * flipped from "incomplete" to "input_required" (commit de6d76fb,
  * per dsp-ant request).
  *
- * Only MRTR-shaped helpers live here. SEP refs are imported from
- * `_shared/sep-refs.ts`; the generic `errMsg` / `failureCheck` /
- * `skipCheck` test scaffolding lives in `_shared/checks.ts`.
+ * Only MRTR-shaped helpers live here. SEP refs + generic check
+ * scaffolding (`errMsg`, `failureCheck`, `skipCheck`) live in
+ * `tasks-mrtr-helpers.ts` at the top of `scenarios/server/`.
  */
 
 // SPEC WATCH — MRTR resultType discriminator value

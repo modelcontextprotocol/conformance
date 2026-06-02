@@ -26,11 +26,9 @@ import {
   ConformanceCheck,
   ScenarioSource
 } from '../../../types';
-import type { RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../_shared/sep-refs';
-import { errMsg, failureCheck } from '../_shared/checks';
-import { initRawSession, type RawSession } from '../_shared/raw-session';
-import { isStateless } from '../_shared/wire-mode';
+import type { Connection, RunContext } from '../../../connection';
+import { SEP_2663_REF } from '../tasks-mrtr-helpers';
+import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 export class TasksRequestStateRemovalScenario implements ClientScenario {
@@ -54,16 +52,18 @@ the MRTR multi-round-trip surface, unrelated to the tasks-v2 wire, and
 is exercised by mrtr-input.ts. This scenario exists because the two
 SEPs put \`requestState\` in lexically adjacent positions, making
 accidental copy-paste from the MRTR shape into the tasks-v2 shape a
-foreseeable mistake for fresh implementations.`;
+foreseeable mistake for fresh implementations.
+
+**Required server fixtures (\`tools/list\` MUST include all):**
+- \`slow_compute\` — task-supporting, \`seconds\`-second sleep then a
+  result.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
-    let session: RawSession;
+    let conn: Connection;
     try {
-      session = await initRawSession(serverUrl, {
-        stateless: isStateless(ctx),
+      conn = await ctx.connect({
         capabilities: { extensions: { [TASKS_EXTENSION_ID]: {} } }
       });
     } catch (error) {
@@ -86,7 +86,7 @@ foreseeable mistake for fresh implementations.`;
     let taskId: string | undefined;
     let createdTask: any;
     try {
-      createdTask = (await session.request('tools/call', {
+      createdTask = (await conn.request('tools/call', {
         name: 'slow_compute',
         arguments: { seconds: 60, label: 'request-state-removal' }
       })) as any;
@@ -101,7 +101,7 @@ foreseeable mistake for fresh implementations.`;
           [SEP_2663_REF]
         )
       );
-      await session.close().catch(() => {});
+      await conn.close().catch(() => {});
       return checks;
     }
     if (!taskId) {
@@ -115,7 +115,7 @@ foreseeable mistake for fresh implementations.`;
         errorMessage: 'no taskId in tools/call response',
         specReferences: [SEP_2663_REF]
       });
-      await session.close().catch(() => {});
+      await conn.close().catch(() => {});
       return checks;
     }
 
@@ -149,7 +149,7 @@ foreseeable mistake for fresh implementations.`;
       const description =
         'tasks/get response (DetailedTask) MUST NOT carry `requestState` for any status (per SEP-2663)';
       try {
-        const detailed = (await session.request('tasks/get', {
+        const detailed = (await conn.request('tasks/get', {
           taskId
         })) as any;
         const has = Object.prototype.hasOwnProperty.call(
@@ -174,12 +174,12 @@ foreseeable mistake for fresh implementations.`;
     }
 
     try {
-      await session.request('tasks/cancel', { taskId });
+      await conn.request('tasks/cancel', { taskId });
     } catch {
       /* swallow */
     }
 
-    await session.close().catch(() => {});
+    await conn.close().catch(() => {});
     return checks;
   }
 }
