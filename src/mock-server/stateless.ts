@@ -45,8 +45,9 @@ export type StatelessValidation =
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
  *
  * `supportedVersions` is the list of wire protocolVersion strings this
- * endpoint accepts; anything else is rejected with -32004 and the list is
- * echoed in the error data and in the `server/discover` result.
+ * endpoint accepts; anything else is rejected with -32004 carrying
+ * `{ supported, requested }` in the error data, and the list is echoed in
+ * the `server/discover` result.
  */
 export function validateStatelessRequest(
   req: { headers: IncomingHeaders; body: unknown },
@@ -98,7 +99,10 @@ export function validateStatelessRequest(
         error: {
           code: -32004,
           message: 'Unsupported protocol version',
-          data: { supported: supportedVersions }
+          data: {
+            supported: supportedVersions,
+            requested: String(headerVersion)
+          }
         }
       }
     };

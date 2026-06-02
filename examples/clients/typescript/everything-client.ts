@@ -263,7 +263,8 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
       const clone = response.clone();
       try {
         const errorResult = await clone.json();
-        if (errorResult.error?.code === -32001) {
+        // -32004 UnsupportedProtocolVersionError per the draft spec
+        if (errorResult.error?.code === -32004) {
           logger.debug(
             'Received UnsupportedProtocolVersionError, starting negotiation...'
           );

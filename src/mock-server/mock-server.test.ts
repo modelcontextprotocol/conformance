@@ -98,7 +98,7 @@ describe('validateStatelessRequest', () => {
       body: {
         error: {
           code: -32004,
-          data: { supported: [DRAFT_PROTOCOL_VERSION] }
+          data: { supported: [DRAFT_PROTOCOL_VERSION], requested: '2099-01-01' }
         }
       }
     });
@@ -222,6 +222,7 @@ describe('createServerStateless', () => {
       expect(rejected.body.error.data.supported).toEqual([
         DRAFT_PROTOCOL_VERSION
       ]);
+      expect(rejected.body.error.data.requested).toBe('2099-01-01');
     } finally {
       await srv.close();
     }

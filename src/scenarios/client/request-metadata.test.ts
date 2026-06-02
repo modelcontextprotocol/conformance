@@ -105,7 +105,7 @@ async function incompatibleVersionClient(serverUrl: string) {
 
   if (response.status === 400) {
     const body = await response.json();
-    if (body.error?.code === -32001) {
+    if (body.error?.code === -32004) {
       return body; // Abort cleanly
     }
   }
