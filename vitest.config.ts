@@ -5,7 +5,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'dist', '.sdk-under-test'],
+    // .claude excluded so local agent worktree checkouts don't add
+    // foreign copies of the suite to the run (mirrors .prettierignore)
+    exclude: ['**/node_modules/**', 'dist', '.sdk-under-test', '.claude/**'],
     // Run test files sequentially to avoid port conflicts
     fileParallelism: false,
     // Increase timeout for server tests in CI
