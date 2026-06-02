@@ -12,10 +12,8 @@ export class ToolsCallScenario implements Scenario {
   readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests calling tools with various parameter types';
   private srv: MockServer | null = null;
-  private checks: ConformanceCheck[] = [];
 
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
-    this.checks = [];
     this.srv = await ctx.createServer({
       'tools/list': () => ({
         tools: [
@@ -55,6 +53,8 @@ export class ToolsCallScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Built fresh on every call so getChecks() is idempotent — the runner may
+    // call it more than once and we must not accumulate duplicates.
     const call = this.srv?.recorded.find((r) => r.method === 'tools/call');
     const args = (call?.params as CallToolRequest['params'] | undefined)
       ?.arguments as { a?: unknown; b?: unknown } | undefined;
@@ -62,21 +62,22 @@ export class ToolsCallScenario implements Scenario {
       call !== undefined &&
       typeof args?.a === 'number' &&
       typeof args?.b === 'number';
-    this.checks.push({
-      id: 'tool-add-numbers',
-      name: 'ToolAddNumbers',
-      description: 'Validates that the add_numbers tool works correctly',
-      status: ok ? 'SUCCESS' : 'FAILURE',
-      timestamp: new Date().toISOString(),
-      specReferences: [SPEC_REF],
-      details: ok
-        ? {
-            a: args!.a,
-            b: args!.b,
-            result: (args!.a as number) + (args!.b as number)
-          }
-        : { message: 'Tool was not called by client' }
-    });
-    return this.checks;
+    return [
+      {
+        id: 'tool-add-numbers',
+        name: 'ToolAddNumbers',
+        description: 'Validates that the add_numbers tool works correctly',
+        status: ok ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REF],
+        details: ok
+          ? {
+              a: args!.a,
+              b: args!.b,
+              result: (args!.a as number) + (args!.b as number)
+            }
+          : { message: 'Tool was not called by client' }
+      }
+    ];
   }
 }
