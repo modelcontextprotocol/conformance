@@ -1353,107 +1353,113 @@ app.post('/mcp', async (req, res) => {
 
     if (method === 'tools/list') {
       const dispatch = await getStatelessDispatchClient();
-      const fromServer = (await dispatch.client.request(
-        { method: 'tools/list', params: {} },
-        ResultSchema as any
-      )) as { tools: any[]; [k: string]: unknown };
-      await dispatch.close();
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          ...fromServer,
-          tools: [
-            ...fromServer.tools,
-            {
-              name: 'test_missing_capability',
-              description: 'Test tool requiring sampling',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_elicitation',
-              description:
-                'MRTR: returns InputRequiredResult with elicitation request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_sampling',
-              description:
-                'MRTR: returns InputRequiredResult with sampling request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_list_roots',
-              description:
-                'MRTR: returns InputRequiredResult with roots/list request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_request_state',
-              description:
-                'MRTR: returns InputRequiredResult with requestState',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multiple_inputs',
-              description:
-                'MRTR: returns InputRequiredResult with multiple input requests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multi_round',
-              description: 'MRTR: multi-round InputRequiredResult workflow',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_tampered_state',
-              description: 'MRTR: HMAC-signed requestState integrity test',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_capabilities',
-              description:
-                'MRTR: respects client capabilities in inputRequests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_streaming_elicitation',
-              description:
-                'Diagnostic tool validating response progress streams',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_logging_tool',
-              description: 'Diagnostic logging validator tool',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
-        }
-      });
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'tools/list', params: {} },
+          ResultSchema as any
+        )) as { tools: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            tools: [
+              ...fromServer.tools,
+              {
+                name: 'test_missing_capability',
+                description: 'Test tool requiring sampling',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_elicitation',
+                description:
+                  'MRTR: returns InputRequiredResult with elicitation request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_sampling',
+                description:
+                  'MRTR: returns InputRequiredResult with sampling request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_list_roots',
+                description:
+                  'MRTR: returns InputRequiredResult with roots/list request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_request_state',
+                description:
+                  'MRTR: returns InputRequiredResult with requestState',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multiple_inputs',
+                description:
+                  'MRTR: returns InputRequiredResult with multiple input requests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multi_round',
+                description: 'MRTR: multi-round InputRequiredResult workflow',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_tampered_state',
+                description: 'MRTR: HMAC-signed requestState integrity test',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_capabilities',
+                description:
+                  'MRTR: respects client capabilities in inputRequests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_streaming_elicitation',
+                description:
+                  'Diagnostic tool validating response progress streams',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_logging_tool',
+                description: 'Diagnostic logging validator tool',
+                inputSchema: { type: 'object', properties: {} }
+              }
+            ]
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
       const dispatch = await getStatelessDispatchClient();
-      const fromServer = (await dispatch.client.request(
-        { method: 'prompts/list', params: {} },
-        ResultSchema as any
-      )) as { prompts: any[]; [k: string]: unknown };
-      await dispatch.close();
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          ...fromServer,
-          prompts: [
-            ...fromServer.prompts,
-            {
-              name: 'test_input_required_result_prompt',
-              description: 'MRTR: prompt that requires elicitation input'
-            }
-          ]
-        }
-      });
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'prompts/list', params: {} },
+          ResultSchema as any
+        )) as { prompts: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            prompts: [
+              ...fromServer.prompts,
+              {
+                name: 'test_input_required_result_prompt',
+                description: 'MRTR: prompt that requires elicitation input'
+              }
+            ]
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // SEP-2322 MRTR: prompts/get handler

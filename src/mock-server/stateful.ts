@@ -98,11 +98,13 @@ export async function createServerStateful(
         sessionIdGenerator: undefined
       });
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
+      // Register cleanup before handing the request to the transport so the
+      // pair is torn down even when handleRequest throws.
       res.on('close', () => {
         transport.close();
         server.close();
       });
+      await transport.handleRequest(req, res, req.body);
     } catch (e) {
       if (!res.headersSent) {
         res.status(500).json({
