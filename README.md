@@ -69,7 +69,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
-The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. When `--spec-version` is passed, its resolved value is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it.
+The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. When `--spec-version` is passed, its resolved value is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it. The runner also sets `MCP_CONFORMANCE_LIFECYCLE` to `stateful` or `stateless` based on the resolved spec version, so clients can pick the right lifecycle (initialize handshake vs per-request `_meta`) without maintaining their own version-to-lifecycle mapping.
 
 ### Server Testing
 

@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ConformanceCheck, SpecVersion, LATEST_SPEC_VERSION } from '../types';
 import { getScenario } from '../scenarios';
+import { lifecycleFor } from '../connection/select';
 import { createServerFor, type ScenarioContext } from '../mock-server';
 import { createResultDir, formatPrettyChecks } from './utils';
 
@@ -35,8 +36,13 @@ async function executeClient(
   // 2. Simpler to read a string vs parsing JSON just to get the scenario name
   // 3. Semantic separation: scenario identifies "which test", context provides "test data"
   const env = { ...process.env };
+  const resolvedVersion = specVersion ?? LATEST_SPEC_VERSION;
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
-  env.MCP_CONFORMANCE_PROTOCOL_VERSION = specVersion ?? LATEST_SPEC_VERSION;
+  env.MCP_CONFORMANCE_PROTOCOL_VERSION = resolvedVersion;
+  // Exported alongside the version so clients can pick the right lifecycle
+  // (initialize handshake vs per-request _meta) without maintaining their
+  // own copy of the version→lifecycle map.
+  env.MCP_CONFORMANCE_LIFECYCLE = lifecycleFor(resolvedVersion);
   if (context) {
     // Include scenario name in context for discriminated union parsing
     env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({

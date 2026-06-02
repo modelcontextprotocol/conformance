@@ -1,5 +1,6 @@
 import { getScenario } from '../../../index';
 import { testScenarioContext } from '../../../../mock-server/testing';
+import { lifecycleFor } from '../../../../connection/select';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -104,13 +105,16 @@ export async function runClientAgainstScenario(
   }
 
   // Start the scenario server
-  const urls = await scenario.start(testScenarioContext());
+  const ctx = testScenarioContext();
+  const urls = await scenario.start(ctx);
   const serverUrl = urls.serverUrl;
 
   try {
     // Set environment variables for inline clients
     // These mirror what src/runner/client.ts does for spawned processes
     process.env.MCP_CONFORMANCE_SCENARIO = scenarioName;
+    process.env.MCP_CONFORMANCE_PROTOCOL_VERSION = ctx.specVersion;
+    process.env.MCP_CONFORMANCE_LIFECYCLE = lifecycleFor(ctx.specVersion);
     if (urls.context) {
       process.env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
         name: scenarioName,
@@ -180,6 +184,8 @@ export async function runClientAgainstScenario(
     // Clean up environment variables
     delete process.env.MCP_CONFORMANCE_SCENARIO;
     delete process.env.MCP_CONFORMANCE_CONTEXT;
+    delete process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
+    delete process.env.MCP_CONFORMANCE_LIFECYCLE;
 
     // Stop the scenario server
     await scenario.stop();

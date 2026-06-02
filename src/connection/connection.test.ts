@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { connectFor } from './select';
+import {
+  connectFor,
+  isStatefulVersion,
+  lifecycleFor,
+  STATELESS_SPEC_VERSIONS
+} from './select';
 import { connectStateful } from './stateful';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
 
 describe('connectFor', () => {
   it('returns stateful for dated 2025-x versions', () => {
@@ -12,6 +18,26 @@ describe('connectFor', () => {
   });
   it('returns stateless for the draft version', () => {
     expect(connectFor('DRAFT-2026-v1')).toBe(connectStateless);
+  });
+});
+
+describe('lifecycleFor', () => {
+  it('maps dated 2025-x versions to stateful and the draft to stateless', () => {
+    expect(lifecycleFor('2025-03-26')).toBe('stateful');
+    expect(lifecycleFor('2025-11-25')).toBe('stateful');
+    expect(lifecycleFor(DRAFT_PROTOCOL_VERSION)).toBe('stateless');
+  });
+});
+
+describe('STATELESS_SPEC_VERSIONS', () => {
+  it('contains exactly the versions isStatefulVersion rejects', () => {
+    expect(STATELESS_SPEC_VERSIONS.length).toBeGreaterThan(0);
+    for (const v of STATELESS_SPEC_VERSIONS) {
+      expect(isStatefulVersion(v)).toBe(false);
+    }
+  });
+  it('currently contains only the draft version', () => {
+    expect(STATELESS_SPEC_VERSIONS).toEqual([DRAFT_PROTOCOL_VERSION]);
   });
 });
 

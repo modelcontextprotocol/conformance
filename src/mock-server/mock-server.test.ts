@@ -2,16 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { createServerFor } from './select';
 import { createServerStateful } from './stateful';
 import { createServerStateless, validateStatelessRequest } from './stateless';
+import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
 
-describe('validateStatelessRequest', () => {
-  const meta = {
-    'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
-    'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' },
-    'io.modelcontextprotocol/clientCapabilities': {}
-  };
-  const headers = { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION };
+const meta = {
+  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' },
+  'io.modelcontextprotocol/clientCapabilities': {}
+};
+const headers = { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION };
 
+async function post(url: string, body: object, headers: object = {}) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body)
+  });
+  return { status: r.status, body: await r.json() };
+}
+
+describe('validateStatelessRequest', () => {
   it('returns reject for invalid requests', () => {
     const v = validateStatelessRequest(
       {
@@ -23,7 +33,8 @@ describe('validateStatelessRequest', () => {
           params: { _meta: meta }
         }
       },
-      {}
+      {},
+      [DRAFT_PROTOCOL_VERSION]
     );
     expect(v).toMatchObject({ kind: 'reject', status: 400 });
   });
@@ -39,7 +50,8 @@ describe('validateStatelessRequest', () => {
           params: { _meta: meta }
         }
       },
-      {}
+      {},
+      [DRAFT_PROTOCOL_VERSION]
     );
     expect(v).toMatchObject({ kind: 'handled', status: 200 });
   });
@@ -55,9 +67,41 @@ describe('validateStatelessRequest', () => {
           params: { _meta: meta }
         }
       },
-      {}
+      {},
+      [DRAFT_PROTOCOL_VERSION]
     );
     expect(v).toMatchObject({ kind: 'route', id: 1, method: 'tools/list' });
+  });
+
+  it('rejects versions outside the supported list with -32004 and echoes it', () => {
+    const v = validateStatelessRequest(
+      {
+        headers: { 'mcp-protocol-version': '2099-01-01' },
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: {
+            _meta: {
+              ...meta,
+              'io.modelcontextprotocol/protocolVersion': '2099-01-01'
+            }
+          }
+        }
+      },
+      {},
+      [DRAFT_PROTOCOL_VERSION]
+    );
+    expect(v).toMatchObject({
+      kind: 'reject',
+      status: 400,
+      body: {
+        error: {
+          code: -32004,
+          data: { supported: [DRAFT_PROTOCOL_VERSION] }
+        }
+      }
+    });
   });
 });
 
@@ -66,27 +110,28 @@ describe('createServerFor', () => {
     expect(createServerFor('2025-06-18')).toBe(createServerStateful);
     expect(createServerFor('2025-11-25')).toBe(createServerStateful);
   });
-  it('returns stateless for the draft version', () => {
-    expect(createServerFor(DRAFT_PROTOCOL_VERSION)).toBe(createServerStateless);
+  it('returns a stateless factory bound to the requested version', async () => {
+    const srv = await createServerFor(DRAFT_PROTOCOL_VERSION)({});
+    try {
+      const { status, body } = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta }
+        },
+        headers
+      );
+      expect(status).toBe(200);
+      expect(body.result.supportedVersions).toEqual([DRAFT_PROTOCOL_VERSION]);
+    } finally {
+      await srv.close();
+    }
   });
 });
 
 describe('createServerStateless', () => {
-  const meta = {
-    'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
-    'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' },
-    'io.modelcontextprotocol/clientCapabilities': {}
-  };
-
-  async function post(url: string, body: object, headers: object = {}) {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body)
-    });
-    return { status: r.status, body: await r.json() };
-  }
-
   it('rejects requests missing the version header', async () => {
     const srv = await createServerStateless({});
     try {
@@ -118,7 +163,7 @@ describe('createServerStateless', () => {
     }
   });
 
-  it('serves server/discover', async () => {
+  it('serves server/discover, defaulting to every known stateless version', async () => {
     const srv = await createServerStateless({});
     try {
       const { status, body } = await post(
@@ -132,8 +177,51 @@ describe('createServerStateless', () => {
         { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
       );
       expect(status).toBe(200);
-      expect(body.result.supportedVersions).toEqual([DRAFT_PROTOCOL_VERSION]);
+      expect(body.result.supportedVersions).toEqual(STATELESS_SPEC_VERSIONS);
       expect(body.result.serverInfo.name).toBe('conformance-mock-server');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('accepts the version it was created for and rejects others with -32004', async () => {
+    const srv = await createServerStateless(
+      { 'tools/list': () => ({ tools: [] }) },
+      DRAFT_PROTOCOL_VERSION
+    );
+    try {
+      const accepted = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: meta }
+        },
+        headers
+      );
+      expect(accepted.status).toBe(200);
+
+      const rejected = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+          params: {
+            _meta: {
+              ...meta,
+              'io.modelcontextprotocol/protocolVersion': '2099-01-01'
+            }
+          }
+        },
+        { 'mcp-protocol-version': '2099-01-01' }
+      );
+      expect(rejected.status).toBe(400);
+      expect(rejected.body.error.code).toBe(-32004);
+      expect(rejected.body.error.data.supported).toEqual([
+        DRAFT_PROTOCOL_VERSION
+      ]);
     } finally {
       await srv.close();
     }

@@ -200,7 +200,7 @@ export function createServer(
   // as createMcpServer. Bearer-auth middleware and PRM route above are
   // version-independent.
   function handleStateless(req: Request, res: Response) {
-    const v = validateStatelessRequest(req, { tools: {} });
+    const v = validateStatelessRequest(req, { tools: {} }, [ctx.specVersion]);
     if (v.kind !== 'route') {
       return res.status(v.status).json(v.body);
     }

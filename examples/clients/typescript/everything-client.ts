@@ -21,6 +21,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
+import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -73,12 +74,23 @@ export function getHandler(scenarioName: string): ScenarioHandler | undefined {
 // Stateless requester (SEP-2575 / 2026-x lifecycle)
 //
 // Shim for the fact that the SDK Client doesn't support stateless mode yet.
-// Carry-forward handlers below pick this when MCP_CONFORMANCE_PROTOCOL_VERSION
-// is the draft version, so the same handler exercises both lifecycles.
+// Carry-forward handlers below pick this when the runner says the resolved
+// spec version is stateless, so the same handler exercises both lifecycles.
 // ============================================================================
 
 const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
-const DRAFT_VERSION = 'DRAFT-2026-v1';
+
+// Lifecycle decision: trust the runner's MCP_CONFORMANCE_LIFECYCLE when set;
+// fall back to comparing against the draft version for older runners that
+// only export the protocol version.
+const USE_STATELESS_LIFECYCLE = process.env.MCP_CONFORMANCE_LIFECYCLE
+  ? process.env.MCP_CONFORMANCE_LIFECYCLE === 'stateless'
+  : PROTOCOL_VERSION === DRAFT_PROTOCOL_VERSION;
+
+// Wire protocolVersion for stateless requests: the runner-resolved version
+// when available (so a dated stateless release is exercised under its own
+// identifier), the current draft otherwise.
+const STATELESS_PROTOCOL_VERSION = PROTOCOL_VERSION ?? DRAFT_PROTOCOL_VERSION;
 
 const STATELESS_META_BASE = {
   'io.modelcontextprotocol/clientInfo': {
@@ -100,7 +112,7 @@ async function statelessRequest(
   params: Record<string, unknown> = {}
 ): Promise<any> {
   const _meta = {
-    'io.modelcontextprotocol/protocolVersion': DRAFT_VERSION,
+    'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
     ...STATELESS_META_BASE,
     ...((params._meta as object | undefined) ?? {})
   };
@@ -108,7 +120,7 @@ async function statelessRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': DRAFT_VERSION
+      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -131,7 +143,7 @@ async function statelessRequest(
 // ============================================================================
 
 async function runBasicClient(serverUrl: string): Promise<void> {
-  if (PROTOCOL_VERSION === DRAFT_VERSION) {
+  if (USE_STATELESS_LIFECYCLE) {
     logger.debug('Stateless lifecycle: calling tools/list + tools/call');
     const list = await statelessRequest(serverUrl, 'tools/list');
     logger.debug('Successfully listed tools:', JSON.stringify(list));
@@ -186,7 +198,7 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
 
   const meta = STATELESS_META_BASE;
 
-  let activeVersion = DRAFT_VERSION;
+  let activeVersion = STATELESS_PROTOCOL_VERSION;
 
   const sendRequestWithNegotiation = async (
     method: string,
@@ -228,7 +240,9 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
           );
           const serverSupported: string[] =
             errorResult.error.data?.supported || [];
-          const clientSupported = [DRAFT_VERSION];
+          const clientSupported = [
+            ...new Set([STATELESS_PROTOCOL_VERSION, DRAFT_PROTOCOL_VERSION])
+          ];
           const mutuallySupported = clientSupported.filter((v) =>
             serverSupported.includes(v)
           );

@@ -8,9 +8,10 @@
  */
 
 import express from 'express';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import type { SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockServer, RequestHandlers } from './index';
+import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { capabilitiesFromHandlers } from './stateful';
 
 const META_KEYS = [
@@ -42,10 +43,15 @@ export type StatelessValidation =
  *
  * Exported so any mock server that needs a stateless `/mcp` route (e.g.
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
+ *
+ * `supportedVersions` is the list of wire protocolVersion strings this
+ * endpoint accepts; anything else is rejected with -32004 and the list is
+ * echoed in the error data and in the `server/discover` result.
  */
 export function validateStatelessRequest(
   req: { headers: IncomingHeaders; body: unknown },
-  capabilities: Record<string, unknown>
+  capabilities: Record<string, unknown>,
+  supportedVersions: readonly string[]
 ): StatelessValidation {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const id = (body.id ?? null) as string | number | null;
@@ -79,7 +85,10 @@ export function validateStatelessRequest(
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
-  if (headerVersion !== DRAFT_PROTOCOL_VERSION) {
+  if (
+    typeof headerVersion !== 'string' ||
+    !supportedVersions.includes(headerVersion)
+  ) {
     return {
       kind: 'reject',
       status: 400,
@@ -89,7 +98,7 @@ export function validateStatelessRequest(
         error: {
           code: -32004,
           message: 'Unsupported protocol version',
-          data: { supported: [DRAFT_PROTOCOL_VERSION] }
+          data: { supported: supportedVersions }
         }
       }
     };
@@ -102,7 +111,7 @@ export function validateStatelessRequest(
         jsonrpc: '2.0',
         id,
         result: {
-          supportedVersions: [DRAFT_PROTOCOL_VERSION],
+          supportedVersions,
           capabilities,
           serverInfo: { name: 'conformance-mock-server', version: '1.0.0' }
         }
@@ -112,11 +121,20 @@ export function validateStatelessRequest(
   return { kind: 'route', id, method, params };
 }
 
+/**
+ * When `specVersion` is given (the runner's resolved `--spec-version`), the
+ * server accepts exactly that version. Without it, every known stateless
+ * version is accepted.
+ */
 export async function createServerStateless(
-  handlers: RequestHandlers
+  handlers: RequestHandlers,
+  specVersion?: SpecVersion
 ): Promise<MockServer> {
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
+  const supportedVersions: readonly string[] = specVersion
+    ? [specVersion]
+    : STATELESS_SPEC_VERSIONS;
 
   const app = express();
   app.use(express.json());
@@ -130,7 +148,7 @@ export async function createServerStateless(
     if (body?.method && body.method !== 'server/discover') {
       recorded.push(req.body as JSONRPCRequest);
     }
-    const v = validateStatelessRequest(req, capabilities);
+    const v = validateStatelessRequest(req, capabilities, supportedVersions);
     if (v.kind !== 'route') {
       return res.status(v.status).json(v.body);
     }

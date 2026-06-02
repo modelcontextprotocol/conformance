@@ -9,5 +9,5 @@ export function createServerFor(
 ): (handlers: RequestHandlers) => Promise<MockServer> {
   return isStatefulVersion(specVersion)
     ? createServerStateful
-    : createServerStateless;
+    : (handlers) => createServerStateless(handlers, specVersion);
 }
