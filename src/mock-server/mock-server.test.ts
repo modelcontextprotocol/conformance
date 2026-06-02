@@ -1,8 +1,65 @@
 import { describe, it, expect } from 'vitest';
 import { createServerFor } from './select';
 import { createServerStateful } from './stateful';
-import { createServerStateless } from './stateless';
+import { createServerStateless, validateStatelessRequest } from './stateless';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
+
+describe('validateStatelessRequest', () => {
+  const meta = {
+    'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+    'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' },
+    'io.modelcontextprotocol/clientCapabilities': {}
+  };
+  const headers = { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION };
+
+  it('returns reject for invalid requests', () => {
+    const v = validateStatelessRequest(
+      {
+        headers: {},
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: meta }
+        }
+      },
+      {}
+    );
+    expect(v).toMatchObject({ kind: 'reject', status: 400 });
+  });
+
+  it('returns handled for server/discover', () => {
+    const v = validateStatelessRequest(
+      {
+        headers,
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta }
+        }
+      },
+      {}
+    );
+    expect(v).toMatchObject({ kind: 'handled', status: 200 });
+  });
+
+  it('returns route for valid non-discover requests', () => {
+    const v = validateStatelessRequest(
+      {
+        headers,
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: meta }
+        }
+      },
+      {}
+    );
+    expect(v).toMatchObject({ kind: 'route', id: 1, method: 'tools/list' });
+  });
+});
 
 describe('createServerFor', () => {
   it('returns stateful for dated 2025-x versions', () => {

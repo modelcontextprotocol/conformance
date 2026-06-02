@@ -22,19 +22,23 @@ const META_KEYS = [
 type IncomingHeaders = Record<string, string | string[] | undefined>;
 
 export type StatelessValidation =
+  | { kind: 'reject'; status: number; body: object }
+  | { kind: 'handled'; status: number; body: object }
   | {
-      ok: true;
+      kind: 'route';
       id: string | number | null;
       method: string;
       params: Record<string, unknown>;
-    }
-  | { ok: false; status: number; body: object };
+    };
 
 /**
  * Shared SEP-2575 request validation: header presence, `_meta` 3-key check,
  * header/`_meta` version match, version-supported check, and `server/discover`
- * handling. Consumers write `res.status(v.status).json(v.body)` for the
- * not-ok branch (which also covers discover) and route on the ok branch.
+ * handling. Returns `reject` when validation failed, `handled` when the
+ * request was valid and already answered (`server/discover`), and `route`
+ * when the caller should dispatch to its own handlers. Consumers write
+ * `res.status(v.status).json(v.body)` for `reject` and `handled` alike and
+ * route only on `route`.
  *
  * Exported so any mock server that needs a stateless `/mcp` route (e.g.
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
@@ -51,7 +55,7 @@ export function validateStatelessRequest(
 
   const reject = (status: number, code: number, message: string) =>
     ({
-      ok: false,
+      kind: 'reject',
       status,
       body: { jsonrpc: '2.0', id, error: { code, message } }
     }) as const;
@@ -77,7 +81,7 @@ export function validateStatelessRequest(
   }
   if (headerVersion !== DRAFT_PROTOCOL_VERSION) {
     return {
-      ok: false,
+      kind: 'reject',
       status: 400,
       body: {
         jsonrpc: '2.0',
@@ -92,7 +96,7 @@ export function validateStatelessRequest(
   }
   if (method === 'server/discover') {
     return {
-      ok: false,
+      kind: 'handled',
       status: 200,
       body: {
         jsonrpc: '2.0',
@@ -105,7 +109,7 @@ export function validateStatelessRequest(
       }
     };
   }
-  return { ok: true, id, method, params };
+  return { kind: 'route', id, method, params };
 }
 
 export async function createServerStateless(
@@ -127,7 +131,7 @@ export async function createServerStateless(
       recorded.push(req.body as JSONRPCRequest);
     }
     const v = validateStatelessRequest(req, capabilities);
-    if (!v.ok) {
+    if (v.kind !== 'route') {
       return res.status(v.status).json(v.body);
     }
     const { id, method, params } = v;

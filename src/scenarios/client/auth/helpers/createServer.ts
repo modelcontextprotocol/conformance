@@ -201,7 +201,7 @@ export function createServer(
   // version-independent.
   function handleStateless(req: Request, res: Response) {
     const v = validateStatelessRequest(req, { tools: {} });
-    if (!v.ok) {
+    if (v.kind !== 'route') {
       return res.status(v.status).json(v.body);
     }
     const { id, method } = v;
