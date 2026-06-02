@@ -173,12 +173,13 @@ export function createServer(
 
       try {
         await server.connect(transport);
-
-        await transport.handleRequest(req, res, req.body);
+        // Register cleanup before handing the request to the transport so the
+        // pair is torn down even when handleRequest throws.
         res.on('close', () => {
           transport.close();
           server.close();
         });
+        await transport.handleRequest(req, res, req.body);
       } catch (error) {
         console.error('Error handling MCP request:', error);
         if (!res.headersSent) {
