@@ -185,9 +185,35 @@ registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
 
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and
-// simply never fetches that URI, so the basic connect+listTools flow is the
-// correct behavior here.
-registerScenario('json-schema-ref-no-deref', runBasicClient);
+// simply never fetches that URI. The scenario's mock only serves tools/list,
+// so this handler stops after listing instead of reusing runBasicClient
+// (whose tools/call would get -32601 and fail the run).
+async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug('Stateless lifecycle: calling tools/list');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    return;
+  }
+
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  await client.connect(transport);
+  logger.debug('Successfully connected to MCP server');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('json-schema-ref-no-deref', runListToolsOnlyClient);
 
 // ============================================================================
 // request-metadata scenario (SEP-2575)
