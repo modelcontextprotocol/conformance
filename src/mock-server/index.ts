@@ -33,7 +33,9 @@ export interface MockServer {
   /**
    * Every JSON-RPC request the client sent, in arrival order, excluding the
    * lifecycle preamble (`initialize` / `notifications/initialized` under the
-   * stateful impl; nothing is excluded under stateless since there is none).
+   * stateful impl; `server/discover` under stateless). Recording happens
+   * before validation, so requests the server rejects (e.g. missing header
+   * or `_meta`) still appear here.
    */
   readonly recorded: JSONRPCRequest[];
   close(): Promise<void>;

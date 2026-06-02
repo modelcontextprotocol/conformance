@@ -105,6 +105,41 @@ describe('createServerStateless', () => {
     }
   });
 
+  it('records requests rejected by validation (missing _meta)', async () => {
+    const srv = await createServerStateless({});
+    try {
+      const { status } = await post(
+        srv.url,
+        { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+      );
+      expect(status).toBe(400);
+      expect(srv.recorded.map((r) => r.method)).toEqual(['tools/list']);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('does not record the server/discover preamble', async () => {
+    const srv = await createServerStateless({});
+    try {
+      const { status } = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta }
+        },
+        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+      );
+      expect(status).toBe(200);
+      expect(srv.recorded).toHaveLength(0);
+    } finally {
+      await srv.close();
+    }
+  });
+
   it('returns -32601 for unknown methods', async () => {
     const srv = await createServerStateless({});
     try {

@@ -118,6 +118,14 @@ export async function createServerStateless(
   app.use(express.json());
 
   app.post('/mcp', async (req, res) => {
+    // Record every JSON-RPC request the client sends (excluding the
+    // `server/discover` lifecycle preamble) before validation so rejected
+    // requests are captured too, matching the stateful impl and the
+    // MockServer.recorded contract.
+    const body = req.body as Record<string, unknown> | undefined;
+    if (body?.method && body.method !== 'server/discover') {
+      recorded.push(req.body as JSONRPCRequest);
+    }
     const v = validateStatelessRequest(req, capabilities);
     if (!v.ok) {
       return res.status(v.status).json(v.body);
@@ -125,8 +133,6 @@ export async function createServerStateless(
     const { id, method, params } = v;
     const error = (status: number, code: number, message: string) =>
       res.status(status).json({ jsonrpc: '2.0', id, error: { code, message } });
-
-    recorded.push(req.body as JSONRPCRequest);
 
     const handler = handlers[method];
     if (!handler) {
