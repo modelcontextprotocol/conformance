@@ -1430,6 +1430,12 @@ app.post('/mcp', async (req, res) => {
             ]
           }
         });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
       } finally {
         await dispatch.close();
       }
@@ -1456,6 +1462,12 @@ app.post('/mcp', async (req, res) => {
               }
             ]
           }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
         });
       } finally {
         await dispatch.close();
