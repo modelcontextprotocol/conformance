@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   connectFor,
   isStatefulVersion,
-  lifecycleFor,
   STATELESS_SPEC_VERSIONS
 } from './select';
 import { connectStateful } from './stateful';
@@ -23,14 +22,6 @@ describe('connectFor', () => {
     // behaviour of the wrapper is covered in stateless.test.ts.
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
-  });
-});
-
-describe('lifecycleFor', () => {
-  it('maps dated 2025-x versions to stateful and the draft to stateless', () => {
-    expect(lifecycleFor('2025-03-26')).toBe('stateful');
-    expect(lifecycleFor('2025-11-25')).toBe('stateful');
-    expect(lifecycleFor(DRAFT_PROTOCOL_VERSION)).toBe('stateless');
   });
 });
 

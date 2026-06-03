@@ -22,6 +22,7 @@ import {
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
+import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -80,12 +81,13 @@ export function getHandler(scenarioName: string): ScenarioHandler | undefined {
 
 const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
 
-// Lifecycle decision: trust the runner's MCP_CONFORMANCE_LIFECYCLE when set;
-// fall back to comparing against the draft version for older runners that
-// only export the protocol version.
-const USE_STATELESS_LIFECYCLE = process.env.MCP_CONFORMANCE_LIFECYCLE
-  ? process.env.MCP_CONFORMANCE_LIFECYCLE === 'stateless'
-  : PROTOCOL_VERSION === DRAFT_PROTOCOL_VERSION;
+// Lifecycle decision: derived from the runner-provided protocol version.
+// The version→lifecycle mapping is spec knowledge a client must own; this
+// in-repo client imports the stateless version set from src/ so it cannot
+// drift from the runner's mapping.
+const USE_STATELESS_LIFECYCLE = PROTOCOL_VERSION
+  ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(PROTOCOL_VERSION)
+  : false;
 
 // Wire protocolVersion for stateless requests: the runner-resolved version
 // when available (so a dated stateless release is exercised under its own

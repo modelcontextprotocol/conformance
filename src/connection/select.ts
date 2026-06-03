@@ -38,16 +38,6 @@ export function isStatefulVersion(v: SpecVersion): boolean {
 export const STATELESS_SPEC_VERSIONS: readonly SpecVersion[] =
   ALL_SPEC_VERSIONS.filter((v) => !isStatefulVersion(v));
 
-/**
- * Lifecycle label for a spec version. This is the value the runner exports
- * to client processes as `MCP_CONFORMANCE_LIFECYCLE` so clients in any
- * language can pick the right lifecycle without maintaining their own copy
- * of the version→lifecycle map.
- */
-export function lifecycleFor(v: SpecVersion): 'stateful' | 'stateless' {
-  return isStatefulVersion(v) ? 'stateful' : 'stateless';
-}
-
 export function connectFor(
   specVersion: SpecVersion
 ): (serverUrl: string) => Promise<Connection> {
