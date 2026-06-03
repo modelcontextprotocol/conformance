@@ -21,6 +21,8 @@ import {
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
+import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
+import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -70,10 +72,135 @@ export function getHandler(scenarioName: string): ScenarioHandler | undefined {
 }
 
 // ============================================================================
-// Basic scenarios (initialize, tools-call)
+// Stateless requester (SEP-2575 / 2026-x lifecycle)
+//
+// Shim for the fact that the SDK Client doesn't support stateless mode yet.
+// Carry-forward handlers below pick this when the runner says the resolved
+// spec version is stateless, so the same handler exercises both lifecycles.
+// ============================================================================
+
+const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
+
+// Lifecycle decision: derived from the runner-provided protocol version.
+// The version→lifecycle mapping is spec knowledge a client must own; this
+// in-repo client imports the stateless version set from src/ so it cannot
+// drift from the runner's mapping.
+const USE_STATELESS_LIFECYCLE = PROTOCOL_VERSION
+  ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(PROTOCOL_VERSION)
+  : false;
+
+// Wire protocolVersion for stateless requests: the runner-resolved version
+// when available (so a dated stateless release is exercised under its own
+// identifier), the current draft otherwise.
+const STATELESS_PROTOCOL_VERSION = PROTOCOL_VERSION ?? DRAFT_PROTOCOL_VERSION;
+
+const STATELESS_META_BASE = {
+  'io.modelcontextprotocol/clientInfo': {
+    name: 'conformance-test-client',
+    version: '1.0.0'
+  },
+  'io.modelcontextprotocol/clientCapabilities': {
+    tools: {},
+    roots: {},
+    sampling: {},
+    elicitation: {}
+  }
+};
+
+let _nextStatelessId = 1;
+async function statelessRequest(
+  serverUrl: string,
+  method: string,
+  params: Record<string, unknown> = {}
+): Promise<any> {
+  const _meta = {
+    'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
+    ...STATELESS_META_BASE,
+    ...((params._meta as object | undefined) ?? {})
+  };
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Servers built on the SDK's StreamableHTTPServerTransport reject
+      // requests that don't accept both JSON and SSE responses.
+      Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: _nextStatelessId++,
+      method,
+      params: { ...params, _meta }
+    })
+  });
+  const body = await response.json();
+  if (body.error) {
+    throw new Error(
+      `${method} failed: ${body.error.code} ${body.error.message}`
+    );
+  }
+  return body.result;
+}
+
+// ============================================================================
+// Basic scenarios (initialize, tools_call)
 // ============================================================================
 
 async function runBasicClient(serverUrl: string): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug('Stateless lifecycle: calling tools/list + tools/call');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    const tool = list?.tools?.[0];
+    if (tool) {
+      const result = await statelessRequest(serverUrl, 'tools/call', {
+        name: tool.name,
+        arguments: { a: 2, b: 3 }
+      });
+      logger.debug('Successfully called tool:', JSON.stringify(result));
+    }
+    return;
+  }
+
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  await client.connect(transport);
+  logger.debug('Successfully connected to MCP server');
+
+  const list = await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  const tool = list.tools[0];
+  if (tool) {
+    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+    logger.debug('Successfully called tool');
+  }
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
+
+// SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
+// contains a network-URI $ref. A conformant client lists tools normally and
+// simply never fetches that URI. The scenario's mock only serves tools/list,
+// so this handler stops after listing instead of reusing runBasicClient
+// (whose tools/call would get -32601 and fail the run).
+async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug('Stateless lifecycle: calling tools/list');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    return;
+  }
+
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
     { capabilities: {} }
@@ -91,13 +218,7 @@ async function runBasicClient(serverUrl: string): Promise<void> {
   logger.debug('Connection closed successfully');
 }
 
-registerScenarios(['initialize', 'tools-call'], runBasicClient);
-
-// SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
-// contains a network-URI $ref. A conformant client lists tools normally and
-// simply never fetches that URI, so the basic connect+listTools flow is the
-// correct behavior here.
-registerScenario('json-schema-ref-no-deref', runBasicClient);
+registerScenario('json-schema-ref-no-deref', runListToolsOnlyClient);
 
 // ============================================================================
 // request-metadata scenario (SEP-2575)
@@ -106,20 +227,9 @@ registerScenario('json-schema-ref-no-deref', runBasicClient);
 async function runRequestMetadataClient(serverUrl: string): Promise<void> {
   logger.debug('Starting request-metadata client flow...');
 
-  const meta = {
-    'io.modelcontextprotocol/clientInfo': {
-      name: 'conformance-test-client',
-      version: '1.0.0'
-    },
-    'io.modelcontextprotocol/clientCapabilities': {
-      tools: {},
-      roots: {},
-      sampling: {},
-      elicitation: {}
-    }
-  };
+  const meta = STATELESS_META_BASE;
 
-  let activeVersion = 'DRAFT-2026-v1';
+  let activeVersion = STATELESS_PROTOCOL_VERSION;
 
   const sendRequestWithNegotiation = async (
     method: string,
@@ -166,7 +276,9 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
           );
           const serverSupported: string[] =
             errorResult.error.data?.supported || [];
-          const clientSupported = ['DRAFT-2026-v1'];
+          const clientSupported = [
+            ...new Set([STATELESS_PROTOCOL_VERSION, DRAFT_PROTOCOL_VERSION])
+          ];
           const mutuallySupported = clientSupported.filter((v) =>
             serverSupported.includes(v)
           );

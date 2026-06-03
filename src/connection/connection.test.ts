@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { connectFor } from './select';
+import {
+  connectFor,
+  isStatefulVersion,
+  STATELESS_SPEC_VERSIONS
+} from './select';
 import { connectStateful } from './stateful';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
 
 describe('connectFor', () => {
   it('returns stateful for dated 2025-x versions', () => {
@@ -17,6 +22,18 @@ describe('connectFor', () => {
     // behaviour of the wrapper is covered in stateless.test.ts.
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
     expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
+  });
+});
+
+describe('STATELESS_SPEC_VERSIONS', () => {
+  it('contains exactly the versions isStatefulVersion rejects', () => {
+    expect(STATELESS_SPEC_VERSIONS.length).toBeGreaterThan(0);
+    for (const v of STATELESS_SPEC_VERSIONS) {
+      expect(isStatefulVersion(v)).toBe(false);
+    }
+  });
+  it('currently contains only the draft version', () => {
+    expect(STATELESS_SPEC_VERSIONS).toEqual([DRAFT_PROTOCOL_VERSION]);
   });
 });
 

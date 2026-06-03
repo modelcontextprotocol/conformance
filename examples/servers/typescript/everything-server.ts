@@ -1283,7 +1283,10 @@ app.post('/mcp', async (req, res) => {
         error: {
           code: -32004,
           message: 'UnsupportedProtocolVersionError',
-          data: { supported: ['DRAFT-2026-v1'] }
+          data: {
+            supported: ['DRAFT-2026-v1'],
+            requested: String(metaVersion)
+          }
         }
       });
     }
@@ -1436,6 +1439,12 @@ app.post('/mcp', async (req, res) => {
             cacheScope: 'public'
           }
         });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
       } finally {
         await dispatch.close();
       }
@@ -1464,6 +1473,12 @@ app.post('/mcp', async (req, res) => {
             ttlMs: 300000,
             cacheScope: 'public'
           }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
         });
       } finally {
         await dispatch.close();
@@ -1549,6 +1564,12 @@ app.post('/mcp', async (req, res) => {
             cacheScope: 'public'
           }
         });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
       } finally {
         await dispatch.close();
       }
@@ -1569,6 +1590,12 @@ app.post('/mcp', async (req, res) => {
             ttlMs: 300000,
             cacheScope: 'public'
           }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
         });
       } finally {
         await dispatch.close();

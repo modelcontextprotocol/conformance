@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 import http from 'http';
 import {
   Scenario,
@@ -46,7 +47,7 @@ export class RequestMetadataScenario implements Scenario {
   private hasSimulatedRejection = false;
   private requestsObserved = 0;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.hasSimulatedRejection = false;
     this.checks = [];
     this.requestsObserved = 0;
@@ -281,7 +282,8 @@ export class RequestMetadataScenario implements Scenario {
               code: -32004,
               message: 'Unsupported protocol version',
               data: {
-                supported: [DRAFT_PROTOCOL_VERSION]
+                supported: [DRAFT_PROTOCOL_VERSION],
+                requested: String(headerVersion ?? metaVersion ?? '')
               }
             }
           })

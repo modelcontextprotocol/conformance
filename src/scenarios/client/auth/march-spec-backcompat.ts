@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -17,17 +18,18 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     // Legacy server, so we create the auth server endpoints on the
     // same URL as the main server (rather than separating AS / RS).
-    const authApp = createAuthServer(this.checks, this.server.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
       loggingEnabled: false,
       // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
       routePrefix: '/oauth'
     });
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.server.getUrl,
@@ -81,10 +83,11 @@ export class Auth20250326OEndpointFallbackScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.server.getUrl,

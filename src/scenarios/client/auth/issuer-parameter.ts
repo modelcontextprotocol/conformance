@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -30,13 +31,13 @@ export class IssParameterSupportedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'correct',
@@ -48,6 +49,7 @@ export class IssParameterSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -99,13 +101,13 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'omit',
@@ -117,6 +119,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -170,14 +173,14 @@ export class IssParameterSupportedMissingScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'omit', // advertise support but don't send iss
@@ -192,6 +195,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -256,14 +260,14 @@ export class IssParameterWrongIssuerScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'wrong', // send iss that doesn't match metadata issuer
@@ -278,6 +282,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -343,14 +348,14 @@ export class IssParameterUnexpectedScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'wrong', // send mismatched iss without advertising support
@@ -365,6 +370,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -435,14 +441,14 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
   private authReached = false;
   private tokenRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authReached = false;
     this.tokenRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'normalized', // correct issuer + trailing slash
@@ -457,6 +463,7 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -522,13 +529,13 @@ export class MetadataIssuerMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private metadataEndpointsUsed = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.metadataEndpointsUsed = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       // The well-known URL is constructed from the AS URL advertised in PRM
       // (the bare origin), so the document's issuer must equal that origin.
@@ -555,6 +562,7 @@ export class MetadataIssuerMismatchScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

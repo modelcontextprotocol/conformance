@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -22,13 +23,13 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const expectedScope = 'mcp:basic';
     const tokenVerifier = new MockTokenVerifier(this.checks, [expectedScope]);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client used the scope from WWW-Authenticate header
@@ -53,6 +54,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -108,13 +110,13 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client requested all scopes from scopes_supported
@@ -148,6 +150,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -204,12 +207,12 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client omitted scope parameter
@@ -232,6 +235,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -291,7 +295,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const initialScope = 'mcp:basic';
@@ -303,7 +307,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;
@@ -437,6 +441,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
     };
 
     const baseApp = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -528,14 +533,14 @@ export class ScopeRetryLimitScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const requiredScope = 'mcp:admin';
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;
@@ -613,6 +618,7 @@ export class ScopeRetryLimitScenario implements Scenario {
     };
 
     const baseApp = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

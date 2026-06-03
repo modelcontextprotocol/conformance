@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -82,7 +83,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
   private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
   private toolsListed = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.canaryRequests = [];
     this.toolsListed = false;
 

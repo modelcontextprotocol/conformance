@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import * as jose from 'jose';
 import type { CryptoKey } from 'jose';
 import express, { type Request, type Response } from 'express';
@@ -69,7 +70,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
   private idpPrivateKey?: CryptoKey;
   private grantKeypairs: Map<string, CryptoKey> = new Map();
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     // Generate IDP keypair
@@ -86,7 +87,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
 
     // Start auth server with JWT bearer grant support only
     // Token exchange is handled by IdP
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       tokenVerifier,
@@ -120,6 +121,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
 
     // Start MCP server with shared token verifier
     const mcpApp = createServer(
+      ctx,
       this.checks,
       this.mcpServer.getUrl,
       this.authServer.getUrl,

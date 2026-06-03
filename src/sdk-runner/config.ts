@@ -19,7 +19,11 @@ export const SdkConfigSchema = z.object({
       readyTimeoutMs: z.number().int().positive().optional()
     })
     .optional(),
-  expectedFailures: z.string().optional()
+  expectedFailures: z.string().optional(),
+  // Spec version this SDK targets, used as the default --spec-version when
+  // the flag isn't given (e.g. a v1 SDK pinned to the latest dated spec).
+  // An explicit --spec-version on the sdk command always wins.
+  specVersion: z.string().optional()
 });
 
 export type SdkConfig = z.infer<typeof SdkConfigSchema>;
