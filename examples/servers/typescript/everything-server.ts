@@ -1283,7 +1283,10 @@ app.post('/mcp', async (req, res) => {
         error: {
           code: -32004,
           message: 'UnsupportedProtocolVersionError',
-          data: { supported: ['DRAFT-2026-v1'] }
+          data: {
+            supported: ['DRAFT-2026-v1'],
+            requested: String(metaVersion)
+          }
         }
       });
     }
