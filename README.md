@@ -238,6 +238,11 @@ npm start -- sdk --path ../typescript-sdk --skip-build --mode client
 # Narrow to one scenario / suite
 npm start -- sdk --path ../typescript-sdk --mode server --scenario server-initialize
 npm start -- sdk typescript-sdk --mode client --suite auth
+
+# Target a specific spec version (passed through to the underlying run).
+# When omitted, the SDK's `specVersion` from KNOWN_SDKS is used, if set —
+# e.g. typescript-sdk-v1 defaults to 2025-11-25.
+npm start -- sdk typescript-sdk --mode client --spec-version draft
 ```
 
 Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.

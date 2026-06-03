@@ -44,6 +44,14 @@ describe('SdkConfigSchema', () => {
     expect(cfg.server).toBeUndefined();
   });
 
+  it('accepts an optional specVersion default', () => {
+    const cfg = SdkConfigSchema.parse({
+      client: { command: 'tsx fixture.ts' },
+      specVersion: '2025-11-25'
+    });
+    expect(cfg.specVersion).toBe('2025-11-25');
+  });
+
   it('rejects server config without a url', () => {
     expect(() =>
       SdkConfigSchema.parse({ server: { command: 'tsx server.ts' } })
@@ -75,8 +83,15 @@ describe('lookupBuiltinConfig', () => {
     expect(v1?.defaultRef).toBe('v1.x');
   });
 
-  it('bare typescript-sdk (v2) has no defaultRef', () => {
+  it('typescript-sdk-v1 defaults to the latest dated spec version', () => {
+    expect(lookupBuiltinConfig('typescript-sdk-v1')?.specVersion).toBe(
+      '2025-11-25'
+    );
+  });
+
+  it('bare typescript-sdk (v2) has no defaultRef or specVersion default', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.defaultRef).toBeUndefined();
+    expect(lookupBuiltinConfig('typescript-sdk')?.specVersion).toBeUndefined();
   });
 
   it('every built-in entry validates against SdkConfigSchema', () => {

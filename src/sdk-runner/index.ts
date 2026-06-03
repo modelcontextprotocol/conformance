@@ -119,6 +119,7 @@ function passThrough(options: {
   timeout?: string;
   verbose?: boolean;
   output?: string;
+  specVersion?: string;
 }): string[] {
   const args: string[] = [];
   if (options.scenario) args.push('--scenario', options.scenario);
@@ -126,6 +127,7 @@ function passThrough(options: {
   if (options.timeout) args.push('--timeout', options.timeout);
   if (options.verbose) args.push('--verbose');
   if (options.output) args.push('-o', options.output);
+  if (options.specVersion) args.push('--spec-version', options.specVersion);
   return args;
 }
 
@@ -166,6 +168,10 @@ export function createSdkCommand(): Command {
     )
     .option('--timeout <ms>', 'Per-scenario client timeout (passed through)')
     .option('-o, --output <dir>', 'Output directory (passed through)')
+    .option(
+      '--spec-version <version>',
+      'Spec version to target (passed through; defaults to the SDK config)'
+    )
     .option('--verbose', 'Verbose output (passed through)')
     .action(async (sdkArg: string | undefined, options) => {
       try {
@@ -217,6 +223,9 @@ export function createSdkCommand(): Command {
         const output = options.output
           ? path.resolve(options.output)
           : undefined;
+        // Explicit flag wins over the per-SDK default.
+        const specVersion: string | undefined =
+          options.specVersion ?? builtinConfig.specVersion;
 
         if (buildCmd && !options.skipBuild) {
           console.error(`[sdk] Building: ${buildCmd}`);
@@ -244,7 +253,8 @@ export function createSdkCommand(): Command {
               suite: options.suite ?? 'all',
               timeout: options.timeout,
               verbose: options.verbose,
-              output
+              output,
+              specVersion
             })
           ];
           if (expectedFailures)
@@ -265,7 +275,8 @@ export function createSdkCommand(): Command {
               scenario: options.scenario,
               suite: options.suite,
               verbose: options.verbose,
-              output
+              output,
+              specVersion
             })
           ];
           if (expectedFailures)

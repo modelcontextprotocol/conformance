@@ -22,10 +22,12 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // v1.x — the published npm line. Same fixtures as v2; differs only in the
   // build (npm, not pnpm) and the baseline filename. Clones the typescript-sdk
-  // repo, defaulting to the `v1.x` branch.
+  // repo, defaulting to the `v1.x` branch. Targets the latest dated spec, so
+  // draft-only scenarios and checks are excluded by default.
   'typescript-sdk-v1': {
     repo: 'typescript-sdk',
     defaultRef: 'v1.x',
+    specVersion: '2025-11-25',
     build: 'npm ci && npm run build',
     client: {
       command: 'npx tsx test/conformance/src/everythingClient.ts'
