@@ -9,7 +9,6 @@ src/seps/traceability.json
 # is meaningful and re-syncing produces a clean diff.
 src/spec-types/*.ts
 
-# Local agent workspace state (e.g. .claude/worktrees/ checkouts). Untracked,
-# and the root-anchored ignores above don't match their nested copies, so
-# `prettier --check .` would otherwise flag them.
+# Local tooling workspaces (not part of the repo).
 .claude/
+.sdk-under-test/

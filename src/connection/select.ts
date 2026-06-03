@@ -51,5 +51,9 @@ export function lifecycleFor(v: SpecVersion): 'stateful' | 'stateless' {
 export function connectFor(
   specVersion: SpecVersion
 ): (serverUrl: string) => Promise<Connection> {
-  return isStatefulVersion(specVersion) ? connectStateful : connectStateless;
+  return isStatefulVersion(specVersion)
+    ? connectStateful
+    : // Pass the version through so stateless requests declare the spec
+      // version the run was invoked with (matters under --force).
+      (serverUrl) => connectStateless(serverUrl, specVersion);
 }

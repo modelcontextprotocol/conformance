@@ -1,7 +1,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck, SpecVersion, LATEST_SPEC_VERSION } from '../types';
-import { getClientScenario } from '../scenarios';
+import {
+  ConformanceCheck,
+  SpecVersion,
+  LATEST_SPEC_VERSION,
+  DRAFT_PROTOCOL_VERSION
+} from '../types';
+import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
 import { connectFor, type RunContext } from '../connection';
 import { createResultDir, formatPrettyChecks } from './utils';
 
@@ -22,11 +27,13 @@ export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
   outputDir?: string,
-  specVersion: SpecVersion = LATEST_SPEC_VERSION
+  specVersion?: SpecVersion,
+  force = false
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
   scenarioDescription: string;
+  skipped?: boolean;
 }> {
   let resultDir: string | undefined;
 
@@ -38,14 +45,51 @@ export async function runServerConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
 
+  // An explicitly-requested spec version outside the scenario's applicability
+  // window is a contradiction: running anyway would test something other than
+  // what the flag claims. Skip (exit 0) unless --force.
+  if (
+    specVersion !== undefined &&
+    !force &&
+    !isScenarioApplicableAt(scenario.source, specVersion)
+  ) {
+    const introduced =
+      'introducedIn' in scenario.source
+        ? `introduced in ${scenario.source.introducedIn}` +
+          (scenario.source.removedIn !== undefined
+            ? `, removed in ${scenario.source.removedIn}`
+            : '')
+        : 'extension scenario, not on the spec timeline';
+    console.log(
+      `SKIPPED: scenario '${scenarioName}' is not applicable at spec version ` +
+        `${specVersion} (${introduced}). Use --force to run it anyway.`
+    );
+    return {
+      checks: [],
+      resultDir,
+      scenarioDescription: scenario.description,
+      skipped: true
+    };
+  }
+
+  // When --spec-version is omitted, infer the version from the scenario's
+  // declared source so draft-only scenarios get the draft (stateless)
+  // connection rather than the stateful latest-spec default.
+  const resolvedSpecVersion =
+    specVersion ??
+    ('introducedIn' in scenario.source &&
+    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ? DRAFT_PROTOCOL_VERSION
+      : LATEST_SPEC_VERSION);
+
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
   const ctx: RunContext = {
     serverUrl,
-    specVersion,
-    connect: () => connectFor(specVersion)(serverUrl)
+    specVersion: resolvedSpecVersion,
+    connect: () => connectFor(resolvedSpecVersion)(serverUrl)
   };
   const checks = await scenario.run(ctx);
 

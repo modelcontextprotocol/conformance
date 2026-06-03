@@ -14,7 +14,7 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
-import type { RunContext } from '../../connection';
+import { buildStandardHeaders, type RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -84,12 +84,14 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
         }
       }
 
+      // Stateless requests carry the full SEP-2243 header set (Mcp-Method,
+      // MCP-Protocol-Version, ...) so a strictly-conformant server doesn't
+      // reject them before the multi-stream behaviour under test is exercised.
       const requestHeaders: Record<string, string> = stateless
-        ? {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream, application/json',
-            'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
-          }
+        ? buildStandardHeaders('tools/list', undefined, {
+            headers: { Accept: 'text/event-stream, application/json' },
+            specVersion
+          })
         : {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream, application/json',

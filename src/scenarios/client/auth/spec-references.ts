@@ -104,7 +104,7 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   SEP_990_ENTERPRISE_OAUTH: {
     id: 'SEP-990-Enterprise-Managed-OAuth',
-    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-oauth.mdx'
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-managed-authorization.mdx'
   },
   SEP_2207_REFRESH_TOKEN_GUIDANCE: {
     id: 'SEP-2207-Refresh-Token-Guidance',

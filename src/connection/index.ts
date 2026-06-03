@@ -63,5 +63,16 @@ export class JsonRpcError extends Error {
 }
 
 export { connectStateful } from './stateful';
-export { connectStateless } from './stateless';
+export {
+  connectStateless,
+  sendStatelessRequest,
+  buildStandardHeaders,
+  withRequestMeta,
+  mcpNameForRequest,
+  readSseJsonRpcResponse,
+  CONFORMANCE_CLIENT_INFO,
+  DEFAULT_CLIENT_CAPABILITIES,
+  type JsonRpcResponse,
+  type StatelessResponse
+} from './stateless';
 export { connectFor } from './select';

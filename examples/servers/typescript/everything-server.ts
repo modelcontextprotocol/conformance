@@ -1275,13 +1275,13 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32602, HTTP 400)
+    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
     if (metaVersion !== 'DRAFT-2026-v1') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32602,
+          code: -32004,
           message: 'UnsupportedProtocolVersionError',
           data: { supported: ['DRAFT-2026-v1'] }
         }
@@ -1344,7 +1344,10 @@ app.post('/mcp', async (req, res) => {
           supportedVersions: ['DRAFT-2026-v1'],
           capabilities: {
             tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
-            prompts: { listChanged: true }
+            prompts: { listChanged: true },
+            // resources/list, resources/templates/list and resources/read are
+            // served on this path, so the capability must be declared too.
+            resources: {}
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1427,7 +1430,10 @@ app.post('/mcp', async (req, res) => {
                 description: 'Diagnostic logging validator tool',
                 inputSchema: { type: 'object', properties: {} }
               }
-            ]
+            ],
+            // SEP-2549 caching hints are required on cacheable list results.
+            ttlMs: 300000,
+            cacheScope: 'public'
           }
         });
       } catch (e: any) {
@@ -1460,7 +1466,9 @@ app.post('/mcp', async (req, res) => {
                 name: 'test_input_required_result_prompt',
                 description: 'MRTR: prompt that requires elicitation input'
               }
-            ]
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
           }
         });
       } catch (e: any) {
@@ -1522,6 +1530,84 @@ app.post('/mcp', async (req, res) => {
           }
         });
       }
+    }
+
+    // Resources on the stateless path (SEP-2575): the McpServer-registered
+    // resources are merged with the stateless-only resource, mirroring the
+    // tools/list and prompts/list handlers above (SEP-2549 hints + SEP-2164
+    // errors via the carry-forward dispatch below).
+    if (method === 'resources/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/list', params: {} },
+          ResultSchema as any
+        )) as { resources: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            resources: [
+              ...fromServer.resources,
+              {
+                uri: 'test://stateless-static-text',
+                name: 'Stateless Static Text',
+                description: 'A static text resource served on the draft path',
+                mimeType: 'text/plain'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/templates/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/templates/list', params: {} },
+          ResultSchema as any
+        )) as { resourceTemplates: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/read') {
+      const uri = params.uri as string | undefined;
+      if (uri === 'test://stateless-static-text') {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'text/plain',
+                text: 'Static text content from the stateless draft path.'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'private'
+          }
+        });
+      }
+      // Other URIs (including unknown ones) fall through to the carry-forward
+      // dispatch below, which serves the McpServer-registered resources.
     }
 
     if (method === 'tools/call') {
@@ -2128,10 +2214,15 @@ app.post('/mcp', async (req, res) => {
         );
         return res.json({ jsonrpc: '2.0', id, result });
       } catch (e: any) {
+        // SEP-2164: unknown resources get -32602 with the requested uri in
+        // data; the SDK's McpError does not populate data itself.
+        const data =
+          e.data ??
+          (method === 'resources/read' ? { uri: params.uri } : undefined);
         return res.json({
           jsonrpc: '2.0',
           id,
-          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+          error: { code: e.code ?? -32603, message: e.message, data }
         });
       } finally {
         await dispatch.close();

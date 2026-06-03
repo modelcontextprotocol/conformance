@@ -25,6 +25,7 @@ import {
   listExtensionScenarios,
   listBackcompatScenarios,
   listDraftScenarios,
+  listDraftClientScenarios,
   listScenariosForSpec,
   listClientScenariosForSpec,
   getScenarioSpecVersions,
@@ -319,7 +320,7 @@ program
   )
   .option(
     '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending), "all", or "pending"',
+    'Suite to run: "active" (default, excludes pending and draft), "all", "draft", or "pending"',
     'active'
   )
   .option(
@@ -330,6 +331,10 @@ program
   .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
+  )
+  .option(
+    '--force',
+    'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
@@ -349,8 +354,15 @@ program
           validated.url,
           validated.scenario,
           outputDir,
-          specVersionFilter
+          specVersionFilter,
+          options.force ?? false
         );
+
+        // Inapplicable scenario/spec-version combination (already logged by
+        // the runner). Not a failure: exit 0.
+        if (result.skipped) {
+          process.exit(0);
+        }
 
         const { failed } = printServerResults(
           result.checks,
@@ -384,9 +396,13 @@ program
           scenarios = listActiveClientScenarios();
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
+        } else if (suite === 'draft') {
+          // Scenarios targeting the in-progress draft spec; excluded from
+          // 'active' until the draft is published as a dated release.
+          scenarios = listDraftClientScenarios();
         } else {
           console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, core, pending');
+          console.error('Available suites: active, all, core, draft, pending');
           process.exit(1);
         }
 

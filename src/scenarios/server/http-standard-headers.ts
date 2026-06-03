@@ -20,8 +20,11 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import type { RunContext } from '../../connection';
-import type { ListToolsResult } from '../../spec-types/draft';
+import {
+  withRequestMeta,
+  sendStatelessRequest,
+  type RunContext
+} from '../../connection';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -266,51 +269,39 @@ export class HttpHeaderValidationScenario implements ClientScenario {
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      // Discover tools via the version-appropriate connection
-      const conn = await ctx.connect();
-      const toolsResult = await conn.request<ListToolsResult>('tools/list');
-      await conn.close();
-
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-raw-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid) ? rawSid[0] : rawSid) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
-        );
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure instead of misleading
+        // per-case results against a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-standard-setup',
+          name: 'HttpHeaderValidationSetup',
+          description: 'Setup for header validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        return checks;
       }
+      const toolsResult = toolsResponse.body.result as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       let idCounter = 100;
       const nextId = () => idCounter++;
@@ -503,7 +494,13 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     details: Record<string, unknown>
   ): Promise<void> {
     try {
-      const requestBody = { ...body, id: body.id === 0 ? nextId() : body.id };
+      // Issue #311: every raw request carries the SEP-2575 _meta fields — the
+      // header-validation cases only mangle headers, never the body metadata.
+      const requestBody = {
+        ...body,
+        id: body.id === 0 ? nextId() : body.id,
+        params: withRequestMeta(body.params)
+      };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
         ...extraHeaders
@@ -568,12 +565,37 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      const conn = await ctx.connect();
-      const toolsResult = await conn.request<ListToolsResult>('tools/list');
-      await conn.close();
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure (and backfill the declared
+        // checks, mirroring the catch path) instead of pretending the
+        // requirements are not applicable to a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-custom-setup',
+          name: 'HttpCustomHeaderServerValidationSetup',
+          description: 'Setup for custom header server validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE_CUSTOM],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        this.failDeclaredChecks(checks);
+        return checks;
+      }
+      const toolsResult = toolsResponse.body.result as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       // Find a tool with x-mcp-header annotations
       const xMcpTool = toolsResult.tools?.find((tool) => {
@@ -605,43 +627,9 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         return checks;
       }
 
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-base64-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid2 = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid2) ? rawSid2[0] : rawSid2) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
-        );
-      }
-
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       // Find the first x-mcp-header annotated STRING property
       // that is callable with minimal arguments to avoid schema validation failures
@@ -831,6 +819,16 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     // Declared-but-unemitted -> FAILURE. Reached only when setup threw partway
     // through (the gate-out paths emit SKIPPED rows and the happy path emits
     // every declared ID).
+    this.failDeclaredChecks(checks);
+
+    return checks;
+  }
+
+  /**
+   * Backfill every declared-but-unemitted check ID as FAILURE when setup
+   * failed before the cases could run, keeping the emitted ID set stable.
+   */
+  private failDeclaredChecks(checks: ConformanceCheck[]): void {
     for (const id of CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS) {
       if (checks.some((c) => c.id === id)) continue;
       checks.push({
@@ -844,8 +842,6 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
     }
-
-    return checks;
   }
 
   /**
@@ -893,10 +889,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // these cases only vary the Mcp-Param header value.
+          params: withRequestMeta({
             name: toolName,
             arguments: { ...defaultArgs, [paramName]: bodyValue }
-          }
+          })
         },
         {
           ...baseHeaders,
@@ -977,10 +975,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // this case only omits the Mcp-Param header.
+          params: withRequestMeta({
             name: toolName,
             arguments: { ...defaultArgs, [paramName]: 'test-value' }
-          }
+          })
         },
         {
           ...baseHeaders,
