@@ -271,7 +271,7 @@ export class WifJwtBearerScenario implements Scenario {
         privateKey,
         // Absolute epoch seconds in the past; jose treats a number as an absolute
         // epoch timestamp, producing a token that is already expired.
-        expiresIn: Math.floor(Date.now() / 1000) - 60
+        expiresIn: '-60s'
       })
     ]);
 

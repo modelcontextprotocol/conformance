@@ -78,19 +78,19 @@ describe('createWorkloadJwt', () => {
     expect(payload.iat as number).toBeLessThanOrEqual(after);
   });
 
-  it('accepts a numeric absolute epoch as expiresIn for already-expired tokens', async () => {
+  it('accepts a negative duration string as expiresIn for already-expired tokens', async () => {
     const kp = await generateWorkloadKeypair();
-    const pastExp = Math.floor(Date.now() / 1000) - 60;
+    const before = Math.floor(Date.now() / 1000);
     const token = await createWorkloadJwt({
       issuer: 'https://issuer.example',
       subject: 'workload',
       audience: 'https://as.example/token',
       privateKey: kp.privateKey,
-      expiresIn: pastExp
+      expiresIn: '-60s'
     });
 
     const payload = jose.decodeJwt(token);
-    expect(payload.exp).toBe(pastExp);
+    expect(payload.exp).toBeLessThan(before);
     await expect(jose.jwtVerify(token, kp.publicKey)).rejects.toThrow();
   });
 

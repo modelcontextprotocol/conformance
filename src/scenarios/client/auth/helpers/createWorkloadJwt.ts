@@ -14,8 +14,8 @@ export interface CreateWorkloadJwtOptions {
   subject: string;
   audience: string | string[];
   privateKey: jose.CryptoKey;
-  /** Jose duration string (e.g. '5m') or absolute epoch seconds. Use a number to construct already-expired tokens for negative tests. */
-  expiresIn?: string | number;
+  /** Jose duration string (e.g. '5m', '-60s', '60 seconds ago'). Use a negative offset to construct already-expired tokens for negative tests. */
+  expiresIn?: string;
   jwtId?: string;
   issuedAt?: number;
   notBefore?: number;
