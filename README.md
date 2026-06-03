@@ -64,7 +64,8 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
 - `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
-- `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `DRAFT-2026-v1`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios
+- `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `DRAFT-2026-v1`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
+- `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
