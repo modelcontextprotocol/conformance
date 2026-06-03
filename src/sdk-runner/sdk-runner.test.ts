@@ -69,6 +69,13 @@ describe('lookupBuiltinConfig', () => {
     expect(lookupBuiltinConfig('rust-sdk')).toBeNull();
   });
 
+  it('exposes python-sdk with both client and server commands', () => {
+    const py = lookupBuiltinConfig('python-sdk');
+    expect(py?.client?.command).toContain('client.py');
+    expect(py?.server?.command).toContain('mcp-everything-server');
+    expect(py?.server?.url).toBe('http://localhost:3000/mcp');
+  });
+
   it('exposes the typescript-sdk-v1 alias with repo + defaultRef', () => {
     const v1 = lookupBuiltinConfig('typescript-sdk-v1');
     expect(v1?.repo).toBe('typescript-sdk');

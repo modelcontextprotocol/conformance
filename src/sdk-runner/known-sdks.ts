@@ -43,6 +43,21 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       command: './.conformance-server -http=:3000',
       url: 'http://localhost:3000'
     }
+  },
+  // uv workspace: the `mcp` (client) and `mcp-everything-server` (server)
+  // packages are both members, so one `uv sync --all-packages` covers both
+  // modes. Fixtures live in the python-sdk repo (.github/actions/conformance/
+  // and examples/servers/everything-server). `--port 3000` matches the url and
+  // the 3000 convention used above; the server's own default is 3001.
+  'python-sdk': {
+    build: 'uv sync --frozen --all-extras --all-packages',
+    client: {
+      command: 'uv run --frozen python .github/actions/conformance/client.py'
+    },
+    server: {
+      command: 'uv run --frozen mcp-everything-server --port 3000',
+      url: 'http://localhost:3000/mcp'
+    }
   }
 };
 
