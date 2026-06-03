@@ -5,7 +5,7 @@
  * BUG: retries instead of surfacing the error.
  */
 
-import { runWifJwtBearerRetry } from './everything-client.js';
+import { runWifJwtBearerRetry } from './wif-broken-clients.js';
 import { runAsCli } from './helpers/cliRunner.js';
 
 runAsCli(

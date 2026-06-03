@@ -5,7 +5,7 @@
  * BUG: switches grant type instead of surfacing the error.
  */
 
-import { runWifJwtBearerGrantFallback } from './everything-client.js';
+import { runWifJwtBearerGrantFallback } from './wif-broken-clients.js';
 import { runAsCli } from './helpers/cliRunner.js';
 
 runAsCli(

@@ -20,10 +20,7 @@ requirements:
     text: 'The authorization server MUST reject JWTs with invalid signatures or malformed claims (RFC 7523 §3 — client MUST surface verification failures)'
 
   - check: wif-no-retry
-    text: 'Clients should not retry a JWT-bearer token request after the authorization server has rejected the assertion (WARNING until SEP-1933 lands normative spec text; RFC 7523 is silent on client retry behaviour)'
-
-  - check: wif-assertion-scope-rejected
-    text: 'When the authorization server returns invalid_scope for a JWT-bearer token request, the client should surface the error and not retry (WARNING until SEP-1933 lands normative spec text)'
+    text: 'Clients should not retry a JWT-bearer token request after the authorization server has rejected the assertion, including after invalid_scope responses (WARNING until SEP-1933 lands normative spec text; RFC 7523 is silent on client retry behaviour)'
 
   - check: wif-grant-fallback
     text: 'When the authorization server returns unauthorized_client for a JWT-bearer token request, the client should not fall back to a different grant type (WARNING until SEP-1933 lands normative spec text; RFC 7523 §2.1 defines the grant but does not forbid grant-type switching after failure)'

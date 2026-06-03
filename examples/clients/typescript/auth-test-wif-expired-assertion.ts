@@ -5,7 +5,7 @@
  * BUG: Uses expired_jwt instead of valid_jwt — server rejects with invalid_grant.
  */
 
-import { runWifJwtBearerExpiredAssertion } from './everything-client.js';
+import { runWifJwtBearerExpiredAssertion } from './wif-broken-clients.js';
 import { runAsCli } from './helpers/cliRunner.js';
 
 runAsCli(

@@ -16,7 +16,7 @@ import {
   runWifJwtBearerScopeRejected,
   runWifJwtBearerGrantFallback,
   runWifJwtBearerRetry
-} from '../../../../examples/clients/typescript/everything-client';
+} from '../../../../examples/clients/typescript/wif-broken-clients';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
@@ -289,7 +289,6 @@ describe('WIF JWT-bearer negative tests', () => {
   test('client requests a scope the AS rejects for JWT-bearer grant', async () => {
     const runner = new InlineClientRunner(runWifJwtBearerScopeRejected);
     await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
-      expectedFailureSlugs: ['wif-assertion-scope-rejected'],
       allowClientError: true
     });
   });

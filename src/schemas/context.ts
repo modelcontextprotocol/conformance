@@ -35,9 +35,6 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
   z.object({
     name: z.literal('auth/wif-jwt-bearer'),
     client_id: z.string(),
-    // RFC 7523 does not require aud to be a URL, but this scenario's test AS
-    // is always addressed by URL, so the constraint is intentional here.
-    audience: z.string().url(),
     valid_jwt: z.string(),
     wrong_audience_jwt: z.string(),
     expired_jwt: z.string()

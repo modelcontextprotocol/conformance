@@ -28,7 +28,10 @@ export class WifJwtBearerScenario implements Scenario {
   specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
-    'Tests OAuth JWT-bearer grant (RFC 7523 §2.1) for workload identity federation (SEP-1933)';
+    'Tests the RFC 7523 JWT-bearer grant for workload identity federation (SEP-1933). ' +
+    'The client must: use grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer, ' +
+    'include the workload JWT as the assertion parameter, and surface errors ' +
+    '(invalid_grant, invalid_scope, unauthorized_client) without retrying or switching grant types.';
 
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
@@ -58,7 +61,7 @@ export class WifJwtBearerScenario implements Scenario {
             this.checks.push({
               id: 'wif-grant-fallback',
               name: 'WifGrantFallback',
-              description: `Client fell back to ${grantType} grant after receiving unauthorized_client; clients should not switch grant types after a JWT-bearer failure`,
+              description: `Client fell back to ${grantType} grant after a JWT-bearer token request was rejected; clients should not switch grant types after a JWT-bearer failure`,
               status: 'WARNING',
               timestamp,
               specReferences: [
@@ -167,18 +170,6 @@ export class WifJwtBearerScenario implements Scenario {
             };
           }
           if (scopeList.includes(WIF_REJECTED_SCOPE)) {
-            this.checks.push({
-              id: 'wif-assertion-scope-rejected',
-              name: 'WifAssertionScopeRejected',
-              description:
-                'AS returned invalid_scope for a valid JWT-bearer assertion; client should surface the error and not retry',
-              status: 'WARNING',
-              timestamp,
-              specReferences: [
-                SpecReferences.RFC_7523_JWT_BEARER,
-                SpecReferences.SEP_1933_WIF
-              ]
-            });
             this.failedOnce = true;
             return {
               error: 'invalid_scope',
@@ -297,7 +288,6 @@ export class WifJwtBearerScenario implements Scenario {
       serverUrl: `${this.server.getUrl()}/mcp`,
       context: {
         client_id: WIF_CLIENT_ID,
-        audience: authServerUrl,
         valid_jwt: validJwt,
         wrong_audience_jwt: wrongAudienceJwt,
         expired_jwt: expiredJwt
@@ -311,6 +301,19 @@ export class WifJwtBearerScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    if (!this.tokenRequestReceived) {
+      this.checks.push({
+        id: 'wif-assertion-verified',
+        name: 'WifAssertionVerified',
+        description: 'Client did not make a JWT-bearer token request',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          SpecReferences.RFC_7523_JWT_BEARER,
+          SpecReferences.SEP_1933_WIF
+        ]
+      });
+    }
     return this.checks;
   }
 }

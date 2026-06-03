@@ -5,7 +5,7 @@
  * BUG: Includes 'wif.rejected' in the scope parameter — AS returns invalid_scope.
  */
 
-import { runWifJwtBearerScopeRejected } from './everything-client.js';
+import { runWifJwtBearerScopeRejected } from './wif-broken-clients.js';
 import { runAsCli } from './helpers/cliRunner.js';
 
 runAsCli(

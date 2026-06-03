@@ -5,7 +5,7 @@
  * BUG: Does not include assertion in JWT-bearer grant — server rejects with invalid_request.
  */
 
-import { runWifJwtBearerMissingAssertion } from './everything-client.js';
+import { runWifJwtBearerMissingAssertion } from './wif-broken-clients.js';
 import { runAsCli } from './helpers/cliRunner.js';
 
 runAsCli(
