@@ -412,14 +412,8 @@ export async function connectStateless(
   return {
     notifications,
     discover(): Promise<Record<string, unknown>> {
-      if (!discoverPromise) {
-        discoverPromise = (async () => {
-          const response = await send('server/discover');
-          drainEvents(response);
-          return unwrap<Record<string, unknown>>('server/discover', response);
-        })();
-      }
-      return discoverPromise;
+      return (discoverPromise ??=
+        request<Record<string, unknown>>('server/discover'));
     },
     request,
     close: async () => {}

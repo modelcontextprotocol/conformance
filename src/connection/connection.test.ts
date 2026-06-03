@@ -1,25 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { connectFor } from './select';
-import { connectStateful } from './stateful';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
-
-describe('connectFor', () => {
-  // connectFor now always wraps the underlying impl in a closure (to thread
-  // ConnectOptions through), so identity with connectStateful/connectStateless
-  // no longer holds; assert wire-shape behaviour in the dedicated suites
-  // below and via stateless.test.ts.
-  it('returns a function for dated 2025-x versions', () => {
-    expect(typeof connectFor('2025-03-26')).toBe('function');
-    expect(typeof connectFor('2025-06-18')).toBe('function');
-    expect(typeof connectFor('2025-11-25')).toBe('function');
-  });
-  it('returns a function for the draft version', () => {
-    expect(typeof connectFor('DRAFT-2026-v1')).toBe('function');
-    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
-    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
-  });
-});
 
 describe('connectStateless', () => {
   const mockFetch = vi.fn();

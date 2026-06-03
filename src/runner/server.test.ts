@@ -63,9 +63,15 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
   let url: string;
   const captured: Array<{ method?: string; params?: Record<string, unknown> }> =
     [];
+  // Bodies the mock couldn't parse as JSON. We surface these via an
+  // explicit assertion (rather than silently dropping) because in this
+  // test's scope, every body MUST be a JSON-RPC request — anything else
+  // is the kind of malformed-wire regression this test exists to catch.
+  const parseFailures: string[] = [];
 
   beforeEach(async () => {
     captured.length = 0;
+    parseFailures.length = 0;
     server = http.createServer((req, res) => {
       let buf = '';
       req.on('data', (chunk) => {
@@ -78,7 +84,7 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
           captured.push({ method: body.method, params: body.params });
           id = body.id ?? null;
         } catch {
-          // non-JSON body — record nothing
+          parseFailures.push(buf);
         }
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json');
@@ -104,6 +110,11 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
 
   test('emits SEP-2575 stateless wire (no initialize, _meta envelope) on tasks-lifecycle', async () => {
     await runServerConformanceTest(url, 'tasks-lifecycle');
+
+    // Every outgoing body MUST be JSON-RPC. Hitting this assertion would
+    // mean the harness emitted something the mock couldn't parse — a
+    // significant regression in its own right, surface it loudly.
+    expect(parseFailures).toEqual([]);
 
     expect(captured.length).toBeGreaterThan(0);
 
