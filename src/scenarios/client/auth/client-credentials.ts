@@ -49,7 +49,7 @@ export class ClientCredentialsJwtScenario implements Scenario {
     // Generate a fresh keypair for this test run
     const { publicKey, privateKeyPem } = await generateTestKeypair();
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['client_credentials'],
       tokenEndpointAuthMethodsSupported: ['private_key_jwt'],
       tokenEndpointAuthSigningAlgValuesSupported: ['ES256'],
@@ -268,7 +268,7 @@ export class ClientCredentialsBasicScenario implements Scenario {
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['client_credentials'],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       onTokenRequest: async ({

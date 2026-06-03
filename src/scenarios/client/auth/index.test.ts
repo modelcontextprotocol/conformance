@@ -21,6 +21,7 @@ import { runClient as issNormalizeClient } from '../../../../examples/clients/ty
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
+import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 
 beforeAll(() => {
   setLogLevel('error');
@@ -176,10 +177,22 @@ describe('Negative tests', () => {
     );
   });
 
-  test('client omits application_type during DCR (SEP-837)', async () => {
+  test('client omits application_type during DCR (SEP-837) at draft', async () => {
+    // SEP-837 is a draft-spec requirement, so the check is only enforced when
+    // the run targets the draft version.
     const runner = new InlineClientRunner(noAppTypeClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      specVersion: DRAFT_PROTOCOL_VERSION,
       expectedFailureSlugs: ['sep-837-application-type-present']
+    });
+  });
+
+  test('client omits application_type during DCR (SEP-837) at 2025-11-25', async () => {
+    // At dated spec versions that predate SEP-837 the check is not emitted at
+    // all, so a client omitting application_type passes cleanly.
+    const runner = new InlineClientRunner(noAppTypeClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-default', {
+      specVersion: '2025-11-25'
     });
   });
 

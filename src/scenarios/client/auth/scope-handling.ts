@@ -29,7 +29,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
     const expectedScope = 'mcp:basic';
     const tokenVerifier = new MockTokenVerifier(this.checks, [expectedScope]);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client used the scope from WWW-Authenticate header
@@ -116,7 +116,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client requested all scopes from scopes_supported
@@ -212,7 +212,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client omitted scope parameter
@@ -307,7 +307,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;
@@ -540,7 +540,7 @@ export class ScopeRetryLimitScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;

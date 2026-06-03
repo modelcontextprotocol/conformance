@@ -87,7 +87,7 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
 
     // Start auth server with JWT bearer grant support only
     // Token exchange is handled by IdP
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       grantTypesSupported: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
       tokenVerifier,

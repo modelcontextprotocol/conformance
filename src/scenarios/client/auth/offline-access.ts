@@ -41,7 +41,7 @@ export class OfflineAccessScopeScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'offline_access'],
       clientIdMetadataDocumentSupported: true,
@@ -245,7 +245,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
       'mcp:read'
     ]);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'mcp:read'],
       onAuthorizationRequest: (data) => {

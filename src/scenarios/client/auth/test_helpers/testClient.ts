@@ -1,5 +1,6 @@
 import { getScenario } from '../../../index';
 import { testScenarioContext } from '../../../../mock-server/testing';
+import type { SpecVersion } from '../../../../types';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -87,6 +88,12 @@ export class InlineClientRunner implements ClientRunner {
 export interface RunClientOptions {
   expectedFailureSlugs?: string[];
   allowClientError?: boolean;
+  /**
+   * Spec version to run the scenario at. Defaults to the latest dated spec
+   * version (see {@link testScenarioContext}). Pass the draft version to
+   * exercise checks gated to draft-only requirements.
+   */
+  specVersion?: SpecVersion;
 }
 
 export async function runClientAgainstScenario(
@@ -94,7 +101,11 @@ export async function runClientAgainstScenario(
   scenarioName: string,
   options: RunClientOptions = {}
 ): Promise<void> {
-  const { expectedFailureSlugs = [], allowClientError = false } = options;
+  const {
+    expectedFailureSlugs = [],
+    allowClientError = false,
+    specVersion
+  } = options;
 
   const runner = clientRunner;
 
@@ -104,7 +115,7 @@ export async function runClientAgainstScenario(
   }
 
   // Start the scenario server
-  const ctx = testScenarioContext();
+  const ctx = testScenarioContext(specVersion);
   const urls = await scenario.start(ctx);
   const serverUrl = urls.serverUrl;
 

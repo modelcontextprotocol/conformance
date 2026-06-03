@@ -69,7 +69,7 @@ class TokenEndpointAuthScenario implements Scenario {
     this.tokenResource = undefined;
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
       onAuthorizationRequest: ({ resource }) => {

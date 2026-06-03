@@ -33,7 +33,7 @@ export class AuthBasicCIMDScenario implements Scenario {
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       clientIdMetadataDocumentSupported: true,
       onAuthorizationRequest: (data) => {
         // Check if client used URL-based client ID

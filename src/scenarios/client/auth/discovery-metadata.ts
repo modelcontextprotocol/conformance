@@ -98,7 +98,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
     async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
 
-      const authApp = createAuthServer(checks, authServer.getUrl, {
+      const authApp = createAuthServer(ctx, checks, authServer.getUrl, {
         metadataPath: config.oauthMetadataLocation,
         isOpenIdConfiguration,
         ...(routePrefix && { routePrefix })

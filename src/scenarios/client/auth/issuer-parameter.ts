@@ -37,7 +37,7 @@ export class IssParameterSupportedScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'correct',
@@ -107,7 +107,7 @@ export class IssParameterNotAdvertisedScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'omit',
@@ -180,7 +180,7 @@ export class IssParameterSupportedMissingScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'omit', // advertise support but don't send iss
@@ -267,7 +267,7 @@ export class IssParameterWrongIssuerScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'wrong', // send iss that doesn't match metadata issuer
@@ -355,7 +355,7 @@ export class IssParameterUnexpectedScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: null,
       issInRedirect: 'wrong', // send mismatched iss without advertising support
@@ -448,7 +448,7 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       issParameterSupported: true,
       issInRedirect: 'normalized', // correct issuer + trailing slash
@@ -535,7 +535,7 @@ export class MetadataIssuerMismatchScenario implements Scenario {
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       // The well-known URL is constructed from the AS URL advertised in PRM
       // (the bare origin), so the document's issuer must equal that origin.

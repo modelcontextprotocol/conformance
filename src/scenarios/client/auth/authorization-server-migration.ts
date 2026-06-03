@@ -37,7 +37,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     let as2SawAs1ClientIdAtToken = false;
 
     // ── AS₁ ────────────────────────────────────────────────────────────────
-    const as1App = createAuthServer(this.checks, this.as1.getUrl, {
+    const as1App = createAuthServer(ctx, this.checks, this.as1.getUrl, {
       tokenVerifier,
       onRegistrationRequest: () => ({
         clientId: AS1_CLIENT_ID,
@@ -47,7 +47,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     await this.as1.start(as1App);
 
     // ── AS₂ ────────────────────────────────────────────────────────────────
-    const as2App = createAuthServer(this.checks, this.as2.getUrl, {
+    const as2App = createAuthServer(ctx, this.checks, this.as2.getUrl, {
       tokenVerifier,
       onRegistrationRequest: () => {
         as2SawRegister = true;
