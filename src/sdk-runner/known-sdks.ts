@@ -46,12 +46,19 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       url: 'http://localhost:3000'
     }
   },
-  // uv workspace: the `mcp` (client) and `mcp-everything-server` (server)
-  // packages are both members, so one `uv sync --all-packages` covers both
-  // modes. Fixtures live in the python-sdk repo (.github/actions/conformance/
-  // and examples/servers/everything-server). `--port 3000` matches the url and
-  // the 3000 convention used above; the server's own default is 3001.
-  'python-sdk': {
+  // v1.x — the stable, published line of the python-sdk, analogous to
+  // typescript-sdk-v1 (v2/main is mid-refactor and noisy). Clones the
+  // python-sdk repo, defaulting to the `v1.x` branch, and targets the latest
+  // dated spec so draft-only scenarios/checks are excluded by default. uv
+  // workspace: the `mcp` (client) and `mcp-everything-server` (server) packages
+  // are both members, so one `uv sync --all-packages` covers both modes.
+  // Fixtures live in the python-sdk repo (.github/actions/conformance/ and
+  // examples/servers/everything-server). `--port 3000` matches the url and the
+  // 3000 convention used above; the server's own default is 3001.
+  'python-sdk-v1': {
+    repo: 'python-sdk',
+    defaultRef: 'v1.x',
+    specVersion: '2025-11-25',
     build: 'uv sync --frozen --all-extras --all-packages',
     client: {
       command: 'uv run --frozen python .github/actions/conformance/client.py'
@@ -59,7 +66,8 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     server: {
       command: 'uv run --frozen mcp-everything-server --port 3000',
       url: 'http://localhost:3000/mcp'
-    }
+    },
+    expectedFailures: '.github/actions/conformance/expected-failures.yml'
   }
 };
 
