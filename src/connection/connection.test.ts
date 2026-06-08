@@ -43,10 +43,10 @@ describe('connectStateless', () => {
     await conn.request('tools/list');
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.headers['MCP-Protocol-Version']).toBe('DRAFT-2026-v1');
+    expect(init.headers['MCP-Protocol-Version']).toBe('2026-07-28');
     const sent = JSON.parse(init.body);
     expect(sent.params._meta['io.modelcontextprotocol/protocolVersion']).toBe(
-      'DRAFT-2026-v1'
+      '2026-07-28'
     );
     expect(
       sent.params._meta['io.modelcontextprotocol/clientInfo']

@@ -23,7 +23,7 @@ type Handler = (params: Record<string, unknown>) => unknown;
 const handlers: Record<string, Handler> = {};
 
 handlers['server/discover'] = () => ({
-  supportedVersions: ['DRAFT-2026-v1'],
+  supportedVersions: ['2026-07-28'],
   capabilities: {
     tools: {},
     prompts: {},

@@ -10,7 +10,7 @@ import { connectStateless } from './stateless';
 /**
  * Spec versions that use the stateful lifecycle (initialize handshake,
  * Mcp-Session-Id). Anything not in this list uses the stateless lifecycle
- * — SEP-2575 (Accepted) removed the initialize handshake on DRAFT-2026-v1
+ * — SEP-2575 (Accepted) removed the initialize handshake on 2026-07-28
  * and later.
  */
 const STATEFUL_VERSIONS: ReadonlySet<string> = new Set([

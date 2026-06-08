@@ -101,7 +101,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
-              supportedVersions: ['DRAFT-2026-v1'],
+              supportedVersions: ['2026-07-28'],
               capabilities: {},
               serverInfo: { name: 'bad-meta-server', version: '1.0.0' }
             }
@@ -341,7 +341,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
-              supportedVersions: ['DRAFT-2026-v1'],
+              supportedVersions: ['2026-07-28'],
               capabilities: {
                 tools: { listChanged: true },
                 prompts: { listChanged: true }

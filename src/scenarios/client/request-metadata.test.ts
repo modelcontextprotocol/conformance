@@ -26,7 +26,7 @@ async function badClient(serverUrl: string) {
 }
 
 const goodMeta = {
-  'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
   'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
@@ -70,7 +70,7 @@ async function nonRetryingClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': '2026-07-28'
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -118,7 +118,7 @@ async function malformedCapabilitiesClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': '2026-07-28'
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
