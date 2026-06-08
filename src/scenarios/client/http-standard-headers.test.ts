@@ -24,7 +24,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: 'DRAFT-2026-v1',
+          protocolVersion: '2026-07-28',
           clientInfo: { name: 'neg-test', version: '0' },
           capabilities: {}
         }
