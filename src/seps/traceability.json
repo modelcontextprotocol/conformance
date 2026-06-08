@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@258f1a04a5d3",
+  "source": "typescript-sdk@3668a0ee6df1",
   "seps": {
     "837": {
       "yaml": "src/seps/sep-837.yaml",
@@ -165,17 +165,17 @@
         },
         {
           "check": "sep-2243-header-name-case-insensitive",
-          "status": "tested",
+          "status": "untested",
           "text": "Clients and servers MUST use case-insensitive comparisons for header names."
         },
         {
           "check": "sep-2243-server-reject-invalid-headers",
-          "status": "tested",
+          "status": "untested",
           "text": "Servers that process the request body MUST reject requests with mismatched or missing standard-header values, returning HTTP 400 Bad Request."
         },
         {
           "check": "sep-2243-server-reject-error-code",
-          "status": "tested",
+          "status": "untested",
           "text": "When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32001."
         },
         {
@@ -285,12 +285,12 @@
       "unkeyed": [],
       "untracked": [
         "sep-2243-invalid-tool-tools-list-gate",
-        "sep-2243-server-accepts-whitespace-header-value",
-        "sep-2243-server-no-xmcp-tool"
+        "sep-2243-server-custom-setup",
+        "sep-2243-server-standard-setup"
       ],
       "summary": {
-        "tested": 18,
-        "untested": 2,
+        "tested": 15,
+        "untested": 5,
         "excluded": 4,
         "untracked": 3,
         "unkeyed": 0
