@@ -13,6 +13,7 @@ import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
+import { SessionRenegotiation404Scenario } from './client/session-renegotiation';
 import { RequestMetadataScenario } from './client/request-metadata';
 import { MRTRClientScenario } from './client/mrtr-client';
 
@@ -255,6 +256,7 @@ const scenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
+  new SessionRenegotiation404Scenario(),
   new RequestMetadataScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
@@ -279,6 +281,7 @@ const coreScenariosList: Scenario[] = [
   new ToolsCallScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
+  new SessionRenegotiation404Scenario(),
   ...authScenariosList
 ];
 

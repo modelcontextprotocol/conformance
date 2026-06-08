@@ -221,6 +221,71 @@ async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
 registerScenario('json-schema-ref-no-deref', runListToolsOnlyClient);
 
 // ============================================================================
+// session-renegotiation-404 scenario
+// ============================================================================
+
+/**
+ * The mock server terminates the session mid-trajectory by returning HTTP 404
+ * to the first session-bearing request. Per the Streamable HTTP spec, when a
+ * client receives 404 for a request carrying an MCP-Session-Id it MUST start a
+ * new session by sending a new InitializeRequest without a session ID, then
+ * continue operating.
+ *
+ * The TypeScript SDK transport surfaces the 404 as a StreamableHTTPError rather
+ * than auto-reconnecting (renegotiation is intentionally a consumer decision),
+ * so this reference client implements it: drop the transport that holds the
+ * stale session ID, build a fresh one (no session ID attached), reconnect —
+ * which sends a clean InitializeRequest — and retry the operation.
+ */
+async function runSessionRenegotiationClient(serverUrl: string): Promise<void> {
+  const url = new URL(serverUrl);
+
+  const connect = async (): Promise<{
+    client: Client;
+    transport: StreamableHTTPClientTransport;
+  }> => {
+    const client = new Client(
+      { name: 'session-renegotiation-test-client', version: '1.0.0' },
+      { capabilities: {} }
+    );
+    // A fresh transport carries no session ID, so connect() sends a clean
+    // InitializeRequest without an MCP-Session-Id header.
+    const transport = new StreamableHTTPClientTransport(url);
+    await client.connect(transport);
+    return { client, transport };
+  };
+
+  const isSessionLost404 = (error: unknown): boolean => {
+    const code = (error as { code?: unknown } | undefined)?.code;
+    return code === 404;
+  };
+
+  let { client, transport } = await connect();
+  logger.debug('Connected; performing first session-bearing request');
+
+  try {
+    await client.listTools();
+  } catch (error) {
+    if (!isSessionLost404(error)) {
+      throw error;
+    }
+    // Session was terminated by the server. Renegotiate: a brand-new session.
+    logger.debug(
+      'Received HTTP 404 for session-bearing request; renegotiating'
+    );
+    await transport.close();
+    ({ client, transport } = await connect());
+    // Continue operating under the new session.
+    await client.listTools();
+    logger.debug('Renegotiated session and continued operating');
+  }
+
+  await transport.close();
+}
+
+registerScenario('session-renegotiation-404', runSessionRenegotiationClient);
+
+// ============================================================================
 // request-metadata scenario (SEP-2575)
 // ============================================================================
 
