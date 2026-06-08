@@ -1,0 +1,33 @@
+sep: 2567
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http
+requirements:
+  - check: sep-2567-server-accepts-requests-without-session-id
+    text: 'Remove protocol-level sessions and the `Mcp-Session-Id` header from the Streamable HTTP transport. [A server speaking this revision processes requests that carry no session header; there is no session mechanism left to require.]'
+    url: https://modelcontextprotocol.io/specification/draft/changelog
+  - check: sep-2567-tools-list-connection-invariant
+    text: 'Servers that declare the `tools` capability MUST respond to `tools/list` requests with the set of tools currently available to the requesting client. This set MAY be empty and MAY change over time (see List Changed Notification), but MUST NOT vary per-connection or as a side effect of other requests on the connection.'
+    url: https://modelcontextprotocol.io/specification/draft/server/tools#capabilities
+  - check: sep-2567-resources-list-connection-invariant
+    text: 'Servers that declare the `resources` capability MUST respond to `resources/list` requests with the set of resources currently available to the requesting client. This set MAY be empty and MAY change over time (see List Changed Notification), but MUST NOT vary per-connection or as a side effect of other requests on the connection.'
+    url: https://modelcontextprotocol.io/specification/draft/server/resources#capabilities
+  - check: sep-2567-prompts-list-connection-invariant
+    text: 'Servers that declare the `prompts` capability MUST respond to `prompts/list` requests with the set of prompts currently available to the requesting client. This set MAY be empty and MAY change over time (see List Changed Notification), but MUST NOT vary per-connection or as a side effect of other requests on the connection.'
+    url: https://modelcontextprotocol.io/specification/draft/server/prompts#capabilities
+  - check: sep-2567-server-ignores-session-id
+    text: 'A server that supports only this revision and receives such traffic from an older client SHOULD respond as follows: An `Mcp-Session-Id` header on a request: ignore it, and do not mint or echo session IDs.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http#earlier-streamable-http-revisions
+  - check: sep-2567-server-rejects-get-and-delete
+    text: 'A server that supports only this revision and receives such traffic from an older client SHOULD respond as follows: HTTP GET or DELETE to the MCP endpoint: respond with 405 Method Not Allowed.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http#earlier-streamable-http-revisions
+  - check: sep-2567-server-ignores-last-event-id
+    text: 'A server that supports only this revision and receives such traffic from an older client SHOULD respond as follows: A `Last-Event-ID` header: ignore it; streams are not resumable.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http#earlier-streamable-http-revisions
+
+  - text: 'The request ID MUST NOT match the ID of any other request the sender has issued and not yet received a response for.'
+    excluded: 'not observable from a black-box harness: the harness cannot compel the implementation under test to issue two concurrent requests with colliding IDs; on HTTP, draft servers never issue independent JSON-RPC requests at all (covered by sep-2575-http-server-no-independent-requests-on-stream)'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#requests
+  - text: 'Note that authorization MUST be included in every HTTP request from client to server.'
+    excluded: 'editorial rewording (SEP-2567 drops the trailing "even if they are part of the same logical session" clause); the obligation itself predates the SEP and is exercised by the authorization scenarios'
+    url: https://modelcontextprotocol.io/specification/draft/basic/authorization
+  - text: 'If present, the [SSE event] ID MUST be globally unique across all streams.'
+    excluded: 'superseded before publication: the draft subsequently removed SSE resumability entirely (event-id replay and Last-Event-ID are not supported), so this re-scoped uniqueness rule no longer appears in the draft spec; legacy Last-Event-ID traffic is covered by sep-2567-server-ignores-last-event-id'

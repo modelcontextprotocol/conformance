@@ -19,6 +19,7 @@ import { MRTRClientScenario } from './client/mrtr-client';
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
 import { ServerStatelessScenario } from './server/stateless';
+import { ServerSessionlessScenario } from './server/sessionless';
 
 import {
   PingScenario,
@@ -130,6 +131,7 @@ const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
   new ServerStatelessScenario(),
+  new ServerSessionlessScenario(),
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
