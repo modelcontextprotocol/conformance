@@ -596,7 +596,15 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ]
       });
     } finally {
-      // Clean up
+      // Clean up: terminate the session before closing the client so the
+      // server is left hermetic.
+      if (transport && sessionId) {
+        try {
+          await transport.terminateSession();
+        } catch {
+          // Server MAY respond 405 to DELETE; best-effort.
+        }
+      }
       if (client) {
         try {
           await client.close();
