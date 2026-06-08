@@ -1,6 +1,7 @@
 import { testScenarioContext } from '../../mock-server/testing';
 import { describe, it, expect } from 'vitest';
 import { HttpStandardHeadersScenario } from './http-standard-headers';
+import { DRAFT_PROTOCOL_VERSION } from '../../types';
 
 /**
  * Negative test for SEP-2243 standard-header checks: a client that omits
@@ -24,7 +25,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: 'DRAFT-2026-v1',
+          protocolVersion: DRAFT_PROTOCOL_VERSION,
           clientInfo: { name: 'neg-test', version: '0' },
           capabilities: {}
         }

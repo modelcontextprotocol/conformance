@@ -16,6 +16,7 @@ import {
 import {
   DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION,
   LATEST_SPEC_VERSION
 } from '../types';
 
@@ -87,8 +88,11 @@ describe('specVersions helpers', () => {
     }
   });
 
-  it("resolveSpecVersion accepts 'draft' as an alias", () => {
+  it("resolveSpecVersion accepts 'draft' and the legacy DRAFT- string as aliases", () => {
     expect(resolveSpecVersion('draft')).toBe(DRAFT_PROTOCOL_VERSION);
+    expect(resolveSpecVersion(LEGACY_DRAFT_PROTOCOL_VERSION)).toBe(
+      DRAFT_PROTOCOL_VERSION
+    );
     expect(resolveSpecVersion(LATEST_SPEC_VERSION)).toBe(LATEST_SPEC_VERSION);
   });
 

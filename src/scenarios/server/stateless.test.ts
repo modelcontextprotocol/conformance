@@ -1,7 +1,7 @@
 import { testContext } from '../../connection/testing';
 import { ServerStatelessScenario } from './stateless';
 import { describe, test, expect } from 'vitest';
-import { ConformanceCheck } from '../../types';
+import { ConformanceCheck, DRAFT_PROTOCOL_VERSION } from '../../types';
 
 const findCheck = (checks: ConformanceCheck[], id: string) =>
   checks.find((c) => c.id === id);
@@ -101,7 +101,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
-              supportedVersions: ['DRAFT-2026-v1'],
+              supportedVersions: [DRAFT_PROTOCOL_VERSION],
               capabilities: {},
               serverInfo: { name: 'bad-meta-server', version: '1.0.0' }
             }
@@ -341,7 +341,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
-              supportedVersions: ['DRAFT-2026-v1'],
+              supportedVersions: [DRAFT_PROTOCOL_VERSION],
               capabilities: {
                 tools: { listChanged: true },
                 prompts: { listChanged: true }

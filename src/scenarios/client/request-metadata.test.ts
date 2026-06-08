@@ -7,6 +7,7 @@ import {
 import { getHandler } from '../../../examples/clients/typescript/everything-client';
 import { getScenario } from '../index';
 import { DECLARED_CHECK_IDS } from './request-metadata';
+import { DRAFT_PROTOCOL_VERSION } from '../../types';
 
 // A bad client that does not send _meta
 async function badClient(serverUrl: string) {
@@ -26,7 +27,7 @@ async function badClient(serverUrl: string) {
 }
 
 const goodMeta = {
-  'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
   'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
@@ -70,7 +71,7 @@ async function nonRetryingClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -118,7 +119,7 @@ async function malformedCapabilitiesClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
     },
     body: JSON.stringify({
       jsonrpc: '2.0',

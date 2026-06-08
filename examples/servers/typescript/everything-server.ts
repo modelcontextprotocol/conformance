@@ -1276,7 +1276,7 @@ app.post('/mcp', async (req, res) => {
     }
 
     // Protocol Version Negotiation Matrix (-32004, HTTP 400)
-    if (metaVersion !== 'DRAFT-2026-v1') {
+    if (metaVersion !== '2026-07-28' && metaVersion !== 'DRAFT-2026-v1') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
@@ -1284,7 +1284,7 @@ app.post('/mcp', async (req, res) => {
           code: -32004,
           message: 'UnsupportedProtocolVersionError',
           data: {
-            supported: ['DRAFT-2026-v1'],
+            supported: ['2026-07-28'],
             requested: String(metaVersion)
           }
         }
@@ -1344,7 +1344,7 @@ app.post('/mcp', async (req, res) => {
         jsonrpc: '2.0',
         id,
         result: {
-          supportedVersions: ['DRAFT-2026-v1'],
+          supportedVersions: ['2026-07-28'],
           capabilities: {
             tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
             prompts: { listChanged: true },

@@ -98,8 +98,8 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 
     // SEP-2549 only exists in the draft spec, so each cacheable endpoint is
     // queried over the version-appropriate connection. Under --spec-version
-    // draft that resolves to the stateless impl (SEP-2575): protocolVersion
-    // DRAFT-2026-v1 plus the cross-cutting _meta and standard headers
+    // draft that resolves to the stateless impl (SEP-2575): the draft
+    // protocolVersion plus the cross-cutting _meta and standard headers
     // (issue #315).
     let conn: Connection;
     try {

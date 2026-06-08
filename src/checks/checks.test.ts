@@ -1,5 +1,8 @@
 import { createClientInitializationCheck } from './client';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION
+} from '../types';
 
 describe('createClientInitializationCheck', () => {
   it('should return SUCCESS for a valid initialize request', () => {
@@ -69,16 +72,19 @@ describe('createClientInitializationCheck', () => {
     expect(check.errorMessage).toContain('Client version missing');
   });
 
-  it('should accept the current draft protocol version', () => {
-    const request = {
-      protocolVersion: DRAFT_PROTOCOL_VERSION,
-      clientInfo: { name: 'TestClient', version: '1.0.0' }
-    };
+  it.each([DRAFT_PROTOCOL_VERSION, LEGACY_DRAFT_PROTOCOL_VERSION])(
+    'should accept the draft protocol version (%s)',
+    (protocolVersion) => {
+      const request = {
+        protocolVersion,
+        clientInfo: { name: 'TestClient', version: '1.0.0' }
+      };
 
-    const check = createClientInitializationCheck(request);
-    expect(check.status).toBe('SUCCESS');
-    expect(check.errorMessage).toBeUndefined();
-  });
+      const check = createClientInitializationCheck(request);
+      expect(check.status).toBe('SUCCESS');
+      expect(check.errorMessage).toBeUndefined();
+    }
+  );
 
   it.each(['DRAFT-2025-v1', 'draft'])(
     'should reject stale or non-canonical draft version %s',

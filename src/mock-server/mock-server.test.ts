@@ -3,7 +3,10 @@ import { createServerFor } from './select';
 import { createServerStateful } from './stateful';
 import { createServerStateless, validateStatelessRequest } from './stateless';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION
+} from '../types';
 
 const meta = {
   'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
@@ -65,6 +68,27 @@ describe('validateStatelessRequest', () => {
           id: 1,
           method: 'tools/list',
           params: { _meta: meta }
+        }
+      },
+      {},
+      [DRAFT_PROTOCOL_VERSION]
+    );
+    expect(v).toMatchObject({ kind: 'route', id: 1, method: 'tools/list' });
+  });
+
+  it('accepts the legacy DRAFT- alias when the dated draft is supported', () => {
+    const legacyMeta = {
+      ...meta,
+      'io.modelcontextprotocol/protocolVersion': LEGACY_DRAFT_PROTOCOL_VERSION
+    };
+    const v = validateStatelessRequest(
+      {
+        headers: { 'mcp-protocol-version': LEGACY_DRAFT_PROTOCOL_VERSION },
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: legacyMeta }
         }
       },
       {},

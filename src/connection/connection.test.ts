@@ -20,8 +20,8 @@ describe('connectFor', () => {
     // version through), so identity with connectStateless no longer holds;
     // assert it did not select the stateful implementation. The wire-level
     // behaviour of the wrapper is covered in stateless.test.ts.
-    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateful);
-    expect(connectFor('DRAFT-2026-v1')).not.toBe(connectStateless);
+    expect(connectFor(DRAFT_PROTOCOL_VERSION)).not.toBe(connectStateful);
+    expect(connectFor(DRAFT_PROTOCOL_VERSION)).not.toBe(connectStateless);
   });
 });
 
@@ -64,10 +64,10 @@ describe('connectStateless', () => {
     await conn.request('tools/list');
 
     const [, init] = mockFetch.mock.calls[0];
-    expect(init.headers['MCP-Protocol-Version']).toBe('DRAFT-2026-v1');
+    expect(init.headers['MCP-Protocol-Version']).toBe(DRAFT_PROTOCOL_VERSION);
     const sent = JSON.parse(init.body);
     expect(sent.params._meta['io.modelcontextprotocol/protocolVersion']).toBe(
-      'DRAFT-2026-v1'
+      DRAFT_PROTOCOL_VERSION
     );
     expect(
       sent.params._meta['io.modelcontextprotocol/clientInfo']

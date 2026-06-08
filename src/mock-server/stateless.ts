@@ -8,7 +8,11 @@
  */
 
 import express from 'express';
-import type { SpecVersion } from '../types';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION,
+  type SpecVersion
+} from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
@@ -86,9 +90,16 @@ export function validateStatelessRequest(
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
+  // Accept the legacy `DRAFT-` form as an alias for the dated draft so SDKs
+  // that haven't bumped their constant yet still pass. Advertise only the
+  // canonical form in `supported`.
+  const normalizedVersion =
+    headerVersion === LEGACY_DRAFT_PROTOCOL_VERSION
+      ? DRAFT_PROTOCOL_VERSION
+      : headerVersion;
   if (
-    typeof headerVersion !== 'string' ||
-    !supportedVersions.includes(headerVersion)
+    typeof normalizedVersion !== 'string' ||
+    !supportedVersions.includes(normalizedVersion)
   ) {
     return {
       kind: 'reject',

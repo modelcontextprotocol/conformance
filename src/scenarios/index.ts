@@ -7,7 +7,8 @@ import {
   DatedSpecVersion,
   ScenarioSpecTag,
   DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
@@ -369,7 +370,9 @@ export const ALL_SPEC_VERSIONS: SpecVersion[] = [
 ];
 
 export function resolveSpecVersion(value: string): SpecVersion {
-  if (value === 'draft') return DRAFT_PROTOCOL_VERSION;
+  if (value === 'draft' || value === LEGACY_DRAFT_PROTOCOL_VERSION) {
+    return DRAFT_PROTOCOL_VERSION;
+  }
   if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
     return value as SpecVersion;
   }

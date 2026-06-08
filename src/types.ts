@@ -41,13 +41,21 @@ export const LATEST_SPEC_VERSION: DatedSpecVersion = '2025-11-25';
  * `LATEST_PROTOCOL_VERSION` in the spec repo's `schema/draft/schema.ts`;
  * bump when that constant changes.
  */
-export const DRAFT_PROTOCOL_VERSION = 'DRAFT-2026-v1';
+export const DRAFT_PROTOCOL_VERSION = '2026-07-28';
+
+/**
+ * Legacy `DRAFT-` prefixed wire string for the in-progress spec.
+ * Accepted on input so SDKs that haven't yet switched to the dated
+ * form still pass; never sent by the suite.
+ */
+export const LEGACY_DRAFT_PROTOCOL_VERSION = 'DRAFT-2026-v1';
 
 // Wire protocolVersion strings the mock server will negotiate on initialize.
 export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
   '2025-06-18',
   LATEST_SPEC_VERSION,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  LEGACY_DRAFT_PROTOCOL_VERSION
 ];
 
 /**
