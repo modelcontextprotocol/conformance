@@ -273,7 +273,10 @@ export function createSdkCommand(): Command {
             serverUrl,
             ...passThrough({
               scenario: options.scenario,
-              suite: options.suite,
+              // Default to the `active` suite (excludes pending/draft) — the same
+              // suite tiering runs, and the most reasonable default to avoid
+              // surfacing intentionally-deferred `pending` scenarios.
+              suite: options.suite ?? 'active',
               verbose: options.verbose,
               output,
               specVersion
