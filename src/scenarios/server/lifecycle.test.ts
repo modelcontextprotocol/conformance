@@ -2,9 +2,15 @@ import { testContext } from '../../connection/testing';
 import { ServerInitializeScenario } from './lifecycle';
 import { connectToServer } from '../../connection/sdk-client';
 
-vi.mock('../../connection/sdk-client', () => ({
-  connectToServer: vi.fn()
-}));
+vi.mock(import('../../connection/sdk-client'), async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    // Only the connection factory is mocked; reportSetupFailure stays real so
+    // the scenario's setup-failure path is exercised end-to-end.
+    connectToServer: vi.fn()
+  };
+});
 
 describe('ServerInitializeScenario', () => {
   const serverUrl = 'http://localhost:3000/mcp';
@@ -97,5 +103,26 @@ describe('ServerInitializeScenario', () => {
         sessionId: 'session-123-é'
       }
     });
+  });
+
+  it('reports a single setup FAILURE when the connection cannot be established', async () => {
+    vi.mocked(connectToServer).mockRejectedValueOnce(
+      new Error('connect ECONNREFUSED 127.0.0.1:3000')
+    );
+
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
+
+    // A connect failure should not be mislabeled as the initialize or
+    // session-id check failing (#248): a single dedicated setup check instead.
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({
+      id: 'server-initialize-setup',
+      status: 'FAILURE',
+      errorMessage: 'Setup failed: connect ECONNREFUSED 127.0.0.1:3000'
+    });
+    // The session-id check is never reached, so no raw fetch is attempted.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

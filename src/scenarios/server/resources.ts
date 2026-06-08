@@ -7,7 +7,12 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { JsonRpcError, type RunContext } from '../../connection';
+import {
+  JsonRpcError,
+  type Connection,
+  type RunContext
+} from '../../connection';
+import { reportSetupFailure } from '../../connection/sdk-client';
 import type {
   ListResourcesResult,
   ReadResourceResult,
@@ -36,9 +41,16 @@ export class ResourcesListScenario implements ClientScenario {
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
+    let conn: Connection;
     try {
-      const conn = await ctx.connect();
+      conn = await ctx.connect();
+    } catch (error) {
+      // A connect failure isn't a `resources-list` failure; report it as a
+      // setup failure rather than mislabeling the check (#248).
+      return reportSetupFailure(this.name, error);
+    }
 
+    try {
       const result = await conn.request<ListResourcesResult>('resources/list');
 
       // Validate response structure
