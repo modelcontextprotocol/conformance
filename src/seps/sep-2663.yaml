@@ -11,8 +11,17 @@ requirements:
   - check: sep-2663-client-rejects-task-result-on-unsupported
     text: 'A client that receives CreateTaskResult in response to an unsupported request type MUST interpret this as an invalid response to the request.'
 
+  # The spec sentence "MUST return an error with the code -32003 ...,
+  # indicating the required extension in the error response" couples two
+  # observable requirements: the JSON-RPC error code, and the data-shape
+  # that names the missing extension. Split into two YAML entries so each
+  # is verifiable independently — Check 1 fires on code mismatch, Check 2
+  # fires on payload shape.
   - check: sep-2663-server-returns-32003-when-required
-    text: 'If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32003 (Missing Required Client Capability), indicating the required extension in the error response:'
+    text: 'If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32003 (Missing Required Client Capability).'
+
+  - check: sep-2663-server-returns-32003-data-shape
+    text: 'The -32003 error response MUST indicate the required extension in the error response payload (the spec example shows a `data.requiredCapabilities.extensions["io.modelcontextprotocol/tasks"]` shape).'
 
   # ── Polymorphic Results ───────────────────────────────────────────────────
   - check: sep-2663-result-type-task-on-create
@@ -142,7 +151,7 @@ requirements:
   # anchor to (tasks-extension-advertised, tasks-sync-tool-call,
   # tasks-immediate-result-shortcut, tasks-wire-field-renames,
   # tasks-no-early-ttl-expiry, tasks-no-related-task-meta-on-inlined-result,
-  # tasks-per-request-meta-opt-in, tasks-headers-*, tasks-required-task-error-code,
+  # tasks-per-request-meta-opt-in, tasks-headers-*,
   # tasks-cancel-terminal-idempotent-ack, tasks-mrtr-tasks-update-resumes,
   # tasks-mrtr-partial-fulfillment, tasks-server-directed-creation-no-hint,
   # tasks-result-type-complete-on-non-task-responses, tasks-removed-tasks-list,

@@ -103,8 +103,8 @@ conformant server MUST reject with \`-32003\`.
     }
 
     // Check 1: tools/call for a required-task tool returns -32003.
-    const id = 'tasks-required-task-error-code';
-    const name = 'TasksRequiredTaskErrorCode';
+    const id = 'sep-2663-server-returns-32003-when-required';
+    const name = 'Sep2663ServerReturns32003WhenRequired';
     const description = `tools/call for a TaskSupport=required tool MUST reject with code -32003 (Missing Required Client Capability) when the client did not declare ${TASKS_EXTENSION_ID}`;
 
     let observed: { code?: number; data?: unknown } = {};
@@ -170,8 +170,8 @@ conformant server MUST reject with \`-32003\`.
     // canonical error example in the spec shows this shape; flag a
     // FAILURE only when the field shape is broken, not when it's absent.
     {
-      const id2 = 'tasks-required-task-error-data-shape';
-      const name2 = 'TasksRequiredTaskErrorDataShape';
+      const id2 = 'sep-2663-server-returns-32003-data-shape';
+      const name2 = 'Sep2663ServerReturns32003DataShape';
       const description2 = `Error data for -32003 SHOULD carry data.requiredCapabilities.extensions["${TASKS_EXTENSION_ID}"]`;
       const data = observed.data as any;
       if (data === undefined || data === null) {
