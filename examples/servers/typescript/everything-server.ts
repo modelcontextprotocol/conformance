@@ -1236,7 +1236,10 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  if (!sessionId && (reqVersion || meta)) {
+  // Header-body validation applies to protocol versions that require
+  // per-request metadata; older-version traffic (e.g. a 2025-11-25
+  // initialize carrying only the transport header) is not subject to it.
+  if (!sessionId && (meta !== undefined || reqVersion === '2026-07-28')) {
     // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
@@ -1246,14 +1249,28 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Per-Request Metadata Integrity Checks (Fields verification)
+    // The body's protocolVersion mirrors the MCP-Protocol-Version header; a
+    // body with nothing to match the header against fails header validation
+    // (-32001 HeaderMismatch, HTTP 400).
+    if (!meta || !metaVersion) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32001,
+          message:
+            'MCP-Protocol-Version header has no matching _meta.protocolVersion in the request body'
+        }
+      });
+    }
+
+    // Per-Request Metadata Integrity Checks: the remaining _meta fields have
+    // no corresponding header, so their absence is -32602 Invalid params.
     if (
-      !meta ||
-      !meta['io.modelcontextprotocol/protocolVersion'] ||
       !meta['io.modelcontextprotocol/clientInfo'] ||
       !meta['io.modelcontextprotocol/clientCapabilities']
     ) {
-      return res.status(200).json({
+      return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -1263,20 +1280,14 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Header Mismatch Verification (-32001, HTTP 400)
-    if (reqVersion !== metaVersion) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32001,
-          message: 'Mismatched MCP-Protocol-Version header'
-        }
-      });
-    }
-
-    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
-    if (metaVersion !== '2026-07-28') {
+    // Protocol Version Negotiation Matrix (-32004, HTTP 400): a request
+    // carrying an unimplemented version on either channel gets the
+    // renegotiation-shaped error with the supported list, even when the two
+    // channels also disagree.
+    const unsupportedVersion = [reqVersion, metaVersion].find(
+      (v) => v !== '2026-07-28'
+    );
+    if (unsupportedVersion !== undefined) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
@@ -1285,8 +1296,21 @@ app.post('/mcp', async (req, res) => {
           message: 'UnsupportedProtocolVersionError',
           data: {
             supported: ['2026-07-28'],
-            requested: String(metaVersion)
+            requested: String(unsupportedVersion)
           }
+        }
+      });
+    }
+
+    // Header Mismatch Verification (-32001, HTTP 400) — reachable only when
+    // both channels carry implemented versions that disagree.
+    if (reqVersion !== metaVersion) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32001,
+          message: 'Mismatched MCP-Protocol-Version header'
         }
       });
     }

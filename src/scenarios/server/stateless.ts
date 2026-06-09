@@ -12,6 +12,7 @@ import {
   readSseJsonRpcResponse,
   type RunContext
 } from '../../connection';
+import { STATELESS_SPEC_VERSIONS } from '../../connection/select';
 
 const SPEC_REF = [
   {
@@ -34,13 +35,13 @@ export class ServerStatelessScenario implements ClientScenario {
 **Grouped Specification Requirements**:
 
 1. **Per-Request _meta Validation (4 Checks)**
-   - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientInfo\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature.
+   - Rejects requests whose body cannot mirror the \`MCP-Protocol-Version\` header (missing \`_meta\` or missing \`protocolVersion\`) with \`-32001 HeaderMismatch\`; rejects requests lacking \`clientInfo\`/\`clientCapabilities\` (no corresponding header) with \`-32602 Invalid params\`.
 2. **Discovery & Capabilities (3 Checks)**
    - Implements \`server/discover\` mapping exact mandatory protocol elements.
    - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities.
-3. **Version Negotiation & Headers (3 Checks)**
-   - Mismatched or unknown protocol versions must return an \`UnsupportedProtocolVersionError\` (HTTP status code \`400 Bad Request\`) carrying precise version tracking arrays.
-   - Absent or altered protocol version header metadata must trigger a \`-32001 Header Mismatch\` error with an HTTP 400 boundary state.
+3. **Version Negotiation & Headers (4 Checks)**
+   - A request carrying a protocol version the server does not implement (header or body channel) must return an \`UnsupportedProtocolVersionError\` (\`-32004\`, HTTP \`400 Bad Request\`) carrying the \`supported\`/\`requested\` version data.
+   - A header/body version mismatch between two implemented versions must trigger \`-32001 HeaderMismatch\` with HTTP 400 (probed only when the server advertises more than one supported version; SKIPPED otherwise).
 4. **Client Capability Constraints (2 Checks)**
    - Accessing platform capabilities without explicit declaration drops requests with a \`-32003 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
 5. **Methods & Routing Mechanics (5 Checks)**
@@ -304,18 +305,27 @@ export class ServerStatelessScenario implements ClientScenario {
     // ==========================================
     // 1. Per-request _meta Validation (4 Checks)
     // ==========================================
+    // The MCP-Protocol-Version header is mirrored by the request body's
+    // _meta protocolVersion. When the header is present but the body has no
+    // value to match it against (no _meta at all, or no protocolVersion in
+    // it), header validation fails: "The HTTP headers do not match the
+    // corresponding values in the request body, or required headers are
+    // missing/malformed" -> 400 + -32001 HeaderMismatch. clientInfo and
+    // clientCapabilities have no corresponding standard header, so their
+    // absence is a plain -32602 Invalid params.
     const metaValidationTestCases = [
       {
         slug: 'missing-meta',
         description:
-          'Rejects request with missing _meta with -32602 Invalid params',
+          'Rejects request with missing _meta with -32001 HeaderMismatch (MCP-Protocol-Version header has no matching body value)',
         params: {},
+        expectedCode: -32001,
         rpcId: 101
       },
       {
         slug: 'missing-protocol-version',
         description:
-          'Rejects request with _meta missing io.modelcontextprotocol/protocolVersion',
+          'Rejects request with _meta missing io.modelcontextprotocol/protocolVersion with -32001 HeaderMismatch',
         params: {
           _meta: {
             'io.modelcontextprotocol/clientInfo':
@@ -324,12 +334,13 @@ export class ServerStatelessScenario implements ClientScenario {
               validMeta['io.modelcontextprotocol/clientCapabilities']
           }
         },
+        expectedCode: -32001,
         rpcId: 102
       },
       {
         slug: 'missing-client-info',
         description:
-          'Rejects request with _meta missing io.modelcontextprotocol/clientInfo',
+          'Rejects request with _meta missing io.modelcontextprotocol/clientInfo with -32602 Invalid params',
         params: {
           _meta: {
             'io.modelcontextprotocol/protocolVersion':
@@ -338,12 +349,13 @@ export class ServerStatelessScenario implements ClientScenario {
               validMeta['io.modelcontextprotocol/clientCapabilities']
           }
         },
+        expectedCode: -32602,
         rpcId: 103
       },
       {
         slug: 'missing-client-capabilities',
         description:
-          'Rejects request with _meta missing io.modelcontextprotocol/clientCapabilities',
+          'Rejects request with _meta missing io.modelcontextprotocol/clientCapabilities with -32602 Invalid params',
         params: {
           _meta: {
             'io.modelcontextprotocol/protocolVersion':
@@ -352,6 +364,7 @@ export class ServerStatelessScenario implements ClientScenario {
               validMeta['io.modelcontextprotocol/clientInfo']
           }
         },
+        expectedCode: -32602,
         rpcId: 104
       }
     ];
@@ -369,9 +382,9 @@ export class ServerStatelessScenario implements ClientScenario {
           );
           checkErrorId(data, testCase.rpcId);
 
-          if (data?.error?.code !== -32602) {
+          if (data?.error?.code !== testCase.expectedCode) {
             return {
-              error: `Expected error code -32602, got ${data?.error?.code}`,
+              error: `Expected error code ${testCase.expectedCode}, got ${data?.error?.code}`,
               details: { fieldIssue: testCase.slug, response: data }
             };
           }
@@ -552,13 +565,19 @@ export class ServerStatelessScenario implements ClientScenario {
       }
     );
 
-    const headerMismatchMeta = {
+    // The body claims a protocol version the server does not implement
+    // ('v999.0.0'). Per the versioning requirements, a request carrying an
+    // unimplemented version MUST be answered with an
+    // UnsupportedProtocolVersionError (-32004) listing the supported
+    // versions, so the client can renegotiate — not with a bare
+    // HeaderMismatch, which carries no recovery data.
+    const unsupportedBodyMeta = {
       ...validMeta,
       'io.modelcontextprotocol/protocolVersion': 'v999.0.0'
     };
     const responseAbsent = await sendRpc(
       'server/discover',
-      { _meta: headerMismatchMeta },
+      { _meta: unsupportedBodyMeta },
       { 'MCP-Protocol-Version': specVersion },
       302
     ).catch(() => null);
@@ -566,18 +585,81 @@ export class ServerStatelessScenario implements ClientScenario {
     const dataAbsent: any = responseAbsent?.data ?? null;
 
     await runCheck(
+      'sep-2575-http-server-unsupported-version-400-body',
+      'HttpServerUnsupportedVersionBody400',
+      'If the server does not implement the requested protocol version (carried in the body _meta), it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.',
+      () => {
+        if (!resAbsent)
+          return { error: 'Header verification endpoint network hit failed' };
+        if (resAbsent.status !== 400 || dataAbsent?.error?.code !== -32004) {
+          return {
+            error: `Expected HTTP 400 and JSON-RPC error -32004, got status ${resAbsent.status} with code ${dataAbsent?.error?.code}`
+          };
+        }
+        if (!Array.isArray(dataAbsent?.error?.data?.supported)) {
+          return {
+            error:
+              'UnsupportedProtocolVersionError is missing the data.supported version array',
+            details: { response: dataAbsent }
+          };
+        }
+        return { details: { response: dataAbsent } };
+      }
+    );
+
+    // A true HeaderMismatch probe needs header and body to carry two
+    // DIFFERENT versions that both use per-request metadata (header-body
+    // validation does not exist in older versions, and a cross-lifecycle
+    // pair triggers the unsupported-version rule on the per-request leg
+    // instead). Only probeable when the server advertises at least two such
+    // versions — today there is exactly one, so this check reports SKIPPED
+    // until a second per-request-metadata spec version exists.
+    const mismatchCandidates = discoverSupportedVersions.filter((v) =>
+      (STATELESS_SPEC_VERSIONS as readonly string[]).includes(v)
+    );
+    const mismatchPair =
+      mismatchCandidates.length >= 2
+        ? [mismatchCandidates[0], mismatchCandidates[1]]
+        : null;
+    const mismatchResponse = mismatchPair
+      ? await sendRpc(
+          'server/discover',
+          {
+            _meta: {
+              ...validMeta,
+              'io.modelcontextprotocol/protocolVersion': mismatchPair[1]
+            }
+          },
+          { 'MCP-Protocol-Version': mismatchPair[0] },
+          303
+        ).catch(() => null)
+      : null;
+
+    await runCheck(
       'sep-2575-http-server-header-mismatch-400',
       'HttpServerHeaderMismatch400',
       'If the values do not match, the server MUST reject the request with 400 Bad Request and a HeaderMismatch JSON-RPC error.',
       () => {
-        if (!resAbsent)
-          return { error: 'Header verification endpoint network hit failed' };
-        if (resAbsent.status !== 400 || dataAbsent?.error?.code !== -32001) {
+        if (!mismatchPair) {
+          // The requirement was not exercised - report SKIPPED rather than
+          // a vacuous SUCCESS.
           return {
-            error: `Expected HTTP 400 and JSON-RPC error -32001, got status ${resAbsent.status} with code ${dataAbsent?.error?.code}`
+            skipped: true,
+            details: {
+              reason:
+                'Server advertises fewer than two per-request-metadata versions; a header/body mismatch between two implemented versions of the same lifecycle is not constructible.'
+            }
           };
         }
-        return { details: { response: dataAbsent } };
+        const res: any = mismatchResponse?.res ?? null;
+        const data: any = mismatchResponse?.data ?? null;
+        if (!res) return { error: 'Header mismatch probe network hit failed' };
+        if (res.status !== 400 || data?.error?.code !== -32001) {
+          return {
+            error: `Expected HTTP 400 and JSON-RPC error -32001, got status ${res.status} with code ${data?.error?.code}`
+          };
+        }
+        return { details: { response: data } };
       }
     );
 

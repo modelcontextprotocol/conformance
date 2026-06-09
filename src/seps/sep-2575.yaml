@@ -37,6 +37,9 @@ requirements:
   - check: sep-2575-http-server-unsupported-version-400
     text: 'If the server does not implement the requested protocol version, it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.'
     url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
+  - check: sep-2575-http-server-unsupported-version-400-body
+    text: 'If the server does not implement the requested protocol version, it MUST respond with 400 Bad Request and an UnsupportedProtocolVersionError listing its supported versions.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
   - check: sep-2575-http-server-method-not-found-404
     text: 'If the server does not implement the requested RPC method, it MUST respond with 404 Not Found and a JSON-RPC error with code -32601 (Method not found).'
     url: https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header
