@@ -20,8 +20,48 @@ import {
 import type { RunContext } from '../../connection';
 import type { ListToolsResult } from '../../spec-types/2025-11-25';
 
-const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
-const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
+export const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
+export const EXPECTED_SCHEMA_DIALECT =
+  'https://json-schema.org/draft/2020-12/schema';
+
+/**
+ * Canonical focal `inputSchema` used by both the server-side
+ * `json-schema-2020-12` scenario (as the schema servers under test are
+ * expected to emit) and the client-side `json-schema-2020-12-preservation`
+ * scenario (as the schema the mock server actually emits on the wire).
+ *
+ * Keeping a single source of truth ensures the documented requirements and
+ * the runtime test fixture stay in sync.
+ */
+export const JSON_SCHEMA_2020_12_FIXTURE = {
+  $schema: EXPECTED_SCHEMA_DIALECT,
+  type: 'object',
+  $defs: {
+    address: {
+      $anchor: 'addressDef',
+      type: 'object',
+      properties: {
+        street: { type: 'string' },
+        city: { type: 'string' }
+      }
+    }
+  },
+  properties: {
+    name: { type: 'string' },
+    address: { $ref: '#/$defs/address' },
+    contactMethod: { type: 'string', enum: ['phone', 'email'] },
+    phone: { type: 'string' },
+    email: { type: 'string' }
+  },
+  allOf: [{ anyOf: [{ required: ['phone'] }, { required: ['email'] }] }],
+  if: {
+    properties: { contactMethod: { const: 'phone' } },
+    required: ['contactMethod']
+  },
+  then: { required: ['phone'] },
+  else: { required: ['email'] },
+  additionalProperties: false
+} as const;
 
 /**
  * Soft version gate for the SEP-2106 keyword-preservation checks.
@@ -55,41 +95,15 @@ export class JsonSchema2020_12Scenario implements ClientScenario {
 Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema 2020-12 features, including the broader vocabulary permitted by SEP-2106 (an \`$anchor\` inside \`$defs\`, composition keywords \`allOf\`/\`anyOf\`, and conditional keywords \`if\`/\`then\`/\`else\`):
 
 \`\`\`json
-{
-  "name": "${EXPECTED_TOOL_NAME}",
-  "description": "Tool with JSON Schema 2020-12 features",
-  "inputSchema": {
-    "$schema": "${EXPECTED_SCHEMA_DIALECT}",
-    "type": "object",
-    "$defs": {
-      "address": {
-        "$anchor": "addressDef",
-        "type": "object",
-        "properties": {
-          "street": { "type": "string" },
-          "city": { "type": "string" }
-        }
-      }
-    },
-    "properties": {
-      "name": { "type": "string" },
-      "address": { "$ref": "#/$defs/address" },
-      "contactMethod": { "type": "string", "enum": ["phone", "email"] },
-      "phone": { "type": "string" },
-      "email": { "type": "string" }
-    },
-    "allOf": [
-      { "anyOf": [{ "required": ["phone"] }, { "required": ["email"] }] }
-    ],
-    "if": {
-      "properties": { "contactMethod": { "const": "phone" } },
-      "required": ["contactMethod"]
-    },
-    "then": { "required": ["phone"] },
-    "else": { "required": ["email"] },
-    "additionalProperties": false
-  }
-}
+${JSON.stringify(
+  {
+    name: EXPECTED_TOOL_NAME,
+    description: 'Tool with JSON Schema 2020-12 features',
+    inputSchema: JSON_SCHEMA_2020_12_FIXTURE
+  },
+  null,
+  2
+)}
 \`\`\`
 
 **Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition (\`allOf\`/\`anyOf\`), conditional (\`if\`/\`then\`/\`else\`), and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;

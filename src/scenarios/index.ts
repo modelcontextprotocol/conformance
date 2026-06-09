@@ -106,6 +106,7 @@ import {
   HttpInvalidToolHeadersScenario
 } from './client/http-custom-headers';
 import { JsonSchemaRefDerefScenario } from './client/json-schema-ref-deref';
+import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020-12-preservation';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -270,7 +271,10 @@ const scenariosList: Scenario[] = [
   new HttpInvalidToolHeadersScenario(),
 
   // JSON Schema network $ref dereferencing (SEP-2106)
-  new JsonSchemaRefDerefScenario()
+  new JsonSchemaRefDerefScenario(),
+
+  // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
+  new JsonSchema2020_12PreservationScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
