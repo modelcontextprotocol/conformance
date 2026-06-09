@@ -148,7 +148,7 @@ describe('createServerStateless', () => {
     }
   });
 
-  it('rejects requests missing required _meta keys', async () => {
+  it('rejects requests whose body cannot mirror the version header with -32001', async () => {
     const srv = await createServerStateless({});
     try {
       const { status, body } = await post(
@@ -157,7 +157,58 @@ describe('createServerStateless', () => {
         { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
       );
       expect(status).toBe(400);
+      expect(body.error.code).toBe(-32001);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('rejects requests missing non-header-mirrored _meta keys with -32602', async () => {
+    const srv = await createServerStateless({});
+    try {
+      const { status, body } = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION
+            }
+          }
+        },
+        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+      );
+      expect(status).toBe(400);
       expect(body.error.code).toBe(-32602);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('rejects an unimplemented body protocolVersion with -32004 and the supported list', async () => {
+    const srv = await createServerStateless({});
+    try {
+      const { status, body } = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: {
+            _meta: {
+              ...meta,
+              'io.modelcontextprotocol/protocolVersion': 'v999.0.0'
+            }
+          }
+        },
+        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+      );
+      expect(status).toBe(400);
+      expect(body.error.code).toBe(-32004);
+      expect(body.error.data.requested).toBe('v999.0.0');
+      expect(Array.isArray(body.error.data.supported)).toBe(true);
     } finally {
       await srv.close();
     }

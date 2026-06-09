@@ -71,7 +71,19 @@ export function validateStatelessRequest(
   if (!headerVersion) {
     return reject(400, -32001, 'Missing MCP-Protocol-Version header');
   }
-  const missing = META_KEYS.filter((k) => meta?.[k] === undefined);
+  // The body's protocolVersion mirrors the MCP-Protocol-Version header. A
+  // body with no value to match the header against fails header validation
+  // (-32001 HeaderMismatch); the other _meta keys have no corresponding
+  // header, so their absence is plain -32602 Invalid params.
+  const bodyVersion = meta?.[META_KEYS[0]];
+  if (bodyVersion === undefined) {
+    return reject(
+      400,
+      -32001,
+      'MCP-Protocol-Version header has no matching _meta.protocolVersion in the request body'
+    );
+  }
+  const missing = META_KEYS.slice(1).filter((k) => meta?.[k] === undefined);
   if (missing.length > 0) {
     return reject(
       400,
@@ -79,17 +91,21 @@ export function validateStatelessRequest(
       `Invalid params: missing _meta keys: ${missing.join(', ')}`
     );
   }
-  if (meta?.[META_KEYS[0]] !== headerVersion) {
+  // A request carrying a version this endpoint does not implement (on
+  // either channel) gets the renegotiation-shaped error, even when the two
+  // channels also disagree: -32004 carries the supported list the client
+  // needs to retry, -32001 does not.
+  const unsupportedVersion = [headerVersion, bodyVersion].find(
+    (v) => typeof v !== 'string' || !supportedVersions.includes(v)
+  );
+  if (unsupportedVersion === undefined && bodyVersion !== headerVersion) {
     return reject(
       400,
       -32001,
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
-  if (
-    typeof headerVersion !== 'string' ||
-    !supportedVersions.includes(headerVersion)
-  ) {
+  if (unsupportedVersion !== undefined) {
     return {
       kind: 'reject',
       status: 400,
@@ -101,7 +117,7 @@ export function validateStatelessRequest(
           message: 'Unsupported protocol version',
           data: {
             supported: supportedVersions,
-            requested: String(headerVersion)
+            requested: String(unsupportedVersion)
           }
         }
       }
