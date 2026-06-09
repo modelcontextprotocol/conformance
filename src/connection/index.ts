@@ -38,9 +38,12 @@ export interface Connection {
    *
    * `extraHeaders` extend or override the standard headers
    * (Content-Type, Accept, MCP-Protocol-Version, Mcp-Method, Mcp-Name)
-   * for this call only — used by SEP-2243 routing-header tests that
-   * inject a mismatch. Honored on the stateless wire; ignored with a
-   * warning on the stateful wire (the SDK transport manages headers).
+   * for this call only, used by SEP-2243 routing-header tests that
+   * inject a mismatch. Honored on the stateless wire; throws on the
+   * stateful wire (the SDK transport manages headers internally, so
+   * a per-call override would require dropping to raw fetch — silently
+   * dropping the header in a conformance harness would mask test
+   * correctness).
    */
   request<R = unknown>(
     method: string,

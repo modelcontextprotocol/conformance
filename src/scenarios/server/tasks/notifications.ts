@@ -16,18 +16,14 @@
  *   - slow_compute  — task-supporting, sleeps N seconds.
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { skipCheck } from '../tasks-mrtr-helpers';
+import { SEP_2663_REF } from './mrtr-helpers';
+import { skipCheck } from './mrtr-helpers';
 
 export class TasksStatusNotificationsScenario implements ClientScenario {
   name = 'tasks-status-notifications';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 status notifications (optional).
 
 **Server Implementation Requirements:**

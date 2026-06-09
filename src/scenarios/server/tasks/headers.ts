@@ -22,21 +22,17 @@
 
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2243_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
+import { SEP_2243_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 const HEADER_MISMATCH_ERROR_CODE = -32001;
 
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2243 Mcp-Method / Mcp-Name request-header validation, tasks surface.
 
 **Server Implementation Requirements:**
@@ -75,8 +71,8 @@ values trigger rejection with JSON-RPC error code \`-32001\`
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-headers-bootstrap',
+        name: 'TasksHeadersBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',

@@ -21,19 +21,15 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
+import { SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 export class TasksRequestStateRemovalScenario implements ClientScenario {
   name = 'tasks-request-state-removal';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Verify the absence of \`requestState\` on the tasks-v2 wire.
 
 **Server Implementation Requirements:**
@@ -68,8 +64,8 @@ foreseeable mistake for fresh implementations.
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-request-state-bootstrap',
+        name: 'TasksRequestStateBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',

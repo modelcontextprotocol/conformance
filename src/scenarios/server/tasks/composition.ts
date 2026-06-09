@@ -16,17 +16,9 @@
  * the tasks suite that drives the MRTR loop end-to-end.
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import {
-  SEP_2322_REF,
-  SEP_2663_REF,
-  failureCheck
-} from '../tasks-mrtr-helpers';
+import { SEP_2322_REF, SEP_2663_REF, failureCheck } from './mrtr-helpers';
 import {
   isInputRequiredResult,
   mockElicitResponse
@@ -37,7 +29,7 @@ const MRTR_INPUT_REQUIRED_RESULT_TYPE = 'input_required';
 
 export class TasksMrtrCompositionScenario implements ClientScenario {
   name = 'tasks-mrtr-composition';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 MRTR → Tasks composition (SEP-2663 commit 451f5e1).
 
 **Server Implementation Requirements:**

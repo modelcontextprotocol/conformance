@@ -121,7 +121,7 @@ describe('spec version plumbing', () => {
   });
 
   test('withRequestMeta declares the requested spec version in _meta', () => {
-    const params = withRequestMeta({}, { specVersion: '2025-11-25' });
+    const params = withRequestMeta({}, '2025-11-25');
     const meta = params._meta as Record<string, unknown>;
     expect(meta['io.modelcontextprotocol/protocolVersion']).toBe('2025-11-25');
   });

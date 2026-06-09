@@ -13,20 +13,16 @@
  *   - protocol_error_job — task-supporting, panics into a protocol error
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck, skipCheck } from '../tasks-mrtr-helpers';
+import { SEP_2322_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck, skipCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
-import { isIso8601 } from '../tasks-mrtr-helpers';
+import { isIso8601 } from './mrtr-helpers';
 
 export class TasksLifecycleScenario implements ClientScenario {
   name = 'tasks-lifecycle';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 Tasks extension lifecycle on the server.
 
 **Server Implementation Requirements (SEP-2663):**
@@ -96,8 +92,8 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-lifecycle-bootstrap',
+        name: 'TasksLifecycleBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',
@@ -196,7 +192,7 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         }
         // Timestamps — both keys present, both ISO-8601 formatted. Per
         // SEP-2663 these are required on every TaskInfoV2. See
-        // `tasks-mrtr-helpers.ts` for the regex rationale.
+        // `mrtr-helpers.ts` for the regex rationale.
         if (!isIso8601(result.createdAt)) {
           errs.push(
             `createdAt MUST be an ISO-8601 string; got ${JSON.stringify(result.createdAt)}`

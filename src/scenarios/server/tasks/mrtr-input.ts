@@ -11,19 +11,15 @@
  *                       parallel so two keys are pending at once
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
+import { SEP_2322_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForStatus, waitForTerminal } from './helpers';
 
 export class TasksMRTRInputScenario implements ClientScenario {
   name = 'tasks-mrtr-input';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2322 MRTR input flow on the tasks surface.
 
 **Server Implementation Requirements:**
@@ -76,8 +72,8 @@ export class TasksMRTRInputScenario implements ClientScenario {
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-mrtr-input-bootstrap',
+        name: 'TasksMrtrInputBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',

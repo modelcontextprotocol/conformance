@@ -1,14 +1,15 @@
 /**
- * Helpers shared by the SEP-2663 tasks and SEP-2322 MRTR scenarios.
+ * Generic conformance-check helpers shared by the SEP-2663 `tasks/*`
+ * scenarios. Pure: no I/O, no scenario-specific state.
  *
- * Bundled in one file (matching the `input-required-result-helpers.ts`
- * precedent) rather than spread across a category-specific subdirectory.
- * Pure: no I/O, no scenario-specific state.
+ * Split from `helpers.ts` (which holds tasks-specific helpers like
+ * `validTasksParams` and the polling loops) so that the SEP references
+ * and the FAILURE/SKIPPED check builders can be reused by any future
+ * extension scenario without dragging tasks-domain types along.
  */
 
-import { z } from 'zod';
-
-import type { ConformanceCheck, SpecReference } from '../../types';
+import type { ConformanceCheck, SpecReference } from '../../../types';
+import { MRTR_SPEC_REFERENCES } from '../input-required-result-helpers';
 
 // ────────────────────────────────────────────────────────────────────────
 // Check builders
@@ -56,13 +57,6 @@ export function skipCheck(
   };
 }
 
-/**
- * Zod passthrough schema. Pair with `client.request(req, AnyResult)` to
- * preserve fields the SDK's typed result schemas would strip. Every
- * SEP-2663 / SEP-2322 wire field falls into this bucket today.
- */
-export const AnyResult = z.object({}).passthrough();
-
 // ────────────────────────────────────────────────────────────────────────
 // SEP references
 // ────────────────────────────────────────────────────────────────────────
@@ -72,10 +66,13 @@ export const SEP_2243_REF: SpecReference = {
   url: 'https://modelcontextprotocol.io/seps/2243-http-standardization'
 };
 
-export const SEP_2322_REF: SpecReference = {
-  id: 'SEP-2322',
-  url: 'https://modelcontextprotocol.io/seps/2322-MRTR'
-};
+/**
+ * SEP-2322 (MRTR). Imported from `input-required-result-helpers` so the
+ * codebase holds a single URL per SEP — the rendered spec page absorbs
+ * post-merge amendments and `MRTR_SPEC_REFERENCES` is already the
+ * traceability anchor for SEP-2322 elsewhere in `server/`.
+ */
+export const SEP_2322_REF: SpecReference = MRTR_SPEC_REFERENCES[0];
 
 export const SEP_2575_REF: SpecReference = {
   id: 'SEP-2575',
@@ -97,8 +94,8 @@ export const SEP_2663_REF: SpecReference = {
  * matches what real servers emit (Go `time.RFC3339Nano`, Python
  * `datetime.isoformat()`, JavaScript `toISOString()`).
  *
- * A regex over `Date.parse` (too permissive — accepts RFC-2822, "May 4
- * 2026") / `new Date(s).toISOString() === s` (too strict — rejects
+ * A regex over `Date.parse` (too permissive, accepts RFC-2822, "May 4
+ * 2026") / `new Date(s).toISOString() === s` (too strict, rejects
  * valid `+00:00` offsets that don't survive the canonical `Z`
  * round-trip) / `Temporal.Instant.from` (Node 24+ experimental).
  */

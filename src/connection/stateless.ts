@@ -124,27 +124,18 @@ export function buildStandardHeaders(
 /**
  * Merge params with the conformant `_meta` required on every stateless
  * request. Keys already present in `params._meta` win over the defaults.
- * `specVersion` sets the declared protocolVersion (default: draft);
- * `capabilities` / `clientInfo` override the harness defaults for
- * scenarios that need to negotiate specific extensions.
+ * `specVersion` sets the declared protocolVersion (default: draft).
  */
 export function withRequestMeta(
   params?: Record<string, unknown>,
-  options: {
-    specVersion?: SpecVersion;
-    capabilities?: Record<string, unknown>;
-    clientInfo?: { name: string; version: string };
-  } = {}
+  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
 ): Record<string, unknown> {
   return {
     ...params,
     _meta: {
-      'io.modelcontextprotocol/protocolVersion':
-        options.specVersion ?? DRAFT_PROTOCOL_VERSION,
-      'io.modelcontextprotocol/clientInfo':
-        options.clientInfo ?? CONFORMANCE_CLIENT_INFO,
-      'io.modelcontextprotocol/clientCapabilities':
-        options.capabilities ?? DEFAULT_CLIENT_CAPABILITIES,
+      'io.modelcontextprotocol/protocolVersion': specVersion,
+      'io.modelcontextprotocol/clientInfo': CONFORMANCE_CLIENT_INFO,
+      'io.modelcontextprotocol/clientCapabilities': DEFAULT_CLIENT_CAPABILITIES,
       ...(params?._meta as Record<string, unknown> | undefined)
     }
   };
@@ -251,8 +242,6 @@ export async function sendStatelessRequest(
     headers?: Record<string, string>;
     timeoutMs?: number;
     specVersion?: SpecVersion;
-    capabilities?: Record<string, unknown>;
-    clientInfo?: { name: string; version: string };
   } = {}
 ): Promise<StatelessResponse> {
   const id = nextRequestId++;
@@ -264,11 +253,7 @@ export async function sendStatelessRequest(
     jsonrpc: '2.0',
     id,
     method,
-    params: withRequestMeta(params, {
-      specVersion: options.specVersion,
-      capabilities: options.capabilities,
-      clientInfo: options.clientInfo
-    })
+    params: withRequestMeta(params, options.specVersion)
   });
 
   const controller = new AbortController();
@@ -337,15 +322,32 @@ export async function connectStateless(
   const capabilities = opts.capabilities ?? DEFAULT_CLIENT_CAPABILITIES;
   const clientInfo = opts.clientInfo ?? CONFORMANCE_CLIENT_INFO;
 
+  // The Connection layer is the single place that knows about
+  // connect-time capabilities / clientInfo. We fold them into the
+  // request's `_meta` here (the trailing `params._meta` spread in
+  // `withRequestMeta` lets us override its defaults) so that
+  // `sendStatelessRequest` and `withRequestMeta` keep their upstream
+  // signatures untouched.
+  function withConnectMeta(
+    params?: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/clientCapabilities': capabilities,
+        'io.modelcontextprotocol/clientInfo': clientInfo,
+        ...(params?._meta as Record<string, unknown> | undefined)
+      }
+    };
+  }
+
   async function send(
     method: string,
     params?: Record<string, unknown>,
     extraHeaders?: Record<string, string>
   ): Promise<StatelessResponse> {
-    return sendStatelessRequest(serverUrl, method, params, {
+    return sendStatelessRequest(serverUrl, method, withConnectMeta(params), {
       specVersion,
-      capabilities,
-      clientInfo,
       headers: extraHeaders
     });
   }

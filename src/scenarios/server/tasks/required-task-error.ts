@@ -29,14 +29,10 @@
 
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2575_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg } from '../tasks-mrtr-helpers';
+import { SEP_2575_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 const MISSING_REQUIRED_CLIENT_CAPABILITY = -32003;
@@ -44,7 +40,7 @@ const REQUIRED_TASK_TOOL = 'failing_job';
 
 export class TasksRequiredTaskErrorScenario implements ClientScenario {
   name = 'tasks-required-task-error';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Verify the -32003 error path for required-task tools when the
 client has not negotiated the io.modelcontextprotocol/tasks extension.
 

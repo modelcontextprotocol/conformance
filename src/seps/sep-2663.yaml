@@ -94,10 +94,16 @@ requirements:
   - check: sep-2663-client-emits-mcp-name-on-tasks-methods
     text: 'When tasks/get, tasks/update, or tasks/cancel is sent over the Streamable HTTP transport, the client MUST set the Mcp-Name header (defined by SEP-2243) to the value of params.taskId.'
 
+  # Positive-path counterpart to the rejection requirement below:
+  # SEP-2663 routing headers, when set correctly, MUST NOT break the
+  # tasks dispatch path — matched Mcp-Method + Mcp-Name on tasks/get
+  # MUST resolve normally to the task identified by params.taskId.
+  - check: sep-2663-routing-headers-accepted-on-tasks-get
+    text: 'When the Mcp-Method and Mcp-Name request headers match the body method and params.taskId on tasks/get, tasks/update, and tasks/cancel, the server MUST dispatch the request normally and return the same result as if the headers were absent.'
+
   # Server-side counterpart to the client-MUST above. Derived from
   # SEP-2243 §"Server Behavior" applied to the tasks-namespace methods
-  # listed in SEP-2663 §"Streamable HTTP: Routing Headers". Confirmed
-  # by SEP-2663 author in the conformance#262 thread.
+  # listed in SEP-2663 §"Streamable HTTP: Routing Headers".
   - check: sep-2663-server-rejects-mismatched-mcp-name-on-tasks-get
     text: 'Servers that process the request body MUST reject requests where the values specified in the headers do not match the values in the request body.'
     url: https://modelcontextprotocol.io/seps/2243-http-standardization#header-processing

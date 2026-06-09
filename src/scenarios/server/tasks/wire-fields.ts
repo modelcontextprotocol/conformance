@@ -10,19 +10,15 @@
  *   - slow_compute — task-supporting, sleeps N seconds
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck, skipCheck } from '../tasks-mrtr-helpers';
+import { SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck, skipCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
 
 export class TasksWireFieldsScenario implements ClientScenario {
   name = 'tasks-wire-fields';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 wire-field renames + TTL semantics.
 
 **Server Implementation Requirements:**
@@ -65,8 +61,8 @@ export class TasksWireFieldsScenario implements ClientScenario {
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-wire-fields-bootstrap',
+        name: 'TasksWireFieldsBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',

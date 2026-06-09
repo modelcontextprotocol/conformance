@@ -10,19 +10,15 @@
  *   - slow_compute  — task-supporting, sleeps N seconds
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2575_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
+import { SEP_2575_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
 export class TasksCapabilityNegotiationScenario implements ClientScenario {
   name = 'tasks-capability-negotiation';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 capability negotiation for the tasks extension.
 
 **Server Implementation Requirements:**
@@ -75,8 +71,8 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-capability-bootstrap',
+        name: 'TasksCapabilityBootstrap',
         description: 'Initialize handshakes (with + without extension) succeed',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),

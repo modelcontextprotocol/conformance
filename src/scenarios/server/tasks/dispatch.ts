@@ -21,14 +21,10 @@
  *   - failing_job     — task-supporting, returns tool error
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  ScenarioSource
-} from '../../../types';
+import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { SEP_2322_REF, SEP_2663_REF } from '../tasks-mrtr-helpers';
-import { errMsg, failureCheck } from '../tasks-mrtr-helpers';
+import { SEP_2322_REF, SEP_2663_REF } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import {
   TASKS_EXTENSION_ID,
   validTasksParams,
@@ -54,7 +50,7 @@ const ISOLATION_HINT =
 
 export class TasksDispatchScenario implements ClientScenario {
   name = 'tasks-dispatch-and-envelope';
-  source: ScenarioSource = { extensionId: 'io.modelcontextprotocol/tasks' };
+  readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
   description = `Test SEP-2663 dispatch / envelope rules across the tasks surface.
 
 **Server Implementation Requirements:**
@@ -121,8 +117,8 @@ export class TasksDispatchScenario implements ClientScenario {
       });
     } catch (error) {
       checks.push({
-        id: 'tasks-session-bootstrap',
-        name: 'TasksSessionBootstrap',
+        id: 'tasks-dispatch-bootstrap',
+        name: 'TasksDispatchBootstrap',
         description:
           'Initialize handshake declaring io.modelcontextprotocol/tasks extension succeeds',
         status: 'FAILURE',
