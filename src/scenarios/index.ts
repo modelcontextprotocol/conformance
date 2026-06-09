@@ -86,6 +86,17 @@ import {
   InputRequiredResultValidateInputScenario
 } from './server/input-required-result';
 
+import { TasksLifecycleScenario } from './server/tasks/lifecycle';
+import { TasksCapabilityNegotiationScenario } from './server/tasks/capability';
+import { TasksWireFieldsScenario } from './server/tasks/wire-fields';
+import { TasksRequestStateRemovalScenario } from './server/tasks/request-state';
+import { TasksMRTRInputScenario } from './server/tasks/mrtr-input';
+import { TasksRequestHeadersScenario } from './server/tasks/headers';
+import { TasksDispatchScenario } from './server/tasks/dispatch';
+import { TasksStatusNotificationsScenario } from './server/tasks/notifications';
+import { TasksRequiredTaskErrorScenario } from './server/tasks/required-task-error';
+import { TasksMrtrCompositionScenario } from './server/tasks/composition';
+
 import {
   HttpHeaderValidationScenario,
   HttpCustomHeaderServerValidationScenario
@@ -122,7 +133,22 @@ const pendingClientScenariosList: ClientScenario[] = [
   // Pending until the everything-server fully implements SEP-2243
   // header validation (case-insensitive names, whitespace trimming, -32001 error code)
   new HttpHeaderValidationScenario(),
-  new HttpCustomHeaderServerValidationScenario()
+  new HttpCustomHeaderServerValidationScenario(),
+
+  // SEP-2663 Tasks extension. Pending because the everything-server
+  // does not implement io.modelcontextprotocol/tasks; targeted runs
+  // point at a SEP-2663-conformant fixture via
+  // `npm start -- server --scenario tasks-* --url <fixture>`.
+  new TasksLifecycleScenario(),
+  new TasksCapabilityNegotiationScenario(),
+  new TasksWireFieldsScenario(),
+  new TasksRequestStateRemovalScenario(),
+  new TasksMRTRInputScenario(),
+  new TasksRequestHeadersScenario(),
+  new TasksDispatchScenario(),
+  new TasksStatusNotificationsScenario(),
+  new TasksRequiredTaskErrorScenario(),
+  new TasksMrtrCompositionScenario()
 ];
 
 // All client scenarios
@@ -188,6 +214,19 @@ const allClientScenariosList: ClientScenario[] = [
   // HTTP Standardization scenarios (SEP-2243)
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario(),
+
+  // SEP-2663 Tasks extension. Pending against the everything-server;
+  // targeted runs point at a SEP-2663-conformant fixture.
+  new TasksLifecycleScenario(),
+  new TasksCapabilityNegotiationScenario(),
+  new TasksWireFieldsScenario(),
+  new TasksRequestStateRemovalScenario(),
+  new TasksMRTRInputScenario(),
+  new TasksRequestHeadersScenario(),
+  new TasksDispatchScenario(),
+  new TasksStatusNotificationsScenario(),
+  new TasksRequiredTaskErrorScenario(),
+  new TasksMrtrCompositionScenario(),
 
   // InputRequiredResult scenarios (SEP-2322)
   new InputRequiredResultBasicElicitationScenario(),

@@ -15,14 +15,40 @@
 import type { SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
 
+/**
+ * Options accepted at session bootstrap. On the stateful (2025-x) wire
+ * these flow into the `initialize` request params; on the stateless
+ * (2026-x) wire they live in `_meta.io.modelcontextprotocol/*` on the
+ * `server/discover` request.
+ */
+export interface ConnectOptions {
+  /**
+   * Capabilities declared during session bootstrap (e.g.
+   * `{ extensions: { 'io.modelcontextprotocol/tasks': {} }, elicitation: {} }`).
+   */
+  capabilities?: Record<string, unknown>;
+  /** Client info advertised at bootstrap; defaults to the harness's own info. */
+  clientInfo?: { name: string; version: string };
+}
+
 export interface Connection {
   /**
    * Send a JSON-RPC request and return its result.
    * Throws `JsonRpcError` on JSON-RPC error responses.
+   *
+   * `extraHeaders` extend or override the standard headers
+   * (Content-Type, Accept, MCP-Protocol-Version, Mcp-Method, Mcp-Name)
+   * for this call only, used by SEP-2243 routing-header tests that
+   * inject a mismatch. Honored on the stateless wire; throws on the
+   * stateful wire (the SDK transport manages headers internally, so
+   * a per-call override would require dropping to raw fetch — silently
+   * dropping the header in a conformance harness would mask test
+   * correctness).
    */
   request<R = unknown>(
     method: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    extraHeaders?: Record<string, string>
   ): Promise<R>;
 
   /**
@@ -32,6 +58,20 @@ export interface Connection {
    * streams.
    */
   readonly notifications: JSONRPCNotification[];
+
+  /**
+   * Return the server's advertised capabilities, serverInfo, and
+   * instructions. On the stateful wire this is synthesized from the
+   * SDK Client's post-`initialize` accessors and resolves immediately;
+   * on the stateless wire this issues `server/discover` (SEP-2575's
+   * equivalent of the missing handshake) on first call and memoizes
+   * the result.
+   *
+   * Scenarios that don't inspect server-side state never call this —
+   * SEP-2575 has no required handshake, so paying for the extra request
+   * is opt-in.
+   */
+  discover(): Promise<Record<string, unknown>>;
 
   close(): Promise<void>;
 }
@@ -48,7 +88,7 @@ export interface RunContext {
    * Scenarios that test the connection mechanics themselves (initialize,
    * GET-SSE, DNS rebinding) bypass this and use raw fetch.
    */
-  connect(): Promise<Connection>;
+  connect(opts?: ConnectOptions): Promise<Connection>;
 }
 
 export class JsonRpcError extends Error {
@@ -75,4 +115,4 @@ export {
   type JsonRpcResponse,
   type StatelessResponse
 } from './stateless';
-export { connectFor } from './select';
+export { connectFor, isStateless } from './select';

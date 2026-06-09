@@ -1,6 +1,6 @@
 import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
 import { connectFor } from './select';
-import type { RunContext } from './index';
+import type { ConnectOptions, RunContext } from './index';
 
 /**
  * Build a RunContext for unit tests that drive a scenario directly.
@@ -14,6 +14,6 @@ export function testContext(
   return {
     serverUrl,
     specVersion,
-    connect: () => connectFor(specVersion)(serverUrl)
+    connect: (opts?: ConnectOptions) => connectFor(specVersion)(serverUrl, opts)
   };
 }

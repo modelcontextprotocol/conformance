@@ -9,30 +9,36 @@ import {
   ProgressNotificationSchema
 } from '@modelcontextprotocol/sdk/types.js';
 
+import type { ConnectOptions } from './index';
+
+const DEFAULT_CLIENT_INFO = {
+  name: 'conformance-test-client',
+  version: '1.0.0'
+} as const;
+
+const DEFAULT_CAPABILITIES = {
+  sampling: {},
+  elicitation: {}
+} as const;
+
 export interface MCPClientConnection {
   client: Client;
   close: () => Promise<void>;
 }
 
 /**
- * Create and connect an MCP client to a server
+ * Create and connect an MCP client to a server. `opts.capabilities` and
+ * `opts.clientInfo` override the harness defaults — scenarios that
+ * negotiate extensions (tasks, EMA, ...) pass them through to drive a
+ * conformant `initialize`.
  */
 export async function connectToServer(
-  serverUrl: string
+  serverUrl: string,
+  opts: ConnectOptions = {}
 ): Promise<MCPClientConnection> {
-  const client = new Client(
-    {
-      name: 'conformance-test-client',
-      version: '1.0.0'
-    },
-    {
-      capabilities: {
-        // Client capabilities
-        sampling: {},
-        elicitation: {}
-      }
-    }
-  );
+  const client = new Client(opts.clientInfo ?? DEFAULT_CLIENT_INFO, {
+    capabilities: opts.capabilities ?? DEFAULT_CAPABILITIES
+  });
 
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
 

@@ -15,10 +15,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { connectToServer } from './sdk-client';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { JsonRpcError, type Connection } from './index';
+import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
-export async function connectStateful(serverUrl: string): Promise<Connection> {
-  const { client, close } = await connectToServer(serverUrl);
+export async function connectStateful(
+  serverUrl: string,
+  opts: ConnectOptions = {}
+): Promise<Connection> {
+  const { client, close } = await connectToServer(serverUrl, opts);
 
   const notifications: JSONRPCNotification[] = [];
   const collect = (n: unknown) => {
@@ -45,10 +48,30 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
   return {
     notifications,
 
+    // Synthesize the discover-shape from the SDK Client's post-`initialize`
+    // accessors so the stateful Connection exposes the same surface the
+    // stateless wire's `server/discover` produces.
+    async discover(): Promise<Record<string, unknown>> {
+      return {
+        capabilities: client.getServerCapabilities() ?? {},
+        serverInfo: client.getServerVersion() ?? {},
+        instructions: client.getInstructions()
+      };
+    },
+
     async request<R>(
       method: string,
-      params: Record<string, unknown> = {}
+      params: Record<string, unknown> = {},
+      extraHeaders?: Record<string, string>
     ): Promise<R> {
+      if (extraHeaders && Object.keys(extraHeaders).length > 0) {
+        // The SDK Client transport manages headers internally; per-call
+        // override would require dropping to raw fetch. No 2025-x
+        // scenario needs this today; flag loudly if one shows up.
+        throw new Error(
+          'connectStateful.request: extraHeaders is unsupported on the stateful wire (per-call header overrides require raw fetch on the stateless wire only)'
+        );
+      }
       try {
         return (await client.request({ method, params }, ResultSchema)) as R;
       } catch (e) {
