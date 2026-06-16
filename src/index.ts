@@ -25,6 +25,7 @@ import {
   listExtensionScenarios,
   listBackcompatScenarios,
   listDraftScenarios,
+  listDraftClientScenarios,
   listScenariosForSpec,
   listClientScenariosForSpec,
   getScenarioSpecVersions,
@@ -100,6 +101,10 @@ program
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option(
+    '--force',
+    'Run a scenario even if it is not applicable at the requested --spec-version'
+  )
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
@@ -156,11 +161,13 @@ program
                 scenarioName,
                 timeout,
                 outputDir,
-                specVersionFilter
+                specVersionFilter,
+                options.force ?? false
               );
               return {
                 scenario: scenarioName,
                 checks: result.checks,
+                skipped: result.skipped,
                 error: null
               };
             } catch (error) {
@@ -177,6 +184,7 @@ program
                       error instanceof Error ? error.message : String(error)
                   }
                 ],
+                skipped: undefined,
                 error
               };
             }
@@ -188,8 +196,17 @@ program
         let totalPassed = 0;
         let totalFailed = 0;
         let totalWarnings = 0;
+        let totalSkipped = 0;
 
         for (const result of results) {
+          // Inapplicable scenario/spec-version combination (already logged by
+          // the runner). Not a failure: report distinctly.
+          if (result.skipped) {
+            totalSkipped++;
+            console.log(`- ${result.scenario}: skipped`);
+            continue;
+          }
+
           const passed = result.checks.filter(
             (c) => c.status === 'SUCCESS'
           ).length;
@@ -221,8 +238,9 @@ program
           }
         }
 
+        const skippedStr = totalSkipped > 0 ? `, ${totalSkipped} skipped` : '';
         console.log(
-          `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
+          `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings${skippedStr}`
         );
 
         if (options.expectedFailures) {
@@ -254,7 +272,13 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario, verbose, outputDir);
+        await runInteractiveMode(
+          validated.scenario,
+          verbose,
+          outputDir,
+          specVersionFilter,
+          options.force ?? false
+        );
         process.exit(0);
       }
 
@@ -264,8 +288,15 @@ program
         validated.scenario,
         timeout,
         outputDir,
-        specVersionFilter
+        specVersionFilter,
+        options.force ?? false
       );
+
+      // Inapplicable scenario/spec-version combination (already logged by
+      // the runner). Not a failure: exit 0.
+      if (result.skipped) {
+        process.exit(0);
+      }
 
       const { overallFailure } = printClientResults(
         result.checks,
@@ -314,7 +345,7 @@ program
   )
   .option(
     '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending), "all", or "pending"',
+    'Suite to run: "active" (default, excludes pending and draft), "all", "draft", or "pending"',
     'active'
   )
   .option(
@@ -325,6 +356,10 @@ program
   .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
+  )
+  .option(
+    '--force',
+    'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
@@ -343,8 +378,16 @@ program
         const result = await runServerConformanceTest(
           validated.url,
           validated.scenario,
-          outputDir
+          outputDir,
+          specVersionFilter,
+          options.force ?? false
         );
+
+        // Inapplicable scenario/spec-version combination (already logged by
+        // the runner). Not a failure: exit 0.
+        if (result.skipped) {
+          process.exit(0);
+        }
 
         const { failed } = printServerResults(
           result.checks,
@@ -378,9 +421,13 @@ program
           scenarios = listActiveClientScenarios();
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
+        } else if (suite === 'draft') {
+          // Scenarios targeting the in-progress draft spec; excluded from
+          // 'active' until the draft is published as a dated release.
+          scenarios = listDraftClientScenarios();
         } else {
           console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, core, pending');
+          console.error('Available suites: active, all, core, draft, pending');
           process.exit(1);
         }
 
@@ -405,7 +452,8 @@ program
             const result = await runServerConformanceTest(
               validated.url,
               scenarioName,
-              outputDir
+              outputDir,
+              specVersionFilter
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {

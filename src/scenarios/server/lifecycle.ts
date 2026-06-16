@@ -2,8 +2,13 @@
  * Lifecycle test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
-import { connectToServer } from './client-helper';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types';
+import type { RunContext } from '../../connection';
+import { connectToServer } from '../../connection/sdk-client';
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
 
@@ -16,7 +21,10 @@ const SESSION_SPEC_REFERENCES = [
 
 export class ServerInitializeScenario implements ClientScenario {
   name = 'server-initialize';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test basic server initialization handshake.
 
 **Server Implementation Requirements:**
@@ -32,7 +40,8 @@ export class ServerInitializeScenario implements ClientScenario {
 This test verifies the server can complete the two-phase initialization handshake successfully,
 and validates session ID format if one is assigned.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {

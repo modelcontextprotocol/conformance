@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -62,13 +63,13 @@ class TokenEndpointAuthScenario implements Scenario {
     this.description = `Tests that client uses ${AUTH_METHOD_NAMES[expectedAuthMethod]} when server only supports ${expectedAuthMethod}`;
   }
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationResource = undefined;
     this.tokenResource = undefined;
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
       onAuthorizationRequest: ({ resource }) => {
@@ -137,6 +138,7 @@ class TokenEndpointAuthScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

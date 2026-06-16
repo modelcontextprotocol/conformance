@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@4e153aef0538",
+  "source": "typescript-sdk@258f1a04a5d3",
   "seps": {
     "837": {
       "yaml": "src/seps/sep-837.yaml",
@@ -41,6 +41,48 @@
         "unkeyed": 0
       }
     },
+    "2106": {
+      "yaml": "src/seps/sep-2106.yaml",
+      "specUrl": "https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#security-implications",
+      "requirements": [
+        {
+          "check": "sep-2106-no-network-ref-deref",
+          "status": "tested",
+          "text": "Implementations MUST NOT automatically dereference `$ref` values that resolve to a network URI (i.e. anything that is not a same-document JSON Pointer such as `#/$defs/Foo` or an internal `$anchor`); an opt-in mode that fetches non-local `$ref`s MUST be disabled by default / Schemas that fail to validate due to an unresolved external `$ref` SHOULD be rejected rather than silently treated as permissive"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "SDK maintainers SHOULD: Document the migration in SDK release notes; Where ergonomic, provide typed helpers (e.g. generics over a tool's `outputSchema`) so consumers do not need to write narrowing guards by hand",
+          "reason": "Migration/deprecation guidance for SDK maintainers; about SDK source code, not protocol-observable wire behavior"
+        },
+        {
+          "text": "JSON Schema validation already handles type checking, value constraints, and required field validation, and implementations MUST continue to validate all inputs and outputs against declared schemas",
+          "reason": "Restates pre-existing schema-validation behavior and is too broad to attribute to a specific observable SEP-2106 check; input/output validation overlaps existing tool scenarios"
+        },
+        {
+          "text": "An opt-in mode that fetches non-local `$ref`s SHOULD enforce an allowlist of hosts (or at minimum reject loopback, link-local, and private network addresses), apply timeouts and size limits, and log dereferenced URIs",
+          "reason": "Applies only when the non-default opt-in network-$ref fetch mode is enabled; not observable in default conformance runs"
+        },
+        {
+          "text": "Implementations SHOULD apply reasonable bounds — for example, a maximum schema depth, a cap on the total number of subschemas, or a per-validation time budget — to prevent a malicious tool definition from acting as a CPU DoS vector against the validator",
+          "reason": "Internal validator resource limits (max schema depth, subschema cap, per-validation time budget); a defensive measure not observable on the wire"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2106-anchor-keyword-preserved",
+        "sep-2106-composition-keywords-preserved",
+        "sep-2106-conditional-keywords-preserved"
+      ],
+      "summary": {
+        "tested": 1,
+        "untested": 0,
+        "excluded": 4,
+        "untracked": 3,
+        "unkeyed": 0
+      }
+    },
     "2164": {
       "yaml": "src/seps/sep-2164.yaml",
       "specUrl": "https://modelcontextprotocol.io/specification/draft/server/resources#error-handling",
@@ -75,21 +117,40 @@
       }
     },
     "2207": {
-      "yaml": null,
-      "specUrl": null,
-      "requirements": [],
-      "excluded": [],
+      "yaml": "src/seps/sep-2207.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/authorization#refresh-tokens",
+      "requirements": [
+        {
+          "check": "sep-2207-client-metadata-grant-types",
+          "status": "tested",
+          "text": "MCP Clients that desire refresh tokens SHOULD include `refresh_token` in their `grant_types` client metadata"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "MCP Servers (Protected Resources) SHOULD NOT include `offline_access` in `WWW-Authenticate` scope or Protected Resource Metadata `scopes_supported`, as refresh tokens are not a resource requirement",
+          "reason": "The server suite does not yet exercise the SDK server as an OAuth protected resource (no Protected Resource Metadata or WWW-Authenticate probing); revisit once server-side authorization scenarios exist",
+          "issue": "https://github.com/modelcontextprotocol/conformance/issues/116"
+        },
+        {
+          "text": "MCP Clients that desire refresh tokens MUST keep refresh tokens confidential in transit and storage as specified in OAuth 2.1 Section 4.3",
+          "reason": "Confidentiality of refresh tokens in storage is client-internal state, and in-transit (TLS) confidentiality is not exercised by the harness over localhost HTTP; not protocol-observable"
+        },
+        {
+          "text": "MCP Clients that desire refresh tokens MUST NOT assume refresh tokens will be issued; the AS retains discretion",
+          "reason": "A client \"assuming\" refresh tokens will be issued is mental-state; only manifests as general authorization-flow completion, which other checks already cover; not directly protocol-observable"
+        }
+      ],
       "unkeyed": [],
       "untracked": [
-        "sep-2207-client-metadata-grant-types",
         "sep-2207-offline-access-not-requested",
         "sep-2207-offline-access-requested"
       ],
       "summary": {
-        "tested": 0,
+        "tested": 1,
         "untested": 0,
-        "excluded": 0,
-        "untracked": 3,
+        "excluded": 3,
+        "untracked": 2,
         "unkeyed": 0
       }
     },
@@ -119,35 +180,35 @@
         },
         {
           "check": "sep-2243-client-supports-custom-headers",
-          "status": "untested",
+          "status": "tested",
           "text": "MCP clients MUST support this feature [custom headers via x-mcp-header]."
         },
         {
           "check": "sep-2243-client-mirrors-designated-params",
-          "status": "untested",
+          "status": "tested",
           "text": "When a client invokes a tool whose definition includes such designations, conforming clients MUST mirror the designated parameter values into HTTP headers as described below."
         },
         {
           "check": "sep-2243-x-mcp-header-not-empty",
-          "status": "untested",
+          "status": "tested",
           "text": "The x-mcp-header value MUST NOT be empty.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
         {
           "check": "sep-2243-x-mcp-header-charset",
-          "status": "untested",
+          "status": "tested",
           "text": "The x-mcp-header value MUST contain only ASCII characters (excluding space and `:`).",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
         {
           "check": "sep-2243-x-mcp-header-unique",
-          "status": "untested",
+          "status": "tested",
           "text": "The x-mcp-header value MUST be case-insensitively unique within a single tool definition.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
         {
           "check": "sep-2243-x-mcp-header-primitive-only",
-          "status": "untested",
+          "status": "tested",
           "text": "x-mcp-header MUST only be applied to parameters with primitive types (number, string, or boolean).",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
@@ -159,17 +220,17 @@
         },
         {
           "check": "sep-2243-client-encode-values",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients MUST encode parameter values before including them in HTTP headers: number values MUST be converted to their decimal string representation; boolean values MUST be converted to the lowercase strings \"true\" or \"false\"."
         },
         {
           "check": "sep-2243-client-base64-unsafe",
-          "status": "untested",
+          "status": "tested",
           "text": "When a value cannot be safely represented as plain ASCII (e.g., contains non-ASCII characters, control characters, or leading/trailing whitespace), clients MUST use Base64 encoding of the UTF-8 representation, wrapped as =?base64?{encoded}?=."
         },
         {
           "check": "sep-2243-server-decode-base64",
-          "status": "untested",
+          "status": "tested",
           "text": "Servers and intermediaries that need to inspect these values MUST decode them accordingly."
         },
         {
@@ -189,17 +250,17 @@
         },
         {
           "check": "sep-2243-server-reject-invalid-param-chars",
-          "status": "untested",
+          "status": "tested",
           "text": "Servers MUST reject requests with a recognized Mcp-Param-{Name} header that contain invalid characters."
         },
         {
           "check": "sep-2243-server-validate-param-match",
-          "status": "untested",
+          "status": "tested",
           "text": "Any server that processes the message body MUST validate that encoded header values, after decoding if Base64-encoded, match the corresponding parameter values in the body."
         },
         {
           "check": "sep-2243-server-reject-param-mismatch",
-          "status": "untested",
+          "status": "tested",
           "text": "Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32001 if any validation fails."
         }
       ],
@@ -224,15 +285,250 @@
       "unkeyed": [],
       "untracked": [
         "sep-2243-invalid-tool-tools-list-gate",
-        "sep-2243-param-header-tool-call-gate",
         "sep-2243-server-accepts-whitespace-header-value",
         "sep-2243-server-no-xmcp-tool"
       ],
       "summary": {
-        "tested": 6,
-        "untested": 14,
+        "tested": 18,
+        "untested": 2,
         "excluded": 4,
-        "untracked": 4,
+        "untracked": 3,
+        "unkeyed": 0
+      }
+    },
+    "2260": {
+      "yaml": "src/seps/sep-2260.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/transports#streamable-http",
+      "requirements": [],
+      "excluded": [
+        {
+          "text": "roots/list, sampling/createMessage, and elicitation/create requests MUST NOT be sent on standalone streams.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients MUST return standard JSON-RPC errors for common failure cases: Server sends an elicitation/create request with no associated client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients SHOULD return standard JSON-RPC errors for common failure cases: Server sends a roots/list request with no associated client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Clients SHOULD return errors for common failure cases: Sampling request not associated with a client-to-server request: -32602 (Invalid params)",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "These messages MUST relate to the originating client request.",
+          "reason": "Semantic association (\"relate to\") is not protocol-observable. The harness cannot determine whether a server request conceptually relates to the client request without understanding application logic."
+        },
+        {
+          "text": "Implementations SHOULD prefer transport-level SSE keepalive mechanisms for idle-connection maintenance.",
+          "reason": "Implementation preference for keepalive mechanism choice; not observable on the wire."
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Servers MUST send sampling/createMessage requests only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated sampling on independent communication streams (unrelated to any client request) is not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        },
+        {
+          "text": "Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.",
+          "reason": "No longer needed this behavior is enabled by default SEP-2322 MRTR."
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 0,
+        "untested": 0,
+        "excluded": 12,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "2322": {
+      "yaml": "src/seps/sep-2322.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/basic/utilities/mrtr",
+      "requirements": [
+        {
+          "check": "sep-2322-result-type-included",
+          "status": "tested",
+          "text": "The resultType field MUST be included to indicate the type of the result.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#resulttype"
+        },
+        {
+          "check": "sep-2322-default-result-type-complete",
+          "status": "tested",
+          "text": "If resultType is not specified, clients MUST assume a default value of \"complete\" for backwards compatibility.",
+          "url": "https://modelcontextprotocol.io/specification/draft/basic/index#resulttype"
+        },
+        {
+          "check": "sep-2322-not-on-unsupported-requests",
+          "status": "tested",
+          "text": "Servers MUST NOT send InputRequiredResult responses on any other client requests."
+        },
+        {
+          "check": "sep-2322-elicitation-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (elicitation variant)"
+        },
+        {
+          "check": "sep-2322-sampling-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (sampling variant)"
+        },
+        {
+          "check": "sep-2322-list-roots-incomplete",
+          "status": "tested",
+          "text": "inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (list roots variant)"
+        },
+        {
+          "check": "sep-2322-reject-tampered-state",
+          "status": "tested",
+          "text": "If requestState influences authorization, resource access, or business logic, servers MUST protect its integrity and MUST reject state that fails verification."
+        },
+        {
+          "check": "sep-2322-request-state-incomplete",
+          "status": "tested",
+          "text": "Servers MUST include at least one of inputRequests or requestState in every InputRequiredResult response."
+        },
+        {
+          "check": "sep-2322-respect-client-capabilities",
+          "status": "tested",
+          "text": "Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities."
+        },
+        {
+          "check": "sep-2322-client-request-state-echoed",
+          "status": "tested",
+          "text": "If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents."
+        },
+        {
+          "check": "sep-2322-client-no-state-omitted",
+          "status": "tested",
+          "text": "If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry."
+        },
+        {
+          "check": "sep-2322-client-jsonrpc-id-different",
+          "status": "tested",
+          "text": "The JSON-RPC id MUST be different between the initial request and the retry, as they are independent requests."
+        },
+        {
+          "check": "sep-2322-client-parallel-isolation",
+          "status": "tested",
+          "text": "Both the inputRequests and requestState fields affect only the client's retry of the original request. They MUST NOT be used for any other request that the client may be sending in parallel."
+        },
+        {
+          "check": "sep-2322-validate-input-responses",
+          "status": "tested",
+          "text": "Servers SHOULD validate that the data provided by the client is a valid InputResponses object and that the information inside can be correctly parsed."
+        },
+        {
+          "check": "sep-2322-error-on-protocol-error",
+          "status": "tested",
+          "text": "Protocol errors (malformed JSON, invalid schema, internal server errors) SHOULD return a JSON-RPC error response with an appropriate error code and message."
+        },
+        {
+          "check": "sep-2322-ignore-unexpected-params",
+          "status": "tested",
+          "text": "If additional, unexpected parameters are provided in the InputResponses object, the server SHOULD ignore any information it does not recognize or need."
+        },
+        {
+          "check": "sep-2322-missing-response-rerequests",
+          "status": "tested",
+          "text": "If the client fails to send all the information requested in a previous InputRequests, and the missing information is necessary for the server to process the request, the server SHOULD respond with a new InputRequiredResult requesting the missing information again, rather than returning an error."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "inputRequests keys are server assigned identifiers and MUST be unique within the scope of the request.",
+          "reason": "inputRequests is a JSON object; duplicate keys are collapsed by JSON parsing before the harness can observe them, so key uniqueness is not testable at the protocol level"
+        },
+        {
+          "text": "Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) using the MRTR pattern.",
+          "reason": "Architectural migration statement; tested indirectly through all MRTR scenarios"
+        },
+        {
+          "text": "servers MUST treat requestState as an attacker-controlled input",
+          "reason": "Internal security posture; not observable at protocol level"
+        },
+        {
+          "text": "servers MUST protect its integrity (e.g. HMAC or AEAD)",
+          "reason": "Internal implementation choice about encryption/signing; not observable at protocol level"
+        },
+        {
+          "text": "servers SHOULD include the authenticated principal, a short expiry (TTL), and an identifier for the originating request inside the integrity-protected requestState payload and verify each on receipt",
+          "reason": "Internal requestState format; not observable at protocol level"
+        },
+        {
+          "text": "Servers for which a given requestState must be consumed at most once MUST enforce that invariant server-side",
+          "reason": "Internal enforcement policy; conformance harness cannot determine which servers require single-use semantics"
+        },
+        {
+          "text": "Servers MUST NOT assume that clients will fulfill the inputRequests or retry the original request",
+          "reason": "Server-internal robustness assumption; not observable at protocol level"
+        },
+        {
+          "text": "Servers MUST validate request state as described in the server requirements above.",
+          "reason": "Duplicates integrity-protection requirements above; internal security detail"
+        },
+        {
+          "text": "Servers MUST include an inputRequests field in the tasks/result response when the task is in status input_required.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "inputRequests keys are server assigned identifiers and MUST be unique within the scope of a Task.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When tasks/get shows status input_required, clients MUST call tasks/result to get the inputRequests and optional requestState.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "Clients SHOULD construct the results of those requests and call tasks/input_response with the inputResponses & requestState (if present).",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "Receivers MUST reject tasks/input_response requests for tasks that are not in input_required status with error code -32602 (Invalid params).",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When a receiver receives a tasks/result request for a task in working status, it MUST block the response until the task reaches a terminal status or input_required status.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "When a receiver receives a tasks/result request for a task in input_required status, it MUST return an InputRequiredResult containing the inputRequests that the requestor must fulfill.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        },
+        {
+          "text": "After sending tasks/input_response, the requestor SHOULD resume polling via tasks/get.",
+          "reason": "Tasks moved to an extension as of SEP-2663; no longer part of core conformance"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [
+        "sep-2322-multi-round-r1",
+        "sep-2322-multiple-inputs-incomplete",
+        "sep-2322-non-tool-incomplete"
+      ],
+      "summary": {
+        "tested": 17,
+        "untested": 0,
+        "excluded": 16,
+        "untracked": 3,
         "unkeyed": 0
       }
     },
@@ -245,14 +541,13 @@
           "status": "tested",
           "text": "When re-authorizing, clients SHOULD include these scopes alongside any previously granted scopes to avoid losing permissions needed for other operations. / Clients SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements"
-        },
-        {
-          "check": "sep-2350-server-single-challenge",
-          "status": "untested",
-          "text": "Regardless of the approach chosen, servers SHOULD include all scopes required for the current operation in a single challenge."
         }
       ],
       "excluded": [
+        {
+          "text": "Regardless of the approach chosen, servers SHOULD include all scopes required for the current operation in a single challenge.",
+          "reason": "\"All scopes required for the current operation\" has no harness-observable ground truth; the challenge is the only place the server declares its requirements. Detecting the negative (incremental challenging) would need server-side auth scenarios that do not exist yet and would test the example app's scope config rather than SDK behavior; the spec also permits dynamic per-request scope determination, so a second challenge is not conclusively non-conformant."
+        },
         {
           "text": "When responding with insufficient scope errors, servers SHOULD include the scopes needed to satisfy the current operation in the scope parameter, consistent with RFC 6750 Section 3.1.",
           "reason": "reword of pre-existing requirement (request->operation, +RFC6750 cite); no normative delta; harness already emits scope= in WWW-Authenticate"
@@ -262,8 +557,8 @@
       "untracked": [],
       "summary": {
         "tested": 1,
-        "untested": 1,
-        "excluded": 1,
+        "untested": 0,
+        "excluded": 2,
         "untracked": 0,
         "unkeyed": 0
       }
@@ -319,19 +614,9 @@
       "requirements": [
         {
           "check": "sep-2468-client-validate-metadata-issuer",
-          "status": "untested",
+          "status": "tested",
           "text": "After retrieving a metadata document, MCP clients MUST validate it as required by RFC8414 Section 3.3 or OpenID Connect Discovery Section 4.3: the issuer value in the document MUST be identical to the issuer identifier used to construct the well-known URL. If they differ, the client MUST NOT use the metadata.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-server-metadata-discovery"
-        },
-        {
-          "check": "sep-2468-as-include-iss",
-          "status": "untested",
-          "text": "MCP authorization servers SHOULD include the iss parameter in authorization responses, including error responses, as defined in RFC9207 Section 2."
-        },
-        {
-          "check": "sep-2468-as-advertise-iss-supported",
-          "status": "untested",
-          "text": "Authorization servers that include the iss parameter MUST advertise this by setting authorization_response_iss_parameter_supported to true in their metadata (RFC9207 Section 2.3)."
         },
         {
           "check": "sep-2468-client-compare-iss-supported",
@@ -355,11 +640,21 @@
         },
         {
           "check": "sep-2468-client-no-normalization",
-          "status": "untested",
+          "status": "tested",
           "text": "After decoding the iss value from the application/x-www-form-urlencoded response per RFC 9207 Section 2.4, clients MUST NOT apply scheme or host case folding, default-port elision, trailing-slash, or percent-encoding normalization (RFC 3986 Sections 6.2.2-6.2.3) before comparison."
         }
       ],
       "excluded": [
+        {
+          "text": "MCP authorization servers SHOULD include the iss parameter in authorization responses, including error responses, as defined in RFC9207 Section 2.",
+          "reason": "Targets the authorization server under test; observing iss in an authorization response requires driving an Authorization Code Grant against the AS, which the authorization-server suite does not implement yet (it only probes the metadata endpoint).",
+          "issue": "https://github.com/modelcontextprotocol/conformance/issues/208"
+        },
+        {
+          "text": "Authorization servers that include the iss parameter MUST advertise this by setting authorization_response_iss_parameter_supported to true in their metadata (RFC9207 Section 2.3).",
+          "reason": "Conditional on the AS actually including iss in an authorization response, which requires driving an Authorization Code Grant against the AS under test; the authorization-server suite does not implement that yet.",
+          "issue": "https://github.com/modelcontextprotocol/conformance/issues/208"
+        },
         {
           "text": "This validation applies equally to error responses - on mismatch the client MUST NOT act on or display error, error_description, or error_uri.",
           "reason": "display is UI-facing; act-on has no protocol-observable signal beyond the existing reject-on-mismatch checks"
@@ -368,9 +663,113 @@
       "unkeyed": [],
       "untracked": [],
       "summary": {
-        "tested": 4,
-        "untested": 4,
-        "excluded": 1,
+        "tested": 6,
+        "untested": 0,
+        "excluded": 3,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "2549": {
+      "yaml": "src/seps/sep-2549.yaml",
+      "specUrl": "https://modelcontextprotocol.io/specification/draft/server/utilities/caching",
+      "requirements": [
+        {
+          "check": "sep-2549-tools-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by tools/list"
+        },
+        {
+          "check": "sep-2549-prompts-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by prompts/list"
+        },
+        {
+          "check": "sep-2549-resources-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/list"
+        },
+        {
+          "check": "sep-2549-resources-templates-list-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/templates/list"
+        },
+        {
+          "check": "sep-2549-resources-read-caching-hints",
+          "status": "tested",
+          "text": "Servers MUST include caching hints on results returned by resources/read"
+        },
+        {
+          "check": "sep-2549-ttl-non-negative",
+          "status": "tested",
+          "text": "Servers MUST provide a ttlMs value that is >= 0"
+        },
+        {
+          "check": "sep-2549-cache-scope-valid",
+          "status": "tested",
+          "text": "cacheScope indicates the intended scope of the cached response, either \"public\" or \"private\""
+        }
+      ],
+      "excluded": [
+        {
+          "text": "If ttlMs is 0, the response SHOULD be considered immediately stale.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is positive, the client SHOULD consider the result fresh for that many milliseconds after receiving the response.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is absent, clients SHOULD assume a default of 0 (immediately stale) and rely on their own caching heuristics or notifications.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If ttlMs is negative, clients SHOULD ignore it and treat it as 0.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Once the TTL expires, the response is stale and the client SHOULD re-fetch on next access.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD NOT treat TTL as a polling interval that triggers automatic background refetches.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Implementations that do choose to poll MUST apply jitter and backoff.",
+          "reason": "Client-side polling behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Cached responses MAY be reused for the same authorization context. Caches MUST NOT be shared across authorization contexts (e.g. a different access token requires a different cache).",
+          "reason": "Client/cache-side behavior; not observable at the protocol level"
+        },
+        {
+          "text": "When a cached page expires, the client SHOULD re-fetch that page using its cursor.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Clients that require a consistent snapshot of the full list SHOULD re-fetch from the beginning (without a cursor).",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "If a cursor becomes invalid (e.g., the server returns an error for a previously valid cursor), the client SHOULD discard all cached pages and re-fetch from the beginning.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Servers MUST be aware that responses with a \"public\" cacheScope may be shared between callers even if the Result is coming from an authenticated endpoint.",
+          "reason": "Server-side awareness requirement; implementation guidance not testable via protocol messages"
+        },
+        {
+          "text": "Server implementors MUST apply appropriate per-primitive access controls, and MUST NOT rely on cacheScope alone to prevent unauthorized access to primitives.",
+          "reason": "Server-side access control; implementation guidance not testable via protocol messages"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 7,
+        "untested": 0,
+        "excluded": 13,
         "untracked": 0,
         "unkeyed": 0
       }
@@ -381,7 +780,7 @@
       "requirements": [
         {
           "check": "sep-2575-client-populates-meta",
-          "status": "untested",
+          "status": "tested",
           "text": "Every client request MUST include the following io.modelcontextprotocol/* fields in _meta: protocolVersion, clientInfo, clientCapabilities.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
         },
@@ -399,19 +798,9 @@
         },
         {
           "check": "sep-2575-server-tags-subscription-id",
-          "status": "untested",
+          "status": "tested",
           "text": "On notifications delivered via a subscriptions/listen stream, the server MUST include io.modelcontextprotocol/subscriptionId in _meta so the client can correlate the notification with the originating subscription request.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
-        },
-        {
-          "check": "sep-2575-server-stateless-no-prior-context",
-          "status": "untested",
-          "text": "A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity)."
-        },
-        {
-          "check": "sep-2575-server-stateless-no-connection-reuse-required",
-          "status": "untested",
-          "text": "Servers MUST NOT require that a client reuse the same connection to perform related operations."
         },
         {
           "check": "sep-2575-server-unsupported-version-error",
@@ -421,7 +810,7 @@
         },
         {
           "check": "sep-2575-client-retry-supported-version",
-          "status": "untested",
+          "status": "tested",
           "text": "The client SHOULD select a mutually supported version from the supported list and retry the request, or surface an error to the user if no compatible version exists.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/lifecycle#protocol-version-negotiation"
         },
@@ -433,31 +822,19 @@
         },
         {
           "check": "sep-2575-http-server-no-independent-requests-on-stream",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT send independent JSON-RPC requests on this stream. Server-to-client interactions are embedded as input requests inside an IncompleteResult.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#receiving-messages-1"
         },
         {
-          "check": "sep-2575-http-server-disconnect-is-cancel",
-          "status": "untested",
-          "text": "Closing the SSE response stream MUST be treated by the server as cancellation of that request.",
-          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
-        },
-        {
-          "check": "sep-2575-http-server-stops-on-cancel",
-          "status": "untested",
-          "text": "The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].",
-          "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#cancellation-1"
-        },
-        {
           "check": "sep-2575-http-client-sends-version-header",
-          "status": "untested",
+          "status": "tested",
           "text": "Every POST request to the MCP endpoint MUST include an MCP-Protocol-Version header.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
         {
           "check": "sep-2575-http-version-header-matches-meta",
-          "status": "untested",
+          "status": "tested",
           "text": "The header value MUST match the io.modelcontextprotocol/protocolVersion field carried in the request body _meta.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header"
         },
@@ -481,31 +858,31 @@
         },
         {
           "check": "sep-2575-server-honors-notification-filter",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT send notification types the client has not explicitly requested.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#opening-a-stream"
         },
         {
           "check": "sep-2575-server-sends-subscription-ack",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST send notifications/subscriptions/acknowledged as the first message on the stream.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/utilities/subscriptions#acknowledgment"
         },
         {
           "check": "sep-2575-client-declares-elicitation-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support elicitation MUST declare the elicitation capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/elicitation#capabilities"
         },
         {
           "check": "sep-2575-client-declares-roots-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support roots MUST declare the roots capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/roots#capabilities"
         },
         {
           "check": "sep-2575-client-declares-sampling-capability",
-          "status": "untested",
+          "status": "tested",
           "text": "Clients that support sampling MUST declare the sampling capability in _meta.io.modelcontextprotocol/clientCapabilities on each request.",
           "url": "https://modelcontextprotocol.io/specification/draft/client/sampling#capabilities"
         },
@@ -517,24 +894,40 @@
         },
         {
           "check": "sep-2575-server-sends-prompts-list-changed-on-subscription",
-          "status": "untested",
+          "status": "tested",
           "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with promptsListChanged: true.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/prompts#list-changed-notification"
         },
         {
           "check": "sep-2575-server-sends-tools-list-changed-on-subscription",
-          "status": "untested",
+          "status": "tested",
           "text": "[A server with the listChanged] capability SHOULD send a notification to clients that have opened a subscriptions/listen stream with toolsListChanged: true.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#list-changed-notification"
         },
         {
           "check": "sep-2575-server-no-log-without-loglevel",
-          "status": "untested",
+          "status": "tested",
           "text": "The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].",
           "url": "https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level"
         }
       ],
       "excluded": [
+        {
+          "text": "A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).",
+          "reason": "internal server state, not directly wire-observable; the observable consequence (rejecting requests with incomplete _meta rather than falling back to remembered state) is covered by sep-2575-request-meta-invalid-* — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "Servers MUST NOT require that a client reuse the same connection to perform related operations.",
+          "reason": "not observable from a black-box harness; every harness request already arrives on an independent connection — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "Closing the SSE response stream MUST be treated by the server as cancellation of that request.",
+          "reason": "\"treated as cancellation\" is internal server state; once the stream is closed there is no channel left on which to observe the effect — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
+        {
+          "text": "The server SHOULD stop work on the cancelled request as soon as practical and MUST NOT send any further messages for it [HTTP].",
+          "reason": "\"stop work as soon as practical\" is unobservable from a black-box harness, and \"no further messages\" cannot be verified once the response stream is closed — see https://github.com/modelcontextprotocol/conformance/issues/296"
+        },
         {
           "text": "State that needs to span multiple requests (e.g., long-running tasks, application-level handles) MUST be referenced by an explicit identifier the client passes on each request.",
           "reason": "architectural guidance, observable only via subscriptionId/task-id rows already listed"
@@ -587,9 +980,9 @@
         "sep-2575-request-meta-invalid-missing-protocol-version"
       ],
       "summary": {
-        "tested": 8,
-        "untested": 18,
-        "excluded": 9,
+        "tested": 22,
+        "untested": 0,
+        "excluded": 13,
         "untracked": 11,
         "unkeyed": 0
       }

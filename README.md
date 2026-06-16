@@ -63,13 +63,14 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
-- `--suite` - Run a suite of tests in parallel (e.g., "auth")
-- `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `DRAFT-2026-v1`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios
+- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
+- `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `2026-07-28`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
+- `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
-The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. When `--spec-version` is passed, its resolved value is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it.
+The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. When `--spec-version` is passed, its resolved value is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it. Clients under test must derive the lifecycle from the protocol version they are asked to run: dated versions through `2025-11-25` use the stateful lifecycle (initialize handshake), while the 2026 draft (`2026-07-28`) uses the stateless lifecycle (per-request `_meta`).
 
 ### Server Testing
 
@@ -81,7 +82,7 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `--url` - URL of the server to test
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
-- `--suite <suite>` - Suite to run: "active" (default), "all", or "pending"
+- `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
 
@@ -237,6 +238,11 @@ npm start -- sdk --path ../typescript-sdk --skip-build --mode client
 # Narrow to one scenario / suite
 npm start -- sdk --path ../typescript-sdk --mode server --scenario server-initialize
 npm start -- sdk typescript-sdk --mode client --suite auth
+
+# Target a specific spec version (passed through to the underlying run).
+# When omitted, the SDK's `specVersion` from KNOWN_SDKS is used, if set —
+# e.g. typescript-sdk-v1 defaults to 2025-11-25.
+npm start -- sdk typescript-sdk --mode client --spec-version draft
 ```
 
 Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.

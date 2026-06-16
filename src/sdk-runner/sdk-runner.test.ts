@@ -44,6 +44,14 @@ describe('SdkConfigSchema', () => {
     expect(cfg.server).toBeUndefined();
   });
 
+  it('accepts an optional specVersion default', () => {
+    const cfg = SdkConfigSchema.parse({
+      client: { command: 'tsx fixture.ts' },
+      specVersion: '2025-11-25'
+    });
+    expect(cfg.specVersion).toBe('2025-11-25');
+  });
+
   it('rejects server config without a url', () => {
     expect(() =>
       SdkConfigSchema.parse({ server: { command: 'tsx server.ts' } })
@@ -69,14 +77,31 @@ describe('lookupBuiltinConfig', () => {
     expect(lookupBuiltinConfig('rust-sdk')).toBeNull();
   });
 
+  it('exposes python-sdk-v1 with repo + defaultRef + specVersion and both commands', () => {
+    const py = lookupBuiltinConfig('python-sdk-v1');
+    expect(py?.repo).toBe('python-sdk');
+    expect(py?.defaultRef).toBe('v1.x');
+    expect(py?.specVersion).toBe('2025-11-25');
+    expect(py?.client?.command).toContain('client.py');
+    expect(py?.server?.command).toContain('mcp-everything-server');
+    expect(py?.server?.url).toBe('http://localhost:3000/mcp');
+  });
+
   it('exposes the typescript-sdk-v1 alias with repo + defaultRef', () => {
     const v1 = lookupBuiltinConfig('typescript-sdk-v1');
     expect(v1?.repo).toBe('typescript-sdk');
     expect(v1?.defaultRef).toBe('v1.x');
   });
 
-  it('bare typescript-sdk (v2) has no defaultRef', () => {
+  it('typescript-sdk-v1 defaults to the latest dated spec version', () => {
+    expect(lookupBuiltinConfig('typescript-sdk-v1')?.specVersion).toBe(
+      '2025-11-25'
+    );
+  });
+
+  it('bare typescript-sdk (v2) has no defaultRef or specVersion default', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.defaultRef).toBeUndefined();
+    expect(lookupBuiltinConfig('typescript-sdk')?.specVersion).toBeUndefined();
   });
 
   it('every built-in entry validates against SdkConfigSchema', () => {

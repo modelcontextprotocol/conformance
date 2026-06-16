@@ -2,13 +2,23 @@
  * Tools test scenarios for MCP servers
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
-import { connectToServer, NotificationCollector } from './client-helper';
 import {
-  CallToolResultSchema,
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types';
+import type { RunContext } from '../../connection';
+import type {
+  ListToolsResult,
+  CallToolResult
+} from '../../spec-types/2025-06-18';
+import {
+  connectToServer,
+  NotificationCollector
+} from '../../connection/sdk-client';
+import {
   CreateMessageRequestSchema,
-  ElicitRequestSchema,
-  Progress
+  ElicitRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 
 const TOOL_NAME_PATTERN = /^[A-Za-z0-9_./-]+$/;
@@ -21,7 +31,7 @@ const TOOLS_NAME_FORMAT_SPEC_REFS = [
   },
   {
     id: 'SEP-986',
-    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/SEP/SEP-986.md'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-names'
   }
 ];
 
@@ -104,13 +114,13 @@ export class ToolsListScenario implements ClientScenario {
   - \`description\` (string)
   - \`inputSchema\` (valid JSON Schema object)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.listTools();
+      const result = await conn.request<ListToolsResult>('tools/list');
 
       // Validate response structure
       const errors: string[] = [];
@@ -153,7 +163,7 @@ export class ToolsListScenario implements ClientScenario {
       // names MUST be 1-64 chars matching ^[A-Za-z0-9_./-]+$
       checks.push(buildToolsNameFormatCheck(result.tools));
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-list',
@@ -195,13 +205,13 @@ Implement tool \`test_simple_text\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.callTool({
+      const result = await conn.request<CallToolResult>('tools/call', {
         name: 'test_simple_text'
         /* omit arguments as it is not required in the schema */
       });
@@ -238,7 +248,7 @@ Implement tool \`test_simple_text\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-simple-text',
@@ -283,13 +293,13 @@ Implement tool \`test_image_content\` with no arguments that returns:
 
 **Implementation Note**: Use a minimal test image (e.g., 1x1 red pixel PNG)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.callTool({
+      const result = await conn.request<CallToolResult>('tools/call', {
         name: 'test_image_content',
         arguments: {}
       });
@@ -326,7 +336,7 @@ Implement tool \`test_image_content\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-image',
@@ -381,13 +391,13 @@ Implement tool \`test_multiple_content_types\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.callTool({
+      const result = await conn.request<CallToolResult>('tools/call', {
         name: 'test_multiple_content_types',
         arguments: {}
       });
@@ -427,7 +437,7 @@ Implement tool \`test_multiple_content_types\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-mixed-content',
@@ -451,7 +461,10 @@ Implement tool \`test_multiple_content_types\` with no arguments that returns:
 
 export class ToolsCallWithLoggingScenario implements ClientScenario {
   name = 'tools-call-with-logging';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test tool that sends log messages during execution.
 
 **Server Implementation Requirements:**
@@ -467,7 +480,8 @@ Implement tool \`test_tool_with_logging\` with no arguments.
 
 **Implementation Note**: The delays are important to test that clients can receive multiple log notifications during tool execution`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -563,13 +577,13 @@ Implement tool \`test_error_handling\` with no arguments.
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result: any = await connection.client.callTool({
+      const result: any = await conn.request<CallToolResult>('tools/call', {
         name: 'test_error_handling',
         arguments: {}
       });
@@ -601,7 +615,7 @@ Implement tool \`test_error_handling\` with no arguments.
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-error',
@@ -656,31 +670,32 @@ If no progress token provided, just execute with delays.
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
-      const progressUpdates: Array<Progress> = [];
-      // TODO: investigate why await connection.client.callTool didn't work for progress.
-      const result = await connection.client.request(
-        {
-          method: 'tools/call',
-          params: {
-            name: 'test_tool_with_progress',
-            arguments: {},
-            _meta: {
-              progressToken: 'progress-test-1'
-            }
-          }
-        },
-        CallToolResultSchema,
-        {
-          onprogress: (progress) => {
-            progressUpdates.push(progress);
-          }
+      const conn = await ctx.connect();
+      const result = await conn.request<CallToolResult>('tools/call', {
+        name: 'test_tool_with_progress',
+        arguments: {},
+        _meta: {
+          progressToken: 'progress-test-1'
         }
-      );
+      });
+
+      const progressUpdates = conn.notifications
+        .filter((n) => n.method === 'notifications/progress')
+        .map(
+          (n) =>
+            n.params as {
+              progressToken?: string | number;
+              progress: number;
+              total?: number;
+            }
+        )
+        // The server must echo the request's progressToken back; ignore
+        // notifications for other tokens.
+        .filter((p) => p.progressToken === 'progress-test-1');
 
       const errors: string[] = [];
       if (progressUpdates.length === 0) {
@@ -716,12 +731,12 @@ If no progress token provided, just execute with delays.
         ],
         details: {
           progressCount: progressUpdates.length,
-          progressNotifications: progressUpdates.map((n: Progress) => n),
+          progressNotifications: progressUpdates,
           result
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-with-progress',
@@ -745,7 +760,10 @@ If no progress token provided, just execute with delays.
 
 export class ToolsCallSamplingScenario implements ClientScenario {
   name = 'tools-call-sampling';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test tool that requests LLM sampling from client.
 
 **Server Implementation Requirements:**
@@ -790,7 +808,8 @@ Implement tool \`test_sampling\` with argument:
 
 **Implementation Note**: If the client doesn't support sampling (no \`sampling\` capability), return an error.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -873,7 +892,10 @@ Implement tool \`test_sampling\` with argument:
 
 export class ToolsCallElicitationScenario implements ClientScenario {
   name = 'tools-call-elicitation';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test tool that requests user input (elicitation) from client.
 
 **Server Implementation Requirements:**
@@ -923,7 +945,8 @@ Implement tool \`test_elicitation\` with argument:
 
 **Implementation Note**: If the client doesn't support elicitation (no \`elicitation\` capability), return an error.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
@@ -1025,13 +1048,13 @@ Implement tool \`test_audio_content\` with no arguments that returns:
 
 **Implementation Note**: Use a minimal test audio file`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.callTool({
+      const result = await conn.request<CallToolResult>('tools/call', {
         name: 'test_audio_content',
         arguments: {}
       });
@@ -1075,7 +1098,7 @@ Implement tool \`test_audio_content\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-audio',
@@ -1121,13 +1144,13 @@ Implement tool \`test_embedded_resource\` with no arguments that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.callTool({
+      const result = await conn.request<CallToolResult>('tools/call', {
         name: 'test_embedded_resource',
         arguments: {}
       });
@@ -1174,7 +1197,7 @@ Implement tool \`test_embedded_resource\` with no arguments that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'tools-call-embedded-resource',

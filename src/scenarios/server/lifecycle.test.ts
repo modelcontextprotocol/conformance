@@ -1,7 +1,8 @@
+import { testContext } from '../../connection/testing';
 import { ServerInitializeScenario } from './lifecycle';
-import { connectToServer } from './client-helper';
+import { connectToServer } from '../../connection/sdk-client';
 
-vi.mock('./client-helper', () => ({
+vi.mock('../../connection/sdk-client', () => ({
   connectToServer: vi.fn()
 }));
 
@@ -26,7 +27,9 @@ describe('ServerInitializeScenario', () => {
   it('returns INFO when the server does not provide an MCP-Session-Id header', async () => {
     fetchMock.mockResolvedValue(new Response(null));
 
-    const checks = await new ServerInitializeScenario().run(serverUrl);
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
 
     expect(connectToServer).toHaveBeenCalledWith(serverUrl);
     expect(closeMock).toHaveBeenCalled();
@@ -59,7 +62,9 @@ describe('ServerInitializeScenario', () => {
       })
     );
 
-    const checks = await new ServerInitializeScenario().run(serverUrl);
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
 
     expect(checks[1]).toMatchObject({
       id: 'server-session-id-visible-ascii',
@@ -79,7 +84,9 @@ describe('ServerInitializeScenario', () => {
       })
     );
 
-    const checks = await new ServerInitializeScenario().run(serverUrl);
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
 
     expect(checks[1]).toMatchObject({
       id: 'server-session-id-visible-ascii',

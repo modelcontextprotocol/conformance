@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * Shared HTTP test-server scaffold for client-under-test SEP-2243 scenarios.
  *
@@ -27,7 +28,7 @@ export abstract class BaseHttpScenario implements Scenario {
   protected port: number = 0;
   protected sessionId: string = `session-${Date.now()}`;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);

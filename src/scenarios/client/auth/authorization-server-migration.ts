@@ -6,6 +6,7 @@
  * to AS₂. On the next 401 the client re-discovers PRM, sees a new issuer, and
  * MUST re-register with AS₂ rather than reuse AS₁'s client credentials.
  */
+import type { ScenarioContext } from '../../../mock-server';
 import type { Request, Response, NextFunction } from 'express';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -25,7 +26,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 
@@ -36,7 +37,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     let as2SawAs1ClientIdAtToken = false;
 
     // ── AS₁ ────────────────────────────────────────────────────────────────
-    const as1App = createAuthServer(this.checks, this.as1.getUrl, {
+    const as1App = createAuthServer(ctx, this.checks, this.as1.getUrl, {
       tokenVerifier,
       onRegistrationRequest: () => ({
         clientId: AS1_CLIENT_ID,
@@ -46,7 +47,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     await this.as1.start(as1App);
 
     // ── AS₂ ────────────────────────────────────────────────────────────────
-    const as2App = createAuthServer(this.checks, this.as2.getUrl, {
+    const as2App = createAuthServer(ctx, this.checks, this.as2.getUrl, {
       tokenVerifier,
       onRegistrationRequest: () => {
         as2SawRegister = true;
@@ -125,6 +126,7 @@ export class AuthorizationServerMigrationScenario implements Scenario {
     };
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       currentAuthServerUrl,

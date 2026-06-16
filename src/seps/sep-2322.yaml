@@ -1,0 +1,116 @@
+sep: 2322
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/utilities/mrtr
+requirements:
+  # ── ResultType (basic/index.mdx) ───────────────────────────────────────────
+  - check: sep-2322-result-type-included
+    text: 'The resultType field MUST be included to indicate the type of the result.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#resulttype
+
+  - check: sep-2322-default-result-type-complete
+    text: 'If resultType is not specified, clients MUST assume a default value of "complete" for backwards compatibility.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/index#resulttype
+
+  # ── Supported Requests ─────────────────────────────────────────────────────
+  - check: sep-2322-not-on-unsupported-requests
+    text: 'Servers MUST NOT send InputRequiredResult responses on any other client requests.'
+
+  # ── Server Requirements (Basic Workflow) ───────────────────────────────────
+  - check: sep-2322-elicitation-incomplete
+    text: 'inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (elicitation variant)'
+
+  - check: sep-2322-sampling-incomplete
+    text: 'inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (sampling variant)'
+
+  - check: sep-2322-list-roots-incomplete
+    text: 'inputRequests values are request objects that MUST be one of ElicitRequest, CreateMessageRequest, or ListRootsRequest (list roots variant)'
+
+  - check: sep-2322-reject-tampered-state
+    text: 'If requestState influences authorization, resource access, or business logic, servers MUST protect its integrity and MUST reject state that fails verification.'
+
+  - check: sep-2322-request-state-incomplete
+    text: 'Servers MUST include at least one of inputRequests or requestState in every InputRequiredResult response.'
+
+  - check: sep-2322-respect-client-capabilities
+    text: 'Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities.'
+
+  # ── Client Requirements (Basic Workflow) ───────────────────────────────────
+  - check: sep-2322-client-request-state-echoed
+    text: 'If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents.'
+
+  - check: sep-2322-client-no-state-omitted
+    text: 'If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry.'
+
+  - check: sep-2322-client-jsonrpc-id-different
+    text: 'The JSON-RPC id MUST be different between the initial request and the retry, as they are independent requests.'
+
+  - check: sep-2322-client-parallel-isolation
+    text: "Both the inputRequests and requestState fields affect only the client's retry of the original request. They MUST NOT be used for any other request that the client may be sending in parallel."
+
+  # Scenario flow gates (sep-2322-*-complete, sep-2322-multi-round-r*,
+  # sep-2322-non-tool-*, sep-2322-multiple-inputs-incomplete) intentionally
+  # have no rows here: they verify the end-to-end MRTR flow rather than a
+  # specific RFC-2119 sentence, so they surface in the traceability manifest's
+  # `untracked` list instead of claiming requirement coverage.
+
+  # ── Error Handling ─────────────────────────────────────────────────────────
+  - check: sep-2322-validate-input-responses
+    text: 'Servers SHOULD validate that the data provided by the client is a valid InputResponses object and that the information inside can be correctly parsed.'
+
+  - check: sep-2322-error-on-protocol-error
+    text: 'Protocol errors (malformed JSON, invalid schema, internal server errors) SHOULD return a JSON-RPC error response with an appropriate error code and message.'
+
+  - check: sep-2322-ignore-unexpected-params
+    text: 'If additional, unexpected parameters are provided in the InputResponses object, the server SHOULD ignore any information it does not recognize or need.'
+
+  - check: sep-2322-missing-response-rerequests
+    text: 'If the client fails to send all the information requested in a previous InputRequests, and the missing information is necessary for the server to process the request, the server SHOULD respond with a new InputRequiredResult requesting the missing information again, rather than returning an error.'
+
+  # ── Excluded requirements ──────────────────────────────────────────────────
+
+  - text: 'inputRequests keys are server assigned identifiers and MUST be unique within the scope of the request.'
+    excluded: 'inputRequests is a JSON object; duplicate keys are collapsed by JSON parsing before the harness can observe them, so key uniqueness is not testable at the protocol level'
+
+  - text: 'Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) using the MRTR pattern.'
+    excluded: 'Architectural migration statement; tested indirectly through all MRTR scenarios'
+
+  - text: 'servers MUST treat requestState as an attacker-controlled input'
+    excluded: 'Internal security posture; not observable at protocol level'
+
+  - text: 'servers MUST protect its integrity (e.g. HMAC or AEAD)'
+    excluded: 'Internal implementation choice about encryption/signing; not observable at protocol level'
+
+  - text: 'servers SHOULD include the authenticated principal, a short expiry (TTL), and an identifier for the originating request inside the integrity-protected requestState payload and verify each on receipt'
+    excluded: 'Internal requestState format; not observable at protocol level'
+
+  - text: 'Servers for which a given requestState must be consumed at most once MUST enforce that invariant server-side'
+    excluded: 'Internal enforcement policy; conformance harness cannot determine which servers require single-use semantics'
+
+  - text: 'Servers MUST NOT assume that clients will fulfill the inputRequests or retry the original request'
+    excluded: 'Server-internal robustness assumption; not observable at protocol level'
+
+  - text: 'Servers MUST validate request state as described in the server requirements above.'
+    excluded: 'Duplicates integrity-protection requirements above; internal security detail'
+
+  - text: 'Servers MUST include an inputRequests field in the tasks/result response when the task is in status input_required.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'inputRequests keys are server assigned identifiers and MUST be unique within the scope of a Task.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'When tasks/get shows status input_required, clients MUST call tasks/result to get the inputRequests and optional requestState.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'Clients SHOULD construct the results of those requests and call tasks/input_response with the inputResponses & requestState (if present).'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'Receivers MUST reject tasks/input_response requests for tasks that are not in input_required status with error code -32602 (Invalid params).'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'When a receiver receives a tasks/result request for a task in working status, it MUST block the response until the task reaches a terminal status or input_required status.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'When a receiver receives a tasks/result request for a task in input_required status, it MUST return an InputRequiredResult containing the inputRequests that the requestor must fulfill.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'
+
+  - text: 'After sending tasks/input_response, the requestor SHOULD resume polling via tasks/get.'
+    excluded: 'Tasks moved to an extension as of SEP-2663; no longer part of core conformance'

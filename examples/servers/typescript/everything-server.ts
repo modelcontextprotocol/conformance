@@ -21,22 +21,104 @@ import {
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
   ElicitResultSchema,
+  ResultSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   type ListToolsResult,
   type Tool
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHmac } from 'crypto';
 
 // Server state
 const resourceSubscriptions = new Set<string>();
 const watchedResourceContent = 'Watched resource content';
 
+// HMAC-based requestState for SEP-2322 MRTR integrity tests
+const MRTR_STATE_SECRET = 'conformance-mrtr-secret-' + randomUUID();
+
+function signMrtState(payload: Record<string, unknown>): string {
+  const data = JSON.stringify(payload);
+  const hmac = createHmac('sha256', MRTR_STATE_SECRET)
+    .update(data)
+    .digest('hex');
+  return JSON.stringify({ data, hmac });
+}
+
+function verifyMrtState(raw: string): Record<string, unknown> | null {
+  try {
+    const { data, hmac } = JSON.parse(raw) as { data: string; hmac: string };
+    const expected = createHmac('sha256', MRTR_STATE_SECRET)
+      .update(data)
+      .digest('hex');
+    if (hmac !== expected) return null;
+    return JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function getMrtInputText(inputResponse: unknown, field: string): string {
+  const content = (inputResponse as Record<string, unknown> | undefined)
+    ?.content as Record<string, unknown> | undefined;
+  const value = content?.[field];
+  return typeof value === 'string' ? value : 'unknown';
+}
+
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory client connected to a fully-registered McpServer. Used by the
+// stateless POST handler to serve carry-forward methods (tools/call,
+// resources/*, prompts/get, completion/complete) without duplicating the
+// registrations. The SDK doesn't yet support a stateless server natively,
+// so this bridges via the in-memory transport after a one-time initialize.
+//
+// A fresh server+client pair is built per request so concurrent requests
+// can't observe each other's notifications.
+type DispatchClient = {
+  client: Client;
+  drainNotifications: () => unknown[];
+  close: () => Promise<void>;
+};
+async function getStatelessDispatchClient(): Promise<DispatchClient> {
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer();
+  await server.connect(serverT);
+  const client = new Client(
+    { name: 'stateless-dispatch', version: '1.0.0' },
+    { capabilities: { sampling: {}, elicitation: {} } }
+  );
+  await client.connect(clientT);
+
+  // Buffer notifications so the stateless handler can flush them to the SSE
+  // response after the request completes. The SDK pre-registers a handler for
+  // notifications/progress so a fallback alone would miss it.
+  const buffer: unknown[] = [];
+  const collect = async (n: unknown) =>
+    void buffer.push({ jsonrpc: '2.0', ...(n as object) });
+  client.setNotificationHandler(ProgressNotificationSchema, collect);
+  client.setNotificationHandler(LoggingMessageNotificationSchema, collect);
+  client.fallbackNotificationHandler = collect;
+
+  return {
+    client,
+    drainNotifications: () => buffer.splice(0, buffer.length),
+    close: async () => {
+      await client.close();
+      await server.close();
+    }
+  };
+}
 
 // In-memory event store for SEP-1699 resumability
 const eventStoreData = new Map<
@@ -89,6 +171,8 @@ const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
   type: 'object' as const,
   $defs: {
     address: {
+      // SEP-2106: reference keyword ($anchor) must be preserved
+      $anchor: 'addressDef',
       type: 'object',
       properties: {
         street: { type: 'string' },
@@ -98,8 +182,25 @@ const JSON_SCHEMA_2020_12_INPUT_SCHEMA = {
   },
   properties: {
     name: { type: 'string' },
-    address: { $ref: '#/$defs/address' }
+    address: { $ref: '#/$defs/address' },
+    contactMethod: { type: 'string', enum: ['phone', 'email'] },
+    phone: { type: 'string' },
+    email: { type: 'string' }
   },
+  // SEP-2106: the full JSON Schema 2020-12 vocabulary is permitted in
+  // inputSchema (alongside the required root `type: "object"`). These keywords
+  // exercise that SDKs preserve them through tools/list rather than stripping
+  // them down to properties/required.
+  //
+  // Composition keywords (allOf / anyOf):
+  allOf: [{ anyOf: [{ required: ['phone'] }, { required: ['email'] }] }],
+  // Conditional keywords (if / then / else):
+  if: {
+    properties: { contactMethod: { const: 'phone' } },
+    required: ['contactMethod']
+  },
+  then: { required: ['phone'] },
+  else: { required: ['email'] },
   additionalProperties: false
 };
 
@@ -127,6 +228,46 @@ function createMcpServer() {
       }
     }
   );
+
+  // SEP-2549: Wrap setRequestHandler so the SDK's own list handlers
+  // automatically get caching hints appended to their responses.
+  const originalSetRequestHandler = mcpServer.server.setRequestHandler.bind(
+    mcpServer.server
+  );
+  const listSchemasForCaching = new Set([
+    ListToolsRequestSchema,
+    ListPromptsRequestSchema,
+    ListResourcesRequestSchema,
+    ListResourceTemplatesRequestSchema
+  ]);
+  mcpServer.server.setRequestHandler = ((schema: any, handler: any) => {
+    if (listSchemasForCaching.has(schema)) {
+      return originalSetRequestHandler(schema, async (...args: any[]) => {
+        const result = await handler(...args);
+        return { ...result, ttlMs: 300000, cacheScope: 'public' as const };
+      });
+    }
+    return originalSetRequestHandler(schema, handler);
+  }) as typeof mcpServer.server.setRequestHandler;
+
+  const registerResourceWithCacheHints =
+    mcpServer.registerResource.bind(mcpServer);
+  mcpServer.registerResource = ((
+    name: string,
+    uriOrTemplate: string | ResourceTemplate,
+    config: any,
+    readCallback: any
+  ) =>
+    registerResourceWithCacheHints(
+      name,
+      uriOrTemplate as any,
+      config,
+      async (...args: any[]) => ({
+        ...(await readCallback(...args)),
+        ttlMs: 300000,
+        cacheScope: 'private' as const
+      })
+    )) as typeof mcpServer.registerResource;
 
   // Helper to send log messages using the underlying server
   function sendLog(
@@ -1024,6 +1165,8 @@ function createMcpServer() {
               _meta: tool._meta
             };
           })
+        // Note: SEP-2549 caching hints are added automatically by the
+        // setRequestHandler wrapper above
       };
     }
   );
@@ -1040,6 +1183,38 @@ function isInitializeRequest(body: any): boolean {
 
 // Use createMcpExpressApp for DNS rebinding protection on localhost
 const app = createMcpExpressApp();
+
+// Open subscriptions/listen streams (SEP-2575). Notifications are delivered
+// to whichever streams are open *at the time of the change* and whose filter
+// requested that notification type.
+interface ListenStream {
+  res: import('express').Response;
+  subscriptionId: string;
+  wantsTools: boolean;
+  wantsPrompts: boolean;
+}
+const activeListenStreams: ListenStream[] = [];
+
+function notifyListenStreams(
+  type: 'tools' | 'prompts',
+  notificationMethod: string
+) {
+  for (const stream of activeListenStreams) {
+    const wants = type === 'tools' ? stream.wantsTools : stream.wantsPrompts;
+    if (!wants) continue;
+    stream.res.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: notificationMethod,
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/subscriptionId': stream.subscriptionId
+          }
+        }
+      }) + '\n'
+    );
+  }
+}
 
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
 app.use(
@@ -1100,17 +1275,68 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32602, HTTP 400)
-    if (metaVersion !== 'DRAFT-2026-v1') {
+    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
+    if (metaVersion !== '2026-07-28') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32602,
+          code: -32004,
           message: 'UnsupportedProtocolVersionError',
-          data: { supported: ['DRAFT-2026-v1'] }
+          data: {
+            supported: ['2026-07-28'],
+            requested: String(metaVersion)
+          }
         }
       });
+    }
+
+    // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
+    if (method === 'subscriptions/listen') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Transfer-Encoding': 'chunked'
+      });
+
+      const requestedNotifications = params.notifications || {};
+      // The subscription ID matches the JSON-RPC id of the listen request.
+      const trackingSubId = String(id ?? 'sub-token-stateless-123');
+
+      const wantsTools = requestedNotifications.toolsListChanged === true;
+      const wantsPrompts = requestedNotifications.promptsListChanged === true;
+
+      // First message MUST be notifications/subscriptions/acknowledged carrying tracking token in _meta
+      // The `notifications` field echoes the subset of the requested filter the server honors.
+      const ackFrame = {
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: {
+          _meta: { 'io.modelcontextprotocol/subscriptionId': trackingSubId },
+          notifications: {
+            ...(wantsTools ? { toolsListChanged: true } : {}),
+            ...(wantsPrompts ? { promptsListChanged: true } : {})
+          }
+        }
+      };
+      res.write(JSON.stringify(ackFrame) + '\n');
+
+      // Keep the stream open and register it so list-changed notifications
+      // triggered by later requests are delivered to it. The stream ends when
+      // the client disconnects (which is also how the client cancels it).
+      const stream: ListenStream = {
+        res,
+        subscriptionId: trackingSubId,
+        wantsTools,
+        wantsPrompts
+      };
+      activeListenStreams.push(stream);
+      res.on('close', () => {
+        const index = activeListenStreams.indexOf(stream);
+        if (index !== -1) activeListenStreams.splice(index, 1);
+      });
+      return;
     }
 
     if (method === 'server/discover') {
@@ -1118,10 +1344,13 @@ app.post('/mcp', async (req, res) => {
         jsonrpc: '2.0',
         id,
         result: {
-          supportedVersions: ['DRAFT-2026-v1'],
+          supportedVersions: ['2026-07-28'],
           capabilities: {
-            tools: { listChanged: false }, // Explicitly declare capability flags to resolve check assertions
-            prompts: { listChanged: false }
+            tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
+            prompts: { listChanged: true },
+            // resources/list, resources/templates/list and resources/read are
+            // served on this path, so the capability must be declared too.
+            resources: {}
           },
           serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
         }
@@ -1129,32 +1358,280 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'tools/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          tools: [
-            {
-              name: 'test_missing_capability',
-              description: 'Test tool requiring sampling',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'tools/list', params: {} },
+          ResultSchema as any
+        )) as { tools: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            tools: [
+              ...fromServer.tools,
+              {
+                name: 'test_missing_capability',
+                description: 'Test tool requiring sampling',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_elicitation',
+                description:
+                  'MRTR: returns InputRequiredResult with elicitation request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_sampling',
+                description:
+                  'MRTR: returns InputRequiredResult with sampling request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_list_roots',
+                description:
+                  'MRTR: returns InputRequiredResult with roots/list request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_request_state',
+                description:
+                  'MRTR: returns InputRequiredResult with requestState',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multiple_inputs',
+                description:
+                  'MRTR: returns InputRequiredResult with multiple input requests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multi_round',
+                description: 'MRTR: multi-round InputRequiredResult workflow',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_tampered_state',
+                description: 'MRTR: HMAC-signed requestState integrity test',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_capabilities',
+                description:
+                  'MRTR: respects client capabilities in inputRequests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_streaming_elicitation',
+                description:
+                  'Diagnostic tool validating response progress streams',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_logging_tool',
+                description: 'Diagnostic logging validator tool',
+                inputSchema: { type: 'object', properties: {} }
+              }
+            ],
+            // SEP-2549 caching hints are required on cacheable list results.
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: { prompts: [] }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'prompts/list', params: {} },
+          ResultSchema as any
+        )) as { prompts: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            prompts: [
+              ...fromServer.prompts,
+              {
+                name: 'test_input_required_result_prompt',
+                description: 'MRTR: prompt that requires elicitation input'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    // SEP-2322 MRTR: prompts/get handler
+    if (method === 'prompts/get') {
+      if (params.name === 'test_input_required_result_prompt') {
+        const inputResponses = params.inputResponses as
+          | Record<string, unknown>
+          | undefined;
+        if (inputResponses?.['user_context']) {
+          const context = getMrtInputText(
+            inputResponses['user_context'],
+            'context'
+          );
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              messages: [
+                {
+                  role: 'user',
+                  content: {
+                    type: 'text',
+                    text: `Prompt with context: ${context}`
+                  }
+                }
+              ]
+            }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              user_context: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'What context should the prompt use?',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { context: { type: 'string' } },
+                    required: ['context']
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    // Resources on the stateless path (SEP-2575): the McpServer-registered
+    // resources are merged with the stateless-only resource, mirroring the
+    // tools/list and prompts/list handlers above (SEP-2549 hints + SEP-2164
+    // errors via the carry-forward dispatch below).
+    if (method === 'resources/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/list', params: {} },
+          ResultSchema as any
+        )) as { resources: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            resources: [
+              ...fromServer.resources,
+              {
+                uri: 'test://stateless-static-text',
+                name: 'Stateless Static Text',
+                description: 'A static text resource served on the draft path',
+                mimeType: 'text/plain'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/templates/list') {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/templates/list', params: {} },
+          ResultSchema as any
+        )) as { resourceTemplates: any[]; [k: string]: unknown };
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+    }
+
+    if (method === 'resources/read') {
+      const uri = params.uri as string | undefined;
+      if (uri === 'test://stateless-static-text') {
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'text/plain',
+                text: 'Static text content from the stateless draft path.'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'private'
+          }
+        });
+      }
+      // Other URIs (including unknown ones) fall through to the carry-forward
+      // dispatch below, which serves the McpServer-registered resources.
     }
 
     if (method === 'tools/call') {
       const name = params.name;
+      const inputResponses = params.inputResponses as
+        | Record<string, unknown>
+        | undefined;
+      const requestState = params.requestState as string | undefined;
+
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
 
@@ -1175,6 +1652,595 @@ app.post('/mcp', async (req, res) => {
           id,
           result: { content: [{ type: 'text', text: 'Success' }] }
         });
+      }
+
+      // ===== SEP-2322 MRTR tools/call handlers =====
+
+      if (name === 'test_input_required_result_elicitation') {
+        if (inputResponses?.['user_name']) {
+          const userName = getMrtInputText(inputResponses['user_name'], 'name');
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: `Hello, ${userName}!` }] }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              user_name: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'What is your name?',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { name: { type: 'string' } },
+                    required: ['name']
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_sampling') {
+        if (inputResponses?.['sample_request']) {
+          const sample = inputResponses['sample_request'] as Record<
+            string,
+            unknown
+          >;
+          const content = sample.content as Record<string, unknown> | undefined;
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: `Sampling result: ${typeof content?.text === 'string' ? content.text : 'no response'}`
+                }
+              ]
+            }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              sample_request: {
+                method: 'sampling/createMessage',
+                params: {
+                  messages: [
+                    {
+                      role: 'user',
+                      content: {
+                        type: 'text',
+                        text: 'What is the capital of France?'
+                      }
+                    }
+                  ],
+                  maxTokens: 100
+                }
+              }
+            }
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_list_roots') {
+        if (inputResponses?.['roots_request']) {
+          const rootsResult = inputResponses['roots_request'] as Record<
+            string,
+            unknown
+          >;
+          const roots = Array.isArray(rootsResult.roots)
+            ? rootsResult.roots
+            : [];
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [{ type: 'text', text: `Found ${roots.length} root(s)` }]
+            }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              roots_request: { method: 'roots/list', params: {} }
+            }
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_request_state') {
+        if (requestState && inputResponses?.['confirm']) {
+          const state = JSON.parse(requestState) as Record<string, unknown>;
+          const ok = (inputResponses['confirm'] as Record<string, unknown>)
+            ?.content as Record<string, unknown> | undefined;
+          if (state.kind === 'request-state' && ok?.ok === true) {
+            return res.json({
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [
+                  { type: 'text', text: 'state-ok: requestState validated' }
+                ]
+              }
+            });
+          }
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              confirm: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'Please confirm',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { ok: { type: 'boolean' } },
+                    required: ['ok']
+                  }
+                }
+              }
+            },
+            requestState: JSON.stringify({
+              kind: 'request-state',
+              nonce: randomUUID()
+            })
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_multiple_inputs') {
+        if (
+          requestState &&
+          inputResponses?.['user_name'] &&
+          inputResponses['greeting'] &&
+          inputResponses['client_roots']
+        ) {
+          const state = JSON.parse(requestState) as Record<string, unknown>;
+          if (state.kind === 'multiple-inputs') {
+            const userName = getMrtInputText(
+              inputResponses['user_name'],
+              'name'
+            );
+            const greetingContent = (
+              inputResponses['greeting'] as Record<string, unknown>
+            ).content as Record<string, unknown> | undefined;
+            const greeting =
+              typeof greetingContent?.text === 'string'
+                ? greetingContent.text
+                : 'Hello there!';
+            const rootsResult = inputResponses['client_roots'] as Record<
+              string,
+              unknown
+            >;
+            const roots = Array.isArray(rootsResult.roots)
+              ? rootsResult.roots
+              : [];
+            return res.json({
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: `Name: ${userName}; Greeting: ${greeting}; Roots: ${roots.length}`
+                  }
+                ]
+              }
+            });
+          }
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              user_name: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'What is your name?',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { name: { type: 'string' } },
+                    required: ['name']
+                  }
+                }
+              },
+              greeting: {
+                method: 'sampling/createMessage',
+                params: {
+                  messages: [
+                    {
+                      role: 'user',
+                      content: { type: 'text', text: 'Generate a greeting' }
+                    }
+                  ],
+                  maxTokens: 50
+                }
+              },
+              client_roots: { method: 'roots/list', params: {} }
+            },
+            requestState: JSON.stringify({
+              kind: 'multiple-inputs',
+              nonce: randomUUID()
+            })
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_multi_round') {
+        if (!requestState) {
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              resultType: 'input_required',
+              inputRequests: {
+                step1: {
+                  method: 'elicitation/create',
+                  params: {
+                    message: 'Step 1: What is your name?',
+                    requestedSchema: {
+                      type: 'object',
+                      properties: { name: { type: 'string' } },
+                      required: ['name']
+                    }
+                  }
+                }
+              },
+              requestState: JSON.stringify({ round: 1, nonce: randomUUID() })
+            }
+          });
+        }
+        const state = JSON.parse(requestState) as Record<string, unknown>;
+        if (state.round === 1 && inputResponses?.['step1']) {
+          const userName = getMrtInputText(inputResponses['step1'], 'name');
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              resultType: 'input_required',
+              inputRequests: {
+                step2: {
+                  method: 'elicitation/create',
+                  params: {
+                    message: 'Step 2: What is your favorite color?',
+                    requestedSchema: {
+                      type: 'object',
+                      properties: { color: { type: 'string' } },
+                      required: ['color']
+                    }
+                  }
+                }
+              },
+              requestState: JSON.stringify({
+                round: 2,
+                name: userName,
+                nonce: randomUUID()
+              })
+            }
+          });
+        }
+        if (state.round === 2 && inputResponses?.['step2']) {
+          const userName =
+            typeof state.name === 'string' ? state.name : 'friend';
+          const color = getMrtInputText(inputResponses['step2'], 'color');
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: `Multi-round complete for ${userName} who likes ${color}`
+                }
+              ]
+            }
+          });
+        }
+        // Fallback: restart
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              step1: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'Step 1: What is your name?',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { name: { type: 'string' } },
+                    required: ['name']
+                  }
+                }
+              }
+            },
+            requestState: JSON.stringify({ round: 1, nonce: randomUUID() })
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_tampered_state') {
+        if (requestState) {
+          const verified = verifyMrtState(requestState);
+          if (!verified) {
+            return res.json({
+              jsonrpc: '2.0',
+              id,
+              error: {
+                code: -32602,
+                message: 'requestState integrity check failed'
+              }
+            });
+          }
+          if (verified.kind === 'tamper-test' && inputResponses?.['confirm']) {
+            return res.json({
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [
+                  { type: 'text', text: 'integrity-ok: state verified' }
+                ]
+              }
+            });
+          }
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              confirm: {
+                method: 'elicitation/create',
+                params: {
+                  message: 'Please confirm',
+                  requestedSchema: {
+                    type: 'object',
+                    properties: { ok: { type: 'boolean' } },
+                    required: ['ok']
+                  }
+                }
+              }
+            },
+            requestState: signMrtState({
+              kind: 'tamper-test',
+              nonce: randomUUID()
+            })
+          }
+        });
+      }
+
+      if (name === 'test_input_required_result_capabilities') {
+        const clientCaps = meta[
+          'io.modelcontextprotocol/clientCapabilities'
+        ] as Record<string, unknown> | undefined;
+        const inputRequests: Record<string, unknown> = {};
+
+        if (clientCaps?.elicitation) {
+          inputRequests['elicit_input'] = {
+            method: 'elicitation/create',
+            params: {
+              message: 'Elicitation input',
+              requestedSchema: {
+                type: 'object',
+                properties: { value: { type: 'string' } },
+                required: ['value']
+              }
+            }
+          };
+        }
+        if (clientCaps?.sampling) {
+          inputRequests['sample_input'] = {
+            method: 'sampling/createMessage',
+            params: {
+              messages: [
+                {
+                  role: 'user',
+                  content: { type: 'text', text: 'Sample request' }
+                }
+              ],
+              maxTokens: 50
+            }
+          };
+        }
+
+        if (inputResponses && Object.keys(inputResponses).length > 0) {
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: `capabilities-ok: received ${Object.keys(inputResponses).join(',')}`
+                }
+              ]
+            }
+          });
+        }
+        if (Object.keys(inputRequests).length === 0) {
+          return res.json({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              content: [
+                { type: 'text', text: 'No supported capabilities declared' }
+              ]
+            }
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests,
+            requestState: signMrtState({
+              kind: 'capabilities-test',
+              nonce: randomUUID()
+            })
+          }
+        });
+      }
+
+      // Progressive IncompleteResult Stream Generator Handling
+      if (name === 'test_streaming_elicitation') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        res.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'notifications/progress', // Emits standard progress notice
+            params: { progressToken: 'token-abc', total: 100, value: 50 }
+          }) + '\n'
+        );
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Streaming complete' }] }
+          })
+        );
+      }
+
+      // Contextual Logging Constraints Verification Handler
+      if (name === 'test_logging_tool') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Transfer-Encoding': 'chunked'
+        });
+
+        // RULE: No logs allowed if meta configuration lacks explicit log level bounds
+        if (meta && meta['io.modelcontextprotocol/logLevel']) {
+          res.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'notifications/message',
+              params: {
+                level: 'info',
+                text: 'Diagnostic trace logging activated'
+              }
+            }) + '\n'
+          );
+        }
+
+        return res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
+          })
+        );
+      }
+
+      // Helper mutation hooks used by dynamic tests to force stream activity
+      // evaluation. The list change is fanned out to whichever
+      // subscriptions/listen streams are currently open and asked for it.
+      if (
+        name === 'test_trigger_tool_change' ||
+        name === 'test_trigger_prompt_change'
+      ) {
+        if (name === 'test_trigger_tool_change') {
+          notifyListenStreams('tools', 'notifications/tools/list_changed');
+        } else {
+          notifyListenStreams('prompts', 'notifications/prompts/list_changed');
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
+        });
+      }
+    }
+
+    // Carry-forward methods that fell through the MRTR-specific handlers above
+    // (tools/call for non-MRTR tools, resources/*, prompts/get for non-MRTR
+    // prompts, completion/complete) are dispatched to the same McpServer the
+    // stateful path uses, via an in-memory client. This avoids duplicating the
+    // tool/resource/prompt registrations for the stateless path.
+    //
+    // tools/call is served as text/event-stream so progress and logging
+    // notifications from the underlying tool reach the conformance client.
+    if (method === 'tools/call') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      const write = (msg: unknown) =>
+        res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+      return res.end();
+    }
+    if (
+      [
+        'resources/list',
+        'resources/read',
+        'resources/templates/list',
+        'prompts/get',
+        'completion/complete'
+      ].includes(method)
+    ) {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        return res.json({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        // SEP-2164: unknown resources get -32602 with the requested uri in
+        // data; the SDK's McpError does not populate data itself.
+        const data =
+          e.data ??
+          (method === 'resources/read' ? { uri: params.uri } : undefined);
+        return res.json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data }
+        });
+      } finally {
+        await dispatch.close();
       }
     }
 

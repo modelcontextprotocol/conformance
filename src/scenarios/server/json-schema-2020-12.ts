@@ -1,25 +1,58 @@
 /**
- * JSON Schema 2020-12 conformance test scenario (SEP-1613)
+ * JSON Schema 2020-12 conformance test scenario (SEP-1613, SEP-2106)
  *
  * Validates that MCP servers correctly preserve JSON Schema 2020-12 keywords
  * in tool definitions, ensuring implementations don't strip $schema, $defs,
- * or additionalProperties fields.
+ * or additionalProperties fields (SEP-1613).
+ *
+ * SEP-2106 broadened inputSchema to permit the full JSON Schema 2020-12
+ * vocabulary alongside the required root `type: "object"`. This scenario also
+ * verifies that composition (allOf/anyOf), conditional (if/then/else), and
+ * reference ($anchor) keywords survive tools/list rather than being stripped.
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
-import { connectToServer } from './client-helper.js';
+import {
+  CheckStatus,
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types.js';
+import type { RunContext } from '../../connection';
+import type { ListToolsResult } from '../../spec-types/2025-11-25';
 
 const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
 const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 
+/**
+ * Soft version gate for the SEP-2106 keyword-preservation checks.
+ *
+ * Preserving the broader JSON Schema 2020-12 vocabulary is good behavior at
+ * any protocol version, so a server that preserves the keywords gets SUCCESS
+ * regardless. Stripping them is only a conformance FAILURE when the run
+ * targets a protocol version that includes SEP-2106 (the draft); when
+ * targeting an earlier dated version the requirement does not apply, so the
+ * check is SKIPPED rather than failed.
+ */
+export function sep2106KeywordCheckStatus(
+  preserved: boolean,
+  targetProtocolVersion: string
+): CheckStatus {
+  if (preserved) {
+    return 'SUCCESS';
+  }
+  return targetProtocolVersion === DRAFT_PROTOCOL_VERSION
+    ? 'FAILURE'
+    : 'SKIPPED';
+}
+
 export class JsonSchema2020_12Scenario implements ClientScenario {
   name = 'json-schema-2020-12';
   readonly source = { introducedIn: '2025-11-25' } as const;
-  description = `Validates JSON Schema 2020-12 keyword preservation (SEP-1613).
+  description = `Validates JSON Schema 2020-12 keyword preservation (SEP-1613, SEP-2106).
 
 **Server Implementation Requirements:**
 
-Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema 2020-12 features:
+Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema 2020-12 features, including the broader vocabulary permitted by SEP-2106 (an \`$anchor\` inside \`$defs\`, composition keywords \`allOf\`/\`anyOf\`, and conditional keywords \`if\`/\`then\`/\`else\`):
 
 \`\`\`json
 {
@@ -30,6 +63,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
     "type": "object",
     "$defs": {
       "address": {
+        "$anchor": "addressDef",
         "type": "object",
         "properties": {
           "street": { "type": "string" },
@@ -39,16 +73,28 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
     },
     "properties": {
       "name": { "type": "string" },
-      "address": { "$ref": "#/$defs/address" }
+      "address": { "$ref": "#/$defs/address" },
+      "contactMethod": { "type": "string", "enum": ["phone", "email"] },
+      "phone": { "type": "string" },
+      "email": { "type": "string" }
     },
+    "allOf": [
+      { "anyOf": [{ "required": ["phone"] }, { "required": ["email"] }] }
+    ],
+    "if": {
+      "properties": { "contactMethod": { "const": "phone" } },
+      "required": ["contactMethod"]
+    },
+    "then": { "required": ["phone"] },
+    "else": { "required": ["email"] },
     "additionalProperties": false
   }
 }
 \`\`\`
 
-**Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved in the tool listing response.`;
+**Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition (\`allOf\`/\`anyOf\`), conditional (\`if\`/\`then\`/\`else\`), and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const specReferences = [
       {
@@ -56,10 +102,19 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         url: 'https://github.com/modelcontextprotocol/specification/pull/655'
       }
     ];
+    const sep2106References = [
+      {
+        id: 'SEP-2106',
+        url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2106'
+      }
+    ];
 
     try {
-      const connection = await connectToServer(serverUrl);
-      const result = await connection.client.listTools();
+      const conn = await ctx.connect();
+      // Spec version this run is targeting; used to soft-gate the SEP-2106
+      // checks below.
+      const targetVersion = ctx.specVersion;
+      const result = await conn.request<ListToolsResult>('tools/list');
 
       // Find the test tool
       const tool = result.tools?.find((t) => t.name === EXPECTED_TOOL_NAME);
@@ -82,7 +137,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       });
 
       if (!tool) {
-        await connection.close();
+        await conn.close();
         return checks;
       }
 
@@ -164,7 +219,108 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         }
       });
 
-      await connection.close();
+      // SEP-2106: the full JSON Schema 2020-12 vocabulary is permitted in
+      // inputSchema and must survive tools/list rather than being stripped to
+      // properties/required. These checks are soft-gated on the protocol
+      // version this run targets (see sep2106KeywordCheckStatus): stripping
+      // the keywords is only a FAILURE when targeting the draft version, and
+      // SKIPPED otherwise.
+      const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
+
+      // Check 5: composition keywords (allOf / anyOf) preserved
+      const allOf = inputSchema['allOf'];
+      const hasAllOf = Array.isArray(allOf) && allOf.length > 0;
+      const hasNestedAnyOf =
+        Array.isArray(allOf) &&
+        allOf.some(
+          (sub) =>
+            typeof sub === 'object' &&
+            sub !== null &&
+            Array.isArray((sub as Record<string, unknown>)['anyOf'])
+        );
+      const compositionPreserved = hasAllOf && hasNestedAnyOf;
+      const compositionStatus = sep2106KeywordCheckStatus(
+        compositionPreserved,
+        targetVersion
+      );
+
+      checks.push({
+        id: 'sep-2106-composition-keywords-preserved',
+        name: 'JsonSchema2020_12CompositionKeywords',
+        description:
+          'inputSchema composition keywords (allOf/anyOf) preserved (SEP-2106)',
+        status: compositionStatus,
+        timestamp: new Date().toISOString(),
+        errorMessage: compositionPreserved
+          ? undefined
+          : (!hasAllOf
+              ? 'allOf keyword missing from inputSchema - composition keyword was likely stripped'
+              : 'nested anyOf missing from allOf - composition keyword was likely stripped') +
+            (compositionStatus === 'SKIPPED' ? skippedSuffix : ''),
+        specReferences: sep2106References,
+        details: {
+          hasAllOf,
+          hasNestedAnyOf,
+          targetProtocolVersion: targetVersion
+        }
+      });
+
+      // Check 6: conditional keywords (if / then / else) preserved
+      const hasIf = 'if' in inputSchema;
+      const hasThen = 'then' in inputSchema;
+      const hasElse = 'else' in inputSchema;
+      const conditionalPreserved = hasIf && hasThen && hasElse;
+      const conditionalStatus = sep2106KeywordCheckStatus(
+        conditionalPreserved,
+        targetVersion
+      );
+
+      checks.push({
+        id: 'sep-2106-conditional-keywords-preserved',
+        name: 'JsonSchema2020_12ConditionalKeywords',
+        description:
+          'inputSchema conditional keywords (if/then/else) preserved (SEP-2106)',
+        status: conditionalStatus,
+        timestamp: new Date().toISOString(),
+        errorMessage: conditionalPreserved
+          ? undefined
+          : `Conditional keywords missing (if=${hasIf}, then=${hasThen}, else=${hasElse}) - likely stripped` +
+            (conditionalStatus === 'SKIPPED' ? skippedSuffix : ''),
+        specReferences: sep2106References,
+        details: {
+          hasIf,
+          hasThen,
+          hasElse,
+          targetProtocolVersion: targetVersion
+        }
+      });
+
+      // Check 7: reference keyword ($anchor) preserved within $defs.address
+      const addressDef = defsValue?.['address'] as
+        | Record<string, unknown>
+        | undefined;
+      const hasAnchor = !!addressDef && '$anchor' in addressDef;
+      const anchorStatus = sep2106KeywordCheckStatus(hasAnchor, targetVersion);
+
+      checks.push({
+        id: 'sep-2106-anchor-keyword-preserved',
+        name: 'JsonSchema2020_12AnchorKeyword',
+        description:
+          'inputSchema reference keyword ($anchor) preserved in $defs (SEP-2106)',
+        status: anchorStatus,
+        timestamp: new Date().toISOString(),
+        errorMessage: hasAnchor
+          ? undefined
+          : '$anchor missing from $defs.address - reference keyword was likely stripped' +
+            (anchorStatus === 'SKIPPED' ? skippedSuffix : ''),
+        specReferences: sep2106References,
+        details: {
+          hasAnchor,
+          anchorValue: addressDef?.['$anchor']
+        }
+      });
+
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'json-schema-2020-12-error',

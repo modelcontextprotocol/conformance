@@ -1,6 +1,6 @@
 {
   "name": "@modelcontextprotocol/conformance",
-  "version": "0.1.16",
+  "version": "0.2.0-alpha.3",
   "type": "module",
   "license": "MIT",
   "author": "Anthropic, PBC (https://anthropic.com)",
@@ -20,6 +20,7 @@
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
     "tier-check": "node dist/index.js tier-check",
     "traceability": "tsx src/index.ts traceability",
+    "sync-schema": "tsx scripts/sync-schema.ts",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
     "prepack": "npm run build",

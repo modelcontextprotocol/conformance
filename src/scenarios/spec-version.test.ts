@@ -3,11 +3,15 @@ import {
   listScenarios,
   listScenariosForSpec,
   listDraftScenarios,
+  listDraftClientScenarios,
+  listActiveClientScenarios,
   listExtensionScenarios,
+  getScenario,
   getScenarioSpecVersions,
   resolveSpecVersion,
   ALL_SPEC_VERSIONS,
-  scenarios
+  scenarios,
+  clientScenarios
 } from './index';
 import {
   DATED_SPEC_VERSIONS,
@@ -54,11 +58,17 @@ describe('specVersions helpers', () => {
     expect(current.length).toBeGreaterThan(overlap.length);
   });
 
-  it('the draft spec version is a superset of the latest dated release', () => {
+  it('every scenario in latest but not in draft is explicitly removedIn: DRAFT', () => {
     const latest = new Set(listScenariosForSpec(LATEST_SPEC_VERSION));
     const draft = new Set(listScenariosForSpec(DRAFT_PROTOCOL_VERSION));
     for (const name of latest) {
-      expect(draft.has(name)).toBe(true);
+      if (!draft.has(name)) {
+        const s = getScenario(name)!;
+        expect(
+          'removedIn' in s.source && s.source.removedIn,
+          `"${name}" is in ${LATEST_SPEC_VERSION} but not in draft without removedIn`
+        ).toBe(DRAFT_PROTOCOL_VERSION);
+      }
     }
     for (const name of listDraftScenarios()) {
       expect(draft.has(name)).toBe(true);
@@ -91,6 +101,54 @@ describe('specVersions helpers', () => {
           `extension scenario "${name}" was selected by --spec-version ${version}`
         ).toBe(false);
       }
+    }
+  });
+});
+
+describe('draft suite membership', () => {
+  it('every scenario introduced in the draft spec is selected by its draft suite', () => {
+    const draftClientTesting = new Set(listDraftScenarios());
+    for (const [name, scenario] of scenarios) {
+      if (
+        'introducedIn' in scenario.source &&
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ) {
+        expect(
+          draftClientTesting.has(name),
+          `client-testing scenario "${name}" should be in the draft suite`
+        ).toBe(true);
+      }
+    }
+
+    const draftServerTesting = new Set(listDraftClientScenarios());
+    for (const [name, scenario] of clientScenarios) {
+      if (
+        'introducedIn' in scenario.source &&
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ) {
+        expect(
+          draftServerTesting.has(name),
+          `server-testing scenario "${name}" should be in the draft suite`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('the draft suite covers the non-auth draft client scenarios', () => {
+    const draft = new Set(listDraftScenarios());
+    expect(draft.has('request-metadata')).toBe(true);
+    expect(draft.has('http-standard-headers')).toBe(true);
+    expect(draft.has('sep-2322-client-request-state')).toBe(true);
+  });
+
+  it('draft server-testing scenarios are excluded from the active suite', () => {
+    const active = new Set(listActiveClientScenarios());
+    expect(listDraftClientScenarios().length).toBeGreaterThan(0);
+    for (const name of listDraftClientScenarios()) {
+      expect(
+        active.has(name),
+        `draft scenario "${name}" should not be in the active suite`
+      ).toBe(false);
     }
   });
 });

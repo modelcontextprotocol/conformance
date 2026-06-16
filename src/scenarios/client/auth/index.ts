@@ -34,7 +34,9 @@ import {
   IssParameterNotAdvertisedScenario,
   IssParameterSupportedMissingScenario,
   IssParameterWrongIssuerScenario,
-  IssParameterUnexpectedScenario
+  IssParameterUnexpectedScenario,
+  IssParameterNormalizedVariantScenario,
+  MetadataIssuerMismatchScenario
 } from './issuer-parameter';
 
 // Auth scenarios (required for tier 1)
@@ -75,5 +77,7 @@ export const draftScenariosList: Scenario[] = [
   new IssParameterNotAdvertisedScenario(),
   new IssParameterSupportedMissingScenario(),
   new IssParameterWrongIssuerScenario(),
-  new IssParameterUnexpectedScenario()
+  new IssParameterUnexpectedScenario(),
+  new IssParameterNormalizedVariantScenario(),
+  new MetadataIssuerMismatchScenario()
 ];

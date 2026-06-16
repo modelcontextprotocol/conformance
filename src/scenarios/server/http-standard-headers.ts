@@ -20,7 +20,11 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { connectToServer } from './client-helper';
+import {
+  withRequestMeta,
+  sendStatelessRequest,
+  type RunContext
+} from '../../connection';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -56,10 +60,30 @@ const HEADER_MISMATCH_ERROR_CODE = -32001;
 // Coarse, requirement-level check IDs (SEP-2243) for STANDARD-header
 // rejections. Every standard-header rejection case emits this same pair of IDs;
 // the per-case name/description carry the detail of which case was exercised,
-// matching the repo's "same id, vary status/message" convention. (Custom-header
-// /Base64 rejections map to different requirements and keep their own IDs.)
+// matching the repo's "same id, vary status/message" convention.
 const REJECT_STATUS_CHECK_ID = 'sep-2243-server-reject-invalid-headers';
 const REJECT_ERROR_CODE_CHECK_ID = 'sep-2243-server-reject-error-code';
+
+// CUSTOM-header (Mcp-Param-*) rejections map to the param-validation
+// requirements instead. The -32001 error-code half of every custom-header
+// rejection is the "reject with 400 + JSON-RPC error code -32001 if any
+// validation fails" requirement.
+const PARAM_REJECT_ERROR_CODE_CHECK_ID =
+  'sep-2243-server-reject-param-mismatch';
+
+/**
+ * Every requirement-level check ID HttpCustomHeaderServerValidationScenario
+ * can emit (SEP-2243). When the server under test exposes no x-mcp-header
+ * tool the scenario cannot exercise these, but it still emits one SKIPPED row
+ * per ID so the traceability manifest sees that a scenario exists for each
+ * requirement (the manifest joins on emitted IDs regardless of status).
+ */
+export const CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS = [
+  'sep-2243-server-decode-base64',
+  'sep-2243-server-validate-param-match',
+  'sep-2243-server-reject-invalid-param-chars',
+  'sep-2243-server-reject-param-mismatch'
+] as const;
 
 /**
  * Helper to send a raw HTTP POST request with custom headers.
@@ -130,9 +154,10 @@ async function sendRawRequest(
  *
  * The two emitted check IDs are supplied explicitly by the caller: standard-
  * header callers pass the coarse REJECT_STATUS_CHECK_ID/REJECT_ERROR_CODE_CHECK_ID
- * so all standard-header cases collapse onto one requirement, while custom-header
- * /Base64 callers pass their own per-case ids. The per-case `name`/`description`
- * distinguish which rejection case was exercised.
+ * pair, while custom-header/Base64 callers pass the param-validation
+ * requirement that case exercises plus PARAM_REJECT_ERROR_CODE_CHECK_ID. The
+ * per-case `name`/`description` distinguish which rejection case was
+ * exercised.
  */
 function createRejectionChecks(
   statusId: string,
@@ -241,53 +266,42 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 - Server MUST return HTTP 400 Bad Request for validation failures
 - Server MUST return JSON-RPC error with code -32001 (HeaderMismatch)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      // Establish a session via normal SDK initialization
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
-
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-raw-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid) ? rawSid[0] : rawSid) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
-        );
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure instead of misleading
+        // per-case results against a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-standard-setup',
+          name: 'HttpHeaderValidationSetup',
+          description: 'Setup for header validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        return checks;
       }
+      const toolsResult = toolsResponse.body.result as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       let idCounter = 100;
       const nextId = () => idCounter++;
@@ -300,7 +314,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'sep-2243-server-rejects-mismatched-method-header',
+        REJECT_STATUS_CHECK_ID,
         'ServerRejectsMismatchedMethodHeader',
         'Server rejects requests where Mcp-Method header does not match body method',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -315,7 +329,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'sep-2243-server-rejects-missing-method-header',
+        REJECT_STATUS_CHECK_ID,
         'ServerRejectsMissingMethodHeader',
         'Server rejects requests with missing Mcp-Method header',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -333,7 +347,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           baseHeaders,
           nextId,
           'reject',
-          'sep-2243-server-rejects-mismatched-name-header',
+          REJECT_STATUS_CHECK_ID,
           'ServerRejectsMismatchedNameHeader',
           'Server rejects tools/call where Mcp-Name does not match body params.name',
           {
@@ -384,7 +398,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           baseHeaders,
           nextId,
           'reject',
-          'sep-2243-server-rejects-missing-name-header',
+          REJECT_STATUS_CHECK_ID,
           'ServerRejectsMissingNameHeader',
           'Server MUST reject tools/call with missing Mcp-Name header when body has params.name',
           {
@@ -442,7 +456,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         baseHeaders,
         nextId,
         'reject',
-        'sep-2243-server-rejects-case-mismatch-value',
+        REJECT_STATUS_CHECK_ID,
         'ServerRejectsCaseMismatchValue',
         'Server MUST reject uppercase method value (TOOLS/LIST) since values are case-sensitive',
         { jsonrpc: '2.0', id: 0, method: 'tools/list' },
@@ -480,7 +494,13 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     details: Record<string, unknown>
   ): Promise<void> {
     try {
-      const requestBody = { ...body, id: body.id === 0 ? nextId() : body.id };
+      // Issue #311: every raw request carries the SEP-2575 _meta fields — the
+      // header-validation cases only mangle headers, never the body metadata.
+      const requestBody = {
+        ...body,
+        id: body.id === 0 ? nextId() : body.id,
+        params: withRequestMeta(body.params)
+      };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
         ...extraHeaders
@@ -542,14 +562,40 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 - Server MUST treat values without =?base64?...?= wrapper as literal
 - Server MUST reject requests where custom header is omitted but value is in body`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
-    let sessionId: string | null = null;
 
     try {
-      const connection = await connectToServer(serverUrl);
-      const toolsResult = await connection.client.listTools();
-      await connection.close();
+      // Discover the server's tools with a fully-conformant stateless request
+      // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
+      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      if (!toolsResponse.body?.result) {
+        // The server under test could not even answer a conformant tools/list:
+        // report a single explicit setup failure (and backfill the declared
+        // checks, mirroring the catch path) instead of pretending the
+        // requirements are not applicable to a broken server.
+        const rpcError = toolsResponse.body?.error;
+        checks.push({
+          id: 'sep-2243-server-custom-setup',
+          name: 'HttpCustomHeaderServerValidationSetup',
+          description: 'Setup for custom header server validation tests',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            `tools/list discovery failed: HTTP ${toolsResponse.status}` +
+            (rpcError
+              ? `, JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+              : ', no result in response body'),
+          specReferences: [SPEC_REFERENCE_CUSTOM],
+          details: { httpStatus: toolsResponse.status, error: rpcError }
+        });
+        this.failDeclaredChecks(checks);
+        return checks;
+      }
+      const toolsResult = toolsResponse.body.result as {
+        tools?: Array<{ name: string; inputSchema?: unknown }>;
+      };
 
       // Find a tool with x-mcp-header annotations
       const xMcpTool = toolsResult.tools?.find((tool) => {
@@ -574,46 +620,16 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
               'No tools with x-mcp-header found. These tests require at least one tool with x-mcp-header annotations.'
           }
         });
-        return checks;
-      }
-
-      // Get a fresh session for raw requests
-      const initResponse = await sendRawRequest(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: DRAFT_PROTOCOL_VERSION,
-            capabilities: {},
-            clientInfo: {
-              name: 'conformance-test-base64-client',
-              version: '1.0.0'
-            }
-          }
-        },
-        { 'Mcp-Method': 'initialize' }
-      );
-
-      if (initResponse.status === 200) {
-        const rawSid2 = initResponse.headers['mcp-session-id'];
-        sessionId = (Array.isArray(rawSid2) ? rawSid2[0] : rawSid2) || null;
-        const notifHeaders: Record<string, string> = {
-          'Mcp-Method': 'notifications/initialized'
-        };
-        if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
-        await sendRawRequest(
-          serverUrl,
-          { jsonrpc: '2.0', method: 'notifications/initialized' },
-          notifHeaders
+        this.skipDeclaredChecks(
+          checks,
+          'Server exposes no tool with x-mcp-header annotations.'
         );
+        return checks;
       }
 
       const baseHeaders: Record<string, string> = {
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
-      if (sessionId) baseHeaders['mcp-session-id'] = sessionId;
 
       // Find the first x-mcp-header annotated STRING property
       // that is callable with minimal arguments to avoid schema validation failures
@@ -632,6 +648,10 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           timestamp: new Date().toISOString(),
           specReferences: [SPEC_REFERENCE_CUSTOM]
         });
+        this.skipDeclaredChecks(
+          checks,
+          'Server exposes no string-typed x-mcp-header parameter.'
+        );
         return checks;
       }
       const [paramName, paramDef] = annotatedEntry as [string, any];
@@ -678,7 +698,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'sep-2243-server-accepts-valid-base64',
+        'sep-2243-server-decode-base64',
         'ServerAcceptsValidBase64',
         'Server decodes valid Base64 header value and validates against body',
         xMcpTool.name,
@@ -702,7 +722,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'reject',
-        'sep-2243-server-rejects-invalid-base64-padding',
+        'sep-2243-server-reject-invalid-param-chars',
         'ServerRejectsInvalidBase64Padding',
         'Server MUST reject Mcp-Param header with invalid Base64 padding (per SEP-2243 test-case table)',
         xMcpTool.name,
@@ -721,7 +741,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'reject',
-        'sep-2243-server-rejects-invalid-base64-chars',
+        'sep-2243-server-reject-invalid-param-chars',
         'ServerRejectsInvalidBase64Chars',
         'Server MUST reject Mcp-Param header with non-alphabet Base64 characters (per SEP-2243 test-case table)',
         xMcpTool.name,
@@ -740,7 +760,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'sep-2243-server-literal-missing-base64-prefix',
+        'sep-2243-server-validate-param-match',
         'ServerLiteralMissingBase64Prefix',
         'Server treats value without =?base64? prefix as literal (not Base64)',
         xMcpTool.name,
@@ -759,7 +779,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         baseHeaders,
         nextId,
         'accept',
-        'sep-2243-server-literal-missing-base64-suffix',
+        'sep-2243-server-validate-param-match',
         'ServerLiteralMissingBase64Suffix',
         'Server treats value without ?= suffix as literal (not Base64)',
         xMcpTool.name,
@@ -796,7 +816,53 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       });
     }
 
+    // Declared-but-unemitted -> FAILURE. Reached only when setup threw partway
+    // through (the gate-out paths emit SKIPPED rows and the happy path emits
+    // every declared ID).
+    this.failDeclaredChecks(checks);
+
     return checks;
+  }
+
+  /**
+   * Backfill every declared-but-unemitted check ID as FAILURE when setup
+   * failed before the cases could run, keeping the emitted ID set stable.
+   */
+  private failDeclaredChecks(checks: ConformanceCheck[]): void {
+    for (const id of CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS) {
+      if (checks.some((c) => c.id === id)) continue;
+      checks.push({
+        id,
+        name: 'NotObserved',
+        description: `Declared check ${id} was never emitted`,
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          'Check was not observed: custom-header validation setup failed before this case ran.',
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
+    }
+  }
+
+  /**
+   * Emit one SKIPPED row per declared requirement check when the scenario
+   * cannot run against this server (no x-mcp-header tool). The IDs must still
+   * reach checks.json so the traceability manifest records that a scenario
+   * exists for each requirement.
+   */
+  private skipDeclaredChecks(checks: ConformanceCheck[], reason: string): void {
+    for (const id of CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS) {
+      if (checks.some((c) => c.id === id)) continue;
+      checks.push({
+        id,
+        name: 'NotApplicable',
+        description: `Declared check ${id} is not testable against this server`,
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REFERENCE_CUSTOM],
+        details: { reason }
+      });
+    }
   }
 
   private async testBase64Case(
@@ -823,10 +889,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // these cases only vary the Mcp-Param header value.
+          params: withRequestMeta({
             name: toolName,
             arguments: { ...defaultArgs, [paramName]: bodyValue }
-          }
+          })
         },
         {
           ...baseHeaders,
@@ -858,12 +926,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         );
       } else {
         // Custom-header rejection: both 400 and -32001 are MUST per
-        // §Server Behavior for Custom Headers. These map to param-validation
-        // requirements, so they keep their per-case ids (status + -error-code).
+        // §Server Behavior for Custom Headers. The status half maps to the
+        // param-validation requirement this case exercises (checkId); the
+        // error-code half is the "400 + -32001 if any validation fails"
+        // requirement.
         checks.push(
           ...createRejectionChecks(
             checkId,
-            `${checkId}-error-code`,
+            PARAM_REJECT_ERROR_CODE_CHECK_ID,
             checkName,
             description,
             response,
@@ -905,10 +975,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
-          params: {
+          // Issue #311: the body always carries the SEP-2575 _meta fields —
+          // this case only omits the Mcp-Param header.
+          params: withRequestMeta({
             name: toolName,
             arguments: { ...defaultArgs, [paramName]: 'test-value' }
-          }
+          })
         },
         {
           ...baseHeaders,
@@ -919,12 +991,13 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         }
       );
 
-      // Custom-header rejection: both 400 and -32001 are MUST. Keeps its own
-      // per-case ids (status + -error-code).
+      // Custom-header rejection: both 400 and -32001 are MUST. A header
+      // omitted while the body carries a value is a header/body mismatch, so
+      // the status half maps to the validate-param-match requirement.
       checks.push(
         ...createRejectionChecks(
-          'sep-2243-server-rejects-missing-custom-header',
-          'sep-2243-server-rejects-missing-custom-header-error-code',
+          'sep-2243-server-validate-param-match',
+          PARAM_REJECT_ERROR_CODE_CHECK_ID,
           'ServerRejectsMissingCustomHeader',
           'Server MUST reject request where custom header is omitted but value is present in body',
           response,
@@ -941,7 +1014,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
     } catch (error) {
       checks.push({
-        id: 'sep-2243-server-rejects-missing-custom-header',
+        id: 'sep-2243-server-validate-param-match',
         name: 'ServerRejectsMissingCustomHeader',
         description:
           'Server MUST reject request where custom header is omitted but value is present in body',

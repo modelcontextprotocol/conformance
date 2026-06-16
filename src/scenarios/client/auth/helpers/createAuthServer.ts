@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import { createHash } from 'crypto';
 import type { ConformanceCheck } from '../../../../types';
+import type { ScenarioContext } from '../../../../mock-server';
+import { isStatefulVersion } from '../../../../connection/select';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
@@ -45,8 +47,20 @@ export interface AuthServerOptions {
   codeChallengeMethodsSupported?: string[] | null;
   /** Advertise authorization_response_iss_parameter_supported in AS metadata. Default: true. Pass null to omit. */
   issParameterSupported?: boolean | null;
-  /** What iss value to include in authorization redirect. Default: 'correct'. */
-  issInRedirect?: 'correct' | 'wrong' | 'omit';
+  /**
+   * What iss value to include in authorization redirect. Default: 'correct'.
+   * 'normalized' sends a normalization-equivalent variant of the correct
+   * issuer (trailing slash appended, exactly what `new URL(x).href`
+   * round-tripping produces) — equal under RFC 3986 §6.2.2–6.2.3
+   * normalization but not under simple string comparison.
+   */
+  issInRedirect?: 'correct' | 'wrong' | 'omit' | 'normalized';
+  /**
+   * Override the `issuer` value served in the AS metadata document. Used to
+   * test that clients validate the metadata issuer against the issuer
+   * identifier used to construct the well-known URL (RFC 8414 §3.3).
+   */
+  metadataIssuer?: string;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -74,6 +88,7 @@ export interface AuthServerOptions {
 }
 
 export function createAuthServer(
+  ctx: ScenarioContext,
   checks: ConformanceCheck[],
   getAuthBaseUrl: () => string,
   options: AuthServerOptions = {}
@@ -92,6 +107,7 @@ export function createAuthServer(
     codeChallengeMethodsSupported = ['S256'],
     issParameterSupported = true,
     issInRedirect = 'correct',
+    metadataIssuer,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -140,7 +156,7 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: `${getAuthBaseUrl()}${routePrefix}`,
+      issuer: metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`,
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
@@ -258,6 +274,11 @@ export function createAuthServer(
       redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}`);
     } else if (issInRedirect === 'wrong') {
       redirectUrl.searchParams.set('iss', 'https://evil.example.com');
+    } else if (issInRedirect === 'normalized') {
+      // Normalization-equivalent variant of the correct issuer: identical
+      // after RFC 3986 scheme-based normalization (trailing slash on an
+      // empty path) but different under simple string comparison.
+      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}/`);
     }
 
     res.redirect(redirectUrl.toString());
@@ -405,21 +426,27 @@ export function createAuthServer(
     // SEP-837: clients MUST specify an appropriate application_type during DCR.
     // The harness can't know the client's real class (native vs web), so this
     // checks presence + that the value is one of the two OIDC-defined values.
-    const appType = req.body.application_type;
-    const validAppType = appType === 'native' || appType === 'web';
-    checks.push({
-      id: 'sep-837-application-type-present',
-      name: 'DCR application_type specified',
-      description: validAppType
-        ? `Client specified application_type "${appType}" during Dynamic Client Registration`
-        : appType === undefined
-          ? 'Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); field was omitted'
-          : `Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); got "${appType}", expected "native" or "web"`,
-      status: validAppType ? 'SUCCESS' : 'FAILURE',
-      timestamp: new Date().toISOString(),
-      specReferences: [SpecReferences.MCP_DCR],
-      details: { application_type: appType ?? '(omitted)' }
-    });
+    // SEP-837 first appears in the draft spec (the same revision that
+    // introduces the stateless lifecycle), so the check only exists for runs
+    // targeting a version that includes it; at dated versions it is not
+    // emitted at all.
+    if (!isStatefulVersion(ctx.specVersion)) {
+      const appType = req.body.application_type;
+      const validAppType = appType === 'native' || appType === 'web';
+      checks.push({
+        id: 'sep-837-application-type-present',
+        name: 'DCR application_type specified',
+        description: validAppType
+          ? `Client specified application_type "${appType}" during Dynamic Client Registration`
+          : appType === undefined
+            ? 'Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); field was omitted'
+            : `Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); got "${appType}", expected "native" or "web"`,
+        status: validAppType ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.MCP_DCR],
+        details: { application_type: appType ?? '(omitted)' }
+      });
+    }
 
     res.status(201).json({
       client_id: clientId,
