@@ -19,6 +19,13 @@ import {
   ClientCredentialsProvider,
   PrivateKeyJwtProvider
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type {
+  OAuthClientInformation,
+  OAuthClientMetadata,
+  OAuthTokens
+} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
@@ -993,6 +1000,107 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
 }
 
 registerScenario('sep-2322-client-request-state', runMRTRClient);
+
+// ============================================================================
+// WIF JWT-bearer scenario
+// ============================================================================
+
+class WifJwtBearerProvider implements OAuthClientProvider {
+  private _tokens?: OAuthTokens;
+  private _clientInfo: OAuthClientInformation;
+  private readonly _clientMetadata: OAuthClientMetadata;
+  private hasAttempted = false;
+
+  // Pass null for assertion to deliberately omit it (missing-assertion negative tests).
+  constructor(
+    private readonly assertion: string | null,
+    clientId: string,
+    private readonly scope?: string
+  ) {
+    this._clientInfo = { client_id: clientId };
+    this._clientMetadata = {
+      client_name: 'conformance-wif-jwt-bearer',
+      redirect_uris: [],
+      grant_types: [JWT_BEARER_GRANT_TYPE],
+      token_endpoint_auth_method: 'none'
+    };
+  }
+
+  get redirectUrl(): undefined {
+    return undefined;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this._clientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformation {
+    return this._clientInfo;
+  }
+
+  saveClientInformation(info: OAuthClientInformation): void {
+    this._clientInfo = info;
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return this._tokens;
+  }
+
+  saveTokens(tokens: OAuthTokens): void {
+    this._tokens = tokens;
+  }
+
+  redirectToAuthorization(): void {
+    throw new Error('redirectToAuthorization is not used for JWT-bearer flow');
+  }
+
+  saveCodeVerifier(): void {}
+
+  codeVerifier(): string {
+    throw new Error('codeVerifier is not used for JWT-bearer flow');
+  }
+
+  prepareTokenRequest(scope?: string): URLSearchParams {
+    if (this.hasAttempted) {
+      throw new Error('JWT-bearer grant must not be retried after failure');
+    }
+    this.hasAttempted = true;
+    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
+    if (this.assertion !== null) params.set('assertion', this.assertion);
+    const effectiveScope = this.scope ?? scope;
+    if (effectiveScope) params.set('scope', effectiveScope);
+    return params;
+  }
+}
+
+export async function runWifJwtBearer(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifJwtBearerProvider(ctx.valid_jwt, ctx.client_id);
+
+  const client = new Client(
+    { name: 'conformance-wif-jwt-bearer', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with JWT-bearer assertion');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/wif-jwt-bearer', runWifJwtBearer);
 
 // ============================================================================
 // Main entry point

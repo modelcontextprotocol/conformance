@@ -4,13 +4,18 @@ export const JWT_BEARER_GRANT_TYPE =
   'urn:ietf:params:oauth:grant-type:jwt-bearer';
 export const DEFAULT_WORKLOAD_JWT_ALG = 'ES256';
 
+// Scope values used by the WIF scenario's mock AS and broken-client runners.
+// Exported here so both sides stay in sync without manual duplication.
+export const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
+export const WIF_REJECTED_SCOPE = 'wif.rejected';
+
 export interface CreateWorkloadJwtOptions {
   issuer: string;
   subject: string;
   audience: string | string[];
   privateKey: jose.CryptoKey;
-  /** Jose duration string (e.g. '5m') or absolute epoch seconds. Use a number to construct already-expired tokens for negative tests. */
-  expiresIn?: string | number;
+  /** Jose duration string (e.g. '5m', '-60s', '60 seconds ago'). Use a negative offset to construct already-expired tokens for negative tests. */
+  expiresIn?: string;
   jwtId?: string;
   issuedAt?: number;
   notBefore?: number;

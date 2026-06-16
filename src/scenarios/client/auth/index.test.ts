@@ -1,13 +1,22 @@
 import {
   authScenariosList,
   backcompatScenariosList,
-  draftScenariosList
+  draftScenariosList,
+  extensionScenariosList
 } from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
 } from './test_helpers/testClient';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
+import {
+  runWifJwtBearerWrongAudience,
+  runWifJwtBearerMissingAssertion,
+  runWifJwtBearerExpiredAssertion,
+  runWifJwtBearerScopeRejected,
+  runWifJwtBearerGrantFallback,
+  runWifJwtBearerRetry
+} from '../../../../examples/clients/typescript/wif-broken-clients';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
@@ -244,6 +253,71 @@ describe('Negative tests', () => {
     const runner = new InlineClientRunner(noIssValidationClient);
     await runClientAgainstScenario(runner, 'auth/metadata-issuer-mismatch', {
       expectedFailureSlugs: ['sep-2468-client-validate-metadata-issuer'],
+      allowClientError: true
+    });
+  });
+});
+
+describe('Client Extension Scenarios', () => {
+  for (const scenario of extensionScenariosList) {
+    test(`${scenario.name} passes`, async () => {
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
+      const runner = new InlineClientRunner(clientFn);
+      await runClientAgainstScenario(runner, scenario.name);
+    });
+  }
+});
+
+// allowClientError: true because broken clients receive an error response from
+// the AS and will throw. The AS-side check is the authoritative conformance
+// signal; client process exit behaviour is not asserted here.
+describe('WIF JWT-bearer negative tests', () => {
+  test('client presents JWT with wrong audience', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerWrongAudience);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-audience'],
+      allowClientError: true
+    });
+  });
+
+  test('client omits assertion from JWT-bearer request', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerMissingAssertion);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-missing'],
+      allowClientError: true
+    });
+  });
+
+  test('client presents expired JWT assertion', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerExpiredAssertion);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-expired'],
+      allowClientError: true
+    });
+  });
+
+  test('client requests a scope the AS rejects for JWT-bearer grant', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerScopeRejected);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      allowClientError: true
+    });
+  });
+
+  test('client falls back to authorization_code after unauthorized_client', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerGrantFallback);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-grant-fallback'],
+      allowClientError: true
+    });
+  });
+
+  test('client retries JWT-bearer after unauthorized_client', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerRetry);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-no-retry'],
       allowClientError: true
     });
   });

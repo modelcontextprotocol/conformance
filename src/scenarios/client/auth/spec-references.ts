@@ -109,5 +109,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   SEP_2207_REFRESH_TOKEN_GUIDANCE: {
     id: 'SEP-2207-Refresh-Token-Guidance',
     url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2207'
+  },
+  SEP_1933_WIF: {
+    id: 'SEP-1933-Workload-Identity-Federation',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933'
   }
 };

@@ -31,6 +31,13 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     idp_id_token: z.string(),
     idp_issuer: z.string(),
     idp_token_endpoint: z.string()
+  }),
+  z.object({
+    name: z.literal('auth/wif-jwt-bearer'),
+    client_id: z.string(),
+    valid_jwt: z.string(),
+    wrong_audience_jwt: z.string(),
+    expired_jwt: z.string()
   })
 ]);
 
