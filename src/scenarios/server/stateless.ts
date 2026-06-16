@@ -33,8 +33,8 @@ export class ServerStatelessScenario implements ClientScenario {
 
 **Grouped Specification Requirements**:
 
-1. **Per-Request _meta Validation (4 Checks)**
-   - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientInfo\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature.
+1. **Per-Request _meta Validation (5 Checks)**
+   - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientInfo\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature and an HTTP status code \`400 Bad Request\`.
 2. **Discovery & Capabilities (3 Checks)**
    - Implements \`server/discover\` mapping exact mandatory protocol elements.
    - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities.
@@ -356,26 +356,50 @@ export class ServerStatelessScenario implements ClientScenario {
       }
     ];
     for (const testCase of metaValidationTestCases) {
+      const metaProbe = await sendRpc(
+        'server/discover',
+        testCase.params,
+        undefined,
+        testCase.rpcId
+      ).catch(() => null);
+      const metaRes: any = metaProbe?.res ?? null;
+      const metaData: any = metaProbe?.data ?? null;
+      if (metaData) checkErrorId(metaData, testCase.rpcId);
+
       await runCheck(
         `sep-2575-request-meta-invalid-${testCase.slug}`,
         'RequestMetaInvalid',
         testCase.description,
-        async () => {
-          const { data } = await sendRpc(
-            'server/discover',
-            testCase.params,
-            undefined,
-            testCase.rpcId
-          );
-          checkErrorId(data, testCase.rpcId);
-
-          if (data?.error?.code !== -32602) {
+        () => {
+          if (!metaProbe)
+            return { error: '_meta validation probe failed completely' };
+          if (metaData?.error?.code !== -32602) {
             return {
-              error: `Expected error code -32602, got ${data?.error?.code}`,
-              details: { fieldIssue: testCase.slug, response: data }
+              error: `Expected error code -32602, got ${metaData?.error?.code}`,
+              details: { fieldIssue: testCase.slug, response: metaData }
             };
           }
-          return { details: { fieldIssue: testCase.slug, response: data } };
+          return { details: { fieldIssue: testCase.slug, response: metaData } };
+        },
+        { fieldIssue: testCase.slug }
+      );
+
+      // Companion HTTP-status check: a request missing a required _meta field
+      // is malformed and, on HTTP, the rejection MUST use 400 Bad Request.
+      await runCheck(
+        'sep-2575-http-server-meta-invalid-400',
+        'HttpServerMetaInvalid400',
+        'Rejections of requests missing required _meta fields use HTTP 400 Bad Request.',
+        () => {
+          if (!metaRes)
+            return { error: '_meta validation probe failed completely' };
+          if (metaRes.status !== 400) {
+            return {
+              error: `Expected HTTP 400 Bad Request, got status code ${metaRes.status}`,
+              details: { fieldIssue: testCase.slug, response: metaData }
+            };
+          }
+          return { details: { fieldIssue: testCase.slug, response: metaData } };
         },
         { fieldIssue: testCase.slug }
       );
@@ -498,14 +522,15 @@ export class ServerStatelessScenario implements ClientScenario {
     // ==========================================
     // 3. Version Negotiation & Headers (3 Checks)
     // ==========================================
+    const requestedUnsupportedVersion = 'v999.0.0';
     const unsupportedMeta = {
       ...validMeta,
-      'io.modelcontextprotocol/protocolVersion': 'v999.0.0'
+      'io.modelcontextprotocol/protocolVersion': requestedUnsupportedVersion
     };
     const response301 = await sendRpc(
       'server/discover',
       { _meta: unsupportedMeta },
-      { 'MCP-Protocol-Version': 'v999.0.0' },
+      { 'MCP-Protocol-Version': requestedUnsupportedVersion },
       301
     ).catch(() => null);
     const res301: any = response301?.res ?? null;
@@ -515,7 +540,7 @@ export class ServerStatelessScenario implements ClientScenario {
     await runCheck(
       'sep-2575-server-unsupported-version-error',
       'ServerUnsupportedVersionError',
-      'If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support.',
+      'If the server does not implement the requested version (whether the version is unknown to the server, or is a known version the server has chosen not to support), it MUST respond with an UnsupportedProtocolVersionError listing the versions it does support; the error data carries the supported versions and echoes the requested version.',
       () => {
         if (!data301)
           return { error: 'Unsupported version invocation failed completely' };
@@ -533,6 +558,17 @@ export class ServerStatelessScenario implements ClientScenario {
           return {
             error: `Returned supported versions data layout does not correlate to active server metrics: ${JSON.stringify(errSupportedVersions)}`
           };
+
+        // UnsupportedProtocolVersionError data carries both required members:
+        // `supported` (asserted above) and `requested`, which echoes the
+        // version the request asked for.
+        const requestedEcho = data301?.error?.data?.requested;
+        if (requestedEcho !== requestedUnsupportedVersion) {
+          return {
+            error: `error.data.requested must echo the requested version '${requestedUnsupportedVersion}', got ${JSON.stringify(requestedEcho)}`,
+            details: { response: data301 }
+          };
+        }
         return { details: { response: data301 } };
       }
     );
