@@ -12,6 +12,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
 import {
   validateStatelessRequest,
+  withRequiredDraftResultFields,
   type ScenarioContext
 } from '../../../../mock-server';
 import { isStatefulVersion } from '../../../../connection/select';
@@ -210,16 +211,18 @@ export function createServer(
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: {
+        result: withRequiredDraftResultFields(method, {
           tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
-        }
+        })
       });
     }
     if (method === 'tools/call') {
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: { content: [{ type: 'text', text: 'test' }] }
+        result: withRequiredDraftResultFields(method, {
+          content: [{ type: 'text', text: 'test' }]
+        })
       });
     }
     return res.status(404).json({

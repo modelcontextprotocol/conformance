@@ -221,6 +221,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
           tools: [
             {
               name: 'test_headers',
@@ -259,6 +262,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
           content: [
             {
               type: 'text',
@@ -281,6 +285,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
           resources: [
             {
               uri: 'file:///path/to/file%20name.txt',
@@ -309,6 +316,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
           contents: []
         }
       })
@@ -326,6 +336,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
           prompts: [
             {
               name: 'test_prompt',
@@ -348,6 +361,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
           messages: []
         }
       })

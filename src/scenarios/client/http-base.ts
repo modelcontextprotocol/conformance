@@ -1,4 +1,7 @@
-import type { ScenarioContext } from '../../mock-server';
+import {
+  withRequiredDraftResultFields,
+  type ScenarioContext
+} from '../../mock-server';
 /**
  * Shared HTTP test-server scaffold for client-under-test SEP-2243 scenarios.
  *
@@ -135,6 +138,7 @@ export abstract class BaseHttpScenario implements Scenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         protocolVersion: DRAFT_PROTOCOL_VERSION,
         serverInfo: { name: this.name + '-server', version: '1.0.0' },
         capabilities
@@ -151,7 +155,9 @@ export abstract class BaseHttpScenario implements Scenario {
     this.sendJson(res, {
       jsonrpc: '2.0',
       id: request.id,
-      result: {}
+      // Method-aware so cacheable methods that fall through to the generic
+      // reply still carry the ttlMs/cacheScope the draft revision requires.
+      result: withRequiredDraftResultFields(request.method, {})
     });
   }
 }
