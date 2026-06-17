@@ -482,6 +482,46 @@ registerScenarios(
 );
 
 // ============================================================================
+// SSE retry scenario
+// ============================================================================
+
+async function runSSERetryClient(serverUrl: string): Promise<void> {
+  const client = new Client(
+    { name: 'sse-retry-test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  await client.connect(transport);
+  logger.debug('Successfully connected to MCP server');
+
+  const tools = await client.listTools();
+  logger.debug(
+    'Available tools:',
+    tools.tools.map((t) => t.name)
+  );
+
+  const testTool = tools.tools.find((t) => t.name === 'test_reconnection');
+  if (!testTool) {
+    throw new Error('Test tool not found: test_reconnection');
+  }
+
+  logger.debug('Calling test_reconnection tool...');
+  const result = await client.callTool({
+    name: 'test_reconnection',
+    arguments: {}
+  });
+
+  logger.debug('Tool result:', JSON.stringify(result, null, 2));
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('sse-retry', runSSERetryClient);
+
+// ============================================================================
 // Elicitation defaults scenario
 // ============================================================================
 
@@ -491,7 +531,9 @@ async function runElicitationDefaultsClient(serverUrl: string): Promise<void> {
     {
       capabilities: {
         elicitation: {
-          applyDefaults: true
+          form: {
+            applyDefaults: true
+          }
         }
       }
     }
@@ -545,7 +587,10 @@ async function runElicitationDefaultsClient(serverUrl: string): Promise<void> {
   logger.debug('Connection closed successfully');
 }
 
-registerScenario('elicitation-defaults', runElicitationDefaultsClient);
+registerScenario(
+  'elicitation-sep1034-client-defaults',
+  runElicitationDefaultsClient
+);
 
 // ============================================================================
 // Client Credentials scenarios
