@@ -32,8 +32,12 @@ requirements:
     text: 'Clients MUST encode parameter values before including them in HTTP headers: number values MUST be converted to their decimal string representation; boolean values MUST be converted to the lowercase strings "true" or "false".'
   - check: sep-2243-client-base64-unsafe
     text: 'When a value cannot be safely represented as plain ASCII (e.g., contains non-ASCII characters, control characters, or leading/trailing whitespace), clients MUST use Base64 encoding of the UTF-8 representation, wrapped as =?base64?{encoded}?=.'
+  - check: sep-2243-client-base64-mcp-name
+    text: 'If the Mcp-Name source value cannot be safely represented as a plain ASCII header value, clients MUST encode it using the Base64 sentinel format described in Value Encoding.'
   - check: sep-2243-server-decode-base64
     text: 'Servers and intermediaries that need to inspect these values MUST decode them accordingly.'
+  - check: sep-2243-server-decode-base64-mcp-name
+    text: 'In particular, servers MUST decode an encoded Mcp-Name or Mcp-Param-{Name} value before comparing it to the corresponding request body value during Server Validation.'
   - check: sep-2243-client-omit-null
     text: 'Parameter value is null or omitted: Client MUST omit the header.'
   - check: sep-2243-server-not-expect-null

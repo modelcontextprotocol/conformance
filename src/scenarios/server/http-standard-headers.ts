@@ -362,6 +362,36 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           { requestBodyName: toolName, mcpNameHeader: 'wrong_tool_name' }
         );
 
+        // --- Base64-encoded Mcp-Name accepted ---
+
+        await this.testCase(
+          checks,
+          serverUrl,
+          baseHeaders,
+          nextId,
+          'accept',
+          'sep-2243-server-decode-base64-mcp-name',
+          'ServerAcceptsBase64EncodedMcpName',
+          'Server MUST decode Base64-sentinel-encoded Mcp-Name before comparing to body params.name',
+          {
+            jsonrpc: '2.0',
+            id: 0,
+            method: 'tools/call',
+            params: { name: toolName, arguments: {} }
+          },
+          {
+            'Mcp-Method': 'tools/call',
+            'Mcp-Name': `=?base64?${Buffer.from(toolName, 'utf-8').toString('base64')}?=`
+          },
+          SPEC_REFERENCE_BASE64,
+          {
+            headerValue: `=?base64?${Buffer.from(toolName, 'utf-8').toString('base64')}?=`,
+            bodyValue: toolName,
+            reason:
+              'Mcp-Name carried as =?base64?{b64(utf8(name))}?= must decode to params.name'
+          }
+        );
+
         // --- Whitespace Test ---
 
         await this.testCase(
