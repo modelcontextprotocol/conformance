@@ -87,6 +87,22 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     const { id, method, params } = body;
 
     switch (method) {
+      case 'server/discover': {
+        res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            capabilities: { tools: {} },
+            serverInfo: { name: 'mrtr-mock-server', version: '1.0.0' }
+          }
+        });
+        return;
+      }
+
       case 'notifications/initialized': {
         res.status(204).end();
         return;

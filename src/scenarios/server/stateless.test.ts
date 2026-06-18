@@ -180,7 +180,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
             jsonrpc: '2.0',
             id: reqBody.id,
             error: {
-              code: -32004,
+              code: -32022,
               message: 'Unsupported protocol version',
               // Spec Violation: data.requested is a required member
               data: { supported: ['2026-07-28'] }

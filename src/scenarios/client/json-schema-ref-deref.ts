@@ -109,6 +109,29 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     });
 
     app.post('/mcp', async (req: Request, res: Response) => {
+      // The bundled SDK server below predates the 2026-07-28 lifecycle and
+      // does not implement server/discover; answer it directly so a client
+      // that negotiates first can proceed to tools/list.
+      if (
+        (req.body as Record<string, unknown> | undefined)?.method ===
+        'server/discover'
+      ) {
+        return res.json({
+          jsonrpc: '2.0',
+          id: (req.body as Record<string, unknown>).id ?? null,
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            capabilities: { tools: {} },
+            serverInfo: {
+              name: 'json-schema-ref-deref-server',
+              version: '1.0.0'
+            }
+          }
+        });
+      }
       try {
         // Stateless: fresh server and transport per request
         const server = createMcpServer(this.canaryUrl(), () => {

@@ -202,12 +202,12 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     });
   }
 
+  protected discoverCapabilities(): object {
+    return { tools: {}, resources: {}, prompts: {} };
+  }
+
   private handleInitialize(res: http.ServerResponse, request: any): void {
-    this.sendInitialize(res, request, {
-      tools: {},
-      resources: {},
-      prompts: {}
-    });
+    this.sendInitialize(res, request);
   }
 
   private handleToolsList(res: http.ServerResponse, request: any): void {

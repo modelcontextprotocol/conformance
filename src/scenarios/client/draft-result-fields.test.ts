@@ -8,6 +8,7 @@ import {
 } from './http-custom-headers';
 import { RequestMetadataScenario } from './request-metadata';
 import { MRTRClientScenario } from './mrtr-client';
+import { JsonSchemaRefDerefScenario } from './json-schema-ref-deref';
 
 /**
  * Pins that the hand-rolled mock servers used by client-direction scenarios
@@ -42,6 +43,70 @@ const CACHEABLE_FIELDS = {
   ttlMs: 0,
   cacheScope: 'private'
 };
+
+const DISCOVER_FIELDS = {
+  ...CACHEABLE_FIELDS,
+  supportedVersions: [DRAFT_PROTOCOL_VERSION]
+};
+
+describe('hand-rolled mock servers serve server/discover (2026-07-28)', () => {
+  const cases = [
+    {
+      name: 'http-standard-headers',
+      make: () => new HttpStandardHeadersScenario(),
+      capabilities: { tools: {}, resources: {}, prompts: {} }
+    },
+    {
+      name: 'http-custom-headers',
+      make: () => new HttpCustomHeadersScenario(),
+      capabilities: { tools: {} }
+    },
+    {
+      name: 'http-invalid-tool-headers',
+      make: () => new HttpInvalidToolHeadersScenario(),
+      capabilities: { tools: {} }
+    },
+    {
+      name: 'sep-2322-client-request-state',
+      make: () => new MRTRClientScenario(),
+      capabilities: { tools: {} }
+    },
+    {
+      name: 'json-schema-ref-no-deref',
+      make: () => new JsonSchemaRefDerefScenario(),
+      capabilities: { tools: {} }
+    }
+  ];
+
+  for (const c of cases) {
+    it(`${c.name} returns a valid DiscoverResult`, async () => {
+      const scenario = c.make();
+      const { serverUrl } = await scenario.start(
+        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+      );
+      try {
+        const { status, body } = await post(
+          serverUrl,
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'server/discover',
+            params: { _meta: meta }
+          },
+          { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        );
+        expect(status).toBe(200);
+        expect(body.result).toMatchObject({
+          ...DISCOVER_FIELDS,
+          capabilities: c.capabilities
+        });
+        expect(body.result.serverInfo?.name).toBeTypeOf('string');
+      } finally {
+        await scenario.stop();
+      }
+    });
+  }
+});
 
 describe('http-standard-headers mock results (2026-07-28)', () => {
   it('carries the draft-required result members on every handled method', async () => {
@@ -173,7 +238,7 @@ describe('request-metadata mock results (2026-07-28)', () => {
     );
     const headers = { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION };
     try {
-      // The first request is always answered with the simulated -32004
+      // The first request is always answered with the simulated -32022
       // rejection (retry probe); results are served from the second on.
       const first = await post(
         serverUrl,

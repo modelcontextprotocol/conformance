@@ -1260,7 +1260,7 @@ app.post('/mcp', async (req, res) => {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
-        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
+        error: { code: -32020, message: 'Missing MCP-Protocol-Version header' }
       });
     }
 
@@ -1283,25 +1283,25 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Header Mismatch Verification (-32001, HTTP 400)
+    // Header Mismatch Verification (-32020, HTTP 400)
     if (reqVersion !== metaVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32001,
+          code: -32020,
           message: 'Mismatched MCP-Protocol-Version header'
         }
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
+    // Protocol Version Negotiation Matrix (-32022, HTTP 400)
     if (metaVersion !== '2026-07-28') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'UnsupportedProtocolVersionError',
           data: {
             supported: ['2026-07-28'],
@@ -1655,13 +1655,13 @@ app.post('/mcp', async (req, res) => {
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
 
-        // Missing Required Client Capability Check (-32003, HTTP 400)
+        // Missing Required Client Capability Check (-32021, HTTP 400)
         if (!clientCaps?.sampling) {
           return res.status(400).json({
             jsonrpc: '2.0',
             id,
             error: {
-              code: -32003,
+              code: -32021,
               message: 'MissingRequiredClientCapabilityError',
               data: { requiredCapabilities: ['sampling'] }
             }
