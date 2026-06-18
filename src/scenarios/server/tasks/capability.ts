@@ -25,16 +25,15 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
 
 **Capability advertisement (SEP-2663):**
 - The server MUST advertise \`io.modelcontextprotocol/tasks\` under
-  \`capabilities.extensions\` in its \`initialize\` response.
+  \`capabilities.extensions\` in its \`server/discover\` response.
 - It MUST NOT use a v1-style \`capabilities.tasks\` slot (the v1 surface
   is replaced by the extension).
 
 **Gating without negotiation (SEP-2663):**
-- For sessions that did NOT declare the \`io.modelcontextprotocol/tasks\`
-  extension during \`initialize\`, the server MUST reject \`tasks/get\`,
-  \`tasks/update\`, and \`tasks/cancel\` with JSON-RPC \`-32601\`
-  (MethodNotFound) — clients that didn't negotiate the surface should
-  not see it.
+- For requests that do NOT carry the \`io.modelcontextprotocol/tasks\`
+  extension in \`_meta.clientCapabilities\`, the server MUST reject
+  \`tasks/get\`, \`tasks/update\`, and \`tasks/cancel\` with a
+  \`MissingRequiredClientCapability\` error.
 - A \`tools/call\` from such a session MUST NOT return
   \`CreateTaskResult\`. Task-supporting tools fall through to synchronous
   execution and return a plain \`ToolResult\` with

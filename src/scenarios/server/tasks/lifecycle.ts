@@ -63,8 +63,8 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
   \`{resultType:"complete"}\` ack — no task envelope (SEP-2322
   discriminator). The cancelled status is observed via the next
   \`tasks/get\`.
-- \`tasks/cancel\` against a terminal task MUST return JSON-RPC
-  \`-32602\` (InvalidParams). Clarified upstream in spec commit d963ad0.
+- \`tasks/cancel\` against a terminal task returns the same empty ack
+  (idempotent) — the spec reserves \`-32602\` for unknown taskIds only.
 
 **Required server fixtures (\`tools/list\` MUST include all):**
 - \`greet\` — sync-only, returns \`Hello, {name}!\`.
@@ -448,15 +448,9 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
               `cancel ack MUST NOT carry task-envelope fields; got: ${ackOffenders.join(', ')}`
             );
           }
-          // Cancellation is eventually-consistent — poll to terminal
-          // before asserting the cancelled status. The slow_compute
-          // fixture contract requires settling to `cancelled`.
+          // SEP-2663 §Task Cancellation: transition to `cancelled` is not
+          // guaranteed; record the settled status as diagnostic detail only.
           const after = await waitForTerminal(conn, cancelTaskId);
-          if (after.status !== 'cancelled') {
-            errs.push(
-              `terminal status after cancel MUST be cancelled; got ${after.status}`
-            );
-          }
           checks.push({
             id,
             name,
