@@ -131,5 +131,13 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
     );
     expect(meta?.['io.modelcontextprotocol/clientInfo']).toBeDefined();
     expect(meta?.['io.modelcontextprotocol/clientCapabilities']).toBeDefined();
+
+    // Scenario-passed capabilities (not just defaults) must reach the wire.
+    const caps = meta?.['io.modelcontextprotocol/clientCapabilities'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(caps?.extensions).toMatchObject({
+      'io.modelcontextprotocol/tasks': {}
+    });
   }, 30000);
 });

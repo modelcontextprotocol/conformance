@@ -91,7 +91,7 @@ export async function runServerConformanceTest(
   const ctx: RunContext = {
     serverUrl,
     specVersion: resolvedSpecVersion,
-    connect: () => connectFor(resolvedSpecVersion)(serverUrl)
+    connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
   const checks = await scenario.run(ctx);
 
