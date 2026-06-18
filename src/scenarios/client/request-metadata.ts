@@ -282,7 +282,7 @@ export class RequestMetadataScenario implements Scenario {
             id: request.id ?? null,
             error: {
               // UnsupportedProtocolVersionError per the draft schema.
-              code: -32004,
+              code: -32022,
               message: 'Unsupported protocol version',
               data: {
                 supported: [DRAFT_PROTOCOL_VERSION],

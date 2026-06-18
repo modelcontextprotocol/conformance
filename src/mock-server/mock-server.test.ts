@@ -100,7 +100,7 @@ describe('validateStatelessRequest', () => {
     });
   });
 
-  it('rejects versions outside the supported list with -32004 and echoes it', () => {
+  it('rejects versions outside the supported list with -32022 and echoes it', () => {
     const v = validateStatelessRequest(
       {
         headers: { 'mcp-protocol-version': '2099-01-01' },
@@ -124,7 +124,7 @@ describe('validateStatelessRequest', () => {
       status: 400,
       body: {
         error: {
-          code: -32004,
+          code: -32022,
           data: { supported: [DRAFT_PROTOCOL_VERSION], requested: '2099-01-01' }
         }
       }
@@ -216,7 +216,7 @@ describe('createServerStateless', () => {
         params: { _meta: meta }
       });
       expect(status).toBe(400);
-      expect(body.error.code).toBe(-32001);
+      expect(body.error.code).toBe(-32020);
     } finally {
       await srv.close();
     }
@@ -258,7 +258,7 @@ describe('createServerStateless', () => {
     }
   });
 
-  it('accepts the version it was created for and rejects others with -32004', async () => {
+  it('accepts the version it was created for and rejects others with -32022', async () => {
     const srv = await createServerStateless(
       { 'tools/list': () => ({ tools: [] }) },
       DRAFT_PROTOCOL_VERSION
@@ -292,7 +292,7 @@ describe('createServerStateless', () => {
         { 'mcp-protocol-version': '2099-01-01' }
       );
       expect(rejected.status).toBe(400);
-      expect(rejected.body.error.code).toBe(-32004);
+      expect(rejected.body.error.code).toBe(-32022);
       expect(rejected.body.error.data.supported).toEqual([
         DRAFT_PROTOCOL_VERSION
       ]);

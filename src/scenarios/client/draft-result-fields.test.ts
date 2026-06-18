@@ -238,7 +238,7 @@ describe('request-metadata mock results (2026-07-28)', () => {
     );
     const headers = { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION };
     try {
-      // The first request is always answered with the simulated -32004
+      // The first request is always answered with the simulated -32022
       // rejection (retry probe); results are served from the second on.
       const first = await post(
         serverUrl,

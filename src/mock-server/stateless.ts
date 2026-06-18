@@ -84,7 +84,7 @@ export type StatelessValidation =
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
  *
  * `supportedVersions` is the list of wire protocolVersion strings this
- * endpoint accepts; anything else is rejected with -32004 carrying
+ * endpoint accepts; anything else is rejected with -32022 carrying
  * `{ supported, requested }` in the error data, and the list is echoed in
  * the `server/discover` result.
  */
@@ -108,7 +108,7 @@ export function validateStatelessRequest(
 
   const headerVersion = req.headers['mcp-protocol-version'];
   if (!headerVersion) {
-    return reject(400, -32001, 'Missing MCP-Protocol-Version header');
+    return reject(400, -32020, 'Missing MCP-Protocol-Version header');
   }
   const missing = META_KEYS.filter((k) => meta?.[k] === undefined);
   if (missing.length > 0) {
@@ -121,7 +121,7 @@ export function validateStatelessRequest(
   if (meta?.[META_KEYS[0]] !== headerVersion) {
     return reject(
       400,
-      -32001,
+      -32020,
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
@@ -136,7 +136,7 @@ export function validateStatelessRequest(
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'Unsupported protocol version',
           data: {
             supported: supportedVersions,

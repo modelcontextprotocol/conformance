@@ -120,7 +120,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // HTTP Standardization (SEP-2243)
   // Pending until the everything-server fully implements SEP-2243
-  // header validation (case-insensitive names, whitespace trimming, -32001 error code)
+  // header validation (case-insensitive names, whitespace trimming, -32020 error code)
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario()
 ];

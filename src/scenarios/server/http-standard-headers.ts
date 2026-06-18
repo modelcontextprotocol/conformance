@@ -8,7 +8,7 @@
  * - Reject case variations of header values (case-sensitive)
  * - Handle whitespace trimming per HTTP spec
  * - Validate Base64-encoded custom header values
- * - Return 400 Bad Request with error code -32001 (HeaderMismatch)
+ * - Return 400 Bad Request with error code -32020 (HeaderMismatch)
  *
  * This is a ClientScenario (connects to a server under test and validates
  * its behavior).
@@ -66,8 +66,8 @@ const REJECT_STATUS_CHECK_ID = 'sep-2243-server-reject-invalid-headers';
 const REJECT_ERROR_CODE_CHECK_ID = 'sep-2243-server-reject-error-code';
 
 // CUSTOM-header (Mcp-Param-*) rejections map to the param-validation
-// requirements instead. The -32001 error-code half of every custom-header
-// rejection is the "reject with 400 + JSON-RPC error code -32001 if any
+// requirements instead. The -32020 error-code half of every custom-header
+// rejection is the "reject with 400 + JSON-RPC error code -32020 if any
 // validation fails" requirement.
 const PARAM_REJECT_ERROR_CODE_CHECK_ID =
   'sep-2243-server-reject-param-mismatch';
@@ -148,8 +148,8 @@ async function sendRawRequest(
 
 /**
  * Builds two checks for a rejection case: one for the HTTP 400 status, one for
- * the -32001 JSON-RPC error code. Per SEP-2243 §Server Validation, 400 is MUST
- * but -32001 is SHOULD for *standard* headers (and MUST for *custom* headers,
+ * the -32020 JSON-RPC error code. Per SEP-2243 §Server Validation, 400 is MUST
+ * but -32020 is SHOULD for *standard* headers (and MUST for *custom* headers,
  * §Server Behavior for Custom Headers) — so a server returning 400 with a
  * different error code is compliant for standard headers and must not FAIL.
  *
@@ -196,7 +196,7 @@ function createRejectionChecks(
     {
       id: errorCodeId,
       name: `${name}ErrorCode`,
-      description: `${description} — uses JSON-RPC error code -32001 (HeaderMismatch)`,
+      description: `${description} — uses JSON-RPC error code -32020 (HeaderMismatch)`,
       status: codeOk ? 'SUCCESS' : opts.errorCodeSeverity,
       timestamp: ts,
       errorMessage: codeOk
@@ -265,7 +265,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 - Server MUST reject case-mismatched header values (method values are case-sensitive)
 - Server MUST accept extra whitespace around header values (per HTTP spec)
 - Server MUST return HTTP 400 Bad Request for validation failures
-- Server MUST return JSON-RPC error with code -32001 (HeaderMismatch)`;
+- Server MUST return JSON-RPC error with code -32020 (HeaderMismatch)`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
@@ -507,7 +507,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         ...extraHeaders
       });
       if (expectation === 'reject') {
-        // Standard-header rejection: 400 is MUST, -32001 is SHOULD. All
+        // Standard-header rejection: 400 is MUST, -32020 is SHOULD. All
         // standard-header rejection cases collapse onto the coarse requirement
         // ids; checkId/checkName still distinguish the case via name/details.
         checks.push(
@@ -926,10 +926,10 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           )
         );
       } else {
-        // Custom-header rejection: both 400 and -32001 are MUST per
+        // Custom-header rejection: both 400 and -32020 are MUST per
         // §Server Behavior for Custom Headers. The status half maps to the
         // param-validation requirement this case exercises (checkId); the
-        // error-code half is the "400 + -32001 if any validation fails"
+        // error-code half is the "400 + -32020 if any validation fails"
         // requirement.
         checks.push(
           ...createRejectionChecks(
@@ -992,7 +992,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         }
       );
 
-      // Custom-header rejection: both 400 and -32001 are MUST. A header
+      // Custom-header rejection: both 400 and -32020 are MUST. A header
       // omitted while the body carries a value is a header/body mismatch, so
       // the status half maps to the validate-param-match requirement.
       checks.push(

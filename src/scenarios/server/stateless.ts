@@ -40,9 +40,9 @@ export class ServerStatelessScenario implements ClientScenario {
    - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities.
 3. **Version Negotiation & Headers (3 Checks)**
    - Mismatched or unknown protocol versions must return an \`UnsupportedProtocolVersionError\` (HTTP status code \`400 Bad Request\`) carrying precise version tracking arrays.
-   - Absent or altered protocol version header metadata must trigger a \`-32001 Header Mismatch\` error with an HTTP 400 boundary state.
+   - Absent or altered protocol version header metadata must trigger a \`-32020 Header Mismatch\` error with an HTTP 400 boundary state.
 4. **Client Capability Constraints (2 Checks)**
-   - Accessing platform capabilities without explicit declaration drops requests with a \`-32003 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
+   - Accessing platform capabilities without explicit declaration drops requests with a \`-32021 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
 5. **Methods & Routing Mechanics (5 Checks)**
    - Removed legacy endpoints (\`initialize\`, \`ping\`, \`logging/setLevel\`, etc.) or generic unknown methods must cleanly yield an HTTP status code \`404 Not Found\` alongside a JSON-RPC \`-32601 Method not found\` payload. All error returns must preserve original request ID mappings.
    - Validates response streams contain only \`IncompleteResult\` chunks and never independent top-level JSON-RPC requests, while enforcing that no log messages are emitted when \`_meta.../logLevel\` is omitted.
@@ -608,9 +608,9 @@ export class ServerStatelessScenario implements ClientScenario {
       () => {
         if (!resAbsent)
           return { error: 'Header verification endpoint network hit failed' };
-        if (resAbsent.status !== 400 || dataAbsent?.error?.code !== -32001) {
+        if (resAbsent.status !== 400 || dataAbsent?.error?.code !== -32020) {
           return {
-            error: `Expected HTTP 400 and JSON-RPC error -32001, got status ${resAbsent.status} with code ${dataAbsent?.error?.code}`
+            error: `Expected HTTP 400 and JSON-RPC error -32020, got status ${resAbsent.status} with code ${dataAbsent?.error?.code}`
           };
         }
         return { details: { response: dataAbsent } };
@@ -631,12 +631,12 @@ export class ServerStatelessScenario implements ClientScenario {
     if (data401) checkErrorId(data401, 401);
 
     // Determine if this server actively enforces client capabilities
-    const serverRequiresCapability = data401?.error?.code === -32003;
+    const serverRequiresCapability = data401?.error?.code === -32021;
 
     await runCheck(
       'sep-2575-server-rejects-undeclared-capability',
       'ServerRejectsUndeclaredCapability',
-      'A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32003).',
+      'A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32021).',
       () => {
         if (!res401)
           return {
@@ -645,22 +645,22 @@ export class ServerStatelessScenario implements ClientScenario {
           };
 
         if (!serverRequiresCapability) {
-          // The server didn't return -32003, so this requirement isn't
+          // The server didn't return -32021, so this requirement isn't
           // exercised for this method. Report SKIPPED rather than a green PASS.
           return {
             skipped: true,
             details: {
-              note: 'Skipped requirement tracking: Server returned a non-32003 response, indicating it does not require explicit client capability authorization constraints for this method.',
+              note: 'Skipped requirement tracking: Server returned a non-32021 response, indicating it does not require explicit client capability authorization constraints for this method.',
               response: data401
             }
           };
         }
 
-        // If it DOES return -32003, strictly validate the requirement payload structure
+        // If it DOES return -32021, strictly validate the requirement payload structure
         const reqCaps = data401?.error?.data?.requiredCapabilities;
         if (!Array.isArray(reqCaps) || !reqCaps.includes('sampling')) {
           return {
-            error: `Server responded with error code -32003 but failed to provide an array containing the expected 'sampling' capability in error.data.requiredCapabilities`,
+            error: `Server responded with error code -32021 but failed to provide an array containing the expected 'sampling' capability in error.data.requiredCapabilities`,
             details: { response: data401 }
           };
         }
@@ -680,7 +680,7 @@ export class ServerStatelessScenario implements ClientScenario {
           };
 
         if (!serverRequiresCapability) {
-          // No -32003 means the HTTP-400 requirement doesn't apply here.
+          // No -32021 means the HTTP-400 requirement doesn't apply here.
           // Report SKIPPED rather than a green PASS.
           return {
             skipped: true,

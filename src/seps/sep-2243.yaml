@@ -8,7 +8,7 @@ requirements:
   - check: sep-2243-server-reject-invalid-headers
     text: 'Servers that process the request body MUST reject requests with mismatched or missing standard-header values, returning HTTP 400 Bad Request.'
   - check: sep-2243-server-reject-error-code
-    text: 'When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32001.'
+    text: 'When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32020.'
   - check: sep-2243-client-supports-custom-headers
     text: 'MCP clients MUST support this feature [custom headers via x-mcp-header].'
   - check: sep-2243-client-mirrors-designated-params
@@ -45,7 +45,7 @@ requirements:
   - check: sep-2243-server-validate-param-match
     text: 'Any server that processes the message body MUST validate that encoded header values, after decoding if Base64-encoded, match the corresponding parameter values in the body.'
   - check: sep-2243-server-reject-param-mismatch
-    text: 'Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32001 if any validation fails.'
+    text: 'Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32020 if any validation fails.'
 
   - text: 'Clients SHOULD log a warning when rejecting a tool definition due to invalid x-mcp-header, including the tool name and the reason.'
     excluded: 'Log output is not wire-observable.'
