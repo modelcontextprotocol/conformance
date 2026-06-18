@@ -42,7 +42,8 @@ export const CUSTOM_HEADERS_DECLARED_CHECK_IDS = [
   'sep-2243-client-mirrors-designated-params',
   'sep-2243-client-encode-values',
   'sep-2243-client-base64-unsafe',
-  'sep-2243-client-omit-null'
+  'sep-2243-client-omit-null',
+  'sep-2243-client-extract-nested-path'
 ] as const;
 
 /**
@@ -54,7 +55,8 @@ export const INVALID_TOOL_DECLARED_CHECK_IDS = [
   'sep-2243-x-mcp-header-not-empty',
   'sep-2243-x-mcp-header-charset',
   'sep-2243-x-mcp-header-unique',
-  'sep-2243-x-mcp-header-primitive-only'
+  'sep-2243-x-mcp-header-primitive-only',
+  'sep-2243-x-mcp-header-statically-reachable'
 ] as const;
 
 /**
@@ -73,7 +75,14 @@ const INVALID_TOOL_CONSTRAINT_IDS: Record<string, string> = {
   invalid_space_in_name: 'sep-2243-x-mcp-header-charset',
   invalid_colon_in_name: 'sep-2243-x-mcp-header-charset',
   invalid_non_ascii_name: 'sep-2243-x-mcp-header-charset',
-  invalid_control_char_name: 'sep-2243-x-mcp-header-charset'
+  invalid_control_char_name: 'sep-2243-x-mcp-header-charset',
+  invalid_under_items: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_oneof: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_anyof: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_allof: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_not: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_conditional: 'sep-2243-x-mcp-header-statically-reachable',
+  invalid_under_ref: 'sep-2243-x-mcp-header-statically-reachable'
 };
 
 /**
@@ -186,6 +195,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
 
   private toolCallReceived: boolean = false;
   private nullToolCallReceived: boolean = false;
+  private nestedToolCallReceived: boolean = false;
 
   async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     const urls = await super.start(_ctx);
@@ -222,6 +232,14 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
             verbose: null,
             query: 'SELECT 1'
           }
+        },
+        {
+          name: 'test_custom_headers_nested',
+          arguments: { outer: { inner: 'nested-value' } }
+        },
+        {
+          name: 'test_custom_headers_nested',
+          arguments: { outer: {} }
         }
       ]
     };
@@ -236,6 +254,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       if (this.checks.some((c) => c.id === id)) continue;
       const missingNullCall =
         id === 'sep-2243-client-omit-null' && !this.nullToolCallReceived;
+      const missingNestedCall =
+        id === 'sep-2243-client-extract-nested-path' &&
+        !this.nestedToolCallReceived;
       this.checks.push({
         id,
         name: 'NotObserved',
@@ -244,9 +265,11 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         timestamp: new Date().toISOString(),
         errorMessage: missingNullCall
           ? 'Client did not send a tools/call request for test_custom_headers_null to test null/omitted parameter handling.'
-          : this.toolCallReceived
-            ? 'Check was not observed: no tool call exercised it.'
-            : 'Client did not send a tools/call request for test_custom_headers.',
+          : missingNestedCall
+            ? 'Client did not send a tools/call request for test_custom_headers_nested to test nested-path header extraction.'
+            : this.toolCallReceived
+              ? 'Check was not observed: no tool call exercised it.'
+              : 'Client did not send a tools/call request for test_custom_headers.',
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
     }
@@ -408,6 +431,29 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                 }
               },
               required: ['region', 'priority', 'query']
+            }
+          },
+          {
+            name: 'test_custom_headers_nested',
+            description:
+              'A tool with an x-mcp-header annotation on a nested object property to test extraction at the exact properties-path',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                outer: {
+                  type: 'object',
+                  description:
+                    'Container object — its child carries the annotation',
+                  properties: {
+                    inner: {
+                      type: 'string',
+                      description:
+                        'Nested string value reached via properties.outer.properties.inner',
+                      'x-mcp-header': 'Nested'
+                    }
+                  }
+                }
+              }
             }
           }
         ]
@@ -588,6 +634,53 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
             : undefined,
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
+    } else if (toolName === 'test_custom_headers_nested') {
+      this.nestedToolCallReceived = true;
+
+      // SEP-2243 nested-path extraction: header value is read at the exact
+      // properties-chain (outer.inner). When outer.inner is present the
+      // client MUST send Mcp-Param-Nested with that value; when absent at
+      // that path the client MUST omit the header.
+      const innerValue = args.outer?.inner;
+      const nestedHeader = req.headers['mcp-param-nested'] as
+        | string
+        | undefined;
+
+      if (innerValue !== undefined && innerValue !== null) {
+        const validationError =
+          nestedHeader === undefined
+            ? `Missing Mcp-Param-Nested header for nested value at outer.inner='${innerValue}'. Client MUST extract values at the annotated property's exact properties-path.`
+            : validateEncodedHeader(nestedHeader, String(innerValue), 'string');
+        this.checks.push({
+          id: 'sep-2243-client-extract-nested-path',
+          name: 'ClientCustomHeaderNestedPresent',
+          description:
+            'Client extracts the header value at the nested properties-path (outer.inner) and sends Mcp-Param-Nested',
+          status: validationError ? 'FAILURE' : 'SUCCESS',
+          timestamp: new Date().toISOString(),
+          errorMessage: validationError ?? undefined,
+          specReferences: [SPEC_REFERENCE_CUSTOM],
+          details: {
+            headerName: 'Mcp-Param-Nested',
+            rawHeaderValue: nestedHeader,
+            bodyValue: innerValue
+          }
+        });
+      } else {
+        this.checks.push({
+          id: 'sep-2243-client-extract-nested-path',
+          name: 'ClientCustomHeaderNestedAbsent',
+          description:
+            'Client omits Mcp-Param-Nested when no value is present at the nested properties-path',
+          status: nestedHeader === undefined ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            nestedHeader !== undefined
+              ? `Mcp-Param-Nested should be omitted when outer.inner is absent, but got '${nestedHeader}'`
+              : undefined,
+          specReferences: [SPEC_REFERENCE_CUSTOM]
+        });
+      }
     }
 
     this.sendJson(res, {
@@ -930,6 +1023,149 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
                 value: { type: 'string', 'x-mcp-header': 'Region\t1' }
               },
               required: ['value']
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `items` (array keyword) ──
+          {
+            name: 'invalid_under_items',
+            description:
+              'x-mcp-header path passes through `items` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                arr: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      value: { type: 'string', 'x-mcp-header': 'ArrItem' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `oneOf` ──
+          {
+            name: 'invalid_under_oneof',
+            description:
+              'x-mcp-header path passes through `oneOf` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                choice: {
+                  oneOf: [
+                    {
+                      type: 'object',
+                      properties: {
+                        value: { type: 'string', 'x-mcp-header': 'OneOf' }
+                      }
+                    },
+                    { type: 'string' }
+                  ]
+                }
+              }
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `anyOf` ──
+          {
+            name: 'invalid_under_anyof',
+            description:
+              'x-mcp-header path passes through `anyOf` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                choice: {
+                  anyOf: [
+                    {
+                      type: 'object',
+                      properties: {
+                        value: { type: 'string', 'x-mcp-header': 'AnyOf' }
+                      }
+                    },
+                    { type: 'string' }
+                  ]
+                }
+              }
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `allOf` ──
+          {
+            name: 'invalid_under_allof',
+            description:
+              'x-mcp-header path passes through `allOf` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              allOf: [
+                {
+                  type: 'object',
+                  properties: {
+                    value: { type: 'string', 'x-mcp-header': 'AllOf' }
+                  }
+                }
+              ]
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `not` ──
+          {
+            name: 'invalid_under_not',
+            description:
+              'x-mcp-header path passes through `not` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                value: { type: 'string' }
+              },
+              not: {
+                properties: {
+                  value: { type: 'string', 'x-mcp-header': 'Not' }
+                }
+              }
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `if`/`then` ──
+          {
+            name: 'invalid_under_conditional',
+            description:
+              'x-mcp-header path passes through `then` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                kind: { type: 'string' }
+              },
+              if: { properties: { kind: { const: 'a' } } },
+              then: {
+                properties: {
+                  value: { type: 'string', 'x-mcp-header': 'Conditional' }
+                }
+              }
+            }
+          },
+
+          // ── Invalid: x-mcp-header reached via `$ref` ──
+          {
+            name: 'invalid_under_ref',
+            description:
+              'x-mcp-header path passes through `$ref` — not statically reachable (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ref: { $ref: '#/$defs/Referenced' }
+              },
+              $defs: {
+                Referenced: {
+                  type: 'object',
+                  properties: {
+                    value: { type: 'string', 'x-mcp-header': 'Ref' }
+                  }
+                }
+              }
             }
           }
         ]

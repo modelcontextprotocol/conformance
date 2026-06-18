@@ -25,6 +25,11 @@ requirements:
   - check: sep-2243-x-mcp-header-primitive-only
     text: 'x-mcp-header MUST only be applied to parameters with primitive types (number, string, or boolean).'
     url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers
+  - check: sep-2243-x-mcp-header-statically-reachable
+    text: 'x-mcp-header MUST only be applied to properties that are statically reachable from the schema root: reachable via a chain consisting solely of `properties` keys. The chain MUST NOT pass through `items` (or any other array keyword), composition keywords (`oneOf`, `anyOf`, `allOf`, `not`), conditional keywords (`if`/`then`/`else`), or `$ref`.'
+    url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers
+  - check: sep-2243-client-extract-nested-path
+    text: 'Header extraction is defined as reading the instance value at the exact property path of the annotated property (the chain of `properties` keys leading to it). If no value is present at that path in the call arguments, the header is omitted.'
   - check: sep-2243-client-reject-invalid-tool
     text: 'Clients MUST reject tool definitions where any x-mcp-header value violates these constraints. Rejection means the client MUST exclude the invalid tool from the set of tools returned by tools/list.'
     url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers
