@@ -25,6 +25,7 @@ import {
   sendStatelessRequest,
   type RunContext
 } from '../../connection';
+import { HEADER_MISMATCH } from '../../spec-types/draft';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -55,7 +56,7 @@ const SPEC_REFERENCE_CUSTOM = {
   url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#server-behavior-for-custom-headers'
 };
 
-const HEADER_MISMATCH_ERROR_CODE = -32001;
+const HEADER_MISMATCH_ERROR_CODE = HEADER_MISMATCH;
 
 // Coarse, requirement-level check IDs (SEP-2243) for STANDARD-header
 // rejections. Every standard-header rejection case emits this same pair of IDs;
