@@ -44,6 +44,9 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     onToolsListed();
     return {
+      resultType: 'complete',
+      ttlMs: 0,
+      cacheScope: 'private',
       tools: [
         {
           name: TOOL_NAME,

@@ -1225,6 +1225,16 @@ app.use(
   })
 );
 
+// Protocol revisions that use the initialize/session lifecycle. The
+// per-request `_meta` and header/body validation requirements apply to
+// 2026-07-28 and later, not to traffic from these revisions.
+const LEGACY_SESSION_PROTOCOL_VERSIONS = [
+  '2024-11-05',
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25'
+];
+
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -1236,7 +1246,15 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  if (!sessionId && (reqVersion || meta)) {
+  // A request that carries no `_meta` and names a legacy session-era revision
+  // in the header is legacy traffic; it is served by the session path below
+  // instead of being rejected for missing per-request metadata.
+  const isLegacySessionEraRequest =
+    meta === undefined &&
+    reqVersion !== undefined &&
+    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
+
+  if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
     // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
@@ -1246,14 +1264,16 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Per-Request Metadata Integrity Checks (Fields verification)
+    // Per-Request Metadata Integrity Checks (Fields verification).
+    // A request missing any required `_meta` field is malformed: -32602 and,
+    // on HTTP, status 400 Bad Request.
     if (
       !meta ||
       !meta['io.modelcontextprotocol/protocolVersion'] ||
       !meta['io.modelcontextprotocol/clientInfo'] ||
       !meta['io.modelcontextprotocol/clientCapabilities']
     ) {
-      return res.status(200).json({
+      return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {

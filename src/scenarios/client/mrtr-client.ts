@@ -96,7 +96,12 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
         res.json({
           jsonrpc: '2.0',
           id,
-          result: { tools: TOOLS }
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            tools: TOOLS
+          }
         });
         return;
       }
@@ -141,7 +146,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
         res.json({
           jsonrpc: '2.0',
           id,
-          result: { action: 'accept', content: { confirmed: true } }
+          result: {
+            resultType: 'complete',
+            action: 'accept',
+            content: { confirmed: true }
+          }
         });
         return;
       }
@@ -258,6 +267,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'echo-state-ok' }]
       }
     });
@@ -324,6 +334,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'no-state-ok' }]
       }
     });
@@ -370,6 +381,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'unrelated-ok' }]
       }
     });
@@ -403,7 +415,10 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       res.json({
         jsonrpc: '2.0',
         id,
-        result: { content: [{ type: 'text', text: 'unexpected-retry' }] }
+        result: {
+          resultType: 'complete',
+          content: [{ type: 'text', text: 'unexpected-retry' }]
+        }
       });
       return;
     }

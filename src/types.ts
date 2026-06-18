@@ -57,6 +57,26 @@ export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
  */
 export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 
+/** Spec versions in timeline order, dated revisions followed by the draft. */
+const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
+  ...DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
+];
+
+/**
+ * True when `v` is at or after `threshold` on the spec timeline. Lets a check
+ * gate itself to the version that introduced its requirement (e.g. a draft-only
+ * requirement passes `DRAFT_PROTOCOL_VERSION` as the threshold).
+ */
+export function specVersionAtLeast(
+  v: SpecVersion,
+  threshold: SpecVersion
+): boolean {
+  return (
+    SPEC_VERSION_TIMELINE.indexOf(v) >= SPEC_VERSION_TIMELINE.indexOf(threshold)
+  );
+}
+
 // Scenarios may also be tagged 'extension' to mark them as off-timeline
 // (selectable via --suite extensions, never via --spec-version). See #256.
 export type ScenarioSpecTag = SpecVersion | 'extension';

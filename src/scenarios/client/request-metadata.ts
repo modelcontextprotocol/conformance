@@ -1,4 +1,7 @@
-import type { ScenarioContext } from '../../mock-server';
+import {
+  withRequiredDraftResultFields,
+  type ScenarioContext
+} from '../../mock-server';
 import http from 'http';
 import {
   Scenario,
@@ -319,11 +322,11 @@ export class RequestMetadataScenario implements Scenario {
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
-            result: {
+            result: withRequiredDraftResultFields(request.method, {
               supportedVersions: [DRAFT_PROTOCOL_VERSION],
               capabilities: {},
               serverInfo: { name: 'test', version: '1.0' }
-            }
+            })
           })
         );
         return;
@@ -337,7 +340,13 @@ export class RequestMetadataScenario implements Scenario {
         result = { content: [] };
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: request.id,
+          result: withRequiredDraftResultFields(request.method, result)
+        })
+      );
     });
   }
 }

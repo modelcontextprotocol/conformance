@@ -276,6 +276,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private',
         tools: [
           {
             name: 'test_custom_headers',
@@ -591,6 +594,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'Custom headers test completed' }]
       }
     });
@@ -760,6 +764,9 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private',
         tools: [
           // ── Valid tool (should be kept by client) ──
           {
@@ -938,6 +945,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'Tool call received' }]
       }
     });

@@ -127,6 +127,93 @@ describe('Stateless Server Scenario Negative Tests', () => {
     expect(missingVersionCheck?.status).toBe('FAILURE');
   });
 
+  test('Fails validation when missing-_meta rejections are returned with HTTP 200', async () => {
+    // This bad server picks the right JSON-RPC error code but the wrong HTTP
+    // status: the spec requires 400 Bad Request for malformed requests.
+    const mockUrl = mockFetchTarget((reqBody) => {
+      const meta = reqBody.params?._meta;
+      const missingRequired =
+        !meta ||
+        !meta['io.modelcontextprotocol/protocolVersion'] ||
+        !meta['io.modelcontextprotocol/clientInfo'] ||
+        !meta['io.modelcontextprotocol/clientCapabilities'];
+      if (missingRequired) {
+        return {
+          status: 200, // Spec Violation: must be HTTP 400
+          body: {
+            jsonrpc: '2.0',
+            id: reqBody.id,
+            error: {
+              code: -32602,
+              message: 'Invalid params: missing _meta or required fields'
+            }
+          }
+        };
+      }
+    });
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    // The JSON-RPC code is correct, so the per-field checks pass; the wrong
+    // HTTP status is caught by the companion status check.
+    const missingMetaCheck = findCheck(
+      checks,
+      'sep-2575-request-meta-invalid-missing-meta'
+    );
+    const httpStatusCheck = findCheck(
+      checks,
+      'sep-2575-http-server-meta-invalid-400'
+    );
+
+    expect(missingMetaCheck?.status).toBe('SUCCESS');
+    expect(httpStatusCheck?.status).toBe('FAILURE');
+  });
+
+  test('Fails validation when the unsupported-version error omits data.requested', async () => {
+    const mockUrl = mockFetchTarget((reqBody) => {
+      const meta = reqBody.params?._meta;
+      if (meta?.['io.modelcontextprotocol/protocolVersion'] === 'v999.0.0') {
+        return {
+          status: 400,
+          body: {
+            jsonrpc: '2.0',
+            id: reqBody.id,
+            error: {
+              code: -32004,
+              message: 'Unsupported protocol version',
+              // Spec Violation: data.requested is a required member
+              data: { supported: ['2026-07-28'] }
+            }
+          }
+        };
+      }
+      if (reqBody.method === 'server/discover') {
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: reqBody.id,
+            result: {
+              supportedVersions: ['2026-07-28'],
+              capabilities: {},
+              serverInfo: { name: 'no-requested-server', version: '1.0.0' }
+            }
+          }
+        };
+      }
+    });
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    const negotiationCheck = findCheck(
+      checks,
+      'sep-2575-server-unsupported-version-error'
+    );
+    expect(negotiationCheck?.status).toBe('FAILURE');
+  });
+
   test('Fails validation if removed legacy RPCs do not return HTTP 404 Not Found', async () => {
     // This bad server intercepts the removed 'ping' or 'initialize' methods but incorrectly returns HTTP 200
     const mockUrl = mockFetchTarget((reqBody) => {

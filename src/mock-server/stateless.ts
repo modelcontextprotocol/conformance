@@ -20,6 +20,45 @@ const META_KEYS = [
   'io.modelcontextprotocol/clientCapabilities'
 ] as const;
 
+/**
+ * Operations whose results the 2026-07-28 revision marks cacheable: servers
+ * MUST include the caching hints `ttlMs` and `cacheScope` on these results
+ * (draft `CacheableResult`, server/utilities/caching).
+ */
+export const CACHEABLE_RESULT_METHODS: ReadonlySet<string> = new Set([
+  'server/discover',
+  'tools/list',
+  'prompts/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read'
+]);
+
+/**
+ * Fill in the result members the 2026-07-28 revision requires of servers when
+ * the handler did not set them itself: every result MUST carry `resultType`,
+ * and results of the cacheable operations MUST also carry `ttlMs` and
+ * `cacheScope`. Members the handler set are preserved (e.g. a handler may
+ * return `resultType: 'input_required'`); only absent (or undefined) ones are
+ * filled. A scenario that needs to send a deliberately non-conformant result
+ * must build its own server instead of routing through this mock.
+ */
+export function withRequiredDraftResultFields(
+  method: string,
+  result: unknown
+): unknown {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+  const stamped: Record<string, unknown> = { ...result };
+  stamped.resultType ??= 'complete';
+  if (CACHEABLE_RESULT_METHODS.has(method)) {
+    stamped.ttlMs ??= 0;
+    stamped.cacheScope ??= 'private';
+  }
+  return stamped;
+}
+
 type IncomingHeaders = Record<string, string | string[] | undefined>;
 
 export type StatelessValidation =
@@ -114,11 +153,11 @@ export function validateStatelessRequest(
       body: {
         jsonrpc: '2.0',
         id,
-        result: {
+        result: withRequiredDraftResultFields(method, {
           supportedVersions,
           capabilities,
           serverInfo: { name: 'conformance-mock-server', version: '1.0.0' }
-        }
+        })
       }
     };
   }
@@ -166,7 +205,11 @@ export async function createServerStateless(
     }
     try {
       const result = await handler(params, req.body as JSONRPCRequest);
-      return res.json({ jsonrpc: '2.0', id, result });
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: withRequiredDraftResultFields(method, result)
+      });
     } catch (e) {
       return error(500, -32603, e instanceof Error ? e.message : String(e));
     }
