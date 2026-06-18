@@ -168,13 +168,14 @@ export class ServerStatelessScenario implements ClientScenario {
       params?: any,
       maxFrames = 3,
       timeoutMs = 1000,
-      onFirstFrame?: () => Promise<void>
+      onFirstFrame?: () => Promise<void>,
+      id: string | number = Date.now()
     ): Promise<any[]> => {
       const headers = buildStandardHeaders(method, params, { specVersion });
 
       const body = JSON.stringify({
         jsonrpc: '2.0',
-        id: Date.now(),
+        id,
         method,
         ...(params !== undefined ? { params } : {})
       });
@@ -772,21 +773,30 @@ export class ServerStatelessScenario implements ClientScenario {
       }
     );
 
+    // Open a non-subscription SSE response stream once and reuse the captured
+    // frames across the independent-request and server-sent-cancelled checks.
+    let toolStreamFrames: any[] = [];
+    try {
+      toolStreamFrames = await listenToStream(
+        'tools/call',
+        {
+          name: 'test_streaming_elicitation',
+          arguments: {},
+          _meta: validMeta
+        },
+        3,
+        600
+      );
+    } catch {
+      // Stream pipeline tracking failed
+    }
+
     await runCheck(
       'sep-2575-http-server-no-independent-requests-on-stream',
       'HttpServerNoIndependentRequestsOnStream',
       'Request stream contains only IncompleteResult, never independent JSON-RPC requests',
-      async () => {
-        const frames = await listenToStream(
-          'tools/call',
-          {
-            name: 'test_streaming_elicitation',
-            arguments: {},
-            _meta: validMeta
-          },
-          3,
-          600
-        );
+      () => {
+        const frames = toolStreamFrames;
 
         if (frames.length === 0) {
           return {
@@ -816,6 +826,47 @@ export class ServerStatelessScenario implements ClientScenario {
             error:
               'Server emitted an independent standard request layout inside a response progress execution block stream context',
             details: { frames }
+          };
+        }
+        return { details: { inspectedFramesCount: frames.length } };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-cancelled-only-for-subscription',
+      'ServerCancelledOnlyForSubscription',
+      'Servers MUST NOT send notifications/cancelled for any purpose other than tearing down a subscriptions/listen stream',
+      () => {
+        const frames = toolStreamFrames;
+
+        if (frames.length === 0) {
+          return {
+            error:
+              'Failed to receive progressive stream chunk execution frames from tools/call handler endpoint'
+          };
+        }
+
+        // If the call was rejected outright (e.g. the diagnostic tool does
+        // not exist), nothing was streamed and the requirement was not
+        // exercised - report SKIPPED rather than a vacuous SUCCESS.
+        if (frames.every((f) => f?.error !== undefined)) {
+          return {
+            skipped: true,
+            details: {
+              note: 'Server does not expose diagnostic tool test_streaming_elicitation; the response stream could not be exercised.',
+              response: frames[0]
+            }
+          };
+        }
+
+        const cancelledFrame = frames.find(
+          (f) => f?.method === 'notifications/cancelled'
+        );
+        if (cancelledFrame) {
+          return {
+            error:
+              'Server sent notifications/cancelled on a non-subscription response stream; servers MUST NOT send notifications/cancelled for any purpose other than tearing down a subscriptions/listen stream',
+            details: { cancelledFrame }
           };
         }
         return { details: { inspectedFramesCount: frames.length } };
@@ -880,6 +931,9 @@ export class ServerStatelessScenario implements ClientScenario {
     // Open a tools-filtered stream and (best-effort) trigger a tool-list
     // change once it is acknowledged, so the stream carries at least one
     // post-acknowledgment notification for the subscription-id check.
+    // The listen request id is fixed up front so the subscription-id check
+    // can assert that _meta.../subscriptionId echoes it.
+    const listenRequestId = Date.now();
     let streamFrames: any[] = [];
     try {
       streamFrames = await listenToStream(
@@ -893,7 +947,8 @@ export class ServerStatelessScenario implements ClientScenario {
             arguments: {},
             _meta: validMeta
           });
-        }
+        },
+        listenRequestId
       );
     } catch {
       // Stream pipeline tracking failed
@@ -932,7 +987,7 @@ export class ServerStatelessScenario implements ClientScenario {
     await runCheck(
       'sep-2575-server-tags-subscription-id',
       'ServerTagsSubscriptionId',
-      'Listen-stream notifications carry _meta.../subscriptionId',
+      'Listen-stream notifications carry _meta.../subscriptionId equal to the JSON-RPC id of the subscriptions/listen request',
       () => {
         if (streamFrames[0]?.error?.code === -32601) {
           return {
@@ -950,7 +1005,10 @@ export class ServerStatelessScenario implements ClientScenario {
         }
 
         // Every notification delivered on the stream (the acknowledgment and
-        // anything after it) must carry the subscription id in params._meta.
+        // anything after it) must carry the subscription id in params._meta,
+        // and that id must equal the JSON-RPC id of the subscriptions/listen
+        // request that opened the stream. RequestId is `string | number`, so
+        // compare via String() to accept either representation.
         const notificationFrames = streamFrames.filter(
           (f) =>
             typeof f?.method === 'string' &&
@@ -965,12 +1023,30 @@ export class ServerStatelessScenario implements ClientScenario {
         }
 
         const untaggedFrames = notificationFrames.filter(
-          (f) => !f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
+          (f) =>
+            f?.params?._meta?.['io.modelcontextprotocol/subscriptionId'] ===
+            undefined
         );
         if (untaggedFrames.length > 0) {
           return {
             error: `${untaggedFrames.length} of ${notificationFrames.length} listen-stream notification(s) are missing io.modelcontextprotocol/subscriptionId in params._meta`,
             details: { untaggedFrames }
+          };
+        }
+
+        const mismatchedFrames = notificationFrames.filter(
+          (f) =>
+            String(
+              f?.params?._meta?.['io.modelcontextprotocol/subscriptionId']
+            ) !== String(listenRequestId)
+        );
+        if (mismatchedFrames.length > 0) {
+          return {
+            error: `${mismatchedFrames.length} of ${notificationFrames.length} listen-stream notification(s) carry an io.modelcontextprotocol/subscriptionId that does not match the subscriptions/listen request id ${JSON.stringify(listenRequestId)}`,
+            details: {
+              expectedSubscriptionId: listenRequestId,
+              mismatchedFrames
+            }
           };
         }
 
@@ -981,6 +1057,7 @@ export class ServerStatelessScenario implements ClientScenario {
         return {
           details: {
             subscriptionId: subId,
+            expectedSubscriptionId: listenRequestId,
             inspectedNotificationCount: notificationFrames.length
           }
         };
