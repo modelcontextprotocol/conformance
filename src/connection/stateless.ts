@@ -309,9 +309,9 @@ export async function sendStatelessRequest(
  * violation, and throws `JsonRpcError` on error responses.
  *
  * Session bootstrap on the stateless wire is `server/discover` (SEP-2575's
- * replacement for `initialize`). The result is exposed as
- * `connection.initializeResult` so scenarios can inspect server
- * capabilities, serverInfo, and supported protocol versions.
+ * replacement for `initialize`). The result is exposed via
+ * `connection.discover()` so scenarios can inspect server capabilities,
+ * serverInfo, and supported protocol versions.
  */
 export async function connectStateless(
   serverUrl: string,

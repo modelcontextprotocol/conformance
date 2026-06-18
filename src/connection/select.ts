@@ -44,7 +44,7 @@ export function connectFor(
   specVersion: SpecVersion
 ): (serverUrl: string, opts?: ConnectOptions) => Promise<Connection> {
   return isStatefulVersion(specVersion)
-    ? (serverUrl, opts) => connectStateful(serverUrl, opts)
+    ? connectStateful
     : // Pass the version through so stateless requests declare the spec
       // version the run was invoked with (matters under --force).
       (serverUrl, opts) => connectStateless(serverUrl, specVersion, opts);
