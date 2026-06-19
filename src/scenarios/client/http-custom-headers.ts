@@ -277,7 +277,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       id: request.id,
       result: {
         resultType: 'complete',
-        ttlMs: 0,
+        ttlMs: 300000,
         cacheScope: 'private',
         tools: [
           {

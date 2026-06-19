@@ -18,8 +18,8 @@ async function post(
   serverUrl: string,
   body: object,
   headers: Record<string, string> = {}
-): Promise<void> {
-  await fetch(serverUrl, {
+): Promise<{ status: number; body: any }> {
+  const response = await fetch(serverUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -28,6 +28,7 @@ async function post(
     },
     body: JSON.stringify(body)
   });
+  return { status: response.status, body: await response.json() };
 }
 
 function idsOf(checks: { id: string }[]): Set<string> {
@@ -146,6 +147,83 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
       expect(
         statusesFor(checks, 'sep-2243-client-mirrors-designated-params')
       ).toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('serves a fresh tools/list TTL before requiring schema-derived custom headers', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      const toolsList = await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list'
+      });
+      const schemaIsFresh = toolsList.body.result.ttlMs > 0;
+
+      const nonAscii = 'Hello, 世界';
+      const nonAsciiB64 = Buffer.from(nonAscii, 'utf-8').toString('base64');
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers',
+            arguments: {
+              region: 'us-west1',
+              priority: 42,
+              non_ascii_val: nonAscii,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        schemaIsFresh
+          ? {
+              'Mcp-Method': 'tools/call',
+              'Mcp-Name': 'test_custom_headers',
+              'Mcp-Param-Region': 'us-west1',
+              'Mcp-Param-Priority': '42',
+              'Mcp-Param-NonAscii': `=?base64?${nonAsciiB64}?=`
+            }
+          : {}
+      );
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_null',
+            arguments: {
+              region: 'us-east1',
+              priority: 1,
+              verbose: null,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        schemaIsFresh
+          ? {
+              'Mcp-Method': 'tools/call',
+              'Mcp-Name': 'test_custom_headers_null',
+              'Mcp-Param-Region': 'us-east1',
+              'Mcp-Param-Priority': '1'
+            }
+          : {}
+      );
+
+      expect(toolsList.body.result.ttlMs).toBeGreaterThan(0);
+      const checks = scenario.getChecks();
+      for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
+        const statuses = statusesFor(checks, id);
+        expect(statuses.length, id).toBeGreaterThan(0);
+        expect(statuses, id).not.toContain('FAILURE');
+      }
     } finally {
       await scenario.stop();
     }
