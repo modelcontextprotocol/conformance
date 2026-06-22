@@ -24,9 +24,13 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
     // same URL as the main server (rather than separating AS / RS).
     const authApp = createAuthServer(ctx, this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
-      loggingEnabled: false,
-      // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
-      routePrefix: '/oauth'
+      loggingEnabled: false
+      // No routePrefix: the AS metadata is served at the root well-known path,
+      // so the metadata `issuer` must be the bare origin (RFC 8414 §3.3). A
+      // routePrefix here would make `createAuthServer` report
+      // `issuer: <origin>/oauth`, which an RFC 8414-conforming client correctly
+      // rejects. The MCP server only mounts `/mcp`, so the unprefixed
+      // `/authorize`, `/token`, `/register` routes do not collide.
     });
     const app = createServer(
       ctx,
