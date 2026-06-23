@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import { ZodError } from 'zod';
-import { readFile } from 'fs/promises';
+import { promises as fs } from 'fs';
 import {
   runConformanceTest,
   printClientResults,
@@ -38,7 +38,6 @@ import {
 import type { SpecVersion } from './scenarios';
 import { ConformanceCheck } from './types';
 import {
-  AuthorizationServerFileOptionsSchema,
   AuthorizationServerOptionsSchema,
   ClientOptionsSchema,
   ServerOptionsSchema
@@ -76,17 +75,6 @@ function filterScenariosBySpecVersion(
   }
   const allowed = new Set(versionScenarios);
   return allScenarios.filter((s) => allowed.has(s));
-}
-
-function mergeAuthorizationServerOptions(
-  cli: Record<string, any>,
-  file: Record<string, any>
-) {
-  return {
-    url: cli.url ?? file?.url,
-    outputDir: cli.outputDir,
-    specVersion: cli.specVersion
-  };
 }
 
 const program = new Command();
@@ -527,7 +515,10 @@ program
   .description(
     'Run conformance tests against an authorization server implementation'
   )
-  .option('--file <filename>', 'authorization server settings file')
+  .option(
+    '--file <filename>',
+    'Path to JSON settings file (see examples/authorization-server-settings.example.json)'
+  )
   .option('--url <url>', 'URL of the authorization server issuer')
   .option('--scenario <scenario>', 'Test scenario to run')
   .option('-o, --output-dir <path>', 'Save results to this directory')
@@ -538,38 +529,30 @@ program
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
-      let fileOptions: Record<string, any> = {};
+      let fileOptions: Record<string, unknown> = {};
       if (options.file) {
         try {
-          const content = await readFile(options.file, 'utf-8');
-          fileOptions = AuthorizationServerFileOptionsSchema.parse(
-            JSON.parse(content)
-          ) as Record<string, any>;
+          fileOptions = JSON.parse(await fs.readFile(options.file, 'utf-8'));
         } catch (error) {
-          if (error instanceof SyntaxError) {
-            console.error(`Invalid JSON in setting file: ${options.file}`);
-          } else if (error instanceof ZodError) {
-            const details = error.issues
-              .map((e) => `${e.path.join('.')}: ${e.message}`)
-              .join(', ');
-            console.error(
-              `Invalid setting file format: ${options.file}${details}`
-            );
-          } else {
-            console.error(
-              `Failed to read setting file: ${options.file}` +
-                (error instanceof Error ? `: ${error.message}` : '')
-            );
-          }
+          console.error(
+            `Failed to read settings file '${options.file}': ` +
+              (error instanceof Error ? error.message : String(error))
+          );
           process.exit(1);
         }
       }
-      const mergedOptions = mergeAuthorizationServerOptions(
-        options,
-        fileOptions
-      );
-      // Validate options with Zod
-      const validated = AuthorizationServerOptionsSchema.parse(mergedOptions);
+      // CLI flags override file values; undefined CLI values must not clobber file values
+      const merged = {
+        ...fileOptions,
+        ...Object.fromEntries(
+          Object.entries(options).filter(([, v]) => v !== undefined)
+        )
+      };
+      if (!merged.url) {
+        console.error("error: must provide --url or a --file containing 'url'");
+        process.exit(1);
+      }
+      const validated = AuthorizationServerOptionsSchema.parse(merged);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
       const specVersionFilter = options.specVersion

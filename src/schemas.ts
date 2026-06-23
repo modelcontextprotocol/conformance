@@ -61,17 +61,6 @@ export type AuthorizationServerOptions = z.infer<
   typeof AuthorizationServerOptionsSchema
 >;
 
-// Authorization server file options schema
-export const AuthorizationServerFileOptionsSchema = z
-  .object({
-    url: z.string().url().optional()
-  })
-  .strict();
-
-export type AuthorizationServerFileOptions = z.infer<
-  typeof AuthorizationServerFileOptionsSchema
->;
-
 // Interactive command options schema
 export const InteractiveOptionsSchema = z.object({
   scenario: z
