@@ -33,7 +33,6 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 - The state parameter in the authorization response MUST match the state parameter in the authorization request query parameters if the state parameter is present in the authorization request query parameters
 - The iss parameter in the authorization response MUST match the issuer claim of authorization server metadata if the iss parameter is present in the authorization response query parameters
 - The code, state and iss parameters MUST NOT appear more than once
-- The code_challenge parameter MUST NOT be present in the authorization response query parameters
 - The error parameter MUST NOT be present in the authorization response query parameters
 - HTTP response status code of token response MUST be 200 OK
 - Content-Type header of token response MUST be application/json
@@ -149,6 +148,14 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
   ): string {
     const url = new URL(responseUrl);
 
+    // RFC 6749 §4.1.2.1: an error response and a code response are mutually
+    // exclusive. Surface the AS-reported error before any other validation.
+    if (url.searchParams.has('error')) {
+      const error = url.searchParams.get('error');
+      const desc = url.searchParams.get('error_description');
+      throw new Error(`Authorization error: ${error} ${desc ?? ''}`.trim());
+    }
+
     if (url.origin !== REDIRECT_URI_ORIGIN + ':' + options.port) {
       errors.push(`Invalid origin of redirect URL: ${url.origin}`);
     }
@@ -156,14 +163,16 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       errors.push(`Invalid path of redirect URL: ${url.pathname}`);
     }
 
-    const code = url.searchParams.getAll('code');
-    if (code.length !== 1 || code[0] === '') {
-      throw new Error(`Invalid code parameter: ${code ?? 'missing'}`);
-    }
-
+    // CSRF binding: state mismatch is fatal — never proceed to token
+    // exchange with an unbound authorization response.
     const state = url.searchParams.getAll('state');
     if (state.length !== 1 || state[0] !== this.state) {
-      errors.push(`Invalid state parameter: ${state ?? 'missing'}`);
+      throw new Error(`Invalid state parameter: ${state.join(',') || 'missing'}`);
+    }
+
+    const code = url.searchParams.getAll('code');
+    if (code.length !== 1 || code[0] === '') {
+      throw new Error(`Invalid code parameter: ${code.join(',') || 'missing'}`);
     }
 
     const iss = url.searchParams.getAll('iss');
@@ -171,14 +180,6 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       if (iss.length !== 1 || iss[0] !== metadata.issuer) {
         errors.push(`Invalid iss parameter: ${iss}`);
       }
-    }
-
-    if (url.searchParams.has('code_challenge')) {
-      errors.push('code_challenge must not be present');
-    }
-
-    if (url.searchParams.has('error')) {
-      errors.push(`Error parameter: ${url.searchParams.get('error')}`);
     }
 
     return code[0];

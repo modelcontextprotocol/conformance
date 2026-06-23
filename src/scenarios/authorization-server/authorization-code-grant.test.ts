@@ -117,18 +117,13 @@ describe('AuthorizationCodeGrantScenario', () => {
     expect((check.details as any).body.token_type).toBe('Bearer');
   });
 
-  it('returns FAILURE when state parameter is invalid', async () => {
+  it('returns FAILURE when state parameter is invalid and does not request a token', async () => {
     const scenario = new AuthorizationCodeGrantScenario();
 
     mockCallbackServer(
       scenario,
       () => 'http://127.0.0.1:3000/callback?code=abc&state=invalid'
     );
-
-    mockTokenResponse({
-      access_token: 'access-token',
-      token_type: 'Bearer'
-    });
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
@@ -138,6 +133,29 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     expect(check.status).toBe('FAILURE');
     expect(check.errorMessage).toContain('Invalid state parameter');
+    // CSRF enforcement: the token endpoint must never be called when state
+    // doesn't bind to the request we sent.
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it('returns FAILURE when the authorization response carries an error parameter', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      () =>
+        'http://127.0.0.1:3000/callback?error=access_denied&error_description=nope'
+    );
+
+    const checks = await scenario.run(OPTIONS, DETAILS);
+
+    expect(checks).toHaveLength(1);
+
+    const check = checks[0];
+
+    expect(check.status).toBe('FAILURE');
+    expect(check.errorMessage).toContain('Authorization error: access_denied');
+    expect(mockedRequest).not.toHaveBeenCalled();
   });
 
   it('returns FAILURE when code parameter is missing', async () => {
