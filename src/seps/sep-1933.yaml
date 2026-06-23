@@ -31,5 +31,5 @@ requirements:
   - text: 'The JWT MUST include a sub (subject) claim identifying the workload (RFC 7523 §3)'
     excluded: 'Subject allowlist enforcement is AS policy; the client has no control over the subject in a pre-signed IdP token. From the client perspective this collapses to a generic invalid_grant response, already covered by existing checks.'
 
-  - text: 'The JWT MAY contain a jti (JWT ID) claim; the authorization server MAY use it to prevent replay (RFC 7523 §3)'
+  - text: 'The JWT MUST contain a jti (JWT ID) claim to prevent replay (WIF extension §JWT Format; stricter than RFC 7523 §3, which has jti as MAY)'
     excluded: 'Replay detection is AS policy; the client cannot influence jti uniqueness across requests. No client-observable protocol difference from other invalid_grant responses.'
