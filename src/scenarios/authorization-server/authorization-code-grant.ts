@@ -45,21 +45,42 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
     details: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
     try {
+      if (!options.clientId) {
+        return [
+          this.skippedCheck('authorization-code-grant requires --client-id')
+        ];
+      }
+
       this.state = randomBytes(32).toString('base64url');
       this.codeVerifier = randomBytes(32).toString('base64url');
       this.codeChallenge = createHash('sha256')
         .update(this.codeVerifier)
         .digest('base64url');
+
       const resultMetadata = details[
         'authorization-server-metadata-endpoint'
       ] as { body?: Record<string, unknown> };
-      if (!resultMetadata) {
+      if (!resultMetadata?.body) {
         throw new Error('Invalid authorization server metadata');
       }
-      const body = resultMetadata.body;
+      const metadata = resultMetadata.body;
+
+      // Decide how we'll authenticate to the token endpoint *before*
+      // binding a port and asking the user to open a browser.
+      const authMethod = this.selectTokenAuthMethod(metadata, options);
+      if (authMethod === null) {
+        return [
+          this.skippedCheck(
+            'Server does not support client_secret_post, client_secret_basic, or none auth methods'
+          )
+        ];
+      }
 
       const callback = startCallbackServer(options.port);
-      const authorizationRequest = this.buildAuthorizationRequest(body, options);
+      const authorizationRequest = this.buildAuthorizationRequest(
+        metadata,
+        options
+      );
       console.log(
         'Access the following URL in your browser and complete the authentication process.'
       );
@@ -71,19 +92,17 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       const errors: string[] = [];
       const code = this.validateAuthorizationResponse(
         authorizationResponseUrl,
-        body,
+        metadata,
         options,
         errors
       );
 
-      const tokenResponse = await this.requestToken(body, options, code);
-      if (tokenResponse === null) {
-        return [
-          this.skippedCheck(
-            'Server does not support client_secret_post or client_secret_basic auth methods'
-          )
-        ];
-      }
+      const tokenResponse = await this.requestToken(
+        metadata,
+        options,
+        code,
+        authMethod
+      );
       this.validateTokenResponse(tokenResponse, errors);
 
       if (errors.length > 0) {
@@ -165,19 +184,39 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
     return code[0];
   }
 
-  private async requestToken(
+  private selectTokenAuthMethod(
     metadata: any,
-    options: AuthorizationServerOptions,
-    code: string
-  ): Promise<{ body: any; headers: any } | null> {
-    if (!metadata?.token_endpoint) {
-      throw new Error('Unable to obtain token endpoint from metadata');
-    }
-
+    options: AuthorizationServerOptions
+  ): 'none' | 'client_secret_post' | 'client_secret_basic' | null {
     // RFC 8414 §2: omitted token_endpoint_auth_methods_supported means
     // the default is "client_secret_basic".
     const authMethods: string[] =
       metadata.token_endpoint_auth_methods_supported ?? ['client_secret_basic'];
+
+    if (!options.clientSecret || authMethods.includes('none')) {
+      return 'none';
+    }
+    if (authMethods.includes('client_secret_post')) {
+      return 'client_secret_post';
+    }
+    if (authMethods.includes('client_secret_basic')) {
+      return 'client_secret_basic';
+    }
+    // client_secret_jwt / private_key_jwt / tls_client_auth are not yet
+    // implemented; skip rather than fail.
+    return null;
+  }
+
+  private async requestToken(
+    metadata: any,
+    options: AuthorizationServerOptions,
+    code: string,
+    authMethod: 'none' | 'client_secret_post' | 'client_secret_basic'
+  ): Promise<{ body: any; headers: any }> {
+    if (!metadata?.token_endpoint) {
+      throw new Error('Unable to obtain token endpoint from metadata');
+    }
+
     const redirectUri = `${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH}`;
 
     const params = new URLSearchParams({
@@ -190,22 +229,18 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       'content-type': 'application/x-www-form-urlencoded'
     };
 
-    if (!options.clientSecret || authMethods.includes('none')) {
+    if (authMethod === 'none') {
       // Public client (PKCE-only). RFC 6749 §3.2.1: client_id in the body.
       params.set('client_id', options.clientId!);
-    } else if (authMethods.includes('client_secret_post')) {
+    } else if (authMethod === 'client_secret_post') {
       params.set('client_id', options.clientId!);
-      params.set('client_secret', options.clientSecret);
-    } else if (authMethods.includes('client_secret_basic')) {
+      params.set('client_secret', options.clientSecret!);
+    } else {
       // RFC 6749 §2.3.1: form-urlencode each component before base64.
       const credentials = Buffer.from(
-        `${encodeURIComponent(options.clientId!)}:${encodeURIComponent(options.clientSecret)}`
+        `${encodeURIComponent(options.clientId!)}:${encodeURIComponent(options.clientSecret!)}`
       ).toString('base64');
       headers.authorization = `Basic ${credentials}`;
-    } else {
-      // client_secret_jwt / private_key_jwt / tls_client_auth are not yet
-      // implemented; skip rather than fail.
-      return null;
     }
 
     const response = await request(metadata.token_endpoint, {
