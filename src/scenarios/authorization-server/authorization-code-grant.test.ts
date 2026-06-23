@@ -86,7 +86,7 @@ describe('AuthorizationCodeGrantScenario', () => {
     mockCallbackServer(
       scenario,
       (state) =>
-        `http://localhost:3000/callback?code=abc&state=${state}&iss=${SERVER_URL}`
+        `http://127.0.0.1:3000/callback?code=abc&state=${state}&iss=${SERVER_URL}`
     );
 
     mockTokenResponse({
@@ -122,7 +122,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      () => 'http://localhost:3000/callback?code=abc&state=invalid'
+      () => 'http://127.0.0.1:3000/callback?code=abc&state=invalid'
     );
 
     mockTokenResponse({
@@ -145,7 +145,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?state=${state}`
     );
 
     const checks = await scenario.run(OPTIONS, DETAILS);
@@ -164,7 +164,7 @@ describe('AuthorizationCodeGrantScenario', () => {
     mockCallbackServer(
       scenario,
       (state) =>
-        `http://localhost:3000/callback?code=abc&state=${state}&iss=https://evil.example.com`
+        `http://127.0.0.1:3000/callback?code=abc&state=${state}&iss=https://evil.example.com`
     );
 
     mockTokenResponse({
@@ -187,7 +187,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?code=abc&state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
     );
 
     mockTokenResponse({
@@ -209,7 +209,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?code=abc&state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
     );
 
     mockTokenResponse({
@@ -231,7 +231,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?code=abc&state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
     );
 
     mockedRequest.mockResolvedValue({
@@ -263,7 +263,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?code=abc&state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
     );
 
     mockedRequest.mockResolvedValue({
@@ -295,7 +295,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     mockCallbackServer(
       scenario,
-      (state) => `http://localhost:3000/callback?code=abc&state=${state}`
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
     );
 
     const checks = await scenario.run(OPTIONS, DETAILS_PRIVATE_KEY_JWT);

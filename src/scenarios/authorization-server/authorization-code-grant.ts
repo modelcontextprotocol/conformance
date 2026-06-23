@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'crypto';
 import { AuthorizationServerOptions } from '../../schemas';
 import { SpecReferences } from '../authorization-server/auth/spec-references';
 
-const REDIRECT_URI_ORIGIN = 'http://localhost';
+const REDIRECT_URI_ORIGIN = 'http://127.0.0.1';
 const REDIRECT_URI_PATH = '/callback';
 
 export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthorizationServer {
@@ -110,15 +110,16 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       throw new Error('Unable to obtain authorization endpoint from metadata');
     }
 
-    const redirectUri = encodeURIComponent(
-      `${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH}`
-    );
-    const params =
-      `response_type=code&client_id=${options.clientId}&state=${this.state}` +
-      `&redirect_uri=${redirectUri}&code_challenge=${this.codeChallenge}` +
-      `&code_challenge_method=S256&resource=https%3A%2F%2Fapi.example.com%2Fapp%2F`;
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: options.clientId ?? '',
+      state: this.state,
+      redirect_uri: `${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH}`,
+      code_challenge: this.codeChallenge,
+      code_challenge_method: 'S256'
+    });
 
-    return `${metadata.authorization_endpoint}?${params}`;
+    return `${metadata.authorization_endpoint}?${params.toString()}`;
   }
 
   private validateAuthorizationResponse(
