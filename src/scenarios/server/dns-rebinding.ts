@@ -11,6 +11,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { buildStandardHeaders, type RunContext } from '../../connection';
+import { isStatefulVersion } from '../../connection/select';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -317,11 +318,7 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
         response.body !== null &&
         'result' in response.body &&
         !('error' in response.body);
-      if (
-        isAccepted &&
-        hasInitializeResult &&
-        specVersion !== DRAFT_PROTOCOL_VERSION
-      ) {
+      if (isAccepted && hasInitializeResult && isStatefulVersion(specVersion)) {
         try {
           const initialized = await sendInitializedNotification(
             serverUrl,
