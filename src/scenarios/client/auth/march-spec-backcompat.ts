@@ -25,8 +25,12 @@ export class Auth20250326OAuthMetadataBackcompatScenario implements Scenario {
     const authApp = createAuthServer(ctx, this.checks, this.server.getUrl, {
       // Disable logging since the main server will already have logging enabled
       loggingEnabled: false,
-      // Add a prefix to auth endpoints to avoid being caught by auth fallbacks
-      routePrefix: '/oauth'
+      // Keep auth endpoints off the 2025-03-26 fallback paths so a client that
+      // fetches metadata but ignores the advertised endpoints still 404s.
+      routePrefix: '/oauth',
+      // Metadata is served at the root well-known path, so per RFC 8414 §3.3
+      // the `issuer` must be the bare origin — not `<origin>/oauth`.
+      metadataIssuer: () => this.server.getUrl()
     });
     const app = createServer(
       ctx,
