@@ -28,9 +28,10 @@ export class WifJwtBearerScenario implements Scenario {
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests the RFC 7523 JWT-bearer grant for workload identity federation (SEP-1933). ' +
-    'The client must: use grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer, ' +
-    'include the workload JWT as the assertion parameter, and surface errors ' +
-    '(invalid_grant, invalid_scope, unauthorized_client) without retrying or switching grant types.';
+    'The client must use grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer and ' +
+    'include the workload JWT as the assertion parameter. The client should surface ' +
+    'errors (invalid_grant, invalid_scope, unauthorized_client) without retrying or ' +
+    'switching grant types (WARNING — pending SEP-1933 normative text).';
 
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
