@@ -103,21 +103,31 @@ async function runWifBrokenClient(
 }
 
 // ---------------------------------------------------------------------------
-// Wrong audience
+// One-shot provider (wrong-audience / expired / missing-assertion)
 // ---------------------------------------------------------------------------
 
-// BUG: presents a JWT whose aud does not match the AS
-class WifWrongAudienceProvider extends WifProviderBase {
+// Sends exactly one JWT-bearer request and then refuses to retry, so the SDK's
+// built-in invalid_grant recovery cannot reach the AS a second time and trip a
+// collateral wif-no-retry. The BUG each runner demonstrates lives in the JWT
+// it selects from context (wrong_audience_jwt / expired_jwt / undefined).
+class WifOneShotProvider extends WifProviderBase {
+  private hasAttempted = false;
+
   constructor(
-    private readonly assertion: string,
-    clientId: string
+    private readonly assertion: string | undefined,
+    clientId: string,
+    clientName: string
   ) {
-    super(clientId, 'conformance-wif-wrong-audience');
+    super(clientId, clientName);
   }
 
   prepareTokenRequest(_scope?: string): URLSearchParams {
+    if (this.hasAttempted) {
+      throw new Error('JWT-bearer grant must not be retried after failure');
+    }
+    this.hasAttempted = true;
     const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
-    params.set('assertion', this.assertion);
+    if (this.assertion !== undefined) params.set('assertion', this.assertion);
     return params;
   }
 }
@@ -126,66 +136,46 @@ export async function runWifJwtBearerWrongAudience(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseWifContext();
+  // BUG: presents a JWT whose aud does not match the AS
   await runWifBrokenClient(
     serverUrl,
-    new WifWrongAudienceProvider(ctx.wrong_audience_jwt, ctx.client_id),
+    new WifOneShotProvider(
+      ctx.wrong_audience_jwt,
+      ctx.client_id,
+      'conformance-wif-wrong-audience'
+    ),
     'conformance-wif-wrong-audience'
   );
-}
-
-// ---------------------------------------------------------------------------
-// Missing assertion
-// ---------------------------------------------------------------------------
-
-// BUG: omits the assertion parameter entirely
-class WifMissingAssertionProvider extends WifProviderBase {
-  constructor(clientId: string) {
-    super(clientId, 'conformance-wif-no-assertion');
-  }
-
-  prepareTokenRequest(_scope?: string): URLSearchParams {
-    return new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
-  }
 }
 
 export async function runWifJwtBearerMissingAssertion(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseWifContext();
+  // BUG: omits the assertion parameter entirely
   await runWifBrokenClient(
     serverUrl,
-    new WifMissingAssertionProvider(ctx.client_id),
+    new WifOneShotProvider(
+      undefined,
+      ctx.client_id,
+      'conformance-wif-no-assertion'
+    ),
     'conformance-wif-no-assertion'
   );
-}
-
-// ---------------------------------------------------------------------------
-// Expired assertion
-// ---------------------------------------------------------------------------
-
-// BUG: presents a JWT whose exp has already passed
-class WifExpiredAssertionProvider extends WifProviderBase {
-  constructor(
-    private readonly assertion: string,
-    clientId: string
-  ) {
-    super(clientId, 'conformance-wif-expired-assertion');
-  }
-
-  prepareTokenRequest(_scope?: string): URLSearchParams {
-    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
-    params.set('assertion', this.assertion);
-    return params;
-  }
 }
 
 export async function runWifJwtBearerExpiredAssertion(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseWifContext();
+  // BUG: presents a JWT whose exp has already passed
   await runWifBrokenClient(
     serverUrl,
-    new WifExpiredAssertionProvider(ctx.expired_jwt, ctx.client_id),
+    new WifOneShotProvider(
+      ctx.expired_jwt,
+      ctx.client_id,
+      'conformance-wif-expired-assertion'
+    ),
     'conformance-wif-expired-assertion'
   );
 }
