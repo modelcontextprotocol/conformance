@@ -6,7 +6,7 @@ import { createResultDir, formatPrettyChecks } from './utils';
 import { AuthorizationServerOptions } from '../schemas';
 
 export async function runAuthorizationServerConformanceTest(
-  option: AuthorizationServerOptions,
+  options: AuthorizationServerOptions,
   scenarioName: string,
   details: Record<string, unknown>,
   outputDir?: string
@@ -30,10 +30,10 @@ export async function runAuthorizationServerConformanceTest(
   const scenario = getClientScenarioForAuthorizationServer(scenarioName)!;
 
   console.log(
-    `Running client scenario for authorization server '${scenarioName}' against server: ${option.url}`
+    `Running client scenario for authorization server '${scenarioName}' against server: ${options.url}`
   );
 
-  const checks = await scenario.run(option, details);
+  const checks = await scenario.run(options, details);
 
   if (resultDir) {
     await fs.writeFile(

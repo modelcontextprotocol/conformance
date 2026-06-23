@@ -27,7 +27,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 - The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.`;
 
   async run(
-    option: AuthorizationServerOptions,
+    options: AuthorizationServerOptions,
     _details: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
     let status: Status = 'SUCCESS';
@@ -35,7 +35,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
     let details: any;
     let response: any | null = null;
     try {
-      const wellKnownUrls = this.createWellKnownUrl(option.url);
+      const wellKnownUrls = this.createWellKnownUrl(options.url);
 
       for (const url of wellKnownUrls) {
         try {
@@ -59,7 +59,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 
       const body = await this.parseJson(response);
       const errors: string[] = [];
-      this.validateMetadataBody(body, option.url, errors);
+      this.validateMetadataBody(body, options.url, errors);
 
       if (errors.length > 0) {
         status = 'FAILURE';

@@ -42,7 +42,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 - Token response MUST return a JSON response including access_token and token_type`;
 
   async run(
-    option: AuthorizationServerOptions,
+    options: AuthorizationServerOptions,
     details: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
     try {
@@ -55,8 +55,8 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       }
       const body = resultMetadata.body;
 
-      const callback = startCallbackServer(option.port);
-      const authorizationRequest = this.buildAuthorizationRequest(body, option);
+      const callback = startCallbackServer(options.port);
+      const authorizationRequest = this.buildAuthorizationRequest(body, options);
       console.log(
         'Access the following URL in your browser and complete the authentication process.'
       );
@@ -69,11 +69,11 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       const code = this.validateAuthorizationResponse(
         authorizationResponseUrl,
         body,
-        option,
+        options,
         errors
       );
 
-      const tokenResponse = await this.requestToken(body, option, code);
+      const tokenResponse = await this.requestToken(body, options, code);
       if (tokenResponse === null) {
         return [
           this.skippedCheck(
@@ -101,17 +101,17 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 
   private buildAuthorizationRequest(
     metadata: any,
-    option: AuthorizationServerOptions
+    options: AuthorizationServerOptions
   ): string {
     if (!metadata?.authorization_endpoint) {
       throw new Error('Unable to obtain authorization endpoint from metadata');
     }
 
     const redirectUri = encodeURIComponent(
-      `${REDIRECT_URI_ORIGIN}:${option.port}${REDIRECT_URI_PATH}`
+      `${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH}`
     );
     const params =
-      `response_type=code&client_id=${option.clientId}&state=${this.state}` +
+      `response_type=code&client_id=${options.clientId}&state=${this.state}` +
       `&redirect_uri=${redirectUri}&code_challenge=${CODE_CHALLENGE}` +
       `&code_challenge_method=S256&resource=https%3A%2F%2Fapi.example.com%2Fapp%2F`;
 
@@ -121,12 +121,12 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
   private validateAuthorizationResponse(
     responseUrl: string,
     metadata: any,
-    option: AuthorizationServerOptions,
+    options: AuthorizationServerOptions,
     errors: string[]
   ): string {
     const url = new URL(responseUrl);
 
-    if (url.origin !== REDIRECT_URI_ORIGIN + ':' + option.port) {
+    if (url.origin !== REDIRECT_URI_ORIGIN + ':' + options.port) {
       errors.push(`Invalid origin of redirect URL: ${url.origin}`);
     }
     if (url.pathname !== REDIRECT_URI_PATH) {
@@ -163,7 +163,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 
   private async requestToken(
     metadata: any,
-    option: AuthorizationServerOptions,
+    options: AuthorizationServerOptions,
     code: string
   ): Promise<{ body: any; headers: any } | null> {
     if (!metadata?.token_endpoint) {
@@ -177,9 +177,9 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
         grant_type: 'authorization_code',
         code,
         redirect_uri:
-          REDIRECT_URI_ORIGIN + ':' + option.port + REDIRECT_URI_PATH,
-        client_id: option.clientId,
-        client_secret: option.secret,
+          REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
+        client_id: options.clientId,
+        client_secret: options.clientSecret,
         code_verifier: CODE_VERIFIER
       });
 
@@ -192,14 +192,14 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       });
     } else if (authMethods.includes('client_secret_basic')) {
       const credentials = Buffer.from(
-        `${option.clientId}:${option.secret}`
+        `${options.clientId}:${options.clientSecret}`
       ).toString('base64');
 
       const params = new URLSearchParams({
         grant_type: 'authorization_code',
         code,
         redirect_uri:
-          REDIRECT_URI_ORIGIN + ':' + option.port + REDIRECT_URI_PATH,
+          REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
         code_verifier: CODE_VERIFIER
       });
 

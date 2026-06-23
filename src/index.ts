@@ -522,11 +522,17 @@ program
   )
   .option('--url <url>', 'URL of the authorization server issuer')
   .option('--scenario <scenario>', 'Test scenario to run')
-  .requiredOption('--client-id <client>', 'Client ID')
-  .requiredOption('--secret <secret>', 'Client Secret')
+  .option(
+    '--client-id <id>',
+    'OAuth client ID registered with the authorization server'
+  )
+  .option(
+    '--client-secret <secret>',
+    'OAuth client secret (omit for public/PKCE-only clients)'
+  )
   .option(
     '-p, --port <port>',
-    'redirect uri port',
+    'Port for the local OAuth callback server; register http://127.0.0.1:<port>/callback as a redirect URI',
     (value) => Number(value),
     3000
   )

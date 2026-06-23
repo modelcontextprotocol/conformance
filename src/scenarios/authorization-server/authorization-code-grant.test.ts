@@ -18,10 +18,10 @@ const SERVER_URL = 'https://example.com';
 const AUTHORIZATION_ENDPOINT = `${SERVER_URL}/auth`;
 const TOKEN_ENDPOINT = `${SERVER_URL}/token`;
 
-const OPTION = {
+const OPTIONS = {
   url: SERVER_URL,
   clientId: 'client',
-  secret: 'secret',
+  clientSecret: 'secret',
   port: 3000
 };
 
@@ -94,7 +94,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       token_type: 'Bearer'
     });
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -130,7 +130,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       token_type: 'Bearer'
     });
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -148,7 +148,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       (state) => `http://localhost:3000/callback?state=${state}`
     );
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -172,7 +172,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       token_type: 'Bearer'
     });
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -194,7 +194,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       token_type: 'Bearer'
     });
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -216,7 +216,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       access_token: 'access-token'
     });
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -248,7 +248,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       }
     } as any);
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -280,7 +280,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       }
     } as any);
 
-    const checks = await scenario.run(OPTION, DETAILS);
+    const checks = await scenario.run(OPTIONS, DETAILS);
 
     expect(checks).toHaveLength(1);
 
@@ -298,7 +298,7 @@ describe('AuthorizationCodeGrantScenario', () => {
       (state) => `http://localhost:3000/callback?code=abc&state=${state}`
     );
 
-    const checks = await scenario.run(OPTION, DETAILS_PRIVATE_KEY_JWT);
+    const checks = await scenario.run(OPTIONS, DETAILS_PRIVATE_KEY_JWT);
 
     expect(checks).toHaveLength(1);
 

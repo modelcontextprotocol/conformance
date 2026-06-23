@@ -142,7 +142,7 @@ export interface ClientScenarioForAuthorizationServer {
   description: string;
   source: ScenarioSource;
   run(
-    option: AuthorizationServerOptions,
+    options: AuthorizationServerOptions,
     details: Record<string, unknown>
   ): Promise<ConformanceCheck[]>;
 }

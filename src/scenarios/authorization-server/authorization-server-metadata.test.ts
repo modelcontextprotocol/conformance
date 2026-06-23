@@ -11,10 +11,10 @@ const mockedRequest = vi.mocked(request);
 const SERVER_URL = 'https://example.com';
 const AUTHORIZATION_ENDPOINT = `${SERVER_URL}/auth`;
 const TOKEN_ENDPOINT = `${SERVER_URL}/token`;
-const OPTION = {
+const OPTIONS = {
   url: SERVER_URL,
   clientId: 'client',
-  secret: 'secret',
+  clientSecret: 'secret',
   port: 3000
 };
 const details: Record<string, unknown> = {};
@@ -40,7 +40,7 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
     const scenario = new AuthorizationServerMetadataEndpointScenario();
     mockMetadataResponse(validMetadata);
 
-    const checks = await scenario.run(OPTION, details);
+    const checks = await scenario.run(OPTIONS, details);
 
     expect(checks).toHaveLength(1);
 
@@ -71,7 +71,7 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
       response_types_supported: validMetadata.response_types_supported
     });
 
-    const checks = await scenario.run(OPTION, details);
+    const checks = await scenario.run(OPTIONS, details);
 
     expect(checks).toHaveLength(1);
 
@@ -87,7 +87,7 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
       code_challenge_methods_supported: ['plain']
     });
 
-    const checks = await scenario.run(OPTION, details);
+    const checks = await scenario.run(OPTIONS, details);
 
     expect(checks).toHaveLength(1);
 
