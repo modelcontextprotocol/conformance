@@ -174,52 +174,45 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       throw new Error('Unable to obtain token endpoint from metadata');
     }
 
-    const authMethods = metadata.token_endpoint_auth_methods_supported || [];
-    let response;
-    if (authMethods.includes('client_secret_post')) {
-      const params = new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri:
-          REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
-        client_id: options.clientId,
-        client_secret: options.clientSecret,
-        code_verifier: this.codeVerifier
-      });
+    // RFC 8414 §2: omitted token_endpoint_auth_methods_supported means
+    // the default is "client_secret_basic".
+    const authMethods: string[] =
+      metadata.token_endpoint_auth_methods_supported ?? ['client_secret_basic'];
+    const redirectUri = `${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH}`;
 
-      response = await request(metadata.token_endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded'
-        },
-        body: params.toString()
-      });
+    const params = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      code_verifier: this.codeVerifier
+    });
+    const headers: Record<string, string> = {
+      'content-type': 'application/x-www-form-urlencoded'
+    };
+
+    if (!options.clientSecret || authMethods.includes('none')) {
+      // Public client (PKCE-only). RFC 6749 §3.2.1: client_id in the body.
+      params.set('client_id', options.clientId!);
+    } else if (authMethods.includes('client_secret_post')) {
+      params.set('client_id', options.clientId!);
+      params.set('client_secret', options.clientSecret);
     } else if (authMethods.includes('client_secret_basic')) {
+      // RFC 6749 §2.3.1: form-urlencode each component before base64.
       const credentials = Buffer.from(
-        `${options.clientId}:${options.clientSecret}`
+        `${encodeURIComponent(options.clientId!)}:${encodeURIComponent(options.clientSecret)}`
       ).toString('base64');
-
-      const params = new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri:
-          REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
-        code_verifier: this.codeVerifier
-      });
-
-      response = await request(metadata.token_endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded',
-          authorization: `Basic ${credentials}`
-        },
-        body: params.toString()
-      });
+      headers.authorization = `Basic ${credentials}`;
     } else {
-      // Supporting client authentication methods such as client_secret_jwt, private_key_jwt, and tls_client_auth requires implementing a significant amount of code.
-      // Their implementation is marked as TODO and these tests are skipped.
+      // client_secret_jwt / private_key_jwt / tls_client_auth are not yet
+      // implemented; skip rather than fail.
       return null;
     }
+
+    const response = await request(metadata.token_endpoint, {
+      method: 'POST',
+      headers,
+      body: params.toString()
+    });
 
     if (response.statusCode !== 200) {
       throw new Error(`Invalid status code: ${response.statusCode}`);
