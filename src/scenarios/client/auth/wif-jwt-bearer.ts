@@ -270,8 +270,8 @@ export class WifJwtBearerScenario implements Scenario {
         subject: WIF_SUBJECT,
         audience: authServerUrl,
         privateKey,
-        // Absolute epoch seconds in the past; jose treats a number as an absolute
-        // epoch timestamp, producing a token that is already expired.
+        // Negative duration string; jose resolves it relative to now, yielding
+        // an already-expired exp claim.
         expiresIn: '-60s'
       })
     ]);
