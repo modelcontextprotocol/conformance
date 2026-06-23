@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Broken WIF client implementations for negative conformance tests.
  *
