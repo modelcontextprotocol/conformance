@@ -11,13 +11,13 @@ requirements:
     text: 'Client successfully authenticates to the MCP authorization server using a JWT-bearer grant with a valid workload identity JWT assertion'
 
   - check: wif-assertion-expired
-    text: 'The JWT MUST contain an exp claim and the authorization server MUST reject assertions whose exp has passed (RFC 7523 §3 — client MUST surface this error and not silently ignore it)'
+    text: 'The JWT MUST contain an exp claim and the authorization server MUST reject assertions whose exp has passed (RFC 7523 §3); a client presenting an assertion that fails this check is non-conformant'
 
   - check: wif-assertion-audience
-    text: 'The JWT MUST contain an aud claim identifying the authorization server (RFC 7523 §3 — client MUST surface invalid audience errors and not silently ignore them)'
+    text: 'The JWT MUST contain an aud claim identifying the authorization server as an intended audience (RFC 7523 §3); a client presenting an assertion that fails this check is non-conformant'
 
   - check: wif-assertion-malformed
-    text: 'The authorization server MUST reject JWTs with invalid signatures or malformed claims (RFC 7523 §3 — client MUST surface verification failures)'
+    text: 'The authorization server MUST reject JWTs with invalid signatures or malformed claims (RFC 7523 §3); a client presenting an assertion that fails this check is non-conformant'
 
   - check: wif-no-retry
     text: 'Clients should not retry a JWT-bearer token request after the authorization server has rejected the assertion, including after invalid_scope responses (WARNING until SEP-1933 lands normative spec text; RFC 7523 is silent on client retry behaviour)'
@@ -31,5 +31,5 @@ requirements:
   - text: 'The JWT MUST include a sub (subject) claim identifying the workload (RFC 7523 §3)'
     excluded: 'Subject allowlist enforcement is AS policy; the client has no control over the subject in a pre-signed IdP token. From the client perspective this collapses to a generic invalid_grant response, already covered by existing checks.'
 
-  - text: 'The JWT MUST include a jti (JWT ID) claim to prevent replay (RFC 7523 §3, recommended)'
+  - text: 'The JWT MAY contain a jti (JWT ID) claim; the authorization server MAY use it to prevent replay (RFC 7523 §3)'
     excluded: 'Replay detection is AS policy; the client cannot influence jti uniqueness across requests. No client-observable protocol difference from other invalid_grant responses.'
