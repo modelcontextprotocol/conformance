@@ -13,6 +13,7 @@ import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import {
   JWT_BEARER_GRANT_TYPE,
+  DEFAULT_WORKLOAD_JWT_ALG,
   WIF_TRIGGER_UNAUTHORIZED_SCOPE,
   WIF_REJECTED_SCOPE,
   generateWorkloadKeypair,
@@ -53,7 +54,13 @@ export class WifJwtBearerScenario implements Scenario {
       tokenEndpointAuthMethodsSupported: ['none'],
       tokenVerifier,
       disableDynamicRegistration: true,
-      onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
+      onTokenRequest: async ({
+        grantType,
+        body,
+        timestamp,
+        authBaseUrl,
+        tokenEndpoint
+      }) => {
         // wif-no-retry and wif-grant-fallback fire on any second request after
         // any first failure, not only after unauthorized_client specifically.
         if (this.tokenRequestReceived && this.failedOnce) {
@@ -142,9 +149,11 @@ export class WifJwtBearerScenario implements Scenario {
           // within the same test run; skew from a real IdP is not a factor here.
           // Both slash forms are accepted because the SDK constructs the audience
           // from the AS metadata URL, which may or may not carry a trailing slash
-          // depending on how the metadata endpoint was discovered.
+          // depending on how the metadata endpoint was discovered. The token
+          // endpoint URL is also accepted per RFC 7523 §3.
           await jose.jwtVerify(assertion, publicKey, {
-            audience: [withoutSlash, withSlash],
+            algorithms: [DEFAULT_WORKLOAD_JWT_ALG],
+            audience: [withoutSlash, withSlash, tokenEndpoint],
             clockTolerance: 5
           });
 
