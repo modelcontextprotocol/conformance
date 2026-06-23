@@ -97,45 +97,50 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       }
 
       const callback = startCallbackServer(options.port);
-      const authorizationRequest = this.buildAuthorizationRequest(
-        metadata,
-        options
-      );
-      console.log(
-        'Access the following URL in your browser and complete the authentication process.'
-      );
-      console.log(authorizationRequest);
-      console.log('');
+      try {
+        const authorizationRequest = this.buildAuthorizationRequest(
+          metadata,
+          options
+        );
+        console.log(
+          'Access the following URL in your browser and complete the authentication process.'
+        );
+        console.log(authorizationRequest);
+        console.log('');
 
-      const authorizationResponseUrl = await callback.waitForCallback(300_000);
+        const authorizationResponseUrl =
+          await callback.waitForCallback(300_000);
 
-      const errors: string[] = [];
-      const code = this.validateAuthorizationResponse(
-        authorizationResponseUrl,
-        metadata,
-        options,
-        errors
-      );
-
-      const tokenResponse = await this.requestToken(
-        metadata,
-        options,
-        code,
-        authMethod
-      );
-      this.validateTokenResponse(tokenResponse, errors);
-
-      if (errors.length > 0) {
-        return [this.failureCheck(errors.join(', '))];
-      }
-
-      return [
-        this.successCheck({
-          authorizationRequest,
+        const errors: string[] = [];
+        const code = this.validateAuthorizationResponse(
           authorizationResponseUrl,
-          body: redactTokens(tokenResponse.body)
-        })
-      ];
+          metadata,
+          options,
+          errors
+        );
+
+        const tokenResponse = await this.requestToken(
+          metadata,
+          options,
+          code,
+          authMethod
+        );
+        this.validateTokenResponse(tokenResponse, errors);
+
+        if (errors.length > 0) {
+          return [this.failureCheck(errors.join(', '))];
+        }
+
+        return [
+          this.successCheck({
+            authorizationRequest,
+            authorizationResponseUrl,
+            body: redactTokens(tokenResponse.body)
+          })
+        ];
+      } finally {
+        callback.close();
+      }
     } catch (error) {
       return [this.failureCheck(error)];
     }

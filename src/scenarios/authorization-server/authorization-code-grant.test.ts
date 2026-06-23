@@ -58,7 +58,8 @@ function mockCallbackServer(
   mockedStartCallbackServer.mockReturnValue({
     waitForCallback: vi.fn().mockImplementation(async () => {
       return buildUrl((scenario as any).state);
-    })
+    }),
+    close: vi.fn()
   } as any);
 }
 
