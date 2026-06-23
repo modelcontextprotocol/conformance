@@ -59,8 +59,10 @@ export interface AuthServerOptions {
    * Override the `issuer` value served in the AS metadata document. Used to
    * test that clients validate the metadata issuer against the issuer
    * identifier used to construct the well-known URL (RFC 8414 §3.3).
+   * Accepts a lazy getter for callers that don't know the server URL until
+   * after `start()`.
    */
-  metadataIssuer?: string;
+  metadataIssuer?: string | (() => string);
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -156,7 +158,10 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`,
+      issuer:
+        typeof metadataIssuer === 'function'
+          ? metadataIssuer()
+          : (metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`),
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
