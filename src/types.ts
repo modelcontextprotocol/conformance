@@ -1,6 +1,6 @@
 import type { RunContext } from './connection';
 import type { ScenarioContext } from './mock-server';
-import { AuthorizationServerOptions } from './schemas';
+import type { AuthorizationServerOptions } from './schemas';
 
 export type CheckStatus =
   | 'SUCCESS'
