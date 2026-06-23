@@ -1,9 +1,5 @@
 import * as jose from 'jose';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls
-} from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import type { ScenarioContext } from '../../../mock-server';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -139,9 +135,9 @@ export class WifJwtBearerScenario implements Scenario {
           };
         }
 
+        const withoutSlash = authBaseUrl.replace(/\/+$/, '');
+        const withSlash = `${withoutSlash}/`;
         try {
-          const withoutSlash = authBaseUrl.replace(/\/+$/, '');
-          const withSlash = `${withoutSlash}/`;
           // iss is not validated: the keypair is generated per start() call and
           // the public key closure binds the assertion to this run. This scenario
           // tests client behaviour, not AS issuer policy.
@@ -218,10 +214,17 @@ export class WifJwtBearerScenario implements Scenario {
             e instanceof jose.errors.JWTClaimValidationFailed &&
             e.claim === 'aud'
           ) {
+            const observedAud = (() => {
+              try {
+                return JSON.stringify(jose.decodeJwt(assertion).aud);
+              } catch {
+                return '<unparseable>';
+              }
+            })();
             this.checks.push({
               id: 'wif-assertion-audience',
               name: 'WifAssertionAudience',
-              description: `JWT-bearer assertion audience claim is invalid: ${msg}`,
+              description: `JWT-bearer assertion audience claim is invalid: expected one of [${withoutSlash}, ${tokenEndpoint}], got ${observedAud}`,
               status: 'FAILURE',
               timestamp,
               specReferences: [
