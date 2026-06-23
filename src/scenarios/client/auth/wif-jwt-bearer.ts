@@ -308,8 +308,12 @@ export class WifJwtBearerScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    if (!this.tokenRequestReceived) {
-      this.checks.push({
+    if (this.tokenRequestReceived) {
+      return this.checks;
+    }
+    return [
+      ...this.checks,
+      {
         id: 'wif-assertion-verified',
         name: 'WifAssertionVerified',
         description: 'Client did not make a JWT-bearer token request',
@@ -319,8 +323,7 @@ export class WifJwtBearerScenario implements Scenario {
           SpecReferences.RFC_7523_JWT_BEARER,
           SpecReferences.SEP_1933_WIF
         ]
-      });
-    }
-    return this.checks;
+      }
+    ];
   }
 }
