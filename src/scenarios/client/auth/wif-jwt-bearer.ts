@@ -49,13 +49,7 @@ export class WifJwtBearerScenario implements Scenario {
       tokenEndpointAuthMethodsSupported: ['none'],
       tokenVerifier,
       disableDynamicRegistration: true,
-      onTokenRequest: async ({
-        grantType,
-        body,
-        timestamp,
-        authBaseUrl,
-        tokenEndpoint
-      }) => {
+      onTokenRequest: async ({ grantType, body, timestamp, authBaseUrl }) => {
         // wif-no-retry and wif-grant-fallback fire on any second request after
         // any first failure, not only after unauthorized_client specifically.
         if (this.tokenRequestReceived && this.failedOnce) {
@@ -145,10 +139,11 @@ export class WifJwtBearerScenario implements Scenario {
           // Both slash forms are accepted because the SDK constructs the audience
           // from the AS metadata URL, which may or may not carry a trailing slash
           // depending on how the metadata endpoint was discovered. The token
-          // endpoint URL is also accepted per RFC 7523 §3.
+          // endpoint URL is NOT accepted: draft-ietf-oauth-rfc7523bis tightens
+          // aud toward the AS issuer identifier, and SEP-1933 will track that.
           await jose.jwtVerify(assertion, publicKey, {
             algorithms: [DEFAULT_WORKLOAD_JWT_ALG],
-            audience: [withoutSlash, withSlash, tokenEndpoint],
+            audience: [withoutSlash, withSlash],
             clockTolerance: 5
           });
 
@@ -218,7 +213,7 @@ export class WifJwtBearerScenario implements Scenario {
             this.checks.push({
               id: 'wif-assertion-audience',
               name: 'WifAssertionAudience',
-              description: `JWT-bearer assertion audience claim is invalid: expected one of [${withoutSlash}, ${tokenEndpoint}], got ${observedAud}`,
+              description: `JWT-bearer assertion audience claim is invalid: expected ${withoutSlash}, got ${observedAud}`,
               status: 'FAILURE',
               timestamp,
               specReferences: [
