@@ -331,6 +331,15 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
             body: initialized.body,
             sessionIdSent: response.sessionId !== undefined
           };
+          if (response.sessionId) {
+            await request(serverUrl, {
+              method: 'DELETE',
+              headers: {
+                'Mcp-Session-Id': response.sessionId,
+                'MCP-Protocol-Version': specVersion
+              }
+            }).catch(() => {});
+          }
         } catch (error) {
           details.initializedNotification = {
             error: error instanceof Error ? error.message : String(error)
