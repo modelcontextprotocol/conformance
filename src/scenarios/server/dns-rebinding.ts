@@ -88,15 +88,6 @@ function probeBody(specVersion: string): {
   };
 }
 
-function getResponseHeader(
-  headers: Record<string, string | string[] | undefined>,
-  name: string
-): string | undefined {
-  const value = headers[name] ?? headers[name.toLowerCase()];
-  if (Array.isArray(value)) return value[0];
-  return value;
-}
-
 /**
  * Send an MCP request with custom Host and Origin headers.
  * Both headers are set to the same value so that servers checking either
@@ -131,10 +122,11 @@ async function sendRequestWithHostAndOrigin(
     body = null;
   }
 
+  const sessionId = response.headers['mcp-session-id'];
   return {
     statusCode: response.statusCode,
     body,
-    sessionId: getResponseHeader(response.headers, 'mcp-session-id')
+    sessionId: Array.isArray(sessionId) ? sessionId[0] : sessionId
   };
 }
 
