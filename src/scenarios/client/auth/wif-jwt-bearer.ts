@@ -2,8 +2,7 @@ import * as jose from 'jose';
 import type {
   Scenario,
   ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
+  ScenarioUrls
 } from '../../../types';
 import type { ScenarioContext } from '../../../mock-server';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -26,7 +25,6 @@ const WIF_CLIENT_ID = 'conformance-wif-workload';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests the RFC 7523 JWT-bearer grant for workload identity federation (SEP-1933). ' +
