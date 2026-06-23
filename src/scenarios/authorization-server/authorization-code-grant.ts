@@ -103,10 +103,16 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
           options
         );
         console.log(
+          `Ensure ${REDIRECT_URI_ORIGIN}:${options.port}${REDIRECT_URI_PATH} is registered as a redirect URI for client '${options.clientId}'.`
+        );
+        console.log(
           'Access the following URL in your browser and complete the authentication process.'
         );
         console.log(authorizationRequest);
         console.log('');
+        console.log(
+          'Waiting up to 5 minutes for the authorization callback...'
+        );
 
         const authorizationResponseUrl =
           await callback.waitForCallback(300_000);
@@ -193,7 +199,9 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
     // exchange with an unbound authorization response.
     const state = url.searchParams.getAll('state');
     if (state.length !== 1 || state[0] !== this.state) {
-      throw new Error(`Invalid state parameter: ${state.join(',') || 'missing'}`);
+      throw new Error(
+        `Invalid state parameter: ${state.join(',') || 'missing'}`
+      );
     }
 
     const code = url.searchParams.getAll('code');
