@@ -42,6 +42,7 @@ import {
   ClientOptionsSchema,
   ServerOptionsSchema
 } from './schemas';
+import type { AuthorizationServerOptions } from './schemas';
 import {
   loadExpectedFailures,
   evaluateBaseline,
@@ -529,17 +530,34 @@ program
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
-      let fileOptions: Record<string, unknown> = {};
+      let fileOptions: AuthorizationServerOptions | undefined;
       if (options.file) {
         try {
-          fileOptions = JSON.parse(await fs.readFile(options.file, 'utf-8'));
+          const raw = JSON.parse(await fs.readFile(options.file, 'utf-8'));
+          // The file must be a complete, valid config on its own; CLI flags
+          // are optional overrides. .strict() rejects unknown keys so typos
+          // surface instead of being silently ignored.
+          fileOptions = AuthorizationServerOptionsSchema.strict().parse(raw);
         } catch (error) {
-          console.error(
-            `Failed to read settings file '${options.file}': ` +
-              (error instanceof Error ? error.message : String(error))
-          );
+          if (error instanceof ZodError) {
+            const details = error.issues
+              .map((e) => `  ${e.path.join('.') || '(root)'}: ${e.message}`)
+              .join('\n');
+            console.error(
+              `Invalid settings file '${options.file}':\n${details}`
+            );
+          } else {
+            console.error(
+              `Failed to read settings file '${options.file}': ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+          }
           process.exit(1);
         }
+      }
+      if (!fileOptions && !options.url) {
+        console.error('error: must provide --url or --file');
+        process.exit(1);
       }
       // CLI flags override file values; undefined CLI values must not clobber file values
       const merged = {
@@ -548,10 +566,6 @@ program
           Object.entries(options).filter(([, v]) => v !== undefined)
         )
       };
-      if (!merged.url) {
-        console.error("error: must provide --url or a --file containing 'url'");
-        process.exit(1);
-      }
       const validated = AuthorizationServerOptionsSchema.parse(merged);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
