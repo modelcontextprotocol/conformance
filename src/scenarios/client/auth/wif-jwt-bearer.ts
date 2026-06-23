@@ -90,7 +90,7 @@ export class WifJwtBearerScenario implements Scenario {
             ]
           });
           return {
-            error: 'invalid_request',
+            error: 'invalid_grant',
             errorDescription: 'Retry not allowed for JWT-bearer grant'
           };
         }
