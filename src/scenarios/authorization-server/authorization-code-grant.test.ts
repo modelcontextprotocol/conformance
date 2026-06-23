@@ -90,7 +90,8 @@ describe('AuthorizationCodeGrantScenario', () => {
     );
 
     mockTokenResponse({
-      access_token: 'access-token',
+      access_token: 'eyJhbGciOiJIUzI1NiJ9.payload.sig0123',
+      refresh_token: 'short',
       token_type: 'Bearer'
     });
 
@@ -113,7 +114,8 @@ describe('AuthorizationCodeGrantScenario', () => {
       'code=abc'
     );
 
-    expect((check.details as any).body.access_token).toBe('access-token');
+    expect((check.details as any).body.access_token).toBe('eyJh…0123 (len=36)');
+    expect((check.details as any).body.refresh_token).toBe('[redacted, len=5]');
     expect((check.details as any).body.token_type).toBe('Bearer');
   });
 

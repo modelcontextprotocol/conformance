@@ -14,6 +14,27 @@ import { SpecReferences } from '../authorization-server/auth/spec-references';
 const REDIRECT_URI_ORIGIN = 'http://127.0.0.1';
 const REDIRECT_URI_PATH = '/callback';
 
+const REDACTED_KEYS = ['access_token', 'refresh_token', 'id_token'] as const;
+
+/**
+ * Mask live token material so it never lands in checks.json. Keep a short
+ * prefix/suffix so the value can still be correlated against AS logs.
+ * Tokens shorter than 16 chars are fully redacted.
+ */
+function redactTokens(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  for (const key of REDACTED_KEYS) {
+    const value = out[key];
+    if (typeof value === 'string') {
+      out[key] =
+        value.length < 16
+          ? `[redacted, len=${value.length}]`
+          : `${value.slice(0, 4)}…${value.slice(-4)} (len=${value.length})`;
+    }
+  }
+  return out;
+}
+
 export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthorizationServer {
   private state = randomBytes(32).toString('base64url');
   private codeVerifier = '';
@@ -112,7 +133,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
         this.successCheck({
           authorizationRequest,
           authorizationResponseUrl,
-          body: tokenResponse.body
+          body: redactTokens(tokenResponse.body)
         })
       ];
     } catch (error) {
