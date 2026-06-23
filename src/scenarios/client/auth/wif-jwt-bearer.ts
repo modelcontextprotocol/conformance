@@ -11,7 +11,6 @@ import {
   JWT_BEARER_GRANT_TYPE,
   DEFAULT_WORKLOAD_JWT_ALG,
   WIF_TRIGGER_UNAUTHORIZED_SCOPE,
-  WIF_REJECTED_SCOPE,
   generateWorkloadKeypair,
   createWorkloadJwt
 } from './helpers/createWorkloadJwt.js';
@@ -27,7 +26,7 @@ export class WifJwtBearerScenario implements Scenario {
     'Tests the RFC 7523 JWT-bearer grant for workload identity federation (SEP-1933). ' +
     'The client must use grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer and ' +
     'include the workload JWT as the assertion parameter. The client should surface ' +
-    'errors (invalid_grant, invalid_scope, unauthorized_client) without retrying or ' +
+    'errors (invalid_grant, unauthorized_client) without retrying or ' +
     'switching grant types (WARNING — pending SEP-1933 normative text).';
 
   private authServer = new ServerLifecycle();
@@ -174,14 +173,6 @@ export class WifJwtBearerScenario implements Scenario {
               errorDescription: 'Client not authorized for JWT-bearer grant'
             };
           }
-          if (scopeList.includes(WIF_REJECTED_SCOPE)) {
-            this.failedOnce = true;
-            return {
-              error: 'invalid_scope',
-              errorDescription:
-                'Requested scope is not permitted for this grant'
-            };
-          }
           return {
             token: `test-token-${Date.now()}`,
             scopes: scopeList
@@ -216,7 +207,10 @@ export class WifJwtBearerScenario implements Scenario {
           ) {
             const observedAud = (() => {
               try {
-                return JSON.stringify(jose.decodeJwt(assertion).aud);
+                return JSON.stringify(jose.decodeJwt(assertion).aud).slice(
+                  0,
+                  200
+                );
               } catch {
                 return '<unparseable>';
               }

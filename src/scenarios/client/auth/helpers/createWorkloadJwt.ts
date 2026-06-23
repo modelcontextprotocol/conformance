@@ -4,10 +4,9 @@ export const JWT_BEARER_GRANT_TYPE =
   'urn:ietf:params:oauth:grant-type:jwt-bearer';
 export const DEFAULT_WORKLOAD_JWT_ALG = 'ES256';
 
-// Scope values used by the WIF scenario's mock AS and broken-client runners.
+// Scope value used by the WIF scenario's mock AS and broken-client runners.
 // Exported here so both sides stay in sync without manual duplication.
 export const WIF_TRIGGER_UNAUTHORIZED_SCOPE = 'wif.trigger-unauthorized';
-export const WIF_REJECTED_SCOPE = 'wif.rejected';
 
 export interface CreateWorkloadJwtOptions {
   issuer: string;

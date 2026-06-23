@@ -13,7 +13,6 @@ import {
   runWifJwtBearerWrongAudience,
   runWifJwtBearerMissingAssertion,
   runWifJwtBearerExpiredAssertion,
-  runWifJwtBearerScopeRejected,
   runWifJwtBearerGrantFallback,
   runWifJwtBearerRetry
 } from '../../../../examples/clients/typescript/wif-broken-clients';
@@ -295,13 +294,6 @@ describe('WIF JWT-bearer negative tests', () => {
     const runner = new InlineClientRunner(runWifJwtBearerExpiredAssertion);
     await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
       expectedFailureSlugs: ['wif-assertion-expired'],
-      allowClientError: true
-    });
-  });
-
-  test('client requests a scope the AS rejects for JWT-bearer grant', async () => {
-    const runner = new InlineClientRunner(runWifJwtBearerScopeRejected);
-    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
       allowClientError: true
     });
   });

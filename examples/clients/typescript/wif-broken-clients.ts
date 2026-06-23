@@ -17,8 +17,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   JWT_BEARER_GRANT_TYPE,
-  WIF_TRIGGER_UNAUTHORIZED_SCOPE,
-  WIF_REJECTED_SCOPE
+  WIF_TRIGGER_UNAUTHORIZED_SCOPE
 } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 
@@ -177,38 +176,6 @@ export async function runWifJwtBearerExpiredAssertion(
       'conformance-wif-expired-assertion'
     ),
     'conformance-wif-expired-assertion'
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Scope rejected
-// ---------------------------------------------------------------------------
-
-// BUG: requests a scope the AS does not permit for JWT-bearer grant
-class WifScopeRejectedProvider extends WifProviderBase {
-  constructor(
-    private readonly assertion: string,
-    clientId: string
-  ) {
-    super(clientId, 'conformance-wif-scope-rejected');
-  }
-
-  prepareTokenRequest(_scope?: string): URLSearchParams {
-    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
-    params.set('assertion', this.assertion);
-    params.set('scope', WIF_REJECTED_SCOPE);
-    return params;
-  }
-}
-
-export async function runWifJwtBearerScopeRejected(
-  serverUrl: string
-): Promise<void> {
-  const ctx = parseWifContext();
-  await runWifBrokenClient(
-    serverUrl,
-    new WifScopeRejectedProvider(ctx.valid_jwt, ctx.client_id),
-    'conformance-wif-scope-rejected'
   );
 }
 
