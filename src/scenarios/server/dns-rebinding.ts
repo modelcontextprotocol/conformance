@@ -299,50 +299,59 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       );
       const isAccepted =
         response.statusCode >= 200 && response.statusCode < 300;
-      const initializedNotification =
-        isAccepted && specVersion !== DRAFT_PROTOCOL_VERSION
-          ? await sendInitializedNotification(
-              serverUrl,
-              validHost,
-              specVersion,
-              response.sessionId
-            )
-          : undefined;
-      const initializedAccepted =
-        !initializedNotification ||
-        (initializedNotification.statusCode >= 200 &&
-          initializedNotification.statusCode < 300);
 
-      const details = {
+      const details: Record<string, unknown> = {
         hostHeader: validHost,
         originHeader: `http://${validHost}`,
         statusCode: response.statusCode,
-        body: response.body,
-        ...(initializedNotification
-          ? {
-              initializedNotification: {
-                statusCode: initializedNotification.statusCode,
-                body: initializedNotification.body,
-                sessionIdSent: response.sessionId ?? null
-              }
-            }
-          : {})
+        body: response.body
       };
 
-      if (isAccepted && initializedAccepted) {
+      // Lifecycle hygiene (#338): the valid-host probe is a real `initialize`,
+      // so complete the handshake (`notifications/initialized`) and release the
+      // session. This is best-effort and recorded in `details` only — the
+      // Host/Origin check's pass/fail stays keyed to the initialize response so
+      // the result remains decidable from this check's spec references.
+      const hasInitializeResult =
+        typeof response.body === 'object' &&
+        response.body !== null &&
+        'result' in response.body &&
+        !('error' in response.body);
+      if (
+        isAccepted &&
+        hasInitializeResult &&
+        specVersion !== DRAFT_PROTOCOL_VERSION
+      ) {
+        try {
+          const initialized = await sendInitializedNotification(
+            serverUrl,
+            validHost,
+            specVersion,
+            response.sessionId
+          );
+          details.initializedNotification = {
+            statusCode: initialized.statusCode,
+            body: initialized.body,
+            sessionIdSent: response.sessionId !== undefined
+          };
+        } catch (error) {
+          details.initializedNotification = {
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      }
+
+      if (isAccepted) {
         checks.push({
           ...acceptedCheckBase,
           status: 'SUCCESS',
           details
         });
       } else {
-        const errorMessage = !isAccepted
-          ? `Expected HTTP 2xx for valid localhost Host/Origin headers, got ${response.statusCode}`
-          : `Expected HTTP 2xx for initialized notification after valid localhost initialize, got ${initializedNotification?.statusCode}`;
         checks.push({
           ...acceptedCheckBase,
           status: 'FAILURE',
-          errorMessage,
+          errorMessage: `Expected HTTP 2xx for valid localhost Host/Origin headers, got ${response.statusCode}`,
           details
         });
       }
