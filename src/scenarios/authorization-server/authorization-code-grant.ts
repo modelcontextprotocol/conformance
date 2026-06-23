@@ -7,18 +7,17 @@ import {
 } from '../../types';
 import { startCallbackServer } from '../authorization-server/auth/helpers/createCallbackServer';
 import { request } from 'undici';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { AuthorizationServerOptions } from '../../schemas';
 import { SpecReferences } from '../authorization-server/auth/spec-references';
 
 const REDIRECT_URI_ORIGIN = 'http://localhost';
 const REDIRECT_URI_PATH = '/callback';
-// These values are from RFC 7636 Appendix B.
-const CODE_VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
-const CODE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 
 export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthorizationServer {
   private state = randomBytes(32).toString('base64url');
+  private codeVerifier = '';
+  private codeChallenge = '';
   name = 'authorization-code-grant';
   readonly source = { introducedIn: '2025-03-26' } as const;
   description = `Test authorization code grant.
@@ -47,6 +46,10 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
   ): Promise<ConformanceCheck[]> {
     try {
       this.state = randomBytes(32).toString('base64url');
+      this.codeVerifier = randomBytes(32).toString('base64url');
+      this.codeChallenge = createHash('sha256')
+        .update(this.codeVerifier)
+        .digest('base64url');
       const resultMetadata = details[
         'authorization-server-metadata-endpoint'
       ] as { body?: Record<string, unknown> };
@@ -112,7 +115,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
     );
     const params =
       `response_type=code&client_id=${options.clientId}&state=${this.state}` +
-      `&redirect_uri=${redirectUri}&code_challenge=${CODE_CHALLENGE}` +
+      `&redirect_uri=${redirectUri}&code_challenge=${this.codeChallenge}` +
       `&code_challenge_method=S256&resource=https%3A%2F%2Fapi.example.com%2Fapp%2F`;
 
     return `${metadata.authorization_endpoint}?${params}`;
@@ -180,7 +183,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
           REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
         client_id: options.clientId,
         client_secret: options.clientSecret,
-        code_verifier: CODE_VERIFIER
+        code_verifier: this.codeVerifier
       });
 
       response = await request(metadata.token_endpoint, {
@@ -200,7 +203,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
         code,
         redirect_uri:
           REDIRECT_URI_ORIGIN + ':' + options.port + REDIRECT_URI_PATH,
-        code_verifier: CODE_VERIFIER
+        code_verifier: this.codeVerifier
       });
 
       response = await request(metadata.token_endpoint, {
