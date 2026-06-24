@@ -138,7 +138,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream, application/json',
           ...(sessionId && { 'mcp-session-id': sessionId }),
-          'mcp-protocol-version': '2025-03-26'
+          'mcp-protocol-version': '2025-11-25'
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
@@ -417,7 +417,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           headers: {
             Accept: 'text/event-stream',
             'mcp-session-id': sessionId,
-            'mcp-protocol-version': '2025-03-26',
+            'mcp-protocol-version': '2025-11-25',
             'last-event-id': lastEventId
           }
         });
