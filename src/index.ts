@@ -594,7 +594,8 @@ program
           validated,
           validated.scenario,
           details,
-          outputDir
+          outputDir,
+          specVersionFilter
         );
 
         const { failed } = printAuthorizationServerResults(
@@ -628,7 +629,8 @@ program
             validated,
             scenarioName,
             details,
-            outputDir
+            outputDir,
+            specVersionFilter
           );
           if (
             result.checks[0].status === 'SUCCESS' &&

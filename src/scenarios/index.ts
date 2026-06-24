@@ -428,7 +428,7 @@ function versionIndex(
 }
 
 // Off-timeline sources (extensions etc.) are never selected by --spec-version.
-function matchesSpecVersion(
+export function matchesSpecVersion(
   source: ScenarioSource,
   version: SpecVersion
 ): boolean {

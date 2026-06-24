@@ -21,6 +21,11 @@ export interface ConformanceCheck {
   status: CheckStatus;
   timestamp: string;
   specReferences?: SpecReference[];
+  /**
+   * Optional spec-version range for this individual check. When set, runners
+   * drop the check for `--spec-version` values outside the range.
+   */
+  source?: ScenarioSource;
   details?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   errorMessage?: string;

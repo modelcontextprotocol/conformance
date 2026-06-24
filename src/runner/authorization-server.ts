@@ -1,7 +1,10 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
-import { getClientScenarioForAuthorizationServer } from '../scenarios';
+import { ConformanceCheck, SpecVersion } from '../types';
+import {
+  getClientScenarioForAuthorizationServer,
+  matchesSpecVersion
+} from '../scenarios';
 import { createResultDir, formatPrettyChecks } from './utils';
 import { AuthorizationServerOptions } from '../schemas';
 
@@ -9,7 +12,8 @@ export async function runAuthorizationServerConformanceTest(
   options: AuthorizationServerOptions,
   scenarioName: string,
   details: Record<string, unknown>,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -34,18 +38,23 @@ export async function runAuthorizationServerConformanceTest(
   );
 
   const checks = await scenario.run(options, details);
+  const filtered = specVersion
+    ? checks.filter(
+        (c) => !c.source || matchesSpecVersion(c.source, specVersion)
+      )
+    : checks;
 
   if (resultDir) {
     await fs.writeFile(
       path.join(resultDir, 'checks.json'),
-      JSON.stringify(checks, null, 2)
+      JSON.stringify(filtered, null, 2)
     );
 
     console.log(`Results saved to ${resultDir}`);
   }
 
   return {
-    checks,
+    checks: filtered,
     resultDir,
     scenarioDescription: scenario.description
   };
