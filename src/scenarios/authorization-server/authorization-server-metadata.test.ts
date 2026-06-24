@@ -119,7 +119,7 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
     });
   });
 
-  it('returns FAILURE for CIMD check when server metadata lacks client_id_metadata_document_supported', async () => {
+  it('returns WARNING for CIMD check when server metadata lacks client_id_metadata_document_supported', async () => {
     const scenario = new AuthorizationServerMetadataEndpointScenario();
     mockMetadataResponse(validMetadata);
 
@@ -132,13 +132,14 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
 
     const cimdCheck = checks[1];
     expect(cimdCheck.id).toBe('authorization-server-metadata-cimd');
-    expect(cimdCheck.status).toBe('FAILURE');
+    expect(cimdCheck.status).toBe('WARNING');
+    expect(cimdCheck.source).toEqual({ introducedIn: '2025-11-25' });
     expect(cimdCheck.errorMessage).toContain(
       'client_id_metadata_document_supported'
     );
   });
 
-  it('returns FAILURE for CIMD check when client_id_metadata_document_supported is false', async () => {
+  it('returns WARNING for CIMD check when client_id_metadata_document_supported is false', async () => {
     const scenario = new AuthorizationServerMetadataEndpointScenario();
     mockMetadataResponse({
       ...validMetadata,
@@ -154,7 +155,8 @@ describe('AuthorizationServerMetadataEndpointScenario', () => {
 
     const cimdCheck = checks[1];
     expect(cimdCheck.id).toBe('authorization-server-metadata-cimd');
-    expect(cimdCheck.status).toBe('FAILURE');
+    expect(cimdCheck.status).toBe('WARNING');
+    expect(cimdCheck.source).toEqual({ introducedIn: '2025-11-25' });
     expect(cimdCheck.errorMessage).toContain(
       'client_id_metadata_document_supported'
     );

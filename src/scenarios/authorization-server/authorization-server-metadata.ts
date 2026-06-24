@@ -3,11 +3,13 @@
  */
 import { AuthorizationServerOptions } from '../../schemas';
 import {
+  CheckStatus,
   ClientScenarioForAuthorizationServer,
   ConformanceCheck
 } from '../../types';
 import { request } from 'undici';
 import { SpecReferences } from '../authorization-server/auth/spec-references';
+import { SpecReferences as ClientSpecReferences } from '../client/auth/spec-references';
 
 type Status = 'SUCCESS' | 'FAILURE';
 
@@ -24,7 +26,8 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 - HTTP response status code MUST be 200 OK
 - Content-Type header MUST be application/json
 - Return a JSON response including issuer, authorization_endpoint, token_endpoint and response_types_supported
-- The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.`;
+- The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.
+- (2025-11-25+) SHOULD include client_id_metadata_document_supported=true (Client ID Metadata Document support)`;
 
   async run(
     options: AuthorizationServerOptions,
@@ -91,7 +94,8 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 
     if (body) {
       const cimdSupported = body.client_id_metadata_document_supported;
-      const cimdStatus: Status = cimdSupported === true ? 'SUCCESS' : 'FAILURE';
+      const cimdStatus: CheckStatus =
+        cimdSupported === true ? 'SUCCESS' : 'WARNING';
       const cimdErrorMessage =
         cimdSupported === true
           ? undefined
@@ -103,15 +107,14 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
         id: 'authorization-server-metadata-cimd',
         name: 'AuthorizationServerMetadataCIMD',
         description:
-          'Authorization server metadata includes client_id_metadata_document_supported=true',
+          'Authorization server metadata includes client_id_metadata_document_supported=true (Client ID Metadata Document support)',
         status: cimdStatus,
+        source: { introducedIn: '2025-11-25' } as const,
         timestamp: new Date().toISOString(),
         errorMessage: cimdErrorMessage,
         specReferences: [
-          {
-            id: 'IETF-OAuth-Client-ID-Metadata-Document',
-            url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-client-id-metadata-document-01.html#name-authorization-server-metada'
-          }
+          ClientSpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS,
+          ClientSpecReferences.IETF_CIMD
         ],
         details: {
           client_id_metadata_document_supported: cimdSupported
