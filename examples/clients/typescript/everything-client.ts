@@ -100,6 +100,239 @@ registerScenarios(['initialize', 'tools-call'], runBasicClient);
 registerScenario('json-schema-ref-no-deref', runBasicClient);
 
 // ============================================================================
+// Stateless gauntlet — a hand-rolled DRAFT (SEP-2575) client. No initialize,
+// no session: every request carries the protocol version, client identity,
+// and capabilities itself, plus the Mcp-Method/Mcp-Name routing headers
+// (SEP-2243). MRTR (SEP-2322) retries echo requestState unchanged.
+// The server judges each request on its own content; any isError result or
+// HTTP error carries an explanation of what the client got wrong.
+// ============================================================================
+
+const DRAFT_VERSION = '2026-07-28';
+const DRAFT_META = {
+  'io.modelcontextprotocol/protocolVersion': DRAFT_VERSION,
+  'io.modelcontextprotocol/clientInfo': {
+    name: 'everything-client',
+    version: '1.0.0'
+  },
+  'io.modelcontextprotocol/clientCapabilities': { elicitation: {} }
+};
+
+async function draftRpc(
+  serverUrl: string,
+  method: string,
+  params: Record<string, unknown> = {}
+): Promise<Record<string, unknown>> {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    'mcp-protocol-version': DRAFT_VERSION,
+    'mcp-method': method
+  };
+  if (method === 'tools/call' && typeof params.name === 'string') {
+    headers['mcp-name'] = params.name;
+  }
+  const res = await fetch(serverUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method,
+      params: { ...params, _meta: DRAFT_META }
+    })
+  });
+  if (!res.ok) {
+    throw new Error(`${method}: HTTP ${res.status}: ${await res.text()}`);
+  }
+  const json = (await res.json()) as {
+    result?: Record<string, unknown>;
+    error?: { code: number; message: string };
+  };
+  if (json.error) {
+    throw new Error(
+      `${method}: JSON-RPC ${json.error.code}: ${json.error.message}`
+    );
+  }
+  return json.result ?? {};
+}
+
+const GAUNTLET_ARGS: Record<string, Record<string, unknown>> = {
+  validate_arguments: {
+    message: 'hello from everything-client',
+    count: 42,
+    payload: { kind: 'solid' }
+  },
+  mrtr_confirm: {},
+  // Listed only when a client does NOT declare elicitation; harmless to call.
+  elicitation_missing: {}
+};
+
+/** Answer an input_required result: accept every elicitation request. */
+function answerInputRequests(
+  inputRequests: Record<string, { method: string }>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(inputRequests).map(([key, request]) => {
+      if (request.method !== 'elicitation/create') {
+        throw new Error(
+          `unsupported input request method '${request.method}'`
+        );
+      }
+      return [key, { action: 'accept', content: { confirmed: true } }];
+    })
+  );
+}
+
+async function runGauntletClient(serverUrl: string): Promise<void> {
+  const discover = await draftRpc(serverUrl, 'server/discover');
+  logger.debug(
+    `server/discover: supportedVersions=${JSON.stringify(discover.supportedVersions)}`
+  );
+
+  const { tools } = (await draftRpc(serverUrl, 'tools/list')) as {
+    tools: { name: string }[];
+  };
+  logger.debug(`Gauntlet lists ${tools.length} tools`);
+
+  const failures: string[] = [];
+  for (const tool of tools) {
+    const args = GAUNTLET_ARGS[tool.name];
+    if (!args) {
+      failures.push(`no argument template for tool '${tool.name}'`);
+      continue;
+    }
+    let result = await draftRpc(serverUrl, 'tools/call', {
+      name: tool.name,
+      arguments: args
+    });
+    // MRTR: answer the input requests and retry with the state echoed.
+    if (result.resultType === 'input_required') {
+      result = await draftRpc(serverUrl, 'tools/call', {
+        name: tool.name,
+        inputResponses: answerInputRequests(
+          result.inputRequests as Record<string, { method: string }>
+        ),
+        ...(result.requestState !== undefined
+          ? { requestState: result.requestState }
+          : {})
+      });
+    }
+    const content = result.content as
+      | { type: string; text?: string }[]
+      | undefined;
+    const text = content?.[0]?.text ?? JSON.stringify(result);
+    if (result.isError) {
+      failures.push(`${tool.name}: ${text}`);
+    } else {
+      logger.debug(`${tool.name}: ${text}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`gauntlet failures:\n  ${failures.join('\n  ')}`);
+  }
+}
+
+registerScenario('checker-2026-07-28', runGauntletClient);
+
+// ============================================================================
+// Auth-chain checker — walk the re-auth rungs in order. Each advance tool
+// answers with an OAuth challenge (401 with a different resource_metadata,
+// then 403 insufficient_scope); the SDK's withOAuthRetry should absorb each
+// challenge, re-authorize under the new configuration, and retry.
+// ============================================================================
+
+async function runAuthChainClient(serverUrl: string): Promise<void> {
+  const client = new Client(
+    { name: 'test-auth-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const oauthFetch = withOAuthRetry(
+    'test-auth-client',
+    new URL(serverUrl),
+    handle401,
+    CIMD_CLIENT_METADATA_URL
+  )(fetch);
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+  await client.connect(transport);
+
+  for (const name of [
+    'auth_status',
+    'advance_to_scoped',
+    'auth_status',
+    'advance_to_stepup',
+    'auth_complete'
+  ]) {
+    const result = await client.callTool({ name, arguments: {} });
+    const text =
+      Array.isArray(result.content) && result.content[0]?.type === 'text'
+        ? result.content[0].text
+        : JSON.stringify(result.content);
+    logger.debug(`${name}: ${text}`);
+    if (result.isError) {
+      throw new Error(`${name} failed: ${text}`);
+    }
+  }
+
+  await transport.close();
+}
+
+registerScenario('checker-auth', runAuthChainClient);
+
+// The iss trap probe: calling check_iss_validation forces a re-auth whose
+// authorization response carries a WRONG iss. The expected outcome is a
+// client-side refusal — the call must FAIL with an iss complaint, not
+// complete. Completing means the client exchanged the code anyway and the
+// server's poisoned-token explanation comes back instead.
+async function runAuthIssTrapProbe(serverUrl: string): Promise<void> {
+  const client = new Client(
+    { name: 'test-auth-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const oauthFetch = withOAuthRetry(
+    'test-auth-client',
+    new URL(serverUrl),
+    handle401,
+    CIMD_CLIENT_METADATA_URL
+  )(fetch);
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    fetch: oauthFetch
+  });
+  await client.connect(transport);
+
+  // Two ways to learn the verdict, depending on whether the client validates
+  // iss. PASS: the client aborts mid-OAuth (validates iss), so callTool
+  // rejects locally with an iss complaint and never reaches the server.
+  // FAIL: the client exchanges the wrong-iss code, so the call completes with
+  // an in-band isError tool result carrying the FAIL verdict.
+  try {
+    const result = await client.callTool({
+      name: 'check_iss_validation',
+      arguments: {}
+    });
+    const text =
+      Array.isArray(result.content) && result.content[0]?.type === 'text'
+        ? result.content[0].text
+        : JSON.stringify(result.content);
+    if (result.isError && text.includes('FAIL [check_iss_validation]')) {
+      throw new Error(`CAUGHT BY THE TRAP (client ignored iss): ${text}`);
+    }
+    throw new Error(`unexpected non-error result from the iss trap: ${text}`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('CAUGHT BY THE TRAP')) throw e;
+    logger.debug(`iss trap outcome — client-side refusal (PASS): ${msg}`);
+  } finally {
+    await transport.close().catch(() => {});
+  }
+}
+
+registerScenario('checker-auth-iss', runAuthIssTrapProbe);
+
+// ============================================================================
 // request-metadata scenario (SEP-2575)
 // ============================================================================
 

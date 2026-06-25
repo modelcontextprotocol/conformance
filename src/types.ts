@@ -130,6 +130,14 @@ export interface Scenario {
   start(): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
+  /**
+   * Checks recorded so far WITHOUT end-of-flow finalization. Some scenarios'
+   * `getChecks()` appends aggregate failures for flow steps never observed
+   * ("expected check missing"); those judgments are only meaningful when one
+   * instance saw the whole flow. Stateless mounting (`/x/...`) judges each
+   * request on its own content, so it reads this view when present.
+   */
+  rawChecks?(): ConformanceCheck[];
 }
 
 /**

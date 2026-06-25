@@ -6,6 +6,36 @@ import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
 
 /**
+ * The authorization code is opaque to the client, so we use it to carry the
+ * per-flow state (PKCE challenge, requested scopes) from /authorize to
+ * /token. This keeps the AS stateless across processes — on serverless hosts
+ * (val.town) the two requests can land on different isolates, where closure
+ * state from /authorize doesn't exist. The closure variables remain as a
+ * fallback for flows that don't round-trip our code (e.g. hand-rolled tests).
+ */
+interface AuthCodeState {
+  challenge?: string;
+  scopes?: string[];
+}
+
+const AUTH_CODE_PREFIX = 'test-auth-code';
+
+function encodeAuthCode(state: AuthCodeState): string {
+  return `${AUTH_CODE_PREFIX}.${Buffer.from(JSON.stringify(state)).toString('base64url')}`;
+}
+
+function decodeAuthCode(code: string | undefined): AuthCodeState | undefined {
+  if (!code?.startsWith(`${AUTH_CODE_PREFIX}.`)) return undefined;
+  try {
+    return JSON.parse(
+      Buffer.from(code.slice(AUTH_CODE_PREFIX.length + 1), 'base64url').toString()
+    ) as AuthCodeState;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Compute S256 code challenge from a code verifier.
  * BASE64URL(SHA256(code_verifier))
  */
@@ -261,7 +291,13 @@ export function createAuthServer(
     const redirectUri = req.query.redirect_uri as string;
     const state = req.query.state as string;
     const redirectUrl = new URL(redirectUri);
-    redirectUrl.searchParams.set('code', 'test-auth-code');
+    redirectUrl.searchParams.set(
+      'code',
+      encodeAuthCode({
+        challenge: codeChallenge,
+        scopes: lastAuthorizationScopes
+      })
+    );
     if (state) {
       redirectUrl.searchParams.set('state', state);
     }
@@ -285,6 +321,13 @@ export function createAuthServer(
     const timestamp = new Date().toISOString();
     const requestedScope = req.body.scope;
     const grantType = req.body.grant_type;
+
+    // Recover per-flow state from the code itself (survives process changes
+    // on serverless hosts); fall back to closure state for codes we didn't
+    // mint via encodeAuthCode.
+    const codeState = decodeAuthCode(req.body.code as string | undefined);
+    const flowChallenge = codeState?.challenge ?? storedCodeChallenge;
+    const flowScopes = codeState?.scopes ?? lastAuthorizationScopes;
 
     checks.push({
       id: 'token-request',
@@ -316,18 +359,17 @@ export function createAuthServer(
       // PKCE: Validate code_verifier matches code_challenge (S256)
       // Fail if either is missing
       const computedChallenge =
-        codeVerifier && storedCodeChallenge
+        codeVerifier && flowChallenge
           ? computeS256Challenge(codeVerifier)
           : undefined;
       const matches =
-        computedChallenge !== undefined &&
-        computedChallenge === storedCodeChallenge;
+        computedChallenge !== undefined && computedChallenge === flowChallenge;
 
       let description: string;
-      if (!storedCodeChallenge && !codeVerifier) {
+      if (!flowChallenge && !codeVerifier) {
         description =
           'Neither code_challenge nor code_verifier were sent - PKCE is required';
-      } else if (!storedCodeChallenge) {
+      } else if (!flowChallenge) {
         description =
           'code_challenge was not sent in authorization request - PKCE is required';
       } else if (!codeVerifier) {
@@ -348,14 +390,14 @@ export function createAuthServer(
         specReferences: [SpecReferences.MCP_PKCE],
         details: {
           matches,
-          storedChallenge: storedCodeChallenge || 'not sent',
+          storedChallenge: flowChallenge || 'not sent',
           computedChallenge: computedChallenge || 'not computed'
         }
       });
     }
 
     let token = `test-token-${Date.now()}`;
-    let scopes: string[] = lastAuthorizationScopes;
+    let scopes: string[] = flowScopes;
 
     if (onTokenRequest) {
       const result = await onTokenRequest({

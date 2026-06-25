@@ -11,6 +11,8 @@ import {
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
+import { StatelessGauntletScenario } from './client/stateless-gauntlet';
+import { AuthCheckerScenario } from './client/auth-checker';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
@@ -269,7 +271,13 @@ const scenariosList: Scenario[] = [
   new HttpInvalidToolHeadersScenario(),
 
   // JSON Schema network $ref dereferencing (SEP-2106)
-  new JsonSchemaRefDerefScenario()
+  new JsonSchemaRefDerefScenario(),
+
+  // Stateless gauntlet — single server, validating tools, no run-id needed
+  new StatelessGauntletScenario(),
+
+  // Auth re-auth chain checker — token encodes progress through the rungs
+  new AuthCheckerScenario()
 ];
 
 // Core scenarios (tier 1 requirements)

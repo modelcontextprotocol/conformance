@@ -176,6 +176,10 @@ abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
     return { rs: rsApp, aux: { as: authApp } };
   }
 
+  rawChecks(): ConformanceCheck[] {
+    return this.checks;
+  }
+
   getChecks(): ConformanceCheck[] {
     const isPathBasedPrm =
       this.config.prmLocation === '/.well-known/oauth-protected-resource/mcp';

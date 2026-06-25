@@ -1,0 +1,28 @@
+{
+  "vals": {
+    "rs": {
+      "name": "mcp-conformance",
+      "entry": "examples/hosted/valtown.ts",
+      "privacy": "public",
+      "id": "b6283b42-5b64-11f1-a2b2-ee650bb23af1"
+    },
+    "relay": {
+      "name": "mcp-conformance-as",
+      "entry": "examples/hosted/valtown-relay.ts",
+      "privacy": "public",
+      "id": "c3e769ce-5b64-11f1-ad2f-ee650bb23af1"
+    },
+    "checker": {
+      "name": "mcp-checker-2026-07-28",
+      "entry": "examples/hosted/valtown-checker.ts",
+      "privacy": "public",
+      "id": "44515dfc-51ef-4efc-8148-80dd309b42e0"
+    },
+    "auth-checker": {
+      "name": "mcp-checker-auth",
+      "entry": "examples/hosted/valtown-auth-checker.ts",
+      "privacy": "public",
+      "id": "53e9c5a5-9ad2-49d4-8b60-3a683d1de202"
+    }
+  }
+}
