@@ -321,7 +321,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                 float_val: {
                   type: 'number',
                   description:
-                    'Floating point numeric value — no x-mcp-header annotation: the spec forbids x-mcp-header on `number`-typed properties, so this is sent in the body but never mirrored'
+                    'Floating point value — no x-mcp-header annotation, should not be mirrored'
                 },
                 non_ascii_val: {
                   type: 'string',
@@ -475,9 +475,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         this.checkParamHeader(req, 'Method', args.method_val, 'string');
       }
 
-      // float_val is intentionally unannotated (the spec forbids x-mcp-header on
-      // `number`-typed properties), so it MUST NOT be mirrored. Assert the absence,
-      // mirroring the negative check applied to the unannotated `query` parameter.
+      // float_val is intentionally unannotated: SEP-2243 forbids x-mcp-header on
+      // `number`-typed properties, so it is served without one. Assert no header
+      // was sent — same "designated params only" rule as the `query` check below.
       const floatHeader = req.headers['mcp-param-floatval'] as
         | string
         | undefined;
@@ -485,7 +485,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         id: 'sep-2243-client-mirrors-designated-params',
         name: 'ClientCustomHeaderNoMirrorNumber',
         description:
-          'Client MUST NOT add an Mcp-Param header for a `number`-typed parameter (x-mcp-header is not permitted on it)',
+          'Client MUST NOT add Mcp-Param headers for parameters without x-mcp-header (number-typed float_val is served unannotated per SEP-2243)',
         status: floatHeader === undefined ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage:
