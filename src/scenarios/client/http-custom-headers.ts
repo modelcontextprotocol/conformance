@@ -127,7 +127,7 @@ function validateEncodedHeader(
       return `Value '${bodyValue}' requires Base64 encoding but header was sent as plain: '${rawHeader}'`;
     }
     const decoded = Buffer.from(base64Match[1], 'base64').toString('utf-8');
-    if (valueType === 'number') {
+    if (valueType === 'number' || valueType === 'integer') {
       return compareNumericValues(decoded, bodyValue);
     }
     if (decoded !== bodyValue) {
@@ -137,7 +137,7 @@ function validateEncodedHeader(
   }
   // Plain ASCII - compare directly (after decoding if Base64 was used)
   const decoded = decodeHeaderValue(rawHeader);
-  if (valueType === 'number') {
+  if (valueType === 'number' || valueType === 'integer') {
     return compareNumericValues(decoded, bodyValue);
   }
   if (decoded !== bodyValue) {
@@ -293,7 +293,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                   'x-mcp-header': 'Region'
                 },
                 priority: {
-                  type: 'number',
+                  type: 'integer',
                   description: 'Integer numeric value',
                   'x-mcp-header': 'Priority'
                 },
@@ -320,8 +320,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                 },
                 float_val: {
                   type: 'number',
-                  description: 'Floating point numeric value',
-                  'x-mcp-header': 'FloatVal'
+                  description:
+                    'Floating point numeric value — no x-mcp-header annotation: the spec forbids x-mcp-header on `number`-typed properties, so this is sent in the body but never mirrored'
                 },
                 non_ascii_val: {
                   type: 'string',
@@ -393,7 +393,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                   'x-mcp-header': 'Region'
                 },
                 priority: {
-                  type: 'number',
+                  type: 'integer',
                   description: 'Integer numeric value',
                   'x-mcp-header': 'Priority'
                 },
@@ -449,8 +449,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       // Check Mcp-Param-Region header (plain ASCII string)
       this.checkParamHeader(req, 'Region', args.region, 'string');
 
-      // Check Mcp-Param-Priority header (integer number)
-      this.checkParamHeader(req, 'Priority', args.priority, 'number');
+      // Check Mcp-Param-Priority header (integer)
+      this.checkParamHeader(req, 'Priority', args.priority, 'integer');
 
       // Check Mcp-Param-Verbose header (boolean value)
       // checkParamHeader already FAILs on missing header, so this also covers
@@ -475,10 +475,25 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         this.checkParamHeader(req, 'Method', args.method_val, 'string');
       }
 
-      // Check Mcp-Param-FloatVal header (floating point number)
-      if (args.float_val !== undefined && args.float_val !== null) {
-        this.checkParamHeader(req, 'FloatVal', args.float_val, 'number');
-      }
+      // float_val is intentionally unannotated (the spec forbids x-mcp-header on
+      // `number`-typed properties), so it MUST NOT be mirrored. Assert the absence,
+      // mirroring the negative check applied to the unannotated `query` parameter.
+      const floatHeader = req.headers['mcp-param-floatval'] as
+        | string
+        | undefined;
+      this.checks.push({
+        id: 'sep-2243-client-mirrors-designated-params',
+        name: 'ClientCustomHeaderNoMirrorNumber',
+        description:
+          'Client MUST NOT add an Mcp-Param header for a `number`-typed parameter (x-mcp-header is not permitted on it)',
+        status: floatHeader === undefined ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          floatHeader !== undefined
+            ? `Found unexpected Mcp-Param-FloatVal header '${floatHeader}' for an unannotated number parameter`
+            : undefined,
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
 
       // Check Mcp-Param-NonAscii header (requires Base64 encoding)
       if (args.non_ascii_val !== undefined && args.non_ascii_val !== null) {
@@ -652,7 +667,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       typeof bodyValue === 'string' && needsBase64Encoding(String(bodyValue));
     const checkId = needsBase64
       ? 'sep-2243-client-base64-unsafe'
-      : valueType === 'number' || valueType === 'boolean'
+      : valueType === 'number' ||
+          valueType === 'integer' ||
+          valueType === 'boolean'
         ? 'sep-2243-client-encode-values'
         : 'sep-2243-client-mirrors-designated-params';
 
