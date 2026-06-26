@@ -30,8 +30,7 @@ describe('Stateless Server Scenario Negative Tests', () => {
                 method: 'notifications/subscriptions/acknowledged',
                 params: {
                   _meta: {
-                    'io.modelcontextprotocol/subscriptionId':
-                      'global-valid-sub-id'
+                    'io.modelcontextprotocol/subscriptionId': body.id
                   }
                 }
               }
@@ -66,14 +65,14 @@ describe('Stateless Server Scenario Negative Tests', () => {
             }
             const chunk = new TextEncoder().encode(streamData[frameIndex++]);
             return { value: chunk, done: false };
-          }
+          },
+          releaseLock: () => {}
         };
 
         return {
           status: responseConfig?.status ?? 200,
           body: {
-            getReader: () => mockReader,
-            releaseLock: () => {}
+            getReader: () => mockReader
           }
         } as unknown as Response;
       }
@@ -314,6 +313,86 @@ describe('Stateless Server Scenario Negative Tests', () => {
 
     expect(ackCheck?.status).toBe('FAILURE');
     expect(idCheck?.status).toBe('FAILURE');
+  });
+
+  test('Fails validation when subscriptionId does not match the listen request id', async () => {
+    const mockUrl = mockFetchTarget((reqBody) => {
+      if (reqBody.method === 'subscriptions/listen') {
+        return {
+          isStream: true,
+          status: 200,
+          frames: [
+            {
+              jsonrpc: '2.0',
+              method: 'notifications/subscriptions/acknowledged',
+              params: {
+                _meta: {
+                  // Spec Violation: subscriptionId must equal the JSON-RPC id
+                  // of the subscriptions/listen request, not an arbitrary token.
+                  'io.modelcontextprotocol/subscriptionId':
+                    'server-generated-token'
+                }
+              }
+            }
+          ]
+        };
+      }
+    });
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    const idCheck = findCheck(checks, 'sep-2575-server-tags-subscription-id');
+    expect(idCheck?.status).toBe('FAILURE');
+    expect(idCheck?.errorMessage).toMatch(/does not match/);
+
+    // Positive: the spec-compliant global fallback for tools/call streams no
+    // notifications/cancelled, so the new restriction check passes.
+    const cancelledCheck = findCheck(
+      checks,
+      'sep-2575-server-cancelled-only-for-subscription'
+    );
+    expect(cancelledCheck?.status).toBe('SUCCESS');
+  });
+
+  test('Fails validation when notifications/cancelled appears on a non-subscription response stream', async () => {
+    const mockUrl = mockFetchTarget((reqBody) => {
+      if (
+        reqBody.method === 'tools/call' &&
+        reqBody.params?.name === 'test_streaming_elicitation'
+      ) {
+        return {
+          isStream: true,
+          status: 200,
+          frames: [
+            {
+              jsonrpc: '2.0',
+              method: 'notifications/cancelled',
+              params: { requestId: reqBody.id, reason: 'server overload' }
+            },
+            {
+              jsonrpc: '2.0',
+              id: reqBody.id,
+              result: { content: [{ type: 'text', text: 'done' }] }
+            }
+          ]
+        };
+      }
+    });
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    const cancelledCheck = findCheck(
+      checks,
+      'sep-2575-server-cancelled-only-for-subscription'
+    );
+    expect(cancelledCheck?.status).toBe('FAILURE');
+
+    // Positive: the spec-compliant global fallback for subscriptions/listen
+    // echoes the request id, so the strengthened subscription-id check passes.
+    const idCheck = findCheck(checks, 'sep-2575-server-tags-subscription-id');
+    expect(idCheck?.status).toBe('SUCCESS');
   });
 
   test('Fails validation when tool response stream leaks raw independent JSON-RPC requests', async () => {

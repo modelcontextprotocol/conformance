@@ -67,7 +67,13 @@ requirements:
   - check: sep-2575-server-no-log-without-loglevel
     text: 'The server MUST NOT emit notifications/message for a request that does not include [io.modelcontextprotocol/logLevel in _meta].'
     url: https://modelcontextprotocol.io/specification/draft/server/utilities/logging#per-request-log-level
+  - check: sep-2575-server-cancelled-only-for-subscription
+    text: 'Servers MUST NOT send notifications/cancelled for any other purpose [than tearing down a subscriptions/listen stream].'
+    url: https://modelcontextprotocol.io/specification/draft/basic/patterns/cancellation
 
+  - text: 'A server MUST send notifications/cancelled referencing a subscriptions/listen request ID when it tears down that subscription stream.'
+    excluded: 'No portable black-box trigger to force server-initiated subscription teardown.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/patterns/cancellation
   - text: 'A server MUST NOT treat connection or process identity as a proxy for conversation or session continuity. / Servers MUST NOT rely on prior requests over the same connection to establish context (e.g., capabilities, protocol version, client identity).'
     excluded: 'internal server state, not directly wire-observable; the observable consequence (rejecting requests with incomplete _meta rather than falling back to remembered state) is covered by sep-2575-request-meta-invalid-* — see https://github.com/modelcontextprotocol/conformance/issues/296'
   - text: 'Servers MUST NOT require that a client reuse the same connection to perform related operations.'
