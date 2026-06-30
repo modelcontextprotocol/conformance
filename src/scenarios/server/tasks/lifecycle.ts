@@ -16,8 +16,9 @@
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
 import { SEP_2322_REF, SEP_2663_REF } from './mrtr-helpers';
-import { errMsg, failureCheck, skipCheck } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
+import { untestableCheck } from '../../untestable';
 import { isIso8601 } from './mrtr-helpers';
 
 export class TasksLifecycleScenario implements ClientScenario {
@@ -231,7 +232,13 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         'tasks/get returns status + metadata for an active task';
       if (!workingTaskId) {
         checks.push(
-          skipCheck(id, name, description, 'no task created', [SEP_2663_REF])
+          untestableCheck(
+            id,
+            name,
+            description,
+            'no task was created by the preceding step, so this check could not be exercised',
+            [SEP_2663_REF]
+          )
         );
       } else {
         try {
@@ -271,7 +278,13 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
         'Completed task tasks/get inlines result with content[] (no separate tasks/result method)';
       if (!workingTaskId) {
         checks.push(
-          skipCheck(id, name, description, 'no task created', [SEP_2663_REF])
+          untestableCheck(
+            id,
+            name,
+            description,
+            'no task was created by the preceding step, so this check could not be exercised',
+            [SEP_2663_REF]
+          )
         );
       } else {
         try {

@@ -26,6 +26,7 @@ import {
   type RunContext
 } from '../../connection';
 import { HEADER_MISMATCH } from '../../spec-types/draft';
+import { untestableCheck } from '../untestable';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Server-Validation',
@@ -85,6 +86,45 @@ export const CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS = [
   'sep-2243-server-reject-invalid-param-chars',
   'sep-2243-server-reject-param-mismatch'
 ] as const;
+
+/**
+ * The three Mcp-Name validation cases need a callable tool. They are emitted
+ * from two places: as live test cases when the server lists a tool, and as
+ * untestable failures (issue #248) when it does not — keep the identities in
+ * one table so the two paths cannot drift.
+ */
+const MCP_NAME_CASES = [
+  {
+    id: REJECT_STATUS_CHECK_ID,
+    name: 'ServerRejectsMismatchedNameHeader',
+    description:
+      'Server rejects tools/call where Mcp-Name does not match body params.name',
+    specRef: SPEC_REFERENCE
+  },
+  {
+    id: 'sep-2243-server-accepts-whitespace-header-value',
+    name: 'ServerAcceptsWhitespaceHeaderValue',
+    description:
+      'Server MUST accept leading/trailing whitespace in Mcp-Name value (RFC 9110 §5.5: field parsing MUST exclude OWS before evaluating)',
+    specRef: SPEC_REFERENCE_RFC9110_OWS
+  },
+  {
+    id: REJECT_STATUS_CHECK_ID,
+    name: 'ServerRejectsMissingNameHeader',
+    description:
+      'Server MUST reject tools/call with missing Mcp-Name header when body has params.name',
+    specRef: SPEC_REFERENCE
+  }
+] as const;
+
+/** Emit the Mcp-Name cases as untestable failures naming the cause. */
+function untestableMcpNameCases(checks: ConformanceCheck[], reason: string) {
+  for (const c of MCP_NAME_CASES) {
+    checks.push(
+      untestableCheck(c.id, c.name, c.description, reason, [c.specRef])
+    );
+  }
+}
 
 /**
  * Helper to send a raw HTTP POST request with custom headers.
@@ -294,6 +334,10 @@ export class HttpHeaderValidationScenario implements ClientScenario {
           specReferences: [SPEC_REFERENCE],
           details: { httpStatus: toolsResponse.status, error: rpcError }
         });
+        untestableMcpNameCases(
+          checks,
+          'tools/list discovery failed, so the Mcp-Name header-validation cases could not be exercised'
+        );
         return checks;
       }
       const toolsResult = toolsResponse.body.result as {
@@ -416,6 +460,14 @@ export class HttpHeaderValidationScenario implements ClientScenario {
             reason:
               'Standard header omitted but value present in body → MUST reject'
           }
+        );
+      } else {
+        // No tools to exercise the Mcp-Name dimension: these MUST cases were
+        // previously omitted without a trace. Emit untestable failures so
+        // the gap is visible (issue #248).
+        untestableMcpNameCases(
+          checks,
+          'server lists no tools, so the Mcp-Name header-validation cases could not be exercised'
         );
       }
 
@@ -608,22 +660,18 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       });
 
       if (!xMcpTool) {
-        checks.push({
-          id: 'sep-2243-server-no-xmcp-tool',
-          name: 'HttpCustomHeaderServerNoTool',
-          description:
+        checks.push(
+          untestableCheck(
+            'sep-2243-server-no-xmcp-tool',
+            'HttpCustomHeaderServerNoTool',
             'Server has no tools with x-mcp-header annotations to test',
-          status: 'SKIPPED',
-          timestamp: new Date().toISOString(),
-          specReferences: [SPEC_REFERENCE_CUSTOM],
-          details: {
-            reason:
-              'No tools with x-mcp-header found. These tests require at least one tool with x-mcp-header annotations.'
-          }
-        });
-        this.skipDeclaredChecks(
+            'server exposes no tool with x-mcp-header annotations, so none of the custom-header validation requirements could be exercised',
+            [SPEC_REFERENCE_CUSTOM]
+          )
+        );
+        this.untestableDeclaredChecks(
           checks,
-          'Server exposes no tool with x-mcp-header annotations.'
+          'server exposes no tool with x-mcp-header annotations'
         );
         return checks;
       }
@@ -640,18 +688,18 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           def['x-mcp-header'] !== undefined && (def as any).type === 'string'
       );
       if (!annotatedEntry) {
-        checks.push({
-          id: 'sep-2243-server-no-string-param',
-          name: 'HttpCustomHeaderServerNoStringParam',
-          description:
+        checks.push(
+          untestableCheck(
+            'sep-2243-server-no-string-param',
+            'HttpCustomHeaderServerNoStringParam',
             'Server has no string-typed x-mcp-header parameter to test',
-          status: 'SKIPPED',
-          timestamp: new Date().toISOString(),
-          specReferences: [SPEC_REFERENCE_CUSTOM]
-        });
-        this.skipDeclaredChecks(
+            'server exposes no string-typed x-mcp-header parameter, so the custom-header validation requirements could not be exercised',
+            [SPEC_REFERENCE_CUSTOM]
+          )
+        );
+        this.untestableDeclaredChecks(
           checks,
-          'Server exposes no string-typed x-mcp-header parameter.'
+          'server exposes no string-typed x-mcp-header parameter'
         );
         return checks;
       }
@@ -818,7 +866,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     }
 
     // Declared-but-unemitted -> FAILURE. Reached only when setup threw partway
-    // through (the gate-out paths emit SKIPPED rows and the happy path emits
+    // through (the gate-out paths emit untestable FAILURE rows and the happy path emits
     // every declared ID).
     this.failDeclaredChecks(checks);
 
@@ -846,23 +894,27 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
   }
 
   /**
-   * Emit one SKIPPED row per declared requirement check when the scenario
-   * cannot run against this server (no x-mcp-header tool). The IDs must still
-   * reach checks.json so the traceability manifest records that a scenario
-   * exists for each requirement.
+   * Emit one untestable FAILURE row per declared requirement check when the
+   * scenario cannot run against this server (no x-mcp-header tool). These
+   * are MUST requirements, so a missing fixture must read red, not green
+   * (issue #248); the IDs still reach checks.json so the traceability
+   * manifest records that a scenario exists for each requirement.
    */
-  private skipDeclaredChecks(checks: ConformanceCheck[], reason: string): void {
+  private untestableDeclaredChecks(
+    checks: ConformanceCheck[],
+    reason: string
+  ): void {
     for (const id of CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS) {
       if (checks.some((c) => c.id === id)) continue;
-      checks.push({
-        id,
-        name: 'NotApplicable',
-        description: `Declared check ${id} is not testable against this server`,
-        status: 'SKIPPED',
-        timestamp: new Date().toISOString(),
-        specReferences: [SPEC_REFERENCE_CUSTOM],
-        details: { reason }
-      });
+      checks.push(
+        untestableCheck(
+          id,
+          'NotTestable',
+          `Declared check ${id} is not testable against this server`,
+          reason,
+          [SPEC_REFERENCE_CUSTOM]
+        )
+      );
     }
   }
 
