@@ -43,7 +43,7 @@ export class ServerStatelessScenario implements ClientScenario {
    - Mismatched or unknown protocol versions must return an \`UnsupportedProtocolVersionError\` (HTTP status code \`400 Bad Request\`) carrying precise version tracking arrays.
    - Absent or altered protocol version header metadata must trigger a \`-32020 Header Mismatch\` error with an HTTP 400 boundary state.
 4. **Client Capability Constraints (2 Checks)**
-   - Accessing platform capabilities without explicit declaration drops requests with a \`-32021 MissingRequiredClientCapabilityError\` containing needed capabilities, returning an HTTP status code \`400 Bad Request\`.
+   - Accessing platform capabilities without explicit declaration drops requests with a \`-32021 MissingRequiredClientCapabilityError\` returning an HTTP status code \`400 Bad Request\`. Its \`error.data.requiredCapabilities\` is a \`ClientCapabilities\` object keyed by the missing capability (e.g. \`{ "sampling": {} }\`), not an array of names.
 5. **Methods & Routing Mechanics (5 Checks)**
    - Removed legacy endpoints (\`initialize\`, \`ping\`, \`logging/setLevel\`, etc.) or generic unknown methods must cleanly yield an HTTP status code \`404 Not Found\` alongside a JSON-RPC \`-32601 Method not found\` payload. All error returns must preserve original request ID mappings.
    - Validates response streams contain only \`IncompleteResult\` chunks and never independent top-level JSON-RPC requests, while enforcing that no log messages are emitted when \`_meta.../logLevel\` is omitted.
@@ -693,11 +693,17 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        // If it DOES return -32021, strictly validate the requirement payload structure
+        // If it DOES return -32021, strictly validate the requirement payload
+        // structure. Per the schema's `MissingRequiredClientCapabilityError`,
+        // `error.data.requiredCapabilities` is a `ClientCapabilities` OBJECT
+        // keyed by the missing capability — not an array of capability names —
+        // and each capability value is itself an object.
         const reqCaps = data401?.error?.data?.requiredCapabilities;
-        if (!Array.isArray(reqCaps) || !reqCaps.includes('sampling')) {
+        const isPlainObject = (value: unknown): boolean =>
+          typeof value === 'object' && value !== null && !Array.isArray(value);
+        if (!isPlainObject(reqCaps) || !isPlainObject(reqCaps.sampling)) {
           return {
-            error: `Server responded with error code -32021 but failed to provide an array containing the expected 'sampling' capability in error.data.requiredCapabilities`,
+            error: `Server responded with error code -32021 but error.data.requiredCapabilities is not a ClientCapabilities object naming 'sampling' (the schema defines it as an object of capability objects, e.g. { "sampling": {} }, not an array)`,
             details: { response: data401 }
           };
         }

@@ -1663,7 +1663,9 @@ app.post('/mcp', async (req, res) => {
             error: {
               code: -32021,
               message: 'MissingRequiredClientCapabilityError',
-              data: { requiredCapabilities: ['sampling'] }
+              // Per the schema, requiredCapabilities is a ClientCapabilities
+              // object keyed by the missing capability, not an array of names.
+              data: { requiredCapabilities: { sampling: {} } }
             }
           });
         }
