@@ -1,4 +1,7 @@
-import type { ScenarioContext } from '../../mock-server';
+import {
+  withRequiredDraftResultFields,
+  type ScenarioContext
+} from '../../mock-server';
 /**
  * Shared HTTP test-server scaffold for client-under-test SEP-2243 scenarios.
  *
@@ -99,6 +102,10 @@ export abstract class BaseHttpScenario implements Scenario {
     req.on('end', () => {
       try {
         const request = JSON.parse(body);
+        if (request.method === 'server/discover') {
+          this.sendDiscover(res, request);
+          return;
+        }
         this.handlePost(req, res, request);
       } catch (error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -126,15 +133,37 @@ export abstract class BaseHttpScenario implements Scenario {
     res.end(JSON.stringify(body));
   }
 
+  /**
+   * Capabilities advertised to a 2026-07-28 client via `server/discover` (and
+   * defaulted in the legacy `initialize` reply). Subclasses override to match
+   * the methods they actually serve.
+   */
+  protected discoverCapabilities(): object {
+    return { tools: {} };
+  }
+
+  protected sendDiscover(res: http.ServerResponse, request: any): void {
+    this.sendJson(res, {
+      jsonrpc: '2.0',
+      id: request.id,
+      result: withRequiredDraftResultFields('server/discover', {
+        supportedVersions: [DRAFT_PROTOCOL_VERSION],
+        capabilities: this.discoverCapabilities(),
+        serverInfo: { name: this.name + '-server', version: '1.0.0' }
+      })
+    });
+  }
+
   protected sendInitialize(
     res: http.ServerResponse,
     request: any,
-    capabilities: object = { tools: {} }
+    capabilities: object = this.discoverCapabilities()
   ): void {
     this.sendJson(res, {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         protocolVersion: DRAFT_PROTOCOL_VERSION,
         serverInfo: { name: this.name + '-server', version: '1.0.0' },
         capabilities
@@ -151,7 +180,9 @@ export abstract class BaseHttpScenario implements Scenario {
     this.sendJson(res, {
       jsonrpc: '2.0',
       id: request.id,
-      result: {}
+      // Method-aware so cacheable methods that fall through to the generic
+      // reply still carry the ttlMs/cacheScope the draft revision requires.
+      result: withRequiredDraftResultFields(request.method, {})
     });
   }
 }

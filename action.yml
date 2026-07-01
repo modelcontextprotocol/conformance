@@ -42,14 +42,14 @@ runs:
     - name: Build conformance tests
       shell: bash
       run: |
-        cd "${{ github.action_path }}"
+        cd "$GITHUB_ACTION_PATH"
         npm ci
         npm run build
 
     - name: Run conformance tests
       shell: bash
       run: |
-        CONFORMANCE="${{ github.action_path }}/dist/index.js"
+        CONFORMANCE="$GITHUB_ACTION_PATH/dist/index.js"
 
         # Build the command arguments
         ARGS="${{ inputs.mode }}"

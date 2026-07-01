@@ -22,7 +22,7 @@
 
 import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { JsonRpcError, type Connection } from './index';
+import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
@@ -58,7 +58,9 @@ let nextRequestId = 1;
 
 /**
  * The `Mcp-Name` source field per SEP-2243: `params.name` for tools/call and
- * prompts/get, `params.uri` for resources/read; absent otherwise.
+ * prompts/get, `params.uri` for resources/read, `params.taskId` for the
+ * SEP-2663 tasks methods (`tasks/get`, `tasks/update`, `tasks/cancel`).
+ * Absent otherwise.
  */
 export function mcpNameForRequest(
   method: string,
@@ -69,6 +71,13 @@ export function mcpNameForRequest(
   }
   if (method === 'resources/read') {
     return typeof params?.uri === 'string' ? params.uri : undefined;
+  }
+  if (
+    method === 'tasks/get' ||
+    method === 'tasks/update' ||
+    method === 'tasks/cancel'
+  ) {
+    return typeof params?.taskId === 'string' ? params.taskId : undefined;
   }
   return undefined;
 }
@@ -298,21 +307,52 @@ export async function sendStatelessRequest(
  * `sendStatelessRequest()`: classifies SSE-stream events into the notification
  * sink, surfaces server→client *requests* on the response stream as a spec
  * violation, and throws `JsonRpcError` on error responses.
+ *
+ * Session bootstrap on the stateless wire is `server/discover` (SEP-2575's
+ * replacement for `initialize`). The result is exposed via
+ * `connection.discover()` so scenarios can inspect server capabilities,
+ * serverInfo, and supported protocol versions.
  */
 export async function connectStateless(
   serverUrl: string,
-  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
+  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION,
+  opts: ConnectOptions = {}
 ): Promise<Connection> {
   const notifications: JSONRPCNotification[] = [];
+  const capabilities = opts.capabilities ?? DEFAULT_CLIENT_CAPABILITIES;
+  const clientInfo = opts.clientInfo ?? CONFORMANCE_CLIENT_INFO;
 
-  async function request<R>(
-    method: string,
+  // The Connection layer is the single place that knows about
+  // connect-time capabilities / clientInfo. We fold them into the
+  // request's `_meta` here (the trailing `params._meta` spread in
+  // `withRequestMeta` lets us override its defaults) so that
+  // `sendStatelessRequest` and `withRequestMeta` keep their upstream
+  // signatures untouched.
+  function withConnectMeta(
     params?: Record<string, unknown>
-  ): Promise<R> {
-    const response = await sendStatelessRequest(serverUrl, method, params, {
-      specVersion
-    });
+  ): Record<string, unknown> {
+    return {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/clientCapabilities': capabilities,
+        'io.modelcontextprotocol/clientInfo': clientInfo,
+        ...(params?._meta as Record<string, unknown> | undefined)
+      }
+    };
+  }
 
+  async function send(
+    method: string,
+    params?: Record<string, unknown>,
+    extraHeaders?: Record<string, string>
+  ): Promise<StatelessResponse> {
+    return sendStatelessRequest(serverUrl, method, withConnectMeta(params), {
+      specVersion,
+      headers: extraHeaders
+    });
+  }
+
+  function drainEvents(response: StatelessResponse): void {
     for (const event of response.events ?? []) {
       if (typeof event !== 'object' || event === null) continue;
       if ('method' in event && !('id' in event)) {
@@ -324,7 +364,9 @@ export async function connectStateless(
         );
       }
     }
+  }
 
+  function unwrap<R>(method: string, response: StatelessResponse): R {
     const rpcError = response.body?.error;
     // Only a properly-shaped JSON-RPC error becomes a JsonRpcError; anything
     // else (e.g. a proxy's `{"error": "upstream timeout"}`) falls through so
@@ -350,8 +392,31 @@ export async function connectStateless(
     return response.body.result as R;
   }
 
+  // SEP-2575 has no required handshake. `_meta.clientCapabilities` on
+  // every request is authoritative per spec, so `server/discover` is
+  // strictly a client-side query ("what does the server advertise?").
+  // We deliberately do NOT run it eagerly — a server that ignores
+  // per-request `_meta` until a prior `server/discover` has registered
+  // the session is non-conformant, and the conformance suite's job is
+  // to surface that, not paper over it.
+  let discoverPromise: Promise<Record<string, unknown>> | undefined;
+
+  async function request<R>(
+    method: string,
+    params?: Record<string, unknown>,
+    extraHeaders?: Record<string, string>
+  ): Promise<R> {
+    const response = await send(method, params, extraHeaders);
+    drainEvents(response);
+    return unwrap<R>(method, response);
+  }
+
   return {
     notifications,
+    discover(): Promise<Record<string, unknown>> {
+      return (discoverPromise ??=
+        request<Record<string, unknown>>('server/discover'));
+    },
     request,
     close: async () => {}
   };

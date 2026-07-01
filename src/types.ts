@@ -1,5 +1,6 @@
 import type { RunContext } from './connection';
 import type { ScenarioContext } from './mock-server';
+import type { AuthorizationServerOptions } from './schemas';
 
 export type CheckStatus =
   | 'SUCCESS'
@@ -20,6 +21,11 @@ export interface ConformanceCheck {
   status: CheckStatus;
   timestamp: string;
   specReferences?: SpecReference[];
+  /**
+   * Optional spec-version range for this individual check. When set, runners
+   * drop the check for `--spec-version` values outside the range.
+   */
+  source?: ScenarioSource;
   details?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   errorMessage?: string;
@@ -57,6 +63,26 @@ export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
  */
 export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 
+/** Spec versions in timeline order, dated revisions followed by the draft. */
+const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
+  ...DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
+];
+
+/**
+ * True when `v` is at or after `threshold` on the spec timeline. Lets a check
+ * gate itself to the version that introduced its requirement (e.g. a draft-only
+ * requirement passes `DRAFT_PROTOCOL_VERSION` as the threshold).
+ */
+export function specVersionAtLeast(
+  v: SpecVersion,
+  threshold: SpecVersion
+): boolean {
+  return (
+    SPEC_VERSION_TIMELINE.indexOf(v) >= SPEC_VERSION_TIMELINE.indexOf(threshold)
+  );
+}
+
 // Scenarios may also be tagged 'extension' to mark them as off-timeline
 // (selectable via --suite extensions, never via --spec-version). See #256.
 export type ScenarioSpecTag = SpecVersion | 'extension';
@@ -68,7 +94,8 @@ export type ScenarioSpecTag = SpecVersion | 'extension';
  */
 export const EXTENSION_IDS = [
   'io.modelcontextprotocol/oauth-client-credentials',
-  'io.modelcontextprotocol/enterprise-managed-authorization'
+  'io.modelcontextprotocol/enterprise-managed-authorization',
+  'io.modelcontextprotocol/tasks'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
@@ -119,5 +146,8 @@ export interface ClientScenarioForAuthorizationServer {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(
+    options: AuthorizationServerOptions,
+    details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]>;
 }

@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { createServerFor } from './select';
 import { createServerStateful } from './stateful';
-import { createServerStateless, validateStatelessRequest } from './stateless';
+import {
+  createServerStateless,
+  validateStatelessRequest,
+  withRequiredDraftResultFields,
+  CACHEABLE_RESULT_METHODS
+} from './stateless';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
 
@@ -73,7 +78,29 @@ describe('validateStatelessRequest', () => {
     expect(v).toMatchObject({ kind: 'route', id: 1, method: 'tools/list' });
   });
 
-  it('rejects versions outside the supported list with -32004 and echoes it', () => {
+  it('includes the draft-required result members on the server/discover result', () => {
+    const v = validateStatelessRequest(
+      {
+        headers,
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'server/discover',
+          params: { _meta: meta }
+        }
+      },
+      {},
+      [DRAFT_PROTOCOL_VERSION]
+    );
+    expect(v).toMatchObject({
+      kind: 'handled',
+      body: {
+        result: { resultType: 'complete', ttlMs: 0, cacheScope: 'private' }
+      }
+    });
+  });
+
+  it('rejects versions outside the supported list with -32022 and echoes it', () => {
     const v = validateStatelessRequest(
       {
         headers: { 'mcp-protocol-version': '2099-01-01' },
@@ -97,11 +124,58 @@ describe('validateStatelessRequest', () => {
       status: 400,
       body: {
         error: {
-          code: -32004,
+          code: -32022,
           data: { supported: [DRAFT_PROTOCOL_VERSION], requested: '2099-01-01' }
         }
       }
     });
+  });
+});
+
+describe('withRequiredDraftResultFields', () => {
+  it('stamps resultType "complete" when the handler omitted it', () => {
+    expect(
+      withRequiredDraftResultFields('tools/call', { content: [] })
+    ).toEqual({ resultType: 'complete', content: [] });
+  });
+
+  it('adds ttlMs and cacheScope for every cacheable method', () => {
+    for (const method of CACHEABLE_RESULT_METHODS) {
+      expect(withRequiredDraftResultFields(method, {})).toEqual({
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private'
+      });
+    }
+  });
+
+  it('does not add caching hints to non-cacheable results', () => {
+    const result = withRequiredDraftResultFields('tools/call', {
+      content: []
+    });
+    expect(result).not.toHaveProperty('ttlMs');
+    expect(result).not.toHaveProperty('cacheScope');
+  });
+
+  it('preserves members the handler set itself', () => {
+    expect(
+      withRequiredDraftResultFields('tools/call', {
+        resultType: 'input_required',
+        inputRequests: {}
+      })
+    ).toMatchObject({ resultType: 'input_required' });
+    expect(
+      withRequiredDraftResultFields('tools/list', {
+        ttlMs: 5000,
+        cacheScope: 'public',
+        tools: []
+      })
+    ).toMatchObject({ ttlMs: 5000, cacheScope: 'public' });
+  });
+
+  it('passes non-object results through untouched', () => {
+    expect(withRequiredDraftResultFields('tools/call', null)).toBeNull();
+    expect(withRequiredDraftResultFields('tools/call', [1])).toEqual([1]);
   });
 });
 
@@ -142,7 +216,7 @@ describe('createServerStateless', () => {
         params: { _meta: meta }
       });
       expect(status).toBe(400);
-      expect(body.error.code).toBe(-32001);
+      expect(body.error.code).toBe(-32020);
     } finally {
       await srv.close();
     }
@@ -184,7 +258,7 @@ describe('createServerStateless', () => {
     }
   });
 
-  it('accepts the version it was created for and rejects others with -32004', async () => {
+  it('accepts the version it was created for and rejects others with -32022', async () => {
     const srv = await createServerStateless(
       { 'tools/list': () => ({ tools: [] }) },
       DRAFT_PROTOCOL_VERSION
@@ -218,7 +292,7 @@ describe('createServerStateless', () => {
         { 'mcp-protocol-version': '2099-01-01' }
       );
       expect(rejected.status).toBe(400);
-      expect(rejected.body.error.code).toBe(-32004);
+      expect(rejected.body.error.code).toBe(-32022);
       expect(rejected.body.error.data.supported).toEqual([
         DRAFT_PROTOCOL_VERSION
       ]);
@@ -281,6 +355,68 @@ describe('createServerStateless', () => {
       );
       expect(status).toBe(200);
       expect(srv.recorded).toHaveLength(0);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('stamps the draft-required result members onto handler results', async () => {
+    const srv = await createServerStateless({
+      'tools/list': () => ({ tools: [{ name: 'x' }] }),
+      'tools/call': () => ({ content: [{ type: 'text', text: 'ok' }] })
+    });
+    try {
+      const list = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: meta }
+        },
+        headers
+      );
+      expect(list.body.result).toMatchObject({
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private',
+        tools: [{ name: 'x' }]
+      });
+
+      const call = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { _meta: meta, name: 'x' }
+        },
+        headers
+      );
+      expect(call.body.result).toMatchObject({ resultType: 'complete' });
+      expect(call.body.result).not.toHaveProperty('ttlMs');
+      expect(call.body.result).not.toHaveProperty('cacheScope');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('preserves a resultType the handler set itself', async () => {
+    const srv = await createServerStateless({
+      'tools/call': () => ({ resultType: 'input_required', inputRequests: {} })
+    });
+    try {
+      const { body } = await post(
+        srv.url,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { _meta: meta }
+        },
+        headers
+      );
+      expect(body.result.resultType).toBe('input_required');
     } finally {
       await srv.close();
     }

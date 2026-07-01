@@ -20,6 +20,45 @@ const META_KEYS = [
   'io.modelcontextprotocol/clientCapabilities'
 ] as const;
 
+/**
+ * Operations whose results the 2026-07-28 revision marks cacheable: servers
+ * MUST include the caching hints `ttlMs` and `cacheScope` on these results
+ * (draft `CacheableResult`, server/utilities/caching).
+ */
+export const CACHEABLE_RESULT_METHODS: ReadonlySet<string> = new Set([
+  'server/discover',
+  'tools/list',
+  'prompts/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read'
+]);
+
+/**
+ * Fill in the result members the 2026-07-28 revision requires of servers when
+ * the handler did not set them itself: every result MUST carry `resultType`,
+ * and results of the cacheable operations MUST also carry `ttlMs` and
+ * `cacheScope`. Members the handler set are preserved (e.g. a handler may
+ * return `resultType: 'input_required'`); only absent (or undefined) ones are
+ * filled. A scenario that needs to send a deliberately non-conformant result
+ * must build its own server instead of routing through this mock.
+ */
+export function withRequiredDraftResultFields(
+  method: string,
+  result: unknown
+): unknown {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+  const stamped: Record<string, unknown> = { ...result };
+  stamped.resultType ??= 'complete';
+  if (CACHEABLE_RESULT_METHODS.has(method)) {
+    stamped.ttlMs ??= 0;
+    stamped.cacheScope ??= 'private';
+  }
+  return stamped;
+}
+
 type IncomingHeaders = Record<string, string | string[] | undefined>;
 
 export type StatelessValidation =
@@ -45,7 +84,7 @@ export type StatelessValidation =
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
  *
  * `supportedVersions` is the list of wire protocolVersion strings this
- * endpoint accepts; anything else is rejected with -32004 carrying
+ * endpoint accepts; anything else is rejected with -32022 carrying
  * `{ supported, requested }` in the error data, and the list is echoed in
  * the `server/discover` result.
  */
@@ -69,7 +108,7 @@ export function validateStatelessRequest(
 
   const headerVersion = req.headers['mcp-protocol-version'];
   if (!headerVersion) {
-    return reject(400, -32001, 'Missing MCP-Protocol-Version header');
+    return reject(400, -32020, 'Missing MCP-Protocol-Version header');
   }
   const missing = META_KEYS.filter((k) => meta?.[k] === undefined);
   if (missing.length > 0) {
@@ -82,7 +121,7 @@ export function validateStatelessRequest(
   if (meta?.[META_KEYS[0]] !== headerVersion) {
     return reject(
       400,
-      -32001,
+      -32020,
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
@@ -97,7 +136,7 @@ export function validateStatelessRequest(
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'Unsupported protocol version',
           data: {
             supported: supportedVersions,
@@ -114,11 +153,11 @@ export function validateStatelessRequest(
       body: {
         jsonrpc: '2.0',
         id,
-        result: {
+        result: withRequiredDraftResultFields(method, {
           supportedVersions,
           capabilities,
           serverInfo: { name: 'conformance-mock-server', version: '1.0.0' }
-        }
+        })
       }
     };
   }
@@ -166,7 +205,11 @@ export async function createServerStateless(
     }
     try {
       const result = await handler(params, req.body as JSONRPCRequest);
-      return res.json({ jsonrpc: '2.0', id, result });
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: withRequiredDraftResultFields(method, result)
+      });
     } catch (e) {
       return error(500, -32603, e instanceof Error ? e.message : String(e));
     }

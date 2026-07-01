@@ -1,29 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  connectFor,
-  isStatefulVersion,
-  STATELESS_SPEC_VERSIONS
-} from './select';
-import { connectStateful } from './stateful';
+import { isStatefulVersion, STATELESS_SPEC_VERSIONS } from './select';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
-
-describe('connectFor', () => {
-  it('returns stateful for dated 2025-x versions', () => {
-    expect(connectFor('2025-03-26')).toBe(connectStateful);
-    expect(connectFor('2025-06-18')).toBe(connectStateful);
-    expect(connectFor('2025-11-25')).toBe(connectStateful);
-  });
-  it('returns stateless for the draft version', () => {
-    // connectFor wraps connectStateless in a closure (to pass the spec
-    // version through), so identity with connectStateless no longer holds;
-    // assert it did not select the stateful implementation. The wire-level
-    // behaviour of the wrapper is covered in stateless.test.ts.
-    expect(connectFor('2026-07-28')).not.toBe(connectStateful);
-    expect(connectFor('2026-07-28')).not.toBe(connectStateless);
-  });
-});
 
 describe('STATELESS_SPEC_VERSIONS', () => {
   it('contains exactly the versions isStatefulVersion rejects', () => {

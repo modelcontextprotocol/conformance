@@ -56,5 +56,10 @@ export interface ScenarioContext {
 }
 
 export { createServerStateful } from './stateful';
-export { createServerStateless, validateStatelessRequest } from './stateless';
+export {
+  createServerStateless,
+  validateStatelessRequest,
+  withRequiredDraftResultFields,
+  CACHEABLE_RESULT_METHODS
+} from './stateless';
 export { createServerFor } from './select';

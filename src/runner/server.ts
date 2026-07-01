@@ -74,10 +74,12 @@ export async function runServerConformanceTest(
 
   // When --spec-version is omitted, infer the version from the scenario's
   // declared source so draft-only scenarios get the draft (stateless)
-  // connection rather than the stateful latest-spec default.
+  // connection rather than the stateful latest-spec default. Extension
+  // scenarios are off-timeline; today every extension in this repo lives
+  // on draft, so they fall under the same inference.
   const resolvedSpecVersion =
     specVersion ??
-    ('introducedIn' in scenario.source &&
+    ('extensionId' in scenario.source ||
     scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
       ? DRAFT_PROTOCOL_VERSION
       : LATEST_SPEC_VERSION);
@@ -89,7 +91,7 @@ export async function runServerConformanceTest(
   const ctx: RunContext = {
     serverUrl,
     specVersion: resolvedSpecVersion,
-    connect: () => connectFor(resolvedSpecVersion)(serverUrl)
+    connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
   const checks = await scenario.run(ctx);
 

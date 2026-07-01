@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { ZodError } from 'zod';
+import { promises as fs } from 'fs';
 import {
   runConformanceTest,
   printClientResults,
@@ -11,6 +12,7 @@ import {
   runInteractiveMode
 } from './runner';
 import {
+  printAuthorizationServerResults,
   printAuthorizationServerSummary,
   runAuthorizationServerConformanceTest
 } from './runner/authorization-server';
@@ -40,6 +42,7 @@ import {
   ClientOptionsSchema,
   ServerOptionsSchema
 } from './schemas';
+import type { AuthorizationServerOptions } from './schemas';
 import {
   loadExpectedFailures,
   evaluateBaseline,
@@ -513,20 +516,96 @@ program
   .description(
     'Run conformance tests against an authorization server implementation'
   )
-  .requiredOption('--url <url>', 'URL of the authorization server issuer')
+  .option(
+    '--file <filename>',
+    'Path to JSON settings file (see examples/authorization-server-settings.example.json)'
+  )
+  .option('--url <url>', 'URL of the authorization server issuer')
+  .option('--scenario <scenario>', 'Test scenario to run')
+  .option(
+    '--client-id <id>',
+    'OAuth client ID registered with the authorization server'
+  )
+  .option(
+    '--client-secret <secret>',
+    'OAuth client secret (omit for public/PKCE-only clients)'
+  )
+  .option(
+    '-p, --port <port>',
+    'Port for the local OAuth callback server; register http://127.0.0.1:<port>/callback as a redirect URI',
+    (value) => Number(value),
+    3000
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
-      // Validate options with Zod
-      const validated = AuthorizationServerOptionsSchema.parse(options);
+      let fileOptions: AuthorizationServerOptions | undefined;
+      if (options.file) {
+        try {
+          const raw = JSON.parse(await fs.readFile(options.file, 'utf-8'));
+          // The file must be a complete, valid config on its own; CLI flags
+          // are optional overrides. .strict() rejects unknown keys so typos
+          // surface instead of being silently ignored.
+          fileOptions = AuthorizationServerOptionsSchema.strict().parse(raw);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            const details = error.issues
+              .map((e) => `  ${e.path.join('.') || '(root)'}: ${e.message}`)
+              .join('\n');
+            console.error(
+              `Invalid settings file '${options.file}':\n${details}`
+            );
+          } else {
+            console.error(
+              `Failed to read settings file '${options.file}': ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+          }
+          process.exit(1);
+        }
+      }
+      if (!fileOptions && !options.url) {
+        console.error('error: must provide --url or --file');
+        process.exit(1);
+      }
+      // CLI flags override file values; undefined CLI values must not clobber file values
+      const merged = {
+        ...fileOptions,
+        ...Object.fromEntries(
+          Object.entries(options).filter(([, v]) => v !== undefined)
+        )
+      };
+      const validated = AuthorizationServerOptionsSchema.parse(merged);
+      const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
       const specVersionFilter = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      // If a single scenario is specified, run just that one
+      if (validated.scenario) {
+        const details: Record<string, unknown> = {};
+        const result = await runAuthorizationServerConformanceTest(
+          validated,
+          validated.scenario,
+          details,
+          outputDir,
+          specVersionFilter
+        );
+
+        const { failed } = printAuthorizationServerResults(
+          result.checks,
+          result.scenarioDescription,
+          verbose
+        );
+
+        process.exit(failed > 0 ? 1 : 0);
+      }
 
       let scenarios: string[];
       scenarios = listClientScenariosForAuthorizationServer();
@@ -542,14 +621,23 @@ program
       );
 
       const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+      const details: Record<string, unknown> = {};
       for (const scenarioName of scenarios) {
         console.log(`\n=== Running scenario: ${scenarioName} ===`);
         try {
           const result = await runAuthorizationServerConformanceTest(
-            validated.url,
+            validated,
             scenarioName,
-            outputDir
+            details,
+            outputDir,
+            specVersionFilter
           );
+          if (
+            result.checks[0].status === 'SUCCESS' &&
+            result.checks[0].details
+          ) {
+            details[scenarioName] = result.checks[0].details;
+          }
           allResults.push({ scenario: scenarioName, checks: result.checks });
         } catch (error) {
           console.error(`Failed to run scenario ${scenarioName}:`, error);

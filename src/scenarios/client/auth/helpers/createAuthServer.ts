@@ -59,8 +59,10 @@ export interface AuthServerOptions {
    * Override the `issuer` value served in the AS metadata document. Used to
    * test that clients validate the metadata issuer against the issuer
    * identifier used to construct the well-known URL (RFC 8414 §3.3).
+   * Accepts a lazy getter for callers that don't know the server URL until
+   * after `start()`.
    */
-  metadataIssuer?: string;
+  metadataIssuer?: string | (() => string);
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -125,6 +127,14 @@ export function createAuthServer(
     registration_endpoint: `${routePrefix}/register`
   };
 
+  // The issuer identifier this AS publishes — used for both the metadata
+  // `issuer` field and the RFC 9207 callback `iss` parameter, which per
+  // RFC 9207 §2.4 must be identical under simple string comparison.
+  const resolveIssuer = () =>
+    typeof metadataIssuer === 'function'
+      ? metadataIssuer()
+      : (metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`);
+
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -156,7 +166,7 @@ export function createAuthServer(
     });
 
     const metadata: any = {
-      issuer: metadataIssuer ?? `${getAuthBaseUrl()}${routePrefix}`,
+      issuer: resolveIssuer(),
       authorization_endpoint: `${getAuthBaseUrl()}${authRoutes.authorization_endpoint}`,
       token_endpoint: `${getAuthBaseUrl()}${authRoutes.token_endpoint}`,
       ...(!disableDynamicRegistration && {
@@ -269,16 +279,19 @@ export function createAuthServer(
       redirectUrl.searchParams.set('state', state);
     }
 
-    // ISS: Include iss parameter in redirect if configured
+    // ISS: Include iss parameter in redirect if configured. The 'correct'
+    // value must equal the metadata `issuer` exactly (RFC 9207 §2.4 simple
+    // string comparison), so honor the same metadataIssuer override the
+    // metadata document does.
     if (issInRedirect === 'correct') {
-      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}`);
+      redirectUrl.searchParams.set('iss', resolveIssuer());
     } else if (issInRedirect === 'wrong') {
       redirectUrl.searchParams.set('iss', 'https://evil.example.com');
     } else if (issInRedirect === 'normalized') {
       // Normalization-equivalent variant of the correct issuer: identical
       // after RFC 3986 scheme-based normalization (trailing slash on an
       // empty path) but different under simple string comparison.
-      redirectUrl.searchParams.set('iss', `${getAuthBaseUrl()}${routePrefix}/`);
+      redirectUrl.searchParams.set('iss', `${resolveIssuer()}/`);
     }
 
     res.redirect(redirectUrl.toString());
