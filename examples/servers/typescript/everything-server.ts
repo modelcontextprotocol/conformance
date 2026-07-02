@@ -1237,6 +1237,25 @@ const LEGACY_SESSION_PROTOCOL_VERSIONS = [
 
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
+  // AGENTS.md: all-scenarios.test.ts runs every active scenario against
+  // everything-server as the reference "does not false-positive" fixture.
+  // Batch arrays must be rejected from 2025-06-18 onward, but this handler
+  // reads req.body.method before the SDK transport sees the POST body. Without
+  // an explicit array guard, batch probes either hit session routing (-32000)
+  // for the wrong reason or reach the transport and get processed. Failure
+  // proof lives in accepts-json-rpc-batch.ts + negative.test.ts; this guard
+  // keeps the reference server aligned with the json-rpc-batch-rejection check.
+  if (Array.isArray(req.body)) {
+    return res.status(400).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32600,
+        message: 'Invalid Request: JSON-RPC batch requests are not supported'
+      },
+      id: null
+    });
+  }
+
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   const reqVersion = req.headers['mcp-protocol-version'] as string | undefined;
   const body = req.body || {};

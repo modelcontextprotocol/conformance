@@ -2,6 +2,7 @@ import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
+import { JsonRpcBatchRejectionScenario } from './json-rpc-batch-rejection';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
 import {
@@ -159,6 +160,43 @@ describe('Server scenario negative tests', () => {
         expect(check?.status).toBe('FAILURE');
       }
     }, 15000);
+  });
+
+  describe('json-rpc-batch-rejection', () => {
+    // AGENTS.md: negative vitest pins the check slug, not failures.length > 0.
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3008;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/accepts-json-rpc-batch.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits FAILURE against a server that accepts JSON-RPC batch arrays', async () => {
+      const scenario = new JsonRpcBatchRejectionScenario();
+      const checks = await scenario.run(
+        // Stateless broken fixture — same lifecycle as draft batch probe.
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+      );
+
+      const batchCheck = checks.find((c) => c.id === 'json-rpc-batch-rejected');
+      expect(batchCheck?.status).toBe('FAILURE');
+      expect(batchCheck?.errorMessage).toContain('accepted');
+      expect(batchCheck?.details).toMatchObject({
+        batchSize: 2,
+        statusCode: 200,
+        lifecycle: 'stateless'
+      });
+    }, 10000);
   });
 
   describe('json-schema-2020-12 (SEP-2106)', () => {
