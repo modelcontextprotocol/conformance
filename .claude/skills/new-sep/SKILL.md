@@ -38,6 +38,8 @@ Extract from the user's input:
 
 - **sep-number** (required): the SEP number, e.g. `2164`. This is also the PR number in `modelcontextprotocol/modelcontextprotocol` by convention.
 
+If the SEP shipped in a released spec version (a backfill), see the [Variant](#variant-backfilling-a-sep-from-a-released-spec-version) section — use `--spec-url` (`--spec-path` only accepts `docs/specification/draft/` paths).
+
 ## Step 2: Generate the skeleton
 
 Run the CLI:
@@ -51,7 +53,7 @@ node dist/index.js new-sep <NNNN>
 
 The CLI writes `src/seps/sep-<NNNN>.yaml` with `sep`, `spec_url`, and two TODO `requirements[]` rows. Capture the output path from the CLI's `Wrote …` line and remember it as `$YAML`.
 
-If the CLI errors with "does not change any docs/specification/draft/\*.mdx", the SEP's spec changes landed in a separate PR — ask the user for the spec file path and rerun with `--spec-path docs/specification/draft/<path>`. Do not guess.
+If the CLI errors with "does not change any docs/specification/draft/\*.mdx", the SEP's spec changes landed in a separate PR — ask the user for the spec file path and rerun with `--spec-path docs/specification/draft/<path>`. Do not guess. For a released-version backfill, use `--spec-url` instead — `--spec-path` only accepts `docs/specification/draft/` paths — see the [Variant](#variant-backfilling-a-sep-from-a-released-spec-version) section.
 
 ## Step 3: Fetch the spec diff
 
@@ -190,9 +192,19 @@ If you find a plausible host, recommend it by path. If nothing fits, say so expl
 The steps above assume a draft-era SEP whose number is its spec PR. For SEPs that shipped in a released version (e.g. `2025-11-25`), four things change:
 
 - **Inventory** — the authoritative SEP list for a version is its changelog, `docs/specification/<version>/changelog.mdx` in the spec repo. Diff it against `ls src/seps/` to find gaps (governance SEPs like 932/994/1302/1730 have no protocol requirements — skip them).
-- **SEP number ≠ PR number** — pre-draft-era SEPs are issue numbers; the spec diff landed in a separate PR (e.g. SEP-1036's spec text is PR #887, linked from the issue as "closed via"). The CLI's PR lookup fails on an issue number — pass `--spec-url` with the released page URL.
+- **SEP number ≠ PR number** — pre-draft-era SEPs are issue numbers; the spec diff landed in a separate PR (e.g. SEP-1036's spec text is PR #887, linked from the issue as "closed via"). Always pass `--spec-url` for released-version backfills; never rely on the PR lookup (a same-numbered unrelated PR can silently succeed with a wrong `spec_url`).
 - **Quote the released page, not the draft** — read requirement text from `docs/specification/<version>/...`; the draft may have diverged since release (URL-mode elicitation's `elicitationId` and `notifications/elicitation/complete` were later removed from draft). Pin `spec_url` and every row `url:` to the `/<version>/` page, never `/draft/`.
-- **Separate co-located SEPs** — a released page aggregates several SEPs (elicitation.mdx mixes SEP-1036, SEP-1330, SEP-1034). Diff the page against the previous released version to find what's new, then attribute sentences to the SEP you're covering and skip the neighbors'.
+- **Separate co-located SEPs** — a released page aggregates several SEPs (elicitation.mdx mixes SEP-1036, SEP-1330, SEP-1034). Diff the page against the previous released version to find what's new, then attribute sentences to the SEP you're covering and skip the neighbors'. Concretely, fetch both versions' page and diff them:
+
+  ```bash
+  base=https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/main/docs/specification
+  curl -sf "$base/2025-06-18/client/elicitation.mdx" -o /tmp/old.mdx
+  curl -sf "$base/2025-11-25/client/elicitation.mdx" -o /tmp/new.mdx
+  git diff --no-index /tmp/old.mdx /tmp/new.mdx
+  ```
+
+- **Exclusion sign-off moves to PR review** — Step 6's interactive `AskUserQuestion` sign-off is replaced by maintainer review of the draft PR for backfills: write the proposed `excluded:` rows with their rationales into the yaml and let maintainers approve or flip them on the PR.
+- **Disposition reworded sentences explicitly** — diff sentences that were reworded but can't be attributed to a specific prior sentence (e.g. a SHOULD→MUST upgrade, or one old sentence split into two) must be dispositioned explicitly — a YAML comment on the row or a note in the PR description — so they don't fall through the traceability net.
 
 ## Step 9: Hand-off
 
