@@ -1016,11 +1016,13 @@ async function runTasksClient(serverUrl: string): Promise<void> {
     error?: { code: number; message: string };
   }> {
     // Declare the tasks extension per-request (stateless-style negotiation).
+    // Caller _meta is spread first so the capability entry stays
+    // authoritative and cannot be silently dropped by a caller override.
     const _meta = {
+      ...((params._meta as object | undefined) ?? {}),
       'io.modelcontextprotocol/clientCapabilities': {
         extensions: { [TASKS_EXTENSION_ID]: {} }
-      },
-      ...((params._meta as object | undefined) ?? {})
+      }
     };
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -1106,12 +1108,15 @@ async function runTasksClient(serverUrl: string): Promise<void> {
     );
   }
 
-  // Step 6: cancel_task — cancel the running task via tasks/cancel, then
-  // observe the cancelled status with one confirming tasks/get.
+  // Step 6: cancel_task — poll the running task once, cancel it via
+  // tasks/cancel, then observe the cancelled status with a prompt
+  // confirming tasks/get (pollIntervalMs governs polling of a running
+  // task, not the post-cancel confirmation).
   const cancel = (await sendRpc('tools/call', { name: 'cancel_task' })).result!;
   if (cancel.resultType === 'task') {
     const taskId = cancel.taskId as string;
     await sleep((cancel.pollIntervalMs as number) ?? 500);
+    await sendRpc('tasks/get', { taskId });
     await sendRpc('tasks/cancel', { taskId });
     const confirmed = await sendRpc('tasks/get', { taskId });
     logger.debug('cancel_task status:', confirmed.result?.status);

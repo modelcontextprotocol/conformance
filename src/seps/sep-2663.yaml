@@ -105,7 +105,8 @@ requirements:
   # consecutive tasks/get POSTs for the same task is observable on the wire.
   # The tasks-client-lifecycle scenario gates it on the early side only (a
   # poll arriving before pollIntervalMs has elapsed), so slow CI cannot
-  # flake it — same approach as the sse-retry timing check.
+  # flake it — the early-side half of the sse-retry timing approach; late
+  # polls are never flagged.
   - check: sep-2663-client-honors-poll-interval
     text: 'Clients SHOULD respect the pollIntervalMs provided in responses when determining polling frequency.'
 
@@ -165,8 +166,9 @@ requirements:
   # tasks-cancel-terminal-idempotent-ack, tasks-mrtr-tasks-update-resumes,
   # tasks-mrtr-partial-fulfillment, tasks-server-directed-creation-no-hint,
   # tasks-result-type-complete-on-non-task-responses, tasks-removed-tasks-list,
-  # the client-suite flow-gates tasks-client-extension-declared and
-  # tasks-client-terminal-failed-surfaced in
+  # the client-suite flow-gates tasks-client-extension-declared,
+  # tasks-client-terminal-failed-surfaced, and
+  # tasks-client-cancel-flow-completed in
   # src/scenarios/client/tasks-client.ts,
   # plus the ephemeral mrtr-* flow-gates in src/scenarios/server/mrtr/).
   # These verify end-to-end flow invariants rather than a specific normative

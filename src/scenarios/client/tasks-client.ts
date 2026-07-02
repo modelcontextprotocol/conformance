@@ -42,6 +42,8 @@
 import http from 'http';
 import {
   ConformanceCheck,
+  LATEST_SPEC_VERSION,
+  NEGOTIABLE_PROTOCOL_VERSIONS,
   ScenarioSource,
   SpecReference
 } from '../../types.js';
@@ -59,8 +61,8 @@ export const TASKS_CLIENT_POLL_INTERVAL_MS = 300;
 /**
  * Early-side tolerance: a poll is only flagged when it arrives more than
  * this many milliseconds before pollIntervalMs has elapsed. Late polls are
- * never flagged (slow CI must not flake the check), mirroring the sse-retry
- * scenario's early-side-only timing gate.
+ * never flagged (slow CI must not flake the check) — the early-side half of
+ * the sse-retry scenario's timing approach.
  */
 export const TASKS_CLIENT_POLL_TOLERANCE_MS = 50;
 
@@ -79,6 +81,7 @@ export const TASKS_CLIENT_DECLARED_CHECK_IDS = [
   'sep-2663-client-emits-mcp-name-on-tasks-methods',
   'sep-2663-client-honors-poll-interval',
   'tasks-client-terminal-failed-surfaced',
+  'tasks-client-cancel-flow-completed',
   'sep-2663-cancel-not-via-cancelled-notification',
   'sep-2663-client-rejects-task-result-on-unsupported'
 ] as const;
@@ -115,6 +118,12 @@ const CHECK_META: Record<
     name: 'TasksClientTerminalFailedSurfaced',
     description:
       'Flow gate: a task that reaches status "failed" (inlined JSON-RPC error) is surfaced — the client continues the script instead of polling the terminal task indefinitely',
+    specReferences: [SEP_2663_REF]
+  },
+  'tasks-client-cancel-flow-completed': {
+    name: 'TasksClientCancelFlowCompleted',
+    description:
+      'Flow gate: the client creates the never-completing cancel_task task and cancels it via tasks/cancel',
     specReferences: [SEP_2663_REF]
   },
   'sep-2663-cancel-not-via-cancelled-notification': {
@@ -240,7 +249,16 @@ apart (only early polls are flagged).`;
   private cancelTaskCreated = false;
   private cancelTaskCancelled = false;
   private tasksCancelObserved = false;
-  private cancelledNotifications: string[] = [];
+  /** JSON-RPC ids of the task-creating tools/call requests → their taskId,
+   * so a notifications/cancelled targeting one of them can be recognized as
+   * an (illegal) task-cancellation attempt. */
+  private taskOriginRequestIds = new Map<string | number, string>();
+  /** notifications/cancelled that target a task (by originating requestId or
+   * by referencing a known taskId in `reason`) — spec violations. */
+  private taskCancellationNotifications: string[] = [];
+  /** notifications/cancelled unrelated to any task — legal request
+   * cancellation, recorded for diagnostics only. */
+  private unrelatedCancelledNotifications: string[] = [];
 
   private pingObserved = false;
   private bogusTaskRequests: string[] = [];
@@ -268,7 +286,9 @@ apart (only early polls are flagged).`;
     this.cancelTaskCreated = false;
     this.cancelTaskCancelled = false;
     this.tasksCancelObserved = false;
-    this.cancelledNotifications = [];
+    this.taskOriginRequestIds.clear();
+    this.taskCancellationNotifications = [];
+    this.unrelatedCancelledNotifications = [];
     this.pingObserved = false;
     this.bogusTaskRequests = [];
     this.tasksMethodRequests = 0;
@@ -368,6 +388,12 @@ apart (only early polls are flagged).`;
           this.bogusTaskRequests.push(method);
         }
         if (method === 'tasks/get') {
+          // Cadence anchor: the gap runs from the moment the harness SENT
+          // the previous non-terminal tasks/get response to the ARRIVAL of
+          // this poll. Both endpoints are measured in the same process and
+          // the transport is a loopback socket, so sub-millisecond skew is
+          // the norm and the 50ms tolerance comfortably absorbs response
+          // write + parse overhead without masking a real early poll.
           const last = this.lastPollRespondedAt.get(taskId);
           if (last !== undefined) {
             const gap = Date.now() - last;
@@ -395,10 +421,18 @@ apart (only early polls are flagged).`;
         if (caps?.extensions?.[TASKS_EXTENSION_ID]) {
           this.extensionDeclared = true;
         }
+        // Echo the requested version only when it is one the harness
+        // negotiates; otherwise clamp to the latest dated release — same
+        // policy as the shared mock server.
         const requested = params.protocolVersion;
+        const negotiated =
+          typeof requested === 'string' &&
+          NEGOTIABLE_PROTOCOL_VERSIONS.includes(requested)
+            ? requested
+            : LATEST_SPEC_VERSION;
         this.sendResult(res, request, {
-          protocolVersion:
-            typeof requested === 'string' ? requested : '2025-11-25',
+          resultType: 'complete',
+          protocolVersion: negotiated,
           serverInfo: { name: this.name + '-server', version: '1.0.0' },
           capabilities: this.discoverCapabilities()
         });
@@ -406,7 +440,23 @@ apart (only early polls are flagged).`;
       }
 
       case 'notifications/cancelled': {
-        this.cancelledNotifications.push(JSON.stringify(params));
+        // The spec sentence only forbids notifications/cancelled FOR TASK
+        // CANCELLATION. Classify: a notification is task-targeted when its
+        // requestId is the JSON-RPC id of a task-creating tools/call, or
+        // when its reason references a known taskId. Anything else is legal
+        // request cancellation and only recorded for diagnostics.
+        const requestId = params.requestId as string | number | undefined;
+        const reason = typeof params.reason === 'string' ? params.reason : '';
+        const knownTaskIds = [TASK_QUICK, TASK_FAIL, TASK_CANCEL, TASK_BOGUS];
+        const targetsTask =
+          (requestId !== undefined &&
+            this.taskOriginRequestIds.has(requestId)) ||
+          knownTaskIds.some((id) => reason.includes(id));
+        if (targetsTask) {
+          this.taskCancellationNotifications.push(JSON.stringify(params));
+        } else {
+          this.unrelatedCancelledNotifications.push(JSON.stringify(params));
+        }
         this.sendNotificationAck(res);
         return;
       }
@@ -461,12 +511,26 @@ apart (only early polls are flagged).`;
           this.tasksCancelObserved = true;
           this.cancelTaskCancelled = true;
         }
+        // The task is terminal now: drop the cadence anchor so a prompt
+        // confirming tasks/get after the cancel ack is not measured against
+        // the last working poll (that would be a false early-poll flag —
+        // pollIntervalMs governs polling of a running task, not the
+        // post-cancel status confirmation).
+        this.lastPollRespondedAt.delete(taskId);
         // Empty ack (idempotent for terminal tasks).
         this.sendResult(res, request, { resultType: 'complete' });
         return;
       }
 
       case 'tasks/update': {
+        const taskId = params.taskId as string | undefined;
+        if (
+          taskId === undefined ||
+          ![TASK_QUICK, TASK_FAIL, TASK_CANCEL].includes(taskId)
+        ) {
+          this.sendError(res, request, -32602, `Unknown task: ${taskId}`);
+          return;
+        }
         // No MRTR flow in this scenario; acknowledge with an empty result.
         this.sendResult(res, request, { resultType: 'complete' });
         return;
@@ -480,6 +544,15 @@ apart (only early polls are flagged).`;
         this.sendError(res, request, -32601, `Method not found: ${method}`);
         return;
       }
+    }
+  }
+
+  /** Remember which JSON-RPC request id produced which task, so a later
+   * notifications/cancelled targeting that id is recognizable as an
+   * (illegal) task-cancellation attempt. */
+  private recordTaskOrigin(request: JsonRpcRequest, taskId: string): void {
+    if (request.id !== undefined && request.id !== null) {
+      this.taskOriginRequestIds.set(request.id, taskId);
     }
   }
 
@@ -513,6 +586,7 @@ apart (only early polls are flagged).`;
           return;
         }
         this.quickTaskCreated = true;
+        this.recordTaskOrigin(request, TASK_QUICK);
         this.sendResult(res, request, {
           resultType: 'task',
           ...this.taskEnvelope(TASK_QUICK, 'working')
@@ -529,6 +603,7 @@ apart (only early polls are flagged).`;
           return;
         }
         this.failTaskCreated = true;
+        this.recordTaskOrigin(request, TASK_FAIL);
         this.sendResult(res, request, {
           resultType: 'task',
           ...this.taskEnvelope(TASK_FAIL, 'working')
@@ -544,6 +619,7 @@ apart (only early polls are flagged).`;
           return;
         }
         this.cancelTaskCreated = true;
+        this.recordTaskOrigin(request, TASK_CANCEL);
         this.sendResult(res, request, {
           resultType: 'task',
           ...this.taskEnvelope(TASK_CANCEL, 'working')
@@ -802,14 +878,9 @@ apart (only early polls are flagged).`;
       );
     }
 
-    // 6. Cancellation channel (MUST NOT → FAILURE).
+    // 6. Flow gate: the cancellation flow was exercised at all.
     {
       const errs: string[] = [];
-      if (this.cancelledNotifications.length > 0) {
-        errs.push(
-          `client sent notifications/cancelled (${this.cancelledNotifications.join(', ')}) — the notifications/cancelled notification MUST NOT be used for task cancellation; use tasks/cancel`
-        );
-      }
       if (!this.cancelTaskCreated) {
         errs.push('client never issued tools/call for cancel_task');
       } else if (!this.tasksCancelObserved) {
@@ -818,14 +889,54 @@ apart (only early polls are flagged).`;
         );
       }
       checks.push(
-        this.check('sep-2663-cancel-not-via-cancelled-notification', errs, {
-          tasksCancelObserved: this.tasksCancelObserved,
-          cancelledNotifications: this.cancelledNotifications.length
+        this.check('tasks-client-cancel-flow-completed', errs, {
+          cancelTaskCreated: this.cancelTaskCreated,
+          tasksCancelObserved: this.tasksCancelObserved
         })
       );
     }
 
-    // 7. Invalid CreateTaskResult on an unsupported request type
+    // 7. Cancellation channel (MUST NOT → FAILURE). Only task-targeted
+    //    notifications/cancelled violate the sentence; unrelated request
+    //    cancellation is legal and surfaces in details only.
+    {
+      const meta = CHECK_META['sep-2663-cancel-not-via-cancelled-notification'];
+      if (this.taskCancellationNotifications.length > 0) {
+        checks.push(
+          this.check(
+            'sep-2663-cancel-not-via-cancelled-notification',
+            [
+              `client sent notifications/cancelled targeting a task (${this.taskCancellationNotifications.join(', ')}) — the notifications/cancelled notification MUST NOT be used for task cancellation; use tasks/cancel`
+            ],
+            {
+              taskCancellationNotifications: this.taskCancellationNotifications,
+              unrelatedCancelledNotifications:
+                this.unrelatedCancelledNotifications
+            }
+          )
+        );
+      } else if (this.tasksCancelObserved) {
+        checks.push(
+          this.check('sep-2663-cancel-not-via-cancelled-notification', [], {
+            tasksCancelObserved: true,
+            unrelatedCancelledNotifications:
+              this.unrelatedCancelledNotifications
+          })
+        );
+      } else {
+        checks.push(
+          untestableCheck(
+            'sep-2663-cancel-not-via-cancelled-notification',
+            meta.name,
+            meta.description,
+            'client never attempted task cancellation (no tasks/cancel for the running cancel_task task), so the cancellation channel could not be observed',
+            meta.specReferences
+          )
+        );
+      }
+    }
+
+    // 8. Invalid CreateTaskResult on an unsupported request type
     //    (MUST → FAILURE).
     if (!this.pingObserved) {
       const meta =

@@ -86,6 +86,14 @@ async function runConformingScript(
     omitMcpName?: boolean;
     /** Cancel via notifications/cancelled instead of tasks/cancel. */
     cancelViaNotification?: boolean;
+    /** Create cancel_task but never cancel it (flow-gate negative). */
+    skipTasksCancel?: boolean;
+    /** Send a notifications/cancelled unrelated to any task (legal). */
+    sendUnrelatedCancelledNotification?: boolean;
+    /** Keep polling failing_task after its terminal status was delivered. */
+    hammerFailedTask?: boolean;
+    /** Stop the script right after failing_task fails (nothing surfaced). */
+    stopAfterFailedTask?: boolean;
     /** Treat CreateTaskResult as a plain result: never poll quick_task. */
     ignoreCreateTaskResult?: boolean;
     /** Poll the bogus task returned to ping. */
@@ -118,14 +126,31 @@ async function runConformingScript(
   // sync_echo
   await rpc(serverUrl, 'tools/call', { name: 'sync_echo' });
 
+  // Legal, non-task-targeted request cancellation must not trip the
+  // task-cancellation-channel check.
+  if (overrides.sendUnrelatedCancelledNotification) {
+    await rpc(serverUrl, 'notifications/cancelled', {
+      requestId: 424242,
+      reason: 'user aborted an unrelated request'
+    });
+  }
+
   // failing_task
   const failing = await rpc(serverUrl, 'tools/call', { name: 'failing_task' });
   if (failing.resultType === 'task') {
     await wait(failing.pollIntervalMs ?? TASKS_CLIENT_POLL_INTERVAL_MS);
     await rpc(serverUrl, 'tasks/get', { taskId: failing.taskId }, taskOpts);
+    if (overrides.stopAfterFailedTask) return;
+    if (overrides.hammerFailedTask) {
+      for (let i = 0; i < 3; i++) {
+        await rpc(serverUrl, 'tasks/get', { taskId: failing.taskId }, taskOpts);
+      }
+    }
   }
 
-  // cancel_task
+  // cancel_task: poll the running task once, cancel it, then promptly
+  // confirm the cancelled status (the confirmation is not a poll of a
+  // running task and must not be measured against pollIntervalMs).
   const cancel = await rpc(serverUrl, 'tools/call', { name: 'cancel_task' });
   if (cancel.resultType === 'task') {
     await wait(cancel.pollIntervalMs ?? TASKS_CLIENT_POLL_INTERVAL_MS);
@@ -134,7 +159,8 @@ async function runConformingScript(
         requestId: 999,
         reason: `cancel task ${cancel.taskId}`
       });
-    } else {
+    } else if (!overrides.skipTasksCancel) {
+      await rpc(serverUrl, 'tasks/get', { taskId: cancel.taskId }, taskOpts);
       await rpc(serverUrl, 'tasks/cancel', { taskId: cancel.taskId }, taskOpts);
       await rpc(serverUrl, 'tasks/get', { taskId: cancel.taskId }, taskOpts);
     }
@@ -266,6 +292,89 @@ describe('tasks-client-lifecycle scenario (SEP-2663, issue #374)', () => {
       expect(statusOf(checks, 'sep-2663-client-honors-poll-interval')).toBe(
         'WARNING'
       );
+    } finally {
+      await scenario.stop();
+    }
+  }, 30000);
+
+  it('does not flag poll cadence for the prompt confirming tasks/get after tasks/cancel', async () => {
+    // Regression: poll (working) → tasks/cancel → immediate confirming
+    // tasks/get. The confirmation must not be measured against the last
+    // working poll's timestamp.
+    const scenario = new TasksClientScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await runConformingScript(serverUrl);
+      const checks = scenario.getChecks();
+      expect(
+        statusOf(checks, 'sep-2663-client-honors-poll-interval'),
+        checks.find((c) => c.id === 'sep-2663-client-honors-poll-interval')
+          ?.errorMessage
+      ).toBe('SUCCESS');
+    } finally {
+      await scenario.stop();
+    }
+  }, 30000);
+
+  it('FAILs the terminal flow gate when the client keeps polling the failed task', async () => {
+    const scenario = new TasksClientScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await runConformingScript(serverUrl, { hammerFailedTask: true });
+      const checks = scenario.getChecks();
+      expect(statusOf(checks, 'tasks-client-terminal-failed-surfaced')).toBe(
+        'FAILURE'
+      );
+    } finally {
+      await scenario.stop();
+    }
+  }, 30000);
+
+  it('FAILs the terminal flow gate when the client stops after the failed task', async () => {
+    const scenario = new TasksClientScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await runConformingScript(serverUrl, { stopAfterFailedTask: true });
+      const checks = scenario.getChecks();
+      expect(statusOf(checks, 'tasks-client-terminal-failed-surfaced')).toBe(
+        'FAILURE'
+      );
+    } finally {
+      await scenario.stop();
+    }
+  }, 30000);
+
+  it('FAILs the cancel flow gate when the client never issues tasks/cancel', async () => {
+    const scenario = new TasksClientScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await runConformingScript(serverUrl, { skipTasksCancel: true });
+      const checks = scenario.getChecks();
+      expect(statusOf(checks, 'tasks-client-cancel-flow-completed')).toBe(
+        'FAILURE'
+      );
+      // The unexercised MUST NOT reports untestable under its own id.
+      const cancelCheck = checks.find(
+        (c) => c.id === 'sep-2663-cancel-not-via-cancelled-notification'
+      );
+      expect(cancelCheck?.status).toBe('FAILURE');
+      expect(cancelCheck?.details?.untestable).toBe(true);
+    } finally {
+      await scenario.stop();
+    }
+  }, 30000);
+
+  it('does not flag a notifications/cancelled unrelated to any task', async () => {
+    const scenario = new TasksClientScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await runConformingScript(serverUrl, {
+        sendUnrelatedCancelledNotification: true
+      });
+      const checks = scenario.getChecks();
+      expect(
+        statusOf(checks, 'sep-2663-cancel-not-via-cancelled-notification')
+      ).toBe('SUCCESS');
     } finally {
       await scenario.stop();
     }
