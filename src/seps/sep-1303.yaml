@@ -1,22 +1,51 @@
 # SEP-1303: Input validation errors as Tool Execution Errors (SEP issue
 # #1303; spec changes landed via PR #1611). Part of the released 2025-11-25
 # spec version. Requirement text is quoted from the released page
-# (docs/specification/2025-11-25/server/tools.mdx), not the draft, so every
-# URL below pins the 2025-11-25 version. Sentences were attributed to this
+# (docs/specification/2025-11-25/server/tools.mdx), not the draft, so the
+# spec_url pins the 2025-11-25 version. Sentences were attributed to this
 # SEP by diffing the released page's "Error Handling" section against the
 # 2025-06-18 version (the co-located icons / tool-name / JSON-Schema / tasks
 # changes on the same page belong to other SEPs and are skipped here).
+#
+# Severity ruling (proposed — pending maintainer sign-off): treat the two
+# keyword-less check rows below as MUST-equivalent → FAILURE, because the
+# error taxonomy is the definitional wire contract this SEP establishes.
 sep: 1303
 spec_url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling
 requirements:
-  # The two rows below quote the error-taxonomy bullets this SEP rewrote.
-  # They are indicative-mood definitions (no RFC 2119 keyword), but they are
-  # the SEP's operative clarification and are wire-observable, so they are
-  # proposed as check: rows for maintainer review rather than dropped.
-  - check: sep-1303-input-validation-tool-error
-    text: 'Tools use two error reporting mechanisms: Tool Execution Errors: Reported in tool results with `isError: true`: Input validation errors (e.g., date in wrong format, value out of range)'
-  - check: sep-1303-malformed-request-protocol-error
-    text: 'Tools use two error reporting mechanisms: Protocol Errors: Standard JSON-RPC errors for issues like: Malformed requests (requests that fail to satisfy CallToolRequest schema)'
+  # The two rows below quote the error-taxonomy bullets this SEP rewrote, in
+  # page order (the Protocol Errors bullet precedes the Tool Execution Errors
+  # bullet). They are indicative-mood definitions (no RFC 2119 keyword), but
+  # they are the SEP's operative clarification and are wire-observable, so
+  # they are proposed as check: rows for maintainer review rather than
+  # dropped. The page's two explanatory sentences ("Tool Execution Errors
+  # contain actionable feedback…" / "Protocol Errors indicate issues with the
+  # request structure itself…") were considered and deliberately produce no
+  # rows (non-operative narrative).
 
+  # Any standard JSON-RPC error response passes this check — the page
+  # mandates no specific error code, and SDKs vary. The check asserts the
+  # forward direction only (a request that fails the CallToolRequest schema
+  # yields a JSON-RPC error), not exclusivity.
+  - check: sep-1303-malformed-request-protocol-error
+    text: 'Protocol Errors: Standard JSON-RPC errors for issues like: Malformed requests (requests that fail to satisfy CallToolRequest schema)'
+
+  # Derivation: any tools/call satisfying the CallToolRequest envelope
+  # schema — including one whose arguments violate the tool's declared
+  # inputSchema — must yield `isError: true`, not a -32602 protocol error
+  # (2025-06-18 listed "Invalid arguments" under Protocol Errors; 2025-11-25
+  # removed it). The eventual probe should include a schema-type /
+  # required-property violation, not only a semantic one.
+  # Fixture need: this check requires an everything-server tool with a
+  # required, type-constrained parameter (test_error_handling takes no
+  # arguments), and the assertion should be scoped to `isError: true` plus
+  # non-empty content — not requiring the error text to echo the offending
+  # input.
+  - check: sep-1303-input-validation-tool-error
+    text: 'Tool Execution Errors: Reported in tool results with `isError: true` — Input validation errors (e.g., date in wrong format, value out of range)'
+
+  # Follow-up recommendation (per the sep-2663 flow-gate precedent): an
+  # untracked flow-gate client check where a mock server returns
+  # `isError: true` and the harness verifies the session continues.
   - text: 'Clients SHOULD provide tool execution errors to language models to enable self-correction.'
-    excluded: 'what the client provides to its language model is host-internal; not observable at the protocol level'
+    excluded: 'what the client provides to its language model is host-internal; not observable at the protocol level (a self-correction retry would test the model, not the client)'
