@@ -185,6 +185,15 @@ rg -A1 'name:|description:' <hit.ts>
 
 If you find a plausible host, recommend it by path. If nothing fits, say so explicitly — a new scenario file is then the right call.
 
+## Variant: backfilling a SEP from a released spec version
+
+The steps above assume a draft-era SEP whose number is its spec PR. For SEPs that shipped in a released version (e.g. `2025-11-25`), four things change:
+
+- **Inventory** — the authoritative SEP list for a version is its changelog, `docs/specification/<version>/changelog.mdx` in the spec repo. Diff it against `ls src/seps/` to find gaps (governance SEPs like 932/994/1302/1730 have no protocol requirements — skip them).
+- **SEP number ≠ PR number** — pre-draft-era SEPs are issue numbers; the spec diff landed in a separate PR (e.g. SEP-1036's spec text is PR #887, linked from the issue as "closed via"). The CLI's PR lookup fails on an issue number — pass `--spec-url` with the released page URL.
+- **Quote the released page, not the draft** — read requirement text from `docs/specification/<version>/...`; the draft may have diverged since release (URL-mode elicitation's `elicitationId` and `notifications/elicitation/complete` were later removed from draft). Pin `spec_url` and every row `url:` to the `/<version>/` page, never `/draft/`.
+- **Separate co-located SEPs** — a released page aggregates several SEPs (elicitation.mdx mixes SEP-1036, SEP-1330, SEP-1034). Diff the page against the previous released version to find what's new, then attribute sentences to the SEP you're covering and skip the neighbors'.
+
 ## Step 9: Hand-off
 
 Report to the user, in this order:

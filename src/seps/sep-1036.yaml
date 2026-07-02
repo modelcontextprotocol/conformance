@@ -1,0 +1,126 @@
+# SEP-1036: URL mode elicitation (SEP issue #1036; spec changes landed via PR
+# #887 plus pre-release refinements, e.g. #1863 for mode backwards
+# compatibility). Part of the released 2025-11-25 spec version. Requirement
+# text is quoted from the released page
+# (docs/specification/2025-11-25/client/elicitation.mdx), not the draft — the
+# draft has since diverged (elicitationId and notifications/elicitation/complete
+# were removed from the draft in June 2026), so every URL below pins the
+# 2025-11-25 version.
+sep: 1036
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation
+requirements:
+  # ── Capabilities ──────────────────────────────────────────────────────────
+  - check: sep-1036-client-supports-declared-mode
+    text: 'Clients declaring the `elicitation` capability MUST support at least one mode (`form` or `url`).'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#capabilities
+
+  - check: sep-1036-server-no-undeclared-mode
+    text: 'Servers MUST NOT send elicitation requests with modes that are not supported by the client.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#capabilities
+
+  # ── Elicitation Requests ──────────────────────────────────────────────────
+  - check: sep-1036-request-required-params
+    text: 'All elicitation requests MUST include the following parameters: mode (string, "form" or "url"; optional for form mode, defaults to "form" if omitted) and message (a human-readable message explaining why the interaction is needed).'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#elicitation-requests
+
+  - check: sep-1036-client-modeless-is-form
+    text: 'Clients MUST treat requests without a `mode` field as form mode.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#elicitation-requests
+
+  - check: sep-1036-form-request-shape
+    text: 'Form mode elicitation requests MUST either specify mode: "form" or omit the mode field, and include these additional parameters: requestedSchema (a JSON Schema defining the structure of the expected response).'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#form-mode-elicitation-requests
+
+  # ── URL Mode Elicitation Requests ─────────────────────────────────────────
+  - check: sep-1036-url-request-shape
+    text: 'URL mode elicitation requests MUST specify mode: "url", a message, and include these additional parameters: url (the URL that the user should navigate to) and elicitationId (a unique identifier for the elicitation).'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#url-mode-elicitation-requests
+
+  - check: sep-1036-url-param-valid
+    text: 'The `url` parameter MUST contain a valid URL.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#url-mode-elicitation-requests
+
+  # ── Completion Notifications for URL Mode Elicitation ────────────────────
+  - check: sep-1036-complete-notification-initiator-only
+    text: 'Servers sending notifications MUST only send the notification to the client that initiated the elicitation request.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#completion-notifications-for-url-mode-elicitation
+
+  - check: sep-1036-complete-notification-elicitation-id
+    text: 'Servers sending notifications MUST include the `elicitationId` established in the original `elicitation/create` request.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#completion-notifications-for-url-mode-elicitation
+
+  # ── URL Elicitation Required Error ────────────────────────────────────────
+  - check: sep-1036-error-lists-elicitations
+    text: 'The error MUST include a list of elicitations that are required to complete before the original can be retried.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#url-elicitation-required-error
+
+  - check: sep-1036-error-elicitations-url-mode
+    text: 'Any elicitations returned in the error MUST be URL mode elicitations and have an `elicitationId` property.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#url-elicitation-required-error
+
+  # ── Error Handling ────────────────────────────────────────────────────────
+  - check: sep-1036-url-elicitation-required-error-code
+    text: 'Servers MUST return standard JSON-RPC errors for common failure cases: When a request cannot be processed until an elicitation is completed: -32042 (URLElicitationRequiredError)'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#error-handling
+
+  - check: sep-1036-client-rejects-undeclared-mode
+    text: 'Clients MUST return standard JSON-RPC errors for common failure cases: Server sends an elicitation/create request with a mode not declared in client capabilities: -32602 (Invalid params)'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#error-handling
+
+  # ── Safe URL Handling (client) ────────────────────────────────────────────
+  - check: sep-1036-client-no-prefetch
+    text: 'When handling URL mode elicitation requests, MCP clients MUST NOT automatically pre-fetch the URL or any of its metadata.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#safe-url-handling
+
+  # ── Excluded requirements ─────────────────────────────────────────────────
+
+  - text: 'Servers MUST NOT use form mode elicitation to request sensitive information such as passwords, API keys, access tokens, or payment credentials / Servers MUST NOT request sensitive information (passwords, API keys, etc.) via form mode'
+    excluded: 'whether requested data is "sensitive information" is semantic; not decidable at the protocol level'
+  - text: 'Servers MUST use URL mode for interactions involving such sensitive information'
+    excluded: 'whether an interaction involves sensitive information is semantic; not decidable at the protocol level'
+  - text: 'MCP clients MUST: Provide UI that makes it clear which server is requesting information; Respect user privacy and provide clear decline and cancel options; For form mode, allow users to review and modify their responses before sending; For URL mode, clearly display the target domain/host and gather user consent before navigation to the target URL'
+    excluded: 'host UI behavior; not observable at the protocol level'
+  - text: 'The server MUST NOT return this error [URLElicitationRequiredError] except when URL mode elicitation is required.'
+    excluded: 'whether an elicitation is "required" is server-internal; only the error shape is observable (covered by the adjacent check rows)'
+  - text: 'Clients MUST ignore notifications referencing unknown or already-completed IDs.'
+    excluded: 'client-internal handling; JSON-RPC notifications produce no response, so "ignoring" has no wire-observable signal'
+  - text: 'Clients SHOULD still provide manual controls that let the user retry or cancel the original request (or otherwise resume interacting with the client) if the notification never arrives.'
+    excluded: 'host UI behavior; not observable at the protocol level'
+  - text: 'Servers implementing elicitation MUST securely associate this state with individual users following the guidelines in the security best practices document. / State MUST NOT be associated with session IDs alone / State storage MUST be protected against unauthorized access / For remote MCP servers, user identification MUST be derived from credentials acquired via MCP authorization when possible (e.g. sub claim)'
+    excluded: 'internal server state management; not observable at the protocol level'
+  - text: 'MCP servers MUST NOT rely on URL mode elicitation to authorize users for themselves.'
+    excluded: 'out-of-band authorization semantics; the harness cannot observe what the server uses the elicitation result for'
+  - text: "The third-party credentials MUST NOT transit through the MCP client / The MCP server MUST NOT use the client's credentials for the third-party service / The user MUST authorize the MCP server directly"
+    excluded: 'the harness cannot classify payloads as third-party credentials or observe the out-of-band authorization channel'
+  - text: 'The MCP server MUST NOT transmit credentials obtained through URL mode elicitation to the MCP client.'
+    excluded: 'the harness cannot classify payloads as credentials obtained via URL mode elicitation'
+  - text: 'Servers MUST bind elicitation requests to the client and user identity'
+    excluded: 'internal server state; the binding is not observable at the protocol level'
+  - text: 'MCP servers requesting elicitation MUST NOT include sensitive information about the end-user, including credentials, personal identifiable information, etc., in the URL sent to the client in a URL elicitation request.'
+    excluded: 'whether URL contents constitute sensitive end-user information is semantic; not decidable at the protocol level'
+  - text: 'MCP servers requesting elicitation MUST NOT provide a URL which is pre-authenticated to access a protected resource, as the URL could be used to impersonate the user by a malicious client.'
+    excluded: 'pre-authorization is a property of the out-of-band resource, not observable from the URL on the wire'
+  - text: 'MCP servers requesting elicitation SHOULD NOT include URLs intended to be clickable in any field of a form mode elicitation request.'
+    excluded: '"intended to be clickable" is authorial intent; not decidable at the protocol level'
+  - text: 'MCP servers requesting elicitation SHOULD use HTTPS URLs for non-development environments.'
+    excluded: 'the harness cannot distinguish development from production environments, so a non-HTTPS URL is not necessarily a violation'
+  - text: 'When handling URL mode elicitation requests, MCP clients MUST NOT open the URL without explicit consent from the user.'
+    excluded: 'host UI behavior; user consent is not observable at the protocol level'
+  - text: 'When handling URL mode elicitation requests, MCP clients MUST show the full URL to the user for examination before consent.'
+    excluded: 'host UI behavior; not observable at the protocol level'
+  - text: 'When handling URL mode elicitation requests, MCP clients MUST open the URL provided by the server in a secure manner that does not enable the client or LLM to inspect the content or user inputs.'
+    excluded: 'host/user-agent behavior outside the MCP wire; not observable at the protocol level'
+  - text: 'When handling URL mode elicitation requests, MCP clients SHOULD highlight the domain of the URL to mitigate subdomain spoofing.'
+    excluded: 'host UI behavior; not observable at the protocol level'
+  - text: 'When handling URL mode elicitation requests, MCP clients SHOULD have warnings for ambiguous/suspicious URIs (i.e., containing Punycode).'
+    excluded: 'host UI behavior; not observable at the protocol level'
+  - text: 'When handling URL mode elicitation requests, MCP clients SHOULD NOT render URLs as clickable in any field of an elicitation request, except for the `url` field in a URL elicitation request (with the restrictions detailed above).'
+    excluded: 'host UI rendering; not observable at the protocol level'
+  - text: 'Servers MUST NOT rely on client-provided user identification without server verification, as this can be forged. Instead, servers SHOULD follow security best practices.'
+    excluded: 'internal server verification policy; not observable at the protocol level'
+  - text: 'The MCP Server MUST verify the identity of the user who opens the URL before accepting information.'
+    excluded: 'occurs on the out-of-band web channel, outside the MCP wire'
+  - text: 'The server MUST ensure that the user who started the elicitation request (the end-user who is accessing the server via the MCP client) is the same user who completes the authorization flow.'
+    excluded: 'occurs on the out-of-band web channel, outside the MCP wire'
+  - text: "In all implementations, the server MUST ensure that the mechanism to determine the user's identity is resilient to attacks where an attacker can modify the elicitation URL."
+    excluded: 'internal server design property; not observable at the protocol level'
