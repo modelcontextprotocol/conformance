@@ -17,6 +17,7 @@
  */
 
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const PORT = process.env.PORT || 3000;
@@ -25,6 +26,19 @@ const AUTH_ISSUER =
 
 const app = express();
 app.use(express.json());
+
+// Rate-limit the endpoint (it performs JWKS fetches and signature
+// verification per request). Generous enough that conformance runs — a
+// handful of probes per scenario — never hit it.
+app.use(
+  '/mcp',
+  rateLimit({
+    windowMs: 60_000,
+    limit: 10_000,
+    standardHeaders: true,
+    legacyHeaders: false
+  })
+);
 
 // Lazily-constructed remote JWKS, discovered from the issuer's RFC 8414
 // metadata at first use.

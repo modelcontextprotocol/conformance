@@ -19,6 +19,7 @@
     "@types/cors": "^2.8.19",
     "cors": "^2.8.5",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "jose": "^6.2.3",
     "zod": "^4.3.6"
   },

@@ -36,6 +36,7 @@ import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-sc
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
+import { rateLimit } from 'express-rate-limit';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { randomUUID, createHmac } from 'crypto';
 
@@ -1241,6 +1242,21 @@ if (AUTH_ISSUER) {
   // Constructed lazily so the conformance suite's mock authorization server
   // only needs to be running when the first token arrives, not at startup.
   let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
+
+  // Rate-limit the endpoint while token verification (JWKS fetch + signature
+  // check per request) is enabled. Generous enough that conformance runs — a
+  // handful of probes per scenario — never hit it. Scoped to auth mode so the
+  // default unauthenticated fixture used by the rest of the suite is
+  // unaffected.
+  app.use(
+    '/mcp',
+    rateLimit({
+      windowMs: 60_000,
+      limit: 10_000,
+      standardHeaders: true,
+      legacyHeaders: false
+    })
+  );
 
   app.use('/mcp', async (req, res, next) => {
     const unauthorized = (description: string) => {
