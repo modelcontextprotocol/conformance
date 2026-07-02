@@ -201,7 +201,7 @@ export class ToolsListScenario implements ClientScenario {
 
       // Gate per AGENTS.md version applicability: Tool Names prose is 2025-11-25+ only.
       // everything-server already passes on applicable versions (positive path in
-      // all-scenarios.test.ts); failure proof is sep-986-invalid-tool-names.ts (filename only).
+      // all-scenarios.test.ts); failure proof is invalid-tool-names.ts.
       if (toolNameFormatCheckApplies(ctx.specVersion)) {
         checks.push(buildToolsNameFormatCheck(result.tools));
       }

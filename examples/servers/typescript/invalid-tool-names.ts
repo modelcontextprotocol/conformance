@@ -8,9 +8,25 @@
  * that violates core spec prose at #tool-names. Proves tools-name-format emits
  * WARNING (SHOULD-level per AGENTS.md), not FAILURE. everything-server unchanged.
  *
- * Why "sep-986" in the filename: SEP-986 originated the rule, but the dated spec
- * prose (PR #1603) diverged; see tools.ts specReferences for authoritative vs
- * historical links.
+ * ## Why this file is not named after SEP-986
+ *
+ * Tool name format rules trace to [SEP-986](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986)
+ * (opened 2025-07-16), but the **authoritative rules live in dated spec prose**,
+ * not the SEP markdown artifact. That split is a process wart worth preserving:
+ *
+ * - **SEP-986 markdown** (`seps/986-specify-format-for-tool-names.md`) still
+ *   documents stale rules: 1–64 chars, `[A-Za-z0-9_./-]` including `/`. The
+ *   finalized SEP file was **never updated** after spec integration.
+ * - **Integrated spec** ([PR #1603](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1603),
+ *   Oct 2025) landed different prose in draft, then **2025-11-25** `#tool-names`:
+ *   1–128 chars, `[A-Za-z0-9_.-]` only (no `/`).
+ * - **Conformance #240** incorrectly encoded the stale SEP markdown (64 + `/`,
+ *   FAILURE severity). This suite follows the integrated spec diff per AGENTS.md;
+ *   see `tools.ts` block comment and `specReferences` (core URLs first, SEP links
+ *   context-only). There is intentionally **no `sep-986.yaml`** traceability row.
+ *
+ * Naming the fixture after the SEP would imply traceability we deliberately
+ * declined — and would obscure that the SEP artifact and published spec diverged.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -20,7 +36,7 @@ import express from 'express';
 
 function createServer() {
   const server = new Server(
-    { name: 'sep-986-invalid-tool-names', version: '1.0.0' },
+    { name: 'invalid-tool-names', version: '1.0.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -70,6 +86,6 @@ app.post('/mcp', async (req, res) => {
 const PORT = parseInt(process.env.PORT || '3009', 10);
 app.listen(PORT, '127.0.0.1', () => {
   console.log(
-    `SEP-986 negative test server running on http://localhost:${PORT}/mcp`
+    `Invalid tool names negative test server running on http://localhost:${PORT}/mcp`
   );
 });

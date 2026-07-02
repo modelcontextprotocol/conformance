@@ -221,7 +221,7 @@ describe('Server scenario negative tests', () => {
       serverProcess = await startServer(
         path.join(
           process.cwd(),
-          'examples/servers/typescript/sep-986-invalid-tool-names.ts'
+          'examples/servers/typescript/invalid-tool-names.ts'
         ),
         PORT
       );
