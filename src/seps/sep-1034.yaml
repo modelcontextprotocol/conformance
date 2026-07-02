@@ -1,0 +1,86 @@
+# SEP-1034: Default values for elicitation schemas (SEP issue #1034; spec
+# changes landed via PR #1035). Part of the released 2025-11-25 spec version.
+# Requirement text is quoted verbatim from the released page
+# (docs/specification/2025-11-25/client/elicitation.mdx); the spec_url pins
+# the 2025-11-25 version, never /draft/.
+#
+# Attribution: sentences were attributed to this SEP by diffing the released
+# page against its 2025-06-18 version. That page co-locates SEP-1036 (URL
+# mode elicitation) and SEP-1330 (enum schema redesign) changes — those
+# sentences are claimed by sep-1036.yaml or left to a sep-1330 backfill and
+# deliberately produce no rows here. Per the 2025-11-25 changelog ("Add
+# support for default values in all primitive types (string, number, enum)
+# for elicitation schemas"), SEP-1034's entire contribution to the page is
+# the two-sentence paragraph that closes the "Requested Schema" section,
+# plus the non-normative `default` lines added to the String, Number, and
+# Enum schema example blocks (the Boolean example's `default: false` already
+# existed in 2025-06-18). The example code blocks produce no rows.
+#
+# Check IDs: scenarios for this SEP already exist but predate the
+# sep-NNNN-<slug> ID convention: src/scenarios/server/elicitation-defaults.ts
+# (server suite — the harness drives the server under test) emits
+# elicitation-sep1034-*, and src/scenarios/client/elicitation-defaults.ts
+# (client suite — the harness drives the client under test) emits
+# client-elicitation-sep1034-*. The rows below point at those real emitted
+# IDs rather than inventing untested sep-1034-* aliases. Caveat: the
+# traceability manifest's emitted-ID collector only recognizes sep-NNNN-*
+# prefixed IDs (CHECK_ID_RE in src/traceability/index.ts), so these rows
+# will report as `untested` until the scenario IDs are renamed to sep-1034-*
+# or the collector is extended — flagged as a follow-up in the PR; scenario
+# files are out of scope here.
+sep: 1034
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#requested-schema
+requirements:
+  # ── Servers: primitive schemas carry optional `default` values ────────────
+  # Severity ruling (proposed — pending maintainer sign-off): the sentence is
+  # keyword-less (indicative mood), but it is the definitional wire contract
+  # this SEP adds — `default` is a legal, meaningful member of every
+  # primitive schema type — and it is wire-observable (the harness, acting
+  # as the client, inspects the requestedSchema the server sends). Proposed
+  # as check: rows at FAILURE severity, matching what the existing scenario
+  # emits, per the sep-1303 precedent for keyword-less operative sentences.
+  # One row per primitive type, mirroring how the existing scenario
+  # decomposes the sentence into independently verifiable checks (sep-2663
+  # precedent for splitting one sentence); the parenthetical suffixes are
+  # annotations, not spec text. The boolean row is a regression check —
+  # boolean `default` predates this SEP — kept because the scenario emits it
+  # under this SEP's banner.
+  - check: elicitation-sep1034-string-default
+    text: 'All primitive types support optional default values to provide sensible starting points. (string schema `default`)'
+  - check: elicitation-sep1034-integer-default
+    text: 'All primitive types support optional default values to provide sensible starting points. (integer schema `default`)'
+  - check: elicitation-sep1034-number-default
+    text: 'All primitive types support optional default values to provide sensible starting points. (number schema `default`)'
+  - check: elicitation-sep1034-enum-default
+    text: 'All primitive types support optional default values to provide sensible starting points. (enum schema `default`, and the default is a member of the enum)'
+  - check: elicitation-sep1034-boolean-default
+    text: 'All primitive types support optional default values to provide sensible starting points. (boolean schema `default`)'
+
+  # ── Clients: pre-populate form fields with defaults ───────────────────────
+  # SHOULD → WARNING severity per AGENTS.md. Form pre-population is UI
+  # behavior, but the existing scenario observes it via a wire proxy: the
+  # mock server sends a requestedSchema in which every field is optional and
+  # has a default, the elicitation message asks the user to accept with
+  # defaults, and the checks assert the accepted content carries a value for
+  # every field — a client that drops defaults returns empty content and
+  # fails. The governing sentence is conditional ("Clients that support
+  # defaults"), so the checks only meaningfully apply to clients claiming
+  # default support. Note: the scenario currently emits these checks at
+  # FAILURE; aligning to WARNING per the SHOULD keyword is flagged as a
+  # follow-up in the PR.
+  - check: client-elicitation-sep1034-string-default
+    text: 'Clients that support defaults SHOULD pre-populate form fields with these values. (string field)'
+  - check: client-elicitation-sep1034-integer-default
+    text: 'Clients that support defaults SHOULD pre-populate form fields with these values. (integer field)'
+  - check: client-elicitation-sep1034-number-default
+    text: 'Clients that support defaults SHOULD pre-populate form fields with these values. (number field)'
+  - check: client-elicitation-sep1034-enum-default
+    text: 'Clients that support defaults SHOULD pre-populate form fields with these values. (enum field)'
+  - check: client-elicitation-sep1034-boolean-default
+    text: 'Clients that support defaults SHOULD pre-populate form fields with these values. (boolean field)'
+
+  # Scenario flow gates (elicitation-sep1034-general,
+  # client-elicitation-sep1034-general) intentionally have no rows here:
+  # they gate the end-to-end flow (elicitation requested / accepted) rather
+  # than anchoring to a normative sentence — same convention as the
+  # sep-2322.yaml / sep-2663.yaml flow-gate comment blocks.
