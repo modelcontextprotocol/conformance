@@ -1,0 +1,102 @@
+# SEP-1699: Support polling SSE streams by allowing servers to disconnect at
+# will (SEP issue #1699). Part of the released 2025-11-25 spec version, which
+# also folds in the follow-up clarification of Issue #1847 ("GET streams
+# support polling, resumption always via GET regardless of stream origin,
+# event IDs should encode stream identity, disconnection includes
+# server-initiated closure") — the changelog labels #1847 "Clarify SEP-1699",
+# so its sentences are traced here too. Requirement text is quoted from the
+# released page (docs/specification/2025-11-25/basic/transports.mdx), not the
+# draft, so every URL pins the 2025-11-25 version.
+#
+# Sentences were attributed to this SEP by diffing the released page against
+# its 2025-06-18 version. The co-located changes on the same page belong to
+# other changelog entries and are skipped here: stdio stderr logging
+# (PR #670), Origin-header 403 (PR #1439), MCP-Session-Id header casing and
+# the session-hijacking security link, and the backwards-compatibility 400
+# status addition.
+#
+# Diff-attributed SEP-1699 sentences that deliberately produce no row:
+# - 'After the server has sent an SSE event with an event ID to the client,
+#   the server MAY close the connection (without terminating the SSE stream)
+#   at any time in order to avoid holding a long-lived connection.' — MAY;
+#   quoted below only as the antecedent of the client-side SHOULD it governs.
+# - 'The server MAY terminate the SSE stream if the session expires.' — MAY.
+#   This is the SEP's core permission change: it replaces 2025-06-18's 'The
+#   server SHOULD NOT close the SSE stream before sending the JSON-RPC
+#   response for the received JSON-RPC request, unless the session expires.'
+#   The old SHOULD NOT was deleted, so there is no obligation left to trace.
+# - 'The SSE stream SHOULD eventually include a JSON-RPC response for the
+#   JSON-RPC request sent in the POST body.' — pre-existing 2025-06-18
+#   requirement; the diff only inserts the article "a". Not SEP-1699.
+# - 'After the JSON-RPC response has been sent, the server SHOULD terminate
+#   the SSE stream.' — pre-existing 2025-06-18 obligation ("close" →
+#   "terminate"); SEP-1699 only renamed the verb to fit its new
+#   connection-vs-stream terminology. Not a new requirement.
+sep: 1699
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+requirements:
+  # ── POST SSE streams (Sending Messages to the Server) ────────────────────
+  # The four rows below are covered by existing scenarios:
+  # server checks by src/scenarios/server/sse-polling.ts, client checks by
+  # src/scenarios/client/sse-retry.ts (both pre-date this yaml, so their
+  # check IDs are not sep-1699-prefixed — the wif-* IDs of sep-1933.yaml are
+  # the precedent for pointing at real emitted IDs).
+  - check: server-sse-priming-event
+    text: 'If the server initiates an SSE stream: The server SHOULD immediately send an SSE event consisting of an event ID and an empty `data` field in order to prime the client to reconnect (using that event ID as `Last-Event-ID`).'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+
+  # The first sentence is the MAY antecedent (no obligation); the check
+  # targets the client-side SHOULD that follows from it.
+  - check: client-sse-graceful-reconnect
+    text: 'After the server has sent an SSE event with an event ID to the client, the server MAY close the connection (without terminating the SSE stream) at any time in order to avoid holding a long-lived connection. The client SHOULD then "poll" the SSE stream by attempting to reconnect.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+
+  - check: server-sse-retry-field
+    text: 'If the server does close the connection prior to terminating the SSE stream, it SHOULD send an SSE event with a standard `retry` field before closing the connection.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+
+  - check: client-sse-retry-timing
+    text: 'The client MUST respect the `retry` field, waiting the given number of milliseconds before attempting to reconnect.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+
+  # ── GET SSE streams (Listening for Messages from the Server) ─────────────
+  # Gap: no scenario exercises polling on a GET-initiated stream —
+  # sse-polling.ts only drives a POST stream (its GET is the resumption leg).
+  # Testing this needs an everything-server fixture that closes the
+  # connection of a standalone GET stream without terminating it; the harness
+  # would then assert a `retry` field was sent and that reconnection resumes
+  # the stream.
+  - check: sep-1699-get-stream-polling
+    text: 'If the server closes the connection without terminating the stream, it SHOULD follow the same polling behavior as described for POST requests: sending a `retry` field and allowing the client to reconnect.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#listening-for-messages-from-the-server
+
+  # ── Resumability and Redelivery ───────────────────────────────────────────
+  # Reworded by #1847 from 2025-06-18's 'If the client wishes to resume after
+  # a broken connection…' — the SEP-1699 delta is that server-initiated
+  # closure now also counts as a resumable disconnection, which is exactly
+  # what sse-retry.ts exercises (mock server closes the stream, then asserts
+  # the client's GET carries `Last-Event-ID`).
+  - check: client-sse-last-event-id
+    text: 'If the client wishes to resume after a disconnection (whether due to network failure or server-initiated closure), it SHOULD issue an HTTP GET to the MCP endpoint, and include the `Last-Event-ID` header to indicate the last event ID it received.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#resumability-and-redelivery
+
+  # Severity ruling (proposed — pending maintainer sign-off): keyword-less
+  # operative sentence, proposed as a check rather than dropped because it is
+  # the wire contract #1847 pins down (a server must accept HTTP GET +
+  # `Last-Event-ID` as the resumption path even for a POST-initiated stream).
+  # sse-polling.ts covers the POST-initiated half: it resumes the
+  # test_reconnection POST stream via GET + Last-Event-ID and asserts the
+  # response arrives on the new stream.
+  - check: server-sse-disconnect-resume
+    text: 'This mechanism applies regardless of how the original stream was initiated (via POST or GET). Resumption is always via HTTP GET with `Last-Event-ID`.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#resumability-and-redelivery
+
+  # Event-ID contents are opaque on the wire — the harness cannot verify what
+  # information an ID "encodes". The observable consequence (the server
+  # correlates `Last-Event-ID` to the correct stream on resume) is covered by
+  # server-sse-disconnect-resume above plus the pre-existing per-stream
+  # replay requirement ('The server MUST NOT replay messages that would have
+  # been delivered on a different stream.', unchanged from 2025-06-18).
+  - text: 'Event IDs SHOULD encode sufficient information to identify the originating stream, enabling the server to correlate a `Last-Event-ID` to the correct stream.'
+    excluded: 'event-ID contents are opaque to the harness; only the downstream correlation behavior is wire-observable and is traced via server-sse-disconnect-resume'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#resumability-and-redelivery
