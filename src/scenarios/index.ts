@@ -118,6 +118,7 @@ import {
   HttpInvalidToolHeadersScenario
 } from './client/http-custom-headers';
 import { JsonSchemaRefDerefScenario } from './client/json-schema-ref-deref';
+import { TasksClientScenario } from './client/tasks-client';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -311,7 +312,10 @@ const scenariosList: Scenario[] = [
   new HttpInvalidToolHeadersScenario(),
 
   // JSON Schema network $ref dereferencing (SEP-2106)
-  new JsonSchemaRefDerefScenario()
+  new JsonSchemaRefDerefScenario(),
+
+  // SEP-2663 Tasks extension — client-side (issue #374)
+  new TasksClientScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -370,8 +374,15 @@ export function listCoreScenarios(): string[] {
   return coreScenariosList.map((scenario) => scenario.name);
 }
 
+// All client-testing scenarios sourced from a protocol extension, derived
+// from the declared `source.extensionId` rather than a hand-maintained list
+// (covers the auth extension scenarios and e.g. the SEP-2663 tasks one).
+const extensionSpecScenariosList: Scenario[] = scenariosList.filter(
+  (scenario) => 'extensionId' in scenario.source
+);
+
 export function listExtensionScenarios(): string[] {
-  return extensionScenariosList.map((scenario) => scenario.name);
+  return extensionSpecScenariosList.map((scenario) => scenario.name);
 }
 
 export function listBackcompatScenarios(): string[] {

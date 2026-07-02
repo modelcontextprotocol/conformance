@@ -998,6 +998,141 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
 registerScenario('sep-2322-client-request-state', runMRTRClient);
 
 // ============================================================================
+// Tasks extension client conformance (SEP-2663, issue #374)
+// ============================================================================
+
+const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
+
+async function runTasksClient(serverUrl: string): Promise<void> {
+  let nextId = 1;
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function sendRpc(
+    method: string,
+    params: Record<string, unknown> = {}
+  ): Promise<{
+    result?: Record<string, unknown>;
+    error?: { code: number; message: string };
+  }> {
+    // Declare the tasks extension per-request (stateless-style negotiation).
+    const _meta = {
+      'io.modelcontextprotocol/clientCapabilities': {
+        extensions: { [TASKS_EXTENSION_ID]: {} }
+      },
+      ...((params._meta as object | undefined) ?? {})
+    };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Method': method
+    };
+    // SEP-2663 routing headers: Mcp-Name carries params.taskId on the
+    // tasks-namespace methods.
+    if (
+      ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(method) &&
+      typeof params.taskId === 'string'
+    ) {
+      headers['Mcp-Name'] = params.taskId;
+    }
+    const resp = await fetch(serverUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: nextId++,
+        method,
+        params: { ...params, _meta }
+      })
+    });
+    if (resp.status === 202 || resp.status === 204) return { result: {} };
+    return (await resp.json()) as {
+      result?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
+  }
+
+  /** Poll tasks/get, honoring pollIntervalMs, until a terminal status. */
+  async function pollUntilTerminal(
+    taskId: string,
+    pollIntervalMs: number
+  ): Promise<Record<string, unknown>> {
+    let interval = pollIntervalMs;
+    for (let i = 0; i < 20; i++) {
+      await sleep(interval);
+      const { result, error } = await sendRpc('tasks/get', { taskId });
+      if (error) throw new Error(`tasks/get failed: ${error.message}`);
+      const task = result as Record<string, unknown>;
+      if (
+        ['completed', 'failed', 'cancelled'].includes(task.status as string)
+      ) {
+        return task;
+      }
+      if (typeof task.pollIntervalMs === 'number') {
+        interval = task.pollIntervalMs;
+      }
+    }
+    throw new Error(`task ${taskId} never reached a terminal status`);
+  }
+
+  // Step 2: list tools.
+  await sendRpc('tools/list');
+
+  // Step 3: quick_task — server task-augments the call; poll to completion.
+  const quick = (await sendRpc('tools/call', { name: 'quick_task' })).result!;
+  if (quick.resultType === 'task') {
+    const terminal = await pollUntilTerminal(
+      quick.taskId as string,
+      (quick.pollIntervalMs as number) ?? 500
+    );
+    logger.debug('quick_task terminal:', terminal.status);
+  }
+
+  // Step 4: sync_echo — plain CallToolResult on the same negotiated session.
+  await sendRpc('tools/call', { name: 'sync_echo' });
+
+  // Step 5: failing_task — poll until failed; surface the error and move on.
+  const failing = (await sendRpc('tools/call', { name: 'failing_task' }))
+    .result!;
+  if (failing.resultType === 'task') {
+    const terminal = await pollUntilTerminal(
+      failing.taskId as string,
+      (failing.pollIntervalMs as number) ?? 500
+    );
+    logger.debug(
+      'failing_task terminal:',
+      terminal.status,
+      JSON.stringify(terminal.error)
+    );
+  }
+
+  // Step 6: cancel_task — cancel the running task via tasks/cancel, then
+  // observe the cancelled status with one confirming tasks/get.
+  const cancel = (await sendRpc('tools/call', { name: 'cancel_task' })).result!;
+  if (cancel.resultType === 'task') {
+    const taskId = cancel.taskId as string;
+    await sleep((cancel.pollIntervalMs as number) ?? 500);
+    await sendRpc('tasks/cancel', { taskId });
+    const confirmed = await sendRpc('tasks/get', { taskId });
+    logger.debug('cancel_task status:', confirmed.result?.status);
+  }
+
+  // Step 7: ping — the scenario deliberately answers with a CreateTaskResult.
+  // Task augmentation is not supported for ping, so treat the response as
+  // invalid: log it and do NOT drive the tasks surface for that taskId.
+  const pong = await sendRpc('ping');
+  if (pong.result?.resultType === 'task') {
+    logger.debug(
+      'ping returned CreateTaskResult — invalid response for an unsupported request type; ignoring'
+    );
+  }
+
+  logger.debug('tasks-client-lifecycle scenario completed');
+}
+
+registerScenario('tasks-client-lifecycle', runTasksClient);
+
+// ============================================================================
 // WIF JWT-bearer scenario
 // ============================================================================
 

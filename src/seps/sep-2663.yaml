@@ -99,6 +99,16 @@ requirements:
   - check: sep-2663-no-progress-or-message-on-task-stream
     text: 'notifications/progress and notifications/message notifications MUST NOT be sent on the subscriptions/listen stream for a task, and are not supported on tasks in general in this specification.'
 
+  # ── Task Polling (client) ─────────────────────────────────────────────────
+  # Previously excluded as "not a wire-level conformance signal"; issue #374
+  # asked for client-side pollIntervalMs coverage, and the interval between
+  # consecutive tasks/get POSTs for the same task is observable on the wire.
+  # The tasks-client-lifecycle scenario gates it on the early side only (a
+  # poll arriving before pollIntervalMs has elapsed), so slow CI cannot
+  # flake it — same approach as the sse-retry timing check.
+  - check: sep-2663-client-honors-poll-interval
+    text: 'Clients SHOULD respect the pollIntervalMs provided in responses when determining polling frequency.'
+
   # ── Streamable HTTP: Routing Headers ──────────────────────────────────────
   - check: sep-2663-client-emits-mcp-name-on-tasks-methods
     text: 'When tasks/get, tasks/update, or tasks/cancel is sent over the Streamable HTTP transport, the client MUST set the Mcp-Name header (defined by SEP-2243) to the value of params.taskId.'
@@ -155,6 +165,9 @@ requirements:
   # tasks-cancel-terminal-idempotent-ack, tasks-mrtr-tasks-update-resumes,
   # tasks-mrtr-partial-fulfillment, tasks-server-directed-creation-no-hint,
   # tasks-result-type-complete-on-non-task-responses, tasks-removed-tasks-list,
+  # the client-suite flow-gates tasks-client-extension-declared and
+  # tasks-client-terminal-failed-surfaced in
+  # src/scenarios/client/tasks-client.ts,
   # plus the ephemeral mrtr-* flow-gates in src/scenarios/server/mrtr/).
   # These verify end-to-end flow invariants rather than a specific normative
   # sentence, so they surface in the traceability manifest's `untracked`
@@ -165,9 +178,6 @@ requirements:
 
   - text: 'implementations SHOULD be designed to accommodate additional request types in future revisions of this specification.'
     excluded: 'Architectural design guidance, not observable at the protocol level'
-
-  - text: 'Clients SHOULD respect the pollIntervalMs provided in responses when determining polling frequency.'
-    excluded: 'Client-internal polling cadence; the rate at which a client polls is not a wire-level conformance signal'
 
   - text: 'Clients SHOULD continue polling until the task reaches a terminal status or until invoking tasks/cancel.'
     excluded: 'Internal client behavior with no observable violation at the protocol level'
