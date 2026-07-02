@@ -239,6 +239,12 @@ describe('Server scenario negative tests', () => {
 
       const formatCheck = checks.find((c) => c.id === 'tools-name-format');
       expect(formatCheck?.status).toBe('WARNING');
+      expect(formatCheck?.errorMessage).toContain('bad tool name');
+      expect(formatCheck?.details).toMatchObject({
+        results: expect.objectContaining({
+          'bad tool name': expect.stringMatching(/invalid:/)
+        })
+      });
     }, 10000);
   });
 
