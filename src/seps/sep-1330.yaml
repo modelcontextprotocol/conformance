@@ -1,0 +1,95 @@
+# SEP-1330: ElicitResult and EnumSchema redesign (SEP issue #1330). Part of
+# the released 2025-11-25 spec version — the changelog entry reads: "Update
+# `ElicitResult` and `EnumSchema` to use a more standards-based approach and
+# support titled, untitled, single-select, and multi-select enums".
+#
+# Attribution: sentences were assigned to this SEP by diffing the released
+# elicitation page (docs/specification/2025-11-25/client/elicitation.mdx)
+# against the 2025-06-18 version. The page co-locates three SEPs: every RFC
+# 2119 keyword sentence in the diff belongs to SEP-1036 (URL mode / mode
+# negotiation — see sep-1036.yaml) or SEP-1034 (default values, including the
+# `default` members inside the enum examples and the "Clients that support
+# defaults SHOULD pre-populate form fields" sentence — see sep-1034.yaml).
+# SEP-1330's page delta is keyword-less: the Enum Schema subsection rewrite
+# (four variants replacing the 2025-06-18 `enum` + `enumNames` example) plus
+# the "(beyond enums)" carve-out. The ElicitResult half of the SEP has no
+# prose on the elicitation page at all — it lives in the Schema Reference
+# (content values gained `string[]` for multi-select submissions).
+#
+# Severity ruling (proposed — pending maintainer sign-off): treat the
+# keyword-less rows below as MUST-equivalent → FAILURE, because the enum
+# variant shapes and the ElicitResult content type are the definitional wire
+# contract this SEP establishes (same precedent as sep-1303's error-taxonomy
+# rows).
+#
+# Check IDs: rows 1–5 point at the IDs actually emitted by the existing
+# scenario src/scenarios/server/elicitation-enums.ts (they predate this yaml,
+# hence the elicitation-sep1330-* prefix rather than sep-1330-*). That
+# scenario also emits a failure-only gate ID, elicitation-sep1330-general,
+# which is deliberately not a requirement row (scenario gates stay in the
+# manifest's `untracked` bucket).
+#
+# In the quoted enum examples below, "…" elides the `title`, `description`,
+# and `default` members: title/description are unchanged decoration and the
+# `default` members belong to SEP-1034 (claimed there, not here).
+sep: 1330
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#requested-schema
+requirements:
+  # ── Enum Schema variants (form mode `requestedSchema`) ────────────────────
+  # The four rows below quote the Enum Schema item of "The schema is
+  # restricted to these primitive types:" — the shapes are given as JSON
+  # examples, flattened here per the table/example-flattening style used in
+  # sep-1036.yaml. The corresponding Schema Reference types are
+  # UntitledSingleSelectEnumSchema, TitledSingleSelectEnumSchema,
+  # UntitledMultiSelectEnumSchema, and TitledMultiSelectEnumSchema.
+  - check: elicitation-sep1330-untitled-single
+    text: 'The schema is restricted to these primitive types: 4. Enum Schema — Single-select enum (without titles): { "type": "string", …, "enum": ["Red", "Green", "Blue"], … }'
+
+  - check: elicitation-sep1330-titled-single
+    text: 'The schema is restricted to these primitive types: 4. Enum Schema — Single-select enum (with titles): { "type": "string", …, "oneOf": [ { "const": "#FF0000", "title": "Red" }, { "const": "#00FF00", "title": "Green" }, { "const": "#0000FF", "title": "Blue" } ], … }'
+
+  - check: elicitation-sep1330-untitled-multi
+    text: 'The schema is restricted to these primitive types: 4. Enum Schema — Multi-select enum (without titles): { "type": "array", …, "minItems": 1, "maxItems": 2, "items": { "type": "string", "enum": ["Red", "Green", "Blue"] }, … }'
+
+  - check: elicitation-sep1330-titled-multi
+    text: 'The schema is restricted to these primitive types: 4. Enum Schema — Multi-select enum (with titles): { "type": "array", …, "minItems": 1, "maxItems": 2, "items": { "anyOf": [ { "const": "#FF0000", "title": "Red" }, { "const": "#00FF00", "title": "Green" }, { "const": "#0000FF", "title": "Blue" } ] }, … }'
+
+  # ── Legacy titled enum (backwards compatibility) ──────────────────────────
+  # The released elicitation page dropped 2025-06-18's `enumNames` example
+  # entirely; the legacy shape survives only as the deprecated
+  # LegacyTitledEnumSchema in the Schema Reference (quoted below). The check
+  # asserts a server can still emit a well-formed legacy titled enum
+  # (`enumNames` parallel to `enum`) during the deprecation window.
+  - check: elicitation-sep1330-legacy-enumnames
+    text: 'LegacyTitledEnumSchema — Use TitledSingleSelectEnumSchema instead. This interface will be removed in a future version. / enumNames?: string[] — (Legacy) Display names for enum values. Non-standard according to JSON schema 2020-12.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/schema#legacytitledenumschema
+
+  # ── ElicitResult content redesign ─────────────────────────────────────────
+  # Gap — untested: this is the ElicitResult half of the SEP. In 2025-06-18
+  # the content values were `string | number | boolean`; 2025-11-25 adds
+  # `string[]` so multi-select submissions can be returned. Wire-observable
+  # on the server suite: the harness-as-client returns array-valued content
+  # for the multi-select fields and asserts the server accepts it (the
+  # originating tools/call completes without error). The existing
+  # elicitation-sep1330-enums scenario already replies with array content but
+  # emits no check for the acceptance — fold this assertion into that
+  # scenario rather than adding a new one. The "only present when action is
+  # accept and mode was form" conditionality in the surrounding prose is
+  # SEP-1036's mode split, not claimed here.
+  - check: sep-1330-elicit-result-array-content
+    text: 'content?: { [key: string]: string | number | boolean | string[] } — The submitted form data … Contains values matching the requested schema.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/schema#elicitresult
+  # ── Dispositioned without rows (deliberate skips) ─────────────────────────
+  # - "Note that complex nested structures, arrays of objects (beyond enums),
+  #   and other advanced JSON Schema features are intentionally not supported
+  #   to simplify client user experience." — the base restriction predates
+  #   this SEP (2025-06-18: "arrays of objects"); SEP-1330's delta is only
+  #   the "(beyond enums)" carve-out, whose operative content (enum option
+  #   arrays are permitted) is covered by the two multi-select check rows
+  #   above. Keyword-less and framed as design rationale, so no row.
+  # - "To simplify client user experience, form mode elicitation schemas are
+  #   limited to flat objects with primitive properties only." — reworded
+  #   from 2025-06-18 ("To simplify implementation for clients, elicitation
+  #   schemas are limited to flat objects with primitive properties only");
+  #   no new obligation from this SEP (the "form mode" qualifier is
+  #   SEP-1036's), so no row.
