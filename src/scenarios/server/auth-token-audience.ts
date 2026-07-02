@@ -151,7 +151,9 @@ export async function startMockAuthorizationServer(
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, () => {
+    // Loopback only: the mock AS serves the local server-under-test and
+    // must not be reachable from other hosts.
+    server.listen(port, '127.0.0.1', () => {
       server.removeListener('error', reject);
       resolve();
     });
@@ -285,9 +287,11 @@ const CHECKS: Record<string, CheckDefinition> = {
     id: 'auth-valid-audience-token-accepted',
     name: 'ValidAudienceTokenAccepted',
     description:
-      'Server accepts a valid access token issued for it as the intended ' +
-      'audience ("MCP servers, acting in their role as an OAuth 2.1 resource ' +
-      'server, MUST validate access tokens")',
+      'Server accepts a baseline valid access token (trusted signature, its ' +
+      'own canonical URI as audience, unexpired) — the control that shows ' +
+      'the rejection checks below reflect targeted validation per "MCP ' +
+      'servers, acting in their role as an OAuth 2.1 resource server, MUST ' +
+      'validate access tokens", not blanket rejection',
     specReferences: [SPEC_REFERENCES.tokenHandling, SPEC_REFERENCES.rfc8707]
   },
   wrongAudience: {
@@ -355,11 +359,11 @@ export class TokenAudienceValidationScenario implements ClientScenario {
 2. expect its own URL — exactly the \`--url\` passed to the conformance CLI — as the token audience, and
 3. not require particular scopes for \`initialize\` / \`server/discover\`.
 
-The reference fixture is \`examples/servers/typescript/everything-server.ts\` launched with \`MCP_CONFORMANCE_AUTH_ISSUER\` (and optionally \`MCP_CONFORMANCE_AUTH_AUDIENCE\`) set.
+The reference fixture is \`examples/servers/typescript/everything-server.ts\` launched with \`MCP_CONFORMANCE_AUTH_ISSUER\` (and optionally \`MCP_CONFORMANCE_AUTH_AUDIENCE\`) set. Run this scenario as a dedicated auth-enabled launch (e.g. \`conformance server --url ... --scenario auth-token-audience-validation\`): the rest of the default suite sends no Bearer tokens, so it would fail with 401s against an auth-enabled server.
 
 **Checks (all MUST-level):**
 1. Request without a token is rejected with HTTP 401
-2. Valid token (trusted signature, correct \`aud\`, unexpired) is accepted
+2. Valid token (trusted signature, correct \`aud\`, unexpired) is accepted — the baseline that makes checks 3-6 meaningful
 3. Token with a different resource in \`aud\` is rejected with HTTP 401
 4. Token with no \`aud\` claim is rejected with HTTP 401
 5. Expired token is rejected with HTTP 401
@@ -409,6 +413,25 @@ If the baseline valid token (check 2) is rejected, checks 3-6 cannot distinguish
       }));
     }
 
+    // Only an authorization challenge (401, or 403 for servers that
+    // misreport the missing-token case) shows authorization is enabled.
+    // Any other non-2xx status means the probe failed for unrelated
+    // reasons (wrong URL, server error, ...) and nothing can be concluded.
+    if (unauthenticated.status !== 401 && unauthenticated.status !== 403) {
+      return Object.values(CHECKS).map((def) =>
+        untestableCheck(
+          def.id,
+          def.name,
+          def.description,
+          `the unauthenticated probe returned HTTP ` +
+            `${unauthenticated.status}; expected 2xx (authorization not ` +
+            `enabled) or an authorization challenge (401/403), so it cannot ` +
+            `be determined whether authorization is enabled`,
+          def.specReferences
+        )
+      );
+    }
+
     checks.push({
       ...CHECKS.unauthenticated,
       status: unauthenticated.status === 401 ? 'SUCCESS' : 'FAILURE',
@@ -424,9 +447,19 @@ If the baseline valid token (check 2) is rejected, checks 3-6 cannot distinguish
       }
     });
 
-    const port =
-      parseInt(process.env.MCP_CONFORMANCE_AUTH_SERVER_PORT ?? '', 10) ||
-      DEFAULT_MOCK_AUTH_SERVER_PORT;
+    let port = DEFAULT_MOCK_AUTH_SERVER_PORT;
+    const portEnv = process.env.MCP_CONFORMANCE_AUTH_SERVER_PORT;
+    if (portEnv !== undefined && portEnv !== '') {
+      const parsed = Number(portEnv);
+      if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) {
+        port = parsed;
+      } else {
+        console.warn(
+          `Ignoring MCP_CONFORMANCE_AUTH_SERVER_PORT="${portEnv}" (not a ` +
+            `valid port); using default port ${DEFAULT_MOCK_AUTH_SERVER_PORT}.`
+        );
+      }
+    }
 
     let mockAs: MockAuthorizationServer;
     try {
@@ -450,12 +483,22 @@ If the baseline valid token (check 2) is rejected, checks 3-6 cannot distinguish
     }
 
     try {
-      // Baseline: a token the server MUST accept — trusted signature,
-      // this server's canonical URI as audience, unexpired.
+      // Baseline: a valid token — trusted signature, this server's canonical
+      // URI as audience, unexpired. Its acceptance is what makes the
+      // rejection checks below evidence of targeted validation rather than
+      // blanket rejection.
       const validToken = await mockAs.signToken({ audience: serverUrl });
-      const validResponse = await sendProbe(serverUrl, specVersion, validToken);
+      let validResponse: ProbeResponse | undefined;
+      let validProbeError: unknown;
+      try {
+        validResponse = await sendProbe(serverUrl, specVersion, validToken);
+      } catch (error) {
+        validProbeError = error;
+      }
       const accepted =
-        validResponse.status >= 200 && validResponse.status < 300;
+        validResponse !== undefined &&
+        validResponse.status >= 200 &&
+        validResponse.status < 300;
 
       checks.push({
         ...CHECKS.validAccepted,
@@ -463,17 +506,23 @@ If the baseline valid token (check 2) is rejected, checks 3-6 cannot distinguish
         timestamp: timestamp(),
         ...(!accepted && {
           errorMessage:
-            `Server rejected a valid access token (HTTP ` +
-            `${validResponse.status}) issued by ${mockAs.issuer} with ` +
-            `aud="${serverUrl}". If the server is not configured to trust ` +
-            `the conformance mock authorization server, see the scenario ` +
-            `description for the setup contract.`
+            validResponse === undefined
+              ? `Request with the baseline valid token failed: ${
+                  validProbeError instanceof Error
+                    ? validProbeError.message
+                    : String(validProbeError)
+                }`
+              : `Server rejected a valid access token (HTTP ` +
+                `${validResponse.status}) issued by ${mockAs.issuer} with ` +
+                `aud="${serverUrl}". If the server is not configured to ` +
+                `trust the conformance mock authorization server, see the ` +
+                `scenario description for the setup contract.`
         }),
         details: {
-          statusCode: validResponse.status,
+          statusCode: validResponse?.status,
           issuer: mockAs.issuer,
           audience: serverUrl,
-          wwwAuthenticate: validResponse.wwwAuthenticate
+          wwwAuthenticate: validResponse?.wwwAuthenticate
         }
       });
 
@@ -537,7 +586,23 @@ If the baseline valid token (check 2) is rejected, checks 3-6 cannot distinguish
 
       for (const { key, token, tokenDescription } of rejectionCases) {
         const def = CHECKS[key];
-        const response = await sendProbe(serverUrl, specVersion, token);
+        let response: ProbeResponse;
+        try {
+          response = await sendProbe(serverUrl, specVersion, token);
+        } catch (error) {
+          // A timeout or connection reset on one probe must not throw away
+          // the checks already collected (mirrors the DNS-rebinding pattern).
+          checks.push({
+            ...def,
+            status: 'FAILURE',
+            timestamp: timestamp(),
+            errorMessage: `Request with a ${tokenDescription} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            details: { token: tokenDescription }
+          });
+          continue;
+        }
         const rejectedWith401 = response.status === 401;
 
         checks.push({

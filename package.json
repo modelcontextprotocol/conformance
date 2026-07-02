@@ -40,6 +40,7 @@
     "cors": "^2.8.5",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
+    "express-rate-limit": "^8.5.2",
     "lefthook": "^2.1.6",
     "prettier": "^3.8.3",
     "tsdown": "^0.21.10",

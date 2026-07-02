@@ -1260,9 +1260,11 @@ if (AUTH_ISSUER) {
 
   app.use('/mcp', async (req, res, next) => {
     const unauthorized = (description: string) => {
+      // Strip characters that would break out of the quoted-string.
+      const sanitized = description.replace(/["\r\n]/g, '');
       res.set(
         'WWW-Authenticate',
-        `Bearer error="invalid_token", error_description="${description}"`
+        `Bearer error="invalid_token", error_description="${sanitized}"`
       );
       res.status(401).json({
         jsonrpc: '2.0',

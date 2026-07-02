@@ -78,11 +78,13 @@ app.use('/mcp', async (req, res, next) => {
     });
     return next();
   } catch (error) {
+    // Strip characters that would break out of the quoted-string.
+    const description = (
+      error instanceof Error ? error.message : 'invalid'
+    ).replace(/["\r\n]/g, '');
     res.set(
       'WWW-Authenticate',
-      `Bearer error="invalid_token", error_description="${
-        error instanceof Error ? error.message : 'invalid'
-      }"`
+      `Bearer error="invalid_token", error_description="${description}"`
     );
     return res.status(401).json({
       jsonrpc: '2.0',
