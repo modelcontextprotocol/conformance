@@ -66,6 +66,7 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { TokenAudienceValidationScenario } from './server/auth-token-audience';
 import { CachingScenario } from './server/caching';
 
 // InputRequiredResult scenarios from (SEP-2322)
@@ -209,6 +210,10 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
+
+  // Token audience validation (issue #78). SKIPs unless the server under
+  // test has authorization enabled (see the scenario description).
+  new TokenAudienceValidationScenario(),
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),

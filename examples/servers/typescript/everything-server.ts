@@ -36,6 +36,7 @@ import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-sc
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { randomUUID, createHmac } from 'crypto';
 
 // Server state
@@ -1224,6 +1225,76 @@ app.use(
     allowedHeaders: ['Content-Type', 'mcp-session-id', 'last-event-id']
   })
 );
+
+// --- Opt-in OAuth 2.1 resource-server mode (auth-token-audience-validation
+// scenario, issue #78). When MCP_CONFORMANCE_AUTH_ISSUER is set, every /mcp
+// request must carry a Bearer JWT signed by that issuer's JWKS key, issued by
+// that issuer, unexpired, and audience-bound to this server's canonical URI
+// (MCP_CONFORMANCE_AUTH_AUDIENCE, defaulting to this server's own /mcp URL).
+// When the env var is unset — every other conformance run — this block is
+// inert and the server remains unauthenticated.
+const AUTH_ISSUER = process.env.MCP_CONFORMANCE_AUTH_ISSUER;
+if (AUTH_ISSUER) {
+  const expectedAudience =
+    process.env.MCP_CONFORMANCE_AUTH_AUDIENCE ??
+    `http://localhost:${process.env.PORT || 3000}/mcp`;
+  // Constructed lazily so the conformance suite's mock authorization server
+  // only needs to be running when the first token arrives, not at startup.
+  let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
+
+  app.use('/mcp', async (req, res, next) => {
+    const unauthorized = (description: string) => {
+      res.set(
+        'WWW-Authenticate',
+        `Bearer error="invalid_token", error_description="${description}"`
+      );
+      res.status(401).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: `Unauthorized: ${description}` }
+      });
+    };
+
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) {
+      res.set('WWW-Authenticate', 'Bearer');
+      return res.status(401).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: 'Unauthorized: missing Bearer token' }
+      });
+    }
+
+    try {
+      if (!jwks) {
+        // Discover the JWKS location from the issuer's RFC 8414 metadata.
+        const metadataRes = await fetch(
+          `${AUTH_ISSUER}/.well-known/oauth-authorization-server`
+        );
+        if (!metadataRes.ok) {
+          throw new Error(
+            `authorization server metadata fetch failed: HTTP ${metadataRes.status}`
+          );
+        }
+        const metadata = (await metadataRes.json()) as { jwks_uri?: string };
+        if (!metadata.jwks_uri) {
+          throw new Error('authorization server metadata lacks jwks_uri');
+        }
+        jwks = createRemoteJWKSet(new URL(metadata.jwks_uri));
+      }
+      // jwtVerify enforces signature, exp, iss, and — critically for the
+      // audience-validation requirement — that `aud` contains exactly this
+      // server's canonical URI (RFC 8707 Section 2).
+      await jwtVerify(header.slice('Bearer '.length), jwks, {
+        issuer: AUTH_ISSUER,
+        audience: expectedAudience
+      });
+      return next();
+    } catch (error) {
+      return unauthorized(error instanceof Error ? error.message : 'invalid');
+    }
+  });
+}
 
 // Protocol revisions that use the initialize/session lifecycle. The
 // per-request `_meta` and header/body validation requirements apply to
