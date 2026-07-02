@@ -1,0 +1,117 @@
+# SEP-1613: JSON Schema 2020-12 as the default dialect for MCP schema
+# definitions (SEP issue #1613; spec changes landed via PR #655). Part of the
+# released 2025-11-25 spec version. Requirement text is quoted from the
+# released pages (docs/specification/2025-11-25/basic/index.mdx and
+# docs/specification/2025-11-25/server/tools.mdx), not the draft, so the
+# spec_url and every row url pin the 2025-11-25 version.
+#
+# Sentences were attributed to this SEP by diffing both released pages
+# against their 2025-06-18 versions: the whole "JSON Schema Usage" section of
+# basic/index.mdx is new in 2025-11-25 and belongs to this SEP, as do the
+# tools.mdx inputSchema/outputSchema dialect sub-bullets and the "Schema
+# Examples" section (all added by PR #655). Co-located 2025-11-25 changes on
+# the same pages belong to other SEPs and are skipped here: the JSON-RPC
+# result/error response split, the _meta prefix rework, icons (SEP-973), tool
+# names (SEP-986), task execution (SEP-1686), and the tool error taxonomy
+# (SEP-1303). PR #655 also touched docs/specification/draft/schema.mdx, but
+# the released schema.mdx is generated typedoc reference output whose
+# "Defaults to JSON Schema 2020-12 when no explicit $schema is provided" line
+# duplicates the basic-page rule, so no rows are drawn from it.
+#
+# Existing coverage: src/scenarios/server/json-schema-2020-12.ts emits
+# json-schema-2020-12-{tool-found,$schema,$defs,additionalProperties} for
+# this SEP (its sep-2106-* checks belong to SEP-2106). tool-found is a
+# fixture gate and additionalProperties is a companion keyword-preservation
+# probe; both stay untracked here rather than being force-fitted to a
+# sentence. The sep-1613-* check IDs below are declared-but-untested gaps.
+#
+# Deliberately skipped diff sentences (dispositioned here, no rows):
+# - 'The Model Context Protocol uses JSON Schema for validation throughout
+#   the protocol. This section clarifies how JSON Schema should be used
+#   within MCP messages.' — non-operative narrative lead-in.
+# - 'Default dialect: When a schema does not include a `$schema` field, it
+#   defaults to JSON Schema 2020-12' — keyword-less statement of the default
+#   rule; its normative force is the MUST sentence traced by the
+#   json-schema-2020-12-$defs row below, so it gets no separate row.
+# - 'Explicit dialect: Schemas MAY include a `$schema` field to specify a
+#   different dialect' — MAY; no row per the severity table.
+# - tools.mdx inputSchema/outputSchema sub-bullets 'Follows the JSON Schema
+#   usage guidelines' and 'Defaults to 2020-12 if no `$schema` field is
+#   present' — keyword-less cross-references restating the basic-page rules
+#   traced above.
+# - tools.mdx 'For tools with no parameters, use one of these valid
+#   approaches: `{ "type": "object", "additionalProperties": false }` /
+#   `{ "type": "object" }`' — keyword-less authoring guidance enumerating
+#   permitted forms; the operative obligation is the not-null MUST row below.
+# - tools.mdx '### Schema Examples' (default 2020-12 / explicit draft-07 /
+#   no-parameters examples) — non-normative examples.
+sep: 1613
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/basic#json-schema-usage
+requirements:
+  # Covers the MUST clause: the scenario's fixture tool declares
+  # `"$schema": "https://json-schema.org/draft/2020-12/schema"` and the check
+  # asserts the declaration survives tools/list intact rather than being
+  # stripped or rewritten. The SHOULD-document clause of the same sentence is
+  # not wire-observable and is proposed for exclusion in the row for the
+  # equivalent Implementation Requirements bullet at the bottom of this file.
+  - check: json-schema-2020-12-$schema
+    text: 'Supported dialects: Implementations MUST support at least 2020-12 and SHOULD document which additional dialects they support'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#schema-dialect
+
+  # Partial coverage: the scenario proves the server round-trips 2020-12
+  # vocabulary ($defs — a keyword that does not exist before draft 2019-09 —
+  # preserved in tools/list; the companion untracked
+  # json-schema-2020-12-additionalProperties check does the same for
+  # additionalProperties). Fixture gap: the scenario's tool declares $schema
+  # explicitly, so the "without an explicit `$schema` field" default-dialect
+  # case needs a fixture variant whose 2020-12 schema omits $schema.
+  - check: json-schema-2020-12-$defs
+    text: 'Clients and servers MUST support JSON Schema 2020-12 for schemas without an explicit `$schema` field'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#implementation-requirements
+
+  # No scenario emits this ID yet (untested). Wire-observable in principle:
+  # drive validation with a schema whose accept/reject outcome differs
+  # between its declared dialect and 2020-12 semantics (e.g. draft-07 vs
+  # 2020-12 treatment of unknown/changed keywords) and assert the declared
+  # dialect's outcome.
+  - check: sep-1613-validate-per-dialect
+    text: 'Clients and servers MUST validate schemas according to their declared or default dialect.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#implementation-requirements
+
+  # No scenario emits this ID yet (untested). Wire-observable: present a
+  # schema declaring an unsupported `$schema` dialect and assert an error
+  # response indicating the dialect is not supported (rather than a crash,
+  # silent acceptance, or silent fallback to another dialect).
+  - check: sep-1613-unsupported-dialect-error
+    text: 'They MUST handle unsupported dialects gracefully by returning an appropriate error indicating the dialect is not supported.'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#implementation-requirements
+
+  # No scenario emits this ID yet (untested). Wire-observable: validate every
+  # schema the server advertises (tool inputSchema/outputSchema, elicitation
+  # requestedSchema) against the meta-schema of its declared-or-default
+  # dialect.
+  - check: sep-1613-schema-valid-per-dialect
+    text: 'Schemas MUST be valid according to their declared or default dialect'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#schema-validation
+
+  # No scenario emits this ID yet (untested). Wire-observable via tools/list:
+  # every advertised tool's inputSchema is a JSON object (not null, not
+  # absent).
+  - check: sep-1613-input-schema-not-null
+    text: '`inputSchema`: JSON Schema defining expected parameters: MUST be a valid JSON Schema object (not `null`)'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool
+
+  # Also dispositions the SHOULD clause of the "Supported dialects" sentence
+  # traced by the json-schema-2020-12-$schema row above (same obligation,
+  # restated).
+  - text: 'Clients and servers SHOULD document which schema dialects they support'
+    excluded: 'out-of-band documentation; what an implementation documents is not observable at the protocol level'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#implementation-requirements
+  # RECOMMENDED is SHOULD-level, but declaring a different dialect is
+  # expressly permitted by the adjacent "Explicit dialect" MAY rule, and the
+  # dialect a schema uses is chosen by the server/fixture author rather than
+  # the implementation under test — a WARNING on any permitted non-2020-12
+  # declaration would flag allowed behavior without evidencing an SDK defect.
+  - text: 'Recommendation: Implementors are RECOMMENDED to use JSON Schema 2020-12.'
+    excluded: 'authoring guidance about which dialect to choose; using a different dialect is expressly permitted, so a non-2020-12 declaration is not distinguishable from permitted behavior'
+    url: https://modelcontextprotocol.io/specification/2025-11-25/basic#schema-dialect
