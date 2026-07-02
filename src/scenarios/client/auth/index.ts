@@ -25,6 +25,7 @@ import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
 import { EnterpriseManagedAuthorizationScenario } from './enterprise-managed-authorization';
 import { WifJwtBearerScenario } from './wif-jwt-bearer';
+import { DPoPClientScenario } from './dpop';
 import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
@@ -81,5 +82,6 @@ export const draftScenariosList: Scenario[] = [
   new IssParameterUnexpectedScenario(),
   new IssParameterNormalizedVariantScenario(),
   new MetadataIssuerMismatchScenario(),
-  new WifJwtBearerScenario()
+  new WifJwtBearerScenario(),
+  new DPoPClientScenario()
 ];

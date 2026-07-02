@@ -28,6 +28,11 @@ import { runClient as noAppTypeClient } from '../../../../examples/clients/types
 import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
 import { runClient as issNormalizeClient } from '../../../../examples/clients/typescript/auth-test-iss-normalize';
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
+import { runClient as dpopBearerClient } from '../../../../examples/clients/typescript/auth-test-dpop-bearer';
+import { runClient as dpopReplayClient } from '../../../../examples/clients/typescript/auth-test-dpop-replay';
+import { runClient as dpopNoTokenProofClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-token-proof';
+import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-as-nonce';
+import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -336,6 +341,52 @@ describe('WIF JWT-bearer negative tests', () => {
     await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
       expectedFailureSlugs: ['wif-no-retry'],
       allowClientError: true
+    });
+  });
+});
+
+// DPoP (SEP-1932): the compliant path is covered by the Client Draft Scenarios
+// loop above (auth/dpop is in draftScenariosList); these are the negative
+// cases, via deliberately-broken example clients.
+describe('DPoP client negative tests (SEP-1932)', () => {
+  test('auth/dpop: client presents the token with the Bearer scheme', async () => {
+    const runner = new InlineClientRunner(dpopBearerClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-dpop-auth-scheme']
+    });
+  });
+
+  test('auth/dpop: client reuses a DPoP proof across requests', async () => {
+    const runner = new InlineClientRunner(dpopReplayClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-fresh-proof']
+    });
+  });
+
+  test('auth/dpop: client never requests a sender-constrained token', async () => {
+    // No token-endpoint proof → the AS issues an unbound Bearer token, so both
+    // the token-request check and (as a consequence of the unbound token) the
+    // resource binding check fail.
+    const runner = new InlineClientRunner(dpopNoTokenProofClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-fresh-proof'
+      ]
+    });
+  });
+
+  test('auth/dpop: client ignores the authorization-server nonce challenge', async () => {
+    const runner = new InlineClientRunner(dpopNoAsNonceClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-as-nonce']
+    });
+  });
+
+  test('auth/dpop: client ignores the MCP-server nonce challenge', async () => {
+    const runner = new InlineClientRunner(dpopNoRsNonceClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-rs-nonce']
     });
   });
 });

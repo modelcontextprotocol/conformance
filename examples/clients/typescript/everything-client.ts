@@ -42,6 +42,7 @@ import {
 } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { runClient as issValidationClient } from './auth-test-iss-validation.js';
+import { runClient as dpopClient } from './auth-test-dpop.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -853,6 +854,12 @@ registerScenario(
   'auth/enterprise-managed-authorization',
   runEnterpriseManagedAuthorization
 );
+
+// ============================================================================
+// DPoP client conformance (SEP-1932)
+// ============================================================================
+
+registerScenario('auth/dpop', dpopClient);
 
 // ============================================================================
 // MRTR client conformance (SEP-2322)
