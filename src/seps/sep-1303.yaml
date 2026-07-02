@@ -1,0 +1,22 @@
+# SEP-1303: Input validation errors as Tool Execution Errors (SEP issue
+# #1303; spec changes landed via PR #1611). Part of the released 2025-11-25
+# spec version. Requirement text is quoted from the released page
+# (docs/specification/2025-11-25/server/tools.mdx), not the draft, so every
+# URL below pins the 2025-11-25 version. Sentences were attributed to this
+# SEP by diffing the released page's "Error Handling" section against the
+# 2025-06-18 version (the co-located icons / tool-name / JSON-Schema / tasks
+# changes on the same page belong to other SEPs and are skipped here).
+sep: 1303
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling
+requirements:
+  # The two rows below quote the error-taxonomy bullets this SEP rewrote.
+  # They are indicative-mood definitions (no RFC 2119 keyword), but they are
+  # the SEP's operative clarification and are wire-observable, so they are
+  # proposed as check: rows for maintainer review rather than dropped.
+  - check: sep-1303-input-validation-tool-error
+    text: 'Tools use two error reporting mechanisms: Tool Execution Errors: Reported in tool results with `isError: true`: Input validation errors (e.g., date in wrong format, value out of range)'
+  - check: sep-1303-malformed-request-protocol-error
+    text: 'Tools use two error reporting mechanisms: Protocol Errors: Standard JSON-RPC errors for issues like: Malformed requests (requests that fail to satisfy CallToolRequest schema)'
+
+  - text: 'Clients SHOULD provide tool execution errors to language models to enable self-correction.'
+    excluded: 'what the client provides to its language model is host-internal; not observable at the protocol level'
