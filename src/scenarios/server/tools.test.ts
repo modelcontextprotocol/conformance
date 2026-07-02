@@ -149,7 +149,7 @@ describe('ToolsListScenario version gate', () => {
   ): RunContext {
     const connection: Connection = {
       notifications: [],
-      request: async () => ({ tools }),
+      request: (async () => ({ tools })) as Connection['request'],
       discover: async () => ({}),
       close: async () => {}
     };
