@@ -66,6 +66,7 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { DPoPServerValidationScenario } from './server/auth/dpop';
 import { CachingScenario } from './server/caching';
 
 // InputRequiredResult scenarios from (SEP-2322)
@@ -149,7 +150,12 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksDispatchScenario(),
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario()
+  new TasksMrtrCompositionScenario(),
+
+  // DPoP server validation (SEP-1932): the everything-server is not DPoP-aware,
+  // so this runs against a dedicated fixture, e.g.
+  // `npm start -- server --scenario auth/dpop-server-validation --url <dpop server>`.
+  new DPoPServerValidationScenario()
 ];
 
 // All client scenarios
@@ -228,6 +234,10 @@ const allClientScenariosList: ClientScenario[] = [
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
   new TasksMrtrCompositionScenario(),
+
+  // DPoP server validation (SEP-1932). Pending against the everything-server
+  // (not DPoP-aware); targeted runs point at the sep-1932-compliant-server fixture.
+  new DPoPServerValidationScenario(),
 
   // InputRequiredResult scenarios (SEP-2322)
   new InputRequiredResultBasicElicitationScenario(),
