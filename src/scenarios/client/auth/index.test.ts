@@ -33,6 +33,7 @@ import { runClient as dpopReplayClient } from '../../../../examples/clients/type
 import { runClient as dpopNoTokenProofClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-token-proof';
 import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-as-nonce';
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
+import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -345,9 +346,12 @@ describe('WIF JWT-bearer negative tests', () => {
   });
 });
 
-// DPoP (SEP-1932): the compliant path is covered by the Client Draft Scenarios
-// loop above (auth/dpop is in draftScenariosList); these are the negative
-// cases, via deliberately-broken example clients.
+// DPoP (SEP-1932): the compliant paths for both postures (auth/dpop and
+// auth/dpop-nonce) are covered by the Client Draft Scenarios loop above; these
+// are the negative cases, via deliberately-broken example clients. The baseline
+// checks (scheme, replay, token-request-proof) are nonce-independent, so those
+// negatives run against auth/dpop; the two nonce checks only fire when a
+// challenge is issued, so their negatives run against auth/dpop-nonce.
 describe('DPoP client negative tests (SEP-1932)', () => {
   test('auth/dpop: client presents the token with the Bearer scheme', async () => {
     const runner = new InlineClientRunner(dpopBearerClient);
@@ -376,17 +380,31 @@ describe('DPoP client negative tests (SEP-1932)', () => {
     });
   });
 
-  test('auth/dpop: client ignores the authorization-server nonce challenge', async () => {
+  test('auth/dpop-nonce: client ignores the authorization-server nonce challenge', async () => {
     const runner = new InlineClientRunner(dpopNoAsNonceClient);
-    await runClientAgainstScenario(runner, 'auth/dpop', {
+    await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
       expectedFailureSlugs: ['sep-1932-client-as-nonce']
     });
   });
 
-  test('auth/dpop: client ignores the MCP-server nonce challenge', async () => {
+  test('auth/dpop-nonce: client ignores the MCP-server nonce challenge', async () => {
     const runner = new InlineClientRunner(dpopNoRsNonceClient);
-    await runClientAgainstScenario(runner, 'auth/dpop', {
+    await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
       expectedFailureSlugs: ['sep-1932-client-rs-nonce']
     });
+  });
+});
+
+// DPoP nonce-less baseline (SEP-1932): a client that implements NO nonce
+// handling still completes DPoP successfully when the server does not require a
+// nonce (the common case — server nonces are OPTIONAL, RFC 9449 §8/§9). The
+// nonce-capable compliant path is covered by the Client Draft Scenarios loop
+// above (auth/dpop is in draftScenariosList).
+describe('DPoP client nonce-less baseline (SEP-1932)', () => {
+  test('auth/dpop: nonce-incapable client passes the baseline', async () => {
+    const runner = new InlineClientRunner(dpopNoNonceClient);
+    // No expectedFailureSlugs → asserts every emitted check is SUCCESS (the
+    // three baseline checks; no as-nonce/rs-nonce checks are emitted here).
+    await runClientAgainstScenario(runner, 'auth/dpop');
   });
 });

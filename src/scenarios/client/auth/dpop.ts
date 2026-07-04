@@ -82,15 +82,25 @@ const CHECK_DEFS: Record<
  * Scenario: DPoP sender-constrained tokens — MCP client (SEP-1932 / RFC 9449).
  *
  * The test authorization server (DPoP-capable `createAuthServer`) issues a
- * DPoP-bound token; the test MCP server judges how the client presents it. The
- * test AS and MCP server both require a server-provided nonce (RFC 9449 §8/§9),
- * so the client's nonce handling is exercised too. Five checks:
- *  - token acquisition — the client sends a valid DPoP proof at the token
- *    request, obtaining a sender-constrained token (RFC 9449 §5);
- *  - the client retries the token request with the AS-supplied nonce (§8);
- *  - the client retries the MCP request with the server-supplied nonce (§9);
- *  - the token is presented with the `DPoP` Authorization scheme (RFC 9449 §7.1);
- *  - a fresh, well-formed DPoP proof accompanies each request (unique `jti`).
+ * DPoP-bound token; the test MCP server judges how the client presents it.
+ *
+ * Registered in two postures, because server-provided nonces are OPTIONAL in
+ * RFC 9449 (AS §8 "MAY", RS §9 "can also choose") and the two are mutually
+ * exclusive for a given run:
+ *
+ *  - `auth/dpop` (`requireNonce = false`) — the common, nonce-less baseline.
+ *    Neither the AS nor the MCP server issues a nonce challenge; the client
+ *    completes the flow with plain proofs. Emits three checks:
+ *      · token acquisition — a valid DPoP proof at the token request, obtaining
+ *        a sender-constrained token (RFC 9449 §5);
+ *      · the token is presented with the `DPoP` Authorization scheme (§7.1);
+ *      · a fresh, well-formed DPoP proof accompanies each request (unique `jti`).
+ *
+ *  - `auth/dpop-nonce` (`requireNonce = true`) — the AS and MCP server both
+ *    require a server-provided nonce (§8/§9), exercising the client's nonce
+ *    handling. Emits the three baseline checks plus two more:
+ *      · the client retries the token request with the AS-supplied nonce (§8);
+ *      · the client retries the MCP request with the server-supplied nonce (§9).
  */
 function newTokenReqObs(): DpopTokenRequestObservation {
   return {
@@ -102,16 +112,28 @@ function newTokenReqObs(): DpopTokenRequestObservation {
 }
 
 export class DPoPClientScenario implements Scenario {
-  name = 'auth/dpop';
+  readonly name: string;
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  description =
-    'Tests that an MCP client requests a DPoP-bound access token (a valid DPoP proof at the token request) and then presents it using the DPoP Authorization scheme (not Bearer) with a fresh, well-formed DPoP proof on each POST /mcp request (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).';
+  readonly description: string;
 
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
   private obs: DpopClientObservations = newDpopClientObservations();
   private tokenReqObs: DpopTokenRequestObservation = newTokenReqObs();
+
+  /**
+   * @param requireNonce when true (`auth/dpop-nonce`) the test AS and MCP server
+   *   both demand a server-provided nonce (RFC 9449 §8/§9); when false
+   *   (`auth/dpop`) neither challenges and the client completes with plain
+   *   proofs — the common, nonce-less baseline.
+   */
+  constructor(private readonly requireNonce: boolean) {
+    this.name = requireNonce ? 'auth/dpop-nonce' : 'auth/dpop';
+    this.description = requireNonce
+      ? 'Tests that an MCP client, when the authorization server and MCP server require a DPoP nonce, retries the token request and the MCP request with the server-supplied nonce (RFC 9449 §8/§9) — on top of requesting a DPoP-bound token and presenting it with the DPoP Authorization scheme and a fresh proof per request (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).'
+      : 'Tests that an MCP client requests a DPoP-bound access token (a valid DPoP proof at the token request) and presents it using the DPoP Authorization scheme (not Bearer) with a fresh, well-formed DPoP proof on each POST /mcp request, when the server does not require a nonce (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).';
+  }
 
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
@@ -121,7 +143,7 @@ export class DPoPClientScenario implements Scenario {
     const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       dpopSigningAlgValuesSupported: ['ES256'],
       dpopTokenRequestObs: this.tokenReqObs,
-      dpopRequireNonce: true
+      dpopRequireNonce: this.requireNonce
     });
     await this.authServer.start(authApp);
 
@@ -135,7 +157,7 @@ export class DPoPClientScenario implements Scenario {
           this.obs,
           () => `${this.server.getUrl()}/mcp`,
           () => `${this.server.getUrl()}${PRM_PATH}`,
-          true
+          this.requireNonce
         )
       }
     );
@@ -150,14 +172,19 @@ export class DPoPClientScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
-    return [
+    const checks: ConformanceCheck[] = [
       ...this.checks,
       this.tokenRequestProofCheck(),
-      this.asNonceCheck(),
-      this.rsNonceCheck(),
       this.authSchemeCheck(),
       this.freshProofCheck()
     ];
+    // The nonce checks only apply to the nonce-requiring posture: in the
+    // baseline (`auth/dpop`) neither server issues a `use_dpop_nonce`
+    // challenge, so there is no nonce behaviour to assert.
+    if (this.requireNonce) {
+      checks.push(this.asNonceCheck(), this.rsNonceCheck());
+    }
+    return checks;
   }
 
   private asNonceCheck(): ConformanceCheck {

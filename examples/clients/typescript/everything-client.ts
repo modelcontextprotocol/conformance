@@ -860,6 +860,7 @@ registerScenario(
 // ============================================================================
 
 registerScenario('auth/dpop', dpopClient);
+registerScenario('auth/dpop-nonce', dpopClient);
 
 // ============================================================================
 // MRTR client conformance (SEP-2322)

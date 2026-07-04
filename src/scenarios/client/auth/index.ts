@@ -83,5 +83,6 @@ export const draftScenariosList: Scenario[] = [
   new IssParameterNormalizedVariantScenario(),
   new MetadataIssuerMismatchScenario(),
   new WifJwtBearerScenario(),
-  new DPoPClientScenario()
+  new DPoPClientScenario(false), // auth/dpop — nonce-less baseline (common case)
+  new DPoPClientScenario(true) // auth/dpop-nonce — server-required nonce (§8/§9)
 ];
