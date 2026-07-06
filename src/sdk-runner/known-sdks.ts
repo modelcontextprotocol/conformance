@@ -38,13 +38,20 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     },
     expectedFailures: 'test/conformance/conformance-baseline.yml'
   },
+  // Fixtures live under conformance/ (the server moved there from
+  // examples/server/conformance); one build compiles both. Same fixtures and
+  // baseline the go-sdk repo's own conformance CI uses.
   'go-sdk': {
-    build: 'go build -o ./.conformance-server ./examples/server/conformance',
-    // Upstream go-sdk has no client conformance fixture yet (see go-sdk#859).
+    build:
+      'go build -o ./.conformance-client ./conformance/everything-client && go build -o ./.conformance-server ./conformance/everything-server',
+    client: {
+      command: './.conformance-client'
+    },
     server: {
       command: './.conformance-server -http=:3000',
-      url: 'http://localhost:3000'
-    }
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: 'conformance/baseline.yml'
   },
   // v1.x — the stable, published line of the python-sdk, analogous to
   // typescript-sdk-v1 (v2/main is mid-refactor and noisy). Clones the

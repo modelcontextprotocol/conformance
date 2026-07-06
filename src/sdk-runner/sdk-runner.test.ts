@@ -104,6 +104,15 @@ describe('lookupBuiltinConfig', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.specVersion).toBeUndefined();
   });
 
+  it('exposes go-sdk with both fixture commands and the repo baseline', () => {
+    const go = lookupBuiltinConfig('go-sdk');
+    expect(go?.build).toContain('./conformance/everything-client');
+    expect(go?.build).toContain('./conformance/everything-server');
+    expect(go?.client?.command).toBe('./.conformance-client');
+    expect(go?.server?.url).toBe('http://localhost:3000/mcp');
+    expect(go?.expectedFailures).toBe('conformance/baseline.yml');
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
