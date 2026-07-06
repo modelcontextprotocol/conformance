@@ -266,7 +266,11 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     // value into every subsequent proof — including the negatives — so a server
     // that checks the nonce first still evaluates the injected defect rather
     // than merely re-challenging. Refreshing (vs capturing once) keeps this
-    // correct against servers that rotate or single-use their nonces.
+    // correct against servers that ROTATE their nonce (each response carries the
+    // next one). A strict single-use server that re-arms the nonce only via a
+    // use_dpop_nonce challenge (not on ordinary rejections, which §8.2 doesn't
+    // require) can still push alternate negatives to untestable — acceptable, as
+    // those are correctly reported not-testable rather than mis-scored.
     let heldNonce: string | undefined;
 
     const send = async (

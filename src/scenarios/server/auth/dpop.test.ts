@@ -378,7 +378,7 @@ describe('DPoP server validation scenario', () => {
 
   it('anchors iat probes to the server clock (no false failure under skew)', async () => {
     // The server's clock is 30s behind the framework. Without anchoring, the
-    // stale probe (now−301s by the framework clock) looks only ~271s old to the
+    // stale probe (now−303s by the framework clock) looks only ~273s old to the
     // server → inside ±5 min → wrongly accepted → the iat check would FAIL a
     // conformant server. Anchoring to the server's Date header keeps it rejected.
     const checks = await new DPoPServerValidationScenario().run(
