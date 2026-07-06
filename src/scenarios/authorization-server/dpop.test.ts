@@ -153,8 +153,11 @@ describe('negotiateProofAlg (dpop_signing_alg_values_supported shapes)', () => {
     expect(negotiateProofAlg(['ES256K'])).toBeNull();
   });
 
-  it('falls back to ES256 only for an empty array', () => {
+  it('falls back to ES256 only for an empty array or an absent field', () => {
     expect(negotiateProofAlg([])).toBe('ES256');
+    // Absent never reaches here in the scenario (the support gate SKIPs upstream),
+    // but the contract still treats undefined as the empty/best-effort case.
+    expect(negotiateProofAlg(undefined)).toBe('ES256');
   });
 
   it('returns null for a present-but-non-array (malformed) value (→ SKIP)', () => {
