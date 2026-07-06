@@ -6,7 +6,7 @@ import {
 import { ServerLifecycle } from '../client/auth/helpers/serverLifecycle';
 import { testScenarioContext } from '../../mock-server/testing';
 import type { CheckStatus, ConformanceCheck } from '../../types';
-import { DPoPAuthorizationServerScenario } from './dpop';
+import { DPoPAuthorizationServerScenario, negotiateProofAlg } from './dpop';
 
 const ALL_IDS = [
   'sep-1932-as-metadata-alg-values',
@@ -140,5 +140,29 @@ describe('DPoPAuthorizationServerScenario — skip conditions', () => {
       expect(statusOf(checks, id)).toBe('SKIPPED');
     }
     expect(checks.filter((c) => c.status === 'FAILURE')).toHaveLength(0);
+  });
+});
+
+describe('negotiateProofAlg (dpop_signing_alg_values_supported shapes)', () => {
+  it('picks the first supported alg from a non-empty array', () => {
+    expect(negotiateProofAlg(['ES256'])).toBe('ES256');
+    expect(negotiateProofAlg(['RS256', 'ES256'])).toBe('RS256');
+  });
+
+  it('returns null for a non-empty array with no supported alg (→ SKIP)', () => {
+    expect(negotiateProofAlg(['ES256K'])).toBeNull();
+  });
+
+  it('falls back to ES256 only for an empty array', () => {
+    expect(negotiateProofAlg([])).toBe('ES256');
+  });
+
+  it('returns null for a present-but-non-array (malformed) value (→ SKIP)', () => {
+    // Regression guard: a string or JSON null must NOT fall through to the
+    // ES256 fallback, which would mis-score token binding.
+    expect(negotiateProofAlg('RS256')).toBeNull();
+    expect(negotiateProofAlg(null)).toBeNull();
+    expect(negotiateProofAlg(42)).toBeNull();
+    expect(negotiateProofAlg({ 0: 'ES256' })).toBeNull();
   });
 });
