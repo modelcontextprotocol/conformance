@@ -122,6 +122,15 @@ describe('lookupBuiltinConfig', () => {
     expect(cs?.server).toBeUndefined();
   });
 
+  it('exposes bare python-sdk (main) tracking the draft spec', () => {
+    const py = lookupBuiltinConfig('python-sdk');
+    expect(py?.defaultRef).toBeUndefined();
+    expect(py?.specVersion).toBeUndefined();
+    expect(py?.client?.command).toContain('client.py');
+    expect(py?.server?.command).toContain('mcp-everything-server');
+    expect(py?.expectedFailures).toContain('expected-failures.yml');
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
