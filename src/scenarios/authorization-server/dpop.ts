@@ -396,8 +396,8 @@ browser login + callback for login-gated servers.`;
   /**
    * Pick a proof-signing algorithm the harness can produce that the AS also
    * advertises (RFC 9449 §5.1). Returns null when the AS advertises a non-empty
-   * list with no algorithm we support (including a non-empty but malformed list)
-   * — the caller then SKIPs rather than sending an unadvertised alg (e.g.
+   * list with no algorithm we support, OR a present-but-non-array (malformed)
+   * value — the caller then SKIPs rather than sending an unadvertised alg (e.g.
    * defaulting to ES256) that the AS would legitimately reject and we'd mis-score
    * as a binding failure. Only an absent or empty list (itself flagged by the
    * metadata check) falls back to ES256 as a best effort to still exercise the
@@ -405,6 +405,15 @@ browser login + callback for login-gated servers.`;
    */
   private negotiateProofAlg(metadata: Record<string, any>): string | null {
     const advertised = metadata.dpop_signing_alg_values_supported;
+    // A present-but-non-array value (e.g. the string "RS256") is malformed
+    // metadata, not "unspecified" — SKIP rather than fall back to ES256.
+    if (
+      advertised !== undefined &&
+      advertised !== null &&
+      !Array.isArray(advertised)
+    ) {
+      return null;
+    }
     if (Array.isArray(advertised) && advertised.length > 0) {
       const match = advertised.find(
         (a) => typeof a === 'string' && SUPPORTED_PROOF_ALGS.includes(a)
