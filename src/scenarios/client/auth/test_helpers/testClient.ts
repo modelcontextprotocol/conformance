@@ -1,6 +1,6 @@
 import { getScenario } from '../../../index';
 import { testScenarioContext } from '../../../../mock-server/testing';
-import type { SpecVersion } from '../../../../types';
+import type { SpecVersion, ConformanceCheck } from '../../../../types';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -107,7 +107,7 @@ export async function runClientAgainstScenario(
   clientRunner: ClientRunner,
   scenarioName: string,
   options: RunClientOptions = {}
-): Promise<void> {
+): Promise<ConformanceCheck[]> {
   const {
     expectedFailureSlugs = [],
     expectedSuccessSlugs = [],
@@ -126,6 +126,10 @@ export async function runClientAgainstScenario(
   const ctx = testScenarioContext(specVersion);
   const urls = await scenario.start(ctx);
   const serverUrl = urls.serverUrl;
+
+  // The emitted checks, returned to the caller for assertions the standard
+  // pass/fail options don't cover (e.g. counting occurrences of a shared check).
+  let collected: ConformanceCheck[] = [];
 
   try {
     // Set environment variables for inline clients
@@ -151,6 +155,7 @@ export async function runClientAgainstScenario(
 
     // Get checks from the scenario
     const checks = scenario.getChecks();
+    collected = checks;
 
     // Verify checks were returned
     if (checks.length === 0) {
@@ -215,4 +220,6 @@ export async function runClientAgainstScenario(
     // Stop the scenario server
     await scenario.stop();
   }
+
+  return collected;
 }

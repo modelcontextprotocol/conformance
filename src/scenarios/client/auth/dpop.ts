@@ -113,8 +113,10 @@ function newTokenReqObs(): DpopTokenRequestObservation {
 
 /**
  * Collapse duplicate non-INFO check IDs to a single entry, preferring the
- * MOST-SEVERE occurrence (FAILURE > WARNING > SUCCESS; ties keep the last) so a
- * real failure is never masked. Per-request INFO log entries are always kept.
+ * MOST-SEVERE occurrence (FAILURE > WARNING > SUCCESS > any other status, e.g.
+ * SKIPPED) so a real failure is never masked. Equal-severity ties keep the LAST
+ * occurrence (for the nonce round-trip that is the retry's diagnostic, which is
+ * status-equivalent to the first). Per-request INFO log entries are always kept.
  *
  * The RFC 9449 §8/§9 nonce round-trip re-POSTs /token (challenge → retry), so
  * the shared token-flow conformance checks (`token-request`, `pkce-*`) are

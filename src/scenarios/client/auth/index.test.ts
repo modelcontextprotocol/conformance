@@ -34,6 +34,7 @@ import { runClient as dpopNoTokenProofClient } from '../../../../examples/client
 import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-as-nonce';
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
+import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -426,5 +427,19 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
     // No expectedFailureSlugs → asserts every emitted check is SUCCESS (the
     // three baseline checks; no as-nonce/rs-nonce checks are emitted here).
     await runClientAgainstScenario(runner, 'auth/dpop');
+  });
+
+  test('auth/dpop-nonce: the §8/§9 double-POST is collapsed to one shared check each', async () => {
+    // Pins that collapseDuplicateChecks is actually wired into getChecks for the
+    // nonce posture: the challenge→retry re-POST records token-request/pkce
+    // twice, so without the collapse these would appear 2×. Guards against the
+    // gating being deleted or inverted.
+    const runner = new InlineClientRunner(dpopClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop-nonce');
+    const count = (id: string): number =>
+      checks.filter((c) => c.id === id).length;
+    expect(count('token-request')).toBe(1);
+    expect(count('pkce-code-verifier-sent')).toBe(1);
+    expect(count('pkce-verifier-matches-challenge')).toBe(1);
   });
 });
