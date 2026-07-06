@@ -53,6 +53,21 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     },
     expectedFailures: 'conformance/baseline.yml'
   },
+  // Client fixture: tests/ModelContextProtocol.ConformanceClient. The fixture
+  // takes the scenario as its first positional argument rather than reading
+  // MCP_CONFORMANCE_SCENARIO, and the runner appends the server URL as the
+  // last argument, so the command goes through `sh -c` to forward both
+  // ("$1" is the appended URL). POSIX sh only — same constraint as the other
+  // shell-based commands here. The csharp-sdk repo runs conformance
+  // per-scenario via `dotnet test` and keeps no baseline file, so there is no
+  // expectedFailures entry. Requires the .NET 10 SDK (global.json).
+  'csharp-sdk': {
+    build:
+      'dotnet build tests/ModelContextProtocol.ConformanceClient/ModelContextProtocol.ConformanceClient.csproj -f net10.0 -c Release',
+    client: {
+      command: `sh -c 'exec ./artifacts/bin/ModelContextProtocol.ConformanceClient/Release/net10.0/ModelContextProtocol.ConformanceClient "$MCP_CONFORMANCE_SCENARIO" "$1"' conformance-client`
+    }
+  },
   // v1.x — the stable, published line of the python-sdk, analogous to
   // typescript-sdk-v1 (v2/main is mid-refactor and noisy). Clones the
   // python-sdk repo, defaulting to the `v1.x` branch, and targets the latest
