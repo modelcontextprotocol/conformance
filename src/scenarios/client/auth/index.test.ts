@@ -382,15 +382,35 @@ describe('DPoP client negative tests (SEP-1932)', () => {
 
   test('auth/dpop-nonce: client ignores the authorization-server nonce challenge', async () => {
     const runner = new InlineClientRunner(dpopNoAsNonceClient);
+    // The client presents a valid proof but never retries with the nonce, so it
+    // never obtains a token — as-nonce fails and the downstream token-dependent
+    // checks legitimately cascade. But token-request-proof MUST stay SUCCESS:
+    // the client DID present a valid proof at the token endpoint (regression
+    // guard for the "never completed a token request" misattribution).
     await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
-      expectedFailureSlugs: ['sep-1932-client-as-nonce']
+      expectedFailureSlugs: [
+        'sep-1932-client-as-nonce',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof',
+        'sep-1932-client-rs-nonce'
+      ],
+      expectedSuccessSlugs: ['sep-1932-client-token-request-proof']
     });
   });
 
   test('auth/dpop-nonce: client ignores the MCP-server nonce challenge', async () => {
     const runner = new InlineClientRunner(dpopNoRsNonceClient);
+    // Clean one-defect isolation: the client obtains a token and presents a
+    // valid fresh proof (recorded before the nonce gate), so only rs-nonce
+    // fails — everything else stays SUCCESS.
     await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
-      expectedFailureSlugs: ['sep-1932-client-rs-nonce']
+      expectedFailureSlugs: ['sep-1932-client-rs-nonce'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof',
+        'sep-1932-client-as-nonce'
+      ]
     });
   });
 });

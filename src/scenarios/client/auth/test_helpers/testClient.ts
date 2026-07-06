@@ -87,6 +87,13 @@ export class InlineClientRunner implements ClientRunner {
 
 export interface RunClientOptions {
   expectedFailureSlugs?: string[];
+  /**
+   * Slugs that MUST be present and SUCCESS. Use alongside expectedFailureSlugs
+   * to pin that a specific check is *not* collateral damage of the injected
+   * defect (e.g. a client that skips the nonce retry still passes
+   * token-request-proof because it did present a valid proof).
+   */
+  expectedSuccessSlugs?: string[];
   allowClientError?: boolean;
   /**
    * Spec version to run the scenario at. Defaults to the latest dated spec
@@ -103,6 +110,7 @@ export async function runClientAgainstScenario(
 ): Promise<void> {
   const {
     expectedFailureSlugs = [],
+    expectedSuccessSlugs = [],
     allowClientError = false,
     specVersion
   } = options;
@@ -151,6 +159,15 @@ export async function runClientAgainstScenario(
 
     // Filter out INFO checks
     const nonInfoChecks = checks.filter((c) => c.status !== 'INFO');
+
+    // Slugs that must be present and SUCCESS (independent of the failure set).
+    for (const slug of expectedSuccessSlugs) {
+      const check = checks.find((c) => c.id === slug);
+      if (!check) {
+        throw new Error(`Expected-success check ${slug} not found`);
+      }
+      expect(check.status).toBe('SUCCESS');
+    }
 
     // Check for expected failures
     if (expectedFailureSlugs.length > 0) {

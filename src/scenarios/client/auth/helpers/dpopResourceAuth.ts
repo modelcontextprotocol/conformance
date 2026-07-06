@@ -108,10 +108,19 @@ export function createDpopResourceAuth(
       return;
     }
 
+    // Record proof freshness on ANY valid proof, before the nonce gate. A
+    // nonce-challenged (but otherwise valid) proof still demonstrates freshness,
+    // so fresh-proof is never asserted on zero `jti` evidence, and a client that
+    // never honours the nonce fails only rs-nonce (not fresh-proof as well).
+    if (obs.jtisSeen.includes(result.jti)) {
+      obs.replayDetected = true;
+    } else {
+      obs.jtisSeen.push(result.jti);
+    }
+
     // RFC 9449 §9: require a server-provided nonce. A valid proof without the
     // correct nonce is challenged (401 use_dpop_nonce + DPoP-Nonce); the client
-    // is expected to retry with it. Only nonce-honoured requests are recorded
-    // for the freshness check.
+    // is expected to retry with it.
     if (requireNonce) {
       let proofNonce: unknown;
       try {
@@ -132,12 +141,6 @@ export function createDpopResourceAuth(
         return;
       }
       obs.rsNonceHonored = true;
-    }
-
-    if (obs.jtisSeen.includes(result.jti)) {
-      obs.replayDetected = true;
-    } else {
-      obs.jtisSeen.push(result.jti);
     }
 
     next();

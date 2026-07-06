@@ -140,10 +140,20 @@ export async function runDpopClient(
   };
   let tokenResponse = await requestToken();
   // RFC 9449 §8: the AS may answer with `use_dpop_nonce` (HTTP 400 + DPoP-Nonce);
-  // a conformant client retries the token request with the supplied nonce.
+  // a conformant client retries the token request with the supplied nonce. Match
+  // on the `use_dpop_nonce` error code (not merely any 400 carrying a nonce), so
+  // an unrelated error (e.g. invalid_grant) that an AS proactively decorates with
+  // a DPoP-Nonce header does not burn the retry and mask the real failure —
+  // consistent with the resource-side check below.
   const asNonce = tokenResponse.headers.get('DPoP-Nonce');
   if (tokenResponse.status === 400 && asNonce && options.handleAsNonce) {
-    tokenResponse = await requestToken(asNonce);
+    const challenge = await tokenResponse
+      .clone()
+      .json()
+      .catch(() => ({}) as { error?: string });
+    if (challenge?.error === 'use_dpop_nonce') {
+      tokenResponse = await requestToken(asNonce);
+    }
   }
   if (!tokenResponse.ok) {
     throw new Error(`Token request failed: HTTP ${tokenResponse.status}`);

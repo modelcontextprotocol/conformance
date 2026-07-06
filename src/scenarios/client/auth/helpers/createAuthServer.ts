@@ -138,10 +138,11 @@ export interface TokenRequestError {
 
 /**
  * Sink for the DPoP token-request observation (RFC 9449 §5). The AS writes to
- * it on the authorization_code exchange (last write wins; refresh grants are
- * ignored) so the client scenario can emit sep-1932-client-token-request-proof
- * unconditionally — FAILURE by default when the client never reaches the token
- * endpoint, matching its sibling checks.
+ * it on the authorization_code exchange (sticky-failure: once any exchange
+ * lacks a valid proof it stays FAILURE; refresh grants are ignored) so the
+ * client scenario can emit sep-1932-client-token-request-proof unconditionally
+ * — FAILURE by default when the client never reaches the token endpoint,
+ * matching its sibling checks.
  */
 export interface DpopTokenRequestObservation {
   recorded: boolean;
@@ -611,9 +612,18 @@ export function createAuthServer(
           });
           return;
         }
+        // The proof itself is valid — record that now, BEFORE any nonce
+        // challenge, so a client that is challenged but does not retry is not
+        // mis-reported by token-request-proof as "never completed a token
+        // request" (its proof was just verified). Sticky + gated on
+        // authorization_code inside recordTokenRequestProof.
+        recordTokenRequestProof(grantType, true);
+
         // RFC 9449 §8: require a server-provided nonce. A proof without the
         // correct nonce is challenged (400 use_dpop_nonce + DPoP-Nonce); the
-        // client is expected to retry with it.
+        // client is expected to retry with it. The nonce observation is gated
+        // on the authorization_code exchange, matching recordTokenRequestProof
+        // (honoring a challenge on a refresh exchange must not satisfy §8).
         if (dpopRequireNonce) {
           let proofNonce: unknown;
           try {
@@ -622,7 +632,7 @@ export function createAuthServer(
             proofNonce = undefined;
           }
           if (proofNonce !== AS_DPOP_NONCE) {
-            if (dpopTokenRequestObs)
+            if (grantType === 'authorization_code' && dpopTokenRequestObs)
               dpopTokenRequestObs.asNonceChallengeIssued = true;
             res.status(400).set('DPoP-Nonce', AS_DPOP_NONCE).json({
               error: 'use_dpop_nonce',
@@ -630,9 +640,9 @@ export function createAuthServer(
             });
             return;
           }
-          if (dpopTokenRequestObs) dpopTokenRequestObs.asNonceHonored = true;
+          if (grantType === 'authorization_code' && dpopTokenRequestObs)
+            dpopTokenRequestObs.asNonceHonored = true;
         }
-        recordTokenRequestProof(grantType, true);
 
         if (dpopMisbehavior === 'unbound-token') {
           // Misbehaviour: ignore the binding and issue a plain Bearer token.

@@ -173,7 +173,7 @@ export class DPoPClientScenario implements Scenario {
 
   getChecks(): ConformanceCheck[] {
     const checks: ConformanceCheck[] = [
-      ...this.checks,
+      ...this.dedupeSharedChecks(),
       this.tokenRequestProofCheck(),
       this.authSchemeCheck(),
       this.freshProofCheck()
@@ -187,19 +187,41 @@ export class DPoPClientScenario implements Scenario {
     return checks;
   }
 
+  /**
+   * The RFC 9449 §8/§9 nonce round-trip re-POSTs /token (challenge → retry), so
+   * the shared token-flow conformance checks (`token-request`, `pkce-*`) are
+   * appended twice. Collapse duplicate non-INFO shared-check IDs to the last
+   * occurrence so each is reported once; per-request INFO log entries are left
+   * intact. Our own sep-1932-client-* checks are unique by construction.
+   */
+  private dedupeSharedChecks(): ConformanceCheck[] {
+    const lastIndex = new Map<string, number>();
+    this.checks.forEach((c, i) => {
+      if (c.status !== 'INFO') lastIndex.set(c.id, i);
+    });
+    return this.checks.filter(
+      (c, i) => c.status === 'INFO' || lastIndex.get(c.id) === i
+    );
+  }
+
   private asNonceCheck(): ConformanceCheck {
+    const challenged = this.tokenReqObs.asNonceChallengeIssued;
     const honored = this.tokenReqObs.asNonceHonored;
+    // SUCCESS requires that a challenge was actually issued AND then honored —
+    // grading `honored` alone would let a client that pre-sends the nonce
+    // (never challenged) pass vacuously.
+    const pass = challenged && honored;
     return this.build(
       'sep-1932-client-as-nonce',
-      honored ? 'SUCCESS' : 'FAILURE',
+      pass ? 'SUCCESS' : 'FAILURE',
       {
-        errorMessage: honored
+        errorMessage: pass
           ? undefined
-          : this.tokenReqObs.asNonceChallengeIssued
+          : challenged
             ? 'Client did not retry the token request with the server-supplied nonce after a use_dpop_nonce challenge'
-            : 'Client never completed a token request that could be nonce-challenged',
+            : 'Client never presented a valid proof that was answered with a use_dpop_nonce challenge',
         details: {
-          challengeIssued: this.tokenReqObs.asNonceChallengeIssued,
+          challengeIssued: challenged,
           nonceHonored: honored
         }
       }
@@ -207,18 +229,22 @@ export class DPoPClientScenario implements Scenario {
   }
 
   private rsNonceCheck(): ConformanceCheck {
+    const challenged = this.obs.rsNonceChallengeIssued;
     const honored = this.obs.rsNonceHonored;
+    // SUCCESS requires that a challenge was actually issued AND then honored —
+    // see asNonceCheck; grading `honored` alone permits a vacuous pass.
+    const pass = challenged && honored;
     return this.build(
       'sep-1932-client-rs-nonce',
-      honored ? 'SUCCESS' : 'FAILURE',
+      pass ? 'SUCCESS' : 'FAILURE',
       {
-        errorMessage: honored
+        errorMessage: pass
           ? undefined
-          : this.obs.rsNonceChallengeIssued
+          : challenged
             ? 'Client did not retry the MCP request with the server-supplied nonce after a use_dpop_nonce challenge'
-            : 'Client never made an MCP request that could be nonce-challenged',
+            : 'Client never made an MCP request with a valid proof that was answered with a use_dpop_nonce challenge',
         details: {
-          challengeIssued: this.obs.rsNonceChallengeIssued,
+          challengeIssued: challenged,
           nonceHonored: honored
         }
       }
