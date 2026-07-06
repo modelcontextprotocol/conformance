@@ -112,6 +112,11 @@ export function createDpopResourceAuth(
     // nonce-challenged (but otherwise valid) proof still demonstrates freshness,
     // so fresh-proof is never asserted on zero `jti` evidence, and a client that
     // never honours the nonce fails only rs-nonce (not fresh-proof as well).
+    //
+    // Deliberate consequence: a client that re-sends the *identical* proof
+    // across the challenge/retry boundary (same `jti`) trips replay detection.
+    // That is a genuine RFC 9449 §4.2 violation (`jti` MUST be unique per proof)
+    // — a conformant client mints a fresh proof, carrying the nonce, on retry.
     if (obs.jtisSeen.includes(result.jti)) {
       obs.replayDetected = true;
     } else {

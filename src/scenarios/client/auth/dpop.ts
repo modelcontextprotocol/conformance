@@ -49,7 +49,7 @@ const CHECK_DEFS: Record<
   'sep-1932-client-token-request-proof': {
     name: 'DpopTokenRequestProof',
     description:
-      'Client includes a valid DPoP proof in the DPoP header of its token request, obtaining a DPoP-bound access token (RFC 9449 §5)',
+      'Client includes a valid DPoP proof in the DPoP header of its token request — the prerequisite for obtaining a DPoP-bound access token (RFC 9449 §5)',
     specReferences: [
       SpecReferences.SEP_1932_DPOP,
       SpecReferences.DPOP_EXTENSION,
@@ -109,6 +109,36 @@ function newTokenReqObs(): DpopTokenRequestObservation {
     asNonceChallengeIssued: false,
     asNonceHonored: false
   };
+}
+
+/**
+ * Collapse duplicate non-INFO check IDs to a single entry, preferring the
+ * MOST-SEVERE occurrence (FAILURE > WARNING > SUCCESS; ties keep the last) so a
+ * real failure is never masked. Per-request INFO log entries are always kept.
+ *
+ * The RFC 9449 §8/§9 nonce round-trip re-POSTs /token (challenge → retry), so
+ * the shared token-flow conformance checks (`token-request`, `pkce-*`) are
+ * appended twice; this reports each once without hiding a failure recorded on
+ * either attempt. Exported so the behaviour is unit-tested directly.
+ */
+export function collapseDuplicateChecks(
+  checks: ConformanceCheck[]
+): ConformanceCheck[] {
+  const severity = (s: CheckStatus): number =>
+    s === 'FAILURE' ? 3 : s === 'WARNING' ? 2 : s === 'SUCCESS' ? 1 : 0;
+  // Winning index per non-INFO id: highest severity, ties → last occurrence.
+  const winner = new Map<string, number>();
+  checks.forEach((c, i) => {
+    if (c.status === 'INFO') return;
+    const cur = winner.get(c.id);
+    if (
+      cur === undefined ||
+      severity(c.status) >= severity(checks[cur].status)
+    ) {
+      winner.set(c.id, i);
+    }
+  });
+  return checks.filter((c, i) => c.status === 'INFO' || winner.get(c.id) === i);
 }
 
 export class DPoPClientScenario implements Scenario {
@@ -172,8 +202,15 @@ export class DPoPClientScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Only the nonce posture re-POSTs /token (challenge → retry), which
+    // duplicates the shared token-flow checks (token-request, pkce-*); collapse
+    // those. The baseline (`auth/dpop`) is left untouched so genuinely distinct
+    // repeated attempts (e.g. a restarted authorization flow) keep both entries.
+    const shared = this.requireNonce
+      ? collapseDuplicateChecks(this.checks)
+      : this.checks;
     const checks: ConformanceCheck[] = [
-      ...this.dedupeSharedChecks(),
+      ...shared,
       this.tokenRequestProofCheck(),
       this.authSchemeCheck(),
       this.freshProofCheck()
@@ -185,23 +222,6 @@ export class DPoPClientScenario implements Scenario {
       checks.push(this.asNonceCheck(), this.rsNonceCheck());
     }
     return checks;
-  }
-
-  /**
-   * The RFC 9449 §8/§9 nonce round-trip re-POSTs /token (challenge → retry), so
-   * the shared token-flow conformance checks (`token-request`, `pkce-*`) are
-   * appended twice. Collapse duplicate non-INFO shared-check IDs to the last
-   * occurrence so each is reported once; per-request INFO log entries are left
-   * intact. Our own sep-1932-client-* checks are unique by construction.
-   */
-  private dedupeSharedChecks(): ConformanceCheck[] {
-    const lastIndex = new Map<string, number>();
-    this.checks.forEach((c, i) => {
-      if (c.status !== 'INFO') lastIndex.set(c.id, i);
-    });
-    return this.checks.filter(
-      (c, i) => c.status === 'INFO' || lastIndex.get(c.id) === i
-    );
   }
 
   private asNonceCheck(): ConformanceCheck {
@@ -218,7 +238,7 @@ export class DPoPClientScenario implements Scenario {
         errorMessage: pass
           ? undefined
           : challenged
-            ? 'Client did not retry the token request with the server-supplied nonce after a use_dpop_nonce challenge'
+            ? 'Client did not complete the token request with the server-supplied nonce after a use_dpop_nonce challenge (it either did not retry or the retried proof was rejected)'
             : 'Client never presented a valid proof that was answered with a use_dpop_nonce challenge',
         details: {
           challengeIssued: challenged,
@@ -241,7 +261,7 @@ export class DPoPClientScenario implements Scenario {
         errorMessage: pass
           ? undefined
           : challenged
-            ? 'Client did not retry the MCP request with the server-supplied nonce after a use_dpop_nonce challenge'
+            ? 'Client did not complete the MCP request with the server-supplied nonce after a use_dpop_nonce challenge (it either did not retry or the retried proof was rejected)'
             : 'Client never made an MCP request with a valid proof that was answered with a use_dpop_nonce challenge',
         details: {
           challengeIssued: challenged,
