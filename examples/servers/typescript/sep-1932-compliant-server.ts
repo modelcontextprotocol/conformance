@@ -27,7 +27,14 @@ import { createHash } from 'node:crypto';
 const ISSUER_JWK = JSON.parse(process.env.DPOP_ISSUER_JWK || '{}');
 const ISSUER = process.env.DPOP_ISSUER || 'https://auth.example.com';
 const AUDIENCE = process.env.DPOP_AUDIENCE || '';
-const IAT_SKEW = parseInt(process.env.DPOP_IAT_SKEW_SECONDS || '300', 10);
+// Parse an integer env var, falling back to the default on absent OR malformed
+// input — a bare parseInt would yield NaN, which silently disables the iat
+// window (`Math.abs(...) > NaN` is false) or the clock skew (NaN is falsy).
+const intEnv = (name: string, def: number): number => {
+  const n = parseInt(process.env[name] ?? '', 10);
+  return Number.isNaN(n) ? def : n;
+};
+const IAT_SKEW = intEnv('DPOP_IAT_SKEW_SECONDS', 300);
 const REQUIRE_NONCE = process.env.DPOP_REQUIRE_NONCE === '1';
 const NONCE = process.env.DPOP_NONCE || 'conformance-test-nonce';
 // Buggy-nonce mode (negative-test fixture only): challenge when no nonce is
@@ -43,7 +50,7 @@ const NONCE_FIRST = process.env.DPOP_NONCE_FIRST === '1';
 // Clock-offset mode (negative-test fixture only): shift the server's notion of
 // "now" — and its `Date` header — by N seconds to simulate a skewed server
 // clock. Used to prove the scenario anchors its iat probes to the server's Date.
-const CLOCK_OFFSET = parseInt(process.env.DPOP_CLOCK_OFFSET_SECONDS || '0', 10);
+const CLOCK_OFFSET = intEnv('DPOP_CLOCK_OFFSET_SECONDS', 0);
 
 // Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 step 5).
 const ASYMMETRIC_ALGS = [

@@ -100,10 +100,12 @@ function properlyRejected(res: Response): boolean {
   return res.statusCode === 401 && hasDpopChallenge(res.wwwAuthenticate);
 }
 
-// A `use_dpop_nonce` challenge means the server is demanding a nonce before it
-// will look at the proof. The negative probes are sent without a nonce, so such
-// a 401 is a rejection for the MISSING NONCE, not for the injected defect — it
-// cannot be attributed to the defect and must not count as a proper rejection.
+// A `use_dpop_nonce` challenge means the server is demanding a (different) nonce
+// before it will look at the proof. Negative probes carry the held nonce, so
+// such a 401 means the server did not accept that nonce (it rotated or
+// single-uses it, or wants a fresh one) — the rejection is about the nonce
+// lifetime, NOT the injected defect, so it cannot be attributed to the defect
+// and must not count as a proper rejection.
 function isNonceChallenge(res: Response): boolean {
   return (
     res.statusCode === 401 &&
@@ -192,7 +194,7 @@ function rejectionCheck(
       id,
       name,
       description,
-      `server answered with a DPoP nonce challenge (use_dpop_nonce), so this rejection cannot be attributed to the ${String(details.case ?? 'injected')} defect rather than the missing nonce`,
+      `server answered with a DPoP nonce challenge (use_dpop_nonce) despite the probe carrying the held nonce, so this rejection is about the nonce (rotated/stale/single-use) and cannot be attributed to the ${String(details.case ?? 'injected')} defect`,
       SPEC_REFERENCES
     );
   }
@@ -258,6 +260,15 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       jkt: kp.thumbprint
     });
 
+    // The server-provided nonce (RFC 9449 §8/§9), if the server requires one.
+    // `send` refreshes it from every response's DPoP-Nonce header (newest wins,
+    // RFC 9449 §8.2), and the local `buildDpopProof` wrapper folds the current
+    // value into every subsequent proof — including the negatives — so a server
+    // that checks the nonce first still evaluates the injected defect rather
+    // than merely re-challenging. Refreshing (vs capturing once) keeps this
+    // correct against servers that rotate or single-use their nonces.
+    let heldNonce: string | undefined;
+
     const send = async (
       authz: string,
       dpop: string | string[] | undefined
@@ -296,15 +307,11 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       const date = Number.isNaN(parsedDate)
         ? undefined
         : Math.floor(parsedDate / 1000);
+      // Newest-wins (RFC 9449 §8.2): carry the latest nonce into the next probe.
+      if (dpopNonce) heldNonce = dpopNonce;
       return { statusCode: res.statusCode, wwwAuthenticate, dpopNonce, date };
     };
 
-    // The server-provided nonce captured from the baseline handshake (RFC 9449
-    // §9), if the server requires one. Once set, the local `buildDpopProof`
-    // wrapper folds it into every subsequent proof — including the negatives —
-    // so a server that checks the nonce first still evaluates the injected
-    // defect rather than merely challenging for a nonce.
-    let heldNonce: string | undefined;
     const buildDpopProof = (
       opts: Parameters<typeof baseBuildDpopProof>[0]
     ): Promise<string> =>
@@ -333,7 +340,8 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
         first.dpopNonce &&
         first.wwwAuthenticate.includes('use_dpop_nonce')
       ) {
-        heldNonce = first.dpopNonce;
+        // `send` has already refreshed heldNonce from the challenge response,
+        // so the retry's proof carries it.
         return send(`DPoP ${token}`, await validProof());
       }
       return first;
@@ -637,12 +645,15 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     }
 
     // ---- iat acceptance window ----
-    // Probes sit just outside the ±5-minute window (±300 s). The future probe
-    // uses +303 s (not +301) because `iat` is whole-seconds and the proof drifts
-    // ~1 s toward "now" in transit; +301 could read as +300 (in-window) at the
-    // server and false-accept. The stale side only ages further, so −301 is safe.
+    // Probes sit just outside the ±5-minute window (±300 s), ±303 s on both
+    // sides. The 3 s margin absorbs two sources of ±1 s error that a bare ±301
+    // would not: the whole-second `Date` header makes `serverClockOffset`
+    // quantized to ±1 s, and `iat` is whole-seconds and drifts ~1 s toward "now"
+    // in transit. At ±301 either could pull the probe onto the ±300 boundary and
+    // be false-accepted; ±303 stays safely outside for a conformant server while
+    // still being well inside a rejection for any sane implementation.
     for (const { label, name, iatDelta } of [
-      { label: 'stale', name: 'RejectsStaleIat', iatDelta: -301 },
+      { label: 'stale', name: 'RejectsStaleIat', iatDelta: -303 },
       { label: 'future', name: 'RejectsFutureIat', iatDelta: 303 }
     ]) {
       const description = `Server rejects a proof whose iat is ${label} — just outside the ±5-minute window (RFC 9449 §4.3 / SEP-1932)`;
