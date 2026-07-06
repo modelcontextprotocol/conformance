@@ -39,18 +39,25 @@ interface MetadataScenarioConfig {
 /**
  * Scenario configurations table:
  *
- * | Scenario         | PRM Location                              | In WWW-Auth | OAuth Metadata Location                        |
- * |------------------|-------------------------------------------|-------------|------------------------------------------------|
- * | metadata-default | /.well-known/oauth-protected-resource/mcp | Yes         | /.well-known/oauth-authorization-server        |
- * | metadata-var1    | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/openid-configuration              |
- * | metadata-var2    | /.well-known/oauth-protected-resource     | No          | /.well-known/oauth-authorization-server/tenant1|
- * | metadata-var3    | /custom/metadata/location.json            | Yes         | /tenant1/.well-known/openid-configuration      |
+ * | Scenario              | PRM Location                              | In WWW-Auth | OAuth Metadata Location                        |
+ * |-----------------------|-------------------------------------------|-------------|------------------------------------------------|
+ * | metadata-default      | /.well-known/oauth-protected-resource/mcp | Yes         | /.well-known/oauth-authorization-server        |
+ * | metadata-var1         | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/openid-configuration              |
+ * | metadata-var2         | /.well-known/oauth-protected-resource     | No          | /.well-known/oauth-authorization-server/tenant1|
+ * | metadata-var3         | /custom/metadata/location.json            | Yes         | /tenant1/.well-known/openid-configuration      |
+ * | metadata-query-params | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/oauth-authorization-server        |
  *
- * metadata-query-params reuses the metadata-var1 layout (path-based PRM, not
- * in WWW-Authenticate) but hands the client an MCP server URL with a query
- * component. Per RFC 9728 §3.1 the well-known suffix is inserted between the
- * host and the path and/or query components, so the client's PRM request must
- * keep the query: /.well-known/oauth-protected-resource/mcp?tenant=alpha.
+ * metadata-query-params uses var1's PRM placement (path-based, not advertised
+ * in WWW-Authenticate) with the default OAuth metadata location, and hands
+ * the client an MCP server URL with a query component. Per RFC 9728 §3.1 the
+ * well-known suffix is inserted between the host and the path and/or query
+ * components, so the client's PRM request must keep the query:
+ * /.well-known/oauth-protected-resource/mcp?tenant=alpha. This is a separate
+ * scenario rather than a tweak to an existing config because a query-bearing
+ * resource identifier is itself a SHOULD NOT-discouraged configuration
+ * (RFC 9728 §1.2), so it must not contaminate the mainline metadata
+ * scenarios' server URL (the mutually-exclusive-config carve-out in
+ * AGENTS.md).
  */
 const SCENARIO_CONFIGS: MetadataScenarioConfig[] = [
   {
@@ -235,7 +242,7 @@ ${config.serverUrlQuery ? `**Server URL query:** ?${config.serverUrlQuery} (clie
           untestableCheck(
             'prm-query-preserved',
             'PRMQueryPreserved',
-            'Client SHOULD preserve the MCP server URL query component when constructing the PRM well-known URL (RFC 9728 §3.1)',
+            'Client is expected to preserve the MCP server URL query component when constructing the PRM well-known URL (RFC 9728 §3.1)',
             'client never requested the path-based PRM well-known URL, so query preservation could not be verified',
             [
               SpecReferences.RFC_PRM_DISCOVERY,

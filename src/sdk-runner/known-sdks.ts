@@ -40,7 +40,10 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // Fixtures live under conformance/ (the server moved there from
   // examples/server/conformance); one build compiles both. Same fixtures and
-  // baseline the go-sdk repo's own conformance CI uses.
+  // baseline the go-sdk repo's own conformance CI uses. The server entry runs
+  // the fixture in its default stateless setting only; go-sdk's own
+  // conformance CI runs it both ways (-stateless=false and -stateless).
+  // Per-mode configs here are a follow-up.
   'go-sdk': {
     build:
       'go build -o ./.conformance-client ./conformance/everything-client && go build -o ./.conformance-server ./conformance/everything-server',

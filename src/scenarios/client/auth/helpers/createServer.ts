@@ -152,7 +152,7 @@ export function createServer(
           name: 'PRMQueryPreserved',
           description: preserved
             ? 'Client preserved the MCP server URL query component in the PRM well-known URL'
-            : 'Client SHOULD preserve the MCP server URL query component when constructing the PRM well-known URL (RFC 9728 §3.1)',
+            : 'Client did not preserve the MCP server URL query component when constructing the PRM well-known URL; RFC 9728 §3.1 requires the query to be kept (reported as WARNING because a query-bearing resource identifier is itself a discouraged configuration per RFC 9728 §1.2)',
           status: preserved ? 'SUCCESS' : 'WARNING',
           timestamp: new Date().toISOString(),
           specReferences: [
