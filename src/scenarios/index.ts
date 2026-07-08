@@ -57,6 +57,8 @@ import {
   ResourcesNotFoundErrorScenario
 } from './server/resources';
 
+import { ResourcesDirectoryReadScenario } from './server/directory';
+
 import {
   PromptsListScenario,
   PromptsGetSimpleScenario,
@@ -199,6 +201,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Resources error handling (SEP-2164)
   new ResourcesNotFoundErrorScenario(),
+
+  // Skills extension (SEP-2640) — resources/directory/read surface (2e04c48d)
+  new ResourcesDirectoryReadScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),

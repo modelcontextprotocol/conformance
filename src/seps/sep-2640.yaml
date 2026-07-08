@@ -1,0 +1,97 @@
+# spec_source: modelcontextprotocol/modelcontextprotocol@556154c088371149c120172e95bb634655f00cbe seps/2640-skills-extension.md
+# extracted: 2026-06-05
+# forward_reference: rows sep-2640-capability-directory-read-flag through
+#   sep-2640-directory-read-pagination track SEP commit
+#   2e04c48da90224000e750ffd54a3611f2824fbc0 (2026-06-09) — the
+#   resources/directory/read addition. The file-level provenance above
+#   stays at 556154c because the PR 97 schema rewrite (360123d0,
+#   2026-06-08) made 3 existing rows stale (sep-2640-index-entry-type-enum,
+#   sep-2640-index-name-required, sep-2640-index-digest-required) and
+#   drifted ~11 others' verbatim wording. Full re-extraction at SEP HEAD
+#   is mcpkit#780's lifecycle; this file deliberately holds at 556154c
+#   until that lands.
+sep: 2640
+spec_url: https://modelcontextprotocol.io/seps/2640-skills-extension#specification
+requirements:
+  - check: sep-2640-skillmd-required
+    text: 'Every skill MUST contain a `SKILL.md` file at its root.'
+  - check: sep-2640-skillmd-frontmatter
+    text: '`SKILL.md` MUST begin with YAML frontmatter containing at minimum the `name` and `description` fields as defined by the Agent Skills specification.'
+  - check: sep-2640-skill-uri-scheme
+    text: 'Each file within a skill directory is exposed as an MCP resource. Servers SHOULD use the `skill://` URI scheme, under which the resource URI has the form: `skill://<skill-path>/<file-path>`'
+  - check: sep-2640-final-segment-equals-name
+    text: "The final segment of `<skill-path>` MUST equal the skill's `name` as declared in its `SKILL.md` frontmatter."
+  - check: sep-2640-no-nested-skills
+    text: 'A `SKILL.md` MUST NOT appear in any descendant directory of a skill. The skill directory is the boundary; skills do not nest inside other skills.'
+  - check: sep-2640-name-naming-rules
+    text: "The final `<skill-path>` segment, being the skill `name`, MUST satisfy the Agent Skills specification's naming rules."
+  - check: sep-2640-prefix-rfc3986
+    text: 'Prefix segments SHOULD be valid URI path segments per RFC 3986; no further constraints are imposed on them.'
+  - check: sep-2640-skillmd-mimetype
+    text: 'For each `skill://<skill-path>/SKILL.md` resource: `mimeType` SHOULD be `text/markdown`.'
+  - check: sep-2640-skillmd-metadata-name
+    text: 'For each `skill://<skill-path>/SKILL.md` resource: `name` SHOULD be set from the `name` field of the `SKILL.md` YAML frontmatter. By the path constraint above, this will equal the final segment of `<skill-path>`.'
+  - check: sep-2640-skillmd-metadata-description
+    text: 'For each `skill://<skill-path>/SKILL.md` resource: `description` SHOULD be set from the `description` field of the `SKILL.md` YAML frontmatter.'
+  - check: sep-2640-meta-prefix
+    text: 'When `_meta` keys are used for skill resources, implementations SHOULD use the `io.modelcontextprotocol.skills/` reverse-domain prefix.'
+  - check: sep-2640-host-load-by-uri
+    text: 'hosts MUST support loading a skill given only its URI'
+  - check: sep-2640-server-expose-index
+    text: 'A server SHOULD expose a resource at the well-known URI `skill://index.json` whose content is a JSON index of the skills it serves.'
+  - check: sep-2640-index-entry-type-enum
+    text: '`skills[].type` MUST be `"skill-md"` or `"archive"`.'
+  - check: sep-2640-index-name-required
+    text: '`skills[].name` matches the `SKILL.md` frontmatter `name` and the final segment of the skill path.'
+  - check: sep-2640-index-digest-required
+    text: '`skills[].digest` is the SHA-256 content digest of the artifact, formatted as `sha256:{hex}` (64 lowercase hex characters).'
+  - check: sep-2640-client-ignore-unrecognized
+    text: 'Clients SHOULD ignore unrecognized fields and SHOULD skip entries with an unrecognized `type`.'
+  - check: sep-2640-archive-format
+    text: 'the archive MUST be `.tar.gz` (gzip-compressed tar, `mimeType` `application/gzip`) or `.zip` (`mimeType` `application/zip`)'
+  - check: sep-2640-host-support-archive-formats
+    text: 'hosts MUST support both `.tar.gz` and `.zip` archive formats'
+  - check: sep-2640-archive-skillmd-at-root
+    text: 'Archive contents represent the skill directory directly — `SKILL.md` MUST be at the archive root, not nested inside a wrapper directory'
+  - check: sep-2640-archive-no-traversal
+    text: 'the archive MUST NOT contain path-traversal sequences (`..`) or absolute paths'
+  - check: sep-2640-host-archive-safety
+    text: 'Hosts unpacking an archive MUST apply the archive safety requirements of the Agent Skills specification: reject archives containing path-traversal sequences or absolute paths, reject symlinks or hard links that resolve outside the skill directory, and enforce a limit on total unpacked size / Hosts MUST validate archives per the Agent Skills archive safety requirements: reject path traversal and absolute paths, reject links resolving outside the skill directory, and bound total unpacked size to prevent decompression bombs.'
+  - check: sep-2640-host-verify-digest
+    text: 'Hosts MUST verify retrieved content against the `digest` in the index / hosts MUST NOT use unverified content.'
+  - check: sep-2640-host-no-empty-index-assumption
+    text: 'Hosts MUST NOT treat an absent or empty index as proof that a server has no skills.'
+
+  # resources/directory/read additions (SEP commit 2e04c48d, 2026-06-09)
+  - check: sep-2640-capability-directory-read-flag
+    text: 'Clients MUST NOT call `resources/directory/read` against a server that has not declared `directoryRead: true`.'
+  - check: sep-2640-directory-read-method-registered
+    text: 'A server that declares `directoryRead` MUST support the method for every directory within the skill namespaces it serves as individual files.'
+  - check: sep-2640-directory-read-subdir-mimetype
+    text: 'A _directory resource_ is a resource whose `mimeType` is `inode/directory`.'
+  - check: sep-2640-directory-read-result-resources-shape
+    text: 'The result contains every direct child of the directory: files with their ordinary resource metadata, subdirectories listed as directory resources (`mimeType: "inode/directory"`). The listing is not recursive; clients descend by calling the method again on a child directory.'
+  - check: sep-2640-directory-read-invalid-params
+    text: 'The method applies only to directory resources. If the URI does not exist, or exists but is not a directory resource, the server MUST return error `-32602` (Invalid params) — the same code `resources/read` uses for unknown resources.'
+  - check: sep-2640-directory-read-pagination
+    text: 'Pagination mirrors `resources/list`: when the result includes `nextCursor`, the client passes it back as `cursor` to retrieve the next page.'
+
+  - text: 'Per RFC 3986, the first segment of `<skill-path>` occupies the authority component. This carries no special semantics under this convention and clients MUST NOT attempt DNS or network resolution of it.'
+    excluded: 'DNS and network resolution sit below the MCP wire layer; the harness cannot observe whether the client performed name lookups on URI authority components.'
+  - text: "[Hosts] SHOULD determine the format from the resource's `mimeType`, falling back to the URL suffix"
+    excluded: 'Internal decision logic: when `mimeType` and URL suffix agree, the harness cannot distinguish a host that branched on `mimeType` from one that fell back to the suffix.'
+  - text: 'Hosts MUST treat MCP-served skill content as untrusted model input, subject to the same prompt-injection defenses applied to any server-provided text. A server being connected does not make its skill content authoritative.'
+    excluded: 'Internal host policy: "treats as untrusted" is an assertion about how content is reasoned over downstream of the read, not about wire traffic.'
+    url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications
+  - text: 'Hosts MUST NOT honor mechanisms in skill content that would cause local code execution without explicit user opt-in. This includes, non-exhaustively: hook declarations, pre/post-invocation scripts, shell commands embedded in frontmatter, or any field that a filesystem-sourced skill might use to register executable behavior on the host.'
+    excluded: 'Local code execution and explicit user opt-in are host-side filesystem and UX behaviors; not protocol-observable on the wire.'
+    url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications
+  - text: 'Hosts MUST either ignore such fields entirely when the skill arrives over MCP, or gate them behind an explicit per-skill user approval that states what will execute and where.'
+    excluded: 'Either branch (silent ignore vs. UI-gated approval) is a host-internal handling choice; not protocol-observable.'
+    url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications
+  - text: 'Hosts MUST NOT treat skill resources as higher-authority than other context. Explicit user policy governs whether a skill is loaded at all.'
+    excluded: 'Context-authority ordering is an internal prompting decision; not protocol-observable.'
+    url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications
+  - text: "Hosts SHOULD indicate which server a skill originates from when presenting it, SHOULD let users inspect a skill's content before it is loaded into model context"
+    excluded: 'UI presentation requirements (origin indicator, pre-load inspection); the harness cannot observe what the host displays to users.'
+    url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications

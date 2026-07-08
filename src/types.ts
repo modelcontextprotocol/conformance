@@ -95,7 +95,8 @@ export type ScenarioSpecTag = SpecVersion | 'extension';
 export const EXTENSION_IDS = [
   'io.modelcontextprotocol/oauth-client-credentials',
   'io.modelcontextprotocol/enterprise-managed-authorization',
-  'io.modelcontextprotocol/tasks'
+  'io.modelcontextprotocol/tasks',
+  'io.modelcontextprotocol/skills',
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
