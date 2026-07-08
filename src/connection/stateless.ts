@@ -244,9 +244,16 @@ export async function sendStatelessRequest(
     timeoutMs?: number;
     specVersion?: SpecVersion;
     /**
-     * Skip wire-schema validation for this call, in both directions. Only
-     * for scenarios that intentionally send malformed traffic to observe
-     * the server's error handling.
+     * Skip wire-schema validation of the *outgoing request* for this call.
+     * Only for scenarios that intentionally send malformed traffic to
+     * observe the server's error handling. The response direction is always
+     * validated — the implementation's reply to a malformed request must
+     * still be schema-valid — with one narrow carve-out: JSON-RPC 2.0
+     * requires `id: null` on error responses to requests that could not be
+     * processed, while the MCP schema's RequestId forbids null, so an
+     * `id: null` *error* response is tolerated on these calls only (no call
+     * site needs the response direction skipped outright today; add an
+     * explicit option if one ever does).
      */
     skipValidation?: boolean;
   } = {}
@@ -271,6 +278,23 @@ export async function sendStatelessRequest(
   }
   const body = JSON.stringify(request);
 
+  // See the `skipValidation` doc above: on a deliberately-malformed
+  // (skip-validated) request, tolerate the JSON-RPC 2.0 `id: null` an error
+  // response must carry when the request could not be processed, by
+  // validating the rest of the shape with the request's real id substituted.
+  const withNullIdCarveOut = (event: unknown): unknown => {
+    if (
+      options.skipValidation &&
+      typeof event === 'object' &&
+      event !== null &&
+      (event as Record<string, unknown>).error !== undefined &&
+      (event as Record<string, unknown>).id === null
+    ) {
+      return { ...(event as Record<string, unknown>), id };
+    }
+    return event;
+  };
+
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -290,14 +314,12 @@ export async function sendStatelessRequest(
       // Read the stream incrementally and resolve on the matching response —
       // a server that keeps the stream open must not stall the harness.
       const { events, body: matched } = await readSseJsonRpcResponse(res, id);
-      if (!options.skipValidation) {
-        for (const event of events) {
-          validateWireMessage(specVersion, event, {
-            origin: 'implementation',
-            context: `SSE event during '${method}'`,
-            requestMethod: event === matched ? method : undefined
-          });
-        }
+      for (const event of events) {
+        validateWireMessage(specVersion, withNullIdCarveOut(event), {
+          origin: 'implementation',
+          context: `SSE event during '${method}'`,
+          requestMethod: event === matched ? method : undefined
+        });
       }
       return {
         status: res.status,
@@ -311,8 +333,8 @@ export async function sendStatelessRequest(
     const text = await res.text();
     try {
       const parsed = text ? (JSON.parse(text) as JsonRpcResponse) : undefined;
-      if (parsed !== undefined && !options.skipValidation) {
-        validateWireMessage(specVersion, parsed, {
+      if (parsed !== undefined) {
+        validateWireMessage(specVersion, withNullIdCarveOut(parsed), {
           origin: 'implementation',
           context: `response to '${method}'`,
           requestMethod: method

@@ -15,13 +15,26 @@ import {
   InputRequiredResultUnsupportedMethodsScenario,
   InputRequiredResultTamperedStateScenario
 } from './input-required-result';
-import { takeWireViolations } from '../../validation/wire-schema';
+import {
+  formatWireViolation,
+  takeWireViolations
+} from '../../validation/wire-schema';
 
 // The broken fixture's responses violate the draft schema by design (that is
 // what these tests verify the checks catch); drain the wire-schema recorder
-// so the suite-wide guard doesn't re-flag the intentional violations.
+// so the suite-wide guard doesn't re-flag the intentional violations. But
+// only the *implementation* (the broken fixture) is allowed to be invalid —
+// a harness-origin violation is a real harness bug and must still fail.
 afterEach(() => {
-  takeWireViolations();
+  const { violations } = takeWireViolations();
+  const harnessViolations = violations.filter((v) => v.origin === 'harness');
+  if (harnessViolations.length > 0) {
+    throw new Error(
+      'Harness-origin wire-schema violations in an MRTR negative test ' +
+        '(only the broken fixture may be invalid here):\n  ' +
+        harnessViolations.map(formatWireViolation).join('\n  ')
+    );
+  }
 });
 
 function getFreePort(): Promise<number> {

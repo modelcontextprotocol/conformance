@@ -3,6 +3,7 @@ import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { sendStatelessRequest } from '../connection/stateless';
 import {
   resetWireValidation,
+  specDispatchMaps,
   takeWireViolations,
   wireSchemaChecks,
   wireSchemaErrors
@@ -174,10 +175,41 @@ describe('wire-schema choke points and checks', () => {
     }
   });
 
-  it('skips both directions for a call that opts out via skipValidation', async () => {
+  it('skips only the request direction for a call that opts out via skipValidation', async () => {
     const { url, server } = await listen(() => ({
       status: 400,
       body: PR_376_INVALID_ERROR
+    }));
+    try {
+      resetWireValidation();
+      // The deliberately-malformed request is not validated, but the
+      // implementation's response still is — and here it is invalid.
+      await sendStatelessRequest(
+        url,
+        'tools/call',
+        { arguments: {} },
+        { skipValidation: true }
+      );
+      const { violations, observed } = takeWireViolations();
+      expect(observed).toBe(1);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].origin).toBe('implementation');
+      expect(violations[0].errors.join('\n')).toContain('requiredCapabilities');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('tolerates a JSON-RPC 2.0 `id: null` error response only on skip-validated requests', async () => {
+    // JSON-RPC 2.0 requires id: null on error responses to requests that
+    // could not be processed; the MCP schema's RequestId forbids null.
+    const { url, server } = await listen(() => ({
+      status: 400,
+      body: {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: 'Invalid Request' }
+      }
     }));
     try {
       resetWireValidation();
@@ -187,9 +219,17 @@ describe('wire-schema choke points and checks', () => {
         { arguments: {} },
         { skipValidation: true }
       );
-      const { violations, observed } = takeWireViolations();
-      expect(observed).toBe(0);
-      expect(violations).toEqual([]);
+      const skipped = takeWireViolations();
+      expect(skipped.observed).toBe(1);
+      expect(skipped.violations).toEqual([]);
+
+      // The carve-out is narrow: the same response on a normal (validated)
+      // call is still a violation.
+      await sendStatelessRequest(url, 'tools/list');
+      const normal = takeWireViolations();
+      expect(
+        normal.violations.filter((v) => v.origin === 'implementation')
+      ).toHaveLength(1);
     } finally {
       server.close();
     }
@@ -225,5 +265,144 @@ describe('wire-schema choke points and checks', () => {
   it('emits no checks when no wire traffic was observed', () => {
     resetWireValidation();
     expect(wireSchemaChecks(DRAFT_PROTOCOL_VERSION)).toEqual([]);
+  });
+});
+
+describe('specDispatchMaps', () => {
+  // Pin the dispatch maps extracted from each vendored schema. The extraction
+  // walks `properties.method.const` and
+  // `properties.error.allOf[].properties.code.const`; if a schema sync
+  // restructures those, validation silently degrades to envelope-only. These
+  // pins make that loud instead.
+
+  const METHOD_DEFS_2025_03_26: Record<string, string> = {
+    'tools/call': 'CallToolRequest',
+    'notifications/cancelled': 'CancelledNotification',
+    'completion/complete': 'CompleteRequest',
+    'sampling/createMessage': 'CreateMessageRequest',
+    'prompts/get': 'GetPromptRequest',
+    initialize: 'InitializeRequest',
+    'notifications/initialized': 'InitializedNotification',
+    'prompts/list': 'ListPromptsRequest',
+    'resources/templates/list': 'ListResourceTemplatesRequest',
+    'resources/list': 'ListResourcesRequest',
+    'roots/list': 'ListRootsRequest',
+    'tools/list': 'ListToolsRequest',
+    'notifications/message': 'LoggingMessageNotification',
+    ping: 'PingRequest',
+    'notifications/progress': 'ProgressNotification',
+    'notifications/prompts/list_changed': 'PromptListChangedNotification',
+    'resources/read': 'ReadResourceRequest',
+    'notifications/resources/list_changed': 'ResourceListChangedNotification',
+    'notifications/resources/updated': 'ResourceUpdatedNotification',
+    'notifications/roots/list_changed': 'RootsListChangedNotification',
+    'logging/setLevel': 'SetLevelRequest',
+    'resources/subscribe': 'SubscribeRequest',
+    'notifications/tools/list_changed': 'ToolListChangedNotification',
+    'resources/unsubscribe': 'UnsubscribeRequest'
+  };
+
+  // 2025-06-18 adds elicitation on top of 2025-03-26.
+  const METHOD_DEFS_2025_06_18: Record<string, string> = {
+    ...METHOD_DEFS_2025_03_26,
+    'elicitation/create': 'ElicitRequest'
+  };
+
+  // 2025-11-25 adds tasks (SEP-1686) and the elicitation-complete
+  // notification on top of 2025-06-18.
+  const METHOD_DEFS_2025_11_25: Record<string, string> = {
+    ...METHOD_DEFS_2025_06_18,
+    'tasks/cancel': 'CancelTaskRequest',
+    'notifications/elicitation/complete': 'ElicitationCompleteNotification',
+    'tasks/result': 'GetTaskPayloadRequest',
+    'tasks/get': 'GetTaskRequest',
+    'tasks/list': 'ListTasksRequest',
+    'notifications/tasks/status': 'TaskStatusNotification'
+  };
+
+  // The draft (SEP-2575) drops the initialize/session lifecycle, ping,
+  // logging/setLevel, roots-changed, tasks, and resource subscriptions, and
+  // adds server/discover plus subscriptions/listen.
+  const METHOD_DEFS_DRAFT: Record<string, string> = (() => {
+    const defs: Record<string, string> = {
+      ...METHOD_DEFS_2025_11_25,
+      'server/discover': 'DiscoverRequest',
+      'subscriptions/listen': 'SubscriptionsListenRequest',
+      'notifications/subscriptions/acknowledged':
+        'SubscriptionsAcknowledgedNotification'
+    };
+    for (const removed of [
+      'initialize',
+      'notifications/initialized',
+      'ping',
+      'logging/setLevel',
+      'notifications/roots/list_changed',
+      'resources/subscribe',
+      'resources/unsubscribe',
+      'tasks/cancel',
+      'notifications/elicitation/complete',
+      'tasks/result',
+      'tasks/get',
+      'tasks/list',
+      'notifications/tasks/status'
+    ]) {
+      delete defs[removed];
+    }
+    return defs;
+  })();
+
+  it.each([
+    ['2025-03-26', METHOD_DEFS_2025_03_26, {}],
+    ['2025-06-18', METHOD_DEFS_2025_06_18, {}],
+    [
+      '2025-11-25',
+      METHOD_DEFS_2025_11_25,
+      { '-32042': 'URLElicitationRequiredError' }
+    ],
+    [
+      DRAFT_PROTOCOL_VERSION,
+      METHOD_DEFS_DRAFT,
+      {
+        '-32020': 'HeaderMismatchError',
+        '-32021': 'MissingRequiredClientCapabilityError',
+        '-32022': 'UnsupportedProtocolVersionError'
+      }
+    ]
+  ] as const)(
+    'extracts the expected methodDefs and errorDefs for %s',
+    (version, expectedMethods, expectedErrors) => {
+      const { methodDefs, errorDefs, resultDefs } = specDispatchMaps(
+        version as never
+      );
+      expect(Object.fromEntries(methodDefs)).toEqual(expectedMethods);
+      expect(
+        Object.fromEntries(
+          [...errorDefs].map(([code, def]) => [String(code), def])
+        )
+      ).toEqual(expectedErrors);
+      // Every XxxRequest with a schema-defined XxxResult must be paired.
+      expect(resultDefs.get('tools/call')).toBe('CallToolResult');
+      expect(resultDefs.get('tools/list')).toBe('ListToolsResult');
+    }
+  );
+
+  it('pairs elicitation/create with ElicitResult from 2025-06-18 on (the #376 class)', () => {
+    expect(
+      specDispatchMaps('2025-03-26').resultDefs.get('elicitation/create')
+    ).toBeUndefined();
+    expect(
+      specDispatchMaps('2025-06-18').resultDefs.get('elicitation/create')
+    ).toBe('ElicitResult');
+    expect(
+      specDispatchMaps('2025-11-25').resultDefs.get('elicitation/create')
+    ).toBe('ElicitResult');
+    expect(
+      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get(
+        'elicitation/create'
+      )
+    ).toBe('ElicitResult');
+    expect(
+      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get('server/discover')
+    ).toBe('DiscoverResult');
   });
 });
