@@ -1,9 +1,18 @@
 /**
  * Per-spec-version JSON-schema validation of wire messages.
  *
- * Every JSON-RPC message the harness sends or receives is validated against
- * the vendored spec `schema.json` for the run's spec version (see
+ * JSON-RPC messages the harness sends or receives are validated against the
+ * vendored spec `schema.json` for the run's spec version (see
  * `src/spec-types/{version}.schema.json`, synced by `scripts/sync-schema.ts`).
+ *
+ * Coverage: the stateless wire (`sendStatelessRequest` — outbound requests,
+ * JSON response bodies, SSE events), the stateful wire (the SDK transport
+ * hook in `src/connection/sdk-client.ts` — both directions, including the
+ * initialize handshake and server→client elicitation/sampling traffic), and
+ * the mock servers driving client conformance (`src/mock-server/*`). Known
+ * gap: the client-auth scenarios' bespoke express mock
+ * (`src/scenarios/client/auth/helpers/createServer.ts`) is not instrumented.
+ *
  * This catches two failure classes:
  *
  * - `implementation` origin: the system-under-test emitted a message the spec
@@ -174,6 +183,28 @@ function compileSpec(specVersion: SpecVersion): CompiledSpec {
   return compiled;
 }
 
+/**
+ * The dispatch maps extracted from a version's schema: JSON-RPC method →
+ * typed request/notification definition, and `error.code` const → typed
+ * error-response definition. Exposed so a unit test can pin the expected
+ * contents per version — if a schema sync changes the structure the
+ * extraction walks (`properties.method.const`,
+ * `properties.error.allOf[].properties.code.const`), validation would
+ * silently degrade to envelope-only; the pinning test makes that loud.
+ */
+export function specDispatchMaps(specVersion: SpecVersion): {
+  methodDefs: ReadonlyMap<string, string>;
+  errorDefs: ReadonlyMap<number, string>;
+  resultDefs: ReadonlyMap<string, string>;
+} {
+  const spec = compileSpec(specVersion);
+  return {
+    methodDefs: spec.methodDefs,
+    errorDefs: spec.errorDefs,
+    resultDefs: spec.resultDefs
+  };
+}
+
 function formatErrors(
   defName: string,
   errors: ErrorObject[] | null | undefined
@@ -214,6 +245,9 @@ export function wireSchemaErrors(
 
   if (Array.isArray(message)) {
     // A batch: only legal where the envelope union admits arrays (2025-03-26).
+    // Limitation: `requestMethod` is forwarded to every element, so a batch
+    // mixing responses to different requests would validate all of them
+    // against one result type — no caller sends batched requests today.
     const elementErrors = message.flatMap((m, i) =>
       wireSchemaErrors(specVersion, m, requestMethod).map((e) => `[${i}] ${e}`)
     );

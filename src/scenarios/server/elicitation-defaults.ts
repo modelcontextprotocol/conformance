@@ -24,7 +24,7 @@ export class ElicitationDefaultsScenario implements ClientScenario {
 Implement a tool named \`test_elicitation_sep1034_defaults\` (no arguments) that requests \`elicitation/create\` from the client with a schema containing default values for all primitive types:
 - \`name\` (string): default "John Doe"
 - \`age\` (integer): default 30
-- \`score\` (number): default 95.5
+- \`score\` (number): default 95 (integer-valued: the 2025-11-25 spec schema types number defaults as \`integer\`)
 - \`status\` (string enum: ["active", "inactive", "pending"]): default "active"
 - \`verified\` (boolean): default true
 
@@ -46,7 +46,7 @@ Implement a tool named \`test_elicitation_sep1034_defaults\` (no arguments) that
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const connection = await connectToServer(serverUrl, {}, ctx.specVersion);
 
       let capturedRequest: any = null;
       connection.client.setRequestHandler(
@@ -184,9 +184,12 @@ Implement a tool named \`test_elicitation_sep1034_defaults\` (no arguments) that
         }
         if (!('default' in properties.score)) {
           numberErrors.push('Missing default field');
-        } else if (properties.score.default !== 95.5) {
+        } else if (properties.score.default !== 95) {
+          // Integer-valued on purpose: the 2025-11-25 spec schema types
+          // NumberSchema.default as `integer`, so a fractional default would
+          // be wire-schema-invalid at this scenario's spec version.
           numberErrors.push(
-            `Expected default 95.5, got ${properties.score.default}`
+            `Expected default 95, got ${properties.score.default}`
           );
         }
       }
