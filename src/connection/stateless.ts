@@ -22,6 +22,7 @@
 
 import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
+import { validateWireMessage } from '../validation/wire-schema';
 import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
 export interface JsonRpcResponse {
@@ -242,19 +243,33 @@ export async function sendStatelessRequest(
     headers?: Record<string, string>;
     timeoutMs?: number;
     specVersion?: SpecVersion;
+    /**
+     * Skip wire-schema validation for this call, in both directions. Only
+     * for scenarios that intentionally send malformed traffic to observe
+     * the server's error handling.
+     */
+    skipValidation?: boolean;
   } = {}
 ): Promise<StatelessResponse> {
   const id = nextRequestId++;
+  const specVersion = options.specVersion ?? DRAFT_PROTOCOL_VERSION;
   const headers = buildStandardHeaders(method, params, {
     headers: options.headers,
     specVersion: options.specVersion
   });
-  const body = JSON.stringify({
+  const request = {
     jsonrpc: '2.0',
     id,
     method,
     params: withRequestMeta(params, options.specVersion)
-  });
+  };
+  if (!options.skipValidation) {
+    validateWireMessage(specVersion, request, {
+      origin: 'harness',
+      context: `stateless request '${method}'`
+    });
+  }
+  const body = JSON.stringify(request);
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -275,6 +290,15 @@ export async function sendStatelessRequest(
       // Read the stream incrementally and resolve on the matching response —
       // a server that keeps the stream open must not stall the harness.
       const { events, body: matched } = await readSseJsonRpcResponse(res, id);
+      if (!options.skipValidation) {
+        for (const event of events) {
+          validateWireMessage(specVersion, event, {
+            origin: 'implementation',
+            context: `SSE event during '${method}'`,
+            requestMethod: event === matched ? method : undefined
+          });
+        }
+      }
       return {
         status: res.status,
         headers: res.headers,
@@ -286,11 +310,19 @@ export async function sendStatelessRequest(
 
     const text = await res.text();
     try {
+      const parsed = text ? (JSON.parse(text) as JsonRpcResponse) : undefined;
+      if (parsed !== undefined && !options.skipValidation) {
+        validateWireMessage(specVersion, parsed, {
+          origin: 'implementation',
+          context: `response to '${method}'`,
+          requestMethod: method
+        });
+      }
       return {
         status: res.status,
         headers: res.headers,
         contentType,
-        body: text ? (JSON.parse(text) as JsonRpcResponse) : undefined
+        body: parsed
       };
     } catch {
       return { status: res.status, headers: res.headers, contentType, text };

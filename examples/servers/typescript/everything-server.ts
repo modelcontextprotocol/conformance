@@ -1311,6 +1311,31 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    // Draft results MUST carry `resultType`, and results of the cacheable
+    // operations MUST carry the SEP-2549 caching hints. Stamp the members
+    // centrally (when a dispatch site did not set them itself) so every
+    // stateless response is valid per the draft schema.
+    const cacheableMethods = new Set([
+      'server/discover',
+      'tools/list',
+      'prompts/list',
+      'resources/list',
+      'resources/templates/list',
+      'resources/read'
+    ]);
+    const sendJson = res.json.bind(res);
+    res.json = ((payload: { result?: Record<string, unknown> }) => {
+      const result = payload?.result;
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        result.resultType ??= 'complete';
+        if (cacheableMethods.has(method)) {
+          result.ttlMs ??= 0;
+          result.cacheScope ??= 'private';
+        }
+      }
+      return sendJson(payload);
+    }) as typeof res.json;
+
     // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
     if (method === 'subscriptions/listen') {
       res.writeHead(200, {

@@ -51,6 +51,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^22.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "commander": "^14.0.2",
     "eventsource-parser": "^3.0.8",
     "express": "^5.1.0",

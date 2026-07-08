@@ -13,6 +13,7 @@ import {
   DEFAULT_CLIENT_CAPABILITIES
 } from './stateless';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { takeWireViolations } from '../validation/wire-schema';
 
 describe('buildStandardHeaders', () => {
   test('sets the standard headers pinned to the draft protocol version', () => {
@@ -87,7 +88,12 @@ describe('sendStatelessRequest', () => {
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
-            result: { tools: [] }
+            result: {
+              tools: [],
+              resultType: 'complete',
+              ttlMs: 0,
+              cacheScope: 'private'
+            }
           })
         );
       });
@@ -100,7 +106,12 @@ describe('sendStatelessRequest', () => {
         'tools/list'
       );
       expect(response.status).toBe(200);
-      expect(response.body?.result).toEqual({ tools: [] });
+      expect(response.body?.result).toEqual({
+        tools: [],
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private'
+      });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -151,6 +162,8 @@ describe('connectStateless', () => {
       await expect(conn.request('tools/list')).rejects.toThrow(
         /HTTP 502.*upstream timeout/
       );
+      // The proxy body is deliberately not a JSON-RPC message.
+      expect(takeWireViolations().violations).toHaveLength(1);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

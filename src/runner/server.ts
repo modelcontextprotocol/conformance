@@ -8,6 +8,10 @@ import {
 } from '../types';
 import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
 import { connectFor, type RunContext } from '../connection';
+import {
+  resetWireValidation,
+  wireSchemaChecks
+} from '../validation/wire-schema';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 /**
@@ -93,7 +97,9 @@ export async function runServerConformanceTest(
     specVersion: resolvedSpecVersion,
     connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
+  resetWireValidation();
   const checks = await scenario.run(ctx);
+  checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
   if (resultDir) {
     await fs.writeFile(

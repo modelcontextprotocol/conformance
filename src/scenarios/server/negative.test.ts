@@ -9,6 +9,7 @@ import {
   sep2106KeywordCheckStatus
 } from './json-schema-2020-12';
 import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
+import { takeWireViolations } from '../../validation/wire-schema';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -158,6 +159,10 @@ describe('Server scenario negative tests', () => {
         expect(check).toBeDefined();
         expect(check?.status).toBe('FAILURE');
       }
+
+      // This fixture's whole point is omitting the caching hints the draft
+      // schema requires, so its responses are wire-schema-invalid by design.
+      expect(takeWireViolations().violations.length).toBeGreaterThan(0);
     }, 15000);
   });
 
