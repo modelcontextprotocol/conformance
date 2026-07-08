@@ -13,6 +13,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
+import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
+import { validateWireMessage } from '../validation/wire-schema';
 import type { MockServer, RequestHandlers } from './index';
 
 const CAPABILITY_BY_PREFIX: Record<string, string> = {
@@ -40,7 +42,8 @@ export function capabilitiesFromHandlers(
 }
 
 export async function createServerStateful(
-  handlers: RequestHandlers
+  handlers: RequestHandlers,
+  specVersion: SpecVersion = LATEST_SPEC_VERSION
 ): Promise<MockServer> {
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
@@ -61,10 +64,22 @@ export async function createServerStateful(
       });
       server.setRequestHandler(schema, async (request) => {
         try {
-          return (await handler(
+          const result = (await handler(
             (request.params ?? {}) as Record<string, unknown>,
             request as JSONRPCRequest
           )) as Record<string, unknown>;
+          // The SDK builds the response envelope; validate the
+          // harness-authored result against its typed definition.
+          validateWireMessage(
+            specVersion,
+            { jsonrpc: '2.0', id: 0, result },
+            {
+              origin: 'harness',
+              context: `stateful mock result for '${method}'`,
+              requestMethod: method
+            }
+          );
+          return result;
         } catch (e) {
           if (e instanceof McpError) throw e;
           throw new McpError(
@@ -85,6 +100,10 @@ export async function createServerStateful(
     // preamble) at the HTTP layer so unregistered methods are captured too,
     // matching the stateless impl and the MockServer.recorded contract.
     const body = req.body;
+    validateWireMessage(specVersion, body, {
+      origin: 'implementation',
+      context: `client request '${body?.method ?? '(unknown)'}' to stateful mock`
+    });
     if (
       body?.method &&
       body.method !== 'initialize' &&

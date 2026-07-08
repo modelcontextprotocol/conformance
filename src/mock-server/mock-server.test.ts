@@ -9,6 +9,7 @@ import {
 } from './stateless';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { takeWireViolations } from '../validation/wire-schema';
 
 const meta = {
   'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
@@ -180,9 +181,33 @@ describe('withRequiredDraftResultFields', () => {
 });
 
 describe('createServerFor', () => {
-  it('returns stateful for dated 2025-x versions', () => {
-    expect(createServerFor('2025-06-18')).toBe(createServerStateful);
-    expect(createServerFor('2025-11-25')).toBe(createServerStateful);
+  it('returns a stateful factory for dated 2025-x versions', async () => {
+    const srv = await createServerFor('2025-11-25')({
+      'tools/list': () => ({ tools: [] })
+    });
+    try {
+      // Only the stateful (initialize handshake) impl answers initialize.
+      const r = await fetch(srv.url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream'
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-11-25',
+            capabilities: {},
+            clientInfo: { name: 't', version: '1' }
+          }
+        })
+      });
+      expect(r.status).toBe(200);
+    } finally {
+      await srv.close();
+    }
   });
   it('returns a stateless factory bound to the requested version', async () => {
     const srv = await createServerFor(DRAFT_PROTOCOL_VERSION)({});
@@ -232,6 +257,8 @@ describe('createServerStateless', () => {
       );
       expect(status).toBe(400);
       expect(body.error.code).toBe(-32602);
+      // The request is deliberately schema-invalid (missing params._meta).
+      expect(takeWireViolations().violations).toHaveLength(1);
     } finally {
       await srv.close();
     }
@@ -307,7 +334,9 @@ describe('createServerStateless', () => {
 
   it('routes to handlers and records requests', async () => {
     const srv = await createServerStateless({
-      'tools/list': () => ({ tools: [{ name: 'x' }] })
+      'tools/list': () => ({
+        tools: [{ name: 'x', inputSchema: { type: 'object' } }]
+      })
     });
     try {
       const { body } = await post(
@@ -338,6 +367,8 @@ describe('createServerStateless', () => {
       );
       expect(status).toBe(400);
       expect(srv.recorded.map((r) => r.method)).toEqual(['tools/list']);
+      // The request is deliberately schema-invalid (missing params._meta).
+      expect(takeWireViolations().violations).toHaveLength(1);
     } finally {
       await srv.close();
     }
@@ -365,7 +396,9 @@ describe('createServerStateless', () => {
 
   it('stamps the draft-required result members onto handler results', async () => {
     const srv = await createServerStateless({
-      'tools/list': () => ({ tools: [{ name: 'x' }] }),
+      'tools/list': () => ({
+        tools: [{ name: 'x', inputSchema: { type: 'object' } }]
+      }),
       'tools/call': () => ({ content: [{ type: 'text', text: 'ok' }] })
     });
     try {
@@ -415,7 +448,7 @@ describe('createServerStateless', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'tools/call',
-          params: { _meta: meta }
+          params: { _meta: meta, name: 'x' }
         },
         headers
       );

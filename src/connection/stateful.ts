@@ -15,11 +15,14 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { connectToServer } from './sdk-client';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
+import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
+import { validateWireMessage } from '../validation/wire-schema';
 import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
 export async function connectStateful(
   serverUrl: string,
-  opts: ConnectOptions = {}
+  opts: ConnectOptions = {},
+  specVersion: SpecVersion = LATEST_SPEC_VERSION
 ): Promise<Connection> {
   const { client, close } = await connectToServer(serverUrl, opts);
 
@@ -28,10 +31,15 @@ export async function connectStateful(
     // The SDK's Zod parsing strips the jsonrpc field; restore it so collected
     // notifications match the JSONRPCNotification wire shape, as
     // connectStateless provides.
-    notifications.push({
+    const notification = {
       jsonrpc: '2.0',
       ...(n as object)
-    } as JSONRPCNotification);
+    } as JSONRPCNotification;
+    validateWireMessage(specVersion, notification, {
+      origin: 'implementation',
+      context: `notification '${notification.method}'`
+    });
+    notifications.push(notification);
   };
   // The SDK pre-registers a handler for notifications/progress (to drive the
   // onprogress callback feature), so it never reaches the fallback. Register
@@ -72,8 +80,25 @@ export async function connectStateful(
           'connectStateful.request: extraHeaders is unsupported on the stateful wire (per-call header overrides require raw fetch on the stateless wire only)'
         );
       }
+      // The SDK assigns the real request id; validate the envelope it builds
+      // with a stand-in id.
+      validateWireMessage(
+        specVersion,
+        { jsonrpc: '2.0', id: 0, method, params },
+        { origin: 'harness', context: `stateful request '${method}'` }
+      );
       try {
-        return (await client.request({ method, params }, ResultSchema)) as R;
+        const result = await client.request({ method, params }, ResultSchema);
+        validateWireMessage(
+          specVersion,
+          { jsonrpc: '2.0', id: 0, result },
+          {
+            origin: 'implementation',
+            context: `response to '${method}'`,
+            requestMethod: method
+          }
+        );
+        return result as R;
       } catch (e) {
         // Normalize so scenarios always see JsonRpcError regardless of impl.
         // The SDK prefixes messages with "MCP error <code>: "; strip it so

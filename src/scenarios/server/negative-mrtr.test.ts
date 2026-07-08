@@ -15,6 +15,14 @@ import {
   InputRequiredResultUnsupportedMethodsScenario,
   InputRequiredResultTamperedStateScenario
 } from './input-required-result';
+import { takeWireViolations } from '../../validation/wire-schema';
+
+// The broken fixture's responses violate the draft schema by design (that is
+// what these tests verify the checks catch); drain the wire-schema recorder
+// so the suite-wide guard doesn't re-flag the intentional violations.
+afterEach(() => {
+  takeWireViolations();
+});
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {

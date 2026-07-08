@@ -43,11 +43,11 @@ export const STATELESS_SPEC_VERSIONS: readonly SpecVersion[] =
 export function connectFor(
   specVersion: SpecVersion
 ): (serverUrl: string, opts?: ConnectOptions) => Promise<Connection> {
+  // Pass the version through so requests declare (and are wire-schema
+  // validated against) the spec version the run was invoked with.
   return isStatefulVersion(specVersion)
-    ? connectStateful
-    : // Pass the version through so stateless requests declare the spec
-      // version the run was invoked with (matters under --force).
-      (serverUrl, opts) => connectStateless(serverUrl, specVersion, opts);
+    ? (serverUrl, opts) => connectStateful(serverUrl, opts, specVersion)
+    : (serverUrl, opts) => connectStateless(serverUrl, specVersion, opts);
 }
 
 /**
