@@ -1,0 +1,48 @@
+sep: 1932
+spec_url: https://github.com/modelcontextprotocol/ext-auth/blob/pieterkas-dpop-extension/specification/draft/dpop-extension.mdx
+requirements:
+  - check: sep-1932-client-dpop-auth-scheme
+    text: 'When making requests to protected MCP server resources, clients MUST include the access token using the `Authorization` header with the `DPoP` authentication scheme as specified in RFC 9449 Section 7.1'
+  - check: sep-1932-client-fresh-proof
+    text: 'When making requests to protected MCP server resources, clients MUST include a fresh DPoP proof in the `DPoP` header'
+  - check: sep-1932-client-token-request-proof
+    text: 'To obtain a DPoP-bound access token, the client MUST include a DPoP proof in the `DPoP` header of its token request (RFC 9449 Section 5)'
+  - check: sep-1932-client-as-nonce
+    text: 'When the authorization server responds with `use_dpop_nonce`, the client MUST retry the token request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 8)'
+  - check: sep-1932-client-rs-nonce
+    text: 'When the MCP server responds with `use_dpop_nonce`, the client MUST retry the request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 9)'
+  - check: sep-1932-server-validate-proof
+    text: 'MCP servers MUST validate DPoP proofs according to RFC 9449 Section 4.3'
+  - check: sep-1932-server-iat-window
+    text: "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time / MCP servers that are not capable of keeping state or performing global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation"
+  - check: sep-1932-server-reject-401
+    text: 'If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1'
+  - check: sep-1932-as-metadata-alg-values
+    text: 'Authorization servers supporting DPoP MUST include the `dpop_signing_alg_values_supported` field in their Authorization Server Metadata as defined in RFC 9449 Section 5.1. This field MUST contain a JSON array listing the JWS algorithm values supported for DPoP proof JWTs'
+  - check: sep-1932-as-no-none-alg
+    text: 'Only asymmetric signature algorithms are permitted; the `none` algorithm MUST NOT be included'
+  - check: sep-1932-as-token-binding
+    text: "When issuing a DPoP-bound access token, the authorization server MUST bind it to the client's DPoP public key by including a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key (RFC 9449 Section 6) and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+  - check: sep-1932-asymmetric-alg-only
+    text: 'Only asymmetric signature algorithms MUST be used for DPoP proofs. Symmetric algorithms and the `none` algorithm MUST NOT be permitted as specified in RFC 9449 Section 11.6'
+  - check: sep-1932-server-nonce
+    text: 'For high-security environments, MCP servers SHOULD implement server-provided nonces as described in RFC 9449 Section 9 to further limit proof lifetime, even if it is stateless'
+  - check: sep-1932-server-audience-validation
+    text: 'MCP servers MUST continue to validate that access tokens were specifically issued for them, even when DPoP is used'
+
+  - text: 'When `dpop_bound_access_tokens` is set to `true`, the authorization server MUST reject token requests from the client that do not include a valid DPoP proof'
+    excluded: 'Enforcement is gated on the `dpop_bound_access_tokens` client-registration metadata (RFC 9449 §5.2), a per-client policy — not exercisable without dynamic client registration, which is out of scope for these DPoP scenarios.'
+  - text: 'Implementations MUST conform to all requirements specified in this extension'
+    excluded: 'Umbrella requirement satisfied by the specific checks above; not separately observable on the wire.'
+  - text: 'Implementations MUST also conform to the baseline authorization requirements'
+    excluded: 'Covered by the existing baseline MCP authorization conformance suite; not DPoP-specific.'
+  - text: 'Authorization servers and clients SHOULD support modern, secure algorithms such as ES256 (ECDSA using P-256 and SHA-256)'
+    excluded: 'No crisp wire-observable behaviour; the spec explicitly does not mandate specific algorithms.'
+  - text: 'Implementations adopting this extension MUST follow the security considerations outlined in RFC 9449 Section 11, the baseline MCP Authorization specification security requirements, and OAuth 2.1 security best practices'
+    excluded: 'Umbrella reference to the security considerations of other specifications; not a discrete observable behaviour.'
+  - text: 'Clients MUST protect DPoP private keys using appropriate security measures. If hardware security modules or secure enclaves are available, they SHOULD be used to protect private keys to prevent key extraction'
+    excluded: 'Key storage is an implementation/internal concern, not observable on the wire.'
+  - text: 'Browser-based clients SHOULD use the Web Crypto API with non-extractable keys to prevent key exfiltration via XSS attacks'
+    excluded: 'Client implementation detail, not observable on the wire.'
+  - text: 'MCP servers requiring maximum replay protection SHOULD implement `jti` tracking despite the operational complexity'
+    excluded: 'Explicitly optional (servers are NOT required to track jti) and stateful/internal; only indirectly observable via replay.'
