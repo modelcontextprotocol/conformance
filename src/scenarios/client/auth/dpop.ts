@@ -326,7 +326,11 @@ export class DPoPClientScenario implements Scenario {
       errorMessage = 'Client never presented an access token to the MCP server';
     } else if (!this.obs.allProofsWellFormed) {
       status = 'FAILURE';
-      errorMessage = `DPoP proof was missing or malformed: ${this.obs.proofError}`;
+      // Attribute the failure to the right layer: a defect in the proof itself
+      // vs. an access token the proof cannot be validated against.
+      errorMessage = this.obs.proofError
+        ? `DPoP proof was missing or malformed: ${this.obs.proofError}`
+        : `DPoP proof could not be validated against the presented access token: ${this.obs.tokenError}`;
     } else if (this.obs.replayDetected) {
       status = 'FAILURE';
       errorMessage =

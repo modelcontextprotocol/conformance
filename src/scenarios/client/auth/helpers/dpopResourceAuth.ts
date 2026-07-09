@@ -32,7 +32,10 @@ export interface DpopClientObservations {
   jtisSeen: string[];
   replayDetected: boolean;
   allProofsWellFormed: boolean;
+  /** First defect in a proof itself (malformed/mismatched claims, bad signature). */
   proofError?: string;
+  /** First defect in the presented access token (e.g. not a DPoP-bound JWT). */
+  tokenError?: string;
   /** The judge issued a `use_dpop_nonce` challenge (RFC 9449 §9). */
   rsNonceChallengeIssued: boolean;
   /** The client retried the request carrying the correct nonce. */
@@ -103,7 +106,8 @@ export function createDpopResourceAuth(
     );
     if (!result.ok) {
       obs.allProofsWellFormed = false;
-      obs.proofError ??= result.error;
+      if (result.tokenProblem) obs.tokenError ??= result.error;
+      else obs.proofError ??= result.error;
       next();
       return;
     }
@@ -191,7 +195,12 @@ export async function validateResourceProof(
   token: string,
   method: string,
   resourceUrl: string
-): Promise<{ ok: true; jti: string } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; jti: string }
+  // `tokenProblem` marks defects in the presented access token, as opposed to
+  // the proof itself, so the scenario can attribute the failure accurately.
+  | { ok: false; error: string; tokenProblem?: boolean }
+> {
   if (!proof) return { ok: false, error: 'missing DPoP proof header' };
   // RFC 9449 §4.2: at most one DPoP header. A single proof JWT has no comma, so
   // a comma means duplicate headers were sent (Node joins them with ", ").
@@ -272,7 +281,14 @@ export async function validateResourceProof(
       };
     }
   } catch {
-    return { ok: false, error: 'access token is not a decodable JWT' };
+    // The token, not the proof, is at fault (e.g. an opaque Bearer token from
+    // a proof-less token request). RFC 9449 §6.2 permits non-JWT bound tokens
+    // via introspection, but this self-contained harness only mints JWTs.
+    return {
+      ok: false,
+      error: 'presented access token is not a DPoP-bound JWT',
+      tokenProblem: true
+    };
   }
 
   return { ok: true, jti: claims.jti };
