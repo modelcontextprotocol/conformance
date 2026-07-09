@@ -11,8 +11,8 @@ import { createHash, randomBytes } from 'node:crypto';
  * deliberately-malformed variants (one defect at a time) for the negative checks.
  *
  * Correctness of this module is anchored to published RFC test vectors in
- * `proof.test.ts` (RFC 9449 §4 examples), not to the conformance servers that
- * consume it — see the validation strategy in the project notes.
+ * `dpopProof.test.ts` (RFC 9449 §4 examples), not to the conformance servers
+ * that consume it — so the builder and the validators cannot share a bug.
  */
 
 const DEFAULT_ALG = 'ES256';
