@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import * as jose from 'jose';
 import { createHash } from 'node:crypto';
 import { DPOP_ASYMMETRIC_ALGS } from './dpopAlgs';
+import type { TokenIssuerKey } from './dpopToken';
 
 /** Fixed nonce the judge hands out when `requireNonce` is set (RFC 9449 §9). */
 const RS_DPOP_NONCE = 'conformance-rs-dpop-nonce';
@@ -43,6 +44,18 @@ export function newDpopClientObservations(): DpopClientObservations {
 }
 
 /**
+ * How the resource judge verifies the presented access token: the test AS
+ * issuer key (signature/issuer/exp) plus the `cnf.jkt` the AS bound at the
+ * token endpoint. Getters are lazy — issuer URL and bound jkt only exist once
+ * the servers are up and a token has been issued.
+ */
+export interface DpopResourceTokenBinding {
+  issuerKey: TokenIssuerKey;
+  getIssuer: () => string;
+  getBoundJkt: () => string | undefined;
+}
+
+/**
  * Test MCP server DPoP judge (SEP-1932 / RFC 9449), passed to `createServer`
  * via its `options.authMiddleware` hook. An unauthenticated request gets a
  * `401 DPoP` discovery challenge; an authenticated one is observed (scheme +
@@ -56,7 +69,8 @@ export function createDpopResourceAuth(
   obs: DpopClientObservations,
   getResourceUrl: () => string,
   getPrmUrl: () => string,
-  requireNonce = false
+  requireNonce: boolean,
+  tokenBinding: DpopResourceTokenBinding
 ): RequestHandler {
   return async (
     req: Request,
@@ -89,7 +103,12 @@ export function createDpopResourceAuth(
       proofValue,
       token,
       req.method,
-      getResourceUrl()
+      getResourceUrl(),
+      {
+        issuerKey: tokenBinding.issuerKey,
+        issuer: tokenBinding.getIssuer(),
+        boundJkt: tokenBinding.getBoundJkt()
+      }
     );
     if (!result.ok) {
       obs.allProofsWellFormed = false;
@@ -175,6 +194,9 @@ function normalizeHtu(u: string): string {
  * (RFC 9449 §4.3, resource-request subset): well-formed `dpop+jwt`, asymmetric
  * alg, embedded public jwk, htm/htu match, `ath` binds the token, signature
  * verifies, and the proof key's thumbprint matches the token's `cnf.jkt`.
+ * The token itself is verified against the test AS issuer key (signature,
+ * issuer, exp) and, when `boundJkt` is known, must be the very token issued at
+ * the token endpoint — not a self-minted lookalike.
  * (Kept as a deliberate two-copy contract with validateDpopProofAtTokenEndpoint
  * in createAuthServer.ts — apply fixes to both.)
  */
@@ -182,7 +204,8 @@ export async function validateResourceProof(
   proof: string | undefined,
   token: string,
   method: string,
-  resourceUrl: string
+  resourceUrl: string,
+  tokenBinding: { issuerKey: TokenIssuerKey; issuer: string; boundJkt?: string }
 ): Promise<
   | { ok: true; jti: string }
   // `tokenProblem` marks defects in the presented access token, as opposed to
@@ -257,24 +280,45 @@ export async function validateResourceProof(
     };
   }
 
-  // Possession: the proof key must be the key the token is bound to.
+  // The token itself: signed by the test AS issuer key, right issuer, unexpired.
+  let tokenClaims: jose.JWTPayload;
   try {
-    const tokenClaims = jose.decodeJwt(token);
-    const cnf = tokenClaims.cnf as { jkt?: unknown } | undefined;
-    const thumbprint = await jose.calculateJwkThumbprint(jwk, 'sha256');
-    if (!cnf || cnf.jkt !== thumbprint) {
-      return {
-        ok: false,
-        error: 'proof key thumbprint does not match the token cnf.jkt'
-      };
-    }
+    tokenClaims = (
+      await jose.jwtVerify(token, tokenBinding.issuerKey.publicKey, {
+        issuer: tokenBinding.issuer,
+        algorithms: [tokenBinding.issuerKey.alg]
+      })
+    ).payload;
   } catch {
     // The token, not the proof, is at fault (e.g. an opaque Bearer token from
-    // a proof-less token request). RFC 9449 §6.2 permits non-JWT bound tokens
-    // via introspection, but this self-contained harness only mints JWTs.
+    // a proof-less token request, or a self-minted JWT). RFC 9449 §6.2 permits
+    // non-JWT bound tokens via introspection; this harness only mints JWTs.
     return {
       ok: false,
-      error: 'presented access token is not a DPoP-bound JWT',
+      error:
+        'presented access token is not a valid JWT issued by the test authorization server (signature/issuer/exp)',
+      tokenProblem: true
+    };
+  }
+
+  // Possession: the proof key must be the key the token is bound to.
+  const cnf = tokenClaims.cnf as { jkt?: unknown } | undefined;
+  const thumbprint = await jose.calculateJwkThumbprint(jwk, 'sha256');
+  if (!cnf || cnf.jkt !== thumbprint) {
+    return {
+      ok: false,
+      error: 'proof key thumbprint does not match the token cnf.jkt'
+    };
+  }
+  // And the token must be the one the AS issued at the token endpoint.
+  if (
+    tokenBinding.boundJkt !== undefined &&
+    cnf.jkt !== tokenBinding.boundJkt
+  ) {
+    return {
+      ok: false,
+      error:
+        'presented token is not the one issued at the token endpoint (cnf.jkt differs from the key bound there)',
       tokenProblem: true
     };
   }

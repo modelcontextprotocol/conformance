@@ -1,21 +1,40 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import {
   generateDpopKeyPair,
   buildDpopProof,
   type DpopKeyPair
 } from './dpopProof';
-import { generateIssuerKey, mintDpopBoundToken } from './dpopToken';
+import {
+  generateIssuerKey,
+  mintDpopBoundToken,
+  type TokenIssuerKey
+} from './dpopToken';
 import { validateResourceProof } from './dpopResourceAuth';
 
 const ISSUER = 'https://auth.example.com';
 const RESOURCE = 'https://mcp.example.com/mcp';
+
+// One issuer key for the whole file: the validator verifies presented tokens
+// against the issuer key, so minting and validation must share it.
+let issuerKey: TokenIssuerKey;
+beforeAll(async () => {
+  issuerKey = await generateIssuerKey();
+});
+
+/** The token-binding argument matching {@link boundToken}'s issuer. */
+function binding(boundJkt?: string): {
+  issuerKey: TokenIssuerKey;
+  issuer: string;
+  boundJkt?: string;
+} {
+  return { issuerKey, issuer: ISSUER, ...(boundJkt ? { boundJkt } : {}) };
+}
 
 /** Mint a DPoP-bound token for `kp`'s key, optionally bound to a foreign key. */
 async function boundToken(
   kp: DpopKeyPair,
   jktOverride?: string
 ): Promise<string> {
-  const issuerKey = await generateIssuerKey();
   return mintDpopBoundToken({
     issuerKey,
     issuer: ISSUER,
@@ -35,7 +54,13 @@ describe('validateResourceProof — baseline acceptance and htu normalization', 
       htu: RESOURCE,
       accessToken: token
     });
-    const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding(kp.thumbprint)
+    );
     expect(result.ok).toBe(true);
   });
 
@@ -48,7 +73,13 @@ describe('validateResourceProof — baseline acceptance and htu normalization', 
       htu: 'HTTPS://MCP.EXAMPLE.COM:443/mcp',
       accessToken: token
     });
-    const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding()
+    );
     expect(result.ok).toBe(true);
   });
 
@@ -61,7 +92,13 @@ describe('validateResourceProof — baseline acceptance and htu normalization', 
       htu: `${RESOURCE}/`,
       accessToken: token
     });
-    const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding()
+    );
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error).toMatch(/htu/);
   });
@@ -76,7 +113,13 @@ describe('validateResourceProof — rejects each single defect', () => {
     const kp = (build.keyPair as DpopKeyPair) ?? (await generateDpopKeyPair());
     const token = await boundToken(kp, tokenJktOverride);
     const proof = await buildDpopProof({ ...build, keyPair: kp });
-    const result = await validateResourceProof(proof, token, method, RESOURCE);
+    const result = await validateResourceProof(
+      proof,
+      token,
+      method,
+      RESOURCE,
+      binding()
+    );
     expect(result.ok).toBe(false);
     return result.ok ? '' : result.error;
   }
@@ -88,7 +131,8 @@ describe('validateResourceProof — rejects each single defect', () => {
       undefined,
       token,
       'POST',
-      RESOURCE
+      RESOURCE,
+      binding()
     );
     expect(result.ok).toBe(false);
   });
@@ -206,9 +250,67 @@ describe('validateResourceProof — rejects each single defect', () => {
       htu: RESOURCE,
       accessToken: token
     });
-    const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding()
+    );
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error).toMatch(/cnf\.jkt/);
+  });
+
+  it('rejects a token signed by a key other than the test AS issuer key', async () => {
+    const kp = await generateDpopKeyPair();
+    // Self-minted lookalike: correct claims, wrong issuer key.
+    const rogueIssuer = await generateIssuerKey();
+    const token = await mintDpopBoundToken({
+      issuerKey: rogueIssuer,
+      issuer: ISSUER,
+      audience: RESOURCE,
+      jkt: kp.thumbprint
+    });
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: RESOURCE,
+      accessToken: token
+    });
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding()
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(/not a valid JWT issued/);
+  });
+
+  it('rejects a validly-issued token bound to a different key than the token endpoint bound', async () => {
+    // The AS bound the token issued at the token endpoint to `original`; the
+    // client presents a different (validly-issued) token bound to `other`.
+    const original = await generateDpopKeyPair();
+    const other = await generateDpopKeyPair();
+    const token = await boundToken(other);
+    const proof = await buildDpopProof({
+      keyPair: other,
+      htm: 'POST',
+      htu: RESOURCE,
+      accessToken: token
+    });
+    const result = await validateResourceProof(
+      proof,
+      token,
+      'POST',
+      RESOURCE,
+      binding(original.thumbprint)
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(
+      /not the one issued at the token endpoint/
+    );
   });
 
   it('rejects an htu containing a query string (RFC 9449 §4.2)', async () => {
@@ -243,7 +345,8 @@ describe('validateResourceProof — rejects each single defect', () => {
       `${proof}, ${proof}`,
       token,
       'POST',
-      RESOURCE
+      RESOURCE,
+      binding()
     );
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error).toMatch(

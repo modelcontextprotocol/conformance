@@ -93,9 +93,8 @@ export async function validateDpopProofAtTokenEndpoint(
   let claims: jose.JWTPayload;
   try {
     const key = await jose.importJWK(jwk, header.alg);
-    claims = (
-      await jose.jwtVerify(proof, key, { algorithms: acceptedAlgs })
-    ).payload;
+    claims = (await jose.jwtVerify(proof, key, { algorithms: acceptedAlgs }))
+      .payload;
   } catch {
     return { ok: false, error: 'DPoP proof signature does not verify' };
   }
@@ -154,6 +153,11 @@ export interface DpopTokenRequestObservation {
   asNonceChallengeIssued: boolean;
   /** The client retried the token request carrying the correct nonce. */
   asNonceHonored: boolean;
+  /**
+   * `cnf.jkt` bound into the most recently issued token, so the resource judge
+   * can assert the token presented at the MCP server is the one issued here.
+   */
+  jkt?: string;
 }
 
 export interface AuthServerOptions {
@@ -209,6 +213,12 @@ export interface AuthServerOptions {
     | 'unbound-token';
   /** Sink for the DPoP token-request observation; see the interface docstring. */
   dpopTokenRequestObs?: DpopTokenRequestObservation;
+  /**
+   * Issuer key for minting DPoP-bound tokens. Supply it when the scenario also
+   * needs to VERIFY the issued tokens (e.g. the resource judge); lazily
+   * generated when omitted.
+   */
+  dpopIssuerKey?: TokenIssuerKey;
   /**
    * When true, the token endpoint requires a DPoP nonce (RFC 9449 §8): a
    * proof-bearing request without the correct `nonce` claim is answered with
@@ -277,8 +287,9 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
-  // Lazily-created issuer key for minting DPoP-bound JWT access tokens.
-  let dpopIssuerKey: TokenIssuerKey | undefined;
+  // Issuer key for minting DPoP-bound JWT access tokens (caller-supplied or
+  // lazily created).
+  let dpopIssuerKey: TokenIssuerKey | undefined = options.dpopIssuerKey;
   // DPoP behaviour is active only when the caller opts in (any DPoP option).
   const dpopEnabled =
     dpopSigningAlgValuesSupported !== undefined ||
@@ -667,6 +678,11 @@ export function createAuthServer(
 
         if (!dpopIssuerKey) {
           dpopIssuerKey = await generateIssuerKey();
+        }
+        // Record the bound thumbprint so the resource judge can assert the
+        // token presented at the MCP server is the one issued here.
+        if (grantType === 'authorization_code' && dpopTokenRequestObs) {
+          dpopTokenRequestObs.jkt = result.jkt;
         }
         const boundToken = await mintDpopBoundToken({
           issuerKey: dpopIssuerKey,
