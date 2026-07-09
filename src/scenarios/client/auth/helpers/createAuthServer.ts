@@ -280,6 +280,12 @@ export function createAuthServer(
   const dpopEnabled =
     dpopSigningAlgValuesSupported !== undefined ||
     dpopMisbehavior !== undefined;
+  // Sub-options without DPoP enabled would be a silent no-op — fail fast.
+  if (!dpopEnabled && (dpopRequireNonce || dpopTokenRequestObs)) {
+    throw new Error(
+      'dpopRequireNonce/dpopTokenRequestObs require DPoP to be enabled (set dpopSigningAlgValuesSupported or dpopMisbehavior)'
+    );
+  }
 
   // Records whether the client presented a valid DPoP proof at its
   // authorization_code token request (RFC 9449 §5) into the caller's observation
