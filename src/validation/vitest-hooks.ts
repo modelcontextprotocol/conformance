@@ -1,16 +1,6 @@
-/**
- * Vitest-wide guard for wire-schema violations (see `wire-schema.ts`).
- *
- * The scenario self-tests drive scenarios directly (bypassing the runners
- * that append the `wire-schema-valid` checks), and in a self-test both sides
- * of the wire are harness-authored. Any message that violates the spec JSON
- * schema during a test is therefore a harness bug — fail the test loudly so
- * hallucinated fixtures can't ship.
- *
- * Tests that intentionally exercise nonconformant traffic (negative fixtures,
- * the wire-schema tests themselves) drain the recorder with
- * `takeWireViolations()` before the test ends.
- */
+// Vitest-wide guard: in self-tests both sides of the wire are harness-authored, so any
+// wire-schema violation is a harness bug — fail the test loudly. Tests that intentionally
+// send nonconformant traffic drain the recorder with `takeWireViolations()` before ending.
 
 import { afterEach, beforeEach } from 'vitest';
 import { formatWireViolation, takeWireViolations } from './wire-schema';

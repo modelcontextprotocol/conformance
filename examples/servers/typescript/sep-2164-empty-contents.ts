@@ -8,11 +8,8 @@
  * NOT. The sep-2164-resource-not-found scenario should emit FAILURE for
  * sep-2164-no-empty-contents against this server.
  *
- * Everything else about the responses is schema-valid (resultType and the
- * SEP-2549 caching hints are present) so the wire-schema check only trips on
- * the violation this fixture exists to exercise — which, for empty contents,
- * is none: an empty array is schema-valid, just forbidden by the SEP-2164
- * prose requirement.
+ * Responses are otherwise schema-valid (resultType and SEP-2549 caching hints present);
+ * an empty contents array is schema-valid too, forbidden only by the SEP-2164 prose.
  */
 
 import express from 'express';
