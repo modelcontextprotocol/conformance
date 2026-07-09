@@ -1,23 +1,10 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import * as jose from 'jose';
 import { createHash } from 'node:crypto';
+import { DPOP_ASYMMETRIC_ALGS } from './dpopAlgs';
 
 /** Fixed nonce the judge hands out when `requireNonce` is set (RFC 9449 §9). */
 const RS_DPOP_NONCE = 'conformance-rs-dpop-nonce';
-
-/** Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 / §11.6). */
-const DPOP_ASYMMETRIC_ALGS = [
-  'ES256',
-  'ES384',
-  'ES512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'PS256',
-  'PS384',
-  'PS512',
-  'EdDSA'
-];
 
 /**
  * Accumulated observations of how the client presented its access token and
@@ -188,6 +175,8 @@ function normalizeHtu(u: string): string {
  * (RFC 9449 §4.3, resource-request subset): well-formed `dpop+jwt`, asymmetric
  * alg, embedded public jwk, htm/htu match, `ath` binds the token, signature
  * verifies, and the proof key's thumbprint matches the token's `cnf.jkt`.
+ * (Kept as a deliberate two-copy contract with validateDpopProofAtTokenEndpoint
+ * in createAuthServer.ts — apply fixes to both.)
  */
 export async function validateResourceProof(
   proof: string | undefined,

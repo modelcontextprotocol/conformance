@@ -25,7 +25,7 @@ async function boundToken(
   });
 }
 
-describe('validateResourceProof — accepts a well-formed resource proof', () => {
+describe('validateResourceProof — baseline acceptance and htu normalization', () => {
   it('accepts a valid proof bound to the presented token', async () => {
     const kp = await generateDpopKeyPair();
     const token = await boundToken(kp);

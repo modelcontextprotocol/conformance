@@ -7,6 +7,7 @@ import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import * as jose from 'jose';
+import { DPOP_ASYMMETRIC_ALGS } from './dpopAlgs';
 import {
   generateIssuerKey,
   mintDpopBoundToken,
@@ -29,20 +30,6 @@ function computeS256Challenge(codeVerifier: string): string {
 // Fixed nonce the test AS hands out when `dpopRequireNonce` is set (RFC 9449 §8).
 const AS_DPOP_NONCE = 'conformance-as-dpop-nonce';
 
-// Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3, §11.6).
-const DPOP_ASYMMETRIC_ALGS = [
-  'ES256',
-  'ES384',
-  'ES512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'PS256',
-  'PS384',
-  'PS512',
-  'EdDSA'
-];
-
 /**
  * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986
  * syntax-based normalization): lowercase scheme/host, drop the default port,
@@ -62,12 +49,22 @@ function normalizeHtu(u: string): string {
  * Validate a DPoP proof presented at the token endpoint (the token-request
  * subset of RFC 9449 §4.3). Hand-rolled with jose primitives — deliberately an
  * INDEPENDENT code path from the suite's proof builder, so a shared bug
- * surfaces rather than hides. Returns the JWK thumbprint to bind on success.
+ * surfaces rather than hides. (Kept as a deliberate two-copy contract with
+ * validateResourceProof in dpopResourceAuth.ts — apply fixes to both.)
+ * Returns the JWK thumbprint to bind on success.
+ *
+ * `advertisedAlgs` is the AS's `dpop_signing_alg_values_supported`; proofs
+ * signed with an alg outside it are rejected (RFC 9449 §5.1), with an
+ * asymmetric-only floor (§11.6) regardless of what is advertised.
  */
 export async function validateDpopProofAtTokenEndpoint(
   proof: string,
-  tokenEndpointUrl: string
+  tokenEndpointUrl: string,
+  advertisedAlgs: string[] = DPOP_ASYMMETRIC_ALGS
 ): Promise<{ ok: true; jkt: string } | { ok: false; error: string }> {
+  const acceptedAlgs = advertisedAlgs.filter((a) =>
+    DPOP_ASYMMETRIC_ALGS.includes(a)
+  );
   let header: jose.ProtectedHeaderParameters;
   try {
     header = jose.decodeProtectedHeader(proof);
@@ -80,6 +77,12 @@ export async function validateDpopProofAtTokenEndpoint(
   if (!header.alg || !DPOP_ASYMMETRIC_ALGS.includes(header.alg)) {
     return { ok: false, error: 'alg must be a supported asymmetric algorithm' };
   }
+  if (!acceptedAlgs.includes(header.alg)) {
+    return {
+      ok: false,
+      error: `alg ${header.alg} is not among the advertised dpop_signing_alg_values_supported (${advertisedAlgs.join(', ')})`
+    };
+  }
   const jwk = header.jwk as jose.JWK | undefined;
   if (!jwk) {
     return { ok: false, error: 'missing jwk header parameter' };
@@ -91,7 +94,7 @@ export async function validateDpopProofAtTokenEndpoint(
   try {
     const key = await jose.importJWK(jwk, header.alg);
     claims = (
-      await jose.jwtVerify(proof, key, { algorithms: DPOP_ASYMMETRIC_ALGS })
+      await jose.jwtVerify(proof, key, { algorithms: acceptedAlgs })
     ).payload;
   } catch {
     return { ok: false, error: 'DPoP proof signature does not verify' };
@@ -607,7 +610,8 @@ export function createAuthServer(
       if (proof) {
         const result = await validateDpopProofAtTokenEndpoint(
           proof,
-          tokenEndpointUrl
+          tokenEndpointUrl,
+          dpopSigningAlgValuesSupported
         );
         if (!result.ok) {
           recordTokenRequestProof(grantType, false, result.error);

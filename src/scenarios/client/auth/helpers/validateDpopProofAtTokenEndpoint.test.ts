@@ -14,7 +14,7 @@ const TOKEN_ENDPOINT = 'https://auth.example.com/token';
  * cover the token-request subset of RFC 9449 §4.3 (no `ath`/`cnf` — there is no
  * access token yet at the token request).
  */
-describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request proof', () => {
+describe('validateDpopProofAtTokenEndpoint — baseline acceptance, htu normalization, alg negotiation', () => {
   it('accepts a well-formed proof and returns the JWK thumbprint', async () => {
     const kp = await generateDpopKeyPair();
     const proof = await buildDpopProof({
@@ -42,6 +42,25 @@ describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request pro
       TOKEN_ENDPOINT
     );
     expect(result.ok).toBe(true);
+  });
+
+  it('rejects a proof signed with an alg outside the advertised list (RFC 9449 §5.1)', async () => {
+    const kp = await generateDpopKeyPair();
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: TOKEN_ENDPOINT
+    });
+    // Proof is ES256; the AS advertises RS256 only.
+    const result = await validateDpopProofAtTokenEndpoint(
+      proof,
+      TOKEN_ENDPOINT,
+      ['RS256']
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(
+      /dpop_signing_alg_values_supported/
+    );
   });
 
   it('rejects an htu with a spurious trailing slash (a distinct URI per RFC 3986)', async () => {

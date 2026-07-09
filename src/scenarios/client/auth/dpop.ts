@@ -17,6 +17,7 @@ import {
   newDpopClientObservations,
   type DpopClientObservations
 } from './helpers/dpopResourceAuth';
+import { DPOP_ASYMMETRIC_ALGS } from './helpers/dpopAlgs';
 import { SpecReferences } from './spec-references';
 
 const PRM_PATH = '/.well-known/oauth-protected-resource/mcp';
@@ -175,7 +176,9 @@ export class DPoPClientScenario implements Scenario {
     this.tokenReqObs = newTokenReqObs();
 
     const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
-      dpopSigningAlgValuesSupported: ['ES256'],
+      // Advertise exactly what the validators enforce, so a client honoring
+      // RFC 9449 §5.1 alg negotiation is graded the same as one that doesn't.
+      dpopSigningAlgValuesSupported: DPOP_ASYMMETRIC_ALGS,
       dpopTokenRequestObs: this.tokenReqObs,
       dpopRequireNonce: this.requireNonce
     });
