@@ -30,6 +30,14 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /**
+   * DPoP signals for the PRM document (RFC 9728 §2), set by the DPoP scenarios
+   * so a discovery-driven client can learn the resource expects DPoP.
+   */
+  prmDpop?: {
+    signingAlgValuesSupported: string[];
+    boundAccessTokensRequired: boolean;
+  };
 }
 
 export function createServer(
@@ -46,7 +54,8 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    prmDpop
   } = options;
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -137,6 +146,13 @@ export function createServer(
 
       if (scopesSupported !== undefined) {
         prmResponse.scopes_supported = scopesSupported;
+      }
+
+      if (prmDpop) {
+        prmResponse.dpop_signing_alg_values_supported =
+          prmDpop.signingAlgValuesSupported;
+        prmResponse.dpop_bound_access_tokens_required =
+          prmDpop.boundAccessTokensRequired;
       }
 
       res.json(prmResponse);

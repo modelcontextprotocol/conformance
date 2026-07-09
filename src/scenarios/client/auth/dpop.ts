@@ -205,7 +205,13 @@ export class DPoPClientScenario implements Scenario {
             getIssuer: () => this.authServer.getUrl(),
             getBoundJkt: () => this.tokenReqObs.jkt
           }
-        )
+        ),
+        // RFC 9728 §2: tell discovery-driven clients this resource expects
+        // DPoP-bound tokens (the wire-level enablement signal for DPoP).
+        prmDpop: {
+          signingAlgValuesSupported: DPOP_ASYMMETRIC_ALGS,
+          boundAccessTokensRequired: true
+        }
       }
     );
     await this.server.start(app);
