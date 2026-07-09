@@ -211,7 +211,10 @@ export class DPoPClientScenario implements Scenario {
         prmDpop: {
           signingAlgValuesSupported: DPOP_ASYMMETRIC_ALGS,
           boundAccessTokensRequired: true
-        }
+        },
+        // SEP-1932's per-request-proof requirement is not POST-scoped, so
+        // observe proofs on GET /mcp too (answered 405 — no SSE stream here).
+        observeGetMcp: true
       }
     );
     await this.server.start(app);

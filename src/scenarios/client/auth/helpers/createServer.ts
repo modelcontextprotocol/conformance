@@ -38,6 +38,11 @@ export interface ServerOptions {
     signingAlgValuesSupported: string[];
     boundAccessTokensRequired: boolean;
   };
+  /**
+   * Run `authMiddleware` on GET /mcp too, then answer 405 (this server offers
+   * no SSE stream). Lets the DPoP judge observe non-POST proofs.
+   */
+  observeGetMcp?: boolean;
 }
 
 export function createServer(
@@ -212,6 +217,25 @@ export function createServer(
       }
     });
   });
+
+  // Streamable HTTP: this server offers no SSE stream, so GET /mcp is 405 —
+  // but the judge middleware runs first so non-POST proofs are observed too.
+  if (options.observeGetMcp && options.authMiddleware) {
+    const judge = options.authMiddleware;
+    app.get('/mcp', (req: Request, res: Response, next: NextFunction) => {
+      judge(req, res, (err?: unknown) => {
+        if (err) return next(err);
+        res
+          .status(405)
+          .set('Allow', 'POST')
+          .json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Method Not Allowed' },
+            id: null
+          });
+      });
+    });
+  }
 
   // Stateless lifecycle for the /mcp route: shared SEP-2575 validation +
   // server/discover from mock-server/stateless, then the same tools handlers
