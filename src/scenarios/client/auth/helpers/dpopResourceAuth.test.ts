@@ -162,7 +162,8 @@ describe('validateResourceProof — rejects each single defect', () => {
   });
 
   it('rejects a private key embedded in the jwk header', async () => {
-    const kp = await generateDpopKeyPair();
+    // embedPrivateKey must export the private JWK, so opt into extractability.
+    const kp = await generateDpopKeyPair('ES256', { extractable: true });
     expect(
       await expectRejected({
         keyPair: kp,
