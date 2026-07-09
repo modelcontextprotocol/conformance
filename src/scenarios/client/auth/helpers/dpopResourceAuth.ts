@@ -62,6 +62,11 @@ export interface DpopResourceTokenBinding {
  * per-request proof) and allowed through so the MCP session can complete and
  * multiple requests can be examined for proof freshness.
  *
+ * Observe-don't-enforce: an INVALID proof is recorded and the request is still
+ * served 200 (so more evidence accrues) — a real DPoP resource server MUST
+ * reject it with 401 per RFC 9449 §7.2. The check report, not the wire
+ * behaviour, is the conformance signal here.
+ *
  * Proof validation is hand-rolled with jose — deliberately an INDEPENDENT code
  * path from the suite's proof builder, so a shared bug surfaces rather than hides.
  */
