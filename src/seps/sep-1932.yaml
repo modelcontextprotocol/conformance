@@ -1,5 +1,7 @@
 sep: 1932
-spec_url: https://github.com/modelcontextprotocol/ext-auth/blob/pieterkas-dpop-extension/specification/draft/dpop-extension.mdx
+# Commit-pinned so the link survives the working branch moving; switch to the
+# main-branch path once the extension doc merges into ext-auth.
+spec_url: https://github.com/modelcontextprotocol/ext-auth/blob/f2f94539fe4dc28aa53b7caed88f929aba02aec6/specification/draft/dpop-extension.mdx
 requirements:
   - check: sep-1932-client-dpop-auth-scheme
     text: 'When making requests to protected MCP server resources, clients MUST include the access token using the `Authorization` header with the `DPoP` authentication scheme as specified in RFC 9449 Section 7.1'
