@@ -39,7 +39,20 @@ describe('validateResourceProof — accepts a well-formed resource proof', () =>
     expect(result.ok).toBe(true);
   });
 
-  it('accepts an htu that differs only by normalization (trailing slash)', async () => {
+  it('accepts an htu that differs only by RFC 3986 normalization (case, default port)', async () => {
+    const kp = await generateDpopKeyPair();
+    const token = await boundToken(kp);
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: 'HTTPS://MCP.EXAMPLE.COM:443/mcp',
+      accessToken: token
+    });
+    const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects an htu with a spurious trailing slash (a distinct URI per RFC 3986)', async () => {
     const kp = await generateDpopKeyPair();
     const token = await boundToken(kp);
     const proof = await buildDpopProof({
@@ -49,7 +62,8 @@ describe('validateResourceProof — accepts a well-formed resource proof', () =>
       accessToken: token
     });
     const result = await validateResourceProof(proof, token, 'POST', RESOURCE);
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(/htu/);
   });
 });
 

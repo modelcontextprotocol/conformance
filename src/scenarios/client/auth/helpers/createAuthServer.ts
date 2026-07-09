@@ -44,16 +44,15 @@ const DPOP_ASYMMETRIC_ALGS = [
 ];
 
 /**
- * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986 scheme-based
- * normalization): lowercase scheme/host, drop the default port, ignore a
- * trailing slash. Query/fragment are rejected by the caller (RFC 9449 §4.2),
- * not silently stripped here.
+ * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986
+ * syntax-based normalization): lowercase scheme/host, drop the default port,
+ * empty path → `/`. No leniency beyond that — `/mcp/` and `/mcp` are distinct
+ * URIs. Query/fragment are rejected by the caller (RFC 9449 §4.2), not
+ * silently stripped here.
  */
 function normalizeHtu(u: string): string {
   try {
-    const url = new URL(u);
-    // Tolerate a single trailing slash only; `/mcp//` is a distinct path.
-    return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`;
+    return new URL(u).href;
   } catch {
     return u;
   }

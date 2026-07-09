@@ -30,7 +30,21 @@ describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request pro
     expect(result.ok ? result.jkt : '').toBe(kp.thumbprint);
   });
 
-  it('accepts an htu differing only by a single trailing slash', async () => {
+  it('accepts an htu differing only by RFC 3986 normalization (case, default port)', async () => {
+    const kp = await generateDpopKeyPair();
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: 'HTTPS://AUTH.EXAMPLE.COM:443/token'
+    });
+    const result = await validateDpopProofAtTokenEndpoint(
+      proof,
+      TOKEN_ENDPOINT
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects an htu with a spurious trailing slash (a distinct URI per RFC 3986)', async () => {
     const kp = await generateDpopKeyPair();
     const proof = await buildDpopProof({
       keyPair: kp,
@@ -41,7 +55,8 @@ describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request pro
       proof,
       TOKEN_ENDPOINT
     );
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(/htu/);
   });
 });
 
