@@ -15,24 +15,34 @@ requirements:
     text: 'When the MCP server responds with `use_dpop_nonce`, the client MUST retry the request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 9)'
   - check: sep-1932-server-validate-proof
     text: 'MCP servers MUST validate DPoP proofs according to RFC 9449 Section 4.3'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
   - check: sep-1932-server-iat-window
-    text: "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time / MCP servers that are not capable of keeping state or performing global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation"
+    text: "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time"
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
   - check: sep-1932-server-reject-401
     text: 'If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
   - check: sep-1932-as-metadata-alg-values
     text: 'Authorization servers supporting DPoP MUST include the `dpop_signing_alg_values_supported` field in their Authorization Server Metadata as defined in RFC 9449 Section 5.1. This field MUST contain a JSON array listing the JWS algorithm values supported for DPoP proof JWTs'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/370'
   - check: sep-1932-as-no-none-alg
     text: 'Only asymmetric signature algorithms are permitted; the `none` algorithm MUST NOT be included'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/370'
   - check: sep-1932-as-dpop-bound-enforcement
     text: 'When `dpop_bound_access_tokens` is set to `true`, the authorization server MUST reject token requests from the client that do not include a valid DPoP proof'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/370'
   - check: sep-1932-as-token-binding
-    text: "When issuing a DPoP-bound access token, the authorization server MUST bind it to the client's DPoP public key by including a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key (RFC 9449 Section 6) and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+    text: "When issuing a DPoP-bound access token, the authorization server MUST associate the token with the public key from the client's DPoP proof such that the resource server can verify the binding — for JWT access tokens via a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key; token introspection is also permitted (RFC 9449 Section 6) — and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/370'
   - check: sep-1932-asymmetric-alg-only
     text: 'Only asymmetric signature algorithms MUST be used for DPoP proofs. Symmetric algorithms and the `none` algorithm MUST NOT be permitted as specified in RFC 9449 Section 11.6'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
   - check: sep-1932-server-nonce
     text: 'For high-security environments, MCP servers SHOULD implement server-provided nonces as described in RFC 9449 Section 9 to further limit proof lifetime, even if it is stateless'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
   - check: sep-1932-server-audience-validation
     text: 'MCP servers MUST continue to validate that access tokens were specifically issued for them, even when DPoP is used'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
 
   - text: 'Implementations MUST conform to all requirements specified in this extension'
     excluded: 'Umbrella requirement satisfied by the specific checks above; not separately observable on the wire.'
@@ -48,3 +58,6 @@ requirements:
     excluded: 'Client implementation detail, not observable on the wire.'
   - text: 'MCP servers requiring maximum replay protection SHOULD implement `jti` tracking despite the operational complexity'
     excluded: 'Explicitly optional (servers are NOT required to track jti) and stateful/internal; only indirectly observable via replay.'
+  - text: 'MCP servers that is not capable of keeping state or perform global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation'
+    excluded: 'Conditional on whether the server keeps state, which is not wire-observable; the unconditional ±5-minute `iat` window it prescribes is covered by sep-1932-server-iat-window.'
+    issue: 'https://github.com/modelcontextprotocol/conformance/issues/369'
