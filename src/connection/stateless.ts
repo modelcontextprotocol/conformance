@@ -243,18 +243,9 @@ export async function sendStatelessRequest(
     headers?: Record<string, string>;
     timeoutMs?: number;
     specVersion?: SpecVersion;
-    /**
-     * Skip wire-schema validation of the *outgoing request* for this call.
-     * Only for scenarios that intentionally send malformed traffic to
-     * observe the server's error handling. The response direction is always
-     * validated — the implementation's reply to a malformed request must
-     * still be schema-valid — with one narrow carve-out: JSON-RPC 2.0
-     * requires `id: null` on error responses to requests that could not be
-     * processed, while the MCP schema's RequestId forbids null, so an
-     * `id: null` *error* response is tolerated on these calls only (no call
-     * site needs the response direction skipped outright today; add an
-     * explicit option if one ever does).
-     */
+    /** Skip wire-schema validation of the *outgoing request* only (for intentionally
+     * malformed traffic). Responses stay validated, with one carve-out: JSON-RPC 2.0
+     * requires `id: null` on errors for unprocessable requests, which RequestId forbids. */
     skipValidation?: boolean;
   } = {}
 ): Promise<StatelessResponse> {
@@ -278,10 +269,9 @@ export async function sendStatelessRequest(
   }
   const body = JSON.stringify(request);
 
-  // See the `skipValidation` doc above: on a deliberately-malformed
-  // (skip-validated) request, tolerate the JSON-RPC 2.0 `id: null` an error
-  // response must carry when the request could not be processed, by
-  // validating the rest of the shape with the request's real id substituted.
+  // See the `skipValidation` doc above: on a skip-validated request, tolerate the
+  // JSON-RPC 2.0 `id: null` an error response must carry when the request could not be
+  // processed, by validating the rest of the shape with the request's real id substituted.
   const withNullIdCarveOut = (event: unknown): unknown => {
     if (
       options.skipValidation &&

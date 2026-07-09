@@ -34,21 +34,9 @@ export interface MCPClientConnection {
   close: () => Promise<void>;
 }
 
-/**
- * Hook an SDK transport so every raw wire message, in both directions, is
- * validated against the spec JSON schema for `specVersion` (see
- * `src/validation/wire-schema.ts`). Because this sits below the SDK's
- * `Client`, it sees the real bytes of everything the protocol layer does —
- * the `initialize` handshake, server→client requests (elicitation/sampling)
- * and the harness's responses to them, notifications on any stream — with no
- * reconstructed stand-ins and no way for a call path to bypass it.
- *
- * Outbound messages are harness-authored; inbound messages come from the
- * implementation under test. Request ids are tracked per direction so each
- * response is validated against the typed result definition of the request
- * it answers (e.g. an outbound response to `elicitation/create` against
- * `ElicitResult`).
- */
+/** Hook an SDK transport so every raw wire message, both directions (handshake included,
+ * no bypass), is schema-validated. Outbound = harness origin, inbound = implementation;
+ * request ids are tracked per direction to validate responses against typed results. */
 function instrumentTransport(
   transport: Transport,
   specVersion: SpecVersion

@@ -675,10 +675,9 @@ function createMcpServer() {
                   score: {
                     type: 'number',
                     description: 'User score',
-                    // Integer-valued: the 2025-11-25 schema types
-                    // NumberSchema.default as `integer` (widened to `number`
-                    // only in the draft), and this scenario runs at
-                    // 2025-11-25.
+                    // Integer-valued: the 2025-11-25 schema types NumberSchema.default
+                    // as `integer` (widened to `number` only in the draft), and this
+                    // scenario runs at 2025-11-25.
                     default: 95
                   },
                   status: {
@@ -1250,13 +1249,9 @@ const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
   'resources/read'
 ]);
 
-/**
- * Send a stateless (draft) JSON-RPC response. Draft results MUST carry
- * `resultType`, and results of the cacheable operations MUST carry the
- * SEP-2549 caching hints; stamp the members (when the dispatch site did not
- * set them itself) so every stateless result is valid per the draft schema.
- * Error payloads pass through untouched.
- */
+/** Send a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
+ * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
+ * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
 function sendStatelessJson(
   res: import('express').Response,
   method: string,

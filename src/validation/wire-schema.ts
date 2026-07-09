@@ -1,42 +1,6 @@
-/**
- * Per-spec-version JSON-schema validation of wire messages.
- *
- * JSON-RPC messages the harness sends or receives are validated against the
- * vendored spec `schema.json` for the run's spec version (see
- * `src/spec-types/{version}.schema.json`, synced by `scripts/sync-schema.ts`).
- *
- * Coverage: the stateless wire (`sendStatelessRequest` — outbound requests,
- * JSON response bodies, SSE events), the stateful wire (the SDK transport
- * hook in `src/connection/sdk-client.ts` — both directions, including the
- * initialize handshake and server→client elicitation/sampling traffic), and
- * the mock servers driving client conformance (`src/mock-server/*`). Known
- * gap: the client-auth scenarios' bespoke express mock
- * (`src/scenarios/client/auth/helpers/createServer.ts`) is not instrumented.
- *
- * This catches two failure classes:
- *
- * - `implementation` origin: the system-under-test emitted a message the spec
- *   schema forbids → surfaced as a failing `wire-schema-valid` check.
- * - `harness` origin: the harness itself (hand-built requests, mock-server
- *   responses, fixture results) emitted an invalid message → surfaced as a
- *   `wire-schema-harness-error` check and failed loudly in the vitest suite
- *   (see `vitest-hooks.ts`), so scenario checks can never expect a message
- *   shape the schema forbids (the "schema hallucination" bug class, #376).
- *
- * Validation depth, per message:
- * 1. The `JSONRPCMessage` envelope definition.
- * 2. Requests/notifications with a `method` the schema types via a `const`
- *    (e.g. `tools/call` → `CallToolRequest`) against that definition.
- * 3. Error responses whose `error.code` the schema types via a `const`
- *    (e.g. -32021 → `MissingRequiredClientCapabilityError`).
- * 4. Results, when the caller knows the request method, against the
- *    `XxxRequest` → `XxxResult` definition pair (skipped when the schema has
- *    no result type for the method, e.g. `ping`).
- *
- * Call sites that intentionally send malformed traffic opt out per call
- * (`skipValidation`); tests that intentionally elicit invalid messages drain
- * the recorder via `takeWireViolations()`. Both are explicit and greppable.
- */
+// Validates wire JSON-RPC messages against the vendored per-version spec schema
+// (src/spec-types/*.schema.json): envelope, then typed defs via method/error.code consts and
+// request→result pairs. Known gap: the client-auth scenarios' express mock is not instrumented.
 
 import { Ajv, type ValidateFunction, type ErrorObject } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -58,10 +22,8 @@ export interface WireMessageInfo {
   origin: WireOrigin;
   /** Human-readable location, e.g. `stateless request 'tools/call'`. */
   context: string;
-  /**
-   * For responses: the method of the request being answered, so the result
-   * can be validated against its typed result definition.
-   */
+  /** For responses: the answered request's method, so the result is validated
+   * against its typed result definition. */
   requestMethod?: string;
 }
 
@@ -85,10 +47,8 @@ export function schemaDirFor(specVersion: SpecVersion): string {
   return specVersion === DRAFT_PROTOCOL_VERSION ? 'draft' : specVersion;
 }
 
-/**
- * Union definitions that alias a single concrete type (and so carry a
- * `method` const) but are not the canonical definition for that method.
- */
+/** Union definitions that alias a single concrete type (and so carry a
+ * `method` const) but are not the canonical definition for that method. */
 const NON_CANONICAL_DEFS = new Set([
   'ClientRequest',
   'ClientNotification',
@@ -183,15 +143,9 @@ function compileSpec(specVersion: SpecVersion): CompiledSpec {
   return compiled;
 }
 
-/**
- * The dispatch maps extracted from a version's schema: JSON-RPC method →
- * typed request/notification definition, and `error.code` const → typed
- * error-response definition. Exposed so a unit test can pin the expected
- * contents per version — if a schema sync changes the structure the
- * extraction walks (`properties.method.const`,
- * `properties.error.allOf[].properties.code.const`), validation would
- * silently degrade to envelope-only; the pinning test makes that loud.
- */
+/** Dispatch maps extracted from a version's schema (method → request/notification def,
+ * `error.code` const → error def). Exposed so a unit test can pin them: if a schema sync
+ * restructures what the extraction walks, validation silently degrades to envelope-only. */
 export function specDispatchMaps(specVersion: SpecVersion): {
   methodDefs: ReadonlyMap<string, string>;
   errorDefs: ReadonlyMap<number, string>;
@@ -226,10 +180,8 @@ function formatErrors(
   return formatted.length > 0 ? formatted : [`${defName}: invalid`];
 }
 
-/**
- * Validate a single JSON-RPC message against the given spec version's schema.
- * Returns `[]` when the message is valid. Pure — does not touch the recorder.
- */
+/** Validate a single JSON-RPC message against the given spec version's schema.
+ * Returns `[]` when the message is valid. Pure — does not touch the recorder. */
 export function wireSchemaErrors(
   specVersion: SpecVersion,
   message: unknown,
@@ -245,9 +197,8 @@ export function wireSchemaErrors(
 
   if (Array.isArray(message)) {
     // A batch: only legal where the envelope union admits arrays (2025-03-26).
-    // Limitation: `requestMethod` is forwarded to every element, so a batch
-    // mixing responses to different requests would validate all of them
-    // against one result type — no caller sends batched requests today.
+    // Limitation: `requestMethod` is forwarded to every element, so batched responses all
+    // validate against one result type — no caller sends batched requests today.
     const elementErrors = message.flatMap((m, i) =>
       wireSchemaErrors(specVersion, m, requestMethod).map((e) => `[${i}] ${e}`)
     );
@@ -310,10 +261,8 @@ export function wireSchemaErrors(
   ];
 }
 
-// ---------------------------------------------------------------------------
 // Recorder: choke points record every message; runners (and the vitest hook)
 // drain the accumulated violations per scenario / test.
-// ---------------------------------------------------------------------------
 
 let violations: WireSchemaViolation[] = [];
 let observed = 0;
@@ -369,11 +318,8 @@ export function formatWireViolation(v: WireSchemaViolation): string {
   );
 }
 
-/**
- * Drain the recorder and synthesize the per-scenario conformance checks.
- * Returns `[]` when no wire traffic was observed (e.g. a scenario that only
- * asserts on HTTP mechanics via raw fetch).
- */
+/** Drain the recorder and synthesize the per-scenario conformance checks. Returns `[]`
+ * when no wire traffic was observed (e.g. a scenario asserting only on raw HTTP). */
 export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
   const { violations: all, observed: count } = takeWireViolations();
   if (count === 0 && all.length === 0) return [];

@@ -269,11 +269,9 @@ describe('wire-schema choke points and checks', () => {
 });
 
 describe('specDispatchMaps', () => {
-  // Pin the dispatch maps extracted from each vendored schema. The extraction
-  // walks `properties.method.const` and
-  // `properties.error.allOf[].properties.code.const`; if a schema sync
-  // restructures those, validation silently degrades to envelope-only. These
-  // pins make that loud instead.
+  // Pin the dispatch maps extracted from each vendored schema: if a schema sync
+  // restructures the `method`/`error.code` consts the extraction walks, validation
+  // silently degrades to envelope-only. These pins make that loud instead.
 
   const METHOD_DEFS_2025_03_26: Record<string, string> = {
     'tools/call': 'CallToolRequest',

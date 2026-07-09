@@ -20,10 +20,8 @@ import {
   takeWireViolations
 } from '../../validation/wire-schema';
 
-// The broken fixture's responses violate the draft schema by design (that is
-// what these tests verify the checks catch); drain the wire-schema recorder
-// so the suite-wide guard doesn't re-flag the intentional violations. But
-// only the *implementation* (the broken fixture) is allowed to be invalid —
+// The broken fixture violates the draft schema by design; drain the wire-schema recorder
+// so the suite-wide guard doesn't re-flag it. Only the *implementation* may be invalid —
 // a harness-origin violation is a real harness bug and must still fail.
 afterEach(() => {
   const { violations } = takeWireViolations();
