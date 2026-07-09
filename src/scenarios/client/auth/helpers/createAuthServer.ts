@@ -102,10 +102,13 @@ export async function validateDpopProofAtTokenEndpoint(
     return { ok: false, error: 'missing jti claim' };
   }
   if (claims.htm !== 'POST') {
-    return { ok: false, error: 'htm does not match POST' };
+    return {
+      ok: false,
+      error: `htm "${claims.htm}" does not match the token request method "POST"`
+    };
   }
   if (typeof claims.htu !== 'string') {
-    return { ok: false, error: 'htu does not match the token endpoint' };
+    return { ok: false, error: 'missing or non-string htu claim' };
   }
   if (claims.htu.includes('?') || claims.htu.includes('#')) {
     return {
@@ -114,13 +117,20 @@ export async function validateDpopProofAtTokenEndpoint(
     };
   }
   if (normalizeHtu(claims.htu) !== normalizeHtu(tokenEndpointUrl)) {
-    return { ok: false, error: 'htu does not match the token endpoint' };
+    return {
+      ok: false,
+      error: `htu "${claims.htu}" does not match the token endpoint "${tokenEndpointUrl}" (compared after RFC 9449 §4.3 normalization)`
+    };
   }
-  if (
-    typeof claims.iat !== 'number' ||
-    Math.abs(Math.floor(Date.now() / 1000) - claims.iat) > 300
-  ) {
-    return { ok: false, error: 'iat outside the acceptable window' };
+  if (typeof claims.iat !== 'number') {
+    return { ok: false, error: 'missing or non-numeric iat claim' };
+  }
+  const iatSkew = Math.floor(Date.now() / 1000) - claims.iat;
+  if (Math.abs(iatSkew) > 300) {
+    return {
+      ok: false,
+      error: `iat ${claims.iat} is ${Math.abs(iatSkew)}s ${iatSkew > 0 ? 'behind' : 'ahead of'} server time; allowed window ±300s`
+    };
   }
   const jkt = await jose.calculateJwkThumbprint(jwk, 'sha256');
   return { ok: true, jkt };

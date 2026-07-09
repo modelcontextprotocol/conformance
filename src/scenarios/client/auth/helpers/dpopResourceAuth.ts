@@ -247,10 +247,14 @@ export async function validateResourceProof(
   }
   if (typeof claims.jti !== 'string')
     return { ok: false, error: 'missing jti claim' };
-  if (claims.htm !== method)
-    return { ok: false, error: 'htm does not match the request method' };
+  if (claims.htm !== method) {
+    return {
+      ok: false,
+      error: `htm "${claims.htm}" does not match the request method "${method}"`
+    };
+  }
   if (typeof claims.htu !== 'string') {
-    return { ok: false, error: 'htu does not match the request URI' };
+    return { ok: false, error: 'missing or non-string htu claim' };
   }
   if (claims.htu.includes('?') || claims.htu.includes('#')) {
     return {
@@ -259,13 +263,20 @@ export async function validateResourceProof(
     };
   }
   if (normalizeHtu(claims.htu) !== normalizeHtu(resourceUrl)) {
-    return { ok: false, error: 'htu does not match the request URI' };
+    return {
+      ok: false,
+      error: `htu "${claims.htu}" does not match the request URI "${resourceUrl}" (compared after RFC 9449 §4.3 normalization)`
+    };
   }
-  if (
-    typeof claims.iat !== 'number' ||
-    Math.abs(Math.floor(Date.now() / 1000) - claims.iat) > 300
-  ) {
-    return { ok: false, error: 'iat outside the acceptable window' };
+  if (typeof claims.iat !== 'number') {
+    return { ok: false, error: 'missing or non-numeric iat claim' };
+  }
+  const iatSkew = Math.floor(Date.now() / 1000) - claims.iat;
+  if (Math.abs(iatSkew) > 300) {
+    return {
+      ok: false,
+      error: `iat ${claims.iat} is ${Math.abs(iatSkew)}s ${iatSkew > 0 ? 'behind' : 'ahead of'} server time; allowed window ±300s`
+    };
   }
   // Recompute ath and the thumbprint inline (jose + node crypto) rather than
   // via the proof builder's helpers, so this validator stays a fully
