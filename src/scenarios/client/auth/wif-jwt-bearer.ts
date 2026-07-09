@@ -1,12 +1,6 @@
 import * as jose from 'jose';
-import type {
-  Scenario,
-  ConformanceCheck,
-  ScenarioUrls,
-  SpecVersion
-} from '../../../types';
+import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
 import type { ScenarioContext } from '../../../mock-server';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
@@ -26,8 +20,9 @@ const WIF_CLIENT_ID = 'conformance-wif-workload';
 
 export class WifJwtBearerScenario implements Scenario {
   name = 'auth/wif-jwt-bearer';
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/auth/wif'
+  } as const;
   description =
     'Tests the RFC 7523 JWT-bearer grant for workload identity federation (SEP-1933). ' +
     'The client must: use grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer, ' +
