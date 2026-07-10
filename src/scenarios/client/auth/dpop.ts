@@ -5,7 +5,7 @@ import type {
   CheckStatus,
   SpecReference
 } from '../../../types';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import {
   createAuthServer,
   type DpopTokenRequestObservation
@@ -145,7 +145,9 @@ export function collapseDuplicateChecks(
 
 export class DPoPClientScenario implements Scenario {
   readonly name: string;
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = {
+    extensionId: 'io.modelcontextprotocol/auth/dpop'
+  } as const;
   readonly description: string;
 
   private authServer = new ServerLifecycle();

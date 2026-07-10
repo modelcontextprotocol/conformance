@@ -348,7 +348,7 @@ describe('WIF JWT-bearer negative tests', () => {
 });
 
 // DPoP (SEP-1932): the compliant paths for both postures (auth/dpop and
-// auth/dpop-nonce) are covered by the Client Draft Scenarios loop above; these
+// auth/dpop-nonce) are covered by the Client Extension Scenarios loop above; these
 // are the negative cases, via deliberately-broken example clients. The baseline
 // checks (scheme, replay, token-request-proof) are nonce-independent, so those
 // negatives run against auth/dpop; the two nonce checks only fire when a
@@ -419,8 +419,8 @@ describe('DPoP client negative tests (SEP-1932)', () => {
 // DPoP nonce-less baseline (SEP-1932): a client that implements NO nonce
 // handling still completes DPoP successfully when the server does not require a
 // nonce (the common case — server nonces are OPTIONAL, RFC 9449 §8/§9). The
-// nonce-capable compliant path is covered by the Client Draft Scenarios loop
-// above (auth/dpop is in draftScenariosList).
+// nonce-capable compliant path is covered by the Client Extension Scenarios
+// loop above (auth/dpop is in extensionScenariosList).
 describe('DPoP client nonce-less baseline (SEP-1932)', () => {
   test('auth/dpop: nonce-incapable client passes the baseline', async () => {
     const runner = new InlineClientRunner(dpopNoNonceClient);
