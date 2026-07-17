@@ -252,7 +252,10 @@ describe('createServerStateless', () => {
       );
       expect(status).toBe(200);
       expect(body.result.supportedVersions).toEqual(STATELESS_SPEC_VERSIONS);
-      expect(body.result.serverInfo.name).toBe('conformance-mock-server');
+      // Spec PR #3002: server identity lives in the result `_meta`.
+      expect(body.result._meta['io.modelcontextprotocol/serverInfo'].name).toBe(
+        'conformance-mock-server'
+      );
     } finally {
       await srv.close();
     }

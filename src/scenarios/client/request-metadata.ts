@@ -32,6 +32,7 @@ const STATUS_SEVERITY: Record<CheckStatus, number> = {
 export const DECLARED_CHECK_IDS = [
   'sep-2575-http-client-sends-version-header',
   'sep-2575-client-populates-meta',
+  'sep-2575-client-sends-client-info',
   'sep-2575-http-version-header-matches-meta',
   'sep-2575-client-declares-roots-capability',
   'sep-2575-client-declares-sampling-capability',
@@ -161,18 +162,38 @@ export class RequestMetadataScenario implements Scenario {
 
       // 2. "Every client request MUST include the following
       //  io.modelcontextprotocol/* fields in _meta: protocolVersion,
-      //  clientInfo, clientCapabilities."
+      //  clientCapabilities." clientInfo is a SHOULD since spec PR #3002 and
+      // is tracked by its own check below, so requirement levels never blend
+      // in one check id.
       const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
       const hasCapabilities =
         meta?.['io.modelcontextprotocol/clientCapabilities'];
-      const metaIsValid = metaVersion && hasClientInfo && hasCapabilities;
+      const metaIsValid = metaVersion && hasCapabilities;
 
       this.addOrUpdateCheck({
         id: 'sep-2575-client-populates-meta',
         name: 'ClientPopulatesMeta',
         description:
-          'Client populates _meta on every request with all three required fields',
+          'Client populates _meta on every request with the required fields (protocolVersion, clientCapabilities)',
         status: metaIsValid ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+          }
+        ],
+        details: { method: request.method, meta }
+      });
+
+      // 2b. clientInfo SHOULD (spec PR #3002): absence is a WARNING, never a
+      // FAILURE — a dedicated id so adoption is trackable on its own.
+      this.addOrUpdateCheck({
+        id: 'sep-2575-client-sends-client-info',
+        name: 'ClientSendsClientInfo',
+        description:
+          "Client SHOULD include io.modelcontextprotocol/clientInfo in every request's _meta (spec PR #3002)",
+        status: hasClientInfo ? 'SUCCESS' : 'WARNING',
         timestamp: new Date().toISOString(),
         specReferences: [
           {

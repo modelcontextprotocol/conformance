@@ -1,8 +1,9 @@
 /**
  * Stateless mock server: 2026-x lifecycle (SEP-2575).
  *
- * No initialize handshake. Validates `_meta` (protocolVersion / clientInfo /
- * clientCapabilities) and the `MCP-Protocol-Version` header on every request,
+ * No initialize handshake. Validates `_meta` (protocolVersion /
+ * clientCapabilities — `clientInfo` is a SHOULD since spec PR #3002 and is
+ * never required) and the `MCP-Protocol-Version` header on every request,
  * serves `server/discover`, and routes other methods to the supplied handlers.
  * Implemented with raw express so it can front-run SDK support.
  */
@@ -14,9 +15,13 @@ import type { MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { capabilitiesFromHandlers } from './stateful';
 
+/**
+ * The required per-request `_meta` keys. `io.modelcontextprotocol/clientInfo`
+ * is deliberately absent: spec PR #3002 demoted it to SHOULD, so a request
+ * without it is valid.
+ */
 const META_KEYS = [
   'io.modelcontextprotocol/protocolVersion',
-  'io.modelcontextprotocol/clientInfo',
   'io.modelcontextprotocol/clientCapabilities'
 ] as const;
 
@@ -156,7 +161,14 @@ export function validateStatelessRequest(
         result: withRequiredDraftResultFields(method, {
           supportedVersions,
           capabilities,
-          serverInfo: { name: 'conformance-mock-server', version: '1.0.0' }
+          // Spec PR #3002: server identity lives in the result `_meta`, not
+          // the DiscoverResult body.
+          _meta: {
+            'io.modelcontextprotocol/serverInfo': {
+              name: 'conformance-mock-server',
+              version: '1.0.0'
+            }
+          }
         })
       }
     };

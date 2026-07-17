@@ -29,13 +29,14 @@ export class ServerStatelessScenario implements ClientScenario {
 **Server Implementation Requirements:**
 
 **Endpoints**:
-- \`server/discover\`: Returns supportedVersions, capabilities, and serverInfo metadata.
+- \`server/discover\`: Returns supportedVersions and capabilities; SHOULD identify itself via \`_meta['io.modelcontextprotocol/serverInfo']\` (spec PR #3002).
 - \`tools/call\`: Implement structural test tools like \`test_missing_capability\` requiring explicit capabilities in \`_meta\`.
 
 **Grouped Specification Requirements**:
 
-1. **Per-Request _meta Validation (5 Checks)**
-   - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientInfo\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature and an HTTP status code \`400 Bad Request\`.
+1. **Per-Request _meta Validation (4 Checks)**
+   - Rejects requests missing \`_meta\` or lacking structural required internal subfields (\`protocolVersion\`, \`clientCapabilities\`) with a JSON-RPC \`-32602 Invalid params\` error signature and an HTTP status code \`400 Bad Request\`.
+   - Serves requests whose \`_meta\` omits \`clientInfo\` (a SHOULD since spec PR #3002 — servers MUST NOT require it).
 2. **Discovery & Capabilities (3 Checks)**
    - Implements \`server/discover\` mapping exact mandatory protocol elements.
    - Dynamically checks prompt capability declaration constraints, validates that active RPC handlers match advertised discovery capacities.
@@ -332,20 +333,8 @@ export class ServerStatelessScenario implements ClientScenario {
         },
         rpcId: 102
       },
-      {
-        slug: 'missing-client-info',
-        description:
-          'Rejects request with _meta missing io.modelcontextprotocol/clientInfo',
-        params: {
-          _meta: {
-            'io.modelcontextprotocol/protocolVersion':
-              validMeta['io.modelcontextprotocol/protocolVersion'],
-            'io.modelcontextprotocol/clientCapabilities':
-              validMeta['io.modelcontextprotocol/clientCapabilities']
-          }
-        },
-        rpcId: 103
-      },
+      // No 'missing-client-info' case: spec PR #3002 demoted clientInfo to
+      // SHOULD, so its absence is valid (asserted positively below).
       {
         slug: 'missing-client-capabilities',
         description:
@@ -411,6 +400,45 @@ export class ServerStatelessScenario implements ClientScenario {
       );
     }
 
+    // Positive companion (spec PR #3002): clientInfo is a SHOULD — a request
+    // whose _meta omits it MUST be served, not rejected.
+    const noClientInfoProbe = await sendRpc(
+      'server/discover',
+      {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion':
+            validMeta['io.modelcontextprotocol/protocolVersion'],
+          'io.modelcontextprotocol/clientCapabilities':
+            validMeta['io.modelcontextprotocol/clientCapabilities']
+        }
+      },
+      undefined,
+      105
+    ).catch(() => null);
+    const noClientInfoData: any = noClientInfoProbe?.data;
+    await runCheck(
+      'sep-2575-request-meta-client-info-optional',
+      'RequestMetaClientInfoOptional',
+      'Serves requests whose _meta omits io.modelcontextprotocol/clientInfo (clientInfo is a SHOULD).',
+      () => {
+        if (!noClientInfoProbe)
+          return { error: 'clientInfo-less probe failed completely' };
+        if (noClientInfoData?.error) {
+          return {
+            error: `Expected a result, got error ${noClientInfoData.error.code}: ${noClientInfoData.error.message}`,
+            details: { response: noClientInfoData }
+          };
+        }
+        if (noClientInfoProbe.res?.status !== 200) {
+          return {
+            error: `Expected HTTP 200, got status code ${noClientInfoProbe.res?.status}`,
+            details: { response: noClientInfoData }
+          };
+        }
+        return { details: { response: noClientInfoData } };
+      }
+    );
+
     // ==========================================
     // 2. Discovery & Capabilities (4 Checks)
     // ==========================================
@@ -448,10 +476,12 @@ export class ServerStatelessScenario implements ClientScenario {
       () => {
         if (discoverRpcError)
           return { error: `Discovery failed: ${discoverRpcError.message}` };
+        // Mandatory body fields per the final revision (spec PR #3002 removed
+        // body serverInfo — identity is a SHOULD in the result _meta, checked
+        // separately below).
         if (
           !discoverResult?.supportedVersions ||
-          !discoverResult?.capabilities ||
-          !discoverResult?.serverInfo
+          !discoverResult?.capabilities
         ) {
           return {
             error: 'Missing mandatory fields in discover response setup',
@@ -459,6 +489,38 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
         return { details: { result: discoverResult } };
+      }
+    );
+
+    await runCheck(
+      'sep-2575-server-identifies-in-result-meta',
+      'ServerIdentifiesInResultMeta',
+      "Servers SHOULD identify themselves via _meta['io.modelcontextprotocol/serverInfo'] on responses (spec PR #3002).",
+      () => {
+        if (discoverRpcError)
+          // Discover itself failed (already a FAILURE on the implements-
+          // discover check): nothing is known about identity, so the gap
+          // must not read as an intentional absence.
+          return {
+            skipped: true,
+            details: {
+              note: `Prerequisite missing: ${discoverRpcError.message}`
+            }
+          };
+        const metaServerInfo =
+          discoverResult?._meta?.['io.modelcontextprotocol/serverInfo'];
+        if (!metaServerInfo?.name || !metaServerInfo?.version) {
+          const bodyServerInfo = discoverResult?.serverInfo;
+          return {
+            // SHOULD-level: WARNING, never FAILURE.
+            warning: true,
+            error: bodyServerInfo
+              ? 'serverInfo found only in the pre-#3002 result body, not in _meta'
+              : 'No serverInfo in the discover result _meta',
+            details: { result: discoverResult }
+          };
+        }
+        return { details: { serverInfo: metaServerInfo } };
       }
     );
 
