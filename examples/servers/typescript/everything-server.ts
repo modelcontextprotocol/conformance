@@ -1266,11 +1266,11 @@ app.post('/mcp', async (req, res) => {
 
     // Per-Request Metadata Integrity Checks (Fields verification).
     // A request missing any required `_meta` field is malformed: -32602 and,
-    // on HTTP, status 400 Bad Request.
+    // on HTTP, status 400 Bad Request. `clientInfo` is a SHOULD since spec
+    // PR #3002 and is never required.
     if (
       !meta ||
       !meta['io.modelcontextprotocol/protocolVersion'] ||
-      !meta['io.modelcontextprotocol/clientInfo'] ||
       !meta['io.modelcontextprotocol/clientCapabilities']
     ) {
       return res.status(400).json({
@@ -1372,7 +1372,13 @@ app.post('/mcp', async (req, res) => {
             // served on this path, so the capability must be declared too.
             resources: {}
           },
-          serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
+          // Spec PR #3002: server identity lives in the result `_meta`.
+          _meta: {
+            'io.modelcontextprotocol/serverInfo': {
+              name: 'everything-stateless-server',
+              version: '1.0.0'
+            }
+          }
         }
       });
     }
