@@ -111,7 +111,14 @@ export type ScenarioSource =
       introducedIn: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
       removedIn?: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
     }
-  | { extensionId: ExtensionId };
+  | {
+      extensionId: ExtensionId;
+      /**
+       * Core protocol version the extension is layered on for conformance
+       * runs. When omitted, runners retain their existing extension default.
+       */
+      baseSpecVersion?: SpecVersion;
+    };
 
 export interface ScenarioUrls {
   serverUrl: string;

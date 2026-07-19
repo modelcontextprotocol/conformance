@@ -28,8 +28,12 @@ import type {
 import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
-import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  type SpecVersion
+} from '../../../src/types.js';
 import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
+import { buildStandardHeaders } from '../../../src/connection/stateless.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -100,7 +104,8 @@ const USE_STATELESS_LIFECYCLE = PROTOCOL_VERSION
 // Wire protocolVersion for stateless requests: the runner-resolved version
 // when available (so a dated stateless release is exercised under its own
 // identifier), the current draft otherwise.
-const STATELESS_PROTOCOL_VERSION = PROTOCOL_VERSION ?? DRAFT_PROTOCOL_VERSION;
+const STATELESS_PROTOCOL_VERSION = (PROTOCOL_VERSION ??
+  DRAFT_PROTOCOL_VERSION) as SpecVersion;
 
 const STATELESS_META_BASE = {
   'io.modelcontextprotocol/clientInfo': {
@@ -128,13 +133,9 @@ async function statelessRequest(
   };
   const response = await fetch(serverUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Servers built on the SDK's StreamableHTTPServerTransport reject
-      // requests that don't accept both JSON and SSE responses.
-      Accept: 'application/json, text/event-stream',
-      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
-    },
+    headers: buildStandardHeaders(method, params, {
+      specVersion: STATELESS_PROTOCOL_VERSION
+    }),
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: _nextStatelessId++,
@@ -287,7 +288,7 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
             serverSupported.includes(v)
           );
           if (mutuallySupported.length > 0) {
-            activeVersion = mutuallySupported[0];
+            activeVersion = mutuallySupported[0] as SpecVersion;
             logger.debug(
               `Mutually supported version found: ${activeVersion}. Retrying...`
             );
@@ -1004,6 +1005,69 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
 }
 
 registerScenario('sep-2322-client-request-state', runMRTRClient);
+
+// ============================================================================
+// Tasks extension client conformance (SEP-2663)
+// ============================================================================
+
+const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
+
+async function runTasksClientCreateHandling(serverUrl: string): Promise<void> {
+  const taskCapabilities = {
+    ...STATELESS_META_BASE['io.modelcontextprotocol/clientCapabilities'],
+    extensions: { [TASKS_EXTENSION_ID]: {} }
+  };
+  const request = (method: string, params: Record<string, unknown> = {}) =>
+    statelessRequest(serverUrl, method, {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/clientCapabilities': taskCapabilities
+      }
+    });
+
+  const discovery = await request('server/discover');
+  if (!discovery?.capabilities?.extensions?.[TASKS_EXTENSION_ID]) {
+    throw new Error('Server did not advertise the Tasks extension');
+  }
+
+  await request('tools/list');
+  const result = await request('tools/call', {
+    name: 'long_running_echo',
+    arguments: { text: 'hello' }
+  });
+
+  if (result?.resultType !== 'task') {
+    // A standard CallToolResult is also valid after negotiating the extension.
+    return;
+  }
+
+  const taskId = result.taskId;
+  if (typeof taskId !== 'string') {
+    throw new Error('CreateTaskResult did not contain a taskId');
+  }
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const task = await request('tasks/get', { taskId });
+    if (task?.status === 'completed') {
+      if (!task.result) {
+        throw new Error('Completed task did not include its result');
+      }
+      return;
+    }
+    if (task?.status === 'failed' || task?.status === 'cancelled') {
+      throw new Error(`Task terminated with status ${task.status}`);
+    }
+    const delay =
+      typeof task?.pollIntervalMs === 'number' ? task.pollIntervalMs : 0;
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error('Task did not reach a terminal status');
+}
+
+registerScenario('tasks-client-create-handling', runTasksClientCreateHandling);
 
 // ============================================================================
 // WIF JWT-bearer scenario

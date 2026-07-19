@@ -15,6 +15,7 @@ import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
 import { MRTRClientScenario } from './client/mrtr-client';
+import { TasksClientCreateHandlingScenario } from './client/tasks-create-handling';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
@@ -311,7 +312,10 @@ const scenariosList: Scenario[] = [
   new HttpInvalidToolHeadersScenario(),
 
   // JSON Schema network $ref dereferencing (SEP-2106)
-  new JsonSchemaRefDerefScenario()
+  new JsonSchemaRefDerefScenario(),
+
+  // SEP-2663 Tasks extension client conformance
+  new TasksClientCreateHandlingScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -371,7 +375,9 @@ export function listCoreScenarios(): string[] {
 }
 
 export function listExtensionScenarios(): string[] {
-  return extensionScenariosList.map((scenario) => scenario.name);
+  return scenariosList
+    .filter((scenario) => 'extensionId' in scenario.source)
+    .map((scenario) => scenario.name);
 }
 
 export function listBackcompatScenarios(): string[] {
