@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "docs": "https://github.com/modelcontextprotocol/conformance/blob/main/AGENTS.md#traceability-manifest",
-  "source": "typescript-sdk@258f1a04a5d3",
+  "source": "typescript-sdk@3547bb21d287",
   "seps": {
     "837": {
       "yaml": "src/seps/sep-837.yaml",
@@ -37,6 +37,195 @@
         "tested": 1,
         "untested": 0,
         "excluded": 4,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "1932": {
+      "yaml": "src/seps/sep-1932.yaml",
+      "specUrl": "https://github.com/modelcontextprotocol/ext-auth/blob/pieterkas-dpop-extension/specification/draft/dpop-extension.mdx",
+      "requirements": [
+        {
+          "check": "sep-1932-client-dpop-auth-scheme",
+          "status": "tested",
+          "text": "When making requests to protected MCP server resources, clients MUST include the access token using the `Authorization` header with the `DPoP` authentication scheme as specified in RFC 9449 Section 7.1"
+        },
+        {
+          "check": "sep-1932-client-fresh-proof",
+          "status": "tested",
+          "text": "When making requests to protected MCP server resources, clients MUST include a fresh DPoP proof in the `DPoP` header"
+        },
+        {
+          "check": "sep-1932-client-token-request-proof",
+          "status": "tested",
+          "text": "To obtain a DPoP-bound access token, the client MUST include a DPoP proof in the `DPoP` header of its token request (RFC 9449 Section 5)"
+        },
+        {
+          "check": "sep-1932-client-as-nonce",
+          "status": "tested",
+          "text": "When the authorization server responds with `use_dpop_nonce`, the client MUST retry the token request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 8)"
+        },
+        {
+          "check": "sep-1932-client-rs-nonce",
+          "status": "tested",
+          "text": "When the MCP server responds with `use_dpop_nonce`, the client MUST retry the request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 9)"
+        },
+        {
+          "check": "sep-1932-server-validate-proof",
+          "status": "untested",
+          "text": "MCP servers MUST validate DPoP proofs according to RFC 9449 Section 4.3"
+        },
+        {
+          "check": "sep-1932-server-iat-window",
+          "status": "untested",
+          "text": "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time / MCP servers that are not capable of keeping state or performing global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation"
+        },
+        {
+          "check": "sep-1932-server-reject-401",
+          "status": "untested",
+          "text": "If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1"
+        },
+        {
+          "check": "sep-1932-as-metadata-alg-values",
+          "status": "untested",
+          "text": "Authorization servers supporting DPoP MUST include the `dpop_signing_alg_values_supported` field in their Authorization Server Metadata as defined in RFC 9449 Section 5.1. This field MUST contain a JSON array listing the JWS algorithm values supported for DPoP proof JWTs"
+        },
+        {
+          "check": "sep-1932-as-no-none-alg",
+          "status": "untested",
+          "text": "Only asymmetric signature algorithms are permitted; the `none` algorithm MUST NOT be included"
+        },
+        {
+          "check": "sep-1932-as-dpop-bound-enforcement",
+          "status": "untested",
+          "text": "When `dpop_bound_access_tokens` is set to `true`, the authorization server MUST reject token requests from the client that do not include a valid DPoP proof"
+        },
+        {
+          "check": "sep-1932-as-token-binding",
+          "status": "untested",
+          "text": "When issuing a DPoP-bound access token, the authorization server MUST bind it to the client's DPoP public key by including a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key (RFC 9449 Section 6) and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+        },
+        {
+          "check": "sep-1932-asymmetric-alg-only",
+          "status": "untested",
+          "text": "Only asymmetric signature algorithms MUST be used for DPoP proofs. Symmetric algorithms and the `none` algorithm MUST NOT be permitted as specified in RFC 9449 Section 11.6"
+        },
+        {
+          "check": "sep-1932-server-nonce",
+          "status": "untested",
+          "text": "For high-security environments, MCP servers SHOULD implement server-provided nonces as described in RFC 9449 Section 9 to further limit proof lifetime, even if it is stateless"
+        },
+        {
+          "check": "sep-1932-server-audience-validation",
+          "status": "untested",
+          "text": "MCP servers MUST continue to validate that access tokens were specifically issued for them, even when DPoP is used"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "Implementations MUST conform to all requirements specified in this extension",
+          "reason": "Umbrella requirement satisfied by the specific checks above; not separately observable on the wire."
+        },
+        {
+          "text": "Implementations MUST also conform to the baseline authorization requirements",
+          "reason": "Covered by the existing baseline MCP authorization conformance suite; not DPoP-specific."
+        },
+        {
+          "text": "Authorization servers and clients SHOULD support modern, secure algorithms such as ES256 (ECDSA using P-256 and SHA-256)",
+          "reason": "No crisp wire-observable behaviour; the spec explicitly does not mandate specific algorithms."
+        },
+        {
+          "text": "Implementations adopting this extension MUST follow the security considerations outlined in RFC 9449 Section 11, the baseline MCP Authorization specification security requirements, and OAuth 2.1 security best practices",
+          "reason": "Umbrella reference to the security considerations of other specifications; not a discrete observable behaviour."
+        },
+        {
+          "text": "Clients MUST protect DPoP private keys using appropriate security measures. If hardware security modules or secure enclaves are available, they SHOULD be used to protect private keys to prevent key extraction",
+          "reason": "Key storage is an implementation/internal concern, not observable on the wire."
+        },
+        {
+          "text": "Browser-based clients SHOULD use the Web Crypto API with non-extractable keys to prevent key exfiltration via XSS attacks",
+          "reason": "Client implementation detail, not observable on the wire."
+        },
+        {
+          "text": "MCP servers requiring maximum replay protection SHOULD implement `jti` tracking despite the operational complexity",
+          "reason": "Explicitly optional (servers are NOT required to track jti) and stateful/internal; only indirectly observable via replay."
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 5,
+        "untested": 10,
+        "excluded": 7,
+        "untracked": 0,
+        "unkeyed": 0
+      }
+    },
+    "1933": {
+      "yaml": "src/seps/sep-1933.yaml",
+      "specUrl": "https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933",
+      "requirements": [
+        {
+          "check": "wif-grant-type",
+          "status": "untested",
+          "text": "The request includes grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer (RFC 7523 §2.1 — clients MUST use this grant type for JWT-bearer authorization grants)"
+        },
+        {
+          "check": "wif-assertion-missing",
+          "status": "untested",
+          "text": "The request includes assertion: <workload-jwt> (RFC 7523 §2.1 — the assertion parameter is REQUIRED and MUST contain the JWT)"
+        },
+        {
+          "check": "wif-assertion-verified",
+          "status": "untested",
+          "text": "Client successfully authenticates to the MCP authorization server using a JWT-bearer grant with a valid workload identity JWT assertion"
+        },
+        {
+          "check": "wif-assertion-expired",
+          "status": "untested",
+          "text": "The JWT MUST contain an exp claim and the authorization server MUST reject assertions whose exp has passed (RFC 7523 §3 — client MUST surface this error and not silently ignore it)"
+        },
+        {
+          "check": "wif-assertion-audience",
+          "status": "untested",
+          "text": "The JWT MUST contain an aud claim identifying the authorization server (RFC 7523 §3 — client MUST surface invalid audience errors and not silently ignore them)"
+        },
+        {
+          "check": "wif-assertion-malformed",
+          "status": "untested",
+          "text": "The authorization server MUST reject JWTs with invalid signatures or malformed claims (RFC 7523 §3 — client MUST surface verification failures)"
+        },
+        {
+          "check": "wif-no-retry",
+          "status": "untested",
+          "text": "Clients should not retry a JWT-bearer token request after the authorization server has rejected the assertion, including after invalid_scope responses (WARNING until SEP-1933 lands normative spec text; RFC 7523 is silent on client retry behaviour)"
+        },
+        {
+          "check": "wif-grant-fallback",
+          "status": "untested",
+          "text": "When the authorization server returns unauthorized_client for a JWT-bearer token request, the client should not fall back to a different grant type (WARNING until SEP-1933 lands normative spec text; RFC 7523 §2.1 defines the grant but does not forbid grant-type switching after failure)"
+        }
+      ],
+      "excluded": [
+        {
+          "text": "The JWT MUST include an iss (issuer) claim identifying the workload identity provider (RFC 7523 §3)",
+          "reason": "Issuer validation is AS policy; the client presents a pre-signed token and cannot vary the iss value. The scenario does not expose issuer in context because it is not a client-observable parameter — the client has no mechanism to select or alter the iss of an assertion it did not construct."
+        },
+        {
+          "text": "The JWT MUST include a sub (subject) claim identifying the workload (RFC 7523 §3)",
+          "reason": "Subject allowlist enforcement is AS policy; the client has no control over the subject in a pre-signed IdP token. From the client perspective this collapses to a generic invalid_grant response, already covered by existing checks."
+        },
+        {
+          "text": "The JWT MUST include a jti (JWT ID) claim to prevent replay (RFC 7523 §3, recommended)",
+          "reason": "Replay detection is AS policy; the client cannot influence jti uniqueness across requests. No client-observable protocol difference from other invalid_grant responses."
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 0,
+        "untested": 8,
+        "excluded": 3,
         "untracked": 0,
         "unkeyed": 0
       }
@@ -176,7 +365,7 @@
         {
           "check": "sep-2243-server-reject-error-code",
           "status": "tested",
-          "text": "When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32001."
+          "text": "When rejecting a request due to header validation failure, servers SHOULD include a JSON-RPC error response using error code -32020."
         },
         {
           "check": "sep-2243-client-supports-custom-headers",
@@ -261,7 +450,7 @@
         {
           "check": "sep-2243-server-reject-param-mismatch",
           "status": "tested",
-          "text": "Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32001 if any validation fails."
+          "text": "Servers MUST reject requests with a 400 Bad Request HTTP status and JSON-RPC error code -32020 if any validation fails."
         }
       ],
       "excluded": [
@@ -284,15 +473,13 @@
       ],
       "unkeyed": [],
       "untracked": [
-        "sep-2243-invalid-tool-tools-list-gate",
-        "sep-2243-server-accepts-whitespace-header-value",
-        "sep-2243-server-no-xmcp-tool"
+        "sep-2243-server-accepts-whitespace-header-value"
       ],
       "summary": {
         "tested": 18,
         "untested": 2,
         "excluded": 4,
-        "untracked": 3,
+        "untracked": 1,
         "unkeyed": 0
       }
     },
@@ -520,15 +707,23 @@
       ],
       "unkeyed": [],
       "untracked": [
+        "sep-2322-elicitation-complete",
+        "sep-2322-list-roots-complete",
         "sep-2322-multi-round-r1",
+        "sep-2322-multi-round-r2",
+        "sep-2322-multi-round-r3",
+        "sep-2322-multiple-inputs-complete",
         "sep-2322-multiple-inputs-incomplete",
-        "sep-2322-non-tool-incomplete"
+        "sep-2322-non-tool-complete",
+        "sep-2322-non-tool-incomplete",
+        "sep-2322-request-state-complete",
+        "sep-2322-sampling-complete"
       ],
       "summary": {
         "tested": 17,
         "untested": 0,
         "excluded": 16,
-        "untracked": 3,
+        "untracked": 11,
         "unkeyed": 0
       }
     },
@@ -538,7 +733,7 @@
       "requirements": [
         {
           "check": "sep-2350-scope-union-on-reauth",
-          "status": "tested",
+          "status": "untested",
           "text": "When re-authorizing, clients SHOULD include these scopes alongside any previously granted scopes to avoid losing permissions needed for other operations. / Clients SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization.",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/authorization#protected-resource-metadata-discovery-requirements"
         }
@@ -556,8 +751,8 @@
       "unkeyed": [],
       "untracked": [],
       "summary": {
-        "tested": 1,
-        "untested": 0,
+        "tested": 0,
+        "untested": 1,
         "excluded": 2,
         "untracked": 0,
         "unkeyed": 0
@@ -677,27 +872,27 @@
         {
           "check": "sep-2549-tools-list-caching-hints",
           "status": "tested",
-          "text": "Servers MUST include caching hints on results returned by tools/list"
+          "text": "Servers MUST include caching hints on results with resultType: \"complete\" returned by tools/list"
         },
         {
           "check": "sep-2549-prompts-list-caching-hints",
           "status": "tested",
-          "text": "Servers MUST include caching hints on results returned by prompts/list"
+          "text": "Servers MUST include caching hints on results with resultType: \"complete\" returned by prompts/list"
         },
         {
           "check": "sep-2549-resources-list-caching-hints",
           "status": "tested",
-          "text": "Servers MUST include caching hints on results returned by resources/list"
+          "text": "Servers MUST include caching hints on results with resultType: \"complete\" returned by resources/list"
         },
         {
           "check": "sep-2549-resources-templates-list-caching-hints",
           "status": "tested",
-          "text": "Servers MUST include caching hints on results returned by resources/templates/list"
+          "text": "Servers MUST include caching hints on results with resultType: \"complete\" returned by resources/templates/list"
         },
         {
           "check": "sep-2549-resources-read-caching-hints",
           "status": "tested",
-          "text": "Servers MUST include caching hints on results returned by resources/read"
+          "text": "Servers MUST include caching hints on results with resultType: \"complete\" returned by resources/read"
         },
         {
           "check": "sep-2549-ttl-non-negative",
@@ -762,6 +957,14 @@
         {
           "text": "Server implementors MUST apply appropriate per-primitive access controls, and MUST NOT rely on cacheScope alone to prevent unauthorized access to primitives.",
           "reason": "Server-side access control; implementation guidance not testable via protocol messages"
+        },
+        {
+          "text": "Clients MUST NOT serve a cached response for a request whose method or parameters differ from the request that produced it.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
+        },
+        {
+          "text": "Results produced by retrying a request through the multi round-trip requests mechanism (requests carrying inputResponses or requestState) MUST NOT be cached.",
+          "reason": "Client-side caching behavior; not observable at the protocol level"
         }
       ],
       "unkeyed": [],
@@ -769,7 +972,7 @@
       "summary": {
         "tested": 7,
         "untested": 0,
-        "excluded": 13,
+        "excluded": 15,
         "untracked": 0,
         "unkeyed": 0
       }
@@ -787,7 +990,7 @@
         {
           "check": "sep-2575-server-rejects-undeclared-capability",
           "status": "tested",
-          "text": "A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32003).",
+          "text": "A server MUST NOT rely on capabilities the client has not declared. If processing a request requires a capability the client did not include in io.modelcontextprotocol/clientCapabilities, the server MUST return a MissingRequiredClientCapabilityError (-32021).",
           "url": "https://modelcontextprotocol.io/specification/draft/basic/index#meta"
         },
         {
@@ -967,23 +1170,292 @@
       ],
       "unkeyed": [],
       "untracked": [
+        "sep-2575-client-sends-client-info",
         "sep-2575-discover-capabilities-match-handlers",
         "sep-2575-http-server-error-jsonrpc-id",
+        "sep-2575-http-server-meta-invalid-400",
         "sep-2575-http-server-method-not-found-404-initialize",
         "sep-2575-http-server-method-not-found-404-logging-setlevel",
         "sep-2575-http-server-method-not-found-404-ping",
         "sep-2575-http-server-method-not-found-404-resources-subscribe",
         "sep-2575-http-server-method-not-found-404-resources-unsubscribe",
+        "sep-2575-request-meta-client-info-optional",
         "sep-2575-request-meta-invalid-missing-client-capabilities",
-        "sep-2575-request-meta-invalid-missing-client-info",
         "sep-2575-request-meta-invalid-missing-meta",
-        "sep-2575-request-meta-invalid-missing-protocol-version"
+        "sep-2575-request-meta-invalid-missing-protocol-version",
+        "sep-2575-server-identifies-in-result-meta"
       ],
       "summary": {
         "tested": 22,
         "untested": 0,
         "excluded": 13,
-        "untracked": 11,
+        "untracked": 14,
+        "unkeyed": 0
+      }
+    },
+    "2663": {
+      "yaml": "src/seps/sep-2663.yaml",
+      "specUrl": "https://modelcontextprotocol.io/seps/2663-tasks-extension",
+      "requirements": [
+        {
+          "check": "sep-2663-server-rejects-undeclared-client",
+          "status": "tested",
+          "text": "A server MUST NOT return CreateTaskResult to a client that did not include the extension capability on its request, regardless of prior declarations."
+        },
+        {
+          "check": "sep-2663-client-handles-polymorphic-result",
+          "status": "untested",
+          "text": "A client that has negotiated this extension MUST be prepared to handle either CallToolResult or CreateTaskResult in response to any supported request it issues."
+        },
+        {
+          "check": "sep-2663-client-rejects-task-result-on-unsupported",
+          "status": "untested",
+          "text": "A client that receives CreateTaskResult in response to an unsupported request type MUST interpret this as an invalid response to the request."
+        },
+        {
+          "check": "sep-2663-server-returns-missing-capability-when-required",
+          "status": "tested",
+          "text": "If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32021 (Missing Required Client Capability)."
+        },
+        {
+          "check": "sep-2663-server-returns-missing-capability-data-shape",
+          "status": "untested",
+          "text": "The -32021 error response MUST indicate the required extension in the error response payload (the spec example shows a `data.requiredCapabilities.extensions[\"io.modelcontextprotocol/tasks\"]` shape)."
+        },
+        {
+          "check": "sep-2663-result-type-task-on-create",
+          "status": "tested",
+          "text": "Servers MUST set resultType to \"task\" when returning a CreateTaskResult so that clients can distinguish it from a standard result."
+        },
+        {
+          "check": "sep-2663-no-task-result-type-on-others",
+          "status": "untested",
+          "text": "Servers MUST NOT set resultType to \"task\" on result types other than CreateTaskResult."
+        },
+        {
+          "check": "sep-2663-failed-status-jsonrpc-only",
+          "status": "untested",
+          "text": "failed: The request failed due to a JSON-RPC error during execution. The task will include the error field with the JSON-RPC error details. This status MUST NOT be used for non-JSON-RPC errors."
+        },
+        {
+          "check": "sep-2663-durable-create-strong-consistency",
+          "status": "tested",
+          "text": "A server MUST NOT return CreateTaskResult until the task is durably created — that is, until a tasks/get for the returned taskId would resolve. In eventually-consistent environments, the server MUST wait for consistency before responding."
+        },
+        {
+          "check": "sep-2663-mrtr-synchronous-before-task-creation",
+          "status": "tested",
+          "text": "Server implementations that use multi round-trip requests in conjunction with task creation (for example, a tool that requires elicitation over InputRequiredResult before creating a task) SHOULD resolve all MRTR exchanges synchronously before responding with a CreateTaskResult."
+        },
+        {
+          "check": "sep-2663-tasks-get-status-working",
+          "status": "tested",
+          "text": "If the status is working, the server MUST return a a Task object with status working."
+        },
+        {
+          "check": "sep-2663-tasks-get-status-input-required",
+          "status": "tested",
+          "text": "If the status is input_required, the server MUST return a Task object with status input_required and an inputRequests field defined in Multi Round-Trip Requests. The inputRequests field MUST contain all outstanding requests from the server to the client that need to be fulfilled before the task can proceed."
+        },
+        {
+          "check": "sep-2663-tasks-get-status-completed",
+          "status": "tested",
+          "text": "If the status is completed, the server MUST return a Task object with status completed and a result field containing the final result of the task."
+        },
+        {
+          "check": "sep-2663-tasks-get-status-cancelled",
+          "status": "untested",
+          "text": "If the status is cancelled, the server MUST return a Task object with status cancelled."
+        },
+        {
+          "check": "sep-2663-tasks-get-status-failed",
+          "status": "tested",
+          "text": "If the status is failed, the server MUST return a Task object with status failed and the error that occurred during execution."
+        },
+        {
+          "check": "sep-2663-result-type-complete-on-tasks-get",
+          "status": "untested",
+          "text": "The resultType field MUST be set to \"complete\" on this object as it is the standard result shape for the tasks/get request."
+        },
+        {
+          "check": "sep-2663-input-request-key-unique-per-task",
+          "status": "untested",
+          "text": "Each request key in inputRequests MUST be unique over the lifetime of a single task."
+        },
+        {
+          "check": "sep-2663-no-key-reuse-after-response",
+          "status": "untested",
+          "text": "A server MUST NOT reuse a key for a subsequent server-to-client request after a response for that key has been delivered, and MUST NOT use the same key to refer to two distinct requests over a task's lifetime."
+        },
+        {
+          "check": "sep-2663-update-ack-empty-result",
+          "status": "untested",
+          "text": "On success, the server MUST acknowledge the request with an empty result."
+        },
+        {
+          "check": "sep-2663-update-error-unknown-task-id",
+          "status": "untested",
+          "text": "Servers SHOULD return a JSON-RPC error if the taskId does not correspond to a known task."
+        },
+        {
+          "check": "sep-2663-update-ignore-unknown-keys",
+          "status": "untested",
+          "text": "A server SHOULD ignore any inputResponses responses mapped to a key that is not currently outstanding for the task — including keys that were never issued, keys that have already been answered, and keys whose corresponding request has been superseded."
+        },
+        {
+          "check": "sep-2663-result-type-complete-on-tasks-update",
+          "status": "untested",
+          "text": "The resultType field MUST be set to \"complete\" on UpdateTaskResult as it is the standard result shape for the tasks/update request."
+        },
+        {
+          "check": "sep-2663-cancel-not-via-cancelled-notification",
+          "status": "untested",
+          "text": "The notifications/cancelled notification MUST NOT be used for task cancellation."
+        },
+        {
+          "check": "sep-2663-cancel-ack-empty-result",
+          "status": "tested",
+          "text": "The server MUST acknowledge the request with an empty result."
+        },
+        {
+          "check": "sep-2663-cancel-error-unknown-task-id",
+          "status": "untested",
+          "text": "Servers SHOULD return a JSON-RPC error if the taskId does not correspond to a known task."
+        },
+        {
+          "check": "sep-2663-result-type-complete-on-tasks-cancel",
+          "status": "untested",
+          "text": "The resultType field MUST be set to \"complete\" on CancelTaskResult as it is the standard result shape for the tasks/cancel request."
+        },
+        {
+          "check": "sep-2663-subscribe-missing-capability-non-declaring",
+          "status": "untested",
+          "text": "If a client requests task status notifications but does not declare the io.modelcontextprotocol/tasks extension capability, the server MUST return a JSON-RPC error specifying the missing capabilities:"
+        },
+        {
+          "check": "sep-2663-no-progress-or-message-on-task-stream",
+          "status": "untested",
+          "text": "notifications/progress and notifications/message notifications MUST NOT be sent on the subscriptions/listen stream for a task, and are not supported on tasks in general in this specification."
+        },
+        {
+          "check": "sep-2663-client-emits-mcp-name-on-tasks-methods",
+          "status": "untested",
+          "text": "When tasks/get, tasks/update, or tasks/cancel is sent over the Streamable HTTP transport, the client MUST set the Mcp-Name header (defined by SEP-2243) to the value of params.taskId."
+        },
+        {
+          "check": "sep-2663-routing-headers-accepted-on-tasks-get",
+          "status": "tested",
+          "text": "When the Mcp-Method and Mcp-Name request headers match the body method and params.taskId on tasks/get, tasks/update, and tasks/cancel, the server MUST dispatch the request normally and return the same result as if the headers were absent."
+        },
+        {
+          "check": "sep-2663-server-rejects-mismatched-mcp-name-on-tasks-get",
+          "status": "tested",
+          "text": "Servers that process the request body MUST reject requests where the values specified in the headers do not match the values in the request body.",
+          "url": "https://modelcontextprotocol.io/seps/2243-http-standardization#header-processing"
+        },
+        {
+          "check": "sep-2663-tasks-get-invalid-task-id-32602",
+          "status": "tested",
+          "text": "Servers MUST return this error for tasks/get."
+        },
+        {
+          "check": "sep-2663-tasks-update-cancel-invalid-task-id-32602",
+          "status": "untested",
+          "text": "Servers SHOULD return this error for tasks/update and tasks/cancel."
+        },
+        {
+          "check": "sep-2663-tasks-methods-non-declaring",
+          "status": "tested",
+          "text": "Servers MUST return this error for non-declaring clients issuing tasks/get, tasks/update, and tasks/cancel requests."
+        },
+        {
+          "check": "sep-2663-failed-includes-statusmessage",
+          "status": "untested",
+          "text": "The tasks/get response SHOULD include a statusMessage field with diagnostic information about the failure, and MUST include the error field with the JSON-RPC error."
+        },
+        {
+          "check": "sep-2663-tool-error-uses-completed-status",
+          "status": "tested",
+          "text": "The failed status MUST NOT be used to represent non-JSON-RPC errors, such as a tool result that completed with isError: true. Errors within the context of a protocol method result MUST use the completed status with the error details in the result field."
+        },
+        {
+          "check": "sep-2663-tasks-result-removed-method-not-found",
+          "status": "tested",
+          "text": "tasks/result is removed; clients calling it MUST receive -32601 (Method Not Found)."
+        },
+        {
+          "check": "sep-2663-legacy-task-param-ignored",
+          "status": "tested",
+          "text": "The task parameter on CallToolRequest is removed; servers MUST ignore it (treat the field as unknown) rather than using it as an opt-in."
+        },
+        {
+          "check": "sep-2663-migrate-from-legacy-capabilities",
+          "status": "untested",
+          "text": "Servers that previously advertised these MUST migrate to declaring io.modelcontextprotocol/tasks, and MUST NOT continue to advertise the legacy capabilities under any protocol version that includes this extension."
+        },
+        {
+          "check": "sep-2663-legacy-capability-treated-as-non-declaring",
+          "status": "untested",
+          "text": "Servers MUST treat clients declaring only the legacy capability as non-declaring with respect to this extension."
+        }
+      ],
+      "excluded": [
+        {
+          "text": "implementations SHOULD be designed to accommodate additional request types in future revisions of this specification.",
+          "reason": "Architectural design guidance, not observable at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD respect the pollIntervalMs provided in responses when determining polling frequency.",
+          "reason": "Client-internal polling cadence; the rate at which a client polls is not a wire-level conformance signal"
+        },
+        {
+          "text": "Clients SHOULD continue polling until the task reaches a terminal status or until invoking tasks/cancel.",
+          "reason": "Internal client behavior with no observable violation at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD persist task IDs to durable storage so that polling can resume after a crash or restart.",
+          "reason": "Internal storage decision; not observable at the protocol level"
+        },
+        {
+          "text": "The client MUST inspect this field and SHOULD provide responses via the inputResponses field in subsequent tasks/update requests.",
+          "reason": "Client-internal inspection action; not observable at the protocol level (the downstream tasks/update emission is covered by the MRTR scenarios)"
+        },
+        {
+          "text": "Clients MUST treat each entry in inputRequests as they would the equivalent standalone server-to-client request — for example, an elicitation request surfaced via inputRequests is subject to the same trust model and user-facing behavior as a direct elicitation/create request.",
+          "reason": "Host-internal trust model; not observable at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD deduplicate inputRequests keys across consecutive polls to avoid presenting the same request to the user or model more than once.",
+          "reason": "Client UX / internal deduplication; not observable at the protocol level"
+        },
+        {
+          "text": "Clients SHOULD track inputRequests keys to avoid responding to requests more than once.",
+          "reason": "Internal client state; not observable at the protocol level"
+        },
+        {
+          "text": "Servers SHOULD provide informative error messages to describe the cause of errors.",
+          "reason": "Subjective; \"informative\" has no observable threshold at the protocol level"
+        },
+        {
+          "text": "Hosts MUST apply the same trust model to these payloads as they would to standard elicitation/sampling requests. A task is not a higher-trust channel.",
+          "reason": "Host-internal trust model; not observable at the protocol level"
+        },
+        {
+          "text": "Servers MUST generate them with sufficient entropy that a third party cannot enumerate or guess them.",
+          "reason": "\"Sufficient entropy\" is a statistical property without a protocol-level threshold; cannot be asserted at the wire layer"
+        },
+        {
+          "text": "Servers MUST perform authentication and authorization checks on each task-related request to ensure that the client has permission to access a task.",
+          "reason": "Host-internal authentication/authorization policy; not observable at the protocol level without coupling to a specific auth scheme"
+        }
+      ],
+      "unkeyed": [],
+      "untracked": [],
+      "summary": {
+        "tested": 17,
+        "untested": 23,
+        "excluded": 12,
+        "untracked": 0,
         "unkeyed": 0
       }
     }
