@@ -18,6 +18,7 @@ import {
   type DpopClientObservations
 } from './helpers/dpopResourceAuth';
 import { SpecReferences } from './spec-references';
+import { collapseDuplicateChecks } from '../../../checks/collapse';
 
 const PRM_PATH = '/.well-known/oauth-protected-resource/mcp';
 
@@ -109,38 +110,6 @@ function newTokenReqObs(): DpopTokenRequestObservation {
     asNonceChallengeIssued: false,
     asNonceHonored: false
   };
-}
-
-/**
- * Collapse duplicate non-INFO check IDs to a single entry, preferring the
- * MOST-SEVERE occurrence (FAILURE > WARNING > SUCCESS > any other status, e.g.
- * SKIPPED) so a real failure is never masked. Equal-severity ties keep the LAST
- * occurrence (for the nonce round-trip that is the retry's diagnostic, which is
- * status-equivalent to the first). Per-request INFO log entries are always kept.
- *
- * The RFC 9449 §8/§9 nonce round-trip re-POSTs /token (challenge → retry), so
- * the shared token-flow conformance checks (`token-request`, `pkce-*`) are
- * appended twice; this reports each once without hiding a failure recorded on
- * either attempt. Exported so the behaviour is unit-tested directly.
- */
-export function collapseDuplicateChecks(
-  checks: ConformanceCheck[]
-): ConformanceCheck[] {
-  const severity = (s: CheckStatus): number =>
-    s === 'FAILURE' ? 3 : s === 'WARNING' ? 2 : s === 'SUCCESS' ? 1 : 0;
-  // Winning index per non-INFO id: highest severity, ties → last occurrence.
-  const winner = new Map<string, number>();
-  checks.forEach((c, i) => {
-    if (c.status === 'INFO') return;
-    const cur = winner.get(c.id);
-    if (
-      cur === undefined ||
-      severity(c.status) >= severity(checks[cur].status)
-    ) {
-      winner.set(c.id, i);
-    }
-  });
-  return checks.filter((c, i) => c.status === 'INFO' || winner.get(c.id) === i);
 }
 
 export class DPoPClientScenario implements Scenario {

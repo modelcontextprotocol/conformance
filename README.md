@@ -134,6 +134,40 @@ This ensures:
 - CI fails on new regressions (unexpected failures)
 - CI fails when a fix lands but the baseline isn't updated (stale entries)
 
+### Baselining a single check
+
+A scenario is many checks — `server-stateless` alone is over twenty — so baselining the
+whole scenario to excuse one of them stops enforcing the other nineteen. An entry can
+instead name a single check, as `<scenario>:<check-id>`:
+
+```yaml
+server:
+  - tasks-lifecycle # whole scenario may fail
+  - server-stateless:sep-2575-server-implements-discover # only this check may fail
+```
+
+The check id is the left-hand column the runner already prints for each check, so it can
+be copied straight out of a failing run.
+
+With a per-check entry, every failing check in that scenario is judged on its own: the
+named one is excused, and any other failure is still an unexpected regression. The four
+exit-code rules above apply per check rather than per scenario, with one addition — a
+baselined check that is absent or skipped is tolerated, because a scenario that bails on
+a failed prerequisite legitimately never reaches its later checks, and the prerequisite
+reports its own failure anyway.
+
+Two things to know:
+
+- **A check id addresses every occurrence of that id.** Ids repeat within a run (a loop,
+  a retried flow), and the occurrences collapse to one verdict, most-severe first. So
+  baselining a repeated id excuses all of its occurrences — coarser than ideal, still far
+  narrower than baselining the scenario.
+- **Mind the space.** `- scenario:check-id` is a string; `- scenario: check-id` is YAML
+  for a mapping and is rejected with an error.
+
+A scenario cannot be listed both wholesale and per-check — the wholesale entry already
+excuses everything, so the pair is contradictory and is rejected.
+
 ## GitHub Action
 
 This repo provides a composite GitHub Action so SDK repos don't need to write their own conformance scripts.
