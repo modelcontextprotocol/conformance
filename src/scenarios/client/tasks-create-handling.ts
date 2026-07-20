@@ -2,8 +2,9 @@
  * SEP-2663 Tasks Extension — client polymorphic-result handling.
  *
  * The mock server returns a server-directed CreateTaskResult from tools/call.
- * A conformant client follows the task handle with tasks/get and consumes the
- * completed result instead of treating the task envelope as a CallToolResult.
+ * A conformant client follows the task handle with tasks/get instead of
+ * treating the task envelope as a CallToolResult. This black-box scenario can
+ * observe retrieval, but not application-level use of the completed result.
  */
 
 import express from 'express';
@@ -221,7 +222,7 @@ export class TasksClientCreateHandlingScenario implements Scenario {
         id: 'sep-2663-client-handles-polymorphic-result',
         name: 'TasksClientHandlesPolymorphicResult',
         description:
-          'Client handles CreateTaskResult from tools/call and retrieves the completed task result with tasks/get.',
+          'Client handles CreateTaskResult from tools/call and retrieves the completed task result with tasks/get. This black-box check observes retrieval, not application-level use of the returned result.',
         status: passed ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage,
