@@ -1,5 +1,5 @@
-import { collapseDuplicateChecks } from './dpop';
-import type { ConformanceCheck, CheckStatus } from '../../../types';
+import { collapseDuplicateChecks } from './collapse';
+import type { ConformanceCheck, CheckStatus } from '../types';
 
 /** Minimal check factory for the dedupe unit tests. */
 function chk(id: string, status: CheckStatus, tag?: string): ConformanceCheck {
@@ -13,7 +13,7 @@ function chk(id: string, status: CheckStatus, tag?: string): ConformanceCheck {
   };
 }
 
-describe('collapseDuplicateChecks (DPoP nonce-posture shared-check dedupe)', () => {
+describe('collapseDuplicateChecks', () => {
   it('collapses duplicate SUCCESS ids to a single entry', () => {
     const out = collapseDuplicateChecks([
       chk('token-request', 'SUCCESS'),
