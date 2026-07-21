@@ -18,6 +18,7 @@ import { MRTRClientScenario } from './client/mrtr-client';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { SessionLifecycleScenario } from './server/session-lifecycle';
 import { ServerStatelessScenario } from './server/stateless';
 
 import {
@@ -156,6 +157,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new SessionLifecycleScenario(),
   new ServerStatelessScenario(),
 
   // Utilities scenarios
