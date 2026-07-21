@@ -129,12 +129,39 @@ export class RequestMetadataScenario implements Scenario {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
+    // This scenario only evaluates the metadata attached to POST requests.
+    // Clients may probe a Streamable HTTP endpoint with an empty-body GET
+    // before sending MCP requests, so reject unsupported methods before
+    // attempting to parse a JSON-RPC body.
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end('Method Not Allowed');
+      return;
+    }
+
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
     });
     req.on('end', () => {
-      const request = JSON.parse(body);
+      let request;
+      try {
+        request = JSON.parse(body);
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: -32700,
+              message: `Parse error: ${String(error)}`
+            }
+          })
+        );
+        return;
+      }
+
       this.requestsObserved++;
 
       // Extract version and headers
