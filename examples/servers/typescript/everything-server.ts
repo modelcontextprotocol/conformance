@@ -1202,17 +1202,15 @@ function notifyListenStreams(
   for (const stream of activeListenStreams) {
     const wants = type === 'tools' ? stream.wantsTools : stream.wantsPrompts;
     if (!wants) continue;
-    stream.res.write(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method: notificationMethod,
-        params: {
-          _meta: {
-            'io.modelcontextprotocol/subscriptionId': stream.subscriptionId
-          }
+    writeSseMessage(stream.res, {
+      jsonrpc: '2.0',
+      method: notificationMethod,
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/subscriptionId': stream.subscriptionId
         }
-      }) + '\n'
-    );
+      }
+    });
   }
 }
 
@@ -1234,6 +1232,10 @@ const LEGACY_SESSION_PROTOCOL_VERSIONS = [
   '2025-06-18',
   '2025-11-25'
 ];
+
+function writeSseMessage(res: import('express').Response, msg: unknown) {
+  res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+}
 
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
@@ -1311,13 +1313,12 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
+    // Subscriptions Listening Endpoint Stream Handler (SSE)
     if (method === 'subscriptions/listen') {
       res.writeHead(200, {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'Transfer-Encoding': 'chunked'
+        Connection: 'keep-alive'
       });
 
       const requestedNotifications = params.notifications || {};
@@ -1340,7 +1341,7 @@ app.post('/mcp', async (req, res) => {
           }
         }
       };
-      res.write(JSON.stringify(ackFrame) + '\n');
+      writeSseMessage(res, ackFrame);
 
       // Keep the stream open and register it so list-changed notifications
       // triggered by later requests are delivered to it. The stream ends when
@@ -2134,55 +2135,49 @@ app.post('/mcp', async (req, res) => {
       // Progressive IncompleteResult Stream Generator Handling
       if (name === 'test_streaming_elicitation') {
         res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Transfer-Encoding': 'chunked'
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache'
         });
 
-        res.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'notifications/progress', // Emits standard progress notice
-            params: { progressToken: 'token-abc', total: 100, value: 50 }
-          }) + '\n'
-        );
+        writeSseMessage(res, {
+          jsonrpc: '2.0',
+          method: 'notifications/progress', // Emits standard progress notice
+          params: { progressToken: 'token-abc', total: 100, value: 50 }
+        });
 
-        return res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: { content: [{ type: 'text', text: 'Streaming complete' }] }
-          })
-        );
+        writeSseMessage(res, {
+          jsonrpc: '2.0',
+          id,
+          result: { content: [{ type: 'text', text: 'Streaming complete' }] }
+        });
+        return res.end();
       }
 
       // Contextual Logging Constraints Verification Handler
       if (name === 'test_logging_tool') {
         res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Transfer-Encoding': 'chunked'
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache'
         });
 
         // RULE: No logs allowed if meta configuration lacks explicit log level bounds
         if (meta && meta['io.modelcontextprotocol/logLevel']) {
-          res.write(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              method: 'notifications/message',
-              params: {
-                level: 'info',
-                text: 'Diagnostic trace logging activated'
-              }
-            }) + '\n'
-          );
+          writeSseMessage(res, {
+            jsonrpc: '2.0',
+            method: 'notifications/message',
+            params: {
+              level: 'info',
+              text: 'Diagnostic trace logging activated'
+            }
+          });
         }
 
-        return res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
-          })
-        );
+        writeSseMessage(res, {
+          jsonrpc: '2.0',
+          id,
+          result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
+        });
+        return res.end();
       }
 
       // Helper mutation hooks used by dynamic tests to force stream activity
@@ -2218,19 +2213,21 @@ app.post('/mcp', async (req, res) => {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache'
       });
-      const write = (msg: unknown) =>
-        res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
       const dispatch = await getStatelessDispatchClient();
       try {
         const result = await dispatch.client.request(
           { method, params },
           ResultSchema as any
         );
-        for (const n of dispatch.drainNotifications()) write(n);
-        write({ jsonrpc: '2.0', id, result });
+        for (const n of dispatch.drainNotifications()) {
+          writeSseMessage(res, n);
+        }
+        writeSseMessage(res, { jsonrpc: '2.0', id, result });
       } catch (e: any) {
-        for (const n of dispatch.drainNotifications()) write(n);
-        write({
+        for (const n of dispatch.drainNotifications()) {
+          writeSseMessage(res, n);
+        }
+        writeSseMessage(res, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data: e.data }
