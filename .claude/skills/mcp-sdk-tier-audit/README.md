@@ -44,6 +44,8 @@ For public repos, any authenticated token works (no special scopes needed — au
 --days <n>                       Limit triage analysis to last N days
 --output <format>                json | markdown | terminal (default: terminal)
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
+--spec-version <version>         Only run conformance scenarios for this spec version (also pins spec-tracking to it)
+--sdk-release-tag <tag>          Exact release tag of the submitted SDK version (pins spec-tracking to that submission)
 ```
 
 ### What the CLI Checks
