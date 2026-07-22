@@ -478,7 +478,7 @@ program
           }
         }
 
-        const { totalFailed } = printServerSummary(allResults);
+        const { totalFailed, totalWarnings } = printServerSummary(allResults);
 
         if (options.expectedFailures) {
           const expectedFailuresConfig = await loadExpectedFailures(
@@ -493,7 +493,7 @@ program
           process.exit(baselineResult.exitCode);
         }
 
-        process.exit(totalFailed > 0 ? 1 : 0);
+        process.exit(totalFailed > 0 || totalWarnings > 0 ? 1 : 0);
       }
     } catch (error) {
       if (error instanceof ZodError) {
