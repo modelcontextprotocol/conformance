@@ -48,9 +48,15 @@ export function createClientInitializationCheck(
     errors.push(
       `Version mismatch: expected ${expectedSpecVersion}, got ${protocolVersionSent}`
     );
-  if (!initializeRequest?.clientInfo?.name) errors.push('Client name missing');
-  if (!initializeRequest?.clientInfo?.version)
-    errors.push('Client version missing');
+  // Presence and type, not truthiness. `Implementation` is
+  // `"required": ["name", "version"]` with both a bare `{"type": "string"}`,
+  // so a client sending `version: ''` has supplied the field; a falsy test
+  // reports it as missing, and at FAILURE severity.
+  const clientInfo = initializeRequest?.clientInfo;
+  if (typeof clientInfo?.name !== 'string')
+    errors.push("clientInfo needs a string 'name'");
+  if (typeof clientInfo?.version !== 'string')
+    errors.push("clientInfo needs a string 'version'");
 
   const status: CheckStatus = errors.length === 0 ? 'SUCCESS' : 'FAILURE';
 
