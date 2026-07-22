@@ -777,4 +777,59 @@ describe('Stateless Server Scenario Negative Tests', () => {
     expect(promptsCheck?.status).toBe('WARNING');
     expect(toolsCheck?.status).toBe('WARNING');
   });
+
+  describe('sep-2575-server-identifies-in-result-meta', () => {
+    // Runs the scenario against a server whose discover result carries the
+    // given _meta serverInfo, and returns the identity check.
+    async function identityCheckFor(serverInfo: unknown) {
+      const mockUrl = mockFetchTarget((reqBody) => {
+        if (reqBody.method === 'server/discover') {
+          return {
+            status: 200,
+            body: {
+              jsonrpc: '2.0',
+              id: reqBody.id,
+              result: {
+                supportedVersions: ['2026-07-28'],
+                capabilities: {},
+                _meta: { 'io.modelcontextprotocol/serverInfo': serverInfo }
+              }
+            }
+          };
+        }
+      });
+      const checks = await new ServerStatelessScenario().run(
+        testContext(mockUrl)
+      );
+      return findCheck(checks, 'sep-2575-server-identifies-in-result-meta');
+    }
+
+    // `Implementation` requires `name` and `version` to be present strings and
+    // constrains nothing about their content, so an empty version identifies
+    // the server. Warning about it fails CI over a conformant payload.
+    it.each([
+      ['a full identity', { name: 'srv', version: '1.0.0' }],
+      ['an empty version', { name: 'srv', version: '' }],
+      ['an empty name', { name: '', version: '1.0.0' }]
+    ])('passes a server reporting %s', async (_label, serverInfo) => {
+      const check = await identityCheckFor(serverInfo);
+      expect(check?.status).toBe('SUCCESS');
+      expect(check?.errorMessage).toBeUndefined();
+    });
+
+    it.each([
+      ['no version', { name: 'srv' }],
+      ['neither field', {}],
+      ['non-string fields', { name: 1, version: 2 }]
+    ])(
+      'warns, without claiming absence, when the stamp has %s',
+      async (_label, serverInfo) => {
+        const check = await identityCheckFor(serverInfo);
+        expect(check?.status).toBe('WARNING');
+        expect(check?.errorMessage).toBe(
+          "serverInfo in the discover result _meta needs a string 'name' and 'version'"
+        );
+      }
+    );
+  });
 });
