@@ -1,5 +1,7 @@
 import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
+import { createServer, type IncomingMessage, type Server } from 'http';
+import type { AddressInfo } from 'net';
 import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
@@ -54,6 +56,47 @@ function stopServer(proc: ChildProcess | null): Promise<void> {
   });
 }
 
+async function readJsonBody(
+  req: IncomingMessage
+): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+}
+
+function listenOnRandomPort(server: Server): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once('error', onError);
+    server.listen(0, () => {
+      server.off('error', onError);
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        reject(new Error('Server did not listen on a TCP port'));
+        return;
+      }
+      resolve(`http://localhost:${(address as AddressInfo).port}/mcp`);
+    });
+  });
+}
+
+function closeHttpServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 describe('Server scenario negative tests', () => {
   describe('dns-rebinding-protection', () => {
     let serverProcess: ChildProcess | null = null;
@@ -83,6 +126,174 @@ describe('Server scenario negative tests', () => {
         (c) => c.id === 'localhost-host-rebinding-rejected'
       );
       expect(rebindingCheck?.status).toBe('FAILURE');
+    }, 10000);
+
+    it('sends initialized notification after a successful dated initialize', async () => {
+      const requests: Array<{
+        method?: string;
+        host?: string;
+        origin?: string;
+        sessionId?: string;
+      }> = [];
+      const sessionId = 'session-338';
+      const server = createServer(async (req, res) => {
+        if (req.method !== 'POST' || req.url !== '/mcp') {
+          res.writeHead(404).end();
+          return;
+        }
+
+        const body = await readJsonBody(req);
+        const method =
+          typeof body.method === 'string' ? body.method : undefined;
+        requests.push({
+          method,
+          host: req.headers.host,
+          origin:
+            typeof req.headers.origin === 'string'
+              ? req.headers.origin
+              : undefined,
+          sessionId:
+            typeof req.headers['mcp-session-id'] === 'string'
+              ? req.headers['mcp-session-id']
+              : undefined
+        });
+
+        if (
+          req.headers.host === 'evil.example.com' ||
+          req.headers.origin === 'http://evil.example.com'
+        ) {
+          res
+            .writeHead(403, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ error: 'forbidden' }));
+          return;
+        }
+
+        if (method === 'initialize') {
+          res
+            .writeHead(200, {
+              'Content-Type': 'application/json',
+              'Mcp-Session-Id': sessionId
+            })
+            .end(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: body.id,
+                result: {
+                  protocolVersion: LATEST_SPEC_VERSION,
+                  capabilities: {},
+                  serverInfo: {
+                    name: 'dns-rebinding-lifecycle-test',
+                    version: '1.0.0'
+                  }
+                }
+              })
+            );
+          return;
+        }
+
+        if (method === 'notifications/initialized') {
+          res.writeHead(
+            req.headers['mcp-session-id'] === sessionId ? 202 : 400
+          );
+          res.end();
+          return;
+        }
+
+        res.writeHead(500).end();
+      });
+
+      const serverUrl = await listenOnRandomPort(server);
+      try {
+        const checks = await new DNSRebindingProtectionScenario().run(
+          testContext(serverUrl, LATEST_SPEC_VERSION)
+        );
+
+        expect(
+          checks.find((c) => c.id === 'localhost-host-rebinding-rejected')
+            ?.status
+        ).toBe('SUCCESS');
+        expect(
+          checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
+        ).toBe('SUCCESS');
+
+        const validHost = new URL(serverUrl).host;
+        expect(requests).toEqual([
+          expect.objectContaining({
+            method: 'initialize',
+            host: 'evil.example.com',
+            origin: 'http://evil.example.com'
+          }),
+          expect.objectContaining({
+            method: 'initialize',
+            host: validHost,
+            origin: `http://${validHost}`
+          }),
+          expect.objectContaining({
+            method: 'notifications/initialized',
+            host: validHost,
+            origin: `http://${validHost}`,
+            sessionId
+          })
+        ]);
+      } finally {
+        await closeHttpServer(server);
+      }
+    }, 10000);
+
+    it('does not send initialized notification for the draft discover probe', async () => {
+      const methods: Array<string | undefined> = [];
+      const server = createServer(async (req, res) => {
+        if (req.method !== 'POST' || req.url !== '/mcp') {
+          res.writeHead(404).end();
+          return;
+        }
+
+        const body = await readJsonBody(req);
+        const method =
+          typeof body.method === 'string' ? body.method : undefined;
+        methods.push(method);
+
+        if (
+          req.headers.host === 'evil.example.com' ||
+          req.headers.origin === 'http://evil.example.com'
+        ) {
+          res
+            .writeHead(403, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ error: 'forbidden' }));
+          return;
+        }
+
+        if (method === 'server/discover') {
+          res.writeHead(200, { 'Content-Type': 'application/json' }).end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: body.id,
+              result: {}
+            })
+          );
+          return;
+        }
+
+        res.writeHead(500).end();
+      });
+
+      const serverUrl = await listenOnRandomPort(server);
+      try {
+        const checks = await new DNSRebindingProtectionScenario().run(
+          testContext(serverUrl, DRAFT_PROTOCOL_VERSION)
+        );
+
+        expect(
+          checks.find((c) => c.id === 'localhost-host-rebinding-rejected')
+            ?.status
+        ).toBe('SUCCESS');
+        expect(
+          checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
+        ).toBe('SUCCESS');
+        expect(methods).toEqual(['server/discover', 'server/discover']);
+      } finally {
+        await closeHttpServer(server);
+      }
     }, 10000);
   });
 
