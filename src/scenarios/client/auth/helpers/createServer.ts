@@ -30,6 +30,15 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /**
+   * Query string (without '?') that the MCP server URL carries and that the
+   * client is expected to preserve when constructing the PRM well-known URL
+   * (RFC 9728 §3.1 inserts the well-known suffix between the host and the
+   * path and/or query components). When set, the PRM route emits the
+   * `prm-query-preserved` check and includes the query in the `resource`
+   * value. The metadata is served either way so the flow can continue.
+   */
+  expectedPrmQuery?: string;
 }
 
 export function createServer(
@@ -46,7 +55,8 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    expectedPrmQuery
   } = options;
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -121,6 +131,47 @@ export function createServer(
         }
       });
 
+      // RFC 9728 §3.1: for a resource identifier with a query component, the
+      // well-known suffix is inserted between the host and the path and/or
+      // query, so the query must survive into the PRM request. A stripped
+      // query is recorded as a WARNING (the query-bearing identifier itself
+      // is a SHOULD NOT-discouraged configuration per RFC 9728 §1.2), and the
+      // metadata is served either way so the rest of the flow can proceed.
+      if (expectedPrmQuery !== undefined) {
+        const queryIndex = req.originalUrl.indexOf('?');
+        const actualQuery =
+          queryIndex >= 0 ? req.originalUrl.slice(queryIndex + 1) : '';
+        const expectedParams = new URLSearchParams(expectedPrmQuery);
+        const actualParams = new URLSearchParams(actualQuery);
+        expectedParams.sort();
+        actualParams.sort();
+        const preserved = expectedParams.toString() === actualParams.toString();
+
+        checks.push({
+          id: 'prm-query-preserved',
+          name: 'PRMQueryPreserved',
+          description: preserved
+            ? 'Client preserved the MCP server URL query component in the PRM well-known URL'
+            : 'Client did not preserve the MCP server URL query component when constructing the PRM well-known URL; RFC 9728 §3.1 requires the query to be kept (reported as WARNING because a query-bearing resource identifier is itself a discouraged configuration per RFC 9728 §1.2)',
+          status: preserved ? 'SUCCESS' : 'WARNING',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            SpecReferences.RFC_PRM_DISCOVERY,
+            SpecReferences.MCP_PRM_DISCOVERY
+          ],
+          ...(preserved
+            ? {}
+            : {
+                errorMessage: `Expected PRM request query "?${expectedPrmQuery}" but got "${actualQuery ? `?${actualQuery}` : '(no query)'}"`
+              }),
+          details: {
+            url: req.originalUrl,
+            expectedQuery: expectedPrmQuery,
+            actualQuery
+          }
+        });
+      }
+
       // Resource is usually $baseUrl/mcp, but if PRM is at the root,
       // the resource identifier is the root.
       // Can be overridden via prmResourceOverride for testing resource mismatch.
@@ -128,7 +179,7 @@ export function createServer(
         prmResourceOverride ??
         (prmPath === '/.well-known/oauth-protected-resource'
           ? getBaseUrl()
-          : `${getBaseUrl()}/mcp`);
+          : `${getBaseUrl()}/mcp${expectedPrmQuery ? `?${expectedPrmQuery}` : ''}`);
 
       const prmResponse: any = {
         resource,

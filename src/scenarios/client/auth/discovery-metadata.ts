@@ -13,6 +13,7 @@ import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
+import { untestableCheck } from '../../untestable';
 import { Request, Response } from 'express';
 
 /**
@@ -27,17 +28,36 @@ interface MetadataScenarioConfig {
   authRoutePrefix?: string;
   /** If true, add a trap for root PRM requests */
   trapRootPrm?: boolean;
+  /**
+   * Query string (without '?') appended to the MCP server URL handed to the
+   * client. The client must preserve it when constructing the PRM well-known
+   * URL (RFC 9728 §3.1).
+   */
+  serverUrlQuery?: string;
 }
 
 /**
  * Scenario configurations table:
  *
- * | Scenario         | PRM Location                              | In WWW-Auth | OAuth Metadata Location                        |
- * |------------------|-------------------------------------------|-------------|------------------------------------------------|
- * | metadata-default | /.well-known/oauth-protected-resource/mcp | Yes         | /.well-known/oauth-authorization-server        |
- * | metadata-var1    | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/openid-configuration              |
- * | metadata-var2    | /.well-known/oauth-protected-resource     | No          | /.well-known/oauth-authorization-server/tenant1|
- * | metadata-var3    | /custom/metadata/location.json            | Yes         | /tenant1/.well-known/openid-configuration      |
+ * | Scenario              | PRM Location                              | In WWW-Auth | OAuth Metadata Location                        |
+ * |-----------------------|-------------------------------------------|-------------|------------------------------------------------|
+ * | metadata-default      | /.well-known/oauth-protected-resource/mcp | Yes         | /.well-known/oauth-authorization-server        |
+ * | metadata-var1         | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/openid-configuration              |
+ * | metadata-var2         | /.well-known/oauth-protected-resource     | No          | /.well-known/oauth-authorization-server/tenant1|
+ * | metadata-var3         | /custom/metadata/location.json            | Yes         | /tenant1/.well-known/openid-configuration      |
+ * | metadata-query-params | /.well-known/oauth-protected-resource/mcp | No          | /.well-known/oauth-authorization-server        |
+ *
+ * metadata-query-params uses var1's PRM placement (path-based, not advertised
+ * in WWW-Authenticate) with the default OAuth metadata location, and hands
+ * the client an MCP server URL with a query component. Per RFC 9728 §3.1 the
+ * well-known suffix is inserted between the host and the path and/or query
+ * components, so the client's PRM request must keep the query:
+ * /.well-known/oauth-protected-resource/mcp?tenant=alpha. This is a separate
+ * scenario rather than a tweak to an existing config because a query-bearing
+ * resource identifier is itself a SHOULD NOT-discouraged configuration
+ * (RFC 9728 §1.2), so it must not contaminate the mainline metadata
+ * scenarios' server URL (the mutually-exclusive-config carve-out in
+ * AGENTS.md).
  */
 const SCENARIO_CONFIGS: MetadataScenarioConfig[] = [
   {
@@ -66,6 +86,13 @@ const SCENARIO_CONFIGS: MetadataScenarioConfig[] = [
     inWwwAuth: true,
     oauthMetadataLocation: '/tenant1/.well-known/openid-configuration',
     authRoutePrefix: '/tenant1'
+  },
+  {
+    name: 'metadata-query-params',
+    prmLocation: '/.well-known/oauth-protected-resource/mcp',
+    inWwwAuth: false,
+    oauthMetadataLocation: '/.well-known/oauth-authorization-server',
+    serverUrlQuery: 'tenant=alpha'
   }
 ];
 
@@ -93,7 +120,7 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
 **PRM:** ${config.prmLocation}${config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}
 **OAuth metadata:** ${config.oauthMetadataLocation}
-`,
+${config.serverUrlQuery ? `**Server URL query:** ?${config.serverUrlQuery} (client should preserve it in the PRM well-known URL per RFC 9728 §3.1)\n` : ''}`,
 
     async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
@@ -134,7 +161,10 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
       const app = createServer(ctx, checks, server.getUrl, getAuthServerUrl, {
         prmPath: config.prmLocation,
-        includePrmInWwwAuth: config.inWwwAuth
+        includePrmInWwwAuth: config.inWwwAuth,
+        ...(config.serverUrlQuery && {
+          expectedPrmQuery: config.serverUrlQuery
+        })
       });
 
       // Add trap for root PRM requests if configured
@@ -169,7 +199,9 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 
       await server.start(app);
 
-      return { serverUrl: `${server.getUrl()}/mcp` };
+      return {
+        serverUrl: `${server.getUrl()}/mcp${config.serverUrlQuery ? `?${config.serverUrlQuery}` : ''}`
+      };
     },
 
     async stop() {
@@ -198,6 +230,29 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
         }
       }
 
+      // If the client never reached the PRM well-known URL at all, query
+      // preservation could not be observed. Report the check as untestable at
+      // the requirement's severity (WARNING — see createServer) rather than
+      // letting it silently disappear.
+      if (
+        config.serverUrlQuery &&
+        !checks.find((c) => c.id === 'prm-query-preserved')
+      ) {
+        checks.push(
+          untestableCheck(
+            'prm-query-preserved',
+            'PRMQueryPreserved',
+            'Client is expected to preserve the MCP server URL query component when constructing the PRM well-known URL (RFC 9728 §3.1)',
+            'client never requested the path-based PRM well-known URL, so query preservation could not be verified',
+            [
+              SpecReferences.RFC_PRM_DISCOVERY,
+              SpecReferences.MCP_PRM_DISCOVERY
+            ],
+            'WARNING'
+          )
+        );
+      }
+
       return checks;
     }
   };
@@ -215,6 +270,9 @@ export const AuthMetadataVar2Scenario = createMetadataScenario(
 );
 export const AuthMetadataVar3Scenario = createMetadataScenario(
   SCENARIO_CONFIGS[3]
+);
+export const AuthMetadataQueryParamsScenario = createMetadataScenario(
+  SCENARIO_CONFIGS[4]
 );
 
 // Export all scenarios as an array for convenience

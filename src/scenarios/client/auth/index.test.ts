@@ -9,6 +9,7 @@ import {
   InlineClientRunner
 } from './test_helpers/testClient';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
+import { runClient as stripQueryClient } from '../../../../examples/clients/typescript/auth-test-strip-query';
 import {
   runWifJwtBearerWrongAudience,
   runWifJwtBearerMissingAssertion,
@@ -117,6 +118,13 @@ describe('Negative tests', () => {
     const runner = new InlineClientRunner(badPrmClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
       expectedFailureSlugs: ['prm-priority-order']
+    });
+  });
+
+  test('client drops query component when constructing PRM well-known URL', async () => {
+    const runner = new InlineClientRunner(stripQueryClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-query-params', {
+      expectedFailureSlugs: ['prm-query-preserved']
     });
   });
 
