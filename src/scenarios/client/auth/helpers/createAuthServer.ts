@@ -7,6 +7,7 @@ import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import * as jose from 'jose';
+import { DPOP_ASYMMETRIC_ALGS } from './dpopAlgs';
 import {
   generateIssuerKey,
   mintDpopBoundToken,
@@ -29,31 +30,16 @@ function computeS256Challenge(codeVerifier: string): string {
 // Fixed nonce the test AS hands out when `dpopRequireNonce` is set (RFC 9449 §8).
 const AS_DPOP_NONCE = 'conformance-as-dpop-nonce';
 
-// Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3, §11.6).
-const DPOP_ASYMMETRIC_ALGS = [
-  'ES256',
-  'ES384',
-  'ES512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'PS256',
-  'PS384',
-  'PS512',
-  'EdDSA'
-];
-
 /**
- * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986 scheme-based
- * normalization): lowercase scheme/host, drop the default port, ignore a
- * trailing slash. Query/fragment are rejected by the caller (RFC 9449 §4.2),
- * not silently stripped here.
+ * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986
+ * syntax-based normalization): lowercase scheme/host, drop the default port,
+ * empty path → `/`. No leniency beyond that — `/mcp/` and `/mcp` are distinct
+ * URIs. Query/fragment are rejected by the caller (RFC 9449 §4.2), not
+ * silently stripped here.
  */
 function normalizeHtu(u: string): string {
   try {
-    const url = new URL(u);
-    // Tolerate a single trailing slash only; `/mcp//` is a distinct path.
-    return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`;
+    return new URL(u).href;
   } catch {
     return u;
   }
@@ -63,12 +49,22 @@ function normalizeHtu(u: string): string {
  * Validate a DPoP proof presented at the token endpoint (the token-request
  * subset of RFC 9449 §4.3). Hand-rolled with jose primitives — deliberately an
  * INDEPENDENT code path from the suite's proof builder, so a shared bug
- * surfaces rather than hides. Returns the JWK thumbprint to bind on success.
+ * surfaces rather than hides. (Kept as a deliberate two-copy contract with
+ * validateResourceProof in dpopResourceAuth.ts — apply fixes to both.)
+ * Returns the JWK thumbprint to bind on success.
+ *
+ * `advertisedAlgs` is the AS's `dpop_signing_alg_values_supported`; proofs
+ * signed with an alg outside it are rejected (RFC 9449 §5.1), with an
+ * asymmetric-only floor (§11.6) regardless of what is advertised.
  */
 export async function validateDpopProofAtTokenEndpoint(
   proof: string,
-  tokenEndpointUrl: string
+  tokenEndpointUrl: string,
+  advertisedAlgs: string[] = DPOP_ASYMMETRIC_ALGS
 ): Promise<{ ok: true; jkt: string } | { ok: false; error: string }> {
+  const acceptedAlgs = advertisedAlgs.filter((a) =>
+    DPOP_ASYMMETRIC_ALGS.includes(a)
+  );
   let header: jose.ProtectedHeaderParameters;
   try {
     header = jose.decodeProtectedHeader(proof);
@@ -81,6 +77,12 @@ export async function validateDpopProofAtTokenEndpoint(
   if (!header.alg || !DPOP_ASYMMETRIC_ALGS.includes(header.alg)) {
     return { ok: false, error: 'alg must be a supported asymmetric algorithm' };
   }
+  if (!acceptedAlgs.includes(header.alg)) {
+    return {
+      ok: false,
+      error: `alg ${header.alg} is not among the advertised dpop_signing_alg_values_supported (${advertisedAlgs.join(', ')})`
+    };
+  }
   const jwk = header.jwk as jose.JWK | undefined;
   if (!jwk) {
     return { ok: false, error: 'missing jwk header parameter' };
@@ -91,9 +93,8 @@ export async function validateDpopProofAtTokenEndpoint(
   let claims: jose.JWTPayload;
   try {
     const key = await jose.importJWK(jwk, header.alg);
-    claims = (
-      await jose.jwtVerify(proof, key, { algorithms: DPOP_ASYMMETRIC_ALGS })
-    ).payload;
+    claims = (await jose.jwtVerify(proof, key, { algorithms: acceptedAlgs }))
+      .payload;
   } catch {
     return { ok: false, error: 'DPoP proof signature does not verify' };
   }
@@ -101,10 +102,13 @@ export async function validateDpopProofAtTokenEndpoint(
     return { ok: false, error: 'missing jti claim' };
   }
   if (claims.htm !== 'POST') {
-    return { ok: false, error: 'htm does not match POST' };
+    return {
+      ok: false,
+      error: `htm "${claims.htm}" does not match the token request method "POST"`
+    };
   }
   if (typeof claims.htu !== 'string') {
-    return { ok: false, error: 'htu does not match the token endpoint' };
+    return { ok: false, error: 'missing or non-string htu claim' };
   }
   if (claims.htu.includes('?') || claims.htu.includes('#')) {
     return {
@@ -113,13 +117,20 @@ export async function validateDpopProofAtTokenEndpoint(
     };
   }
   if (normalizeHtu(claims.htu) !== normalizeHtu(tokenEndpointUrl)) {
-    return { ok: false, error: 'htu does not match the token endpoint' };
+    return {
+      ok: false,
+      error: `htu "${claims.htu}" does not match the token endpoint "${tokenEndpointUrl}" (compared after RFC 9449 §4.3 normalization)`
+    };
   }
-  if (
-    typeof claims.iat !== 'number' ||
-    Math.abs(Math.floor(Date.now() / 1000) - claims.iat) > 300
-  ) {
-    return { ok: false, error: 'iat outside the acceptable window' };
+  if (typeof claims.iat !== 'number') {
+    return { ok: false, error: 'missing or non-numeric iat claim' };
+  }
+  const iatSkew = Math.floor(Date.now() / 1000) - claims.iat;
+  if (Math.abs(iatSkew) > 300) {
+    return {
+      ok: false,
+      error: `iat ${claims.iat} is ${Math.abs(iatSkew)}s ${iatSkew > 0 ? 'behind' : 'ahead of'} server time; allowed window ±300s`
+    };
   }
   const jkt = await jose.calculateJwkThumbprint(jwk, 'sha256');
   return { ok: true, jkt };
@@ -152,6 +163,11 @@ export interface DpopTokenRequestObservation {
   asNonceChallengeIssued: boolean;
   /** The client retried the token request carrying the correct nonce. */
   asNonceHonored: boolean;
+  /**
+   * `cnf.jkt` bound into the most recently issued token, so the resource judge
+   * can assert the token presented at the MCP server is the one issued here.
+   */
+  jkt?: string;
 }
 
 export interface AuthServerOptions {
@@ -207,6 +223,12 @@ export interface AuthServerOptions {
     | 'unbound-token';
   /** Sink for the DPoP token-request observation; see the interface docstring. */
   dpopTokenRequestObs?: DpopTokenRequestObservation;
+  /**
+   * Issuer key for minting DPoP-bound tokens. Supply it when the scenario also
+   * needs to VERIFY the issued tokens (e.g. the resource judge); lazily
+   * generated when omitted.
+   */
+  dpopIssuerKey?: TokenIssuerKey;
   /**
    * When true, the token endpoint requires a DPoP nonce (RFC 9449 §8): a
    * proof-bearing request without the correct `nonce` claim is answered with
@@ -275,12 +297,19 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
-  // Lazily-created issuer key for minting DPoP-bound JWT access tokens.
-  let dpopIssuerKey: TokenIssuerKey | undefined;
+  // Issuer key for minting DPoP-bound JWT access tokens (caller-supplied or
+  // lazily created).
+  let dpopIssuerKey: TokenIssuerKey | undefined = options.dpopIssuerKey;
   // DPoP behaviour is active only when the caller opts in (any DPoP option).
   const dpopEnabled =
     dpopSigningAlgValuesSupported !== undefined ||
     dpopMisbehavior !== undefined;
+  // Sub-options without DPoP enabled would be a silent no-op — fail fast.
+  if (!dpopEnabled && (dpopRequireNonce || dpopTokenRequestObs)) {
+    throw new Error(
+      'dpopRequireNonce/dpopTokenRequestObs require DPoP to be enabled (set dpopSigningAlgValuesSupported or dpopMisbehavior)'
+    );
+  }
 
   // Records whether the client presented a valid DPoP proof at its
   // authorization_code token request (RFC 9449 §5) into the caller's observation
@@ -602,7 +631,8 @@ export function createAuthServer(
       if (proof) {
         const result = await validateDpopProofAtTokenEndpoint(
           proof,
-          tokenEndpointUrl
+          tokenEndpointUrl,
+          dpopSigningAlgValuesSupported
         );
         if (!result.ok) {
           recordTokenRequestProof(grantType, false, result.error);
@@ -658,6 +688,11 @@ export function createAuthServer(
 
         if (!dpopIssuerKey) {
           dpopIssuerKey = await generateIssuerKey();
+        }
+        // Record the bound thumbprint so the resource judge can assert the
+        // token presented at the MCP server is the one issued here.
+        if (grantType === 'authorization_code' && dpopTokenRequestObs) {
+          dpopTokenRequestObs.jkt = result.jkt;
         }
         const boundToken = await mintDpopBoundToken({
           issuerKey: dpopIssuerKey,

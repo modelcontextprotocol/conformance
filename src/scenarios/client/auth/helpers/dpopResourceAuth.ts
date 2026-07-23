@@ -1,23 +1,11 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import * as jose from 'jose';
 import { createHash } from 'node:crypto';
+import { DPOP_ASYMMETRIC_ALGS } from './dpopAlgs';
+import type { TokenIssuerKey } from './dpopToken';
 
 /** Fixed nonce the judge hands out when `requireNonce` is set (RFC 9449 §9). */
 const RS_DPOP_NONCE = 'conformance-rs-dpop-nonce';
-
-/** Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 / §11.6). */
-const DPOP_ASYMMETRIC_ALGS = [
-  'ES256',
-  'ES384',
-  'ES512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'PS256',
-  'PS384',
-  'PS512',
-  'EdDSA'
-];
 
 /**
  * Accumulated observations of how the client presented its access token and
@@ -32,7 +20,10 @@ export interface DpopClientObservations {
   jtisSeen: string[];
   replayDetected: boolean;
   allProofsWellFormed: boolean;
+  /** First defect in a proof itself (malformed/mismatched claims, bad signature). */
   proofError?: string;
+  /** First defect in the presented access token (e.g. not a DPoP-bound JWT). */
+  tokenError?: string;
   /** The judge issued a `use_dpop_nonce` challenge (RFC 9449 §9). */
   rsNonceChallengeIssued: boolean;
   /** The client retried the request carrying the correct nonce. */
@@ -53,11 +44,28 @@ export function newDpopClientObservations(): DpopClientObservations {
 }
 
 /**
+ * How the resource judge verifies the presented access token: the test AS
+ * issuer key (signature/issuer/exp) plus the `cnf.jkt` the AS bound at the
+ * token endpoint. Getters are lazy — issuer URL and bound jkt only exist once
+ * the servers are up and a token has been issued.
+ */
+export interface DpopResourceTokenBinding {
+  issuerKey: TokenIssuerKey;
+  getIssuer: () => string;
+  getBoundJkt: () => string | undefined;
+}
+
+/**
  * Test MCP server DPoP judge (SEP-1932 / RFC 9449), passed to `createServer`
  * via its `options.authMiddleware` hook. An unauthenticated request gets a
  * `401 DPoP` discovery challenge; an authenticated one is observed (scheme +
  * per-request proof) and allowed through so the MCP session can complete and
  * multiple requests can be examined for proof freshness.
+ *
+ * Observe-don't-enforce: an INVALID proof is recorded and the request is still
+ * served 200 (so more evidence accrues) — a real DPoP resource server MUST
+ * reject it with 401 per RFC 9449 §7.2. The check report, not the wire
+ * behaviour, is the conformance signal here.
  *
  * Proof validation is hand-rolled with jose — deliberately an INDEPENDENT code
  * path from the suite's proof builder, so a shared bug surfaces rather than hides.
@@ -66,7 +74,8 @@ export function createDpopResourceAuth(
   obs: DpopClientObservations,
   getResourceUrl: () => string,
   getPrmUrl: () => string,
-  requireNonce = false
+  requireNonce: boolean,
+  tokenBinding: DpopResourceTokenBinding
 ): RequestHandler {
   return async (
     req: Request,
@@ -99,11 +108,17 @@ export function createDpopResourceAuth(
       proofValue,
       token,
       req.method,
-      getResourceUrl()
+      getResourceUrl(),
+      {
+        issuerKey: tokenBinding.issuerKey,
+        issuer: tokenBinding.getIssuer(),
+        boundJkt: tokenBinding.getBoundJkt()
+      }
     );
     if (!result.ok) {
       obs.allProofsWellFormed = false;
-      obs.proofError ??= result.error;
+      if (result.tokenProblem) obs.tokenError ??= result.error;
+      else obs.proofError ??= result.error;
       next();
       return;
     }
@@ -165,16 +180,15 @@ function splitAuthorization(authorization: string): {
 }
 
 /**
- * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986 scheme-based
- * normalization): lowercase scheme/host, drop the default port, ignore a
- * trailing slash. Query/fragment are rejected by the caller (RFC 9449 §4.2),
- * not silently stripped here.
+ * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986
+ * syntax-based normalization): lowercase scheme/host, drop the default port,
+ * empty path → `/`. No leniency beyond that — `/mcp/` and `/mcp` are distinct
+ * URIs. Query/fragment are rejected by the caller (RFC 9449 §4.2), not
+ * silently stripped here.
  */
 function normalizeHtu(u: string): string {
   try {
-    const url = new URL(u);
-    // Tolerate a single trailing slash only; `/mcp//` is a distinct path.
-    return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`;
+    return new URL(u).href;
   } catch {
     return u;
   }
@@ -185,13 +199,24 @@ function normalizeHtu(u: string): string {
  * (RFC 9449 §4.3, resource-request subset): well-formed `dpop+jwt`, asymmetric
  * alg, embedded public jwk, htm/htu match, `ath` binds the token, signature
  * verifies, and the proof key's thumbprint matches the token's `cnf.jkt`.
+ * The token itself is verified against the test AS issuer key (signature,
+ * issuer, exp) and, when `boundJkt` is known, must be the very token issued at
+ * the token endpoint — not a self-minted lookalike.
+ * (Kept as a deliberate two-copy contract with validateDpopProofAtTokenEndpoint
+ * in createAuthServer.ts — apply fixes to both.)
  */
 export async function validateResourceProof(
   proof: string | undefined,
   token: string,
   method: string,
-  resourceUrl: string
-): Promise<{ ok: true; jti: string } | { ok: false; error: string }> {
+  resourceUrl: string,
+  tokenBinding: { issuerKey: TokenIssuerKey; issuer: string; boundJkt?: string }
+): Promise<
+  | { ok: true; jti: string }
+  // `tokenProblem` marks defects in the presented access token, as opposed to
+  // the proof itself, so the scenario can attribute the failure accurately.
+  | { ok: false; error: string; tokenProblem?: boolean }
+> {
   if (!proof) return { ok: false, error: 'missing DPoP proof header' };
   // RFC 9449 §4.2: at most one DPoP header. A single proof JWT has no comma, so
   // a comma means duplicate headers were sent (Node joins them with ", ").
@@ -227,10 +252,14 @@ export async function validateResourceProof(
   }
   if (typeof claims.jti !== 'string')
     return { ok: false, error: 'missing jti claim' };
-  if (claims.htm !== method)
-    return { ok: false, error: 'htm does not match the request method' };
+  if (claims.htm !== method) {
+    return {
+      ok: false,
+      error: `htm "${claims.htm}" does not match the request method "${method}"`
+    };
+  }
   if (typeof claims.htu !== 'string') {
-    return { ok: false, error: 'htu does not match the request URI' };
+    return { ok: false, error: 'missing or non-string htu claim' };
   }
   if (claims.htu.includes('?') || claims.htu.includes('#')) {
     return {
@@ -239,13 +268,20 @@ export async function validateResourceProof(
     };
   }
   if (normalizeHtu(claims.htu) !== normalizeHtu(resourceUrl)) {
-    return { ok: false, error: 'htu does not match the request URI' };
+    return {
+      ok: false,
+      error: `htu "${claims.htu}" does not match the request URI "${resourceUrl}" (compared after RFC 9449 §4.3 normalization)`
+    };
   }
-  if (
-    typeof claims.iat !== 'number' ||
-    Math.abs(Math.floor(Date.now() / 1000) - claims.iat) > 300
-  ) {
-    return { ok: false, error: 'iat outside the acceptable window' };
+  if (typeof claims.iat !== 'number') {
+    return { ok: false, error: 'missing or non-numeric iat claim' };
+  }
+  const iatSkew = Math.floor(Date.now() / 1000) - claims.iat;
+  if (Math.abs(iatSkew) > 300) {
+    return {
+      ok: false,
+      error: `iat ${claims.iat} is ${Math.abs(iatSkew)}s ${iatSkew > 0 ? 'behind' : 'ahead of'} server time; allowed window ±300s`
+    };
   }
   // Recompute ath and the thumbprint inline (jose + node crypto) rather than
   // via the proof builder's helpers, so this validator stays a fully
@@ -260,19 +296,47 @@ export async function validateResourceProof(
     };
   }
 
-  // Possession: the proof key must be the key the token is bound to.
+  // The token itself: signed by the test AS issuer key, right issuer, unexpired.
+  let tokenClaims: jose.JWTPayload;
   try {
-    const tokenClaims = jose.decodeJwt(token);
-    const cnf = tokenClaims.cnf as { jkt?: unknown } | undefined;
-    const thumbprint = await jose.calculateJwkThumbprint(jwk, 'sha256');
-    if (!cnf || cnf.jkt !== thumbprint) {
-      return {
-        ok: false,
-        error: 'proof key thumbprint does not match the token cnf.jkt'
-      };
-    }
+    tokenClaims = (
+      await jose.jwtVerify(token, tokenBinding.issuerKey.publicKey, {
+        issuer: tokenBinding.issuer,
+        algorithms: [tokenBinding.issuerKey.alg]
+      })
+    ).payload;
   } catch {
-    return { ok: false, error: 'access token is not a decodable JWT' };
+    // The token, not the proof, is at fault (e.g. an opaque Bearer token from
+    // a proof-less token request, or a self-minted JWT). RFC 9449 §6.2 permits
+    // non-JWT bound tokens via introspection; this harness only mints JWTs.
+    return {
+      ok: false,
+      error:
+        'presented access token is not a valid JWT issued by the test authorization server (signature/issuer/exp)',
+      tokenProblem: true
+    };
+  }
+
+  // Possession: the proof key must be the key the token is bound to.
+  const cnf = tokenClaims.cnf as { jkt?: unknown } | undefined;
+  const thumbprint = await jose.calculateJwkThumbprint(jwk, 'sha256');
+  if (!cnf || cnf.jkt !== thumbprint) {
+    return {
+      ok: false,
+      error: 'proof key thumbprint does not match the token cnf.jkt'
+    };
+  }
+  // And the token must be the one the AS issued at the token endpoint.
+  if (
+    tokenBinding.boundJkt !== undefined &&
+    cnf.jkt !== tokenBinding.boundJkt
+  ) {
+    return {
+      ok: false,
+      error:
+        'presented token is not the one issued at the token endpoint (cnf.jkt differs from the key bound there)',
+      tokenProblem: true
+    };
   }
 
   return { ok: true, jti: claims.jti };

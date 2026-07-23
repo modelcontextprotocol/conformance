@@ -17,6 +17,8 @@ import {
   newDpopClientObservations,
   type DpopClientObservations
 } from './helpers/dpopResourceAuth';
+import { DPOP_ASYMMETRIC_ALGS } from './helpers/dpopAlgs';
+import { generateIssuerKey } from './helpers/dpopToken';
 import { SpecReferences } from './spec-references';
 import { collapseDuplicateChecks } from '../../../checks/collapse';
 
@@ -143,10 +145,16 @@ export class DPoPClientScenario implements Scenario {
     this.obs = newDpopClientObservations();
     this.tokenReqObs = newTokenReqObs();
 
+    // The scenario owns the issuer key: the AS mints tokens with it and the
+    // resource judge verifies presented tokens against it.
+    const issuerKey = await generateIssuerKey();
     const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
-      dpopSigningAlgValuesSupported: ['ES256'],
+      // Advertise exactly what the validators enforce, so a client honoring
+      // RFC 9449 §5.1 alg negotiation is graded the same as one that doesn't.
+      dpopSigningAlgValuesSupported: DPOP_ASYMMETRIC_ALGS,
       dpopTokenRequestObs: this.tokenReqObs,
-      dpopRequireNonce: this.requireNonce
+      dpopRequireNonce: this.requireNonce,
+      dpopIssuerKey: issuerKey
     });
     await this.authServer.start(authApp);
 
@@ -160,8 +168,22 @@ export class DPoPClientScenario implements Scenario {
           this.obs,
           () => `${this.server.getUrl()}/mcp`,
           () => `${this.server.getUrl()}${PRM_PATH}`,
-          this.requireNonce
-        )
+          this.requireNonce,
+          {
+            issuerKey,
+            getIssuer: () => this.authServer.getUrl(),
+            getBoundJkt: () => this.tokenReqObs.jkt
+          }
+        ),
+        // RFC 9728 §2: tell discovery-driven clients this resource expects
+        // DPoP-bound tokens (the wire-level enablement signal for DPoP).
+        prmDpop: {
+          signingAlgValuesSupported: DPOP_ASYMMETRIC_ALGS,
+          boundAccessTokensRequired: true
+        },
+        // SEP-1932's per-request-proof requirement is not POST-scoped, so
+        // observe proofs on GET /mcp too (answered 405 — no SSE stream here).
+        observeGetMcp: true
       }
     );
     await this.server.start(app);
@@ -295,7 +317,11 @@ export class DPoPClientScenario implements Scenario {
       errorMessage = 'Client never presented an access token to the MCP server';
     } else if (!this.obs.allProofsWellFormed) {
       status = 'FAILURE';
-      errorMessage = `DPoP proof was missing or malformed: ${this.obs.proofError}`;
+      // Attribute the failure to the right layer: a defect in the proof itself
+      // vs. an access token the proof cannot be validated against.
+      errorMessage = this.obs.proofError
+        ? `DPoP proof was missing or malformed: ${this.obs.proofError}`
+        : `DPoP proof could not be validated against the presented access token: ${this.obs.tokenError}`;
     } else if (this.obs.replayDetected) {
       status = 'FAILURE';
       errorMessage =

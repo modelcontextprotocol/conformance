@@ -30,6 +30,19 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /**
+   * DPoP signals for the PRM document (RFC 9728 §2), set by the DPoP scenarios
+   * so a discovery-driven client can learn the resource expects DPoP.
+   */
+  prmDpop?: {
+    signingAlgValuesSupported: string[];
+    boundAccessTokensRequired: boolean;
+  };
+  /**
+   * Run `authMiddleware` on GET /mcp too, then answer 405 (this server offers
+   * no SSE stream). Lets the DPoP judge observe non-POST proofs.
+   */
+  observeGetMcp?: boolean;
 }
 
 export function createServer(
@@ -46,7 +59,8 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    prmDpop
   } = options;
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -139,6 +153,13 @@ export function createServer(
         prmResponse.scopes_supported = scopesSupported;
       }
 
+      if (prmDpop) {
+        prmResponse.dpop_signing_alg_values_supported =
+          prmDpop.signingAlgValuesSupported;
+        prmResponse.dpop_bound_access_tokens_required =
+          prmDpop.boundAccessTokensRequired;
+      }
+
       res.json(prmResponse);
     });
   }
@@ -196,6 +217,25 @@ export function createServer(
       }
     });
   });
+
+  // Streamable HTTP: this server offers no SSE stream, so GET /mcp is 405 —
+  // but the judge middleware runs first so non-POST proofs are observed too.
+  if (options.observeGetMcp && options.authMiddleware) {
+    const judge = options.authMiddleware;
+    app.get('/mcp', (req: Request, res: Response, next: NextFunction) => {
+      judge(req, res, (err?: unknown) => {
+        if (err) return next(err);
+        res
+          .status(405)
+          .set('Allow', 'POST')
+          .json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Method Not Allowed' },
+            id: null
+          });
+      });
+    });
+  }
 
   // Stateless lifecycle for the /mcp route: shared SEP-2575 validation +
   // server/discover from mock-server/stateless, then the same tools handlers
