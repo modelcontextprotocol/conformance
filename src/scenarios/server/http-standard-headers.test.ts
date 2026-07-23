@@ -56,6 +56,9 @@ describe('http-custom-header-server-validation — missing fixture policy', () =
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
+              resultType: 'complete',
+              ttlMs: 0,
+              cacheScope: 'private',
               tools: [
                 {
                   name: 'plain_tool',
@@ -99,6 +102,9 @@ describe('http-custom-header-server-validation — missing fixture policy', () =
             jsonrpc: '2.0',
             id: reqBody.id,
             result: {
+              resultType: 'complete',
+              ttlMs: 0,
+              cacheScope: 'private',
               tools: [
                 {
                   name: 'numeric_only',
@@ -169,7 +175,16 @@ describe('http-header-validation — zero-tools Mcp-Name cases', () => {
       if (body.method === 'tools/list') {
         return {
           status: 200,
-          body: { jsonrpc: '2.0', id: body.id, result: { tools: [] } }
+          body: {
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              resultType: 'complete',
+              ttlMs: 0,
+              cacheScope: 'private',
+              tools: []
+            }
+          }
         };
       }
       return {

@@ -9,10 +9,11 @@
  */
 
 import express from 'express';
-import type { SpecVersion } from '../types';
+import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
+import { validateWireMessage } from '../validation/wire-schema';
 import { capabilitiesFromHandlers } from './stateful';
 
 /**
@@ -190,6 +191,7 @@ export async function createServerStateless(
   const supportedVersions: readonly string[] = specVersion
     ? [specVersion]
     : STATELESS_SPEC_VERSIONS;
+  const wireVersion = specVersion ?? DRAFT_PROTOCOL_VERSION;
 
   const app = express();
   app.use(express.json());
@@ -200,16 +202,32 @@ export async function createServerStateless(
     // requests are captured too, matching the stateful impl and the
     // MockServer.recorded contract.
     const body = req.body as Record<string, unknown> | undefined;
+    validateWireMessage(wireVersion, req.body, {
+      origin: 'implementation',
+      context: `client request '${body?.method ?? '(unknown)'}' to stateless mock`
+    });
     if (body?.method && body.method !== 'server/discover') {
       recorded.push(req.body as JSONRPCRequest);
     }
+    const sendJson = (status: number, payload: object, method?: string) => {
+      validateWireMessage(wireVersion, payload, {
+        origin: 'harness',
+        context: `stateless mock response${method ? ` to '${method}'` : ''}`,
+        requestMethod: method
+      });
+      return res.status(status).json(payload);
+    };
     const v = validateStatelessRequest(req, capabilities, supportedVersions);
     if (v.kind !== 'route') {
-      return res.status(v.status).json(v.body);
+      return sendJson(
+        v.status,
+        v.body,
+        v.kind === 'handled' ? (body?.method as string) : undefined
+      );
     }
     const { id, method, params } = v;
     const error = (status: number, code: number, message: string) =>
-      res.status(status).json({ jsonrpc: '2.0', id, error: { code, message } });
+      sendJson(status, { jsonrpc: '2.0', id, error: { code, message } });
 
     const handler = handlers[method];
     if (!handler) {
@@ -217,11 +235,15 @@ export async function createServerStateless(
     }
     try {
       const result = await handler(params, req.body as JSONRPCRequest);
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: withRequiredDraftResultFields(method, result)
-      });
+      return sendJson(
+        200,
+        {
+          jsonrpc: '2.0',
+          id,
+          result: withRequiredDraftResultFields(method, result)
+        },
+        method
+      );
     } catch (e) {
       return error(500, -32603, e instanceof Error ? e.message : String(e));
     }

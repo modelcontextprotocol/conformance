@@ -1,7 +1,8 @@
 #!/usr/bin/env -S npx tsx
 /**
- * Vendor schema/{version}/schema.ts from the modelcontextprotocol spec repo
- * into src/spec-types/{version}.ts at a pinned SHA.
+ * Vendor schema/{version}/schema.ts and schema/{version}/schema.json from the
+ * modelcontextprotocol spec repo into src/spec-types/{version}.ts and
+ * src/spec-types/{version}.schema.json at a pinned SHA.
  *
  * Usage: npm run sync-schema -- <sha-or-ref>
  */
@@ -39,6 +40,11 @@ try {
   for (const v of VERSIONS) {
     copyFileSync(join(tmp, 'schema', v, 'schema.ts'), join(OUT_DIR, `${v}.ts`));
     console.log(`  ${v} -> src/spec-types/${v}.ts`);
+    copyFileSync(
+      join(tmp, 'schema', v, 'schema.json'),
+      join(OUT_DIR, `${v}.schema.json`)
+    );
+    console.log(`  ${v} -> src/spec-types/${v}.schema.json`);
   }
 
   writeFileSync(

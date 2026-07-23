@@ -31,7 +31,11 @@ describe('ServerInitializeScenario', () => {
       testContext(serverUrl)
     );
 
-    expect(connectToServer).toHaveBeenCalledWith(serverUrl);
+    expect(connectToServer).toHaveBeenCalledWith(
+      serverUrl,
+      {},
+      testContext(serverUrl).specVersion
+    );
     expect(closeMock).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       serverUrl,
