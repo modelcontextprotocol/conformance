@@ -79,10 +79,11 @@ export async function runServerConformanceTest(
   // on draft, so they fall under the same inference.
   const resolvedSpecVersion =
     specVersion ??
-    ('extensionId' in scenario.source ||
-    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION);
+    ('extensionId' in scenario.source
+      ? (scenario.source.baseSpecVersion ?? DRAFT_PROTOCOL_VERSION)
+      : scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+        ? DRAFT_PROTOCOL_VERSION
+        : LATEST_SPEC_VERSION);
 
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`

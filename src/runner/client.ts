@@ -136,9 +136,12 @@ function resolveScenarioSpecVersion(
 ): SpecVersion {
   return (
     specVersion ??
-    ('introducedIn' in source && source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION)
+    ('extensionId' in source && source.baseSpecVersion !== undefined
+      ? source.baseSpecVersion
+      : 'introducedIn' in source &&
+          source.introducedIn === DRAFT_PROTOCOL_VERSION
+        ? DRAFT_PROTOCOL_VERSION
+        : LATEST_SPEC_VERSION)
   );
 }
 
