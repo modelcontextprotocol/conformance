@@ -628,6 +628,135 @@ describe('Stateless Server Scenario Negative Tests', () => {
     expect(independentRequestCheck?.status).toBe('FAILURE');
   });
 
+  // A spec-correct server that enforces per-request capability declaration:
+  // test_missing_capability requires sampling and test_streaming_elicitation
+  // requires elicitation; each is rejected with a spec-shaped -32021 unless
+  // the request's _meta declares the capability. A rejection reaches
+  // listenToStream as the parsed JSON error body — a single error frame.
+  function capabilityEnforcingMock(
+    streamingCallFrames: (reqBody: any) => any[]
+  ) {
+    return mockFetchTarget((reqBody) => {
+      if (reqBody.method === 'server/discover') {
+        return discoverResponse(reqBody, { tools: {} }, 'capability-enforcer');
+      }
+      if (reqBody.method === 'tools/list') {
+        return {
+          status: 200,
+          body: {
+            jsonrpc: '2.0',
+            id: reqBody.id,
+            result: {
+              tools: [
+                { name: 'test_missing_capability' },
+                { name: 'test_streaming_elicitation' }
+              ]
+            }
+          }
+        };
+      }
+      if (reqBody.method === 'tools/call') {
+        const declaredCaps =
+          reqBody.params?._meta?.[
+            'io.modelcontextprotocol/clientCapabilities'
+          ] ?? {};
+        if (reqBody.params?.name === 'test_missing_capability') {
+          if (!declaredCaps.sampling) {
+            return {
+              status: 400,
+              body: {
+                jsonrpc: '2.0',
+                id: reqBody.id,
+                ...spec32021({ sampling: {} })
+              }
+            };
+          }
+          return {
+            status: 200,
+            body: {
+              jsonrpc: '2.0',
+              id: reqBody.id,
+              result: { content: [{ type: 'text', text: 'ok' }] }
+            }
+          };
+        }
+        if (reqBody.params?.name === 'test_streaming_elicitation') {
+          if (!declaredCaps.elicitation) {
+            return {
+              isStream: true,
+              status: 400,
+              frames: [
+                {
+                  jsonrpc: '2.0',
+                  id: reqBody.id,
+                  ...spec32021({ elicitation: {} })
+                }
+              ]
+            };
+          }
+          return {
+            isStream: true,
+            status: 200,
+            frames: streamingCallFrames(reqBody)
+          };
+        }
+      }
+    });
+  }
+
+  test('Passes both capability checks against a capability-enforcing server: the streaming probe declares the elicitation capability its fixture requires', async () => {
+    // sep-2575-server-rejects-undeclared-capability REQUIRES the -32021
+    // rejection of an undeclared capability; before the streaming probe
+    // declared elicitation, that same rejection made
+    // sep-2575-http-server-no-independent-requests-on-stream untestable —
+    // one scenario demanded and punished the identical server behavior.
+    const mockUrl = capabilityEnforcingMock((reqBody) => [
+      {
+        jsonrpc: '2.0',
+        method: 'notifications/progress',
+        params: { progressToken: 'token-abc', total: 100, value: 50 }
+      },
+      {
+        jsonrpc: '2.0',
+        id: reqBody.id,
+        result: { content: [{ type: 'text', text: 'Streaming complete' }] }
+      }
+    ]);
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    expect(
+      findCheck(checks, 'sep-2575-server-rejects-undeclared-capability')?.status
+    ).toBe('SUCCESS');
+    expect(
+      findCheck(
+        checks,
+        'sep-2575-http-server-no-independent-requests-on-stream'
+      )?.status
+    ).toBe('SUCCESS');
+  });
+
+  test('Fails (untestable) the stream check when the server rejects the streaming probe despite the declared elicitation capability', async () => {
+    // Guards the notTestable branch: a server that rejects even a properly
+    // declared capability leaves nothing streamed to inspect, which must
+    // stay a red untestable outcome, not a vacuous SUCCESS.
+    const mockUrl = capabilityEnforcingMock((reqBody) => [
+      { jsonrpc: '2.0', id: reqBody.id, ...spec32021({ elicitation: {} }) }
+    ]);
+
+    const scenario = new ServerStatelessScenario();
+    const checks = await scenario.run(testContext(mockUrl));
+
+    const streamCheck = findCheck(
+      checks,
+      'sep-2575-http-server-no-independent-requests-on-stream'
+    );
+    expect(streamCheck?.status).toBe('FAILURE');
+    expect(streamCheck?.errorMessage).toContain('Not testable:');
+    expect(streamCheck?.errorMessage).toContain('-32021');
+  });
+
   test('Fails validation when logging occurs without an explicit client request logLevel metadata', async () => {
     const mockUrl = mockFetchTarget((reqBody) => {
       if (

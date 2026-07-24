@@ -889,7 +889,16 @@ export class ServerStatelessScenario implements ClientScenario {
           {
             name: 'test_streaming_elicitation',
             arguments: {},
-            _meta: validMeta
+            // The fixture legitimately needs the elicitation capability, so a
+            // capability-enforcing server rejects the shared empty-capability
+            // envelope with -32021 (the exact behavior
+            // sep-2575-server-rejects-undeclared-capability requires) and the
+            // stream could never be exercised. Declare it at the probe site
+            // only — validMeta must stay empty for that sibling check.
+            _meta: {
+              ...validMeta,
+              'io.modelcontextprotocol/clientCapabilities': { elicitation: {} }
+            }
           },
           3,
           600
