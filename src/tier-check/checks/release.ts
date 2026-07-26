@@ -1,16 +1,40 @@
 import { Octokit } from '@octokit/rest';
 import { ReleaseResult } from '../types';
 
+/**
+ * Extracts the first semver from a release tag, tolerating monorepo tag
+ * prefixes such as `rust-mcp-sdk-v1.0.1`, `mcp-use@1.18.0-canary.3`,
+ * or plain `v1.2.3`. Returns null when the tag contains no semver.
+ */
+export function extractSemver(
+  tag: string
+): { version: string; major: number; prerelease: string | null } | null {
+  const match = tag.match(/(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+  if (!match) return null;
+  return {
+    version: match[0],
+    major: parseInt(match[1], 10),
+    prerelease: match[4] ?? null
+  };
+}
+
+// Word-boundary match so markers are caught both at the start of a tag
+// (e.g. `canary-v1.0.0`) and after a `-` separator (e.g. `v1.0.0-alpha`).
+const PRERELEASE_MARKERS = /\b(alpha|beta|rc|dev|preview|snapshot|canary)\b/i;
+
 export async function checkStableRelease(
   octokit: Octokit,
   owner: string,
-  repo: string
+  repo: string,
+  tagPrefix?: string
 ): Promise<ReleaseResult> {
   try {
     const { data: releases } = await octokit.repos.listReleases({
       owner,
       repo,
-      per_page: 20
+      // With a prefix filter, widen the window so the package's latest
+      // release isn't pushed out by other packages' releases.
+      per_page: tagPrefix ? 100 : 20
     });
 
     if (releases.length === 0) {
@@ -22,31 +46,38 @@ export async function checkStableRelease(
       };
     }
 
-    // Find latest non-draft release
-    const latest = releases.find((r) => !r.draft);
-    if (!latest) {
+    const candidates = releases.filter(
+      (r) => !r.draft && (!tagPrefix || r.tag_name.startsWith(tagPrefix))
+    );
+
+    // First release (API order) whose tag contains a parseable semver.
+    // Tags with no semver are skipped , previously they produced a fail with
+    // the raw tag as version, which broke selection in mixed-tag monorepos.
+    for (const release of candidates) {
+      const parsed = extractSemver(release.tag_name);
+      if (!parsed) continue;
+
+      const isPrerelease =
+        release.prerelease ||
+        (parsed.prerelease !== null &&
+          PRERELEASE_MARKERS.test(`-${parsed.prerelease}`)) ||
+        PRERELEASE_MARKERS.test(release.tag_name);
+
+      const isStable = !isPrerelease && parsed.major >= 1;
+
       return {
-        status: 'fail',
-        version: null,
-        is_stable: false,
-        is_prerelease: false
+        status: isStable ? 'pass' : 'fail',
+        version: parsed.version,
+        is_stable: isStable,
+        is_prerelease: isPrerelease
       };
     }
 
-    const version = latest.tag_name.replace(/^v/, '');
-    const isPrerelease =
-      latest.prerelease ||
-      /-(alpha|beta|rc|dev|preview|snapshot)/i.test(version);
-
-    // Check if version is >= 1.0.0
-    const parts = version.split('.').map((p) => parseInt(p, 10));
-    const isStable = !isPrerelease && parts.length >= 2 && parts[0] >= 1;
-
     return {
-      status: isStable ? 'pass' : 'fail',
-      version,
-      is_stable: isStable,
-      is_prerelease: isPrerelease
+      status: 'fail',
+      version: null,
+      is_stable: false,
+      is_prerelease: false
     };
   } catch {
     return {

@@ -4,7 +4,8 @@ import { SpecTrackingResult } from '../types';
 export async function checkSpecTracking(
   octokit: Octokit,
   owner: string,
-  repo: string
+  repo: string,
+  tagPrefix?: string
 ): Promise<SpecTrackingResult> {
   try {
     // Get latest spec release from modelcontextprotocol/modelcontextprotocol
@@ -21,7 +22,9 @@ export async function checkSpecTracking(
       repo,
       per_page: 50
     });
-    const nonDraftSdkReleases = sdkReleases.filter((r) => !r.draft);
+    const nonDraftSdkReleases = sdkReleases.filter(
+      (r) => !r.draft && (!tagPrefix || r.tag_name.startsWith(tagPrefix))
+    );
 
     if (!latestSpec || nonDraftSdkReleases.length === 0) {
       return {
