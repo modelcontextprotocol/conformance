@@ -46,7 +46,7 @@ export function connectFor(
   // Pass the version through so requests declare (and are wire-schema
   // validated against) the spec version the run was invoked with.
   return isStatefulVersion(specVersion)
-    ? (serverUrl, opts) => connectStateful(serverUrl, opts, specVersion)
+    ? (serverUrl, opts) => connectStateful(serverUrl, opts ?? {}, specVersion)
     : (serverUrl, opts) => connectStateless(serverUrl, specVersion, opts);
 }
 

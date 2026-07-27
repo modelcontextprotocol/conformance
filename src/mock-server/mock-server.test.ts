@@ -8,7 +8,7 @@ import {
   CACHEABLE_RESULT_METHODS
 } from './stateless';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { LATEST_SPEC_VERSION, DRAFT_PROTOCOL_VERSION } from '../types';
 import { takeWireViolations } from '../validation/wire-schema';
 
 const meta = {
@@ -500,9 +500,10 @@ describe('createServerStateful', () => {
   }
 
   it('accepts initialize and routes to handlers, recording non-preamble', async () => {
-    const srv = await createServerStateful({
-      'tools/list': () => ({ tools: [] })
-    });
+    const srv = await createServerStateful(
+      { 'tools/list': () => ({ tools: [] }) },
+      LATEST_SPEC_VERSION
+    );
     try {
       // SDK transport in sessionless mode handles initialize internally; we
       // can drive it via the SDK Client.
@@ -524,9 +525,10 @@ describe('createServerStateful', () => {
   });
 
   it('derives capabilities from handler keys; non-tools handler does not 500 initialize', async () => {
-    const srv = await createServerStateful({
-      'prompts/list': () => ({ prompts: [] })
-    });
+    const srv = await createServerStateful(
+      { 'prompts/list': () => ({ prompts: [] }) },
+      LATEST_SPEC_VERSION
+    );
     try {
       const { status, contentType } = await postInit(srv.url);
       expect(status).toBe(200);
@@ -537,9 +539,10 @@ describe('createServerStateful', () => {
   });
 
   it('records requests for unregistered methods (parity with stateless)', async () => {
-    const srv = await createServerStateful({
-      'tools/list': () => ({ tools: [] })
-    });
+    const srv = await createServerStateful(
+      { 'tools/list': () => ({ tools: [] }) },
+      LATEST_SPEC_VERSION
+    );
     try {
       const { Client } =
         await import('@modelcontextprotocol/sdk/client/index.js');
@@ -560,6 +563,76 @@ describe('createServerStateful', () => {
         .catch(() => {});
       await client.close();
       expect(srv.recorded.map((r) => r.method)).toContain('tools/call');
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe('wire violation attribution', () => {
+  it('does not blame the harness for the JSON-RPC-mandated id:null on error replies', async () => {
+    const srv = await createServerStateless({}, DRAFT_PROTOCOL_VERSION);
+    try {
+      // An id-less, _meta-less message forces a reject reply carrying
+      // `id: null` (JSON-RPC 2.0 when the request id cannot be determined).
+      await post(srv.url, { jsonrpc: '2.0', method: 'tools/call' }, headers);
+      const { violations } = takeWireViolations();
+      expect(violations.filter((v) => v.origin === 'harness')).toEqual([]);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('does not record an implementation violation for an unparsed body (wrong Content-Type)', async () => {
+    const stateless = await createServerStateless({}, DRAFT_PROTOCOL_VERSION);
+    const stateful = await createServerStateful({}, LATEST_SPEC_VERSION);
+    try {
+      for (const url of [stateless.url, stateful.url]) {
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'text/plain' },
+          body: '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+        });
+      }
+      const { violations } = takeWireViolations();
+      expect(violations.filter((v) => v.origin === 'implementation')).toEqual(
+        []
+      );
+    } finally {
+      await stateless.close();
+      await stateful.close();
+    }
+  });
+
+  it('validates stateful client traffic against the version the client declares, not the run version', async () => {
+    const srv = await createServerStateful({}, '2025-11-25');
+    try {
+      const batch = [{ jsonrpc: '2.0', id: 1, method: 'ping' }];
+      // Batch arrays are only legal at 2025-03-26; a client that negotiated
+      // that version declares it on the request.
+      await post(srv.url, batch, { 'mcp-protocol-version': '2025-03-26' });
+      const negotiated = takeWireViolations();
+      expect(
+        negotiated.violations.filter((v) => v.origin === 'implementation')
+      ).toEqual([]);
+
+      // No header: the header only exists from 2025-06-18, whose spec says
+      // to assume 2025-03-26 — where the batch is legal.
+      await post(srv.url, batch);
+      const headerless = takeWireViolations();
+      expect(
+        headerless.violations.filter((v) => v.origin === 'implementation')
+      ).toEqual([]);
+
+      await post(srv.url, batch, { 'mcp-protocol-version': '2025-11-25' });
+      const runVersion = takeWireViolations();
+      expect(
+        runVersion.violations.some(
+          (v) =>
+            v.origin === 'implementation' &&
+            v.errors.some((e) => e.includes('batch'))
+        )
+      ).toBe(true);
     } finally {
       await srv.close();
     }

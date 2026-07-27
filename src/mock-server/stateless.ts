@@ -202,15 +202,29 @@ export async function createServerStateless(
     // requests are captured too, matching the stateful impl and the
     // MockServer.recorded contract.
     const body = req.body as Record<string, unknown> | undefined;
-    validateWireMessage(wireVersion, req.body, {
-      origin: 'implementation',
-      context: `client request '${body?.method ?? '(unknown)'}' to stateless mock`
-    });
+    // An unparsed body (wrong or missing Content-Type) is a transport fault
+    // surfaced by the HTTP-level checks, not a JSON-RPC message to validate.
+    if (body !== undefined) {
+      validateWireMessage(wireVersion, req.body, {
+        origin: 'implementation',
+        context: `client request '${body?.method ?? '(unknown)'}' to stateless mock`
+      });
+    }
     if (body?.method && body.method !== 'server/discover') {
       recorded.push(req.body as JSONRPCRequest);
     }
     const sendJson = (status: number, payload: object, method?: string) => {
-      validateWireMessage(wireVersion, payload, {
+      // JSON-RPC 2.0 mandates `id: null` on error replies when the request id
+      // could not be determined, but the spec's RequestId is string|integer;
+      // validate with a placeholder id so the mandated null is not recorded
+      // as a harness violation (mirrors connection/stateless.ts's
+      // withNullIdCarveOut).
+      const raw = payload as Record<string, unknown>;
+      const validated =
+        raw.error !== undefined && raw.id === null
+          ? { ...raw, id: 0 }
+          : payload;
+      validateWireMessage(wireVersion, validated, {
         origin: 'harness',
         context: `stateless mock response${method ? ` to '${method}'` : ''}`,
         requestMethod: method

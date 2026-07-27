@@ -98,6 +98,24 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `checks.json` - Array of conformance check results with pass/fail status
 
+### Wire-schema checks
+
+Every scenario also validates each JSON-RPC message on the wire against the
+spec's JSON schema for the negotiated spec version, and emits up to two
+synthetic checks alongside the scenario's own:
+
+- `wire-schema-valid` - fails when a message _the implementation under test
+  sent_ violates the spec JSON schema. The failure details include every
+  violating message and its schema errors.
+- `wire-schema-harness-error` - fails when the _harness itself_ sent an
+  invalid message. This indicates a bug in the conformance suite (or a
+  deliberately nonconformant fixture), not in the implementation under test;
+  please report it.
+
+Scenarios that exchange no instrumented wire traffic (see issue #418) emit
+neither check. Like any other check, `wire-schema-valid` can be baselined via
+the expected-failures file.
+
 ## Expected Failures
 
 SDKs that don't yet pass all conformance tests can specify a baseline of known failures. This allows running conformance tests in CI without failing, while still catching regressions.

@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
+import { type SpecVersion } from '../types';
 import {
   validateWireMessage,
   type WireOrigin
@@ -51,8 +51,8 @@ function instrumentTransport(
       origin === 'harness' ? harnessRequests : implementationRequests;
     const peerRequests =
       origin === 'harness' ? implementationRequests : harnessRequests;
-    // `send` accepts arrays (2025-03-26 batches); validate each element with
-    // its own classification, then the batch envelope itself.
+    // `send` accepts arrays (2025-03-26 batches); walk elements for request/
+    // response bookkeeping, validating singles here and batches whole below.
     for (const m of Array.isArray(message) ? message : [message]) {
       const msg = (typeof m === 'object' && m !== null ? m : {}) as Record<
         string,
@@ -73,9 +73,14 @@ function instrumentTransport(
         if (id !== undefined) peerRequests.delete(id);
         context = `stateful response to '${requestMethod ?? `id ${String(id)}`}'`;
       }
-      validateWireMessage(specVersion, m, { origin, context, requestMethod });
+      if (!Array.isArray(message)) {
+        validateWireMessage(specVersion, m, { origin, context, requestMethod });
+      }
     }
     if (Array.isArray(message)) {
+      // One whole-array validation covers per-element errors (prefixed [i])
+      // and batch legality for the version; validating the elements in the
+      // loop above too would record every violation twice.
       validateWireMessage(specVersion, message, {
         origin,
         context: 'stateful batch'
@@ -119,8 +124,8 @@ function instrumentTransport(
  */
 export async function connectToServer(
   serverUrl: string,
-  opts: ConnectOptions = {},
-  specVersion: SpecVersion = LATEST_SPEC_VERSION
+  opts: ConnectOptions,
+  specVersion: SpecVersion
 ): Promise<MCPClientConnection> {
   const client = new Client(opts.clientInfo ?? DEFAULT_CLIENT_INFO, {
     capabilities: opts.capabilities ?? DEFAULT_CAPABILITIES

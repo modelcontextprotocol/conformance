@@ -15,13 +15,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { connectToServer } from './sdk-client';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
+import { type SpecVersion } from '../types';
 import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
 export async function connectStateful(
   serverUrl: string,
-  opts: ConnectOptions = {},
-  specVersion: SpecVersion = LATEST_SPEC_VERSION
+  opts: ConnectOptions,
+  specVersion: SpecVersion
 ): Promise<Connection> {
   // Wire-schema validation happens inside connectToServer, which hooks the
   // SDK transport's send/onmessage so the real bytes of every message in
