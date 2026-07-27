@@ -539,10 +539,10 @@ function createMcpServer() {
         prompt: z.string().describe('The prompt to send to the LLM')
       }
     },
-    async (args: { prompt: string }) => {
+    async (args: { prompt: string }, { sendRequest }) => {
       try {
-        // Request sampling from client
-        const result = await mcpServer.server.request(
+        // Request sampling from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'sampling/createMessage',
             params: {
@@ -599,10 +599,10 @@ function createMcpServer() {
         message: z.string().describe('The message to show the user')
       }
     },
-    async (args: { message: string }) => {
+    async (args: { message: string }, { sendRequest }) => {
       try {
-        // Request user input from client
-        const result = await mcpServer.server.request(
+        // Request user input from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -651,10 +651,10 @@ function createMcpServer() {
       description: 'Tests elicitation with default values per SEP-1034',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with default values for all primitive types
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -726,10 +726,10 @@ function createMcpServer() {
         'Tests elicitation with enum schema improvements per SEP-1330',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with all 5 enum schema variants
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
