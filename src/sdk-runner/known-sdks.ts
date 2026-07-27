@@ -38,17 +38,44 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     },
     expectedFailures: 'test/conformance/conformance-baseline.yml'
   },
+  // Fixtures live under conformance/ (everything-client + everything-server,
+  // mirroring scripts/{client,server}-conformance.sh). The server's -stateless
+  // flag defaults to true; -stateless=false pins the stateful transport, which
+  // the dated-spec (`active` suite) scenarios need — for a 2026-07-28 /
+  // SEP-2575 run, override with --server-cmd './.conformance-server -http=localhost:3000'
+  // to get the stateless lifecycle.
   'go-sdk': {
-    build: 'go build -o ./.conformance-server ./examples/server/conformance',
-    // Upstream go-sdk has no client conformance fixture yet (see go-sdk#859).
+    build:
+      'go build -o ./.conformance-server ./conformance/everything-server && go build -o ./.conformance-client ./conformance/everything-client',
+    client: {
+      command: './.conformance-client'
+    },
     server: {
-      command: './.conformance-server -http=:3000',
+      command: './.conformance-server -http=localhost:3000 -stateless=false',
       url: 'http://localhost:3000'
-    }
+    },
+    expectedFailures: 'conformance/baseline.yml'
+  },
+  // main — targets the 2026-07-28 revision. Same uv workspace layout as v1.x
+  // (client fixture in .github/actions/conformance/, mcp-everything-server
+  // workspace package). Two baselines exist upstream: expected-failures.yml
+  // covers runs at the latest dated spec (the default here), and
+  // expected-failures.2026-07-28.yml covers --spec-version 2026-07-28 runs —
+  // pass the latter via --expected-failures when targeting the new revision.
+  'python-sdk': {
+    build: 'uv sync --frozen --all-extras --all-packages',
+    client: {
+      command: 'uv run --frozen python .github/actions/conformance/client.py'
+    },
+    server: {
+      command: 'uv run --frozen mcp-everything-server --port 3000',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: '.github/actions/conformance/expected-failures.yml'
   },
   // v1.x — the stable, published line of the python-sdk, analogous to
-  // typescript-sdk-v1 (v2/main is mid-refactor and noisy). Clones the
-  // python-sdk repo, defaulting to the `v1.x` branch, and targets the latest
+  // typescript-sdk-v1. Clones the python-sdk repo, defaulting to the `v1.x`
+  // branch, and targets the latest
   // dated spec so draft-only scenarios/checks are excluded by default. uv
   // workspace: the `mcp` (client) and `mcp-everything-server` (server) packages
   // are both members, so one `uv sync --all-packages` covers both modes.
@@ -68,6 +95,27 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       url: 'http://localhost:3000/mcp'
     },
     expectedFailures: '.github/actions/conformance/expected-failures.yml'
+  },
+  // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
+  // tests/ModelContextProtocol.ConformanceServer (requires the .NET 10 SDK,
+  // per global.json); build output goes to the repo-level artifacts/ tree
+  // (UseArtifactsOutput), not per-project bin/. The client binary takes the scenario as its first
+  // argument rather than reading MCP_CONFORMANCE_SCENARIO, so the command
+  // bridges the env var into argv ($1 is the server URL the harness appends).
+  // The server serves the stateful lifecycle at / and the SEP-2575 stateless
+  // lifecycle at /stateless from the same port — for a 2026-07-28 run,
+  // override with --server-url http://localhost:3000/stateless.
+  'csharp-sdk': {
+    build:
+      'dotnet build tests/ModelContextProtocol.ConformanceClient -c Release -f net10.0 && dotnet build tests/ModelContextProtocol.ConformanceServer -c Release -f net10.0',
+    client: {
+      command: `bash -c 'exec dotnet artifacts/bin/ModelContextProtocol.ConformanceClient/Release/net10.0/ModelContextProtocol.ConformanceClient.dll "$MCP_CONFORMANCE_SCENARIO" "$1"' conformance-client`
+    },
+    server: {
+      command:
+        'dotnet artifacts/bin/ModelContextProtocol.ConformanceServer/Release/net10.0/ModelContextProtocol.ConformanceServer.dll --urls http://localhost:3000',
+      url: 'http://localhost:3000'
+    }
   }
 };
 

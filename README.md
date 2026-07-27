@@ -284,10 +284,11 @@ Build/run commands for each official SDK are looked up by name from [`src/sdk-ru
 An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias). Overriding for a one-off ref:
 
 ```bash
-npm start -- sdk owner/go-sdk@some-branch \
-  --mode client \
-  --build-cmd 'go build -tags mcp_go_client_oauth -o ./.conformance-client ./conformance/everything-client' \
-  --client-cmd './.conformance-client'
+# e.g. a 2026-07-28 run against go-sdk's server — the built-in server command
+# pins -stateless=false (what the dated-spec suites need), so override it to
+# get the SEP-2575 stateless lifecycle:
+npm start -- sdk go-sdk --mode server --suite all --spec-version 2026-07-28 \
+  --server-cmd './.conformance-server -http=localhost:3000'
 ```
 
 To add a new SDK to the matrix, add an entry to `KNOWN_SDKS`.

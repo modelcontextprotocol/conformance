@@ -104,6 +104,35 @@ describe('lookupBuiltinConfig', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.specVersion).toBeUndefined();
   });
 
+  it('go-sdk exposes both fixtures from conformance/ and a baseline', () => {
+    const go = lookupBuiltinConfig('go-sdk');
+    expect(go?.build).toContain('./conformance/everything-server');
+    expect(go?.build).toContain('./conformance/everything-client');
+    expect(go?.client?.command).toBe('./.conformance-client');
+    expect(go?.server?.url).toBe('http://localhost:3000');
+    expect(go?.expectedFailures).toBe('conformance/baseline.yml');
+  });
+
+  it('exposes python-sdk (main) with both commands and no ref/spec pin', () => {
+    const py = lookupBuiltinConfig('python-sdk');
+    expect(py?.repo).toBeUndefined();
+    expect(py?.defaultRef).toBeUndefined();
+    expect(py?.specVersion).toBeUndefined();
+    expect(py?.client?.command).toContain('client.py');
+    expect(py?.server?.command).toContain('mcp-everything-server');
+    expect(py?.server?.url).toBe('http://localhost:3000/mcp');
+  });
+
+  it('exposes csharp-sdk with dotnet fixtures and the scenario-argv bridge', () => {
+    const cs = lookupBuiltinConfig('csharp-sdk');
+    expect(cs?.build).toContain('ModelContextProtocol.ConformanceClient');
+    expect(cs?.build).toContain('ModelContextProtocol.ConformanceServer');
+    // The C# client takes the scenario as argv[0]; the command bridges the
+    // MCP_CONFORMANCE_SCENARIO env var into it.
+    expect(cs?.client?.command).toContain('$MCP_CONFORMANCE_SCENARIO');
+    expect(cs?.server?.url).toBe('http://localhost:3000');
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
