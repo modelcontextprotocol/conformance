@@ -75,11 +75,35 @@ interface CompiledSpec {
 
 const compiledSpecs = new Map<SpecVersion, CompiledSpec>();
 
+/** Patch known bugs in released (frozen) generated spec schemas at load time
+ * so validation matches the schema.ts source of truth. Each erratum cites the
+ * upstream fix; delete it once the dated schema.json is corrected upstream
+ * and re-vendored. */
+function applySchemaErrata(
+  specVersion: SpecVersion,
+  schema: Record<string, unknown>
+): Record<string, unknown> {
+  if (specVersion !== '2025-11-25') return schema;
+  // 2025-11-25 generates NumberSchema minimum/maximum/default as `integer`,
+  // contradicting its own schema.ts (`default?: number`). Fixed for draft in
+  // modelcontextprotocol#2710, which left the released schema.json as-is.
+  const patched = structuredClone(schema);
+  const defs = (patched.$defs ?? patched.definitions) as Record<
+    string,
+    { properties?: Record<string, { type?: string }> }
+  >;
+  for (const prop of ['minimum', 'maximum', 'default']) {
+    const p = defs.NumberSchema?.properties?.[prop];
+    if (p?.type === 'integer') p.type = 'number';
+  }
+  return patched;
+}
+
 function compileSpec(specVersion: SpecVersion): CompiledSpec {
   let compiled = compiledSpecs.get(specVersion);
   if (compiled) return compiled;
 
-  const schema = SCHEMAS[specVersion];
+  const schema = applySchemaErrata(specVersion, SCHEMAS[specVersion]);
   const is2020 =
     typeof schema.$schema === 'string' && schema.$schema.includes('2020-12');
   // The spec schemas are not authored for ajv strict mode; validate them

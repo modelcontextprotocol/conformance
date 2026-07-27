@@ -457,11 +457,15 @@ program
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
-            const result = await runServerConformanceTest(
-              validated.url,
-              scenarioName,
-              outputDir,
-              specVersionFilter
+            // Sequential, but a failed scenario can leak a connection that
+            // emits late traffic; scoping keeps it out of the next scenario.
+            const result = await withWireRecorder(() =>
+              runServerConformanceTest(
+                validated.url,
+                scenarioName,
+                outputDir,
+                specVersionFilter
+              )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {

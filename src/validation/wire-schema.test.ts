@@ -469,3 +469,41 @@ describe('withWireRecorder', () => {
     expect(takeWireViolations().observed).toBe(0);
   });
 });
+
+describe('schema errata', () => {
+  const elicitWithScore = (score: Record<string, unknown>) => ({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'elicitation/create',
+    params: {
+      message: 'score please',
+      requestedSchema: { type: 'object', properties: { score } }
+    }
+  });
+
+  it('accepts fractional NumberSchema bounds/defaults at 2025-11-25 (spec generator bug, modelcontextprotocol#2710)', () => {
+    expect(
+      wireSchemaErrors(
+        '2025-11-25',
+        elicitWithScore({
+          type: 'number',
+          minimum: 0.5,
+          maximum: 99.5,
+          default: 95.5
+        })
+      )
+    ).toEqual([]);
+    // The erratum makes 2025-11-25 agree with the fixed draft schema.
+    expect(
+      wireSchemaErrors(
+        DRAFT_PROTOCOL_VERSION,
+        elicitWithScore({
+          type: 'number',
+          minimum: 0.5,
+          maximum: 99.5,
+          default: 95.5
+        })
+      )
+    ).toEqual([]);
+  });
+});

@@ -675,10 +675,7 @@ function createMcpServer() {
                   score: {
                     type: 'number',
                     description: 'User score',
-                    // Integer-valued: the 2025-11-25 schema types NumberSchema.default
-                    // as `integer` (widened to `number` only in the draft), and this
-                    // scenario runs at 2025-11-25.
-                    default: 95
+                    default: 95.5
                   },
                   status: {
                     type: 'string',
