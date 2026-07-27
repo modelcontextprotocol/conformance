@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { DATED_SPEC_VERSIONS, DRAFT_PROTOCOL_VERSION } from '../types';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  SPEC_VERSION_TIMELINE,
+  isSpecVersion
+} from '../types';
 
 // Fields an entry may vary per targeted spec version. Identity fields
 // (repo / defaultRef / specVersion) can't vary — they pick what to clone,
@@ -23,11 +27,6 @@ const SpecOverrideSchema = z.object({
 });
 
 export type SpecOverride = z.infer<typeof SpecOverrideSchema>;
-
-const VALID_OVERRIDE_KEYS: readonly string[] = [
-  ...DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
-];
 
 export const SdkConfigSchema = z.object({
   // Clone this repo instead of the KNOWN_SDKS key — lets an alias entry
@@ -67,12 +66,12 @@ export const SdkConfigSchema = z.object({
       // date) would silently never match, because the requested version is
       // resolved to its dated form before the lookup.
       for (const key of Object.keys(overrides)) {
-        if (!VALID_OVERRIDE_KEYS.includes(key)) {
+        if (!isSpecVersion(key)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message:
               `specOverrides key '${key}' is not a spec version. ` +
-              `Use one of: ${VALID_OVERRIDE_KEYS.join(', ')} ` +
+              `Use one of: ${SPEC_VERSION_TIMELINE.join(', ')} ` +
               `('draft' resolves to ${DRAFT_PROTOCOL_VERSION} before lookup, so key the dated form).`
           });
         }

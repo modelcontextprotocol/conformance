@@ -64,7 +64,7 @@ export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
 export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 
 /** Spec versions in timeline order, dated revisions followed by the draft. */
-const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
+export const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
   ...DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION
 ];
