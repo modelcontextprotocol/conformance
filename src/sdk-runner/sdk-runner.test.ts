@@ -159,7 +159,6 @@ describe('resolveConfigForSpec', () => {
     expect(() => SdkConfigSchema.parse(typo)).toThrow(/not a spec version/);
   });
 
-
   it('returns the base config when no spec version is given', () => {
     const go = KNOWN_SDKS['go-sdk'];
     expect(resolveConfigForSpec(go, undefined)).toBe(go);
@@ -204,10 +203,7 @@ describe('resolveConfigForSpec', () => {
   });
 
   it('prefixes STATELESS=1 for rust-sdk at 2026-07-28', () => {
-    const resolved = resolveConfigForSpec(
-      KNOWN_SDKS['rust-sdk'],
-      '2026-07-28'
-    );
+    const resolved = resolveConfigForSpec(KNOWN_SDKS['rust-sdk'], '2026-07-28');
     expect(resolved.server?.command).toBe(
       'STATELESS=1 PORT=3000 ./target/debug/conformance-server'
     );
