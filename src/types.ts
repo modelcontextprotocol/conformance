@@ -69,6 +69,11 @@ const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
   DRAFT_PROTOCOL_VERSION
 ];
 
+/** True when `v` names a known spec version (dated or draft). */
+export function isSpecVersion(v: unknown): v is SpecVersion {
+  return SPEC_VERSION_TIMELINE.includes(v as SpecVersion);
+}
+
 /**
  * True when `v` is at or after `threshold` on the spec timeline. Lets a check
  * gate itself to the version that introduced its requirement (e.g. a draft-only

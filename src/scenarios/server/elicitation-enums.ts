@@ -47,7 +47,7 @@ Implement a tool named \`test_elicitation_sep1330_enums\` (no arguments) that re
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const connection = await connectToServer(serverUrl, {}, ctx.specVersion);
 
       let capturedRequest: any = null;
       connection.client.setRequestHandler(

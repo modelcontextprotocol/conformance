@@ -45,7 +45,7 @@ and validates session ID format if one is assigned.`;
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const connection = await connectToServer(serverUrl, {}, ctx.specVersion);
 
       // The connection process already does initialization
       // Check that we have a connected client

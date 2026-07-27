@@ -13,6 +13,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
+import { isSpecVersion, type SpecVersion } from '../types';
+import { validateWireMessage } from '../validation/wire-schema';
 import type { MockServer, RequestHandlers } from './index';
 
 const CAPABILITY_BY_PREFIX: Record<string, string> = {
@@ -40,7 +42,8 @@ export function capabilitiesFromHandlers(
 }
 
 export async function createServerStateful(
-  handlers: RequestHandlers
+  handlers: RequestHandlers,
+  specVersion: SpecVersion
 ): Promise<MockServer> {
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
@@ -61,10 +64,22 @@ export async function createServerStateful(
       });
       server.setRequestHandler(schema, async (request) => {
         try {
-          return (await handler(
+          const result = (await handler(
             (request.params ?? {}) as Record<string, unknown>,
             request as JSONRPCRequest
           )) as Record<string, unknown>;
+          // The SDK builds the response envelope; validate the
+          // harness-authored result against its typed definition.
+          validateWireMessage(
+            specVersion,
+            { jsonrpc: '2.0', id: 0, result },
+            {
+              origin: 'harness',
+              context: `stateful mock result for '${method}'`,
+              requestMethod: method
+            }
+          );
+          return result;
         } catch (e) {
           if (e instanceof McpError) throw e;
           throw new McpError(
@@ -85,6 +100,27 @@ export async function createServerStateful(
     // preamble) at the HTTP layer so unregistered methods are captured too,
     // matching the stateless impl and the MockServer.recorded contract.
     const body = req.body;
+    // An unparsed body (wrong or missing Content-Type) is a transport fault
+    // the SDK transport rejects itself, not a JSON-RPC message to validate.
+    if (body !== undefined) {
+      // Clients may legitimately negotiate a different protocol version than
+      // the run's (the README permits ignoring the forwarded --spec-version),
+      // and they declare it on every post-initialize request; validate their
+      // traffic against the version they actually speak.
+      const headerVersion = req.headers['mcp-protocol-version'];
+      // Absent header: the header only exists from 2025-06-18, whose spec
+      // says to assume 2025-03-26 — a header-less legacy client is not a
+      // violation of the run version.
+      const inboundVersion = isSpecVersion(headerVersion)
+        ? headerVersion
+        : headerVersion === undefined
+          ? '2025-03-26'
+          : specVersion;
+      validateWireMessage(inboundVersion, body, {
+        origin: 'implementation',
+        context: `client request '${body?.method ?? '(unknown)'}' to stateful mock`
+      });
+    }
     if (
       body?.method &&
       body.method !== 'initialize' &&
