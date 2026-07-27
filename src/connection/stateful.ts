@@ -31,9 +31,8 @@ export async function connectStateful(
   const notifications: JSONRPCNotification[] = [];
   const collect = (n: unknown) => {
     // The SDK's Zod parsing strips the jsonrpc field; restore it so collected
-    // notifications match the JSONRPCNotification wire shape, as
-    // connectStateless provides. (The raw notification was already validated
-    // by the transport hook.)
+    // notifications match the wire shape connectStateless provides (the raw
+    // notification was already validated by the transport hook).
     const notification = {
       jsonrpc: '2.0',
       ...(n as object)

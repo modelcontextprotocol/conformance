@@ -5,8 +5,10 @@ import {
   resetWireValidation,
   specDispatchMaps,
   takeWireViolations,
+  validateWireMessage,
   wireSchemaChecks,
-  wireSchemaErrors
+  wireSchemaErrors,
+  withWireRecorder
 } from './wire-schema';
 
 const META = {
@@ -402,5 +404,68 @@ describe('specDispatchMaps', () => {
     expect(
       specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get('server/discover')
     ).toBe('DiscoverResult');
+  });
+});
+
+describe('withWireRecorder', () => {
+  it('keeps concurrent scenario recorders isolated (suite runs)', async () => {
+    const { url, server } = await listen(() => ({
+      status: 400,
+      body: PR_376_INVALID_ERROR
+    }));
+    try {
+      const scope = () =>
+        withWireRecorder(async () => {
+          await sendStatelessRequest(url, 'tools/list');
+          return takeWireViolations();
+        });
+      // With a shared recorder one scope would drain both violations and the
+      // other none; scoped recorders see exactly their own.
+      const [a, b] = await Promise.all([scope(), scope()]);
+      expect(a.violations).toHaveLength(1);
+      expect(b.violations).toHaveLength(1);
+      expect(takeWireViolations().observed).toBe(0);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('propagates the scoped recorder into handlers of servers created in-scope', async () => {
+    // Mirrors the mock-server flow: the server is created inside the scenario
+    // scope, but requests arrive from outside it (the client subprocess).
+    let resolveUrl!: (url: string) => void;
+    const urlReady = new Promise<string>((r) => (resolveUrl = r));
+    let resolveRequestDone!: () => void;
+    const requestDone = new Promise<void>((r) => (resolveRequestDone = r));
+
+    const scopeResult = withWireRecorder(async () => {
+      const server = createServer((_req, res) => {
+        validateWireMessage(DRAFT_PROTOCOL_VERSION, PR_376_INVALID_ERROR, {
+          origin: 'implementation',
+          context: 'inbound message to in-scope server'
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
+      });
+      await new Promise<void>((r) => {
+        server.listen(0, () => {
+          const addr = server.address() as { port: number };
+          resolveUrl(`http://localhost:${addr.port}/`);
+          r();
+        });
+      });
+      await requestDone;
+      const drained = takeWireViolations();
+      server.close();
+      return drained;
+    });
+
+    await fetch(await urlReady, { method: 'POST', body: '{}' });
+    resolveRequestDone();
+
+    const drained = await scopeResult;
+    expect(drained.observed).toBe(1);
+    expect(drained.violations).toHaveLength(1);
+    expect(takeWireViolations().observed).toBe(0);
   });
 });

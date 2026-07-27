@@ -2,6 +2,7 @@
 // (src/spec-types/*.schema.json): envelope, then typed defs via method/error.code consts and
 // request→result pairs. Known gap: the client-auth scenarios' express mock is not instrumented.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Ajv, type ValidateFunction, type ErrorObject } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { default as addFormats } from 'ajv-formats';
@@ -262,10 +263,29 @@ export function wireSchemaErrors(
 }
 
 // Recorder: choke points record every message; runners (and the vitest hook)
-// drain the accumulated violations per scenario / test.
+// drain the accumulated violations per scenario / test. Suite runs execute
+// scenarios concurrently, so each scenario gets its own recorder via
+// AsyncLocalStorage; code outside any scope falls back to the global recorder.
 
-let violations: WireSchemaViolation[] = [];
-let observed = 0;
+interface RecorderState {
+  violations: WireSchemaViolation[];
+  observed: number;
+}
+
+const recorderStorage = new AsyncLocalStorage<RecorderState>();
+const globalRecorder: RecorderState = { violations: [], observed: 0 };
+
+function recorder(): RecorderState {
+  return recorderStorage.getStore() ?? globalRecorder;
+}
+
+/** Run `fn` with its own isolated wire recorder. Async work started inside
+ * `fn` (mock servers, transport hooks) records into that recorder, so
+ * concurrent scenarios in a suite run cannot steal or wipe each other's
+ * violations. */
+export function withWireRecorder<T>(fn: () => Promise<T>): Promise<T> {
+  return recorderStorage.run({ violations: [], observed: 0 }, fn);
+}
 
 /** Validate a wire message and record any violation. Called by choke points. */
 export function validateWireMessage(
@@ -273,10 +293,11 @@ export function validateWireMessage(
   message: unknown,
   info: WireMessageInfo
 ): void {
-  observed++;
+  const state = recorder();
+  state.observed++;
   const errors = wireSchemaErrors(specVersion, message, info.requestMethod);
   if (errors.length > 0) {
-    violations.push({
+    state.violations.push({
       origin: info.origin,
       specVersion,
       context: info.context,
@@ -287,8 +308,9 @@ export function validateWireMessage(
 }
 
 export function resetWireValidation(): void {
-  violations = [];
-  observed = 0;
+  const state = recorder();
+  state.violations = [];
+  state.observed = 0;
 }
 
 /** Return everything recorded since the last reset, and reset. */
@@ -296,7 +318,8 @@ export function takeWireViolations(): {
   violations: WireSchemaViolation[];
   observed: number;
 } {
-  const result = { violations, observed };
+  const state = recorder();
+  const result = { violations: state.violations, observed: state.observed };
   resetWireValidation();
   return result;
 }
