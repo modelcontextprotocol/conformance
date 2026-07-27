@@ -107,7 +107,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
       await client.connect(transport);
 
       // Extract session ID and negotiated protocol version from transport
-      sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+      sessionId = transport.sessionId;
       negotiatedProtocolVersion = transport.protocolVersion;
 
       if (!sessionId) {

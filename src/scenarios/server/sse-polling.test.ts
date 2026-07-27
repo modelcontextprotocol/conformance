@@ -4,40 +4,65 @@ import { testContext } from '../../connection/testing';
 import { ServerSSEPollingScenario } from './sse-polling';
 import { LATEST_SPEC_VERSION, type ConformanceCheck } from '../../types';
 
-/**
- * Regression coverage for the #412 bug class in sse-polling: raw follow-up
- * requests must carry the initialize-negotiated protocol version, enforced
- * here by a fixture that down-negotiates and 400s mismatched requests.
- */
+// Regression coverage for the #412 bug class in sse-polling: raw follow-up
+// requests must carry the initialize-negotiated protocol version and session
+// id, enforced by a fixture that down-negotiates and 400s mismatched requests.
 
 const SESSION_ID = 'test-session-sse-polling';
 const DOWN_NEGOTIATED_VERSION = '2025-06-18';
 
+interface SeenRequest {
+  request: string;
+  version: string | undefined;
+  hasLastEventId?: boolean;
+}
+
 interface VersionEnforcingServer {
   url: string;
-  seenVersions: () => Array<{ request: string; version: string | undefined }>;
+  seenRequests: () => SeenRequest[];
   close: () => Promise<void>;
 }
 
 // Down-negotiates every initialize to DOWN_NEGOTIATED_VERSION so a scenario
-// that hard-codes the latest version cannot pass, records the version header
-// of each follow-up request, and 400s any that mismatch.
+// that hard-codes the latest version cannot pass, records each follow-up's
+// version header, and 400s any version or session mismatch.
 async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
   let negotiated: string | undefined;
-  const seen: Array<{ request: string; version: string | undefined }> = [];
+  const seen: SeenRequest[] = [];
 
   const server = http.createServer((req, res) => {
-    const version = req.headers['mcp-protocol-version'] as string | undefined;
+    const rawVersion = req.headers['mcp-protocol-version'];
+    const version = Array.isArray(rawVersion) ? rawVersion[0] : rawVersion;
+    const sessionOk = req.headers['mcp-session-id'] === SESSION_ID;
     const sseHead = { 'Content-Type': 'text/event-stream' };
+    const reject = (payload: object) => {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
+    };
+    const mismatchError = {
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32000,
+        message: `Session or protocol version mismatch: got ${version}, negotiated ${negotiated}`
+      }
+    };
 
     if (req.method === 'GET') {
-      seen.push({ request: 'GET', version });
-      if (version !== negotiated) {
-        res.writeHead(400).end();
+      seen.push({
+        request: 'GET',
+        version,
+        hasLastEventId: Boolean(req.headers['last-event-id'])
+      });
+      if (version !== negotiated || !sessionOk) {
+        reject(mismatchError);
         return;
       }
       if (!req.headers['last-event-id']) {
-        res.writeHead(405).end();
+        // Absorbs the SDK's automatic standalone GET after initialized;
+        // the SDK tolerates 405, and the scenario's reconnect GET differs
+        // by carrying Last-Event-ID.
+        res.writeHead(405, { Allow: 'POST' }).end();
         return;
       }
       res.writeHead(200, sseHead);
@@ -82,15 +107,8 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
       }
 
       seen.push({ request: body.method ?? 'unknown', version });
-      if (version !== negotiated) {
-        respond(400, {
-          jsonrpc: '2.0',
-          id: body.id ?? null,
-          error: {
-            code: -32000,
-            message: `Protocol version mismatch: got ${version}, negotiated ${negotiated}`
-          }
-        });
+      if (version !== negotiated || !sessionOk) {
+        reject({ ...mismatchError, id: body.id ?? null });
         return;
       }
 
@@ -99,10 +117,10 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
         return;
       }
       if (body.method === 'tools/call') {
-        // Priming event with id, then close without the result, so the
-        // scenario must reconnect via GET + Last-Event-ID (line-420 path).
+        // Spec-shaped priming event (id + empty data), then close without
+        // the result, so the scenario must reconnect via GET + Last-Event-ID.
         res.writeHead(200, sseHead);
-        res.end('id: evt-1\ndata: {}\n\n');
+        res.end('id: evt-1\ndata: \n\n');
         return;
       }
       respond(404, {
@@ -118,7 +136,7 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
   const port = typeof address === 'object' && address ? address.port : 0;
   return {
     url: `http://127.0.0.1:${port}/mcp`,
-    seenVersions: () => seen,
+    seenRequests: () => seen,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections?.();
@@ -142,14 +160,20 @@ describe('server-sse-polling — negotiated protocol version', () => {
       await srv.close();
     }
 
-    // Every raw follow-up (tools/call POST, reconnect GET) must have sent
-    // the negotiated version, not the latest/spec version.
-    const followUps = srv
-      .seenVersions()
-      .filter((s) => s.request === 'tools/call' || s.request === 'GET');
-    expect(followUps.length).toBeGreaterThanOrEqual(2);
+    // Both raw sites must have fired and sent the negotiated version, not
+    // the latest/spec version.
+    const toolCalls = srv
+      .seenRequests()
+      .filter((s) => s.request === 'tools/call');
+    const reconnectGets = srv
+      .seenRequests()
+      .filter((s) => s.request === 'GET' && s.hasLastEventId);
+    expect(toolCalls.length).toBeGreaterThanOrEqual(1);
+    expect(reconnectGets.length).toBeGreaterThanOrEqual(1);
     expect(
-      followUps.filter((s) => s.version !== DOWN_NEGOTIATED_VERSION)
+      [...toolCalls, ...reconnectGets].filter(
+        (s) => s.version !== DOWN_NEGOTIATED_VERSION
+      )
     ).toEqual([]);
 
     const resume = findAll(checks, 'server-sse-disconnect-resume')[0];
