@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseSdkSpec } from './checkout';
-import { SdkConfigSchema } from './config';
 import { lookupBuiltinConfig, KNOWN_SDKS } from './known-sdks';
+import { SdkConfigSchema, resolveConfigForSpec } from './config';
 
 describe('parseSdkSpec', () => {
   it('leaves ref undefined when omitted (resolved later via defaultRef/main)', () => {
@@ -145,5 +145,78 @@ describe('lookupBuiltinConfig', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
     }
+  });
+});
+
+describe('resolveConfigForSpec', () => {
+  it("rejects a 'draft' or typo'd specOverrides key at schema level", () => {
+    const bad = {
+      server: { command: 'x', url: 'http://localhost:3000' },
+      specOverrides: { draft: { server: { command: 'y' } } }
+    };
+    expect(() => SdkConfigSchema.parse(bad)).toThrow(/not a spec version/);
+    const typo = { ...bad, specOverrides: { '2026-7-28': {} } };
+    expect(() => SdkConfigSchema.parse(typo)).toThrow(/not a spec version/);
+  });
+
+
+  it('returns the base config when no spec version is given', () => {
+    const go = KNOWN_SDKS['go-sdk'];
+    expect(resolveConfigForSpec(go, undefined)).toBe(go);
+  });
+
+  it('returns the base config for a version with no override', () => {
+    const go = KNOWN_SDKS['go-sdk'];
+    expect(resolveConfigForSpec(go, '2025-11-25')).toBe(go);
+  });
+
+  it('swaps the whole server command for go-sdk at 2026-07-28', () => {
+    const resolved = resolveConfigForSpec(KNOWN_SDKS['go-sdk'], '2026-07-28');
+    expect(resolved.server?.command).toBe(
+      './.conformance-server -http=localhost:3000'
+    );
+    // untouched fields carry through
+    expect(resolved.server?.url).toBe('http://localhost:3000');
+    expect(resolved.client?.command).toBe('./.conformance-client');
+    expect(resolved.expectedFailures).toBe('conformance/baseline.yml');
+  });
+
+  it('merges a partial server override (csharp url) over the base command', () => {
+    const resolved = resolveConfigForSpec(
+      KNOWN_SDKS['csharp-sdk'],
+      '2026-07-28'
+    );
+    expect(resolved.server?.url).toBe('http://localhost:3000/stateless');
+    expect(resolved.server?.command).toContain(
+      'ModelContextProtocol.ConformanceServer.dll'
+    );
+  });
+
+  it('swaps the expected-failures baseline for python-sdk at 2026-07-28', () => {
+    const resolved = resolveConfigForSpec(
+      KNOWN_SDKS['python-sdk'],
+      '2026-07-28'
+    );
+    expect(resolved.expectedFailures).toBe(
+      '.github/actions/conformance/expected-failures.2026-07-28.yml'
+    );
+    expect(resolved.server?.command).toContain('mcp-everything-server');
+  });
+
+  it('prefixes STATELESS=1 for rust-sdk at 2026-07-28', () => {
+    const resolved = resolveConfigForSpec(
+      KNOWN_SDKS['rust-sdk'],
+      '2026-07-28'
+    );
+    expect(resolved.server?.command).toBe(
+      'STATELESS=1 PORT=3000 ./target/debug/conformance-server'
+    );
+  });
+
+  it('does not mutate the base entry', () => {
+    const go = KNOWN_SDKS['go-sdk'];
+    const before = JSON.stringify(go);
+    resolveConfigForSpec(go, '2026-07-28');
+    expect(JSON.stringify(go)).toBe(before);
   });
 });

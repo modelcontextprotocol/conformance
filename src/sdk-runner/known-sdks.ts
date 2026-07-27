@@ -40,10 +40,9 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // Fixtures live under conformance/ (everything-client + everything-server,
   // mirroring scripts/{client,server}-conformance.sh). The server's -stateless
-  // flag defaults to true; -stateless=false pins the stateful transport, which
-  // the dated-spec (`active` suite) scenarios need — for a 2026-07-28 /
-  // SEP-2575 run, override with --server-cmd './.conformance-server -http=localhost:3000'
-  // to get the stateless lifecycle.
+  // flag defaults to true; the dated-spec (`active` suite) scenarios need the
+  // stateful transport, so the base command pins -stateless=false and the
+  // 2026-07-28 override drops it for the SEP-2575 stateless lifecycle.
   'go-sdk': {
     build:
       'go build -o ./.conformance-server ./conformance/everything-server && go build -o ./.conformance-client ./conformance/everything-client',
@@ -54,14 +53,17 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       command: './.conformance-server -http=localhost:3000 -stateless=false',
       url: 'http://localhost:3000'
     },
-    expectedFailures: 'conformance/baseline.yml'
+    expectedFailures: 'conformance/baseline.yml',
+    specOverrides: {
+      '2026-07-28': {
+        server: { command: './.conformance-server -http=localhost:3000' }
+      }
+    }
   },
   // main — targets the 2026-07-28 revision. Same uv workspace layout as v1.x
   // (client fixture in .github/actions/conformance/, mcp-everything-server
-  // workspace package). Two baselines exist upstream: expected-failures.yml
-  // covers runs at the latest dated spec (the default here), and
-  // expected-failures.2026-07-28.yml covers --spec-version 2026-07-28 runs —
-  // pass the latter via --expected-failures when targeting the new revision.
+  // workspace package). Two baselines exist upstream, one per spec target;
+  // the 2026-07-28 override picks the matching one.
   'python-sdk': {
     build: 'uv sync --frozen --all-extras --all-packages',
     client: {
@@ -71,7 +73,13 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       command: 'uv run --frozen mcp-everything-server --port 3000',
       url: 'http://localhost:3000/mcp'
     },
-    expectedFailures: '.github/actions/conformance/expected-failures.yml'
+    expectedFailures: '.github/actions/conformance/expected-failures.yml',
+    specOverrides: {
+      '2026-07-28': {
+        expectedFailures:
+          '.github/actions/conformance/expected-failures.2026-07-28.yml'
+      }
+    }
   },
   // v1.x — the stable, published line of the python-sdk, analogous to
   // typescript-sdk-v1. Clones the python-sdk repo, defaulting to the `v1.x`
@@ -100,9 +108,8 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   // conformance-client + conformance-server bins; the package is excluded from
   // the workspace default-members, so build it explicitly). The server reads
   // PORT and STATELESS from the environment: the stateful (dated-spec)
-  // lifecycle is the default, and STATELESS=1 enables the SEP-2575 stateless
-  // lifecycle — for a 2026-07-28 run, override with
-  // --server-cmd 'STATELESS=1 PORT=3000 ./target/debug/conformance-server'.
+  // lifecycle is the default, and the 2026-07-28 override sets STATELESS=1
+  // for the SEP-2575 stateless lifecycle.
   'rust-sdk': {
     build: 'cargo build -p mcp-conformance',
     client: {
@@ -111,6 +118,13 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     server: {
       command: 'PORT=3000 ./target/debug/conformance-server',
       url: 'http://localhost:3000/mcp'
+    },
+    specOverrides: {
+      '2026-07-28': {
+        server: {
+          command: 'STATELESS=1 PORT=3000 ./target/debug/conformance-server'
+        }
+      }
     }
   },
   // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
@@ -120,8 +134,8 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   // argument rather than reading MCP_CONFORMANCE_SCENARIO, so the command
   // bridges the env var into argv ($1 is the server URL the harness appends).
   // The server serves the stateful lifecycle at / and the SEP-2575 stateless
-  // lifecycle at /stateless from the same port — for a 2026-07-28 run,
-  // override with --server-url http://localhost:3000/stateless.
+  // lifecycle at /stateless from the same port; the 2026-07-28 override
+  // points runs at the stateless endpoint.
   'csharp-sdk': {
     build:
       'dotnet build tests/ModelContextProtocol.ConformanceClient -c Release -f net10.0 && dotnet build tests/ModelContextProtocol.ConformanceServer -c Release -f net10.0',
@@ -132,6 +146,11 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       command:
         'dotnet artifacts/bin/ModelContextProtocol.ConformanceServer/Release/net10.0/ModelContextProtocol.ConformanceServer.dll --urls http://localhost:3000',
       url: 'http://localhost:3000'
+    },
+    specOverrides: {
+      '2026-07-28': {
+        server: { url: 'http://localhost:3000/stateless' }
+      }
     }
   }
 };

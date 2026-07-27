@@ -281,14 +281,25 @@ npm start -- sdk typescript-sdk --mode client --spec-version draft
 
 Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.
 
-An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias). Overriding built-in fields for a one-off run:
+An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias).
+
+When the right invocation depends on the spec version being targeted, the entry carries it in `specOverrides` instead of a comment to copy from. The matching entry is merged over the base config when you pass `--spec-version` (or when the entry's own `specVersion` default applies), so version-specific runs need no extra flags:
 
 ```bash
-# e.g. a 2026-07-28 run against go-sdk's server — the built-in server command
-# pins -stateless=false (what the dated-spec suites need), so override it to
-# get the SEP-2575 stateless lifecycle:
-npm start -- sdk go-sdk --mode server --suite all --spec-version 2026-07-28 \
-  --server-cmd './.conformance-server -http=localhost:3000'
+# go-sdk's server pins -stateless=false for the dated-spec suites; its
+# specOverrides['2026-07-28'] entry swaps in the stateless invocation, so
+# this is the whole command:
+npm start -- sdk go-sdk --mode server --suite all --spec-version 2026-07-28
+
+# same for csharp-sdk (stateless URL), rust-sdk (STATELESS=1 env), and
+# python-sdk (per-revision expected-failures baseline)
+```
+
+Explicit CLI flags still beat everything, config included — overriding a field for a one-off run:
+
+```bash
+npm start -- sdk go-sdk@my-fork-branch --mode server \
+  --build-cmd 'go build -o ./.conformance-server ./experimental/server'
 ```
 
 To add a new SDK to the matrix, add an entry to `KNOWN_SDKS`.
