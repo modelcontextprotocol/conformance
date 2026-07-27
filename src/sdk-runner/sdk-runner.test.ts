@@ -74,7 +74,7 @@ describe('lookupBuiltinConfig', () => {
   });
 
   it('returns null for unknown SDKs', () => {
-    expect(lookupBuiltinConfig('rust-sdk')).toBeNull();
+    expect(lookupBuiltinConfig('swift-sdk')).toBeNull();
   });
 
   it('exposes python-sdk-v1 with repo + defaultRef + specVersion and both commands', () => {
@@ -131,6 +131,14 @@ describe('lookupBuiltinConfig', () => {
     // MCP_CONFORMANCE_SCENARIO env var into it.
     expect(cs?.client?.command).toContain('$MCP_CONFORMANCE_SCENARIO');
     expect(cs?.server?.url).toBe('http://localhost:3000');
+  });
+
+  it('exposes rust-sdk with the mcp-conformance fixture bins', () => {
+    const rs = lookupBuiltinConfig('rust-sdk');
+    expect(rs?.build).toBe('cargo build -p mcp-conformance');
+    expect(rs?.client?.command).toBe('./target/debug/conformance-client');
+    expect(rs?.server?.command).toContain('conformance-server');
+    expect(rs?.server?.url).toBe('http://localhost:3000/mcp');
   });
 
   it('every built-in entry validates against SdkConfigSchema', () => {

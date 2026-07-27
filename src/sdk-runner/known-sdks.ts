@@ -96,6 +96,23 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     },
     expectedFailures: '.github/actions/conformance/expected-failures.yml'
   },
+  // Fixtures live in conformance/ (the mcp-conformance package's
+  // conformance-client + conformance-server bins; the package is excluded from
+  // the workspace default-members, so build it explicitly). The server reads
+  // PORT and STATELESS from the environment: the stateful (dated-spec)
+  // lifecycle is the default, and STATELESS=1 enables the SEP-2575 stateless
+  // lifecycle — for a 2026-07-28 run, override with
+  // --server-cmd 'STATELESS=1 PORT=3000 ./target/debug/conformance-server'.
+  'rust-sdk': {
+    build: 'cargo build -p mcp-conformance',
+    client: {
+      command: './target/debug/conformance-client'
+    },
+    server: {
+      command: 'PORT=3000 ./target/debug/conformance-server',
+      url: 'http://localhost:3000/mcp'
+    }
+  },
   // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
   // tests/ModelContextProtocol.ConformanceServer (requires the .NET 10 SDK,
   // per global.json); build output goes to the repo-level artifacts/ tree
