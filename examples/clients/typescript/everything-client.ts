@@ -381,6 +381,7 @@ registerScenarios(
     'auth/metadata-var1',
     'auth/metadata-var2',
     'auth/metadata-var3',
+    'auth/metadata-query-params',
     // Backcompat scenarios
     'auth/2025-03-26-oauth-metadata-backcompat',
     'auth/2025-03-26-oauth-endpoint-fallback',

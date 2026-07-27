@@ -104,6 +104,33 @@ describe('lookupBuiltinConfig', () => {
     expect(lookupBuiltinConfig('typescript-sdk')?.specVersion).toBeUndefined();
   });
 
+  it('exposes go-sdk with both fixture commands and the repo baseline', () => {
+    const go = lookupBuiltinConfig('go-sdk');
+    expect(go?.build).toContain('./conformance/everything-client');
+    expect(go?.build).toContain('./conformance/everything-server');
+    expect(go?.client?.command).toBe('./.conformance-client');
+    expect(go?.server?.url).toBe('http://localhost:3000/mcp');
+    expect(go?.expectedFailures).toBe('conformance/baseline.yml');
+  });
+
+  it('exposes csharp-sdk as client-only, forwarding scenario and URL', () => {
+    const cs = lookupBuiltinConfig('csharp-sdk');
+    expect(cs?.build).toContain('ModelContextProtocol.ConformanceClient');
+    // The fixture wants <scenario> <url> as positional args; the sh -c shim
+    // maps the env var and the runner-appended URL onto them.
+    expect(cs?.client?.command).toContain('"$MCP_CONFORMANCE_SCENARIO" "$1"');
+    expect(cs?.server).toBeUndefined();
+  });
+
+  it('exposes bare python-sdk (main) tracking the draft spec', () => {
+    const py = lookupBuiltinConfig('python-sdk');
+    expect(py?.defaultRef).toBeUndefined();
+    expect(py?.specVersion).toBeUndefined();
+    expect(py?.client?.command).toContain('client.py');
+    expect(py?.server?.command).toContain('mcp-everything-server');
+    expect(py?.expectedFailures).toContain('expected-failures.yml');
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
