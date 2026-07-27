@@ -37,6 +37,7 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
     const stateless = specVersion === DRAFT_PROTOCOL_VERSION;
 
     let sessionId: string | undefined;
+    let negotiatedProtocolVersion: string | undefined;
     let client: Client | undefined;
     let transport: StreamableHTTPClientTransport | undefined;
 
@@ -59,8 +60,9 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
         transport = new StreamableHTTPClientTransport(new URL(serverUrl));
         await client.connect(transport);
 
-        // Extract session ID from transport
+        // Extract session ID and negotiated protocol version from transport
         sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+        negotiatedProtocolVersion = transport.protocolVersion;
 
         if (!sessionId) {
           checks.push({
@@ -96,7 +98,7 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream, application/json',
             'mcp-session-id': sessionId!,
-            'mcp-protocol-version': '2025-03-26'
+            'mcp-protocol-version': negotiatedProtocolVersion ?? specVersion
           };
       const requestParams = stateless
         ? {
