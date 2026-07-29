@@ -678,6 +678,10 @@ export async function runPreRegistration(serverUrl: string): Promise<void> {
     redirect_uris: ['http://localhost:3000/callback']
   });
 
+  // Associate the pre-registered credentials with the AS that issued them,
+  // keyed by its issuer (Authorization Server Binding).
+  provider.bindIssuer(ctx.issuer);
+
   // Use the provider-based middleware
   const oauthFetch = withOAuthRetryWithProvider(
     provider,
