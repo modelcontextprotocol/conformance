@@ -10,6 +10,10 @@ import {
 } from '../types';
 import { getScenario, isScenarioApplicableAt } from '../scenarios';
 import { createServerFor, type ScenarioContext } from '../mock-server';
+import {
+  resetWireValidation,
+  wireSchemaChecks
+} from '../validation/wire-schema';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 export interface ClientExecutionResult {
@@ -182,6 +186,7 @@ export async function runConformanceTest(
   };
 
   console.error(`Starting scenario: ${scenarioName}`);
+  resetWireValidation();
   const urls = await scenario.start(ctx);
 
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
@@ -215,6 +220,7 @@ export async function runConformanceTest(
     }
 
     const checks = scenario.getChecks();
+    checks.push(...wireSchemaChecks(resolvedVersion));
 
     if (resultDir) {
       await fs.writeFile(
@@ -366,6 +372,7 @@ export async function runInteractiveMode(
   };
 
   console.log(`Starting scenario: ${scenarioName}`);
+  resetWireValidation();
   const urls = await scenario.start(ctx);
 
   console.log(`Server URL: ${urls.serverUrl}`);
@@ -375,6 +382,7 @@ export async function runInteractiveMode(
     console.log('\nShutting down...');
 
     const checks = scenario.getChecks();
+    checks.push(...wireSchemaChecks(resolvedVersion));
 
     if (resultDir) {
       await fs.writeFile(

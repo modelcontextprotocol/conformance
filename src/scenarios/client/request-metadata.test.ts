@@ -6,7 +6,10 @@ import {
 } from './auth/test_helpers/testClient';
 import { getHandler } from '../../../examples/clients/typescript/everything-client';
 import { getScenario } from '../index';
-import { DECLARED_CHECK_IDS } from './request-metadata';
+import {
+  DECLARED_CHECK_IDS,
+  RequestMetadataScenario
+} from './request-metadata';
 
 // A bad client that does not send _meta
 async function badClient(serverUrl: string) {
@@ -243,6 +246,48 @@ describe('request-metadata client scenario — client never connects', () => {
     expect(populatesMeta?.errorMessage ?? '').not.toContain(
       'never sent a request'
     );
+  });
+});
+
+describe('request-metadata client scenario — HTTP handling', () => {
+  test.each(['GET', 'DELETE'])(
+    'rejects an empty-body %s request without parsing it as JSON',
+    async (method) => {
+      const scenario = new RequestMetadataScenario();
+      const { serverUrl } = await scenario.start(testScenarioContext());
+
+      try {
+        const response = await fetch(serverUrl, { method });
+
+        expect(response.status).toBe(405);
+        expect(response.headers.get('allow')).toBe('POST');
+        expect(await response.text()).toBe('Method Not Allowed');
+      } finally {
+        await scenario.stop();
+      }
+    }
+  );
+
+  test('returns a JSON-RPC parse error for malformed POST bodies', async () => {
+    const scenario = new RequestMetadataScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+
+    try {
+      const response = await fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{'
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700 }
+      });
+    } finally {
+      await scenario.stop();
+    }
   });
 });
 

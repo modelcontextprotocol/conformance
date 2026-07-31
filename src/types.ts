@@ -64,10 +64,15 @@ export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
 export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 
 /** Spec versions in timeline order, dated revisions followed by the draft. */
-const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
+export const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
   ...DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION
 ];
+
+/** True when `v` names a known spec version (dated or draft). */
+export function isSpecVersion(v: unknown): v is SpecVersion {
+  return SPEC_VERSION_TIMELINE.includes(v as SpecVersion);
+}
 
 /**
  * True when `v` is at or after `threshold` on the spec timeline. Lets a check
@@ -95,6 +100,8 @@ export type ScenarioSpecTag = SpecVersion | 'extension';
 export const EXTENSION_IDS = [
   'io.modelcontextprotocol/oauth-client-credentials',
   'io.modelcontextprotocol/enterprise-managed-authorization',
+  'io.modelcontextprotocol/auth/dpop',
+  'io.modelcontextprotocol/auth/wif',
   'io.modelcontextprotocol/tasks'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];

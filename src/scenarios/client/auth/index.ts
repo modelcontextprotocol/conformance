@@ -25,6 +25,7 @@ import { ResourceMismatchScenario } from './resource-mismatch';
 import { PreRegistrationScenario } from './pre-registration';
 import { EnterpriseManagedAuthorizationScenario } from './enterprise-managed-authorization';
 import { WifJwtBearerScenario } from './wif-jwt-bearer';
+import { DPoPClientScenario } from './dpop';
 import {
   OfflineAccessScopeScenario,
   OfflineAccessNotSupportedScenario
@@ -65,7 +66,10 @@ export const backcompatScenariosList: Scenario[] = [
 export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
-  new EnterpriseManagedAuthorizationScenario()
+  new EnterpriseManagedAuthorizationScenario(),
+  new DPoPClientScenario(false), // auth/dpop — nonce-less baseline (common case)
+  new DPoPClientScenario(true), // auth/dpop-nonce — server-required nonce (§8/§9)
+  new WifJwtBearerScenario()
 ];
 
 // Draft scenarios (informational - not scored for tier assessment)
@@ -80,6 +84,5 @@ export const draftScenariosList: Scenario[] = [
   new IssParameterWrongIssuerScenario(),
   new IssParameterUnexpectedScenario(),
   new IssParameterNormalizedVariantScenario(),
-  new MetadataIssuerMismatchScenario(),
-  new WifJwtBearerScenario()
+  new MetadataIssuerMismatchScenario()
 ];

@@ -8,7 +8,10 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import type { RunContext } from '../../connection';
-import { connectToServer } from '../../connection/sdk-client';
+import {
+  connectToServer,
+  terminateSessionRaw
+} from '../../connection/sdk-client';
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
 
@@ -45,7 +48,7 @@ and validates session ID format if one is assigned.`;
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const connection = await connectToServer(serverUrl, {}, ctx.specVersion);
 
       // The connection process already does initialization
       // Check that we have a connected client
@@ -91,20 +94,21 @@ and validates session ID format if one is assigned.`;
     // Check: Session ID visible ASCII validation
     // Use a raw fetch to inspect the MCP-Session-Id response header,
     // since the SDK client transport does not expose it.
+    let rawSessionId: string | null = null;
     try {
       const response = await fetch(serverUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
-          'mcp-protocol-version': '2025-11-25'
+          'mcp-protocol-version': ctx.specVersion
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
           params: {
-            protocolVersion: '2025-11-25',
+            protocolVersion: ctx.specVersion,
             capabilities: {},
             clientInfo: {
               name: 'conformance-session-id-test',
@@ -115,6 +119,7 @@ and validates session ID format if one is assigned.`;
       });
 
       const sessionId = response.headers.get('mcp-session-id');
+      rawSessionId = sessionId;
 
       if (!sessionId) {
         checks.push({
@@ -170,6 +175,10 @@ and validates session ID format if one is assigned.`;
         errorMessage: `Failed to send initialize request for session ID check: ${error instanceof Error ? error.message : String(error)}`,
         specReferences: SESSION_SPEC_REFERENCES
       });
+    } finally {
+      if (rawSessionId) {
+        await terminateSessionRaw(serverUrl, rawSessionId, ctx.specVersion);
+      }
     }
 
     return checks;

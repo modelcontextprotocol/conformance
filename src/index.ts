@@ -43,6 +43,7 @@ import {
   ServerOptionsSchema
 } from './schemas';
 import type { AuthorizationServerOptions } from './schemas';
+import { withWireRecorder } from './validation/wire-schema';
 import {
   loadExpectedFailures,
   evaluateBaseline,
@@ -159,13 +160,17 @@ program
         const results = await Promise.all(
           scenarios.map(async (scenarioName) => {
             try {
-              const result = await runConformanceTest(
-                options.command,
-                scenarioName,
-                timeout,
-                outputDir,
-                specVersionFilter,
-                options.force ?? false
+              // Each concurrent scenario records wire violations into its own
+              // AsyncLocalStorage-scoped recorder (see withWireRecorder).
+              const result = await withWireRecorder(() =>
+                runConformanceTest(
+                  options.command,
+                  scenarioName,
+                  timeout,
+                  outputDir,
+                  specVersionFilter,
+                  options.force ?? false
+                )
               );
               return {
                 scenario: scenarioName,
@@ -452,11 +457,15 @@ program
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
-            const result = await runServerConformanceTest(
-              validated.url,
-              scenarioName,
-              outputDir,
-              specVersionFilter
+            // Sequential, but a failed scenario can leak a connection that
+            // emits late traffic; scoping keeps it out of the next scenario.
+            const result = await withWireRecorder(() =>
+              runServerConformanceTest(
+                validated.url,
+                scenarioName,
+                outputDir,
+                specVersionFilter
+              )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {

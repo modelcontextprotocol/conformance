@@ -6,6 +6,12 @@ import { isStatefulVersion } from '../../../../connection/select';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
+import * as jose from 'jose';
+import {
+  generateIssuerKey,
+  mintDpopBoundToken,
+  type TokenIssuerKey
+} from './dpopToken';
 
 /**
  * Compute S256 code challenge from a code verifier.
@@ -20,6 +26,105 @@ function computeS256Challenge(codeVerifier: string): string {
     .replace(/=+$/, '');
 }
 
+// Fixed nonce the test AS hands out when `dpopRequireNonce` is set (RFC 9449 §8).
+const AS_DPOP_NONCE = 'conformance-as-dpop-nonce';
+
+// Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3, §11.6).
+const DPOP_ASYMMETRIC_ALGS = [
+  'ES256',
+  'ES384',
+  'ES512',
+  'RS256',
+  'RS384',
+  'RS512',
+  'PS256',
+  'PS384',
+  'PS512',
+  'EdDSA'
+];
+
+/**
+ * Canonicalize an `htu` for comparison per RFC 9449 §4.3 (RFC 3986 scheme-based
+ * normalization): lowercase scheme/host, drop the default port, ignore a
+ * trailing slash. Query/fragment are rejected by the caller (RFC 9449 §4.2),
+ * not silently stripped here.
+ */
+function normalizeHtu(u: string): string {
+  try {
+    const url = new URL(u);
+    // Tolerate a single trailing slash only; `/mcp//` is a distinct path.
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, '')}`;
+  } catch {
+    return u;
+  }
+}
+
+/**
+ * Validate a DPoP proof presented at the token endpoint (the token-request
+ * subset of RFC 9449 §4.3). Hand-rolled with jose primitives — deliberately an
+ * INDEPENDENT code path from the suite's proof builder, so a shared bug
+ * surfaces rather than hides. Returns the JWK thumbprint to bind on success.
+ */
+export async function validateDpopProofAtTokenEndpoint(
+  proof: string,
+  tokenEndpointUrl: string
+): Promise<{ ok: true; jkt: string } | { ok: false; error: string }> {
+  let header: jose.ProtectedHeaderParameters;
+  try {
+    header = jose.decodeProtectedHeader(proof);
+  } catch {
+    return { ok: false, error: 'DPoP proof is not a well-formed JWT' };
+  }
+  if (header.typ !== 'dpop+jwt') {
+    return { ok: false, error: 'typ must be dpop+jwt' };
+  }
+  if (!header.alg || !DPOP_ASYMMETRIC_ALGS.includes(header.alg)) {
+    return { ok: false, error: 'alg must be a supported asymmetric algorithm' };
+  }
+  const jwk = header.jwk as jose.JWK | undefined;
+  if (!jwk) {
+    return { ok: false, error: 'missing jwk header parameter' };
+  }
+  if ((jwk as Record<string, unknown>).d !== undefined) {
+    return { ok: false, error: 'jwk must not contain a private key' };
+  }
+  let claims: jose.JWTPayload;
+  try {
+    const key = await jose.importJWK(jwk, header.alg);
+    claims = (
+      await jose.jwtVerify(proof, key, { algorithms: DPOP_ASYMMETRIC_ALGS })
+    ).payload;
+  } catch {
+    return { ok: false, error: 'DPoP proof signature does not verify' };
+  }
+  if (typeof claims.jti !== 'string') {
+    return { ok: false, error: 'missing jti claim' };
+  }
+  if (claims.htm !== 'POST') {
+    return { ok: false, error: 'htm does not match POST' };
+  }
+  if (typeof claims.htu !== 'string') {
+    return { ok: false, error: 'htu does not match the token endpoint' };
+  }
+  if (claims.htu.includes('?') || claims.htu.includes('#')) {
+    return {
+      ok: false,
+      error: 'htu MUST NOT contain a query or fragment (RFC 9449 §4.2)'
+    };
+  }
+  if (normalizeHtu(claims.htu) !== normalizeHtu(tokenEndpointUrl)) {
+    return { ok: false, error: 'htu does not match the token endpoint' };
+  }
+  if (
+    typeof claims.iat !== 'number' ||
+    Math.abs(Math.floor(Date.now() / 1000) - claims.iat) > 300
+  ) {
+    return { ok: false, error: 'iat outside the acceptable window' };
+  }
+  const jkt = await jose.calculateJwkThumbprint(jwk, 'sha256');
+  return { ok: true, jkt };
+}
+
 export interface TokenRequestResult {
   token: string;
   scopes: string[];
@@ -29,6 +134,24 @@ export interface TokenRequestError {
   error: string;
   errorDescription?: string;
   statusCode?: number;
+}
+
+/**
+ * Sink for the DPoP token-request observation (RFC 9449 §5). The AS writes to
+ * it on the authorization_code exchange (sticky-failure: once any exchange
+ * lacks a valid proof it stays FAILURE; refresh grants are ignored) so the
+ * client scenario can emit sep-1932-client-token-request-proof unconditionally
+ * — FAILURE by default when the client never reaches the token endpoint,
+ * matching its sibling checks.
+ */
+export interface DpopTokenRequestObservation {
+  recorded: boolean;
+  validProof: boolean;
+  error?: string;
+  /** The token endpoint issued a `use_dpop_nonce` challenge (RFC 9449 §8). */
+  asNonceChallengeIssued: boolean;
+  /** The client retried the token request carrying the correct nonce. */
+  asNonceHonored: boolean;
 }
 
 export interface AuthServerOptions {
@@ -63,6 +186,34 @@ export interface AuthServerOptions {
    * after `start()`.
    */
   metadataIssuer?: string | (() => string);
+  /**
+   * DPoP (SEP-1932 / RFC 9449) — opt-in; absent ⇒ no DPoP behaviour at all.
+   * When set, the AS advertises `dpop_signing_alg_values_supported` in its
+   * metadata and validates+binds a DPoP proof presented at the token endpoint.
+   */
+  dpopSigningAlgValuesSupported?: string[];
+  /**
+   * Negative-test mode: make the AS misbehave in one specific way so a check
+   * can be proven to FAIL.
+   *  - 'omit-alg-values'   — drop `dpop_signing_alg_values_supported` entirely
+   *  - 'empty-alg-values'  — advertise the field as an empty array
+   *  - 'include-none'      — list `none` among the supported proof algs
+   *  - 'unbound-token'     — issue a Bearer token ignoring a valid proof
+   */
+  dpopMisbehavior?:
+    | 'omit-alg-values'
+    | 'empty-alg-values'
+    | 'include-none'
+    | 'unbound-token';
+  /** Sink for the DPoP token-request observation; see the interface docstring. */
+  dpopTokenRequestObs?: DpopTokenRequestObservation;
+  /**
+   * When true, the token endpoint requires a DPoP nonce (RFC 9449 §8): a
+   * proof-bearing request without the correct `nonce` claim is answered with
+   * `400 use_dpop_nonce` + a `DPoP-Nonce` header, and the retry carrying the
+   * nonce is accepted. Used to exercise the client's nonce handling.
+   */
+  dpopRequireNonce?: boolean;
   tokenVerifier?: MockTokenVerifier;
   onTokenRequest?: (requestData: {
     scope?: string;
@@ -110,6 +261,10 @@ export function createAuthServer(
     issParameterSupported = true,
     issInRedirect = 'correct',
     metadataIssuer,
+    dpopSigningAlgValuesSupported,
+    dpopMisbehavior,
+    dpopTokenRequestObs,
+    dpopRequireNonce = false,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -120,6 +275,34 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
+  // Lazily-created issuer key for minting DPoP-bound JWT access tokens.
+  let dpopIssuerKey: TokenIssuerKey | undefined;
+  // DPoP behaviour is active only when the caller opts in (any DPoP option).
+  const dpopEnabled =
+    dpopSigningAlgValuesSupported !== undefined ||
+    dpopMisbehavior !== undefined;
+
+  // Records whether the client presented a valid DPoP proof at its
+  // authorization_code token request (RFC 9449 §5) into the caller's observation
+  // sink. Sticky-failure: FAILURE if ANY exchange lacked a valid proof, SUCCESS
+  // only if every one had one — so a later proof-less exchange (e.g. a refresh
+  // done as authorization_code) can't overwrite an earlier failure, nor vice
+  // versa. Refresh grants are ignored entirely. The client scenario reads this
+  // to emit sep-1932-client-token-request-proof unconditionally (FAILURE by
+  // default when the client never reaches the token endpoint).
+  const recordTokenRequestProof = (
+    grantType: string,
+    ok: boolean,
+    detail?: string
+  ): void => {
+    if (grantType !== 'authorization_code' || !dpopTokenRequestObs) return;
+    const valid = dpopTokenRequestObs.recorded
+      ? dpopTokenRequestObs.validProof && ok
+      : ok;
+    dpopTokenRequestObs.recorded = true;
+    dpopTokenRequestObs.validProof = valid;
+    if (!valid && detail) dpopTokenRequestObs.error ??= detail;
+  };
 
   const authRoutes = {
     authorization_endpoint: `${routePrefix}/authorize`,
@@ -185,7 +368,21 @@ export function createAuthServer(
       ...(tokenEndpointAuthSigningAlgValuesSupported && {
         token_endpoint_auth_signing_alg_values_supported:
           tokenEndpointAuthSigningAlgValuesSupported
-      })
+      }),
+      // DPoP AS-metadata support signal (SEP-1932 / RFC 9449 §5.1). Opt-in;
+      // misbehaviour modes alter it: 'omit-alg-values' drops the field,
+      // 'empty-alg-values' advertises an empty array, 'include-none' adds the
+      // forbidden `none` alg. (dpop_bound_access_tokens is client-registration
+      // metadata per RFC 9449 §5.2, so it is deliberately NOT advertised here.)
+      ...(dpopMisbehavior !== 'omit-alg-values' &&
+        dpopSigningAlgValuesSupported !== undefined && {
+          dpop_signing_alg_values_supported:
+            dpopMisbehavior === 'empty-alg-values'
+              ? []
+              : dpopMisbehavior === 'include-none'
+                ? [...dpopSigningAlgValuesSupported, 'none']
+                : dpopSigningAlgValuesSupported
+        })
     };
 
     // Add scopes_supported if provided
@@ -368,6 +565,122 @@ export function createAuthServer(
           computedChallenge: computedChallenge || 'not computed'
         }
       });
+    }
+
+    // ---- DPoP token binding (SEP-1932 / RFC 9449) — opt-in ----
+    if (dpopEnabled) {
+      const proofHeader = req.headers['dpop'];
+      const proofValue = Array.isArray(proofHeader)
+        ? proofHeader.join(', ')
+        : proofHeader;
+      // RFC 9449 §4.2: at most one DPoP header field. Node collapses duplicate
+      // request headers into one comma-joined value; a valid proof JWT contains
+      // no comma, so a comma means more than one proof was sent.
+      if (typeof proofValue === 'string' && proofValue.includes(',')) {
+        recordTokenRequestProof(
+          grantType,
+          false,
+          'multiple DPoP proof headers'
+        );
+        res.status(400).json({
+          error: 'invalid_dpop_proof',
+          error_description: 'Multiple DPoP proof headers'
+        });
+        return;
+      }
+      const proof = proofValue;
+      const tokenEndpointUrl = `${getAuthBaseUrl()}${authRoutes.token_endpoint}`;
+      const grantedScopes = requestedScope
+        ? requestedScope.split(' ')
+        : lastAuthorizationScopes;
+
+      // No proof ⇒ DPoP is not being exercised here; fall through to a Bearer
+      // token. (Requiring a proof is a per-client `dpop_bound_access_tokens`
+      // registration policy — RFC 9449 §5.2 — not a global AS behaviour.) The
+      // client-side check still records that the client failed to ask for a
+      // bound token.
+      if (proof) {
+        const result = await validateDpopProofAtTokenEndpoint(
+          proof,
+          tokenEndpointUrl
+        );
+        if (!result.ok) {
+          recordTokenRequestProof(grantType, false, result.error);
+          res.status(400).json({
+            error: 'invalid_dpop_proof',
+            error_description: result.error
+          });
+          return;
+        }
+        // The proof itself is valid — record that now, BEFORE any nonce
+        // challenge, so a client that is challenged but does not retry is not
+        // mis-reported by token-request-proof as "never completed a token
+        // request" (its proof was just verified). Sticky + gated on
+        // authorization_code inside recordTokenRequestProof.
+        recordTokenRequestProof(grantType, true);
+
+        // RFC 9449 §8: require a server-provided nonce. A proof without the
+        // correct nonce is challenged (400 use_dpop_nonce + DPoP-Nonce); the
+        // client is expected to retry with it. The nonce observation is gated
+        // on the authorization_code exchange, matching recordTokenRequestProof
+        // (honoring a challenge on a refresh exchange must not satisfy §8).
+        if (dpopRequireNonce) {
+          let proofNonce: unknown;
+          try {
+            proofNonce = jose.decodeJwt(proof).nonce;
+          } catch {
+            proofNonce = undefined;
+          }
+          if (proofNonce !== AS_DPOP_NONCE) {
+            if (grantType === 'authorization_code' && dpopTokenRequestObs)
+              dpopTokenRequestObs.asNonceChallengeIssued = true;
+            res.status(400).set('DPoP-Nonce', AS_DPOP_NONCE).json({
+              error: 'use_dpop_nonce',
+              error_description: 'Authorization server requires a DPoP nonce'
+            });
+            return;
+          }
+          if (grantType === 'authorization_code' && dpopTokenRequestObs)
+            dpopTokenRequestObs.asNonceHonored = true;
+        }
+
+        if (dpopMisbehavior === 'unbound-token') {
+          // Misbehaviour: ignore the binding and issue a plain Bearer token.
+          const bearer = `test-token-${Date.now()}`;
+          if (tokenVerifier) tokenVerifier.registerToken(bearer, grantedScopes);
+          res.json({
+            access_token: bearer,
+            token_type: 'Bearer',
+            expires_in: 3600
+          });
+          return;
+        }
+
+        if (!dpopIssuerKey) {
+          dpopIssuerKey = await generateIssuerKey();
+        }
+        const boundToken = await mintDpopBoundToken({
+          issuerKey: dpopIssuerKey,
+          issuer: resolveIssuer(),
+          audience:
+            (req.body.resource as string) || 'urn:conformance-test-resource',
+          jkt: result.jkt,
+          ...(requestedScope && { scope: requestedScope })
+        });
+        res.json({
+          access_token: boundToken,
+          token_type: 'DPoP',
+          expires_in: 3600,
+          ...(requestedScope && { scope: requestedScope })
+        });
+        return;
+      }
+      // dpopEnabled but the token request carried no DPoP proof.
+      recordTokenRequestProof(
+        grantType,
+        false,
+        'no DPoP proof in the token request'
+      );
     }
 
     let token = `test-token-${Date.now()}`;
