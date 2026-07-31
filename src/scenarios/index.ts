@@ -7,7 +7,9 @@ import {
   DatedSpecVersion,
   ScenarioSpecTag,
   DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  EXTENSION_IDS,
+  ExtensionId
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
@@ -478,13 +480,95 @@ export function listClientScenariosForAuthorizationServerForSpec(
     .map((s) => s.name);
 }
 
+/**
+ * Resolve a comma-separated list of extension IDs from the CLI. IDs may be
+ * given in full (`io.modelcontextprotocol/tasks`) or without the
+ * `io.modelcontextprotocol/` prefix (`tasks`, `auth/dpop`). The sentinel
+ * `none` (the whole value) resolves to the empty list.
+ */
+export function resolveExtensionIds(input: string): ExtensionId[] {
+  if (input.trim().toLowerCase() === 'none') return [];
+  const parts = input
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) {
+    // An empty value (e.g. an unset CI variable) must not silently change
+    // which scenarios run; "none" is the explicit spelling for that.
+    console.error('Empty extension list; use "none" to select no extensions');
+    console.error(`Known extensions: ${EXTENSION_IDS.join(', ')}`);
+    process.exit(1);
+  }
+  return parts.map((raw) => {
+    const full = EXTENSION_IDS.find(
+      (id) => id === raw || id === `io.modelcontextprotocol/${raw}`
+    );
+    if (!full) {
+      console.error(`Unknown extension: ${raw}`);
+      console.error(`Known extensions: ${EXTENSION_IDS.join(', ')}`);
+      process.exit(1);
+    }
+    return full;
+  });
+}
+
+/** Look a scenario up by name across all three scenario registries. */
+function findScenarioByName(
+  name: string
+):
+  | Scenario
+  | ClientScenario
+  | ClientScenarioForAuthorizationServer
+  | undefined {
+  return (
+    scenarios.get(name) ??
+    clientScenarios.get(name) ??
+    clientScenariosForAuthorizationServer.get(name)
+  );
+}
+
+/** The extension a scenario belongs to, or undefined for spec-timeline scenarios. */
+export function getScenarioExtensionId(name: string): ExtensionId | undefined {
+  const s = findScenarioByName(name);
+  if (!s || !('extensionId' in s.source)) return undefined;
+  return s.source.extensionId;
+}
+
+/**
+ * The `--extensions` / `--exclude-extensions` selection: `include` keeps
+ * only the listed extensions' scenarios, `exclude` drops the listed
+ * extensions' scenarios and keeps the rest.
+ */
+export interface ExtensionSelection {
+  mode: 'include' | 'exclude';
+  ids: ExtensionId[];
+}
+
+/**
+ * Apply an extension selection to a suite's scenario list. Spec-timeline
+ * scenarios always pass through.
+ */
+export function filterScenariosByExtensions(
+  names: string[],
+  selection: ExtensionSelection
+): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (const name of names) {
+    const extension = getScenarioExtensionId(name);
+    const listed = extension !== undefined && selection.ids.includes(extension);
+    const keep =
+      extension === undefined ||
+      (selection.mode === 'include' ? listed : !listed);
+    (keep ? kept : dropped).push(name);
+  }
+  return { kept, dropped };
+}
+
 export function getScenarioSpecVersions(
   name: string
 ): ScenarioSpecTag[] | undefined {
-  const s =
-    scenarios.get(name) ??
-    clientScenarios.get(name) ??
-    clientScenariosForAuthorizationServer.get(name);
+  const s = findScenarioByName(name);
   if (!s) return undefined;
   if ('extensionId' in s.source) return ['extension'];
   const result: ScenarioSpecTag[] = [];

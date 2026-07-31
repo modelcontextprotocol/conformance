@@ -121,6 +121,8 @@ function passThrough(options: {
   verbose?: boolean;
   output?: string;
   specVersion?: string;
+  extensions?: string;
+  excludeExtensions?: string;
 }): string[] {
   const args: string[] = [];
   if (options.scenario) args.push('--scenario', options.scenario);
@@ -129,6 +131,12 @@ function passThrough(options: {
   if (options.verbose) args.push('--verbose');
   if (options.output) args.push('-o', options.output);
   if (options.specVersion) args.push('--spec-version', options.specVersion);
+  // Forward even empty values: the child's fail-loud empty-list guard must
+  // see them (an unset CI variable must not silently widen the run).
+  if (options.extensions !== undefined)
+    args.push('--extensions', options.extensions);
+  if (options.excludeExtensions !== undefined)
+    args.push('--exclude-extensions', options.excludeExtensions);
   return args;
 }
 
@@ -158,6 +166,16 @@ export function createSdkCommand(): Command {
     )
     .option('--scenario <name>', 'Run a single scenario (passed through)')
     .option('--suite <name>', 'Run a suite (passed through)')
+    .option(
+      '--extensions <ids>',
+      'Extension selection, passed through (see the client/server commands)'
+    )
+    .addOption(
+      new Option(
+        '--exclude-extensions <ids>',
+        'Extension deselection, passed through (see the client/server commands)'
+      ).conflicts('extensions')
+    )
     .option('--skip-build', 'Skip the SDK build step (reuse prior build)')
     .option('--build-cmd <cmd>', 'Override the build command from config')
     .option('--client-cmd <cmd>', 'Override the client command from config')

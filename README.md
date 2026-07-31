@@ -66,6 +66,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
 - `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `2026-07-28`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
 - `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
+- `--extensions <ids>` / `--exclude-extensions <ids>` - Select which protocol extensions' scenarios run within the chosen suite (mutually exclusive; spec-timeline scenarios are unaffected, and a lone `--scenario` runs unfiltered). `--extensions` keeps only the listed extensions (`none` deselects them all); `--exclude-extensions` runs everything but the listed ones (`none` deselects nothing). IDs are comma-separated and may omit the `io.modelcontextprotocol/` prefix, e.g. `--exclude-extensions auth/dpop,auth/wif` or `--extensions oauth-client-credentials`. Deselected scenarios are listed in the run output; asking to include an extension with no scenarios in the suite is an error
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
@@ -83,6 +84,7 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 - `--url` - URL of the server to test
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
 - `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
+- `--extensions <ids>` / `--exclude-extensions <ids>` - Select which protocol extensions' scenarios run within the chosen suite (mutually exclusive; spec-timeline scenarios are unaffected, and a lone `--scenario` runs unfiltered). `--extensions` keeps only the listed extensions (`none` deselects them all); `--exclude-extensions` runs everything but the listed ones (`none` deselects nothing). IDs are comma-separated and may omit the `io.modelcontextprotocol/` prefix, e.g. `--exclude-extensions tasks` or `--extensions tasks`. Deselected scenarios are listed in the run output; asking to include an extension with no scenarios in the suite is an error
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
 

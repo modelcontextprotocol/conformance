@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { ZodError } from 'zod';
 import { promises as fs } from 'fs';
 import {
@@ -33,9 +33,13 @@ import {
   getScenarioSpecVersions,
   listClientScenariosForAuthorizationServer,
   listClientScenariosForAuthorizationServerForSpec,
-  resolveSpecVersion
+  resolveSpecVersion,
+  resolveExtensionIds,
+  filterScenariosByExtensions,
+  getScenarioExtensionId
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
+import type { ExtensionSelection } from './scenarios';
 import { ConformanceCheck } from './types';
 import {
   AuthorizationServerOptionsSchema,
@@ -79,6 +83,90 @@ function filterScenariosBySpecVersion(
   return allScenarios.filter((s) => allowed.has(s));
 }
 
+const EXTENSION_SELECTION_NOTE =
+  'Note: --extensions/--exclude-extensions apply to --suite selection; a lone --scenario runs regardless.';
+
+/** Add the shared --extensions/--exclude-extensions option pair to a command. */
+function withExtensionSelectionOptions(cmd: Command): Command {
+  return cmd
+    .option(
+      '--extensions <ids>',
+      'Comma-separated extension IDs: keep only these extensions\' scenarios in the selected suite (spec-timeline scenarios are unaffected; "none" deselects all extension scenarios)'
+    )
+    .addOption(
+      new Option(
+        '--exclude-extensions <ids>',
+        'Comma-separated extension IDs whose scenarios are deselected from the selected suite ("none" deselects nothing; mutually exclusive with --extensions)'
+      ).conflicts('extensions')
+    );
+}
+
+/**
+ * Parse `--extensions` / `--exclude-extensions` (commander enforces their
+ * mutual exclusion) into an extension selection, or undefined when neither
+ * is given (all extension scenarios stay selected, the historical behavior).
+ * `none` is accepted by both: `--extensions none` deselects every extension
+ * scenario, `--exclude-extensions none` deselects nothing.
+ */
+function parseExtensionSelection(options: {
+  extensions?: string;
+  excludeExtensions?: string;
+}): ExtensionSelection | undefined {
+  if (options.extensions !== undefined) {
+    return { mode: 'include', ids: resolveExtensionIds(options.extensions) };
+  }
+  if (options.excludeExtensions !== undefined) {
+    return {
+      mode: 'exclude',
+      ids: resolveExtensionIds(options.excludeExtensions)
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Apply the extension selection to a suite's scenario list, logging what was
+ * deselected. An empty result is an error: a run whose selection removes
+ * every scenario (or whose --spec-version already removed all extension
+ * scenarios the selection asked for) should fail loudly, not exit 0 having
+ * tested nothing.
+ */
+function applyExtensionSelection(
+  scenarios: string[],
+  selection: ExtensionSelection | undefined
+): string[] {
+  if (!selection) return scenarios;
+  const { kept, dropped } = filterScenariosByExtensions(scenarios, selection);
+  if (dropped.length > 0) {
+    console.log(
+      `Deselected ${dropped.length} extension scenario(s): ${dropped.join(', ')}\n`
+    );
+  }
+  if (selection.mode === 'include') {
+    // Asking to include an extension that contributes nothing to the
+    // selected suite (wrong suite, or --spec-version already removed its
+    // scenarios) must not silently pass as if it were tested. Excluding an
+    // absent extension, by contrast, is a satisfied no-op — including when
+    // the suite was already empty before the selection.
+    const unmatched = selection.ids.filter(
+      (id) => !kept.some((name) => getScenarioExtensionId(name) === id)
+    );
+    if (unmatched.length > 0) {
+      console.error(
+        `No scenarios for extension(s) ${unmatched.join(', ')} in the selected suite; check --suite and --spec-version`
+      );
+      process.exit(1);
+    }
+  }
+  if (kept.length === 0 && dropped.length > 0) {
+    console.error(
+      'The extension selection deselected every scenario in the suite; check --suite and --extensions/--exclude-extensions'
+    );
+    process.exit(1);
+  }
+  return kept;
+}
+
 const program = new Command();
 
 program
@@ -87,28 +175,33 @@ program
   .version(packageJson.version);
 
 // Client command - tests a client implementation against scenarios
-program
-  .command('client')
-  .description(
-    'Run conformance tests against a client implementation or start interactive mode'
-  )
-  .option('--command <command>', 'Command to run the client')
-  .option('--scenario <scenario>', 'Scenario to test')
-  .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
-  .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
-  .option(
-    '--expected-failures <path>',
-    'Path to YAML file listing expected failures (baseline)'
-  )
-  .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
-  .option(
-    '--force',
-    'Run a scenario even if it is not applicable at the requested --spec-version'
-  )
+withExtensionSelectionOptions(
+  program
+    .command('client')
+    .description(
+      'Run conformance tests against a client implementation or start interactive mode'
+    )
+    .option('--command <command>', 'Command to run the client')
+    .option('--scenario <scenario>', 'Scenario to test')
+    .option(
+      '--suite <suite>',
+      'Run a suite of tests in parallel (e.g., "auth")'
+    )
+    .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
+    .option(
+      '--expected-failures <path>',
+      'Path to YAML file listing expected failures (baseline)'
+    )
+    .option('-o, --output-dir <path>', 'Save results to this directory')
+    .option(
+      '--spec-version <version>',
+      'Filter scenarios by spec version (cumulative for date versions)'
+    )
+    .option(
+      '--force',
+      'Run a scenario even if it is not applicable at the requested --spec-version'
+    )
+)
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
@@ -118,6 +211,8 @@ program
       const specVersionFilter = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      const extensionSelection = parseExtensionSelection(options);
 
       // Handle suite mode
       if (options.suite) {
@@ -153,6 +248,7 @@ program
             'client'
           );
         }
+        scenarios = applyExtensionSelection(scenarios, extensionSelection);
         console.log(
           `Running ${suiteName} suite (${scenarios.length} scenarios) in parallel...\n`
         );
@@ -275,6 +371,10 @@ program
         process.exit(1);
       }
 
+      if (extensionSelection) {
+        console.log(EXTENSION_SELECTION_NOTE);
+      }
+
       // Validate options with Zod for single scenario mode
       const validated = ClientOptionsSchema.parse(options);
 
@@ -343,32 +443,34 @@ program
   });
 
 // Server command - tests a server implementation
-program
-  .command('server')
-  .description('Run conformance tests against a server implementation')
-  .requiredOption('--url <url>', 'URL of the server to test')
-  .option(
-    '--scenario <scenario>',
-    'Scenario to test (defaults to active suite if not specified)'
-  )
-  .option(
-    '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending and draft), "all", "draft", or "pending"',
-    'active'
-  )
-  .option(
-    '--expected-failures <path>',
-    'Path to YAML file listing expected failures (baseline)'
-  )
-  .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
-  .option(
-    '--force',
-    'Run a scenario even if it is not applicable at the requested --spec-version'
-  )
+withExtensionSelectionOptions(
+  program
+    .command('server')
+    .description('Run conformance tests against a server implementation')
+    .requiredOption('--url <url>', 'URL of the server to test')
+    .option(
+      '--scenario <scenario>',
+      'Scenario to test (defaults to active suite if not specified)'
+    )
+    .option(
+      '--suite <suite>',
+      'Suite to run: "active" (default, excludes pending and draft), "all", "draft", or "pending"',
+      'active'
+    )
+    .option(
+      '--expected-failures <path>',
+      'Path to YAML file listing expected failures (baseline)'
+    )
+    .option('-o, --output-dir <path>', 'Save results to this directory')
+    .option(
+      '--spec-version <version>',
+      'Filter scenarios by spec version (cumulative for date versions)'
+    )
+    .option(
+      '--force',
+      'Run a scenario even if it is not applicable at the requested --spec-version'
+    )
+)
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -381,8 +483,14 @@ program
         ? resolveSpecVersion(options.specVersion)
         : undefined;
 
+      const extensionSelection = parseExtensionSelection(options);
+
       // If a single scenario is specified, run just that one
       if (validated.scenario) {
+        if (extensionSelection) {
+          console.log(EXTENSION_SELECTION_NOTE);
+        }
+
         const result = await runServerConformanceTest(
           validated.url,
           validated.scenario,
@@ -446,6 +554,7 @@ program
             'server'
           );
         }
+        scenarios = applyExtensionSelection(scenarios, extensionSelection);
 
         console.log(
           `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
@@ -708,10 +817,26 @@ program
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option(
+    '--extensions <ids>',
+    'Preview an extension selection: list only these extensions\' scenarios plus spec-timeline scenarios ("none" hides all extension scenarios)'
+  )
+  .addOption(
+    new Option(
+      '--exclude-extensions <ids>',
+      "Preview an extension deselection: hide these extensions' scenarios (mutually exclusive with --extensions)"
+    ).conflicts('extensions')
+  )
   .action((options) => {
     const specVersionFilter = options.specVersion
       ? resolveSpecVersion(options.specVersion)
       : undefined;
+    const extensionSelection = parseExtensionSelection(options);
+    // Listing is a preview: filter silently, no fail-loud checks.
+    const applySelection = (names: string[]): string[] =>
+      extensionSelection
+        ? filterScenariosByExtensions(names, extensionSelection).kept
+        : names;
 
     if (
       options.server ||
@@ -726,6 +851,7 @@ program
           'server'
         );
       }
+      serverScenarios = applySelection(serverScenarios);
       serverScenarios.forEach((s) => {
         const v = getScenarioSpecVersions(s);
         console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
@@ -748,6 +874,7 @@ program
           'client'
         );
       }
+      clientScenarioNames = applySelection(clientScenarioNames);
       clientScenarioNames.forEach((s) => {
         const v = getScenarioSpecVersions(s);
         console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
@@ -773,6 +900,9 @@ program
           'authorization'
         );
       }
+      authorizationServerScenarios = applySelection(
+        authorizationServerScenarios
+      );
       authorizationServerScenarios.forEach((s) => {
         const v = getScenarioSpecVersions(s);
         console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
