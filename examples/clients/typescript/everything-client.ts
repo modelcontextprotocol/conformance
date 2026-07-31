@@ -229,6 +229,69 @@ async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
 registerScenario('json-schema-ref-no-deref', runListToolsOnlyClient);
 
 // ============================================================================
+// json-schema-2020-12-preservation (SEP-1613, SEP-2106, Issue #101)
+//
+// Scenario contract:
+//   1. tools/list — observe `json_schema_2020_12_tool` and its inputSchema
+//   2. tools/call json_schema_echo with `{ schema: <observed inputSchema> }`
+// The scenario diffs the echoed schema against its fixture to detect
+// client-side keyword stripping; this handler just round-trips the schema
+// verbatim, which is the compliant behavior.
+// ============================================================================
+
+const FOCAL_TOOL_NAME = 'json_schema_2020_12_tool';
+const ECHO_TOOL_NAME = 'json_schema_echo';
+
+async function runJsonSchema2020_12PreservationClient(
+  serverUrl: string
+): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug(
+      'Stateless lifecycle: listing tools and echoing observed schema'
+    );
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    const focal = list?.tools?.find(
+      (t: { name: string }) => t.name === FOCAL_TOOL_NAME
+    );
+    if (!focal) {
+      throw new Error(`Focal tool '${FOCAL_TOOL_NAME}' not advertised`);
+    }
+    await statelessRequest(serverUrl, 'tools/call', {
+      name: ECHO_TOOL_NAME,
+      arguments: { schema: focal.inputSchema }
+    });
+    logger.debug('Successfully echoed observed inputSchema');
+    return;
+  }
+
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+  await client.connect(transport);
+  try {
+    const list = await client.listTools();
+    const focal = list.tools.find((t) => t.name === FOCAL_TOOL_NAME);
+    if (!focal) {
+      throw new Error(`Focal tool '${FOCAL_TOOL_NAME}' not advertised`);
+    }
+    await client.callTool({
+      name: ECHO_TOOL_NAME,
+      arguments: { schema: focal.inputSchema as Record<string, unknown> }
+    });
+    logger.debug('Successfully echoed observed inputSchema');
+  } finally {
+    await transport.close();
+  }
+}
+
+registerScenario(
+  'json-schema-2020-12-preservation',
+  runJsonSchema2020_12PreservationClient
+);
+
+// ============================================================================
 // request-metadata scenario (SEP-2575)
 // ============================================================================
 

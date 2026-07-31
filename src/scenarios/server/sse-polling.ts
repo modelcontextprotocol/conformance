@@ -17,6 +17,7 @@ import type { RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { terminateSessionBestEffort } from '../../connection/sdk-client';
 
 function createLoggingFetch(checks: ConformanceCheck[]) {
   return async (url: string, options: RequestInit): Promise<Response> => {
@@ -598,7 +599,11 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ]
       });
     } finally {
-      // Clean up
+      // Clean up: terminate the session before closing the client so the
+      // server is left hermetic.
+      if (transport) {
+        await terminateSessionBestEffort(transport, serverUrl);
+      }
       if (client) {
         try {
           await client.close();
