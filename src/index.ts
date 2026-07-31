@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { ZodError } from 'zod';
+import { promises as fs } from 'fs';
 import {
   runConformanceTest,
   printClientResults,
@@ -11,6 +12,7 @@ import {
   runInteractiveMode
 } from './runner';
 import {
+  printAuthorizationServerResults,
   printAuthorizationServerSummary,
   runAuthorizationServerConformanceTest
 } from './runner/authorization-server';
@@ -40,6 +42,8 @@ import {
   ClientOptionsSchema,
   ServerOptionsSchema
 } from './schemas';
+import type { AuthorizationServerOptions } from './schemas';
+import { withWireRecorder } from './validation/wire-schema';
 import {
   loadExpectedFailures,
   evaluateBaseline,
@@ -101,6 +105,10 @@ program
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option(
+    '--force',
+    'Run a scenario even if it is not applicable at the requested --spec-version'
+  )
   .option('--verbose', 'Show verbose output')
   .action(async (options) => {
     try {
@@ -152,16 +160,22 @@ program
         const results = await Promise.all(
           scenarios.map(async (scenarioName) => {
             try {
-              const result = await runConformanceTest(
-                options.command,
-                scenarioName,
-                timeout,
-                outputDir,
-                specVersionFilter
+              // Each concurrent scenario records wire violations into its own
+              // AsyncLocalStorage-scoped recorder (see withWireRecorder).
+              const result = await withWireRecorder(() =>
+                runConformanceTest(
+                  options.command,
+                  scenarioName,
+                  timeout,
+                  outputDir,
+                  specVersionFilter,
+                  options.force ?? false
+                )
               );
               return {
                 scenario: scenarioName,
                 checks: result.checks,
+                skipped: result.skipped,
                 error: null
               };
             } catch (error) {
@@ -178,6 +192,7 @@ program
                       error instanceof Error ? error.message : String(error)
                   }
                 ],
+                skipped: undefined,
                 error
               };
             }
@@ -189,8 +204,17 @@ program
         let totalPassed = 0;
         let totalFailed = 0;
         let totalWarnings = 0;
+        let totalSkipped = 0;
 
         for (const result of results) {
+          // Inapplicable scenario/spec-version combination (already logged by
+          // the runner). Not a failure: report distinctly.
+          if (result.skipped) {
+            totalSkipped++;
+            console.log(`- ${result.scenario}: skipped`);
+            continue;
+          }
+
           const passed = result.checks.filter(
             (c) => c.status === 'SUCCESS'
           ).length;
@@ -222,8 +246,9 @@ program
           }
         }
 
+        const skippedStr = totalSkipped > 0 ? `, ${totalSkipped} skipped` : '';
         console.log(
-          `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
+          `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings${skippedStr}`
         );
 
         if (options.expectedFailures) {
@@ -255,7 +280,13 @@ program
 
       // If no command provided, run in interactive mode
       if (!validated.command) {
-        await runInteractiveMode(validated.scenario, verbose, outputDir);
+        await runInteractiveMode(
+          validated.scenario,
+          verbose,
+          outputDir,
+          specVersionFilter,
+          options.force ?? false
+        );
         process.exit(0);
       }
 
@@ -265,8 +296,15 @@ program
         validated.scenario,
         timeout,
         outputDir,
-        specVersionFilter
+        specVersionFilter,
+        options.force ?? false
       );
+
+      // Inapplicable scenario/spec-version combination (already logged by
+      // the runner). Not a failure: exit 0.
+      if (result.skipped) {
+        process.exit(0);
+      }
 
       const { overallFailure } = printClientResults(
         result.checks,
@@ -327,6 +365,10 @@ program
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option(
+    '--force',
+    'Run a scenario even if it is not applicable at the requested --spec-version'
+  )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -344,8 +386,16 @@ program
         const result = await runServerConformanceTest(
           validated.url,
           validated.scenario,
-          outputDir
+          outputDir,
+          specVersionFilter,
+          options.force ?? false
         );
+
+        // Inapplicable scenario/spec-version combination (already logged by
+        // the runner). Not a failure: exit 0.
+        if (result.skipped) {
+          process.exit(0);
+        }
 
         const { failed } = printServerResults(
           result.checks,
@@ -407,10 +457,15 @@ program
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
           try {
-            const result = await runServerConformanceTest(
-              validated.url,
-              scenarioName,
-              outputDir
+            // Sequential, but a failed scenario can leak a connection that
+            // emits late traffic; scoping keeps it out of the next scenario.
+            const result = await withWireRecorder(() =>
+              runServerConformanceTest(
+                validated.url,
+                scenarioName,
+                outputDir,
+                specVersionFilter
+              )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
           } catch (error) {
@@ -470,20 +525,96 @@ program
   .description(
     'Run conformance tests against an authorization server implementation'
   )
-  .requiredOption('--url <url>', 'URL of the authorization server issuer')
+  .option(
+    '--file <filename>',
+    'Path to JSON settings file (see examples/authorization-server-settings.example.json)'
+  )
+  .option('--url <url>', 'URL of the authorization server issuer')
+  .option('--scenario <scenario>', 'Test scenario to run')
+  .option(
+    '--client-id <id>',
+    'OAuth client ID registered with the authorization server'
+  )
+  .option(
+    '--client-secret <secret>',
+    'OAuth client secret (omit for public/PKCE-only clients)'
+  )
+  .option(
+    '-p, --port <port>',
+    'Port for the local OAuth callback server; register http://127.0.0.1:<port>/callback as a redirect URI',
+    (value) => Number(value),
+    3000
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
-      // Validate options with Zod
-      const validated = AuthorizationServerOptionsSchema.parse(options);
+      let fileOptions: AuthorizationServerOptions | undefined;
+      if (options.file) {
+        try {
+          const raw = JSON.parse(await fs.readFile(options.file, 'utf-8'));
+          // The file must be a complete, valid config on its own; CLI flags
+          // are optional overrides. .strict() rejects unknown keys so typos
+          // surface instead of being silently ignored.
+          fileOptions = AuthorizationServerOptionsSchema.strict().parse(raw);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            const details = error.issues
+              .map((e) => `  ${e.path.join('.') || '(root)'}: ${e.message}`)
+              .join('\n');
+            console.error(
+              `Invalid settings file '${options.file}':\n${details}`
+            );
+          } else {
+            console.error(
+              `Failed to read settings file '${options.file}': ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+          }
+          process.exit(1);
+        }
+      }
+      if (!fileOptions && !options.url) {
+        console.error('error: must provide --url or --file');
+        process.exit(1);
+      }
+      // CLI flags override file values; undefined CLI values must not clobber file values
+      const merged = {
+        ...fileOptions,
+        ...Object.fromEntries(
+          Object.entries(options).filter(([, v]) => v !== undefined)
+        )
+      };
+      const validated = AuthorizationServerOptionsSchema.parse(merged);
+      const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
       const specVersionFilter = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      // If a single scenario is specified, run just that one
+      if (validated.scenario) {
+        const details: Record<string, unknown> = {};
+        const result = await runAuthorizationServerConformanceTest(
+          validated,
+          validated.scenario,
+          details,
+          outputDir,
+          specVersionFilter
+        );
+
+        const { failed } = printAuthorizationServerResults(
+          result.checks,
+          result.scenarioDescription,
+          verbose
+        );
+
+        process.exit(failed > 0 ? 1 : 0);
+      }
 
       let scenarios: string[];
       scenarios = listClientScenariosForAuthorizationServer();
@@ -499,14 +630,23 @@ program
       );
 
       const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+      const details: Record<string, unknown> = {};
       for (const scenarioName of scenarios) {
         console.log(`\n=== Running scenario: ${scenarioName} ===`);
         try {
           const result = await runAuthorizationServerConformanceTest(
-            validated.url,
+            validated,
             scenarioName,
-            outputDir
+            details,
+            outputDir,
+            specVersionFilter
           );
+          if (
+            result.checks[0].status === 'SUCCESS' &&
+            result.checks[0].details
+          ) {
+            details[scenarioName] = result.checks[0].details;
+          }
           allResults.push({ scenario: scenarioName, checks: result.checks });
         } catch (error) {
           console.error(`Failed to run scenario ${scenarioName}:`, error);

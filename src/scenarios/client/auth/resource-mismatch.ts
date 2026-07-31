@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -37,13 +38,13 @@ export class ResourceMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private authorizationRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: ['none'],
       onAuthorizationRequest: () => {
@@ -60,6 +61,7 @@ export class ResourceMismatchScenario implements Scenario {
 
     // Create server that returns a mismatched resource in PRM
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

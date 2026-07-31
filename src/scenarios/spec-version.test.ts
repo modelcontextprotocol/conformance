@@ -6,7 +6,9 @@ import {
   listDraftClientScenarios,
   listActiveClientScenarios,
   listExtensionScenarios,
+  getScenario,
   getScenarioSpecVersions,
+  matchesSpecVersion,
   resolveSpecVersion,
   ALL_SPEC_VERSIONS,
   scenarios,
@@ -57,11 +59,17 @@ describe('specVersions helpers', () => {
     expect(current.length).toBeGreaterThan(overlap.length);
   });
 
-  it('the draft spec version is a superset of the latest dated release', () => {
+  it('every scenario in latest but not in draft is explicitly removedIn: DRAFT', () => {
     const latest = new Set(listScenariosForSpec(LATEST_SPEC_VERSION));
     const draft = new Set(listScenariosForSpec(DRAFT_PROTOCOL_VERSION));
     for (const name of latest) {
-      expect(draft.has(name)).toBe(true);
+      if (!draft.has(name)) {
+        const s = getScenario(name)!;
+        expect(
+          'removedIn' in s.source && s.source.removedIn,
+          `"${name}" is in ${LATEST_SPEC_VERSION} but not in draft without removedIn`
+        ).toBe(DRAFT_PROTOCOL_VERSION);
+      }
     }
     for (const name of listDraftScenarios()) {
       expect(draft.has(name)).toBe(true);
@@ -83,6 +91,17 @@ describe('specVersions helpers', () => {
   it("resolveSpecVersion accepts 'draft' as an alias", () => {
     expect(resolveSpecVersion('draft')).toBe(DRAFT_PROTOCOL_VERSION);
     expect(resolveSpecVersion(LATEST_SPEC_VERSION)).toBe(LATEST_SPEC_VERSION);
+  });
+
+  describe('matchesSpecVersion (per-check gating)', () => {
+    const src = { introducedIn: '2025-11-25' } as const;
+    it.each(['2025-11-25', DRAFT_PROTOCOL_VERSION] as const)(
+      'includes %s',
+      (v) => expect(matchesSpecVersion(src, v)).toBe(true)
+    );
+    it.each(['2025-03-26', '2025-06-18'] as const)('excludes %s', (v) =>
+      expect(matchesSpecVersion(src, v)).toBe(false)
+    );
   });
 
   it('extension-tagged scenarios are not selected by any --spec-version', () => {

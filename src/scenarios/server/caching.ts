@@ -10,7 +10,12 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { sendStatelessRequest } from './stateless-client';
+import {
+  JsonRpcError,
+  type Connection,
+  type RunContext
+} from '../../connection';
+import type { CacheableResult } from '../../spec-types/draft';
 
 const SPEC_REFS = [
   {
@@ -30,12 +35,12 @@ interface CachingFields {
   hasCacheScope: boolean;
 }
 
-function extractCachingFields(result: Record<string, unknown>): CachingFields {
+function extractCachingFields(result: Partial<CacheableResult>): CachingFields {
   const hasTtlMs = 'ttlMs' in result;
   const hasCacheScope = 'cacheScope' in result;
   return {
-    ttlMs: hasTtlMs ? result.ttlMs : undefined,
-    cacheScope: hasCacheScope ? result.cacheScope : undefined,
+    ttlMs: result.ttlMs,
+    cacheScope: result.cacheScope,
     hasTtlMs,
     hasCacheScope
   };
@@ -87,56 +92,61 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
 - \`resources/templates/list\`
 - \`resources/read\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 
     // SEP-2549 only exists in the draft spec, so each cacheable endpoint is
-    // queried over the stateless path (SEP-2575): protocolVersion DRAFT-2026-v1
-    // plus the cross-cutting _meta and standard headers (issue #315).
+    // queried over the version-appropriate connection. Under --spec-version
+    // draft that resolves to the stateless impl (SEP-2575): protocolVersion
+    // 2026-07-28 plus the cross-cutting _meta and standard headers
+    // (issue #315).
+    let conn: Connection;
+    try {
+      conn = await ctx.connect();
+    } catch (error) {
+      checks.push({
+        id: 'sep-2549-caching-connection',
+        name: 'CachingConnection',
+        description: 'Caching hints scenario failed to connect',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
+        specReferences: SPEC_REFS
+      });
+      return checks;
+    }
+
     const queryEndpoint = async (
       checkId: string,
       checkName: string,
       endpoint: string,
       params?: Record<string, unknown>
-    ): Promise<Record<string, unknown> | undefined> => {
+    ): Promise<(CacheableResult & Record<string, unknown>) | undefined> => {
       const description = `${endpoint} response includes ttlMs and cacheScope caching hints`;
       try {
-        const response = await sendStatelessRequest(
-          serverUrl,
-          endpoint,
-          params
-        );
-        const result = response.body?.result;
-        if (!result) {
-          const error = response.body?.error;
-          checks.push({
-            id: checkId,
-            name: checkName,
-            description,
-            status: 'FAILURE',
-            timestamp: new Date().toISOString(),
-            errorMessage: error
-              ? `${endpoint} returned JSON-RPC error ${error.code}: ${error.message}`
-              : `${endpoint} returned HTTP ${response.status} with no result`,
-            specReferences: SPEC_REFS,
-            details: { httpStatus: response.status, error }
-          });
-          return undefined;
-        }
+        const result = await conn.request<
+          CacheableResult & Record<string, unknown>
+        >(endpoint, params);
         const fields = extractCachingFields(result);
         allFields.push({ endpoint, fields });
         checks.push(buildPresenceCheck(checkId, checkName, endpoint, fields));
         return result;
       } catch (error) {
+        const rpcError = error instanceof JsonRpcError ? error : undefined;
         checks.push({
           id: checkId,
           name: checkName,
           description,
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          errorMessage: `${endpoint} request failed: ${error instanceof Error ? error.message : String(error)}`,
-          specReferences: SPEC_REFS
+          errorMessage: rpcError
+            ? `${endpoint} returned JSON-RPC error ${rpcError.code}: ${rpcError.message}`
+            : `${endpoint} request failed: ${error instanceof Error ? error.message : String(error)}`,
+          specReferences: SPEC_REFS,
+          details: rpcError
+            ? { error: { code: rpcError.code, message: rpcError.message } }
+            : undefined
         });
         return undefined;
       }
@@ -197,6 +207,8 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
         specReferences: SPEC_REFS
       });
     }
+
+    await conn.close();
 
     // 6. Aggregate: ttlMs must be a non-negative integer
     const ttlErrors: string[] = [];

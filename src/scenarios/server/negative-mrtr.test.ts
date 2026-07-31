@@ -1,7 +1,8 @@
+import { testContext } from '../../connection/testing';
 /**
  * SEP-2322 MRTR negative tests.
  *
- * Positive tests run via all-scenarios.test.ts against the everything-server
+ * Positive tests run via the CLI runner against the everything-server
  * (which implements MRTR in its stateless path). These negative tests run
  * against a deliberately broken server to verify checks emit FAILURE.
  */
@@ -14,6 +15,25 @@ import {
   InputRequiredResultUnsupportedMethodsScenario,
   InputRequiredResultTamperedStateScenario
 } from './input-required-result';
+import {
+  formatWireViolation,
+  takeWireViolations
+} from '../../validation/wire-schema';
+
+// The broken fixture violates the draft schema by design; drain the wire-schema recorder
+// so the suite-wide guard doesn't re-flag it. Only the *implementation* may be invalid —
+// a harness-origin violation is a real harness bug and must still fail.
+afterEach(() => {
+  const { violations } = takeWireViolations();
+  const harnessViolations = violations.filter((v) => v.origin === 'harness');
+  if (harnessViolations.length > 0) {
+    throw new Error(
+      'Harness-origin wire-schema violations in an MRTR negative test ' +
+        '(only the broken fixture may be invalid here):\n  ' +
+        harnessViolations.map(formatWireViolation).join('\n  ')
+    );
+  }
+});
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -92,7 +112,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-result-type-included against server that omits resultType', async () => {
     const scenario = new InputRequiredResultResultTypeScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const resultTypeCheck = checks.find(
       (c) => c.id === 'sep-2322-result-type-included'
@@ -103,7 +123,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-not-on-unsupported-requests against server returning InputRequiredResult on tools/list', async () => {
     const scenario = new InputRequiredResultUnsupportedMethodsScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const unsupportedCheck = checks.find(
       (c) => c.id === 'sep-2322-not-on-unsupported-requests'
@@ -114,7 +134,7 @@ describe('SEP-2322 MRTR negative tests', () => {
 
   it('emits FAILURE for sep-2322-reject-tampered-state against server that accepts tampered state', async () => {
     const scenario = new InputRequiredResultTamperedStateScenario();
-    const checks = await scenario.run(SERVER_URL);
+    const checks = await scenario.run(testContext(SERVER_URL));
 
     const tamperedCheck = checks.find(
       (c) => c.id === 'sep-2322-reject-tampered-state'

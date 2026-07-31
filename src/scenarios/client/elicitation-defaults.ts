@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../mock-server';
 /**
  * SEP-1034: Elicitation defaults test
  * Validates that clients properly apply default values for omitted fields
@@ -13,7 +14,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls } from '../../types';
+import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
 import { createRequestLogger } from '../request-logger';
 import { randomUUID } from 'crypto';
 
@@ -474,7 +475,10 @@ function createServer(checks: ConformanceCheck[]): {
 
 export class ElicitationClientDefaultsScenario implements Scenario {
   name = 'elicitation-sep1034-client-defaults';
-  readonly source = { introducedIn: '2025-11-25' } as const;
+  readonly source = {
+    introducedIn: '2025-11-25',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description =
     'Tests client applies default values for omitted elicitation fields (SEP-1034)';
   private app: express.Application | null = null;
@@ -482,7 +486,7 @@ export class ElicitationClientDefaultsScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private cleanup: (() => void) | null = null;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     const { app, cleanup } = createServer(this.checks);
     this.app = app;

@@ -5,7 +5,12 @@
  * to prevent DNS rebinding attacks. See GHSA-w48q-cv73-mx4w for details.
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types';
+import { buildStandardHeaders, type RunContext } from '../../connection';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -42,32 +47,71 @@ function getHostFromUrl(serverUrl: string): string {
 }
 
 /**
- * Send an MCP initialize request with custom Host and Origin headers.
+ * Build a request body that any server for the given spec version should
+ * accept without prior setup (initialize for the stateful lifecycle,
+ * server/discover with _meta for the stateless lifecycle).
+ */
+function probeBody(specVersion: string): {
+  jsonrpc: '2.0';
+  id: number;
+  method: string;
+  params: Record<string, unknown>;
+} {
+  const clientInfo = {
+    name: 'conformance-dns-rebinding-test',
+    version: '1.0.0'
+  };
+  if (specVersion === DRAFT_PROTOCOL_VERSION) {
+    return {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'server/discover',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': specVersion,
+          'io.modelcontextprotocol/clientInfo': clientInfo,
+          'io.modelcontextprotocol/clientCapabilities': {}
+        }
+      }
+    };
+  }
+  return {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: specVersion,
+      capabilities: {},
+      clientInfo
+    }
+  };
+}
+
+/**
+ * Send an MCP request with custom Host and Origin headers.
  * Both headers are set to the same value so that servers checking either
  * Host or Origin will properly detect the rebinding attempt.
  */
 async function sendRequestWithHostAndOrigin(
   serverUrl: string,
-  hostOrOrigin: string
+  hostOrOrigin: string,
+  specVersion: string
 ): Promise<{ statusCode: number; body: unknown }> {
+  // Build the SEP-2243 standard headers (Mcp-Method, Accept, ...) for the
+  // probe's JSON-RPC method so a strictly-conformant server only rejects the
+  // request for the Host/Origin values under test, then layer the
+  // scenario-specific headers on top.
+  const probe = probeBody(specVersion);
   const response = await request(serverUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Host: hostOrOrigin,
-      Origin: `http://${hostOrOrigin}`,
-      Accept: 'application/json, text/event-stream'
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2025-11-25',
-        capabilities: {},
-        clientInfo: { name: 'conformance-dns-rebinding-test', version: '1.0.0' }
+    headers: buildStandardHeaders(probe.method, probe.params, {
+      headers: {
+        Host: hostOrOrigin,
+        Origin: `http://${hostOrOrigin}`,
+        'MCP-Protocol-Version': specVersion
       }
-    })
+    }),
+    body: JSON.stringify(probe)
   });
 
   let body: unknown;
@@ -109,7 +153,8 @@ website tricks a user's browser into making requests to the local server.
 
 See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
@@ -160,7 +205,8 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
     try {
       const response = await sendRequestWithHostAndOrigin(
         serverUrl,
-        attackerHost
+        attackerHost,
+        specVersion
       );
       const isRejected =
         response.statusCode >= 400 && response.statusCode < 500;
@@ -200,7 +246,11 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
 
     // Check 2: Valid localhost Host/Origin headers should be accepted (2xx response)
     try {
-      const response = await sendRequestWithHostAndOrigin(serverUrl, validHost);
+      const response = await sendRequestWithHostAndOrigin(
+        serverUrl,
+        validHost,
+        specVersion
+      );
       const isAccepted =
         response.statusCode >= 200 && response.statusCode < 300;
 

@@ -1,9 +1,10 @@
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { Command, Option } from 'commander';
-import { SdkConfig } from './config';
+import { SdkConfig, resolveConfigForSpec } from './config';
 import { parseSdkSpec, ensureCheckout } from './checkout';
 import { lookupBuiltinConfig, knownSdkNames } from './known-sdks';
+import { resolveSpecVersion } from '../scenarios';
 
 type Mode = 'client' | 'server';
 
@@ -119,6 +120,7 @@ function passThrough(options: {
   timeout?: string;
   verbose?: boolean;
   output?: string;
+  specVersion?: string;
 }): string[] {
   const args: string[] = [];
   if (options.scenario) args.push('--scenario', options.scenario);
@@ -126,6 +128,7 @@ function passThrough(options: {
   if (options.timeout) args.push('--timeout', options.timeout);
   if (options.verbose) args.push('--verbose');
   if (options.output) args.push('-o', options.output);
+  if (options.specVersion) args.push('--spec-version', options.specVersion);
   return args;
 }
 
@@ -166,6 +169,10 @@ export function createSdkCommand(): Command {
     )
     .option('--timeout <ms>', 'Per-scenario client timeout (passed through)')
     .option('-o, --output <dir>', 'Output directory (passed through)')
+    .option(
+      '--spec-version <version>',
+      'Spec version to target (passed through; defaults to the SDK config)'
+    )
     .option('--verbose', 'Verbose output (passed through)')
     .action(async (sdkArg: string | undefined, options) => {
       try {
@@ -184,7 +191,17 @@ export function createSdkCommand(): Command {
           spec?.name ?? path.basename(path.resolve(options.path!));
 
         // Resolution: CLI flag > built-in entry (KNOWN_SDKS).
-        const builtinConfig: SdkConfig = lookupBuiltinConfig(sdkName) ?? {};
+        const baseConfig: SdkConfig = lookupBuiltinConfig(sdkName) ?? {};
+
+        // The targeted spec version (explicit flag wins over the per-SDK
+        // default) selects that version's specOverrides entry, so version-
+        // specific invocations live in config instead of copy-paste flags.
+        // 'draft' resolves to its dated alias so overlay keys stay canonical.
+        const requestedSpec = options.specVersion ?? baseConfig.specVersion;
+        const specVersion: string | undefined = requestedSpec
+          ? resolveSpecVersion(requestedSpec)
+          : undefined;
+        const builtinConfig = resolveConfigForSpec(baseConfig, specVersion);
 
         // The built-in entry may be an alias (e.g. typescript-sdk-v1): honor its
         // `repo` (real clone target) and `defaultRef` (branch when no @ref given).
@@ -217,7 +234,6 @@ export function createSdkCommand(): Command {
         const output = options.output
           ? path.resolve(options.output)
           : undefined;
-
         if (buildCmd && !options.skipBuild) {
           console.error(`[sdk] Building: ${buildCmd}`);
           await execShell(buildCmd, dir);
@@ -244,7 +260,8 @@ export function createSdkCommand(): Command {
               suite: options.suite ?? 'all',
               timeout: options.timeout,
               verbose: options.verbose,
-              output
+              output,
+              specVersion
             })
           ];
           if (expectedFailures)
@@ -263,9 +280,13 @@ export function createSdkCommand(): Command {
             serverUrl,
             ...passThrough({
               scenario: options.scenario,
-              suite: options.suite,
+              // Default to the `active` suite (excludes pending/draft) — the same
+              // suite tiering runs, and the most reasonable default to avoid
+              // surfacing intentionally-deferred `pending` scenarios.
+              suite: options.suite ?? 'active',
               verbose: options.verbose,
-              output
+              output,
+              specVersion
             })
           ];
           if (expectedFailures)

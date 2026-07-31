@@ -8,10 +8,12 @@ import {
   buildStandardHeaders,
   withRequestMeta,
   sendStatelessRequest,
+  connectStateless,
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES
-} from './stateless-client';
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
+} from './stateless';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { takeWireViolations } from '../validation/wire-schema';
 
 describe('buildStandardHeaders', () => {
   test('sets the standard headers pinned to the draft protocol version', () => {
@@ -86,7 +88,12 @@ describe('sendStatelessRequest', () => {
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
-            result: { tools: [] }
+            result: {
+              tools: [],
+              resultType: 'complete',
+              ttlMs: 0,
+              cacheScope: 'private'
+            }
           })
         );
       });
@@ -99,7 +106,64 @@ describe('sendStatelessRequest', () => {
         'tools/list'
       );
       expect(response.status).toBe(200);
-      expect(response.body?.result).toEqual({ tools: [] });
+      expect(response.body?.result).toEqual({
+        tools: [],
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private'
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('spec version plumbing', () => {
+  test('buildStandardHeaders sends the requested spec version', () => {
+    const headers = buildStandardHeaders('tools/list', undefined, {
+      specVersion: '2025-11-25'
+    });
+    expect(headers['MCP-Protocol-Version']).toBe('2025-11-25');
+  });
+
+  test('buildStandardHeaders defaults to the draft version', () => {
+    const headers = buildStandardHeaders('tools/list');
+    expect(headers['MCP-Protocol-Version']).toBe(DRAFT_PROTOCOL_VERSION);
+  });
+
+  test('withRequestMeta declares the requested spec version in _meta', () => {
+    const params = withRequestMeta({}, '2025-11-25');
+    const meta = params._meta as Record<string, unknown>;
+    expect(meta['io.modelcontextprotocol/protocolVersion']).toBe('2025-11-25');
+  });
+
+  test('withRequestMeta defaults to the draft version', () => {
+    const params = withRequestMeta({});
+    const meta = params._meta as Record<string, unknown>;
+    expect(meta['io.modelcontextprotocol/protocolVersion']).toBe(
+      DRAFT_PROTOCOL_VERSION
+    );
+  });
+});
+
+describe('connectStateless', () => {
+  test('surfaces HTTP status and body when the error field is not JSON-RPC shaped', async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'upstream timeout' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const conn = await connectStateless(`http://localhost:${port}/`);
+      await expect(conn.request('tools/list')).rejects.toThrow(
+        /HTTP 502.*upstream timeout/
+      );
+      // The proxy body is deliberately not a JSON-RPC message.
+      expect(takeWireViolations().violations).toHaveLength(1);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

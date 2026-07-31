@@ -1,23 +1,28 @@
+import type { ScenarioContext } from '../../mock-server';
 import http from 'http';
 import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
   LATEST_SPEC_VERSION,
-  NEGOTIABLE_PROTOCOL_VERSIONS
+  NEGOTIABLE_PROTOCOL_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { clientChecks } from '../../checks/index';
 
 export class InitializeScenario implements Scenario {
   name = 'initialize';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = 'Tests MCP client initialization handshake';
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
   private port: number = 0;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);

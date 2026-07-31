@@ -17,7 +17,8 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
-import { connectToServer } from './client-helper.js';
+import type { RunContext } from '../../connection';
+import type { ListToolsResult } from '../../spec-types/2025-11-25';
 
 const EXPECTED_TOOL_NAME = 'json_schema_2020_12_tool';
 const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
@@ -27,19 +28,19 @@ const EXPECTED_SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
  *
  * Preserving the broader JSON Schema 2020-12 vocabulary is good behavior at
  * any protocol version, so a server that preserves the keywords gets SUCCESS
- * regardless of what it negotiated. Stripping them is only a conformance
- * FAILURE once the server claims a protocol version that includes SEP-2106
- * (the draft); a server that only negotiated an earlier dated version is not
- * yet subject to the requirement, so the check is SKIPPED rather than failed.
+ * regardless. Stripping them is only a conformance FAILURE when the run
+ * targets a protocol version that includes SEP-2106 (the draft); when
+ * targeting an earlier dated version the requirement does not apply, so the
+ * check is SKIPPED rather than failed.
  */
 export function sep2106KeywordCheckStatus(
   preserved: boolean,
-  negotiatedProtocolVersion: string | undefined
+  targetProtocolVersion: string
 ): CheckStatus {
   if (preserved) {
     return 'SUCCESS';
   }
-  return negotiatedProtocolVersion === DRAFT_PROTOCOL_VERSION
+  return targetProtocolVersion === DRAFT_PROTOCOL_VERSION
     ? 'FAILURE'
     : 'SKIPPED';
 }
@@ -93,7 +94,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
 
 **Verification**: The test verifies that \`$schema\`, \`$defs\`, and \`additionalProperties\` are preserved (SEP-1613), and that the composition (\`allOf\`/\`anyOf\`), conditional (\`if\`/\`then\`/\`else\`), and \`$anchor\` keywords are preserved (SEP-2106), in the tool listing response.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const specReferences = [
       {
@@ -109,13 +110,11 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
     ];
 
     try {
-      const connection = await connectToServer(serverUrl);
-      // Negotiated wire protocolVersion from the initialize handshake; used to
-      // soft-gate the SEP-2106 checks below.
-      const negotiatedVersion = (
-        connection.client.transport as { protocolVersion?: string } | undefined
-      )?.protocolVersion;
-      const result = await connection.client.listTools();
+      const conn = await ctx.connect();
+      // Spec version this run is targeting; used to soft-gate the SEP-2106
+      // checks below.
+      const targetVersion = ctx.specVersion;
+      const result = await conn.request<ListToolsResult>('tools/list');
 
       // Find the test tool
       const tool = result.tools?.find((t) => t.name === EXPECTED_TOOL_NAME);
@@ -138,7 +137,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       });
 
       if (!tool) {
-        await connection.close();
+        await conn.close();
         return checks;
       }
 
@@ -222,11 +221,11 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
 
       // SEP-2106: the full JSON Schema 2020-12 vocabulary is permitted in
       // inputSchema and must survive tools/list rather than being stripped to
-      // properties/required. These checks are soft-gated on the negotiated
-      // protocol version (see sep2106KeywordCheckStatus): stripping the
-      // keywords is only a FAILURE for servers that negotiated the draft
-      // protocol version, and SKIPPED otherwise.
-      const skippedSuffix = ` (server negotiated protocol version ${negotiatedVersion ?? 'unknown'}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
+      // properties/required. These checks are soft-gated on the protocol
+      // version this run targets (see sep2106KeywordCheckStatus): stripping
+      // the keywords is only a FAILURE when targeting the draft version, and
+      // SKIPPED otherwise.
+      const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
 
       // Check 5: composition keywords (allOf / anyOf) preserved
       const allOf = inputSchema['allOf'];
@@ -242,7 +241,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       const compositionPreserved = hasAllOf && hasNestedAnyOf;
       const compositionStatus = sep2106KeywordCheckStatus(
         compositionPreserved,
-        negotiatedVersion
+        targetVersion
       );
 
       checks.push({
@@ -262,7 +261,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         details: {
           hasAllOf,
           hasNestedAnyOf,
-          negotiatedProtocolVersion: negotiatedVersion
+          targetProtocolVersion: targetVersion
         }
       });
 
@@ -273,7 +272,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
       const conditionalPreserved = hasIf && hasThen && hasElse;
       const conditionalStatus = sep2106KeywordCheckStatus(
         conditionalPreserved,
-        negotiatedVersion
+        targetVersion
       );
 
       checks.push({
@@ -292,7 +291,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
           hasIf,
           hasThen,
           hasElse,
-          negotiatedProtocolVersion: negotiatedVersion
+          targetProtocolVersion: targetVersion
         }
       });
 
@@ -301,10 +300,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         | Record<string, unknown>
         | undefined;
       const hasAnchor = !!addressDef && '$anchor' in addressDef;
-      const anchorStatus = sep2106KeywordCheckStatus(
-        hasAnchor,
-        negotiatedVersion
-      );
+      const anchorStatus = sep2106KeywordCheckStatus(hasAnchor, targetVersion);
 
       checks.push({
         id: 'sep-2106-anchor-keyword-preserved',
@@ -324,7 +320,7 @@ Implement tool \`${EXPECTED_TOOL_NAME}\` with inputSchema containing JSON Schema
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'json-schema-2020-12-error',

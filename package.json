@@ -1,6 +1,6 @@
 {
   "name": "@modelcontextprotocol/conformance",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0-alpha.10",
   "type": "module",
   "license": "MIT",
   "author": "Anthropic, PBC (https://anthropic.com)",
@@ -20,6 +20,7 @@
     "lint:fix_check": "npm run lint:fix && git diff --exit-code --quiet",
     "tier-check": "node dist/index.js tier-check",
     "traceability": "tsx src/index.ts traceability",
+    "sync-schema": "tsx scripts/sync-schema.ts",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
     "prepack": "npm run build",
@@ -50,6 +51,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@octokit/rest": "^22.0.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "commander": "^14.0.2",
     "eventsource-parser": "^3.0.8",
     "express": "^5.1.0",

@@ -7,11 +7,11 @@
 
 // ─── JSON-RPC Types ──────────────────────────────────────────────────────────
 
-export type { JsonRpcResponse } from './stateless-client';
+export type { JsonRpcResponse } from '../../connection';
 
 // ─── Stateless RPC Helper ────────────────────────────────────────────────────
 
-import { sendStatelessRequest, JsonRpcResponse } from './stateless-client';
+import { sendStatelessRequest, JsonRpcResponse } from '../../connection';
 
 /**
  * Send a stateless JSON-RPC request (SEP-2575 pattern).
@@ -22,9 +22,12 @@ import { sendStatelessRequest, JsonRpcResponse } from './stateless-client';
 export async function sendRpc(
   serverUrl: string,
   method: string,
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  options?: { skipValidation?: boolean }
 ): Promise<JsonRpcResponse> {
-  const response = await sendStatelessRequest(serverUrl, method, params);
+  const response = await sendStatelessRequest(serverUrl, method, params, {
+    skipValidation: options?.skipValidation
+  });
   if (!response.body) {
     throw new Error(
       `Expected a JSON-RPC response for ${method}, got HTTP ${response.status} (${response.contentType ?? 'no content-type'})`

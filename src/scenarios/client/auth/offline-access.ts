@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -33,14 +34,14 @@ export class OfflineAccessScopeScenario implements Scenario {
   private grantTypesChecked = false;
   private capturedCimdUrl: string | undefined;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.grantTypesChecked = false;
     this.capturedCimdUrl = undefined;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'offline_access'],
       clientIdMetadataDocumentSupported: true,
@@ -101,6 +102,7 @@ export class OfflineAccessScopeScenario implements Scenario {
     // PRM does NOT include offline_access (per SEP-2207 server guidance:
     // servers SHOULD NOT include offline_access in PRM scopes_supported)
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -235,7 +237,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, [
@@ -243,7 +245,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
       'mcp:read'
     ]);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'mcp:read'],
       onAuthorizationRequest: (data) => {
@@ -268,6 +270,7 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

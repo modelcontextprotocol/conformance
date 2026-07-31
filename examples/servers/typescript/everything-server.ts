@@ -21,6 +21,9 @@ import {
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
   ElicitResultSchema,
+  ResultSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
   ListToolsRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
@@ -30,6 +33,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
 import { randomUUID, createHmac } from 'crypto';
 
@@ -71,6 +76,49 @@ function getMrtInputText(inputResponse: unknown, field: string): string {
 // Session management
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 const servers: { [sessionId: string]: McpServer } = {};
+
+// In-memory client connected to a fully-registered McpServer. Used by the
+// stateless POST handler to serve carry-forward methods (tools/call,
+// resources/*, prompts/get, completion/complete) without duplicating the
+// registrations. The SDK doesn't yet support a stateless server natively,
+// so this bridges via the in-memory transport after a one-time initialize.
+//
+// A fresh server+client pair is built per request so concurrent requests
+// can't observe each other's notifications.
+type DispatchClient = {
+  client: Client;
+  drainNotifications: () => unknown[];
+  close: () => Promise<void>;
+};
+async function getStatelessDispatchClient(): Promise<DispatchClient> {
+  const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+  const server = createMcpServer();
+  await server.connect(serverT);
+  const client = new Client(
+    { name: 'stateless-dispatch', version: '1.0.0' },
+    { capabilities: { sampling: {}, elicitation: {} } }
+  );
+  await client.connect(clientT);
+
+  // Buffer notifications so the stateless handler can flush them to the SSE
+  // response after the request completes. The SDK pre-registers a handler for
+  // notifications/progress so a fallback alone would miss it.
+  const buffer: unknown[] = [];
+  const collect = async (n: unknown) =>
+    void buffer.push({ jsonrpc: '2.0', ...(n as object) });
+  client.setNotificationHandler(ProgressNotificationSchema, collect);
+  client.setNotificationHandler(LoggingMessageNotificationSchema, collect);
+  client.fallbackNotificationHandler = collect;
+
+  return {
+    client,
+    drainNotifications: () => buffer.splice(0, buffer.length),
+    close: async () => {
+      await client.close();
+      await server.close();
+    }
+  };
+}
 
 // In-memory event store for SEP-1699 resumability
 const eventStoreData = new Map<
@@ -491,10 +539,10 @@ function createMcpServer() {
         prompt: z.string().describe('The prompt to send to the LLM')
       }
     },
-    async (args: { prompt: string }) => {
+    async (args: { prompt: string }, { sendRequest }) => {
       try {
-        // Request sampling from client
-        const result = await mcpServer.server.request(
+        // Request sampling from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'sampling/createMessage',
             params: {
@@ -551,10 +599,10 @@ function createMcpServer() {
         message: z.string().describe('The message to show the user')
       }
     },
-    async (args: { message: string }) => {
+    async (args: { message: string }, { sendRequest }) => {
       try {
-        // Request user input from client
-        const result = await mcpServer.server.request(
+        // Request user input from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -603,10 +651,10 @@ function createMcpServer() {
       description: 'Tests elicitation with default values per SEP-1034',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with default values for all primitive types
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -678,10 +726,10 @@ function createMcpServer() {
         'Tests elicitation with enum schema improvements per SEP-1330',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with all 5 enum schema variants
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -1177,6 +1225,46 @@ app.use(
   })
 );
 
+// Protocol revisions that use the initialize/session lifecycle. The
+// per-request `_meta` and header/body validation requirements apply to
+// 2026-07-28 and later, not to traffic from these revisions.
+const LEGACY_SESSION_PROTOCOL_VERSIONS = [
+  '2024-11-05',
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25'
+];
+
+// Stateless (draft) operations whose results MUST carry the SEP-2549 caching
+// hints (`ttlMs`, `cacheScope`).
+const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
+  'server/discover',
+  'tools/list',
+  'prompts/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read'
+]);
+
+/** Send a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
+ * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
+ * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
+function sendStatelessJson(
+  res: import('express').Response,
+  method: string,
+  payload: { result?: Record<string, unknown>; [key: string]: unknown }
+): import('express').Response {
+  const result = payload.result;
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    result.resultType ??= 'complete';
+    if (STATELESS_CACHEABLE_METHODS.has(method)) {
+      result.ttlMs ??= 0;
+      result.cacheScope ??= 'private';
+    }
+  }
+  return res.json(payload);
+}
+
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -1188,24 +1276,34 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  if (!sessionId && (reqVersion || meta)) {
+  // A request that carries no `_meta` and names a legacy session-era revision
+  // in the header is legacy traffic; it is served by the session path below
+  // instead of being rejected for missing per-request metadata.
+  const isLegacySessionEraRequest =
+    meta === undefined &&
+    reqVersion !== undefined &&
+    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
+
+  if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
     // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
-        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
+        error: { code: -32020, message: 'Missing MCP-Protocol-Version header' }
       });
     }
 
-    // Per-Request Metadata Integrity Checks (Fields verification)
+    // Per-Request Metadata Integrity Checks (Fields verification).
+    // A request missing any required `_meta` field is malformed: -32602 and,
+    // on HTTP, status 400 Bad Request. `clientInfo` is a SHOULD since spec
+    // PR #3002 and is never required.
     if (
       !meta ||
       !meta['io.modelcontextprotocol/protocolVersion'] ||
-      !meta['io.modelcontextprotocol/clientInfo'] ||
       !meta['io.modelcontextprotocol/clientCapabilities']
     ) {
-      return res.status(200).json({
+      return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -1215,27 +1313,30 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Header Mismatch Verification (-32001, HTTP 400)
+    // Header Mismatch Verification (-32020, HTTP 400)
     if (reqVersion !== metaVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32001,
+          code: -32020,
           message: 'Mismatched MCP-Protocol-Version header'
         }
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
-    if (metaVersion !== 'DRAFT-2026-v1') {
+    // Protocol Version Negotiation Matrix (-32022, HTTP 400)
+    if (metaVersion !== '2026-07-28') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'UnsupportedProtocolVersionError',
-          data: { supported: ['DRAFT-2026-v1'] }
+          data: {
+            supported: ['2026-07-28'],
+            requested: String(metaVersion)
+          }
         }
       });
     }
@@ -1289,11 +1390,11 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'server/discover') {
-      return res.json({
+      return sendStatelessJson(res, method, {
         jsonrpc: '2.0',
         id,
         result: {
-          supportedVersions: ['DRAFT-2026-v1'],
+          supportedVersions: ['2026-07-28'],
           capabilities: {
             tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
             prompts: { listChanged: true },
@@ -1301,103 +1402,143 @@ app.post('/mcp', async (req, res) => {
             // served on this path, so the capability must be declared too.
             resources: {}
           },
-          serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
+          // Spec PR #3002: server identity lives in the result `_meta`.
+          _meta: {
+            'io.modelcontextprotocol/serverInfo': {
+              name: 'everything-stateless-server',
+              version: '1.0.0'
+            }
+          }
         }
       });
     }
 
     if (method === 'tools/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          tools: [
-            {
-              name: 'test_missing_capability',
-              description: 'Test tool requiring sampling',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_elicitation',
-              description:
-                'MRTR: returns InputRequiredResult with elicitation request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_sampling',
-              description:
-                'MRTR: returns InputRequiredResult with sampling request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_list_roots',
-              description:
-                'MRTR: returns InputRequiredResult with roots/list request',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_request_state',
-              description:
-                'MRTR: returns InputRequiredResult with requestState',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multiple_inputs',
-              description:
-                'MRTR: returns InputRequiredResult with multiple input requests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_multi_round',
-              description: 'MRTR: multi-round InputRequiredResult workflow',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_tampered_state',
-              description: 'MRTR: HMAC-signed requestState integrity test',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_input_required_result_capabilities',
-              description:
-                'MRTR: respects client capabilities in inputRequests',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_streaming_elicitation',
-              description:
-                'Diagnostic tool validating response progress streams',
-              inputSchema: { type: 'object', properties: {} }
-            },
-            {
-              name: 'test_logging_tool',
-              description: 'Diagnostic logging validator tool',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ],
-          // SEP-2549 caching hints are required on cacheable list results.
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'tools/list', params: {} },
+          ResultSchema as any
+        )) as { tools: any[]; [k: string]: unknown };
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            tools: [
+              ...fromServer.tools,
+              {
+                name: 'test_missing_capability',
+                description: 'Test tool requiring sampling',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_elicitation',
+                description:
+                  'MRTR: returns InputRequiredResult with elicitation request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_sampling',
+                description:
+                  'MRTR: returns InputRequiredResult with sampling request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_list_roots',
+                description:
+                  'MRTR: returns InputRequiredResult with roots/list request',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_request_state',
+                description:
+                  'MRTR: returns InputRequiredResult with requestState',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multiple_inputs',
+                description:
+                  'MRTR: returns InputRequiredResult with multiple input requests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_multi_round',
+                description: 'MRTR: multi-round InputRequiredResult workflow',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_tampered_state',
+                description: 'MRTR: HMAC-signed requestState integrity test',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_input_required_result_capabilities',
+                description:
+                  'MRTR: respects client capabilities in inputRequests',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_streaming_elicitation',
+                description:
+                  'Diagnostic tool validating response progress streams',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'test_logging_tool',
+                description: 'Diagnostic logging validator tool',
+                inputSchema: { type: 'object', properties: {} }
+              }
+            ],
+            // SEP-2549 caching hints are required on cacheable list results.
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // Mock fallbacks to answer prompts capability matches safely
     if (method === 'prompts/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          prompts: [
-            {
-              name: 'test_input_required_result_prompt',
-              description: 'MRTR: prompt that requires elicitation input'
-            }
-          ],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'prompts/list', params: {} },
+          ResultSchema as any
+        )) as { prompts: any[]; [k: string]: unknown };
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            prompts: [
+              ...fromServer.prompts,
+              {
+                name: 'test_input_required_result_prompt',
+                description: 'MRTR: prompt that requires elicitation input'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     // SEP-2322 MRTR: prompts/get handler
@@ -1411,7 +1552,7 @@ app.post('/mcp', async (req, res) => {
             inputResponses['user_context'],
             'context'
           );
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1427,7 +1568,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1450,42 +1591,77 @@ app.post('/mcp', async (req, res) => {
       }
     }
 
-    // Resources on the stateless path (SEP-2575): SEP-2549 hints + SEP-2164 errors.
+    // Resources on the stateless path (SEP-2575): the McpServer-registered
+    // resources are merged with the stateless-only resource, mirroring the
+    // tools/list and prompts/list handlers above (SEP-2549 hints + SEP-2164
+    // errors via the carry-forward dispatch below).
     if (method === 'resources/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          resources: [
-            {
-              uri: 'test://stateless-static-text',
-              name: 'Stateless Static Text',
-              description: 'A static text resource served on the draft path',
-              mimeType: 'text/plain'
-            }
-          ],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/list', params: {} },
+          ResultSchema as any
+        )) as { resources: any[]; [k: string]: unknown };
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            resources: [
+              ...fromServer.resources,
+              {
+                uri: 'test://stateless-static-text',
+                name: 'Stateless Static Text',
+                description: 'A static text resource served on the draft path',
+                mimeType: 'text/plain'
+              }
+            ],
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     if (method === 'resources/templates/list') {
-      return res.json({
-        jsonrpc: '2.0',
-        id,
-        result: {
-          resourceTemplates: [],
-          ttlMs: 300000,
-          cacheScope: 'public'
-        }
-      });
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const fromServer = (await dispatch.client.request(
+          { method: 'resources/templates/list', params: {} },
+          ResultSchema as any
+        )) as { resourceTemplates: any[]; [k: string]: unknown };
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            ...fromServer,
+            ttlMs: 300000,
+            cacheScope: 'public'
+          }
+        });
+      } catch (e: any) {
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
     }
 
     if (method === 'resources/read') {
       const uri = params.uri as string | undefined;
       if (uri === 'test://stateless-static-text') {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1501,16 +1677,8 @@ app.post('/mcp', async (req, res) => {
           }
         });
       }
-      // SEP-2164: unknown resources get -32602 with the requested uri in data.
-      return res.status(200).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32602,
-          message: 'Resource not found',
-          data: { uri }
-        }
-      });
+      // Other URIs (including unknown ones) fall through to the carry-forward
+      // dispatch below, which serves the McpServer-registered resources.
     }
 
     if (method === 'tools/call') {
@@ -1523,19 +1691,21 @@ app.post('/mcp', async (req, res) => {
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
 
-        // Missing Required Client Capability Check (-32003, HTTP 400)
+        // Missing Required Client Capability Check (-32021, HTTP 400)
         if (!clientCaps?.sampling) {
           return res.status(400).json({
             jsonrpc: '2.0',
             id,
             error: {
-              code: -32003,
+              code: -32021,
               message: 'MissingRequiredClientCapabilityError',
-              data: { requiredCapabilities: ['sampling'] }
+              // Per the schema, requiredCapabilities is a ClientCapabilities
+              // object keyed by the missing capability, not an array of names.
+              data: { requiredCapabilities: { sampling: {} } }
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: { content: [{ type: 'text', text: 'Success' }] }
@@ -1547,13 +1717,13 @@ app.post('/mcp', async (req, res) => {
       if (name === 'test_input_required_result_elicitation') {
         if (inputResponses?.['user_name']) {
           const userName = getMrtInputText(inputResponses['user_name'], 'name');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: { content: [{ type: 'text', text: `Hello, ${userName}!` }] }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1582,7 +1752,7 @@ app.post('/mcp', async (req, res) => {
             unknown
           >;
           const content = sample.content as Record<string, unknown> | undefined;
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1595,7 +1765,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1630,7 +1800,7 @@ app.post('/mcp', async (req, res) => {
           const roots = Array.isArray(rootsResult.roots)
             ? rootsResult.roots
             : [];
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1638,7 +1808,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1656,7 +1826,7 @@ app.post('/mcp', async (req, res) => {
           const ok = (inputResponses['confirm'] as Record<string, unknown>)
             ?.content as Record<string, unknown> | undefined;
           if (state.kind === 'request-state' && ok?.ok === true) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -1667,7 +1837,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1720,7 +1890,7 @@ app.post('/mcp', async (req, res) => {
             const roots = Array.isArray(rootsResult.roots)
               ? rootsResult.roots
               : [];
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -1734,7 +1904,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1775,7 +1945,7 @@ app.post('/mcp', async (req, res) => {
 
       if (name === 'test_input_required_result_multi_round') {
         if (!requestState) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1800,7 +1970,7 @@ app.post('/mcp', async (req, res) => {
         const state = JSON.parse(requestState) as Record<string, unknown>;
         if (state.round === 1 && inputResponses?.['step1']) {
           const userName = getMrtInputText(inputResponses['step1'], 'name');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1830,7 +2000,7 @@ app.post('/mcp', async (req, res) => {
           const userName =
             typeof state.name === 'string' ? state.name : 'friend';
           const color = getMrtInputText(inputResponses['step2'], 'color');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1844,7 +2014,7 @@ app.post('/mcp', async (req, res) => {
           });
         }
         // Fallback: restart
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1871,7 +2041,7 @@ app.post('/mcp', async (req, res) => {
         if (requestState) {
           const verified = verifyMrtState(requestState);
           if (!verified) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               error: {
@@ -1881,7 +2051,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
           if (verified.kind === 'tamper-test' && inputResponses?.['confirm']) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -1892,7 +2062,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1953,7 +2123,7 @@ app.post('/mcp', async (req, res) => {
         }
 
         if (inputResponses && Object.keys(inputResponses).length > 0) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1967,7 +2137,7 @@ app.post('/mcp', async (req, res) => {
           });
         }
         if (Object.keys(inputRequests).length === 0) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1977,7 +2147,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -2057,11 +2227,78 @@ app.post('/mcp', async (req, res) => {
         } else {
           notifyListenStreams('prompts', 'notifications/prompts/list_changed');
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
         });
+      }
+    }
+
+    // Carry-forward methods that fell through the MRTR-specific handlers above
+    // (tools/call for non-MRTR tools, resources/*, prompts/get for non-MRTR
+    // prompts, completion/complete) are dispatched to the same McpServer the
+    // stateful path uses, via an in-memory client. This avoids duplicating the
+    // tool/resource/prompt registrations for the stateless path.
+    //
+    // tools/call is served as text/event-stream so progress and logging
+    // notifications from the underlying tool reach the conformance client.
+    if (method === 'tools/call') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      const write = (msg: unknown) =>
+        res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({ jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        for (const n of dispatch.drainNotifications()) write(n);
+        write({
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data: e.data }
+        });
+      } finally {
+        await dispatch.close();
+      }
+      return res.end();
+    }
+    if (
+      [
+        'resources/list',
+        'resources/read',
+        'resources/templates/list',
+        'prompts/get',
+        'completion/complete'
+      ].includes(method)
+    ) {
+      const dispatch = await getStatelessDispatchClient();
+      try {
+        const result = await dispatch.client.request(
+          { method, params },
+          ResultSchema as any
+        );
+        return sendStatelessJson(res, method, { jsonrpc: '2.0', id, result });
+      } catch (e: any) {
+        // SEP-2164: unknown resources get -32602 with the requested uri in
+        // data; the SDK's McpError does not populate data itself.
+        const data =
+          e.data ??
+          (method === 'resources/read' ? { uri: params.uri } : undefined);
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          error: { code: e.code ?? -32603, message: e.message, data }
+        });
+      } finally {
+        await dispatch.close();
       }
     }
 

@@ -7,12 +7,14 @@ import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
-import { connectToServer } from './client-helper';
-import { sendStatelessRequest } from './stateless-client';
-import {
+import { JsonRpcError, type RunContext } from '../../connection';
+import type {
+  ListResourcesResult,
+  ReadResourceResult,
   TextResourceContents,
-  BlobResourceContents
-} from '@modelcontextprotocol/sdk/types.js';
+  BlobResourceContents,
+  EmptyResult
+} from '../../spec-types/2025-06-18';
 
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
@@ -31,13 +33,13 @@ export class ResourcesListScenario implements ClientScenario {
   - \`description\` (string)
   - \`mimeType\` (string, optional)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.listResources();
+      const result = await conn.request<ListResourcesResult>('resources/list');
 
       // Validate response structure
       const errors: string[] = [];
@@ -73,7 +75,7 @@ export class ResourcesListScenario implements ClientScenario {
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-list',
@@ -116,13 +118,13 @@ Implement resource \`test://static-text\` that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.readResource({
+      const result = await conn.request<ReadResourceResult>('resources/read', {
         uri: 'test://static-text'
       });
 
@@ -160,7 +162,7 @@ Implement resource \`test://static-text\` that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-read-text',
@@ -203,13 +205,13 @@ Implement resource \`test://static-binary\` that returns:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.readResource({
+      const result = await conn.request<ReadResourceResult>('resources/read', {
         uri: 'test://static-binary'
       });
 
@@ -245,7 +247,7 @@ Implement resource \`test://static-binary\` that returns:
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-read-binary',
@@ -292,13 +294,13 @@ Returns (for \`uri: "test://template/123/data"\`):
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      const result = await connection.client.readResource({
+      const result = await conn.request<ReadResourceResult>('resources/read', {
         uri: 'test://template/123/data'
       });
 
@@ -347,7 +349,7 @@ Returns (for \`uri: "test://template/123/data"\`):
         }
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-templates-read',
@@ -371,7 +373,10 @@ Returns (for \`uri: "test://template/123/data"\`):
 
 export class ResourcesSubscribeScenario implements ClientScenario {
   name = 'resources-subscribe';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test subscribing to resource updates.
 
 **Server Implementation Requirements:**
@@ -394,13 +399,13 @@ Example request:
 }
 \`\`\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
-      await connection.client.subscribeResource({
+      await conn.request<EmptyResult>('resources/subscribe', {
         uri: 'test://watched-resource'
       });
 
@@ -418,7 +423,7 @@ Example request:
         ]
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-subscribe',
@@ -473,7 +478,7 @@ Example error response:
 
 This scenario does not require the server to register any specific resource — it tests behavior when reading a URI the server does not recognize.`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const nonexistentUri =
       'test://nonexistent-resource-for-conformance-testing';
@@ -484,13 +489,12 @@ This scenario does not require the server to register any specific resource — 
       }
     ];
 
-    // SEP-2164 is a draft-spec requirement, so the request is sent statelessly
-    // with the draft protocol version and the cross-cutting _meta/headers.
-    let response;
+    // SEP-2164 is a draft-spec requirement; under --spec-version draft the
+    // RunContext-provided connect() resolves to the stateless impl, so the
+    // request goes out with the draft protocol version and _meta/headers.
+    let conn;
     try {
-      response = await sendStatelessRequest(serverUrl, 'resources/read', {
-        uri: nonexistentUri
-      });
+      conn = await ctx.connect();
     } catch (error) {
       checks.push({
         id: 'sep-2164-error-code',
@@ -505,10 +509,15 @@ This scenario does not require the server to register any specific resource — 
       return checks;
     }
 
-    const result = response.body?.result as
-      | { contents?: unknown[] }
-      | undefined;
-    const rpcError = response.body?.error;
+    let caughtError: unknown;
+    let result: { contents: unknown[] } | undefined;
+    try {
+      result = await conn.request<ReadResourceResult>('resources/read', {
+        uri: nonexistentUri
+      });
+    } catch (error) {
+      caughtError = error;
+    }
 
     // Check 1: MUST NOT return an empty contents array
     const returnedEmptyContents =
@@ -532,12 +541,14 @@ This scenario does not require the server to register any specific resource — 
     });
 
     // Check 2: SHOULD return JSON-RPC error with code -32602
+    const rpcError =
+      caughtError instanceof JsonRpcError ? caughtError : undefined;
     const errorCode = rpcError?.code;
     let errorCodeMessage: string | undefined;
     if (result !== undefined) {
       errorCodeMessage = `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers SHOULD return a JSON-RPC error for non-existent resources.`;
-    } else if (!rpcError) {
-      errorCodeMessage = `Expected a JSON-RPC error, got HTTP ${response.status} with no JSON-RPC error in the body.`;
+    } else if (rpcError === undefined) {
+      errorCodeMessage = `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`;
     } else if (errorCode !== -32602) {
       errorCodeMessage =
         `Expected error code -32602 (Invalid Params), got ${errorCode}. ` +
@@ -585,13 +596,17 @@ This scenario does not require the server to register any specific resource — 
       }
     });
 
+    await conn.close();
     return checks;
   }
 }
 
 export class ResourcesUnsubscribeScenario implements ClientScenario {
   name = 'resources-unsubscribe';
-  readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly source = {
+    introducedIn: '2025-06-18',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description = `Test unsubscribing from resource.
 
 **Server Implementation Requirements:**
@@ -604,19 +619,19 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
 - Stop sending update notifications for that URI
 - Return empty object \`{}\``;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
 
     try {
-      const connection = await connectToServer(serverUrl);
+      const conn = await ctx.connect();
 
       // First subscribe
-      await connection.client.subscribeResource({
+      await conn.request<EmptyResult>('resources/subscribe', {
         uri: 'test://watched-resource'
       });
 
       // Then unsubscribe
-      await connection.client.unsubscribeResource({
+      await conn.request<EmptyResult>('resources/unsubscribe', {
         uri: 'test://watched-resource'
       });
 
@@ -634,7 +649,7 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
         ]
       });
 
-      await connection.close();
+      await conn.close();
     } catch (error) {
       checks.push({
         id: 'resources-unsubscribe',

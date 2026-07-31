@@ -1,3 +1,4 @@
+import { testScenarioContext } from '../../mock-server/testing';
 import { describe, test, expect } from 'vitest';
 import {
   runClientAgainstScenario,
@@ -5,7 +6,10 @@ import {
 } from './auth/test_helpers/testClient';
 import { getHandler } from '../../../examples/clients/typescript/everything-client';
 import { getScenario } from '../index';
-import { DECLARED_CHECK_IDS } from './request-metadata';
+import {
+  DECLARED_CHECK_IDS,
+  RequestMetadataScenario
+} from './request-metadata';
 
 // A bad client that does not send _meta
 async function badClient(serverUrl: string) {
@@ -25,7 +29,7 @@ async function badClient(serverUrl: string) {
 }
 
 const goodMeta = {
-  'io.modelcontextprotocol/protocolVersion': 'DRAFT-2026-v1',
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
   'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
@@ -69,7 +73,7 @@ async function nonRetryingClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': '2026-07-28'
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -104,10 +108,9 @@ async function incompatibleVersionClient(serverUrl: string) {
 
   if (response.status === 400) {
     const body = await response.json();
-    if (body.error?.code === -32004 || body.error?.code === -32001) {
+    if (body.error?.code === -32022) {
       return body; // Abort cleanly
     }
-    return body;
   }
   return response.json();
 }
@@ -118,7 +121,7 @@ async function malformedCapabilitiesClient(serverUrl: string) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'MCP-Protocol-Version': 'DRAFT-2026-v1'
+      'MCP-Protocol-Version': '2026-07-28'
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -207,7 +210,7 @@ describe('request-metadata client scenario — client never connects', () => {
       throw new Error('Scenario not found');
     }
 
-    await scenario.start();
+    await scenario.start(testScenarioContext());
     try {
       const checks = scenario.getChecks();
       const byId = new Map(checks.map((c) => [c.id, c]));
@@ -243,6 +246,48 @@ describe('request-metadata client scenario — client never connects', () => {
     expect(populatesMeta?.errorMessage ?? '').not.toContain(
       'never sent a request'
     );
+  });
+});
+
+describe('request-metadata client scenario — HTTP handling', () => {
+  test.each(['GET', 'DELETE'])(
+    'rejects an empty-body %s request without parsing it as JSON',
+    async (method) => {
+      const scenario = new RequestMetadataScenario();
+      const { serverUrl } = await scenario.start(testScenarioContext());
+
+      try {
+        const response = await fetch(serverUrl, { method });
+
+        expect(response.status).toBe(405);
+        expect(response.headers.get('allow')).toBe('POST');
+        expect(await response.text()).toBe('Method Not Allowed');
+      } finally {
+        await scenario.stop();
+      }
+    }
+  );
+
+  test('returns a JSON-RPC parse error for malformed POST bodies', async () => {
+    const scenario = new RequestMetadataScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+
+    try {
+      const response = await fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{'
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700 }
+      });
+    } finally {
+      await scenario.stop();
+    }
   });
 });
 

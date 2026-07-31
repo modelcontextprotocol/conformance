@@ -10,6 +10,12 @@ import {
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
+import {
+  validateStatelessRequest,
+  withRequiredDraftResultFields,
+  type ScenarioContext
+} from '../../../../mock-server';
+import { isStatefulVersion } from '../../../../connection/select';
 import { createRequestLogger } from '../../../request-logger';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import { SpecReferences } from '../spec-references';
@@ -27,6 +33,7 @@ export interface ServerOptions {
 }
 
 export function createServer(
+  ctx: ScenarioContext,
   checks: ConformanceCheck[],
   getBaseUrl: () => string,
   getAuthServerUrl: () => string,
@@ -157,6 +164,9 @@ export function createServer(
 
     authMiddleware(req, res, async (err?: any) => {
       if (err) return next(err);
+      if (!isStatefulVersion(ctx.specVersion)) {
+        return handleStateless(req, res);
+      }
       const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined
@@ -164,12 +174,13 @@ export function createServer(
 
       try {
         await server.connect(transport);
-
-        await transport.handleRequest(req, res, req.body);
+        // Register cleanup before handing the request to the transport so the
+        // pair is torn down even when handleRequest throws.
         res.on('close', () => {
           transport.close();
           server.close();
         });
+        await transport.handleRequest(req, res, req.body);
       } catch (error) {
         console.error('Error handling MCP request:', error);
         if (!res.headersSent) {
@@ -185,6 +196,41 @@ export function createServer(
       }
     });
   });
+
+  // Stateless lifecycle for the /mcp route: shared SEP-2575 validation +
+  // server/discover from mock-server/stateless, then the same tools handlers
+  // as createMcpServer. Bearer-auth middleware and PRM route above are
+  // version-independent.
+  function handleStateless(req: Request, res: Response) {
+    const v = validateStatelessRequest(req, { tools: {} }, [ctx.specVersion]);
+    if (v.kind !== 'route') {
+      return res.status(v.status).json(v.body);
+    }
+    const { id, method } = v;
+    if (method === 'tools/list') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: withRequiredDraftResultFields(method, {
+          tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
+        })
+      });
+    }
+    if (method === 'tools/call') {
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: withRequiredDraftResultFields(method, {
+          content: [{ type: 'text', text: 'test' }]
+        })
+      });
+    }
+    return res.status(404).json({
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32601, message: 'Method not found' }
+    });
+  }
 
   return app;
 }
