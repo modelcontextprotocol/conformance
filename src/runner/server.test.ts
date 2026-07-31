@@ -5,8 +5,9 @@
  */
 import http from 'http';
 import type { AddressInfo } from 'net';
-import { afterEach, beforeEach, describe, test, expect } from 'vitest';
-import { runServerConformanceTest } from './server';
+import { afterEach, beforeEach, describe, test, expect, vi } from 'vitest';
+import { printServerSummary, runServerConformanceTest } from './server';
+import { evaluateBaseline } from '../expected-failures';
 import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../types';
 
 // The skip decision happens before any network request, so an unreachable
@@ -140,4 +141,66 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
       'io.modelcontextprotocol/tasks': {}
     });
   }, 30000);
+});
+
+describe('printServerSummary', () => {
+  const check = (status: 'SUCCESS' | 'FAILURE' | 'WARNING', id: string) => ({
+    id,
+    name: id,
+    description: `a ${status} check`,
+    status,
+    timestamp: '2026-07-22T00:00:00.000Z'
+  });
+
+  function capture(allResults: Parameters<typeof printServerSummary>[0]): {
+    totals: ReturnType<typeof printServerSummary>;
+    output: string;
+  } {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const totals = printServerSummary(allResults);
+      return { totals, output: spy.mock.calls.map((c) => c[0]).join('\n') };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  test('ticks a scenario whose checks all pass', () => {
+    const { output } = capture([
+      { scenario: 'server-stateless', checks: [check('SUCCESS', 'a')] }
+    ]);
+    expect(output).toContain('✓ server-stateless: 1 passed, 0 failed');
+  });
+
+  // The reported defect: a warning-only scenario printed `✓ ... 0 failed` and
+  // then failed the baseline gate, which counts WARNING.
+  test('crosses a scenario whose only failing check is a warning', () => {
+    const { totals, output } = capture([
+      {
+        scenario: 'server-stateless',
+        checks: [check('SUCCESS', 'a'), check('WARNING', 'b')]
+      }
+    ]);
+    expect(output).toContain(
+      '✗ server-stateless: 1 passed, 0 failed, 1 warnings'
+    );
+    expect(totals.totalWarnings).toBe(1);
+  });
+
+  // The invariant that was violated: the summary's verdict and the gate's
+  // exit code are the same verdict, for every status.
+  test.each(['SUCCESS', 'FAILURE', 'WARNING', 'SKIPPED', 'INFO'] as const)(
+    'agrees with the baseline gate on a %s check',
+    (status) => {
+      const results = [
+        { scenario: 's', checks: [check(status as never, 'a')] }
+      ];
+      const { totals } = capture(results);
+      const summarySaysFailing =
+        totals.totalFailed > 0 || totals.totalWarnings > 0;
+      expect(summarySaysFailing).toBe(
+        evaluateBaseline(results, []).exitCode === 1
+      );
+    }
+  );
 });

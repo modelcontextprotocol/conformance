@@ -509,14 +509,23 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         const metaServerInfo =
           discoverResult?._meta?.['io.modelcontextprotocol/serverInfo'];
-        if (!metaServerInfo?.name || !metaServerInfo?.version) {
+        // Presence and type, not truthiness. `Implementation` is
+        // `"required": ["name", "version"]` with both a bare
+        // `{"type": "string"}`, so `version: ''` identifies the server just as
+        // `'1.0.0'` does; a falsy test reports a present identity as absent.
+        if (
+          typeof metaServerInfo?.name !== 'string' ||
+          typeof metaServerInfo?.version !== 'string'
+        ) {
           const bodyServerInfo = discoverResult?.serverInfo;
           return {
             // SHOULD-level: WARNING, never FAILURE.
             warning: true,
-            error: bodyServerInfo
-              ? 'serverInfo found only in the pre-#3002 result body, not in _meta'
-              : 'No serverInfo in the discover result _meta',
+            error: metaServerInfo
+              ? "serverInfo in the discover result _meta needs a string 'name' and 'version'"
+              : bodyServerInfo
+                ? 'serverInfo found only in the pre-#3002 result body, not in _meta'
+                : 'No serverInfo in the discover result _meta',
             details: { result: discoverResult }
           };
         }

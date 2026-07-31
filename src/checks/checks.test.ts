@@ -53,7 +53,7 @@ describe('createClientInitializationCheck', () => {
 
     const check = createClientInitializationCheck(invalidRequest);
     expect(check.status).toBe('FAILURE');
-    expect(check.errorMessage).toContain('Client name missing');
+    expect(check.errorMessage).toContain("clientInfo needs a string 'name'");
   });
 
   it('should return FAILURE when client version is missing', () => {
@@ -66,7 +66,7 @@ describe('createClientInitializationCheck', () => {
 
     const check = createClientInitializationCheck(invalidRequest);
     expect(check.status).toBe('FAILURE');
-    expect(check.errorMessage).toContain('Client version missing');
+    expect(check.errorMessage).toContain("clientInfo needs a string 'version'");
   });
 
   it('should accept the current draft protocol version', () => {
@@ -93,6 +93,39 @@ describe('createClientInitializationCheck', () => {
       expect(check.errorMessage).toContain('Version mismatch');
     }
   );
+
+  // `Implementation` constrains `name` and `version` to be present strings and
+  // says nothing about their content, so '' is a supplied field. Failing here
+  // rejected a client the spec allows — and at FAILURE severity.
+  it.each([
+    ['version', { name: 'TestClient', version: '' }],
+    ['name', { name: '', version: '1.0.0' }]
+  ])('should accept an empty %s', (_field, clientInfo) => {
+    const check = createClientInitializationCheck({
+      protocolVersion: '2025-06-18',
+      clientInfo
+    });
+    expect(check.status).toBe('SUCCESS');
+    expect(check.errorMessage).toBeUndefined();
+  });
+
+  it('should return FAILURE when a clientInfo field is not a string', () => {
+    const check = createClientInitializationCheck({
+      protocolVersion: '2025-06-18',
+      clientInfo: { name: 'TestClient', version: 1 }
+    });
+    expect(check.status).toBe('FAILURE');
+    expect(check.errorMessage).toContain("clientInfo needs a string 'version'");
+  });
+
+  it('should report both fields when clientInfo is absent', () => {
+    const check = createClientInitializationCheck({
+      protocolVersion: '2025-06-18'
+    });
+    expect(check.status).toBe('FAILURE');
+    expect(check.errorMessage).toContain("clientInfo needs a string 'name'");
+    expect(check.errorMessage).toContain("clientInfo needs a string 'version'");
+  });
 
   it('should support custom expected spec version', () => {
     const request = {
