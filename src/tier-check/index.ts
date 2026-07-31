@@ -14,6 +14,7 @@ import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
 import { TierScorecard } from './types';
 import { resolveSpecVersion } from '../scenarios';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const parts = repo.split('/');
@@ -53,6 +54,10 @@ export function createTierCheckCommand(): Command {
       '--spec-version <version>',
       'Only run conformance scenarios for this spec version'
     )
+    .option(
+      '--sdk-release-tag <tag>',
+      'Exact release tag of the submitted SDK version, resolved with no normalization (pins spec-tracking to that submission)'
+    )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
       let token = options.token || process.env.GITHUB_TOKEN;
@@ -60,6 +65,20 @@ export function createTierCheckCommand(): Command {
       const specVersion = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      // The CLI's --spec-version vocabulary is released dated versions plus
+      // the 'draft' alias — resolveSpecVersion above already exits the
+      // process on anything else. checkSpecTracking itself accepts any exact
+      // release tag (including pre-releases like an RC), which is exercised
+      // directly in its unit tests; pinning one of those from this CLI would
+      // need a wider --spec-version vocabulary, deliberately out of scope
+      // here. The draft spec version has no GitHub release to pin against,
+      // so draft runs fall back to tracking the latest stable spec release
+      // instead — during the graduation window, the latest stable release
+      // IS the version that was just the draft, so the fallback lands on
+      // the right release anyway.
+      const specVersionForTracking =
+        specVersion === DRAFT_PROTOCOL_VERSION ? undefined : specVersion;
 
       if (!token) {
         // Try to get token from GitHub CLI
@@ -133,7 +152,10 @@ export function createTierCheckCommand(): Command {
           console.error('  \u2713 Policy Signals');
           return r;
         }),
-        checkSpecTracking(octokit, owner, repo).then((r) => {
+        checkSpecTracking(octokit, owner, repo, {
+          sdkReleaseTag: options.sdkReleaseTag,
+          specVersion: specVersionForTracking
+        }).then((r) => {
           console.error('  \u2713 Spec Tracking');
           return r;
         })

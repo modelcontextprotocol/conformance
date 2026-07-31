@@ -62,8 +62,17 @@ export interface PolicySignalsResult extends CheckResult {
 export interface SpecTrackingResult extends CheckResult {
   latest_spec_release: string | null;
   latest_sdk_release: string | null;
+  // Deprecated: no longer read by tier-logic (superseded by the SEP-1730
+  // pass/partial/fail windows), kept only for backward-compatible output.
   sdk_release_within_30d: boolean | null;
   days_gap: number | null;
+  target_spec_tag: string | null;
+  submitted_sdk_tag: string | null;
+  // SEP-1730 window verdicts read by tier-logic; status is the display
+  // label derived from the same windows.
+  meets_tier1_window: boolean | null;
+  meets_tier2_window: boolean | null;
+  reason?: string;
 }
 
 export interface TierScorecard {
