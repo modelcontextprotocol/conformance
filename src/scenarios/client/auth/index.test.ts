@@ -1,13 +1,22 @@
 import {
   authScenariosList,
   backcompatScenariosList,
-  draftScenariosList
+  draftScenariosList,
+  extensionScenariosList
 } from './index';
 import {
   runClientAgainstScenario,
   InlineClientRunner
 } from './test_helpers/testClient';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
+import {
+  runWifJwtBearerWrongAudience,
+  runWifJwtBearerMissingAssertion,
+  runWifJwtBearerExpiredAssertion,
+  runWifJwtBearerScopeRejected,
+  runWifJwtBearerGrantFallback,
+  runWifJwtBearerRetry
+} from '../../../../examples/clients/typescript/wif-broken-clients';
 import { runClient as noCimdClient } from '../../../../examples/clients/typescript/auth-test-no-cimd';
 import { runClient as ignoreScopeClient } from '../../../../examples/clients/typescript/auth-test-ignore-scope';
 import { runClient as partialScopesClient } from '../../../../examples/clients/typescript/auth-test-partial-scopes';
@@ -19,6 +28,13 @@ import { runClient as noAppTypeClient } from '../../../../examples/clients/types
 import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
 import { runClient as issNormalizeClient } from '../../../../examples/clients/typescript/auth-test-iss-normalize';
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
+import { runClient as dpopBearerClient } from '../../../../examples/clients/typescript/auth-test-dpop-bearer';
+import { runClient as dpopReplayClient } from '../../../../examples/clients/typescript/auth-test-dpop-replay';
+import { runClient as dpopNoTokenProofClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-token-proof';
+import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-as-nonce';
+import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
+import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
+import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -130,8 +146,12 @@ describe('Negative tests', () => {
   });
 
   test('client only responds to 401, not 403', async () => {
+    // Run at draft so the SEP-2350 union check is also emitted: a client that
+    // never makes the second authorization request fails both the escalation
+    // check and the union check.
     const runner = new InlineClientRunner(ignore403Client);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
+      specVersion: DRAFT_PROTOCOL_VERSION,
       expectedFailureSlugs: [
         'scope-step-up-escalation',
         'sep-2350-scope-union-on-reauth'
@@ -139,10 +159,23 @@ describe('Negative tests', () => {
     });
   });
 
-  test('client echoes challenge scope without accumulating prior grant (SEP-2350)', async () => {
+  test('client echoes challenge scope without accumulating prior grant (SEP-2350) at draft', async () => {
+    // The set-wise union requirement (SEP-2350) was added in the draft spec
+    // (2026-07-28); a client that echoes only the challenged scope fails it.
     const runner = new InlineClientRunner(echoScopeClient);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
+      specVersion: DRAFT_PROTOCOL_VERSION,
       expectedFailureSlugs: ['sep-2350-scope-union-on-reauth']
+    });
+  });
+
+  test('client echoes challenge scope without accumulating prior grant (SEP-2350) at 2025-11-25', async () => {
+    // At dated spec versions that predate SEP-2350, the union check is not
+    // emitted at all, so a client that drops the previously-granted scope on
+    // re-auth passes cleanly.
+    const runner = new InlineClientRunner(echoScopeClient);
+    await runClientAgainstScenario(runner, 'auth/scope-step-up', {
+      specVersion: '2025-11-25'
     });
   });
 
@@ -246,5 +279,167 @@ describe('Negative tests', () => {
       expectedFailureSlugs: ['sep-2468-client-validate-metadata-issuer'],
       allowClientError: true
     });
+  });
+});
+
+describe('Client Extension Scenarios', () => {
+  for (const scenario of extensionScenariosList) {
+    test(`${scenario.name} passes`, async () => {
+      const clientFn = getHandler(scenario.name);
+      if (!clientFn) {
+        throw new Error(`No handler registered for scenario: ${scenario.name}`);
+      }
+      const runner = new InlineClientRunner(clientFn);
+      await runClientAgainstScenario(runner, scenario.name);
+    });
+  }
+});
+
+// allowClientError: true because broken clients receive an error response from
+// the AS and will throw. The AS-side check is the authoritative conformance
+// signal; client process exit behaviour is not asserted here.
+describe('WIF JWT-bearer negative tests', () => {
+  test('client presents JWT with wrong audience', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerWrongAudience);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-audience'],
+      allowClientError: true
+    });
+  });
+
+  test('client omits assertion from JWT-bearer request', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerMissingAssertion);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-missing'],
+      allowClientError: true
+    });
+  });
+
+  test('client presents expired JWT assertion', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerExpiredAssertion);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-assertion-expired'],
+      allowClientError: true
+    });
+  });
+
+  test('client requests a scope the AS rejects for JWT-bearer grant', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerScopeRejected);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      allowClientError: true
+    });
+  });
+
+  test('client falls back to authorization_code after unauthorized_client', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerGrantFallback);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-grant-fallback'],
+      allowClientError: true
+    });
+  });
+
+  test('client retries JWT-bearer after unauthorized_client', async () => {
+    const runner = new InlineClientRunner(runWifJwtBearerRetry);
+    await runClientAgainstScenario(runner, 'auth/wif-jwt-bearer', {
+      expectedFailureSlugs: ['wif-no-retry'],
+      allowClientError: true
+    });
+  });
+});
+
+// DPoP (SEP-1932): the compliant paths for both postures (auth/dpop and
+// auth/dpop-nonce) are covered by the Client Extension Scenarios loop above; these
+// are the negative cases, via deliberately-broken example clients. The baseline
+// checks (scheme, replay, token-request-proof) are nonce-independent, so those
+// negatives run against auth/dpop; the two nonce checks only fire when a
+// challenge is issued, so their negatives run against auth/dpop-nonce.
+describe('DPoP client negative tests (SEP-1932)', () => {
+  test('auth/dpop: client presents the token with the Bearer scheme', async () => {
+    const runner = new InlineClientRunner(dpopBearerClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-dpop-auth-scheme']
+    });
+  });
+
+  test('auth/dpop: client reuses a DPoP proof across requests', async () => {
+    const runner = new InlineClientRunner(dpopReplayClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-fresh-proof']
+    });
+  });
+
+  test('auth/dpop: client never requests a sender-constrained token', async () => {
+    // No token-endpoint proof → the AS issues an unbound Bearer token, so both
+    // the token-request check and (as a consequence of the unbound token) the
+    // resource binding check fail.
+    const runner = new InlineClientRunner(dpopNoTokenProofClient);
+    await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-fresh-proof'
+      ]
+    });
+  });
+
+  test('auth/dpop-nonce: client ignores the authorization-server nonce challenge', async () => {
+    const runner = new InlineClientRunner(dpopNoAsNonceClient);
+    // The client presents a valid proof but never retries with the nonce, so it
+    // never obtains a token — as-nonce fails and the downstream token-dependent
+    // checks legitimately cascade. But token-request-proof MUST stay SUCCESS:
+    // the client DID present a valid proof at the token endpoint (regression
+    // guard for the "never completed a token request" misattribution).
+    await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
+      expectedFailureSlugs: [
+        'sep-1932-client-as-nonce',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof',
+        'sep-1932-client-rs-nonce'
+      ],
+      expectedSuccessSlugs: ['sep-1932-client-token-request-proof']
+    });
+  });
+
+  test('auth/dpop-nonce: client ignores the MCP-server nonce challenge', async () => {
+    const runner = new InlineClientRunner(dpopNoRsNonceClient);
+    // Clean one-defect isolation: the client obtains a token and presents a
+    // valid fresh proof (recorded before the nonce gate), so only rs-nonce
+    // fails — everything else stays SUCCESS.
+    await runClientAgainstScenario(runner, 'auth/dpop-nonce', {
+      expectedFailureSlugs: ['sep-1932-client-rs-nonce'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof',
+        'sep-1932-client-as-nonce'
+      ]
+    });
+  });
+});
+
+// DPoP nonce-less baseline (SEP-1932): a client that implements NO nonce
+// handling still completes DPoP successfully when the server does not require a
+// nonce (the common case — server nonces are OPTIONAL, RFC 9449 §8/§9). The
+// nonce-capable compliant path is covered by the Client Extension Scenarios
+// loop above (auth/dpop is in extensionScenariosList).
+describe('DPoP client nonce-less baseline (SEP-1932)', () => {
+  test('auth/dpop: nonce-incapable client passes the baseline', async () => {
+    const runner = new InlineClientRunner(dpopNoNonceClient);
+    // No expectedFailureSlugs → asserts every emitted check is SUCCESS (the
+    // three baseline checks; no as-nonce/rs-nonce checks are emitted here).
+    await runClientAgainstScenario(runner, 'auth/dpop');
+  });
+
+  test('auth/dpop-nonce: the §8/§9 double-POST is collapsed to one shared check each', async () => {
+    // Pins that collapseDuplicateChecks is actually wired into getChecks for the
+    // nonce posture: the challenge→retry re-POST records token-request/pkce
+    // twice, so without the collapse these would appear 2×. Guards against the
+    // gating being deleted or inverted.
+    const runner = new InlineClientRunner(dpopClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop-nonce');
+    const count = (id: string): number =>
+      checks.filter((c) => c.id === id).length;
+    expect(count('token-request')).toBe(1);
+    expect(count('pkce-code-verifier-sent')).toBe(1);
+    expect(count('pkce-verifier-matches-challenge')).toBe(1);
   });
 });

@@ -98,6 +98,24 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `checks.json` - Array of conformance check results with pass/fail status
 
+### Wire-schema checks
+
+Every scenario also validates each JSON-RPC message on the wire against the
+spec's JSON schema for the negotiated spec version, and emits up to two
+synthetic checks alongside the scenario's own:
+
+- `wire-schema-valid` - fails when a message _the implementation under test
+  sent_ violates the spec JSON schema. The failure details include every
+  violating message and its schema errors.
+- `wire-schema-harness-error` - fails when the _harness itself_ sent an
+  invalid message. This indicates a bug in the conformance suite (or a
+  deliberately nonconformant fixture), not in the implementation under test;
+  please report it.
+
+Scenarios that exchange no instrumented wire traffic (see issue #418) emit
+neither check. Like any other check, `wire-schema-valid` can be baselined via
+the expected-failures file.
+
 ## Expected Failures
 
 SDKs that don't yet pass all conformance tests can specify a baseline of known failures. This allows running conformance tests in CI without failing, while still catching regressions.
@@ -133,6 +151,40 @@ This ensures:
 - CI passes when only known failures occur
 - CI fails on new regressions (unexpected failures)
 - CI fails when a fix lands but the baseline isn't updated (stale entries)
+
+### Baselining a single check
+
+A scenario is many checks — `server-stateless` alone is over twenty — so baselining the
+whole scenario to excuse one of them stops enforcing the other nineteen. An entry can
+instead name a single check, as `<scenario>:<check-id>`:
+
+```yaml
+server:
+  - tasks-lifecycle # whole scenario may fail
+  - server-stateless:sep-2575-server-implements-discover # only this check may fail
+```
+
+The check id is the left-hand column the runner already prints for each check, so it can
+be copied straight out of a failing run.
+
+With a per-check entry, every failing check in that scenario is judged on its own: the
+named one is excused, and any other failure is still an unexpected regression. The four
+exit-code rules above apply per check rather than per scenario, with one addition — a
+baselined check that is absent or skipped is tolerated, because a scenario that bails on
+a failed prerequisite legitimately never reaches its later checks, and the prerequisite
+reports its own failure anyway.
+
+Two things to know:
+
+- **A check id addresses every occurrence of that id.** Ids repeat within a run (a loop,
+  a retried flow), and the occurrences collapse to one verdict, most-severe first. So
+  baselining a repeated id excuses all of its occurrences — coarser than ideal, still far
+  narrower than baselining the scenario.
+- **Mind the space.** `- scenario:check-id` is a string; `- scenario: check-id` is YAML
+  for a mapping and is rejected with an error.
+
+A scenario cannot be listed both wholesale and per-check — the wholesale entry already
+excuses everything, so the pair is contradictory and is rejected.
 
 ## GitHub Action
 
@@ -247,13 +299,25 @@ npm start -- sdk typescript-sdk --mode client --spec-version draft
 
 Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.
 
-An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias). Overriding for a one-off ref:
+An SDK can have more than one entry when its layout differs across major versions — e.g. `typescript-sdk` (v2, the `main` monorepo) and `typescript-sdk-v1` (the published npm v1.x line). An entry may set `defaultRef` (the branch used when you don't pass `@<ref>`) and `repo` (the real clone target when the entry name is an alias).
+
+When the right invocation depends on the spec version being targeted, the entry carries it in `specOverrides` instead of a comment to copy from. The matching entry is merged over the base config when you pass `--spec-version` (or when the entry's own `specVersion` default applies), so version-specific runs need no extra flags:
 
 ```bash
-npm start -- sdk owner/go-sdk@some-branch \
-  --mode client \
-  --build-cmd 'go build -tags mcp_go_client_oauth -o ./.conformance-client ./conformance/everything-client' \
-  --client-cmd './.conformance-client'
+# go-sdk's server pins -stateless=false for the dated-spec suites; its
+# specOverrides['2026-07-28'] entry swaps in the stateless invocation, so
+# this is the whole command:
+npm start -- sdk go-sdk --mode server --suite all --spec-version 2026-07-28
+
+# same for csharp-sdk (stateless URL), rust-sdk (STATELESS=1 env), and
+# python-sdk (per-revision expected-failures baseline)
+```
+
+Explicit CLI flags still beat everything, config included — overriding a field for a one-off run:
+
+```bash
+npm start -- sdk go-sdk@my-fork-branch --mode server \
+  --build-cmd 'go build -o ./.conformance-server ./experimental/server'
 ```
 
 To add a new SDK to the matrix, add an entry to `KNOWN_SDKS`.

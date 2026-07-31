@@ -1,29 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  connectFor,
-  isStatefulVersion,
-  STATELESS_SPEC_VERSIONS
-} from './select';
-import { connectStateful } from './stateful';
+import { isStatefulVersion, STATELESS_SPEC_VERSIONS } from './select';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
-
-describe('connectFor', () => {
-  it('returns stateful for dated 2025-x versions', () => {
-    expect(connectFor('2025-03-26')).toBe(connectStateful);
-    expect(connectFor('2025-06-18')).toBe(connectStateful);
-    expect(connectFor('2025-11-25')).toBe(connectStateful);
-  });
-  it('returns stateless for the draft version', () => {
-    // connectFor wraps connectStateless in a closure (to pass the spec
-    // version through), so identity with connectStateless no longer holds;
-    // assert it did not select the stateful implementation. The wire-level
-    // behaviour of the wrapper is covered in stateless.test.ts.
-    expect(connectFor('2026-07-28')).not.toBe(connectStateful);
-    expect(connectFor('2026-07-28')).not.toBe(connectStateless);
-  });
-});
+import { takeWireViolations } from '../validation/wire-schema';
 
 describe('STATELESS_SPEC_VERSIONS', () => {
   it('contains exactly the versions isStatefulVersion rejects', () => {
@@ -58,7 +38,16 @@ describe('connectStateless', () => {
 
   it('injects required _meta keys and MCP-Protocol-Version header', async () => {
     mockFetch.mockResolvedValue(
-      jsonResponse({ jsonrpc: '2.0', id: 1, result: { ok: true } })
+      jsonResponse({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          tools: [],
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private'
+        }
+      })
     );
     const conn = await connectStateless('http://test/mcp');
     await conn.request('tools/list');
@@ -97,6 +86,8 @@ describe('connectStateless', () => {
     );
     const conn = await connectStateless('http://test/mcp');
     await expect(conn.request('tools/list')).rejects.toThrow(/HTTP 502/);
+    // The gateway body is deliberately not a JSON-RPC message.
+    expect(takeWireViolations().violations).toHaveLength(1);
   });
 
   it('throws a useful error for non-JSON non-SSE responses', async () => {
@@ -113,12 +104,15 @@ describe('connectStateless', () => {
   it('parses SSE: collects notifications and returns final result (LF)', async () => {
     mockFetch.mockResolvedValue(
       sseResponse([
-        'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}\n\n',
-        'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"done":true}}\n\n'
+        'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"t1","progress":1}}\n\n',
+        'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[],"resultType":"complete","done":true}}\n\n'
       ])
     );
     const conn = await connectStateless('http://test/mcp');
-    const result = await conn.request<{ done: boolean }>('tools/call', {});
+    const result = await conn.request<{ done: boolean }>('tools/call', {
+      name: 'echo',
+      arguments: {}
+    });
     expect(result.done).toBe(true);
     expect(conn.notifications).toHaveLength(1);
     expect(conn.notifications[0].method).toBe('notifications/progress');
@@ -127,21 +121,26 @@ describe('connectStateless', () => {
   it('parses SSE with CRLF line endings', async () => {
     mockFetch.mockResolvedValue(
       sseResponse([
-        'event: message\r\ndata: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\r\n\r\n'
+        'event: message\r\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[],"resultType":"complete","ok":true}}\r\n\r\n'
       ])
     );
     const conn = await connectStateless('http://test/mcp');
-    const result = await conn.request<{ ok: boolean }>('tools/call', {});
+    const result = await conn.request<{ ok: boolean }>('tools/call', {
+      name: 'echo',
+      arguments: {}
+    });
     expect(result.ok).toBe(true);
   });
 
   it('rejects server-to-client requests on the SSE stream', async () => {
     mockFetch.mockResolvedValue(
       sseResponse([
-        'event: message\ndata: {"jsonrpc":"2.0","id":99,"method":"elicitation/create","params":{}}\n\n'
+        'event: message\ndata: {"jsonrpc":"2.0","id":99,"method":"elicitation/create","params":{"message":"Name?","requestedSchema":{"type":"object","properties":{}}}}\n\n'
       ])
     );
     const conn = await connectStateless('http://test/mcp');
-    await expect(conn.request('tools/call', {})).rejects.toThrow(/MRTR/);
+    await expect(
+      conn.request('tools/call', { name: 'echo', arguments: {} })
+    ).rejects.toThrow(/MRTR/);
   });
 });

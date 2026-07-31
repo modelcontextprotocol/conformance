@@ -1567,14 +1567,21 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
     const checks: ConformanceCheck[] = [];
 
     try {
-      // Send inputResponses with invalid structure (number instead of object for the response)
-      const resp = await sendRpc(serverUrl, 'tools/call', {
-        name: 'test_input_required_result_elicitation',
-        arguments: {},
-        inputResponses: {
-          user_name: 12345 as unknown as Record<string, unknown>
-        }
-      });
+      // Send inputResponses with invalid structure (number instead of object
+      // for the response). Deliberately schema-invalid, so wire-schema
+      // validation is skipped for this call.
+      const resp = await sendRpc(
+        serverUrl,
+        'tools/call',
+        {
+          name: 'test_input_required_result_elicitation',
+          arguments: {},
+          inputResponses: {
+            user_name: 12345 as unknown as Record<string, unknown>
+          }
+        },
+        { skipValidation: true }
+      );
 
       const validateErrors: string[] = [];
 
@@ -1599,12 +1606,18 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
         details: { result: resp.result, error: resp.error }
       });
 
-      // Also test: send completely malformed inputResponses (null)
-      const resp2 = await sendRpc(serverUrl, 'tools/call', {
-        name: 'test_input_required_result_elicitation',
-        arguments: {},
-        inputResponses: null as unknown as Record<string, unknown>
-      });
+      // Also test: send completely malformed inputResponses (null).
+      // Deliberately schema-invalid; skip wire-schema validation.
+      const resp2 = await sendRpc(
+        serverUrl,
+        'tools/call',
+        {
+          name: 'test_input_required_result_elicitation',
+          arguments: {},
+          inputResponses: null as unknown as Record<string, unknown>
+        },
+        { skipValidation: true }
+      );
 
       const protocolErrors: string[] = [];
 

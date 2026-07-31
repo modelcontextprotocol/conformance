@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Fail any test during which a wire message violated the spec JSON schema.
+    setupFiles: ['./src/validation/vitest-hooks.ts'],
     include: ['**/*.test.ts'],
     exclude: [
       '**/node_modules/**',
