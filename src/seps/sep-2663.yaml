@@ -1,0 +1,200 @@
+sep: 2663
+spec_url: https://modelcontextprotocol.io/seps/2663-tasks-extension
+requirements:
+  # ── Capability Negotiation ────────────────────────────────────────────────
+  - check: sep-2663-server-rejects-undeclared-client
+    text: 'A server MUST NOT return CreateTaskResult to a client that did not include the extension capability on its request, regardless of prior declarations.'
+
+  - check: sep-2663-client-handles-polymorphic-result
+    text: 'A client that has negotiated this extension MUST be prepared to handle either CallToolResult or CreateTaskResult in response to any supported request it issues.'
+
+  - check: sep-2663-client-rejects-task-result-on-unsupported
+    text: 'A client that receives CreateTaskResult in response to an unsupported request type MUST interpret this as an invalid response to the request.'
+
+  # The spec sentence "MUST return an error with the code -32021 ...,
+  # indicating the required extension in the error response" couples two
+  # observable requirements: the JSON-RPC error code, and the data-shape
+  # that names the missing extension. Split into two YAML entries so each
+  # is verifiable independently — Check 1 fires on code mismatch, Check 2
+  # fires on payload shape.
+  - check: sep-2663-server-returns-missing-capability-when-required
+    text: 'If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32021 (Missing Required Client Capability).'
+
+  - check: sep-2663-server-returns-missing-capability-data-shape
+    text: 'The -32021 error response MUST indicate the required extension in the error response payload (the spec example shows a `data.requiredCapabilities.extensions["io.modelcontextprotocol/tasks"]` shape).'
+
+  # ── Polymorphic Results ───────────────────────────────────────────────────
+  - check: sep-2663-result-type-task-on-create
+    text: 'Servers MUST set resultType to "task" when returning a CreateTaskResult so that clients can distinguish it from a standard result.'
+
+  - check: sep-2663-no-task-result-type-on-others
+    text: 'Servers MUST NOT set resultType to "task" on result types other than CreateTaskResult.'
+
+  # ── Task Status ───────────────────────────────────────────────────────────
+  - check: sep-2663-failed-status-jsonrpc-only
+    text: 'failed: The request failed due to a JSON-RPC error during execution. The task will include the error field with the JSON-RPC error details. This status MUST NOT be used for non-JSON-RPC errors.'
+
+  # ── Task Creation ─────────────────────────────────────────────────────────
+  - check: sep-2663-durable-create-strong-consistency
+    text: 'A server MUST NOT return CreateTaskResult until the task is durably created — that is, until a tasks/get for the returned taskId would resolve. In eventually-consistent environments, the server MUST wait for consistency before responding.'
+
+  - check: sep-2663-mrtr-synchronous-before-task-creation
+    text: 'Server implementations that use multi round-trip requests in conjunction with task creation (for example, a tool that requires elicitation over InputRequiredResult before creating a task) SHOULD resolve all MRTR exchanges synchronously before responding with a CreateTaskResult.'
+
+  # ── Task Polling (tasks/get response per status) ──────────────────────────
+  - check: sep-2663-tasks-get-status-working
+    text: 'If the status is working, the server MUST return a a Task object with status working.'
+
+  - check: sep-2663-tasks-get-status-input-required
+    text: 'If the status is input_required, the server MUST return a Task object with status input_required and an inputRequests field defined in Multi Round-Trip Requests. The inputRequests field MUST contain all outstanding requests from the server to the client that need to be fulfilled before the task can proceed.'
+
+  - check: sep-2663-tasks-get-status-completed
+    text: 'If the status is completed, the server MUST return a Task object with status completed and a result field containing the final result of the task.'
+
+  - check: sep-2663-tasks-get-status-cancelled
+    text: 'If the status is cancelled, the server MUST return a Task object with status cancelled.'
+
+  - check: sep-2663-tasks-get-status-failed
+    text: 'If the status is failed, the server MUST return a Task object with status failed and the error that occurred during execution.'
+
+  - check: sep-2663-result-type-complete-on-tasks-get
+    text: 'The resultType field MUST be set to "complete" on this object as it is the standard result shape for the tasks/get request.'
+
+  # ── Task Update Requests ──────────────────────────────────────────────────
+  - check: sep-2663-input-request-key-unique-per-task
+    text: 'Each request key in inputRequests MUST be unique over the lifetime of a single task.'
+
+  - check: sep-2663-no-key-reuse-after-response
+    text: "A server MUST NOT reuse a key for a subsequent server-to-client request after a response for that key has been delivered, and MUST NOT use the same key to refer to two distinct requests over a task's lifetime."
+
+  - check: sep-2663-update-ack-empty-result
+    text: 'On success, the server MUST acknowledge the request with an empty result.'
+
+  - check: sep-2663-update-error-unknown-task-id
+    text: 'Servers SHOULD return a JSON-RPC error if the taskId does not correspond to a known task.'
+
+  - check: sep-2663-update-ignore-unknown-keys
+    text: 'A server SHOULD ignore any inputResponses responses mapped to a key that is not currently outstanding for the task — including keys that were never issued, keys that have already been answered, and keys whose corresponding request has been superseded.'
+
+  - check: sep-2663-result-type-complete-on-tasks-update
+    text: 'The resultType field MUST be set to "complete" on UpdateTaskResult as it is the standard result shape for the tasks/update request.'
+
+  # ── Task Cancellation ─────────────────────────────────────────────────────
+  - check: sep-2663-cancel-not-via-cancelled-notification
+    text: 'The notifications/cancelled notification MUST NOT be used for task cancellation.'
+
+  - check: sep-2663-cancel-ack-empty-result
+    text: 'The server MUST acknowledge the request with an empty result.'
+
+  - check: sep-2663-cancel-error-unknown-task-id
+    text: 'Servers SHOULD return a JSON-RPC error if the taskId does not correspond to a known task.'
+
+  - check: sep-2663-result-type-complete-on-tasks-cancel
+    text: 'The resultType field MUST be set to "complete" on CancelTaskResult as it is the standard result shape for the tasks/cancel request.'
+
+  # ── Task Status Notifications ─────────────────────────────────────────────
+  - check: sep-2663-subscribe-missing-capability-non-declaring
+    text: 'If a client requests task status notifications but does not declare the io.modelcontextprotocol/tasks extension capability, the server MUST return a JSON-RPC error specifying the missing capabilities:'
+
+  - check: sep-2663-no-progress-or-message-on-task-stream
+    text: 'notifications/progress and notifications/message notifications MUST NOT be sent on the subscriptions/listen stream for a task, and are not supported on tasks in general in this specification.'
+
+  # ── Streamable HTTP: Routing Headers ──────────────────────────────────────
+  - check: sep-2663-client-emits-mcp-name-on-tasks-methods
+    text: 'When tasks/get, tasks/update, or tasks/cancel is sent over the Streamable HTTP transport, the client MUST set the Mcp-Name header (defined by SEP-2243) to the value of params.taskId.'
+
+  # Positive-path counterpart to the rejection requirement below:
+  # SEP-2663 routing headers, when set correctly, MUST NOT break the
+  # tasks dispatch path — matched Mcp-Method + Mcp-Name on tasks/get
+  # MUST resolve normally to the task identified by params.taskId.
+  - check: sep-2663-routing-headers-accepted-on-tasks-get
+    text: 'When the Mcp-Method and Mcp-Name request headers match the body method and params.taskId on tasks/get, tasks/update, and tasks/cancel, the server MUST dispatch the request normally and return the same result as if the headers were absent.'
+
+  # Server-side counterpart to the client-MUST above. Derived from
+  # SEP-2243 §"Server Behavior" applied to the tasks-namespace methods
+  # listed in SEP-2663 §"Streamable HTTP: Routing Headers".
+  - check: sep-2663-server-rejects-mismatched-mcp-name-on-tasks-get
+    text: 'Servers that process the request body MUST reject requests where the values specified in the headers do not match the values in the request body.'
+    url: https://modelcontextprotocol.io/seps/2243-http-standardization#header-processing
+
+  # ── Error Handling — Protocol Errors ──────────────────────────────────────
+  - check: sep-2663-tasks-get-invalid-task-id-32602
+    text: 'Servers MUST return this error for tasks/get.'
+
+  - check: sep-2663-tasks-update-cancel-invalid-task-id-32602
+    text: 'Servers SHOULD return this error for tasks/update and tasks/cancel.'
+
+  - check: sep-2663-tasks-methods-non-declaring
+    text: 'Servers MUST return this error for non-declaring clients issuing tasks/get, tasks/update, and tasks/cancel requests.'
+
+  # ── Task Execution Errors ─────────────────────────────────────────────────
+  - check: sep-2663-failed-includes-statusmessage
+    text: 'The tasks/get response SHOULD include a statusMessage field with diagnostic information about the failure, and MUST include the error field with the JSON-RPC error.'
+
+  - check: sep-2663-tool-error-uses-completed-status
+    text: 'The failed status MUST NOT be used to represent non-JSON-RPC errors, such as a tool result that completed with isError: true. Errors within the context of a protocol method result MUST use the completed status with the error details in the result field.'
+
+  # ── Backwards Compatibility (2026-06-30) ──────────────────────────────────
+  - check: sep-2663-tasks-result-removed-method-not-found
+    text: 'tasks/result is removed; clients calling it MUST receive -32601 (Method Not Found).'
+
+  - check: sep-2663-legacy-task-param-ignored
+    text: 'The task parameter on CallToolRequest is removed; servers MUST ignore it (treat the field as unknown) rather than using it as an opt-in.'
+
+  - check: sep-2663-migrate-from-legacy-capabilities
+    text: 'Servers that previously advertised these MUST migrate to declaring io.modelcontextprotocol/tasks, and MUST NOT continue to advertise the legacy capabilities under any protocol version that includes this extension.'
+
+  - check: sep-2663-legacy-capability-treated-as-non-declaring
+    text: 'Servers MUST treat clients declaring only the legacy capability as non-declaring with respect to this extension.'
+
+  # Scenario flow-gate checks emit IDs without an RFC-2119 sentence to
+  # anchor to (tasks-extension-advertised, tasks-sync-tool-call,
+  # tasks-immediate-result-shortcut, tasks-wire-field-renames,
+  # tasks-no-early-ttl-expiry, tasks-no-related-task-meta-on-inlined-result,
+  # tasks-per-request-meta-opt-in, tasks-headers-*,
+  # tasks-cancel-terminal-idempotent-ack, tasks-mrtr-tasks-update-resumes,
+  # tasks-mrtr-partial-fulfillment, tasks-server-directed-creation-no-hint,
+  # tasks-result-type-complete-on-non-task-responses, tasks-removed-tasks-list,
+  # plus the ephemeral mrtr-* flow-gates in src/scenarios/server/mrtr/).
+  # These verify end-to-end flow invariants rather than a specific normative
+  # sentence, so they surface in the traceability manifest's `untracked`
+  # list instead of claiming requirement coverage. Same convention as
+  # sep-2322.yaml's flow-gate comment block.
+
+  # ── Excluded requirements ─────────────────────────────────────────────────
+
+  - text: 'implementations SHOULD be designed to accommodate additional request types in future revisions of this specification.'
+    excluded: 'Architectural design guidance, not observable at the protocol level'
+
+  - text: 'Clients SHOULD respect the pollIntervalMs provided in responses when determining polling frequency.'
+    excluded: 'Client-internal polling cadence; the rate at which a client polls is not a wire-level conformance signal'
+
+  - text: 'Clients SHOULD continue polling until the task reaches a terminal status or until invoking tasks/cancel.'
+    excluded: 'Internal client behavior with no observable violation at the protocol level'
+
+  - text: 'Clients SHOULD persist task IDs to durable storage so that polling can resume after a crash or restart.'
+    excluded: 'Internal storage decision; not observable at the protocol level'
+
+  - text: 'The client MUST inspect this field and SHOULD provide responses via the inputResponses field in subsequent tasks/update requests.'
+    excluded: 'Client-internal inspection action; not observable at the protocol level (the downstream tasks/update emission is covered by the MRTR scenarios)'
+
+  - text: 'Clients MUST treat each entry in inputRequests as they would the equivalent standalone server-to-client request — for example, an elicitation request surfaced via inputRequests is subject to the same trust model and user-facing behavior as a direct elicitation/create request.'
+    excluded: 'Host-internal trust model; not observable at the protocol level'
+
+  - text: 'Clients SHOULD deduplicate inputRequests keys across consecutive polls to avoid presenting the same request to the user or model more than once.'
+    excluded: 'Client UX / internal deduplication; not observable at the protocol level'
+
+  - text: 'Clients SHOULD track inputRequests keys to avoid responding to requests more than once.'
+    excluded: 'Internal client state; not observable at the protocol level'
+
+  - text: 'Servers SHOULD provide informative error messages to describe the cause of errors.'
+    excluded: 'Subjective; "informative" has no observable threshold at the protocol level'
+
+  - text: 'Hosts MUST apply the same trust model to these payloads as they would to standard elicitation/sampling requests. A task is not a higher-trust channel.'
+    excluded: 'Host-internal trust model; not observable at the protocol level'
+
+  - text: 'Servers MUST generate them with sufficient entropy that a third party cannot enumerate or guess them.'
+    excluded: '"Sufficient entropy" is a statistical property without a protocol-level threshold; cannot be asserted at the wire layer'
+
+  - text: 'Servers MUST perform authentication and authorization checks on each task-related request to ensure that the client has permission to access a task.'
+    excluded: 'Host-internal authentication/authorization policy; not observable at the protocol level without coupling to a specific auth scheme'

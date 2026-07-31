@@ -15,20 +15,29 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { connectToServer } from './sdk-client';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { JsonRpcError, type Connection } from './index';
+import { type SpecVersion } from '../types';
+import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
-export async function connectStateful(serverUrl: string): Promise<Connection> {
-  const { client, close } = await connectToServer(serverUrl);
+export async function connectStateful(
+  serverUrl: string,
+  opts: ConnectOptions,
+  specVersion: SpecVersion
+): Promise<Connection> {
+  // Wire-schema validation happens inside connectToServer, which hooks the
+  // SDK transport's send/onmessage so the real bytes of every message in
+  // both directions are validated — no per-call choke points needed here.
+  const { client, close } = await connectToServer(serverUrl, opts, specVersion);
 
   const notifications: JSONRPCNotification[] = [];
   const collect = (n: unknown) => {
     // The SDK's Zod parsing strips the jsonrpc field; restore it so collected
-    // notifications match the JSONRPCNotification wire shape, as
-    // connectStateless provides.
-    notifications.push({
+    // notifications match the wire shape connectStateless provides (the raw
+    // notification was already validated by the transport hook).
+    const notification = {
       jsonrpc: '2.0',
       ...(n as object)
-    } as JSONRPCNotification);
+    } as JSONRPCNotification;
+    notifications.push(notification);
   };
   // The SDK pre-registers a handler for notifications/progress (to drive the
   // onprogress callback feature), so it never reaches the fallback. Register
@@ -45,12 +54,33 @@ export async function connectStateful(serverUrl: string): Promise<Connection> {
   return {
     notifications,
 
+    // Synthesize the discover-shape from the SDK Client's post-`initialize`
+    // accessors so the stateful Connection exposes the same surface the
+    // stateless wire's `server/discover` produces.
+    async discover(): Promise<Record<string, unknown>> {
+      return {
+        capabilities: client.getServerCapabilities() ?? {},
+        serverInfo: client.getServerVersion() ?? {},
+        instructions: client.getInstructions()
+      };
+    },
+
     async request<R>(
       method: string,
-      params: Record<string, unknown> = {}
+      params: Record<string, unknown> = {},
+      extraHeaders?: Record<string, string>
     ): Promise<R> {
+      if (extraHeaders && Object.keys(extraHeaders).length > 0) {
+        // The SDK Client transport manages headers internally; per-call
+        // override would require dropping to raw fetch. No 2025-x
+        // scenario needs this today; flag loudly if one shows up.
+        throw new Error(
+          'connectStateful.request: extraHeaders is unsupported on the stateful wire (per-call header overrides require raw fetch on the stateless wire only)'
+        );
+      }
       try {
-        return (await client.request({ method, params }, ResultSchema)) as R;
+        const result = await client.request({ method, params }, ResultSchema);
+        return result as R;
       } catch (e) {
         // Normalize so scenarios always see JsonRpcError regardless of impl.
         // The SDK prefixes messages with "MCP error <code>: "; strip it so

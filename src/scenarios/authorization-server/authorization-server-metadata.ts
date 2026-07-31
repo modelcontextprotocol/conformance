@@ -1,11 +1,15 @@
 /**
  * Authorization server metadata endpoint test scenarios for MCP authorization servers
  */
+import { AuthorizationServerOptions } from '../../schemas';
 import {
+  CheckStatus,
   ClientScenarioForAuthorizationServer,
   ConformanceCheck
 } from '../../types';
 import { request } from 'undici';
+import { SpecReferences } from '../authorization-server/auth/spec-references';
+import { SpecReferences as ClientSpecReferences } from '../client/auth/spec-references';
 
 type Status = 'SUCCESS' | 'FAILURE';
 
@@ -22,15 +26,20 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 - HTTP response status code MUST be 200 OK
 - Content-Type header MUST be application/json
 - Return a JSON response including issuer, authorization_endpoint, token_endpoint and response_types_supported
-- The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.`;
+- The issuer value MUST match the URI obtained by removing the well-known URI string from the authorization server metadata URI.
+- (2025-11-25+) SHOULD include client_id_metadata_document_supported=true (Client ID Metadata Document support)`;
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(
+    options: AuthorizationServerOptions,
+    _details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]> {
     let status: Status = 'SUCCESS';
     let errorMessage: string | undefined;
     let details: any;
     let response: any | null = null;
+    let body: Record<string, any> | undefined;
     try {
-      const wellKnownUrls = this.createWellKnownUrl(serverUrl);
+      const wellKnownUrls = this.createWellKnownUrl(options.url);
 
       for (const url of wellKnownUrls) {
         try {
@@ -52,9 +61,9 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
 
       this.validateContentType(response.headers['content-type']);
 
-      const body = await this.parseJson(response);
+      body = await this.parseJson(response);
       const errors: string[] = [];
-      this.validateMetadataBody(body, serverUrl, errors);
+      this.validateMetadataBody(body, options.url, errors);
 
       if (errors.length > 0) {
         status = 'FAILURE';
@@ -70,7 +79,7 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
       errorMessage = error instanceof Error ? error.message : String(error);
     }
 
-    return [
+    const checks: ConformanceCheck[] = [
       {
         id: 'authorization-server-metadata',
         name: 'AuthorizationServerMetadata',
@@ -78,15 +87,42 @@ export class AuthorizationServerMetadataEndpointScenario implements ClientScenar
         status,
         timestamp: new Date().toISOString(),
         errorMessage,
-        specReferences: [
-          {
-            id: 'Authorization-Server-Metadata',
-            url: 'https://datatracker.ietf.org/doc/html/rfc8414'
-          }
-        ],
+        specReferences: [SpecReferences.MCP_AUTH_DISCOVERY],
         ...(details ? { details } : {})
       }
     ];
+
+    if (body) {
+      const cimdSupported = body.client_id_metadata_document_supported;
+      const cimdStatus: CheckStatus =
+        cimdSupported === true ? 'SUCCESS' : 'WARNING';
+      const cimdErrorMessage =
+        cimdSupported === true
+          ? undefined
+          : cimdSupported === undefined
+            ? 'Authorization server metadata does not include "client_id_metadata_document_supported"'
+            : `Expected "client_id_metadata_document_supported" to be true, got ${JSON.stringify(cimdSupported)}`;
+
+      checks.push({
+        id: 'authorization-server-metadata-cimd',
+        name: 'AuthorizationServerMetadataCIMD',
+        description:
+          'Authorization server metadata includes client_id_metadata_document_supported=true (Client ID Metadata Document support)',
+        status: cimdStatus,
+        source: { introducedIn: '2025-11-25' } as const,
+        timestamp: new Date().toISOString(),
+        errorMessage: cimdErrorMessage,
+        specReferences: [
+          ClientSpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS,
+          ClientSpecReferences.IETF_CIMD
+        ],
+        details: {
+          client_id_metadata_document_supported: cimdSupported
+        }
+      });
+    }
+
+    return checks;
   }
 
   private createWellKnownUrl(serverUrl: string): string[] {

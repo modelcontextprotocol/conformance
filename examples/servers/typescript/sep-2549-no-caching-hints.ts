@@ -26,7 +26,7 @@ app.post('/mcp', (req, res) => {
         jsonrpc: '2.0',
         id,
         result: {
-          supportedVersions: ['DRAFT-2026-v1'],
+          supportedVersions: ['2026-07-28'],
           capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: { name: 'sep-2549-no-caching-hints', version: '1.0.0' }
         }
