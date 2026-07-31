@@ -101,14 +101,14 @@ and validates session ID format if one is assigned.`;
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
-          'mcp-protocol-version': '2025-11-25'
+          'mcp-protocol-version': ctx.specVersion
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
           params: {
-            protocolVersion: '2025-11-25',
+            protocolVersion: ctx.specVersion,
             capabilities: {},
             clientInfo: {
               name: 'conformance-session-id-test',
@@ -177,7 +177,7 @@ and validates session ID format if one is assigned.`;
       });
     } finally {
       if (rawSessionId) {
-        await terminateSessionRaw(serverUrl, rawSessionId, '2025-11-25');
+        await terminateSessionRaw(serverUrl, rawSessionId, ctx.specVersion);
       }
     }
 

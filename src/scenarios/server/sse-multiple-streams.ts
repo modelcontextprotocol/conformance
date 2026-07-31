@@ -18,6 +18,7 @@ import { buildStandardHeaders, type RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { terminateSessionBestEffort } from '../../connection/sdk-client';
 
 export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   name = 'server-sse-multiple-streams';
@@ -295,12 +296,8 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
     } finally {
       // Clean up: terminate the session before closing the client so the
       // server is left hermetic.
-      if (transport && sessionId) {
-        try {
-          await transport.terminateSession();
-        } catch {
-          // Server MAY respond 405 to DELETE; best-effort.
-        }
+      if (transport) {
+        await terminateSessionBestEffort(transport, serverUrl);
       }
       if (client) {
         try {

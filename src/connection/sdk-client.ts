@@ -121,6 +121,11 @@ function instrumentTransport(
  * conformant `initialize`. The transport is instrumented so every wire
  * message in both directions is validated against `specVersion`'s spec
  * JSON schema; scenarios that call this directly pass `ctx.specVersion`.
+ *
+ * The returned `close()` sends an HTTP DELETE to terminate the server-side
+ * session (per the Streamable HTTP transport spec) before closing the client,
+ * so each scenario leaves the server hermetic. A server that responds 405
+ * (DELETE not supported) is tolerated, since the spec allows that.
  */
 export async function connectToServer(
   serverUrl: string,
@@ -139,16 +144,32 @@ export async function connectToServer(
   return {
     client,
     close: async () => {
-      if (transport.sessionId) {
-        try {
-          await transport.terminateSession();
-        } catch {
-          // The spec allows the server to respond 405 to a DELETE; best-effort.
-        }
-      }
+      await terminateSessionBestEffort(transport, serverUrl);
       await client.close();
     }
   };
+}
+
+// Shared teardown bound so a wedged server-under-test cannot stall the suite.
+const SESSION_TERMINATE_TIMEOUT_MS = 5000;
+
+/**
+ * Best-effort session termination for an SDK transport. Delegates to
+ * terminateSessionRaw (with the transport's negotiated protocol version) so
+ * the DELETE is truly bounded — the socket is aborted at the timeout rather
+ * than left pending against a wedged server. No-op when the server never
+ * issued a session.
+ */
+export async function terminateSessionBestEffort(
+  transport: StreamableHTTPClientTransport,
+  serverUrl: string
+): Promise<void> {
+  if (!transport.sessionId || !transport.protocolVersion) return;
+  await terminateSessionRaw(
+    serverUrl,
+    transport.sessionId,
+    transport.protocolVersion
+  );
 }
 
 /**
@@ -169,7 +190,8 @@ export async function terminateSessionRaw(
       headers: {
         'mcp-session-id': sessionId,
         'MCP-Protocol-Version': protocolVersion
-      }
+      },
+      signal: AbortSignal.timeout(SESSION_TERMINATE_TIMEOUT_MS)
     });
   } catch {
     // best-effort cleanup
