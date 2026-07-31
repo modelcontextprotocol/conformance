@@ -53,6 +53,10 @@ export function createTierCheckCommand(): Command {
       '--spec-version <version>',
       'Only run conformance scenarios for this spec version'
     )
+    .option(
+      '--tag-prefix <prefix>',
+      'Only consider releases whose tag starts with this prefix (monorepos with per-package tags, e.g. "rust-mcp-sdk-v")'
+    )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
       let token = options.token || process.env.GITHUB_TOKEN;
@@ -125,15 +129,17 @@ export function createTierCheckCommand(): Command {
           console.error('  \u2713 P0 Resolution');
           return r;
         }),
-        checkStableRelease(octokit, owner, repo).then((r) => {
-          console.error('  \u2713 Stable Release');
-          return r;
-        }),
+        checkStableRelease(octokit, owner, repo, options.tagPrefix).then(
+          (r) => {
+            console.error('  \u2713 Stable Release');
+            return r;
+          }
+        ),
         checkPolicySignals(octokit, owner, repo, options.branch).then((r) => {
           console.error('  \u2713 Policy Signals');
           return r;
         }),
-        checkSpecTracking(octokit, owner, repo).then((r) => {
+        checkSpecTracking(octokit, owner, repo, options.tagPrefix).then((r) => {
           console.error('  \u2713 Spec Tracking');
           return r;
         })

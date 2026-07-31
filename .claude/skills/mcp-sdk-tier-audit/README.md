@@ -44,6 +44,7 @@ For public repos, any authenticated token works (no special scopes needed — au
 --days <n>                       Limit triage analysis to last N days
 --output <format>                json | markdown | terminal (default: terminal)
 --token <token>                  GitHub token (defaults to GITHUB_TOKEN or gh auth token)
+--tag-prefix <prefix>            Only consider releases whose tag starts with this prefix (monorepos with per-package tags, e.g. "package-name-v")
 ```
 
 ### What the CLI Checks
