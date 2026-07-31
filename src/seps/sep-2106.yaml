@@ -4,29 +4,23 @@ requirements:
   - check: sep-2106-no-network-ref-deref
     text: 'Implementations MUST NOT automatically dereference `$ref` values that resolve to a network URI (i.e. anything that is not a same-document JSON Pointer such as `#/$defs/Foo` or an internal `$anchor`); an opt-in mode that fetches non-local `$ref`s MUST be disabled by default / Schemas that fail to validate due to an unresolved external `$ref` SHOULD be rejected rather than silently treated as permissive'
 
-  # Client-side keyword-preservation checks (Issue #101). The MUST is
-  # implicit in SEP-2106 §1 "Loosen inputSchema", which redefines
-  # `inputSchema` to permit any additional JSON Schema 2020-12 keyword.
-  # A client that silently strips such a keyword while parsing a server's
-  # tool definition violates that contract, since downstream consumers can
-  # no longer recover the intended semantics from what the client exposes.
-  - check: json-schema-2020-12-client-$schema-preserved
-    text: 'The `inputSchema` field is typed as `{ $schema?: string; type: "object"; [key: string]: unknown }`; the optional `$schema` field declares the JSON Schema dialect under which the rest of the schema is interpreted. Implementations MUST preserve `$schema` when parsing a tool definition received from a server, since dropping it loses the dialect declaration.'
-    url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
-  - check: json-schema-2020-12-client-$defs-preserved
-    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties", which includes `$defs` (the JSON Schema 2020-12 reusable-subschema keyword). Implementations MUST preserve `$defs` when parsing a tool definition received from a server.'
-    url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
-  - check: json-schema-2020-12-client-additionalProperties-preserved
-    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties", which includes `additionalProperties`. Implementations MUST preserve `additionalProperties` when parsing a tool definition received from a server, since dropping it changes whether unknown arguments are accepted.'
-    url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
+  # Client-side keyword-preservation checks, derived from issue #101 rather
+  # than a normative sentence in the SEP: SEP-2106 §1 "Loosen inputSchema"
+  # redefines `inputSchema` to permit any additional JSON Schema 2020-12
+  # keyword, and a client that silently strips such a keyword while parsing
+  # a server's tool definition breaks that contract, since downstream
+  # consumers can no longer recover the intended semantics from what the
+  # client exposes. The scenario's SEP-1613-scoped checks ($schema, $defs,
+  # additionalProperties) are not declared here: their IDs are not
+  # sep-2106-prefixed, so the traceability manifest never collects them.
   - check: sep-2106-client-composition-keywords-preserved
-    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: Composition keywords: anyOf, oneOf, allOf, not". Implementations MUST preserve these composition keywords when parsing a tool definition received from a server.'
+    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: Composition keywords: anyOf, oneOf, allOf, not". Derived expectation (issue #101): a client parsing a tool definition received from a server is expected to preserve these composition keywords.'
     url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
   - check: sep-2106-client-conditional-keywords-preserved
-    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: ... Conditional schemas: if/then/else". Implementations MUST preserve these conditional keywords when parsing a tool definition received from a server.'
+    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: ... Conditional schemas: if/then/else". Derived expectation (issue #101): a client parsing a tool definition received from a server is expected to preserve these conditional keywords.'
     url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
   - check: sep-2106-client-anchor-keyword-preserved
-    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: ... Reference schemas: $ref, $defs". Implementations MUST preserve `$anchor` (a JSON Schema 2020-12 reference-anchor keyword that lives inside `$defs`) when parsing a tool definition received from a server.'
+    text: 'The `inputSchema` field "now accepts any additional JSON Schema properties. This enables: ... Reference schemas: $ref, $defs". Derived expectation (issue #101): a client parsing a tool definition received from a server is expected to preserve `$anchor` (a JSON Schema 2020-12 reference-anchor keyword that lives inside `$defs`).'
     url: https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#1-loosen-inputschema
 
   - text: "SDK maintainers SHOULD: Document the migration in SDK release notes; Where ergonomic, provide typed helpers (e.g. generics over a tool's `outputSchema`) so consumers do not need to write narrowing guards by hand"
