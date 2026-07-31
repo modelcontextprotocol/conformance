@@ -21,8 +21,8 @@
  *    flags any missing or altered keywords.
  *
  * SEP-2106 vocabulary checks are soft-gated via `sep2106KeywordCheckStatus`:
- * stripping is FAILURE only when the run targets `DRAFT-2026-v1`; on earlier
- * dated versions the check reports SKIPPED.
+ * stripping is FAILURE only when the run targets the draft version
+ * (`2026-07-28`); on earlier dated versions the check reports SKIPPED.
  */
 
 import type { ScenarioContext, MockServer } from '../../mock-server';
@@ -31,6 +31,7 @@ import type {
   ListToolsResult
 } from '../../spec-types/2025-11-25';
 import {
+  DRAFT_PROTOCOL_VERSION,
   LATEST_SPEC_VERSION,
   type ConformanceCheck,
   type Scenario,
@@ -308,7 +309,7 @@ The scenario compares the echoed schema against the original fixture and flags a
     });
 
     // SEP-2106 vocabulary — soft-gated via sep2106KeywordCheckStatus.
-    const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from DRAFT-2026-v1)`;
+    const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
 
     // SEP-2106: composition (allOf/anyOf) preserved
     const allOf = echo['allOf'];
