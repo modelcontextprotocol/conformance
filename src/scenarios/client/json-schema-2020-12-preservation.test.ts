@@ -1,31 +1,11 @@
 import { testScenarioContext } from '../../mock-server/testing';
-import { createServerStateful } from '../../mock-server/stateful';
-import type { ScenarioContext } from '../../mock-server';
 import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { JsonSchema2020_12PreservationScenario } from './json-schema-2020-12-preservation';
-import {
-  DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION,
-  type SpecVersion
-} from '../../types';
+import { sendStatelessRequest } from '../../connection/stateless';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 import { JSON_SCHEMA_2020_12_FIXTURE } from '../server/json-schema-2020-12';
-
-/**
- * Build a ScenarioContext whose advertised spec version drives the
- * scenario's soft-gating logic, while the underlying mock server stays on
- * the stateful (initialize-handshake) lifecycle. The SDK `Client` does not
- * yet support the SEP-2575 stateless lifecycle, so a stateless mock server
- * cannot be driven by the SDK in this unit test; this helper lets us
- * exercise the SEP-2106 draft-target branch without that limitation.
- */
-function statefulCtxAtSpecVersion(specVersion: SpecVersion): ScenarioContext {
-  return {
-    specVersion,
-    createServer: createServerStateful
-  };
-}
 
 const FOCAL_TOOL = 'json_schema_2020_12_tool';
 const ECHO_TOOL = 'json_schema_echo';
@@ -62,6 +42,35 @@ async function runEchoClient(
   } finally {
     await transport.close();
   }
+}
+
+/**
+ * Drive the scenario's mock server through the SEP-2575 stateless lifecycle
+ * that the draft protocol version uses: list tools, then echo the focal
+ * tool's inputSchema back (verbatim or after the caller-supplied transform).
+ * The SDK `Client` does not support the stateless lifecycle, so these
+ * requests go through the raw stateless helper instead.
+ */
+async function runStatelessEchoClient(
+  serverUrl: string,
+  transform: (schema: Record<string, unknown>) => Record<string, unknown> = (
+    s
+  ) => s
+): Promise<void> {
+  const listed = await sendStatelessRequest(serverUrl, 'tools/list');
+  const tools = (
+    listed.body?.result as
+      | { tools?: { name: string; inputSchema: Record<string, unknown> }[] }
+      | undefined
+  )?.tools;
+  const focal = tools?.find((t) => t.name === FOCAL_TOOL);
+  if (!focal) {
+    throw new Error(`Focal tool ${FOCAL_TOOL} not advertised`);
+  }
+  await sendStatelessRequest(serverUrl, 'tools/call', {
+    name: ECHO_TOOL,
+    arguments: { schema: transform(focal.inputSchema) }
+  });
 }
 
 describe('json-schema-2020-12-preservation scenario', () => {
@@ -145,10 +154,10 @@ describe('json-schema-2020-12-preservation scenario', () => {
   it('emits all SUCCESS when a compliant client echoes back on the draft target', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
     const { serverUrl } = await scenario.start(
-      statefulCtxAtSpecVersion(DRAFT_PROTOCOL_VERSION)
+      testScenarioContext(DRAFT_PROTOCOL_VERSION)
     );
     try {
-      await runEchoClient(serverUrl);
+      await runStatelessEchoClient(serverUrl);
 
       const checks = scenario.getChecks();
       for (const c of checks) {
@@ -205,10 +214,10 @@ describe('json-schema-2020-12-preservation scenario', () => {
   it('flags SEP-2106 FAILURE on the draft target when composition keywords are stripped', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
     const { serverUrl } = await scenario.start(
-      statefulCtxAtSpecVersion(DRAFT_PROTOCOL_VERSION)
+      testScenarioContext(DRAFT_PROTOCOL_VERSION)
     );
     try {
-      await runEchoClient(serverUrl, (schema) => {
+      await runStatelessEchoClient(serverUrl, (schema) => {
         const stripped = { ...schema };
         delete stripped['allOf'];
         delete stripped['anyOf'];
