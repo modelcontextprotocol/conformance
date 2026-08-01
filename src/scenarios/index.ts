@@ -15,6 +15,7 @@ import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
 import { MRTRClientScenario } from './client/mrtr-client';
+import { TasksClientCreateHandlingScenario } from './client/tasks-create-handling';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
@@ -317,7 +318,10 @@ const scenariosList: Scenario[] = [
   new JsonSchemaRefDerefScenario(),
 
   // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
-  new JsonSchema2020_12PreservationScenario()
+  new JsonSchema2020_12PreservationScenario(),
+
+  // SEP-2663 Tasks extension client conformance
+  new TasksClientCreateHandlingScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -377,7 +381,9 @@ export function listCoreScenarios(): string[] {
 }
 
 export function listExtensionScenarios(): string[] {
-  return extensionScenariosList.map((scenario) => scenario.name);
+  return scenariosList
+    .filter((scenario) => 'extensionId' in scenario.source)
+    .map((scenario) => scenario.name);
 }
 
 export function listBackcompatScenarios(): string[] {
