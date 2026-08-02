@@ -68,6 +68,8 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import { CachingScenario } from './server/caching';
+import { HttpStreamCancellationScenario } from './server/http-stream-cancellation';
+import { PerRequestLogLevelScenario } from './server/per-request-loglevel';
 
 // InputRequiredResult scenarios from (SEP-2322)
 import {
@@ -215,6 +217,13 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),
+
+  // HTTP Stream-Close Cancellation (2026-07-28)
+  new HttpStreamCancellationScenario(),
+
+  // Per-Request LogLevel (2026-07-28)
+  new PerRequestLogLevelScenario(),
+
   // HTTP Standardization scenarios (SEP-2243)
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario(),
