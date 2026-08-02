@@ -66,6 +66,8 @@ import {
   PromptsGetWithImageScenario
 } from './server/prompts';
 
+import { CancellationScenario } from './server/cancellation';
+import { ProgressNotificationsScenario } from './server/progress-notifications';
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import { CachingScenario } from './server/caching';
 
@@ -123,6 +125,12 @@ import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
+  // Cancellation and progress scenarios require test_tool_slow, test_tool_fast,
+  // and the progressToken guard fix in the everything-server. These additions
+  // are included in this branch but not yet merged to the server's main.
+  new CancellationScenario(),
+  new ProgressNotificationsScenario(),
+
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
   // $schema, $defs, and additionalProperties fields in tool schemas.
@@ -165,6 +173,8 @@ const allClientScenariosList: ClientScenario[] = [
   new LoggingSetLevelScenario(),
   new PingScenario(),
   new CompletionCompleteScenario(),
+  new CancellationScenario(),
+  new ProgressNotificationsScenario(),
 
   // Tools scenarios
   new ToolsListScenario(),
