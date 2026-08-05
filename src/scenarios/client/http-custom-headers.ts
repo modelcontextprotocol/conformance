@@ -68,6 +68,7 @@ const INVALID_TOOL_CONSTRAINT_IDS: Record<string, string> = {
   invalid_object_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_array_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_null_header: 'sep-2243-x-mcp-header-primitive-only',
+  invalid_number_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_duplicate_same_case: 'sep-2243-x-mcp-header-unique',
   invalid_duplicate_diff_case: 'sep-2243-x-mcp-header-unique',
   invalid_space_in_name: 'sep-2243-x-mcp-header-charset',
@@ -858,6 +859,23 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
                 nil: { type: 'null', 'x-mcp-header': 'Nil' }
               },
               required: ['nil']
+            }
+          },
+
+          // ── Invalid: x-mcp-header on number type ──
+          // `number` is a JSON Schema primitive but SEP-2243 excludes it from
+          // the permitted set: "Parameters with type `number` are not
+          // permitted." Only integer, string and boolean may be annotated.
+          {
+            name: 'invalid_number_header',
+            description:
+              'x-mcp-header MUST NOT be on number type (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                score: { type: 'number', 'x-mcp-header': 'Score' }
+              },
+              required: ['score']
             }
           },
 
