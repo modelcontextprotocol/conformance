@@ -105,6 +105,95 @@ function formatRate(cell: Cell): string {
   return `${cell.passed}/${cell.total} (${Math.round((cell.passed / cell.total) * 100)}%)`;
 }
 
+/**
+ * Under a requirement set the spec-version matrix is the wrong picture: the set
+ * already names exactly what is scored, so splitting it by applicability tag and
+ * filing part of it as "informational" would contradict the score.
+ */
+/**
+ * A scenario excluded from scoring is excluded under every revision that runs it,
+ * so listing it once per revision just pads the report. Keep one row, and treat it
+ * as failing if it failed anywhere.
+ */
+function dedupeNotScored<T extends { scenario: string; passed: boolean }>(
+  entries: T[]
+): T[] {
+  const byName = new Map<string, T>();
+  for (const e of entries) {
+    const seen = byName.get(e.scenario);
+    if (!seen) byName.set(e.scenario, e);
+    else if (seen.passed && !e.passed) byName.set(e.scenario, e);
+  }
+  return [...byName.values()];
+}
+
+function requirementsSummary(scorecard: TierScorecard): string[] {
+  const revisions = scorecard.requirements_revisions ?? [];
+  const rows: [string, ConformanceResult][] = [
+    ['Server', scorecard.checks.conformance as ConformanceResult],
+    ['Client', scorecard.checks.client_conformance as ConformanceResult]
+  ];
+  const lines = [
+    '',
+    `Scored against the ${revisions.join(' and ')} requirement set${revisions.length > 1 ? 's' : ''}, each run at its own wire version.`,
+    '',
+    '| | Required | Passed | |',
+    '|---|---|---|---|'
+  ];
+  for (const [label, result] of rows) {
+    if (result.error) {
+      lines.push(`| ${label} | — | — | not measured |`);
+      continue;
+    }
+    if (result.status === 'skipped') {
+      lines.push(`| ${label} | — | — | skipped |`);
+      continue;
+    }
+    lines.push(
+      `| ${label} | ${result.total} | ${result.passed} | ${Math.round(result.pass_rate * 100)}% |`
+    );
+  }
+
+  // A requirement set is small and every entry is named, so a bare count is not
+  // actionable: say which ones failed.
+  const failed = rows.flatMap(([label, result]) =>
+    result.details
+      .filter((d) => !d.passed && !d.notScoredReason)
+      .map((d) => `${label.toLowerCase()}: ${d.scenario}`)
+  );
+  if (failed.length > 0) {
+    lines.push('');
+    lines.push(`_Failing (${failed.length}):_`);
+    lines.push('');
+    failed.forEach((f) => lines.push(`- ${f}`));
+  }
+
+  // Run and reported, but deliberately outside the score.
+  const notScored = dedupeNotScored(
+    rows.flatMap(([label, result]) =>
+      result.details
+        .filter((d) => d.notScoredReason)
+        .map((d) => ({ ...d, leg: label.toLowerCase() }))
+    )
+  );
+  if (notScored.length > 0) {
+    const failing = notScored.filter((d) => !d.passed);
+    lines.push('');
+    lines.push(
+      `_Not scored (${notScored.length} run, ${failing.length} failing). These do not affect the tier:_`
+    );
+    lines.push('');
+    lines.push('| Scenario | Leg | Result | Why not scored |');
+    lines.push('|---|---|---|---|');
+    for (const d of notScored) {
+      lines.push(
+        `| ${d.scenario} | ${d.leg} | ${d.passed ? 'pass' : 'fail'} | ${d.notScoredReason} |`
+      );
+    }
+  }
+  return lines;
+}
+
 export function formatJson(scorecard: TierScorecard): string {
   return JSON.stringify(scorecard, null, 2);
 }
@@ -118,6 +207,10 @@ export function formatMarkdown(scorecard: TierScorecard): string {
   lines.push(`**Repo**: ${scorecard.repo}`);
   if (scorecard.branch) lines.push(`**Branch**: ${scorecard.branch}`);
   if (scorecard.version) lines.push(`**Version**: ${scorecard.version}`);
+  if (scorecard.requirements_revisions)
+    lines.push(
+      `**Requirements**: ${scorecard.requirements_revisions.join(', ')} (frozen; each run at its own wire)`
+    );
   lines.push(`**Timestamp**: ${scorecard.timestamp}`);
   lines.push('');
   lines.push('## Check Results');
@@ -129,50 +222,54 @@ export function formatMarkdown(scorecard: TierScorecard): string {
     c.client_conformance as ConformanceResult
   );
 
-  // Tier-scoring matrix
-  lines.push('');
-  lines.push(`| | ${TIER_SPEC_VERSIONS.join(' | ')} | All* |`);
-  lines.push(`|---|${TIER_SPEC_VERSIONS.map(() => '---|').join('')}---|`);
-
-  const mdRows: [string, MatrixRow][] = [
-    ['Server', matrix.server],
-    ['Client: Core', matrix.clientCore],
-    ['Client: Auth', matrix.clientAuth]
-  ];
-
-  for (const [label, row] of mdRows) {
-    lines.push(
-      `| ${label} | ${TIER_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} | ${formatRate(row.tierUnique)} |`
-    );
-  }
-
-  lines.push('');
-  lines.push(
-    '_* unique scenarios — a scenario may apply to multiple spec versions_'
-  );
-
-  // Informational matrix (draft/extension)
-  const hasInfoMd = mdRows.some(([, row]) =>
-    INFO_SPEC_VERSIONS.some((v) => {
-      const cell = row.cells.get(v);
-      return cell && cell.total > 0;
-    })
-  );
-  if (hasInfoMd) {
+  if (scorecard.requirements_revisions) {
+    lines.push(...requirementsSummary(scorecard));
+  } else {
+    // Tier-scoring matrix
     lines.push('');
-    lines.push('_Informational (not scored for tier):_');
-    lines.push('');
-    lines.push(`| | ${INFO_SPEC_VERSIONS.join(' | ')} |`);
-    lines.push(`|---|${INFO_SPEC_VERSIONS.map(() => '---|').join('')}`);
+    lines.push(`| | ${TIER_SPEC_VERSIONS.join(' | ')} | All* |`);
+    lines.push(`|---|${TIER_SPEC_VERSIONS.map(() => '---|').join('')}---|`);
+
+    const mdRows: [string, MatrixRow][] = [
+      ['Server', matrix.server],
+      ['Client: Core', matrix.clientCore],
+      ['Client: Auth', matrix.clientAuth]
+    ];
+
     for (const [label, row] of mdRows) {
-      const hasData = INFO_SPEC_VERSIONS.some((v) => {
+      lines.push(
+        `| ${label} | ${TIER_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} | ${formatRate(row.tierUnique)} |`
+      );
+    }
+
+    lines.push('');
+    lines.push(
+      '_* unique scenarios — a scenario may apply to multiple spec versions_'
+    );
+
+    // Informational matrix (draft/extension)
+    const hasInfoMd = mdRows.some(([, row]) =>
+      INFO_SPEC_VERSIONS.some((v) => {
         const cell = row.cells.get(v);
         return cell && cell.total > 0;
-      });
-      if (!hasData) continue;
-      lines.push(
-        `| ${label} | ${INFO_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} |`
-      );
+      })
+    );
+    if (hasInfoMd) {
+      lines.push('');
+      lines.push('_Informational (not scored for tier):_');
+      lines.push('');
+      lines.push(`| | ${INFO_SPEC_VERSIONS.join(' | ')} |`);
+      lines.push(`|---|${INFO_SPEC_VERSIONS.map(() => '---|').join('')}`);
+      for (const [label, row] of mdRows) {
+        const hasData = INFO_SPEC_VERSIONS.some((v) => {
+          const cell = row.cells.get(v);
+          return cell && cell.total > 0;
+        });
+        if (!hasData) continue;
+        lines.push(
+          `| ${label} | ${INFO_SPEC_VERSIONS.map((v) => formatCell(row.cells.get(v))).join(' | ')} |`
+        );
+      }
     }
   }
   lines.push('');
@@ -228,79 +325,142 @@ export function formatTerminal(scorecard: TierScorecard): void {
   console.log(`Repo:      ${scorecard.repo}`);
   if (scorecard.branch) console.log(`Branch:    ${scorecard.branch}`);
   if (scorecard.version) console.log(`Version:   ${scorecard.version}`);
+  if (scorecard.requirements_revisions)
+    console.log(
+      `Requires:  ${scorecard.requirements_revisions.join(', ')} (frozen, each at its own wire)`
+    );
   console.log(`Timestamp: ${scorecard.timestamp}\n`);
 
   console.log(`${COLORS.BOLD}Conformance:${COLORS.RESET}\n`);
 
-  // Conformance matrix
-  const matrix = buildConformanceMatrix(
-    c.conformance as ConformanceResult,
-    c.client_conformance as ConformanceResult
-  );
-
-  const vw = 10; // column width for version cells
-  const lw = 14; // label column width
-  const tw = 16; // total column width
-  const rp = (s: string, w: number) => s.padStart(w);
-  const lp = (s: string, w: number) => s.padEnd(w);
-
-  // Tier-scoring matrix (date-versioned specs only)
-  console.log(
-    `  ${COLORS.DIM}${lp('', lw + 2)} ${TIER_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}  ${rp('All*', tw)}${COLORS.RESET}`
-  );
-
-  const rows: [string, MatrixRow, CheckStatus | null, boolean][] = [
-    ['Server', matrix.server, c.conformance.status, true],
-    ['Client: Core', matrix.clientCore, null, false],
-    ['Client: Auth', matrix.clientAuth, null, false]
-  ];
-
-  for (const [label, row, status, bold] of rows) {
-    const icon = status ? statusIcon(status) + ' ' : '  ';
-    const b = bold ? COLORS.BOLD : '';
-    const r = bold ? COLORS.RESET : '';
+  if (scorecard.requirements_revisions) {
     console.log(
-      `  ${icon}${b}${lp(label, lw)}${r} ${TIER_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}  ${b}${rp(formatRate(row.tierUnique), tw)}${r}`
+      `  ${COLORS.DIM}Scored against ${scorecard.requirements_revisions.join(' and ')}, each run at its own wire version.${COLORS.RESET}\n`
     );
-  }
+    const reqRows: [string, ConformanceResult][] = [
+      ['Server', c.conformance as ConformanceResult],
+      ['Client', c.client_conformance as ConformanceResult]
+    ];
+    for (const [label, result] of reqRows) {
+      if (result.status === 'skipped') {
+        console.log(`    ${label.padEnd(8)} skipped`);
+        continue;
+      }
+      if (result.error) {
+        console.log(
+          `    ${label.padEnd(8)} ${COLORS.RED}not measured${COLORS.RESET}: ${result.error}`
+        );
+        continue;
+      }
+      console.log(
+        `    ${label.padEnd(8)} ${result.passed}/${result.total} required scenarios (${Math.round(result.pass_rate * 100)}%)`
+      );
+    }
+    const failedReq = reqRows.flatMap(([label, result]) =>
+      result.details
+        .filter((d) => !d.passed && !d.notScoredReason)
+        .map((d) => `${label.toLowerCase()}: ${d.scenario}`)
+    );
+    if (failedReq.length > 0) {
+      console.log(
+        `\n  ${COLORS.RED}Failing (${failedReq.length}):${COLORS.RESET}`
+      );
+      failedReq.forEach((f) =>
+        console.log(`    ${COLORS.RED}\u2717${COLORS.RESET} ${f}`)
+      );
+    }
+    const notScoredReq = dedupeNotScored(
+      reqRows.flatMap(([, result]) =>
+        result.details.filter((d) => d.notScoredReason)
+      )
+    );
+    if (notScoredReq.length > 0) {
+      const failing = notScoredReq.filter((d) => !d.passed);
+      console.log(
+        `\n  ${COLORS.DIM}Not scored (${notScoredReq.length} run, ${failing.length} failing, no effect on tier):${COLORS.RESET}`
+      );
+      for (const d of notScoredReq) {
+        const mark = d.passed
+          ? `${COLORS.GREEN}\u2713${COLORS.RESET}`
+          : `${COLORS.DIM}\u2717${COLORS.RESET}`;
+        console.log(
+          `    ${mark} ${d.scenario} ${COLORS.DIM}(${d.notScoredReason})${COLORS.RESET}`
+        );
+      }
+    }
+    console.log('');
+  } else {
+    // Conformance matrix
+    const matrix = buildConformanceMatrix(
+      c.conformance as ConformanceResult,
+      c.client_conformance as ConformanceResult
+    );
 
-  // Client total line (tier-scoring only)
-  const clientTierTotal: Cell = {
-    passed:
-      matrix.clientCore.tierUnique.passed + matrix.clientAuth.tierUnique.passed,
-    total:
-      matrix.clientCore.tierUnique.total + matrix.clientAuth.tierUnique.total
-  };
-  console.log(
-    `  ${statusIcon(c.client_conformance.status)} ${COLORS.BOLD}${lp('Client Total', lw)}${COLORS.RESET} ${' '.repeat(TIER_SPEC_VERSIONS.length * (vw + 1) - 1)}  ${COLORS.BOLD}${rp(formatRate(clientTierTotal), tw)}${COLORS.RESET}`
-  );
-  console.log(
-    `\n  ${COLORS.DIM}* unique scenarios — a scenario may apply to multiple spec versions${COLORS.RESET}`
-  );
+    const vw = 10; // column width for version cells
+    const lw = 14; // label column width
+    const tw = 16; // total column width
+    const rp = (s: string, w: number) => s.padStart(w);
+    const lp = (s: string, w: number) => s.padEnd(w);
 
-  // Informational matrix (draft/extension) — only if there are any
-  const hasInfo = rows.some(([, row]) =>
-    INFO_SPEC_VERSIONS.some((v) => {
-      const cell = row.cells.get(v);
-      return cell && cell.total > 0;
-    })
-  );
-  if (hasInfo) {
-    console.log(`\n  Informational (not scored for tier):\n`);
+    // Tier-scoring matrix (date-versioned specs only)
     console.log(
-      `  ${COLORS.DIM}${lp('', lw + 2)} ${INFO_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}${COLORS.RESET}`
+      `  ${COLORS.DIM}${lp('', lw + 2)} ${TIER_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}  ${rp('All*', tw)}${COLORS.RESET}`
     );
-    for (const [label, row, , bold] of rows) {
-      const hasData = INFO_SPEC_VERSIONS.some((v) => {
-        const cell = row.cells.get(v);
-        return cell && cell.total > 0;
-      });
-      if (!hasData) continue;
+
+    const rows: [string, MatrixRow, CheckStatus | null, boolean][] = [
+      ['Server', matrix.server, c.conformance.status, true],
+      ['Client: Core', matrix.clientCore, null, false],
+      ['Client: Auth', matrix.clientAuth, null, false]
+    ];
+
+    for (const [label, row, status, bold] of rows) {
+      const icon = status ? statusIcon(status) + ' ' : '  ';
       const b = bold ? COLORS.BOLD : '';
       const r = bold ? COLORS.RESET : '';
       console.log(
-        `    ${b}${lp(label, lw)}${r} ${INFO_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}`
+        `  ${icon}${b}${lp(label, lw)}${r} ${TIER_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}  ${b}${rp(formatRate(row.tierUnique), tw)}${r}`
       );
+    }
+
+    // Client total line (tier-scoring only)
+    const clientTierTotal: Cell = {
+      passed:
+        matrix.clientCore.tierUnique.passed +
+        matrix.clientAuth.tierUnique.passed,
+      total:
+        matrix.clientCore.tierUnique.total + matrix.clientAuth.tierUnique.total
+    };
+    console.log(
+      `  ${statusIcon(c.client_conformance.status)} ${COLORS.BOLD}${lp('Client Total', lw)}${COLORS.RESET} ${' '.repeat(TIER_SPEC_VERSIONS.length * (vw + 1) - 1)}  ${COLORS.BOLD}${rp(formatRate(clientTierTotal), tw)}${COLORS.RESET}`
+    );
+    console.log(
+      `\n  ${COLORS.DIM}* unique scenarios — a scenario may apply to multiple spec versions${COLORS.RESET}`
+    );
+
+    // Informational matrix (draft/extension) — only if there are any
+    const hasInfo = rows.some(([, row]) =>
+      INFO_SPEC_VERSIONS.some((v) => {
+        const cell = row.cells.get(v);
+        return cell && cell.total > 0;
+      })
+    );
+    if (hasInfo) {
+      console.log(`\n  Informational (not scored for tier):\n`);
+      console.log(
+        `  ${COLORS.DIM}${lp('', lw + 2)} ${INFO_SPEC_VERSIONS.map((v) => rp(v, vw)).join(' ')}${COLORS.RESET}`
+      );
+      for (const [label, row, , bold] of rows) {
+        const hasData = INFO_SPEC_VERSIONS.some((v) => {
+          const cell = row.cells.get(v);
+          return cell && cell.total > 0;
+        });
+        if (!hasData) continue;
+        const b = bold ? COLORS.BOLD : '';
+        const r = bold ? COLORS.RESET : '';
+        console.log(
+          `    ${b}${lp(label, lw)}${r} ${INFO_SPEC_VERSIONS.map((v) => rp(formatCell(row.cells.get(v)), vw)).join(' ')}`
+        );
+      }
     }
   }
   console.log(`\n${COLORS.BOLD}Repository Health:${COLORS.RESET}\n`);

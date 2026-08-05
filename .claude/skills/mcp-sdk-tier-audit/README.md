@@ -95,10 +95,12 @@ The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](
 3. Run the skill:
 
 ```
-/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd]
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd] [--requirements <revision>]
 ```
 
 Pass the client command as the third argument to include client conformance testing. If omitted, client conformance is skipped and noted as a gap in the report.
+
+**Pass `--requirements` with every revision the SDK claims**, comma-separated. Each revision's scenarios run at that revision's own wire version, and all of them must pass for Tier 1: the dated revisions through `2025-11-25` use the stateful initialize handshake while `2026-07-28` is stateless, so a scenario belonging to both has to work on both and one run does not cover the other. It also means a scenario added to the suite after a revision shipped cannot fail an SDK that had no opportunity to adopt it. Without the flag, scoring uses the suite as it stands today, which is not a tier claim. See [Conformance Requirements](../../../README.md#conformance-requirements), and run `conformance list --requirements 2025-11-25,2026-07-28` to see both sets.
 
 **TypeScript SDK example:**
 
@@ -107,7 +109,7 @@ Pass the client command as the third argument to include client conformance test
 cd ~/src/mcp/typescript-sdk && npm run test:conformance:server:run
 
 # Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts"
+/mcp-sdk-tier-audit <sdk-path> http://localhost:3000/mcp "node --import tsx <sdk-path>/test/conformance/src/everythingClient.ts" --requirements 2025-11-25,2026-07-28
 ```
 
 **Python SDK example:**

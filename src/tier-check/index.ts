@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { Octokit } from '@octokit/rest';
 import {
   checkConformance,
-  checkClientConformance
+  checkClientConformance,
+  mergeByRevision
 } from './checks/test-conformance-results';
 import { checkLabels } from './checks/labels';
 import { checkTriage } from './checks/triage';
@@ -14,6 +15,7 @@ import { computeTier } from './tier-logic';
 import { formatJson, formatMarkdown, formatTerminal } from './output';
 import { TierScorecard } from './types';
 import { resolveSpecVersion } from '../scenarios';
+import { loadRequirements, RequirementSet } from '../requirements';
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const parts = repo.split('/');
@@ -53,6 +55,10 @@ export function createTierCheckCommand(): Command {
       '--spec-version <version>',
       'Only run conformance scenarios for this spec version'
     )
+    .option(
+      '--requirements <revision>',
+      'Score against the frozen requirement set for a spec revision (e.g. 2026-07-28), so the SDK is measured against the suite as it stood when that revision shipped'
+    )
     .action(async (options) => {
       const { owner, repo } = parseRepo(options.repo);
       let token = options.token || process.env.GITHUB_TOKEN;
@@ -60,6 +66,32 @@ export function createTierCheckCommand(): Command {
       const specVersion = options.specVersion
         ? resolveSpecVersion(options.specVersion)
         : undefined;
+
+      let requirements: RequirementSet[] | undefined;
+      if (options.requirements !== undefined) {
+        if (specVersion) {
+          console.error(
+            '--requirements cannot be combined with --spec-version: a requirement set already fixes which scenarios run.'
+          );
+          process.exit(1);
+        }
+        try {
+          // Several revisions may be claimed at once. Tier 1 then means every
+          // one of them passes, because a scenario shared by two revisions has
+          // to work on both wires, and one run does not cover the other.
+          requirements = String(options.requirements)
+            .split(',')
+            .map((r) => r.trim())
+            .filter(Boolean)
+            .map(loadRequirements);
+          if (requirements.length === 0) {
+            throw new Error('--requirements needs at least one revision');
+          }
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exit(1);
+        }
+      }
 
       if (!token) {
         // Try to get token from GitHub CLI
@@ -97,19 +129,41 @@ export function createTierCheckCommand(): Command {
         files,
         specTracking
       ] = await Promise.all([
-        checkConformance({
-          serverUrl: options.conformanceServerUrl,
-          skip: options.skipConformance,
-          specVersion
-        }).then((r) => {
+        (requirements
+          ? Promise.all(
+              requirements.map((req) =>
+                checkConformance({
+                  serverUrl: options.conformanceServerUrl,
+                  skip: options.skipConformance,
+                  requirements: req
+                }).then((result) => ({ revision: req.revision, result }))
+              )
+            ).then(mergeByRevision)
+          : checkConformance({
+              serverUrl: options.conformanceServerUrl,
+              skip: options.skipConformance,
+              specVersion
+            })
+        ).then((r) => {
           console.error('  ✓ Server Conformance');
           return r;
         }),
-        checkClientConformance({
-          clientCmd: options.clientCmd,
-          skip: options.skipConformance || !options.clientCmd,
-          specVersion
-        }).then((r) => {
+        (requirements
+          ? Promise.all(
+              requirements.map((req) =>
+                checkClientConformance({
+                  clientCmd: options.clientCmd,
+                  skip: options.skipConformance || !options.clientCmd,
+                  requirements: req
+                }).then((result) => ({ revision: req.revision, result }))
+              )
+            ).then(mergeByRevision)
+          : checkClientConformance({
+              clientCmd: options.clientCmd,
+              skip: options.skipConformance || !options.clientCmd,
+              specVersion
+            })
+        ).then((r) => {
           console.error('  ✓ Client Conformance');
           return r;
         }),
@@ -157,6 +211,7 @@ export function createTierCheckCommand(): Command {
         branch: options.branch || null,
         timestamp: new Date().toISOString(),
         version: release.version,
+        requirements_revisions: requirements?.map((r) => r.revision) ?? null,
         checks,
         implied_tier
       };

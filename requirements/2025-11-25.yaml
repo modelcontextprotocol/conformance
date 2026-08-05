@@ -1,0 +1,113 @@
+# Conformance requirements for the 2025-11-25 specification revision.
+#
+# This file is the canonical answer to "which scenarios must my implementation pass
+# to conform to 2025-11-25".
+#
+# Anchor, and READ THIS BEFORE TRUSTING IT AS A SNAPSHOT: unlike the 2026-07-28 set,
+# this one could not be frozen at its own ship date. The release current on 2025-11-25
+# was 0.1.7 (published 2025-11-20), which had no --spec-version flag and no concept of
+# which revision a scenario belonged to, so there is nothing to snapshot. This set is
+# instead derived from @modelcontextprotocol/conformance@0.2.0-alpha.10 filtered to
+# 2025-11-25, and therefore contains scenarios written after 2025-11-25 shipped. It is
+# frozen from here on, but it is a reconstruction rather than a contemporaneous record.
+#
+# `server` and `client` are named for the subcommand that runs them, and list what
+# conformance to this revision requires. Scenarios run at THIS revision's wire
+# version: the dated revisions through 2025-11-25 use the stateful initialize
+# handshake and 2026-07-28 is stateless with per-request _meta, so a scenario that
+# applies to both must be run once under each and one run does not cover the other.
+#
+# There is deliberately no authorization-server section: the MCP specification puts
+# authorization-server implementation beyond its own scope, so those scenarios serve
+# people deploying an authorization server, not implementations of MCP itself.
+#
+# `not_scored` is run and reported but never counts toward a pass rate; each entry
+# says why. `extension` is optional by definition (SEP-1730: "Experimental features
+# and protocol extensions ... are not required for any tier"). `added-after-release`
+# did not exist when this revision shipped, so no implementation could have been
+# passing it. Promoting an entry into the lists above is a deliberate, reviewable
+# change.
+#
+# Scenarios that were PENDING in the source release appear nowhere: SEP-1730 scores
+# "applicable required tests" only, and a pending scenario is one the suite itself
+# does not enforce. Fourteen were pending at 0.2.0-alpha.10, including all ten
+# io.modelcontextprotocol/tasks extension scenarios, json-schema-2020-12,
+# server-sse-polling, http-header-validation and http-custom-header-server-validation.
+
+server:
+  - server-initialize
+  - logging-set-level
+  - ping
+  - completion-complete
+  - tools-list
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-error
+  - tools-call-with-progress
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - server-sse-multiple-streams
+  - elicitation-sep1330-enums
+  - resources-list
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - resources-subscribe
+  - resources-unsubscribe
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - dns-rebinding-protection
+
+client:
+  - initialize
+  - tools_call
+  - elicitation-sep1034-client-defaults
+  - sse-retry
+  - auth/metadata-default
+  - auth/metadata-var1
+  - auth/metadata-var2
+  - auth/metadata-var3
+  - auth/basic-cimd
+  - auth/scope-from-www-authenticate
+  - auth/scope-from-scopes-supported
+  - auth/scope-omitted-when-undefined
+  - auth/scope-step-up
+  - auth/scope-retry-limit
+  - auth/token-endpoint-auth-basic
+  - auth/token-endpoint-auth-post
+  - auth/token-endpoint-auth-none
+  - auth/pre-registration
+
+not_scored:
+  - scenario: auth/client-credentials-jwt
+    leg: client
+    reason: extension
+  - scenario: auth/client-credentials-basic
+    leg: client
+    reason: extension
+  - scenario: auth/enterprise-managed-authorization
+    leg: client
+    reason: extension
+  - scenario: auth/dpop
+    leg: client
+    reason: extension
+  - scenario: auth/dpop-nonce
+    leg: client
+    reason: extension
+  - scenario: auth/wif-jwt-bearer
+    leg: client
+    reason: extension
+  - scenario: server-session-lifecycle
+    leg: server
+    reason: added-after-release
+  - scenario: json-schema-2020-12-preservation
+    leg: client
+    reason: added-after-release

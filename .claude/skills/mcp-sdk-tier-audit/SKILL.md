@@ -5,7 +5,7 @@ description: >-
   Produces tier classification (1/2/3) with evidence table, gap list, and
   remediation guide. Works for any official MCP SDK (TypeScript, Python, Go,
   C#, Java, Kotlin, PHP, Swift, Rust, Ruby).
-argument-hint: '<local-path> <conformance-server-url> [client-cmd] [--branch <branch>]'
+argument-hint: '<local-path> <conformance-server-url> [client-cmd] [--requirements <revision>] [--branch <branch>]'
 ---
 
 # MCP SDK Tier Audit
@@ -43,6 +43,7 @@ Extract from the user's input:
 - **local-path**: absolute path to the SDK checkout (e.g. `~/src/mcp/typescript-sdk`)
 - **conformance-server-url**: URL where the SDK's everything server is already running (e.g. `http://localhost:3000/mcp`)
 - **client-cmd** (optional): command to run the SDK's conformance client (e.g. `npx tsx test/conformance/src/everythingClient.ts`). If not provided, client conformance tests are skipped and noted as a gap in the report.
+- **requirements** (optional): spec revisions to score against, comma-separated, e.g. `--requirements 2025-11-25,2026-07-28`. Each revision's scenarios run at that revision's wire version, and every listed revision must pass for Tier 1. Scores the SDK against exactly the scenarios that revision required when it shipped, rather than everything the suite carries today. Prefer it whenever the question is "does this SDK conform to revision X". Without it, scoring uses today's suite, which can fail an SDK for a scenario added after it shipped. Run `conformance list --requirements <revision>` to see the set.
 - **branch** (optional): Git branch to check on GitHub (e.g. `--branch fweinberger/v1x-governance-docs`). If not provided, derive from the local checkout's current branch: `cd <local-path> && git rev-parse --abbrev-ref HEAD`. This is passed to the tier-check CLI so that policy signal file checks use the correct branch instead of the repo's default branch.
 
 The first two arguments are required. If either is missing, ask the user to provide it.
@@ -61,10 +62,19 @@ The `tier-check` CLI handles all deterministic checks — server conformance, cl
 npm run --silent tier-check -- \
   --repo <owner/repo> \
   --branch <branch> \
+  --requirements <revision> \
   --conformance-server-url <conformance-server-url> \
   --client-cmd '<client-cmd>' \
   --output json
 ```
+
+Omit `--requirements` only if the user did not name a revision. When it is set the
+scorecard reports `requirements_revision`, both pass rates count exactly the
+scenarios that revision requires, and anything run but not scored carries a
+`notScoredReason` of `extension` or `added-after-release`. `requirements_revisions`
+lists every revision scored, and each detail carries the `revision` it came from. Quote the revision
+alongside any conformance number, and report the not-scored failures separately
+rather than folding them into the score or omitting them.
 
 If no client-cmd was detected, omit the `--client-cmd` flag (client conformance will be skipped). The `--branch` flag should always be included (derived from the local checkout if not explicitly provided).
 
@@ -117,8 +127,8 @@ Combine the deterministic scorecard (from the CLI) with the evaluation results (
 
 ### Tier 1 requires ALL of:
 
-- Server conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
-- Client conformance test pass rate == 100% (date-versioned scenarios only; `draft` and `extension` are informational and not scored)
+- Server conformance test pass rate == 100% across every requirement set given to `--requirements` (each run at its own wire), otherwise of date-versioned scenarios only
+- Client conformance test pass rate == 100%, on the same basis
 - Issue triage compliance >= 90% within 2 business days
 - All P0 bugs resolved within 7 days
 - Stable release >= 1.0.0 with no pre-release suffix

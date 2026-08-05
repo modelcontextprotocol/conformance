@@ -12,12 +12,32 @@ export interface ConformanceResult extends CheckResult {
   passed: number;
   failed: number;
   total: number;
+  /**
+   * Scenarios run without being scored, kept out of passed/failed/total so those
+   * always agree with pass_rate.
+   */
+  not_scored?: { total: number; failed: number };
+  /**
+   * Set when the conformance run could not be performed at all, e.g. the child
+   * CLI rejected a requirement set naming a scenario this build lacks. Without
+   * this the empty result reconciles into "every scenario failed", which blames
+   * the implementation for a broken invocation.
+   */
+  error?: string;
   details: Array<{
     scenario: string;
     passed: boolean;
     checks_passed: number;
     checks_failed: number;
     specVersions?: ScenarioSpecTag[];
+    /**
+     * Why this scenario ran but did not count toward the pass rate. Set only
+     * under a requirement set, which decides scoring by name rather than by
+     * spec-version tag.
+     */
+    notScoredReason?: string;
+    /** Which revision's run produced this, when several were scored. */
+    revision?: string;
   }>;
 }
 
@@ -71,6 +91,14 @@ export interface TierScorecard {
   branch: string | null;
   timestamp: string;
   version: string | null;
+  /**
+   * Spec revisions whose frozen requirement sets were scored, if any were used.
+   * Every listed revision must pass for Tier 1: a scenario shared by two
+   * revisions must work on both wires, and one run does not cover the other.
+   * When set, the pass rates count exactly the scenarios that revision
+   * required when it shipped, rather than everything the suite carries today.
+   */
+  requirements_revisions: string[] | null;
   checks: {
     conformance: ConformanceResult;
     client_conformance: ConformanceResult;
