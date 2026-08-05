@@ -9,6 +9,15 @@ Two components work together:
 
 ## Quick Start: CLI
 
+For an SDK listed in `src/sdk-runner/known-sdks.ts`, tier-check manages the whole conformance side itself — clone/build, then for each shipped revision the server invocation that SDK declares for that revision:
+
+```bash
+gh auth login
+npx @modelcontextprotocol/conformance tier-check --sdk go-sdk
+```
+
+The per-SDK sections below are for the manual path: driving a server you started yourself.
+
 The CLI is a subcommand of the [MCP Conformance](https://github.com/modelcontextprotocol/conformance) tool.
 
 ```bash
@@ -95,56 +104,33 @@ The skill lives in `.claude/skills/` in this repo, so if you open [Claude Code](
 3. Run the skill:
 
 ```
-/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd]
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> [client-cmd] [--requirements <revision>]
 ```
 
 Pass the client command as the third argument to include client conformance testing. If omitted, client conformance is skipped and noted as a gap in the report.
 
-**TypeScript SDK example:**
+**Pass `--requirements` with every revision the SDK claims**, comma-separated. Each revision's scenarios run at that revision's own wire version, and all of them must pass for Tier 1: the dated revisions through `2025-11-25` use the stateful initialize handshake while `2026-07-28` is stateless, so a scenario belonging to both has to work on both and one run does not cover the other. It also means a scenario added to the suite after a revision shipped cannot fail an SDK that had no opportunity to adopt it. Without the flag, scoring uses the suite as it stands today, which is not a tier claim. See [Conformance Requirements](../../../README.md#conformance-requirements), and run `conformance list --requirements 2025-11-25,2026-07-28` to see both sets.
 
-```bash
-# Terminal 1: start the everything server (build first: npm run build)
-cd ~/src/mcp/typescript-sdk && npm run test:conformance:server:run
+**Known SDKs — no server to start, no commands to look up:**
 
-# Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/typescript-sdk http://localhost:3000/mcp "npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts"
+```
+/mcp-sdk-tier-audit <sdk checkout> --requirements 2025-11-25,2026-07-28
 ```
 
-**Python SDK example:**
+The skill drives `tier-check --sdk-path`, which builds the SDK and starts the
+server invocation its config declares **per revision** — the per-SDK commands
+live in [`src/sdk-runner/known-sdks.ts`](../../../src/sdk-runner/known-sdks.ts),
+not here. That matters because a hand-run example cannot be correct for every
+SDK: go-sdk needs a different server process per revision (`-stateless` defaults
+to true, so a bare invocation mis-measures 2025-11-25 — [#446](https://github.com/modelcontextprotocol/conformance/issues/446)),
+and csharp-sdk serves the two revisions at different endpoints. Prose copies of
+those invocations drift; the config is tested.
 
-```bash
-# Terminal 1: install and start the everything server
-cd ~/src/mcp/python-sdk && uv sync --frozen --all-extras --package mcp-everything-server
-uv run mcp-everything-server --port 3001
+**An SDK not in `known-sdks.ts`:** start its everything server yourself and pass
+the URL and client command explicitly — see [Other SDKs](#running-conformance-tests)
+below. The one endpoint you give must serve every claimed revision at its own
+wire, or the numbers will be wrong for the revisions it does not speak.
 
-# Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/python-sdk http://localhost:3001/mcp "uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py"
-```
-
-**Go SDK example:**
-
-```bash
-# Terminal 1: build and start the everything server
-cd ~/src/mcp/go-sdk && go build -o /tmp/go-conformance-server ./conformance/everything-server
-go build -o /tmp/go-conformance-client ./conformance/everything-client
-/tmp/go-conformance-server -http="localhost:3002"
-
-# Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/go-sdk http://localhost:3002 "/tmp/go-conformance-client"
-```
-
-**C# SDK example:**
-
-```bash
-# Terminal 1: start the everything server (requires .NET SDK)
-cd ~/src/mcp/csharp-sdk
-dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework net9.0 -- --urls http://localhost:3003
-
-# Terminal 2: run the audit (from the conformance repo)
-/mcp-sdk-tier-audit ~/src/mcp/csharp-sdk http://localhost:3003 "dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient"
-```
-
-The skill derives `owner/repo` from git remote, runs the CLI, launches parallel evaluations for docs and policy, and writes detailed reports to `results/`.
 
 ### Any Other AI Coding Agent
 
@@ -181,66 +167,17 @@ Run the CLI for the scorecard, then review docs and policies yourself using the 
 
 ## Running Conformance Tests
 
-To include conformance test results, start the SDK's everything server first, then pass the URL to the CLI. To also run client conformance tests, pass `--client-cmd` with the command to launch the SDK's conformance client.
-
-**TypeScript SDK**:
+For any SDK in [`src/sdk-runner/known-sdks.ts`](../../../src/sdk-runner/known-sdks.ts), don't start servers by hand — the config runs the right invocation per revision:
 
 ```bash
-# Terminal 1: start the server (SDK must be built first)
-cd ~/src/mcp/typescript-sdk && npm run build
-npm run test:conformance:server:run   # starts on port 3000
+# both legs, every revision, one verdict
+npx @modelcontextprotocol/conformance tier-check --sdk go-sdk
 
-# Terminal 2: run tier-check (server + client conformance)
-npm run --silent tier-check -- \
-  --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-url http://localhost:3000/mcp \
-  --client-cmd 'npx tsx ~/src/mcp/typescript-sdk/test/conformance/src/everythingClient.ts'
+# a single leg at a single revision, for debugging
+npx @modelcontextprotocol/conformance sdk --path <sdk checkout> --mode server --requirements 2026-07-28
 ```
 
-**Python SDK**:
-
-```bash
-# Terminal 1: install and start the server
-cd ~/src/mcp/python-sdk
-uv sync --frozen --all-extras --package mcp-everything-server
-uv run mcp-everything-server --port 3001   # specify port to avoid conflicts
-
-# Terminal 2: run tier-check (server + client conformance)
-npm run --silent tier-check -- \
-  --repo modelcontextprotocol/python-sdk \
-  --conformance-server-url http://localhost:3001/mcp \
-  --client-cmd 'uv run python ~/src/mcp/python-sdk/.github/actions/conformance/client.py'
-```
-
-**Go SDK**:
-
-```bash
-# Terminal 1: build and start the server
-cd ~/src/mcp/go-sdk
-go build -o /tmp/go-conformance-server ./conformance/everything-server
-go build -o /tmp/go-conformance-client ./conformance/everything-client
-/tmp/go-conformance-server -http="localhost:3002"
-
-# Terminal 2: run tier-check (server + client conformance)
-npm run --silent tier-check -- \
-  --repo modelcontextprotocol/go-sdk \
-  --conformance-server-url http://localhost:3002 \
-  --client-cmd '/tmp/go-conformance-client'
-```
-
-**C# SDK**:
-
-```bash
-# Terminal 1: start the server (requires .NET SDK)
-cd ~/src/mcp/csharp-sdk
-dotnet run --project tests/ModelContextProtocol.ConformanceServer --framework net9.0 -- --urls http://localhost:3003
-
-# Terminal 2: run tier-check (server + client conformance)
-npm run --silent tier-check -- \
-  --repo modelcontextprotocol/csharp-sdk \
-  --conformance-server-url http://localhost:3003 \
-  --client-cmd 'dotnet run --project ~/src/mcp/csharp-sdk/tests/ModelContextProtocol.ConformanceClient'
-```
+To reproduce one leg fully by hand, copy the build/server/client commands from that SDK's `known-sdks.ts` entry (including its `specOverrides` for the revision you're running) rather than from a README: the entries are exercised by the test suite and per-revision, prose examples are neither.
 
 **Other SDKs:** Your SDK needs an "everything server" — an HTTP server implementing the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/draft/basic/transports.md) with all MCP features (tools, resources, prompts, etc.). See the implementations above as reference.
 
