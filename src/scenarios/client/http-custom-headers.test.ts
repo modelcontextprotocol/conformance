@@ -30,6 +30,18 @@ async function post(
   });
 }
 
+async function postJson(serverUrl: string, body: object): Promise<any> {
+  const res = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
 function idsOf(checks: { id: string }[]): Set<string> {
   return new Set(checks.map((c) => c.id));
 }
@@ -193,6 +205,44 @@ describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
       // The other constraints were not violated.
       expect(
         statusesFor(checks, 'sep-2243-x-mcp-header-charset')
+      ).not.toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('FAILs primitive-only when the client calls the number-typed tool', async () => {
+    const scenario = new HttpInvalidToolHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      const listed = await postJson(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list'
+      });
+      // SEP-2243 permits x-mcp-header only on integer/string/boolean, so the
+      // number-typed tool must be served for the client to reject it.
+      const numberTool = listed.result.tools.find(
+        (t: { name: string }) => t.name === 'invalid_number_header'
+      );
+      expect(numberTool?.inputSchema.properties.score).toEqual({
+        type: 'number',
+        'x-mcp-header': 'Score'
+      });
+
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'invalid_number_header', arguments: { score: 1.5 } }
+      });
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-primitive-only')
+      ).toContain('FAILURE');
+      // The other constraints were not violated.
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-not-empty')
       ).not.toContain('FAILURE');
     } finally {
       await scenario.stop();
