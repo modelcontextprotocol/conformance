@@ -110,6 +110,40 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
           // Mcp-Param-Verbose deliberately omitted: value is null
         }
       );
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_nested',
+            arguments: { outer: { inner: 'nested-value' } }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers_nested',
+          'Mcp-Param-Nested': 'nested-value'
+        }
+      );
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 4,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_nested',
+            arguments: { outer: {} }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers_nested'
+          // Mcp-Param-Nested deliberately omitted: outer.inner absent
+        }
+      );
 
       const checks = scenario.getChecks();
       for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
@@ -145,6 +179,29 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
       const checks = scenario.getChecks();
       expect(
         statusesFor(checks, 'sep-2243-client-mirrors-designated-params')
+      ).toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('FAILs client-extract-nested-path when the nested header is missing', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'test_custom_headers_nested',
+          arguments: { outer: { inner: 'nested-value' } }
+        }
+        // No Mcp-Param-Nested header sent
+      });
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-client-extract-nested-path')
       ).toContain('FAILURE');
     } finally {
       await scenario.stop();
@@ -193,6 +250,33 @@ describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
       // The other constraints were not violated.
       expect(
         statusesFor(checks, 'sep-2243-x-mcp-header-charset')
+      ).not.toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('FAILs x-mcp-header-statically-reachable when the client calls a tool annotated under items', async () => {
+    const scenario = new HttpInvalidToolHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(serverUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'invalid_under_items',
+          arguments: { arr: [{ value: 'x' }] }
+        }
+      });
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-statically-reachable')
+      ).toContain('FAILURE');
+      // The other constraints were not violated.
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-not-empty')
       ).not.toContain('FAILURE');
     } finally {
       await scenario.stop();
