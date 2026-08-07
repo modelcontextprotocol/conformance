@@ -58,6 +58,10 @@ import {
   ResourcesNotFoundErrorScenario
 } from './server/resources';
 
+import { SkillsDirectoryReadScenario } from './server/skills/directory';
+import { SkillsIndexScenario } from './server/skills/index';
+import { SkillsManifestScenario } from './server/skills/manifest';
+
 import {
   PromptsListScenario,
   PromptsGetSimpleScenario,
@@ -151,7 +155,15 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksDispatchScenario(),
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario()
+  new TasksMrtrCompositionScenario(),
+
+  // SEP-2640 Skills extension. Pending because the everything-server does not
+  // implement io.modelcontextprotocol/skills; targeted runs point at a
+  // SEP-2640-conformant fixture via
+  // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
+  new SkillsDirectoryReadScenario(),
+  new SkillsIndexScenario(),
+  new SkillsManifestScenario()
 ];
 
 // All client scenarios
@@ -202,6 +214,12 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Resources error handling (SEP-2164)
   new ResourcesNotFoundErrorScenario(),
+
+  // Skills extension (SEP-2640). Fixture-dependent (needs a SEP-2640 server);
+  // each scenario SKIPs cleanly when the extension is not declared.
+  new SkillsDirectoryReadScenario(),
+  new SkillsIndexScenario(),
+  new SkillsManifestScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
