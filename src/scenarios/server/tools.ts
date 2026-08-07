@@ -5,7 +5,9 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  specVersionAtLeast,
+  type SpecVersion
 } from '../../types';
 import type { RunContext } from '../../connection';
 import type {
@@ -21,26 +23,61 @@ import {
   ElicitRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9_./-]+$/;
-const TOOL_NAME_MAX_LENGTH = 64;
+/**
+ * Tool name format validation tracks dated MCP spec prose (2025-11-25+
+ * `#tool-names`), not the SEP-986 markdown file. There is no sep-986.yaml
+ * traceability row — the requirement lives in the core specification.
+ *
+ * specReferences order: core spec URLs first (authoritative), then SEP/history
+ * links for context only (SEP-986 markdown still documents stale 64 + `/` rules).
+ *
+ * Divergence to preserve when updating this check:
+ * - SEP-986 markdown (modelcontextprotocol#986): 1–64 chars, `[A-Za-z0-9_./-]`
+ *   including `/` — never updated after spec integration.
+ * - Published spec (PR modelcontextprotocol#1603): 1–128 chars,
+ *   `[A-Za-z0-9_.-]` only (no `/`).
+ *
+ * Conformance #240 incorrectly encoded the stale SEP rules; this check follows
+ * the integrated spec diff per AGENTS.md.
+ */
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
+const TOOL_NAME_MAX_LENGTH = 128;
 
 const TOOLS_NAME_FORMAT_SPEC_REFS = [
   {
-    id: 'MCP-Tools-List',
-    url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools#listing-tools'
+    id: 'MCP-Tool-Names',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-names'
   },
   {
-    id: 'SEP-986',
-    url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-names'
+    id: 'MCP-Tool-Names-Draft',
+    url: 'https://modelcontextprotocol.io/specification/draft/server/tools#tool-names'
+  },
+  // Context only — not the rule source. SEP markdown was never updated to match PR #1603.
+  {
+    id: 'SEP-986-History',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986'
+  },
+  {
+    id: 'SEP-986-Spec-Integration',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1603'
   }
 ];
+
+/**
+ * Tool Names SHOULD rules apply only from 2025-11-25 spec prose onward.
+ * tools-list stays introducedIn 2025-06-18 for structural MUST checks; gating
+ * here avoids false signals on versions that never had Tool Names prose.
+ */
+export function toolNameFormatCheckApplies(specVersion: SpecVersion): boolean {
+  return specVersionAtLeast(specVersion, '2025-11-25');
+}
 
 export function validateToolNameFormat(name: string): string | null {
   if (name.length < 1 || name.length > TOOL_NAME_MAX_LENGTH) {
     return `length ${name.length} is outside 1-${TOOL_NAME_MAX_LENGTH}`;
   }
   if (!TOOL_NAME_PATTERN.test(name)) {
-    return 'contains characters outside [A-Za-z0-9_./-]';
+    return 'contains characters outside [A-Za-z0-9_.-]';
   }
   return null;
 }
@@ -52,7 +89,8 @@ export function buildToolsNameFormatCheck(
   const baseCheck = {
     id: 'tools-name-format',
     name: 'ToolsNameFormat',
-    description: 'Tool names are 1-64 characters and match ^[A-Za-z0-9_./-]+$',
+    description:
+      'Tool names SHOULD be 1-128 characters and match ^[A-Za-z0-9_.-]+$',
     specReferences: TOOLS_NAME_FORMAT_SPEC_REFS,
     timestamp
   };
@@ -86,10 +124,11 @@ export function buildToolsNameFormatCheck(
 
   return {
     ...baseCheck,
-    status: violations.length === 0 ? 'SUCCESS' : 'FAILURE',
+    // AGENTS.md: SHOULD in spec prose → WARNING (Tier-1 CI still treats as failure).
+    status: violations.length === 0 ? 'SUCCESS' : 'WARNING',
     errorMessage:
       violations.length > 0
-        ? `${violations.length} tool name(s) violate SEP-986 format: ${violations.join('; ')}`
+        ? `${violations.length} tool name(s) violate spec Tool Names SHOULD rules: ${violations.join('; ')}`
         : undefined,
     details: {
       toolCount: tools.length,
@@ -110,9 +149,10 @@ export class ToolsListScenario implements ClientScenario {
 **Requirements**:
 - Return array of all available tools
 - Each tool MUST have:
-  - \`name\` (string, 1-64 chars, matching \`^[A-Za-z0-9_./-]+$\`)
+  - \`name\` (string)
   - \`description\` (string)
-  - \`inputSchema\` (valid JSON Schema object)`;
+  - \`inputSchema\` (valid JSON Schema object)
+- From 2025-11-25 onward, advertised \`name\` values SHOULD follow the spec Tool Names rules (1–128 chars, \`[A-Za-z0-9_.-]\` only) — see \`tools-name-format\` check`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
@@ -159,9 +199,12 @@ export class ToolsListScenario implements ClientScenario {
         }
       });
 
-      // Validate tool name format per SEP-986:
-      // names MUST be 1-64 chars matching ^[A-Za-z0-9_./-]+$
-      checks.push(buildToolsNameFormatCheck(result.tools));
+      // Gate per AGENTS.md version applicability: Tool Names prose is 2025-11-25+ only.
+      // everything-server already passes on applicable versions (positive path in
+      // all-scenarios.test.ts); failure proof is invalid-tool-names.ts.
+      if (toolNameFormatCheckApplies(ctx.specVersion)) {
+        checks.push(buildToolsNameFormatCheck(result.tools));
+      }
 
       await conn.close();
     } catch (error) {
