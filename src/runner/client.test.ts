@@ -64,4 +64,14 @@ describe('runConformanceTest spec-version applicability', () => {
     expect(result.skipped).toBeUndefined();
     expect(result.clientOutput?.stdout).toContain(LATEST_SPEC_VERSION);
   }, 30000);
+
+  test('uses an extension baseSpecVersion when the scenario declares one', async () => {
+    const result = await runConformanceTest(
+      PRINT_VERSION_COMMAND,
+      'tasks-client-create-handling',
+      10000
+    );
+    expect(result.skipped).toBeUndefined();
+    expect(result.clientOutput?.stdout).toContain(DRAFT_PROTOCOL_VERSION);
+  }, 30000);
 });

@@ -117,6 +117,28 @@ describe('wireSchemaErrors', () => {
     ).toEqual([]);
   });
 
+  it('accepts a Tasks extension CreateTaskResult for draft tools/call', () => {
+    expect(
+      wireSchemaErrors(
+        DRAFT_PROTOCOL_VERSION,
+        {
+          jsonrpc: '2.0',
+          id: 4,
+          result: {
+            resultType: 'task',
+            taskId: 'task-1',
+            status: 'working',
+            createdAt: '2026-07-29T00:00:00.000Z',
+            lastUpdatedAt: '2026-07-29T00:00:00.000Z',
+            ttlMs: 60_000,
+            pollIntervalMs: 100
+          }
+        },
+        'tools/call'
+      )
+    ).toEqual([]);
+  });
+
   it('accepts a JSON-RPC batch under 2025-03-26 and reports per-element errors', () => {
     expect(
       wireSchemaErrors('2025-03-26', [
