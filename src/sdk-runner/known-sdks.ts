@@ -130,6 +130,24 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       url: 'http://localhost:3000/mcp'
     }
   },
+  // Fixtures live in Sources/MCPConformance/{Client,Server} — the
+  // mcp-everything-client and mcp-everything-server products, mirroring
+  // scripts/run-conformance.sh. SwiftPM writes binaries to a per-triple
+  // directory but also maintains a `.build/debug` symlink pointing at it, so
+  // the paths below stay portable across host architectures. The server
+  // defaults to port 3001; `--port` pins it to the 3000 convention used above.
+  'swift-sdk': {
+    build:
+      'swift build --product mcp-everything-client && swift build --product mcp-everything-server',
+    client: {
+      command: './.build/debug/mcp-everything-client'
+    },
+    server: {
+      command: './.build/debug/mcp-everything-server --port 3000',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: 'conformance-baseline.yml'
+  },
   // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
   // tests/ModelContextProtocol.ConformanceServer (requires the .NET 10 SDK,
   // per global.json); build output goes to the repo-level artifacts/ tree
