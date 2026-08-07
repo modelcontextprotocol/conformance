@@ -184,7 +184,11 @@ describe('http-custom-headers mock results (2026-07-28)', () => {
         method: 'tools/list',
         params: {}
       });
-      expect(list.body.result).toMatchObject(CACHEABLE_FIELDS);
+      expect(list.body.result).toMatchObject({
+        resultType: 'complete',
+        cacheScope: 'private'
+      });
+      expect(list.body.result.ttlMs).toBeGreaterThan(0);
 
       const call = await post(serverUrl, {
         jsonrpc: '2.0',
