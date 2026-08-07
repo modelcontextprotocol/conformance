@@ -377,12 +377,9 @@ export async function checkConformance(options: {
     );
   }
 
-  const activeScenarios = new Set(listActiveClientScenarios());
   const expectedScenarios = options.specVersion
-    ? listClientScenariosForSpec(options.specVersion).filter((s) =>
-        activeScenarios.has(s)
-      )
-    : [...activeScenarios];
+    ? listScenariosForSpec(options.specVersion)
+    : listScenarios();
 
   return reconcileWithExpected(parsedServer, expectedScenarios, 'server');
 }
@@ -456,9 +453,12 @@ export async function checkClientConformance(options: {
     );
   }
 
+  const activeScenarios = new Set(listActiveClientScenarios());
   const expectedScenarios = options.specVersion
-    ? listScenariosForSpec(options.specVersion)
-    : listScenarios();
+    ? listClientScenariosForSpec(options.specVersion).filter((s) =>
+        activeScenarios.has(s)
+      )
+    : [...activeScenarios];
 
   return reconcileWithExpected(parsedClient, expectedScenarios);
 }
