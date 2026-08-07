@@ -14,7 +14,7 @@ const TOKEN_ENDPOINT = 'https://auth.example.com/token';
  * cover the token-request subset of RFC 9449 §4.3 (no `ath`/`cnf` — there is no
  * access token yet at the token request).
  */
-describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request proof', () => {
+describe('validateDpopProofAtTokenEndpoint — baseline acceptance, htu normalization, alg negotiation', () => {
   it('accepts a well-formed proof and returns the JWK thumbprint', async () => {
     const kp = await generateDpopKeyPair();
     const proof = await buildDpopProof({
@@ -30,7 +30,40 @@ describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request pro
     expect(result.ok ? result.jkt : '').toBe(kp.thumbprint);
   });
 
-  it('accepts an htu differing only by a single trailing slash', async () => {
+  it('accepts an htu differing only by RFC 3986 normalization (case, default port)', async () => {
+    const kp = await generateDpopKeyPair();
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: 'HTTPS://AUTH.EXAMPLE.COM:443/token'
+    });
+    const result = await validateDpopProofAtTokenEndpoint(
+      proof,
+      TOKEN_ENDPOINT
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a proof signed with an alg outside the advertised list (RFC 9449 §5.1)', async () => {
+    const kp = await generateDpopKeyPair();
+    const proof = await buildDpopProof({
+      keyPair: kp,
+      htm: 'POST',
+      htu: TOKEN_ENDPOINT
+    });
+    // Proof is ES256; the AS advertises RS256 only.
+    const result = await validateDpopProofAtTokenEndpoint(
+      proof,
+      TOKEN_ENDPOINT,
+      ['RS256']
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(
+      /dpop_signing_alg_values_supported/
+    );
+  });
+
+  it('rejects an htu with a spurious trailing slash (a distinct URI per RFC 3986)', async () => {
     const kp = await generateDpopKeyPair();
     const proof = await buildDpopProof({
       keyPair: kp,
@@ -41,7 +74,8 @@ describe('validateDpopProofAtTokenEndpoint — accepts a valid token-request pro
       proof,
       TOKEN_ENDPOINT
     );
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error).toMatch(/htu/);
   });
 });
 
@@ -104,7 +138,8 @@ describe('validateDpopProofAtTokenEndpoint — rejects each single defect', () =
   });
 
   it('rejects a private key embedded in the jwk header', async () => {
-    const kp = await generateDpopKeyPair();
+    // embedPrivateKey must export the private JWK, so opt into extractability.
+    const kp = await generateDpopKeyPair('ES256', { extractable: true });
     expect(
       await expectRejected({
         keyPair: kp,

@@ -121,7 +121,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   DPOP_EXTENSION: {
     id: 'MCP-DPoP-Extension',
-    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/pieterkas-dpop-extension/specification/draft/dpop-extension.mdx'
+    // Commit-pinned so reports don't dead-link when the working branch moves;
+    // TODO: switch to the main-branch path once the doc merges into ext-auth.
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/f2f94539fe4dc28aa53b7caed88f929aba02aec6/specification/draft/dpop-extension.mdx'
   },
   RFC_9449_PROOF_SYNTAX: {
     id: 'RFC-9449-dpop-proof-jwt-syntax',
