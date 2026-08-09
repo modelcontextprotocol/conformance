@@ -163,4 +163,20 @@ describe('ServerInitializeScenario', () => {
     // The session-id check is never reached, so no raw fetch is attempted.
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('keeps the initialize SUCCESS when the client close fails', async () => {
+    fetchMock.mockResolvedValue(new Response(null));
+    closeMock.mockRejectedValueOnce(new Error('transport already closed'));
+
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
+
+    // Teardown is best-effort, so a close failure must neither retract the
+    // recorded SUCCESS nor be reported as a setup failure (#248).
+    expect(checks).toContainEqual(
+      expect.objectContaining({ id: 'server-initialize', status: 'SUCCESS' })
+    );
+    expect(checks.some((c) => c.id === 'server-initialize-setup')).toBe(false);
+  });
 });
