@@ -28,6 +28,12 @@ import {
 } from './server/utils';
 
 import {
+  LoggingCapabilityScenario,
+  LoggingInvalidLevelScenario,
+  LoggingThresholdFilteringScenario
+} from './server/logging';
+
+import {
   ToolsListScenario,
   ToolsCallSimpleTextScenario,
   ToolsCallImageScenario,
@@ -123,6 +129,12 @@ import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
+  // Logging scenarios that require server-side filtering and invalid-level
+  // rejection — the everything-server does not implement these behaviors.
+  // Run targeted: `npm start -- server --scenario logging-invalid-level --url <fixture>`
+  new LoggingInvalidLevelScenario(),
+  new LoggingThresholdFilteringScenario(),
+
   // JSON Schema 2020-12 (SEP-1613)
   // This test is pending until the SDK includes PR #1135 which preserves
   // $schema, $defs, and additionalProperties fields in tool schemas.
@@ -163,6 +175,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Utilities scenarios
   new LoggingSetLevelScenario(),
+  new LoggingCapabilityScenario(),
+  new LoggingInvalidLevelScenario(),
+  new LoggingThresholdFilteringScenario(),
   new PingScenario(),
   new CompletionCompleteScenario(),
 
