@@ -1,0 +1,60 @@
+sep: 3221
+spec_url: https://modelcontextprotocol.io/seps/3221-secure-parameters
+requirements:
+  # ── Capability Negotiation ───────────────────────────────────────────────
+  - check: sep-3221-client-capability-declared
+    text: 'In stateless protocol versions (2026-07-28 and later), the client MUST declare support for this extension in _meta["io.modelcontextprotocol/clientCapabilities"].extensions'
+
+  - check: sep-3221-stateful-initialize-negotiation
+    text: 'For stateful protocol lifecycles, clients MUST declare extension support in initialize.params.capabilities.extensions["io.modelcontextprotocol/secure-params"] and servers MUST advertise support in initialize.result.capabilities.extensions["io.modelcontextprotocol/secure-params"].'
+
+  # ── Tool Manifests (tools/list) ───────────────────────────────────────────
+  - check: sep-3221-secure-input-schema-valid
+    text: 'secureInputSchema MUST be a valid JSON Schema (Draft 2020-12) object with top-level "type": "object" describing the parameters that must be supplied by the application/host runtime.'
+
+  - check: sep-3221-no-parameter-name-collision
+    text: 'Parameter property names defined in secureInputSchema MUST NOT appear in inputSchema for the same tool.'
+
+  - check: sep-3221-client-reject-overlapping-schemas
+    text: 'Clients MUST reject any tool definition where property names overlap between inputSchema and secureInputSchema by excluding the invalid tool from the active tools list.'
+
+  # ── Tool Invocation (tools/call) ──────────────────────────────────────────
+  - check: sep-3221-client-arguments-passed
+    text: 'The client MUST pass model-generated arguments in params.arguments.'
+
+  - check: sep-3221-client-secure-arguments-passed
+    text: 'If the invoked tool defines a secureInputSchema, the client MUST provide all required secure parameters in params.secureArguments as a JSON object of key-value pairs.'
+
+  - check: sep-3221-server-validate-secure-arguments
+    text: "The server MUST validate params.secureArguments against the tool's secureInputSchema."
+
+  # ── Argument Precedence & Injection Defense ───────────────────────────────
+  - check: sep-3221-no-satisfy-secure-from-arguments
+    text: 'The server MUST NOT populate or satisfy any parameter defined in secureInputSchema using values provided in arguments.'
+
+  - check: sep-3221-server-reject-colliding-argument
+    text: 'If a client or model supplies a property in arguments whose name matches a property declared in secureInputSchema, the server MUST reject the invocation with JSON-RPC error code -32602 (INVALID_PARAMS).'
+
+  - check: sep-3221-secure-params-exclusive-in-secure-arguments
+    text: 'The server MUST validate that all parameters declared in secureInputSchema are provided exclusively via params.secureArguments.'
+
+  # ── Protocol Interactions ─────────────────────────────────────────────────
+  - check: sep-3221-mrtr-retransmit-secure-arguments
+    text: 'When retrying a tool invocation following an InputRequiredResult (resultType: "input_required"), the client MUST re-transmit the original secureArguments payload alongside inputResponses and requestState.'
+
+  - check: sep-3221-task-no-echo-secure-arguments
+    text: 'Servers MUST NOT echo secureArguments in task inspection responses (tasks/get, tasks/update).'
+
+  # ── Error Handling & Graceful Degradation ─────────────────────────────────
+  - check: sep-3221-unnegotiated-tools-list-filter
+    text: 'If a client issues a tools/list request without declaring the io.modelcontextprotocol/secure-params extension capability, the server: MUST NOT include any tool in the tools/list response that requires mandatory parameters defined in secureInputSchema.'
+
+  - check: sep-3221-unnegotiated-invocation-rejected-32021
+    text: 'If a client attempts to directly invoke a tool requiring secureInputSchema without having declared extension support: The server MUST reject the call with standard error code -32021 (MISSING_REQUIRED_CLIENT_CAPABILITY)'
+
+  - check: sep-3221-missing-required-secure-arguments-rejected-32602
+    text: 'If an extension-aware client calls a tool but omits a required parameter from secureArguments, the server MUST return error code -32602 (INVALID_PARAMS) indicating the missing required secure parameters.'
+
+  # ── Excluded Requirements (SEP-2484 Compliant) ────────────────────
+  - text: 'Host applications SHOULD expose only inputSchema to the Large Language Model and isolate secureInputSchema properties from model context.'
+    excluded: 'Host application internal prompt construction; not observable at the protocol/wire level'
