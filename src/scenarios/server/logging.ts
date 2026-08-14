@@ -17,6 +17,7 @@ import {
   connectToServer,
   NotificationCollector
 } from '../../connection/sdk-client';
+import { untestableCheck } from '../untestable';
 
 const LOG_LEVELS = [
   'debug',
@@ -85,11 +86,12 @@ export class LoggingCapabilityScenario implements ClientScenario {
           name: 'LoggingCapabilityAdvertised',
           description:
             'Server advertises logging capability in initialize response',
-          status: 'WARNING',
+          status: 'SKIPPED',
           timestamp: new Date().toISOString(),
           errorMessage:
             'Server did not advertise capabilities.logging. ' +
-            'A server that supports logging/setLevel MUST include logging in its capabilities.',
+            'This is compliant if the server does not emit log notifications. ' +
+            'The spec requires the capability only for servers that emit notifications/message.',
           specReferences: SPEC_REFS,
           details: { capabilities: caps }
         });
@@ -251,14 +253,18 @@ export class LoggingThresholdFilteringScenario implements ClientScenario {
 at multiple severity levels (at minimum: debug and error) via \`notifications/message\`
 during execution.
 
-**Specification Requirements (2 Checks)**:
+**Interoperability Observations (2 Checks)**:
+
+Note: The spec does not currently include explicit normative language (MUST/SHOULD)
+for receiver-side threshold filtering. These checks verify expected behavior based on
+the spec's sequence diagram but are scored as non-conformance observations.
 
 1. **Threshold Suppresses Lower Levels**
-   - After setting level to "error", the server MUST NOT emit notifications/message
+   - After setting level to "error", the server is expected not to emit notifications/message
      at levels below "error" (debug, info, notice, warning).
 
 2. **Threshold Allows Higher Levels**
-   - After setting level to "debug", the server SHOULD emit notifications/message
+   - After setting level to "debug", the server is expected to emit notifications/message
      at all levels (debug through emergency).
 
 **Log Levels** (ascending severity):
@@ -291,29 +297,29 @@ debug < info < notice < warning < error < critical < alert < emergency`;
       });
 
       if (errorLevelNotifications.length === 0) {
-        checks.push({
-          id: 'logging-threshold-suppresses-lower',
-          name: 'LoggingThresholdSuppressesLower',
-          description:
-            'Server does not emit log notifications below the configured level',
-          status: 'SKIPPED',
-          timestamp: new Date().toISOString(),
-          errorMessage:
-            'No log notifications received at any level after setting threshold to "error". ' +
-            'Cannot verify filtering without log output from test_tool_with_logging.',
-          specReferences: SPEC_REFS
-        });
+        checks.push(untestableCheck(
+          'logging-threshold-suppresses-lower',
+          'LoggingThresholdSuppressesLower',
+          'Server does not emit log notifications below the configured level',
+          'No log notifications received at any level after setting threshold to "error". ' +
+            'test_tool_with_logging either is not implemented or emitted no notifications, ' +
+            'so threshold filtering cannot be verified.',
+          SPEC_REFS,
+          'WARNING'
+        ));
       } else if (belowThreshold.length > 0) {
         checks.push({
           id: 'logging-threshold-suppresses-lower',
           name: 'LoggingThresholdSuppressesLower',
           description:
             'Server does not emit log notifications below the configured level',
-          status: 'FAILURE',
+          status: 'WARNING',
           timestamp: new Date().toISOString(),
           errorMessage:
             `Received ${belowThreshold.length} notification(s) below "error" threshold: ` +
-            belowThreshold.map((n: any) => n.params?.level).join(', '),
+            belowThreshold.map((n: any) => n.params?.level).join(', ') +
+            '. No normative spec requirement currently mandates filtering, but the ' +
+            'spec sequence diagram implies suppression.',
           specReferences: SPEC_REFS,
           details: {
             configuredLevel: 'error',
@@ -372,18 +378,16 @@ debug < info < notice < warning < error < critical < alert < emergency`;
       const debugLevelNotifications = notifications.getLoggingNotifications();
 
       if (debugLevelNotifications.length === 0) {
-        checks.push({
-          id: 'logging-threshold-allows-all',
-          name: 'LoggingThresholdAllowsAll',
-          description:
-            'Server emits log notifications at all levels when threshold is "debug"',
-          status: 'WARNING',
-          timestamp: new Date().toISOString(),
-          errorMessage:
-            'No log notifications received with threshold at "debug". ' +
-            'Server MAY choose not to emit, but this prevents verification of threshold behavior.',
-          specReferences: SPEC_REFS
-        });
+        checks.push(untestableCheck(
+          'logging-threshold-allows-all',
+          'LoggingThresholdAllowsAll',
+          'Server emits log notifications at all levels when threshold is "debug"',
+          'No log notifications received with threshold at "debug". ' +
+            'test_tool_with_logging either is not implemented or emitted no notifications, ' +
+            'so threshold passthrough cannot be verified.',
+          SPEC_REFS,
+          'WARNING'
+        ));
       } else {
         checks.push({
           id: 'logging-threshold-allows-all',
