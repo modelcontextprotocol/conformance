@@ -30,7 +30,7 @@ interface CheckDef {
 const VALUES_NON_DECREASING: CheckDef = {
   id: 'progress-values-non-decreasing',
   name: 'ProgressValuesNonDecreasing',
-  description: 'Progress values are non-decreasing and total is consistent'
+  description: 'Progress value MUST increase with every notification'
 };
 
 const TOKEN_MATCHES_REQUEST: CheckDef = {
@@ -84,12 +84,14 @@ export class ProgressNotificationsScenario implements ClientScenario {
 
 **Requirements**:
 - Progress tokens MUST be string or integer
-- The \`progress\` value MUST be non-decreasing across notifications for the same token
+- The \`progress\` value MUST increase with every notification for the same token
 - Progress notifications MUST reference tokens from active requests only
 - Progress notifications MUST cease after the request completes
-- If \`total\` is provided, it SHOULD remain consistent or increase
-- \`progress\` SHOULD NOT exceed \`total\` when total is provided
 - Server MAY choose not to send progress notifications at all
+
+**Observations** (no normative backing in current spec):
+- If \`total\` is provided, consistency is noted but not asserted
+- \`progress\` exceeding \`total\` is recorded but does not affect conformance status
 
 **Test Server Prerequisites:**
 - Must expose \`test_tool_with_progress\` that emits at least 3 progress notifications when a progressToken is provided`;
@@ -123,24 +125,28 @@ export class ProgressNotificationsScenario implements ClientScenario {
         );
       } else {
         const errors: string[] = [];
-        const warnings: string[] = [];
 
         for (let i = 1; i < progressUpdates.length; i++) {
-          if (progressUpdates[i].progress < progressUpdates[i - 1].progress) {
+          if (progressUpdates[i].progress <= progressUpdates[i - 1].progress) {
             errors.push(
-              `Progress decreased: ${progressUpdates[i - 1].progress} -> ${progressUpdates[i].progress} at index ${i}`
+              `Progress did not increase: ${progressUpdates[i - 1].progress} -> ${progressUpdates[i].progress} at index ${i}. ` +
+              `Spec requires progress MUST increase with every notification.`
             );
             break;
           }
         }
 
+        // Total-decrease and progress-exceeds-total are observational only.
+        // The spec does not include normative requirements for these; record
+        // them in details without affecting conformance status.
+        const observations: string[] = [];
         const totals = progressUpdates
           .filter((p) => p.total !== undefined)
           .map((p) => p.total as number);
         if (totals.length > 1) {
           for (let i = 1; i < totals.length; i++) {
             if (totals[i] < totals[i - 1]) {
-              warnings.push(
+              observations.push(
                 `Total decreased: ${totals[i - 1]} -> ${totals[i]} at index ${i}`
               );
               break;
@@ -150,26 +156,21 @@ export class ProgressNotificationsScenario implements ClientScenario {
 
         for (const p of progressUpdates) {
           if (p.total !== undefined && p.progress > p.total) {
-            warnings.push(
+            observations.push(
               `Progress (${p.progress}) exceeds total (${p.total})`
             );
             break;
           }
         }
 
-        const status =
-          errors.length > 0
-            ? 'FAILURE'
-            : warnings.length > 0
-              ? 'WARNING'
-              : 'SUCCESS';
+        const status = errors.length > 0 ? 'FAILURE' : 'SUCCESS';
 
         checks.push(
           check(VALUES_NON_DECREASING, status, {
             errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
             details: {
               progressCount: progressUpdates.length,
-              warnings: warnings.length > 0 ? warnings : undefined,
+              observations: observations.length > 0 ? observations : undefined,
               values: progressUpdates.map((p) => ({
                 progress: p.progress,
                 total: p.total

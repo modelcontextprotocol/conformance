@@ -2,9 +2,10 @@
  * Cancellation conformance test scenario for MCP servers.
  *
  * Validates that servers handle `notifications/cancelled` gracefully per spec:
- * - MUST NOT crash or enter invalid state on cancellation of unknown requests
+ * - Receivers MAY ignore cancellation for unknown/completed request IDs
+ * - Senders MUST reference previously issued, believed-active request IDs
  * - SHOULD stop processing cancelled in-progress requests
- * - MUST remain stable under rapid cancellation bursts
+ * - Invalid cancellations SHOULD be ignored (not crash or degrade)
  *
  * Closes https://github.com/modelcontextprotocol/conformance/issues/433
  */
@@ -42,7 +43,8 @@ const IN_PROGRESS_REQUEST: CheckDef = {
 const RAPID_BURST_STABILITY: CheckDef = {
   id: 'cancellation-rapid-burst-stability',
   name: 'CancellationRapidBurstStability',
-  description: 'Server remains stable under rapid cancellation notifications'
+  description:
+    'Server SHOULD remain stable under rapid cancellation notifications for unknown IDs'
 };
 
 function check(
@@ -69,10 +71,10 @@ export class CancellationScenario implements ClientScenario {
 **Notification**: \`notifications/cancelled\`
 
 **Requirements**:
-- Server MUST handle cancellation gracefully without crashing or entering an invalid state
-- Server SHOULD stop processing the cancelled request and free associated resources
 - Server MAY ignore cancellation if the request is unknown, already completed, or not cancellable
-- The \`notifications/cancelled\` params MUST include \`requestId\` corresponding to the ID of a previously issued request
+- Invalid cancellations SHOULD be ignored without degradation
+- Server SHOULD stop processing the cancelled request and free associated resources
+- Senders MUST include \`requestId\` corresponding to a previously issued, believed-active request
 
 **Test Server Prerequisites:**
 - Must expose a tool named \`test_tool_slow\` that accepts \`{ durationMs: number }\` and sleeps for that duration before returning
@@ -131,21 +133,21 @@ export class CancellationScenario implements ClientScenario {
     }
 
     // Check 2: Cancellation of an in-progress request
+    // Note: The SDK manages request IDs internally. We assume initialize=0,
+    // first callTool=1. If wrong, the server MAY ignore it as an unknown ID,
+    // which is spec-compliant. We use timing to distinguish actual cancellation
+    // from the server simply ignoring the notification.
     try {
       const connection = await connectToServer(serverUrl, {}, specVersion);
       const startTime = Date.now();
 
-      // Start the slow tool call without awaiting completion
       const slowPromise = connection.client.callTool({
         name: 'test_tool_slow',
         arguments: { durationMs: 10000 }
       });
 
-      // Wait for the server to begin processing
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Send cancellation. The SDK assigns sequential numeric request IDs;
-      // after initialize (id=0), the first callTool gets id=1.
       await connection.client.notification({
         method: 'notifications/cancelled',
         params: {
@@ -154,7 +156,6 @@ export class CancellationScenario implements ClientScenario {
         }
       });
 
-      // Wait for the slow request to resolve, error, or timeout
       let timedOut = false;
       try {
         await Promise.race([
@@ -167,12 +168,11 @@ export class CancellationScenario implements ClientScenario {
         if (e instanceof Error && e.message === 'timeout') {
           timedOut = true;
         }
-        // Other errors (e.g. request cancelled) are acceptable
       }
 
       const elapsed = Date.now() - startTime;
+      const cancelledEarly = elapsed < 9000;
 
-      // Verify server is still healthy after the cancellation exchange
       const healthCheck = await connection.client.callTool({
         name: 'test_tool_fast',
         arguments: {}
@@ -188,12 +188,25 @@ export class CancellationScenario implements ClientScenario {
             details: { elapsedMs: elapsed, timedOut }
           })
         );
-      } else {
+      } else if (cancelledEarly) {
         checks.push(
           check(IN_PROGRESS_REQUEST, 'SUCCESS', {
             details: {
               elapsedMs: elapsed,
-              cancelledEarly: elapsed < 9000,
+              cancelledEarly: true,
+              healthCheckPassed: true
+            }
+          })
+        );
+      } else {
+        checks.push(
+          check(IN_PROGRESS_REQUEST, 'INFO', {
+            errorMessage:
+              'Server remained healthy but did not cancel early. ' +
+              'The server MAY ignore cancellation for unknown or non-cancellable requests.',
+            details: {
+              elapsedMs: elapsed,
+              cancelledEarly: false,
               timedOut,
               healthCheckPassed: true
             }
@@ -234,9 +247,11 @@ export class CancellationScenario implements ClientScenario {
 
       if (!result || !result.content) {
         checks.push(
-          check(RAPID_BURST_STABILITY, 'FAILURE', {
+          check(RAPID_BURST_STABILITY, 'WARNING', {
             errorMessage:
-              'Server became unresponsive after rapid cancellation burst'
+              'Server became unresponsive after rapid cancellation burst. ' +
+              'The spec allows ignoring invalid cancellations but servers ' +
+              'SHOULD remain stable.'
           })
         );
       } else {
