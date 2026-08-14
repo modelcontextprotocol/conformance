@@ -81,20 +81,60 @@ export class LoggingCapabilityScenario implements ClientScenario {
           details: { logging: caps.logging }
         });
       } else {
-        checks.push({
-          id: 'logging-capability-advertised',
-          name: 'LoggingCapabilityAdvertised',
-          description:
-            'Server advertises logging capability in initialize response',
-          status: 'SKIPPED',
-          timestamp: new Date().toISOString(),
-          errorMessage:
-            'Server did not advertise capabilities.logging. ' +
-            'This is compliant if the server does not emit log notifications. ' +
-            'The spec requires the capability only for servers that emit notifications/message.',
-          specReferences: SPEC_REFS,
-          details: { capabilities: caps }
-        });
+        // Capability absent — probe whether the server actually emits notifications.
+        // If it does, that's a MUST violation; if not, SKIPPED is correct.
+        await conn.close();
+
+        let observedNotifications = 0;
+        try {
+          const probe = await connectToServer(ctx.serverUrl, {}, ctx.specVersion);
+          const collector = new NotificationCollector(probe.client);
+
+          await probe.client.callTool({
+            name: 'test_tool_with_logging',
+            arguments: {}
+          });
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          observedNotifications = collector.getLoggingNotifications().length;
+          await probe.close();
+        } catch {
+          // Probe failed (tool missing, etc.) — treat as no evidence
+        }
+
+        if (observedNotifications > 0) {
+          checks.push({
+            id: 'logging-capability-advertised',
+            name: 'LoggingCapabilityAdvertised',
+            description:
+              'Server advertises logging capability in initialize response',
+            status: 'WARNING',
+            timestamp: new Date().toISOString(),
+            errorMessage:
+              `Server emitted ${observedNotifications} log notification(s) without advertising ` +
+              'capabilities.logging. The spec requires servers that emit ' +
+              'notifications/message to advertise the logging capability.',
+            specReferences: SPEC_REFS,
+            details: { capabilities: caps, observedNotifications }
+          });
+        } else {
+          checks.push({
+            id: 'logging-capability-advertised',
+            name: 'LoggingCapabilityAdvertised',
+            description:
+              'Server advertises logging capability in initialize response',
+            status: 'SKIPPED',
+            timestamp: new Date().toISOString(),
+            errorMessage:
+              'Server did not advertise capabilities.logging and no log notifications ' +
+              'were observed. This is compliant — the spec requires the capability ' +
+              'only for servers that emit notifications/message.',
+            specReferences: SPEC_REFS,
+            details: { capabilities: caps }
+          });
+        }
+
+        return checks;
       }
 
       await conn.close();
