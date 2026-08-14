@@ -87,7 +87,11 @@ export class LoggingCapabilityScenario implements ClientScenario {
 
         let observedNotifications = 0;
         try {
-          const probe = await connectToServer(ctx.serverUrl, {}, ctx.specVersion);
+          const probe = await connectToServer(
+            ctx.serverUrl,
+            {},
+            ctx.specVersion
+          );
           const collector = new NotificationCollector(probe.client);
 
           await probe.client.callTool({
@@ -185,8 +189,7 @@ export class LoggingInvalidLevelScenario implements ClientScenario {
       checks.push({
         id: 'logging-invalid-level-rejection',
         name: 'LoggingInvalidLevelRejection',
-        description:
-          'Server rejects unrecognized logging level with -32602',
+        description: 'Server rejects unrecognized logging level with -32602',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -213,8 +216,7 @@ export class LoggingInvalidLevelScenario implements ClientScenario {
       checks.push({
         id: 'logging-invalid-level-rejection',
         name: 'LoggingInvalidLevelRejection',
-        description:
-          'Server rejects unrecognized logging level with -32602',
+        description: 'Server rejects unrecognized logging level with -32602',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
         specReferences: SPEC_REFS,
@@ -228,8 +230,7 @@ export class LoggingInvalidLevelScenario implements ClientScenario {
       checks.push({
         id: 'logging-invalid-level-rejection',
         name: 'LoggingInvalidLevelRejection',
-        description:
-          'Server rejects unrecognized logging level with -32602',
+        description: 'Server rejects unrecognized logging level with -32602',
         status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage:
@@ -246,8 +247,7 @@ export class LoggingInvalidLevelScenario implements ClientScenario {
       checks.push({
         id: 'logging-invalid-level-rejection',
         name: 'LoggingInvalidLevelRejection',
-        description:
-          'Server rejects unrecognized logging level with -32602',
+        description: 'Server rejects unrecognized logging level with -32602',
         status: 'WARNING',
         timestamp: new Date().toISOString(),
         errorMessage:
@@ -263,8 +263,7 @@ export class LoggingInvalidLevelScenario implements ClientScenario {
       checks.push({
         id: 'logging-invalid-level-rejection',
         name: 'LoggingInvalidLevelRejection',
-        description:
-          'Server rejects unrecognized logging level with -32602',
+        description: 'Server rejects unrecognized logging level with -32602',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Unexpected error: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`,
@@ -337,16 +336,18 @@ debug < info < notice < warning < error < critical < alert < emergency`;
       });
 
       if (errorLevelNotifications.length === 0) {
-        checks.push(untestableCheck(
-          'logging-threshold-suppresses-lower',
-          'LoggingThresholdSuppressesLower',
-          'Server does not emit log notifications below the configured level',
-          'No log notifications received at any level after setting threshold to "error". ' +
-            'test_tool_with_logging either is not implemented or emitted no notifications, ' +
-            'so threshold filtering cannot be verified.',
-          SPEC_REFS,
-          'WARNING'
-        ));
+        checks.push(
+          untestableCheck(
+            'logging-threshold-suppresses-lower',
+            'LoggingThresholdSuppressesLower',
+            'Server does not emit log notifications below the configured level',
+            'No log notifications received at any level after setting threshold to "error". ' +
+              'test_tool_with_logging either is not implemented or emitted no notifications, ' +
+              'so threshold filtering cannot be verified.',
+            SPEC_REFS,
+            'WARNING'
+          )
+        );
       } else if (belowThreshold.length > 0) {
         checks.push({
           id: 'logging-threshold-suppresses-lower',
@@ -418,16 +419,18 @@ debug < info < notice < warning < error < critical < alert < emergency`;
       const debugLevelNotifications = notifications.getLoggingNotifications();
 
       if (debugLevelNotifications.length === 0) {
-        checks.push(untestableCheck(
-          'logging-threshold-allows-all',
-          'LoggingThresholdAllowsAll',
-          'Server emits log notifications at all levels when threshold is "debug"',
-          'No log notifications received with threshold at "debug". ' +
-            'test_tool_with_logging either is not implemented or emitted no notifications, ' +
-            'so threshold passthrough cannot be verified.',
-          SPEC_REFS,
-          'WARNING'
-        ));
+        checks.push(
+          untestableCheck(
+            'logging-threshold-allows-all',
+            'LoggingThresholdAllowsAll',
+            'Server emits log notifications at all levels when threshold is "debug"',
+            'No log notifications received with threshold at "debug". ' +
+              'test_tool_with_logging either is not implemented or emitted no notifications, ' +
+              'so threshold passthrough cannot be verified.',
+            SPEC_REFS,
+            'WARNING'
+          )
+        );
       } else {
         checks.push({
           id: 'logging-threshold-allows-all',
