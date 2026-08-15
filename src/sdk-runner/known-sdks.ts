@@ -65,7 +65,12 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   // workspace package). Two baselines exist upstream, one per spec target;
   // the 2026-07-28 override picks the matching one.
   'python-sdk': {
-    build: 'uv sync --frozen --all-extras --all-packages',
+    // Mirrors the SDK's own CI, which syncs the two conformance packages
+    // individually (--inexact so the second sync doesn't prune the first).
+    // --all-packages is unbuildable on main: an example package's declared
+    // README is missing, and uv builds every workspace member.
+    build:
+      'uv sync --frozen --all-extras --package mcp-everything-server && uv sync --frozen --all-extras --package mcp --inexact',
     client: {
       command: 'uv run --frozen python .github/actions/conformance/client.py'
     },
@@ -110,6 +115,11 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   // PORT and STATELESS from the environment: the stateful (dated-spec)
   // lifecycle is the default, and the 2026-07-28 override sets STATELESS=1
   // for the SEP-2575 stateless lifecycle.
+  // One default server serves every revision — rust-sdk's own CI starts a
+  // single un-flagged conformance-server and runs both the 2025-11-25 and
+  // 2026-07-28 legs against it. (A STATELESS=1 override here used to force the
+  // 2026 leg onto a mode the SDK's CI never exercises, failing its SEP-2575
+  // input-required scenarios.)
   'rust-sdk': {
     build: 'cargo build -p mcp-conformance',
     client: {
@@ -118,13 +128,6 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     server: {
       command: 'PORT=3000 ./target/debug/conformance-server',
       url: 'http://localhost:3000/mcp'
-    },
-    specOverrides: {
-      '2026-07-28': {
-        server: {
-          command: 'STATELESS=1 PORT=3000 ./target/debug/conformance-server'
-        }
-      }
     }
   },
   // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
@@ -143,8 +146,12 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
       command: `bash -c 'exec dotnet artifacts/bin/ModelContextProtocol.ConformanceClient/Release/net10.0/ModelContextProtocol.ConformanceClient.dll "$MCP_CONFORMANCE_SCENARIO" "$1"' conformance-client`
     },
     server: {
+      // Launch from the build-output directory: ASP.NET resolves
+      // appsettings.json from the content root (the cwd), and that file
+      // carries the AllowedHosts filter dns-rebinding-protection tests.
+      // Launched from the repo root it silently never loads.
       command:
-        'dotnet artifacts/bin/ModelContextProtocol.ConformanceServer/Release/net10.0/ModelContextProtocol.ConformanceServer.dll --urls http://localhost:3000',
+        "bash -c 'cd artifacts/bin/ModelContextProtocol.ConformanceServer/Release/net10.0 && exec dotnet ModelContextProtocol.ConformanceServer.dll --urls http://localhost:3000'",
       url: 'http://localhost:3000'
     },
     specOverrides: {
