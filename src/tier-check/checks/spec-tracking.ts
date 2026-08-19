@@ -1,6 +1,10 @@
 import { Octokit } from '@octokit/rest';
 import { SpecTrackingResult } from '../types';
 
+// Lockstep SDKs publish in the hours before the spec release is tagged;
+// a release up to this long before it counts as the release for that spec.
+const LEAD_MS = 24 * 60 * 60 * 1000;
+
 export async function checkSpecTracking(
   octokit: Octokit,
   owner: string,
@@ -38,7 +42,7 @@ export async function checkSpecTracking(
     // Reverse so oldest-first, then find the FIRST SDK release after the spec
     const oldestFirst = [...nonDraftSdkReleases].reverse();
     const firstSdkAfterSpec = oldestFirst.find(
-      (r) => new Date(r.published_at!) >= specDate
+      (r) => new Date(r.published_at!).getTime() >= specDate.getTime() - LEAD_MS
     );
 
     if (!firstSdkAfterSpec) {
