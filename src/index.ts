@@ -764,6 +764,10 @@ program
     'OAuth client secret (omit for public/PKCE-only clients)'
   )
   .option(
+    '--resource <uri>',
+    'Canonical URI of the MCP server the token is for (RFC 8707 resource parameter)'
+  )
+  .option(
     '-p, --port <port>',
     'Port for the local OAuth callback server; register http://127.0.0.1:<port>/callback as a redirect URI',
     (value) => Number(value),
