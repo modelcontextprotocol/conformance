@@ -117,6 +117,24 @@ describe('wireSchemaErrors', () => {
     ).toEqual([]);
   });
 
+  it('accepts extension result types through the generic result envelope', () => {
+    expect(
+      wireSchemaErrors(
+        DRAFT_PROTOCOL_VERSION,
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          result: {
+            resultType: 'task',
+            taskId: 'task-1',
+            status: 'working'
+          }
+        },
+        'tools/call'
+      )
+    ).toEqual([]);
+  });
+
   it('accepts a JSON-RPC batch under 2025-03-26 and reports per-element errors', () => {
     expect(
       wireSchemaErrors('2025-03-26', [

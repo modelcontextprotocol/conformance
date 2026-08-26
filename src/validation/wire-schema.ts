@@ -261,15 +261,23 @@ export function wireSchemaErrors(
 
   if (msg.result !== undefined) {
     // SEP-2322 (MRTR): any request may be answered with an InputRequiredResult
-    // instead of its method's result type; discriminate on resultType.
+    // instead of its method's result type; discriminate on resultType. Results
+    // introduced by extensions use the same open discriminator and are checked
+    // against the generic result envelope until their schema is available here.
+    const resultType = (msg.result as Record<string, unknown> | null)
+      ?.resultType;
     const inputRequired =
-      (msg.result as Record<string, unknown> | null)?.resultType ===
-        'input_required' && 'InputRequiredResult' in spec.defs;
-    const resultDefName = inputRequired
-      ? 'InputRequiredResult'
-      : requestMethod !== undefined
-        ? spec.resultDefs.get(requestMethod)
-        : undefined;
+      resultType === 'input_required' && 'InputRequiredResult' in spec.defs;
+    const extensionResult =
+      typeof resultType === 'string' &&
+      resultType !== 'complete' &&
+      resultType !== 'input_required';
+    let resultDefName: string | undefined;
+    if (inputRequired) {
+      resultDefName = 'InputRequiredResult';
+    } else if (!extensionResult && requestMethod !== undefined) {
+      resultDefName = spec.resultDefs.get(requestMethod);
+    }
     if (resultDefName) {
       const typed = validateAgainst(resultDefName, msg.result).map(
         (e) => `${e} (result of '${requestMethod}')`
