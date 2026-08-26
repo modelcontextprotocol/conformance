@@ -14,6 +14,7 @@ import {
 } from '../../connection/sdk-client';
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
+const SESSION_ID_PROBE_TIMEOUT_MS = 5_000;
 
 const SESSION_SPEC_REFERENCES = [
   {
@@ -115,7 +116,8 @@ and validates session ID format if one is assigned.`;
               version: '1.0.0'
             }
           }
-        })
+        }),
+        signal: AbortSignal.timeout(SESSION_ID_PROBE_TIMEOUT_MS)
       });
 
       const sessionId = response.headers.get('mcp-session-id');
@@ -164,6 +166,10 @@ and validates session ID format if one is assigned.`;
           }
         });
       }
+
+      // The probe only needs response headers. Release the body so a
+      // long-lived SSE response cannot keep a connection open.
+      await response.body?.cancel().catch(() => {});
     } catch (error) {
       checks.push({
         id: 'server-session-id-visible-ascii',

@@ -27,10 +27,14 @@ describe('ServerInitializeScenario', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('returns INFO when the server does not provide an MCP-Session-Id header', async () => {
-    fetchMock.mockResolvedValue(new Response(null));
+    const cancelMock = vi.fn();
+    fetchMock.mockResolvedValue(
+      new Response(new ReadableStream({ cancel: cancelMock }))
+    );
 
     const checks = await new ServerInitializeScenario().run(
       testContext(serverUrl)
@@ -45,9 +49,11 @@ describe('ServerInitializeScenario', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       serverUrl,
       expect.objectContaining({
-        method: 'POST'
+        method: 'POST',
+        signal: expect.any(AbortSignal)
       })
     );
+    expect(cancelMock).toHaveBeenCalled();
 
     expect(checks).toHaveLength(2);
     expect(checks[0]?.id).toBe('server-initialize');
@@ -127,6 +133,25 @@ describe('ServerInitializeScenario', () => {
           'mcp-session-id': 'session-123_ABC'
         })
       })
+    );
+  });
+
+  it('reports a failure when the raw session ID probe times out', async () => {
+    const probeSignal = new AbortController().signal;
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(probeSignal);
+    fetchMock.mockRejectedValue(new Error('The operation was aborted'));
+
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
+
+    expect(AbortSignal.timeout).toHaveBeenCalledWith(5000);
+    expect(checks[1]).toMatchObject({
+      id: 'server-session-id-visible-ascii',
+      status: 'FAILURE'
+    });
+    expect(checks[1]?.errorMessage).toContain(
+      'Failed to send initialize request for session ID check'
     );
   });
 
