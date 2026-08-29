@@ -117,6 +117,57 @@ describe('wireSchemaErrors', () => {
     ).toEqual([]);
   });
 
+  it('validates a task-augmented result against the tasks extension at the draft (SEP-2663)', () => {
+    const handle = {
+      resultType: 'task',
+      taskId: 'task_1',
+      status: 'working',
+      createdAt: '2026-08-29T00:00:00Z',
+      lastUpdatedAt: '2026-08-29T00:00:00Z',
+      ttlMs: 60000,
+      pollIntervalMs: 1000
+    };
+    expect(
+      wireSchemaErrors(
+        DRAFT_PROTOCOL_VERSION,
+        { jsonrpc: '2.0', id: 4, result: handle },
+        'tools/call'
+      )
+    ).toEqual([]);
+    // Missing the required taskId: the extension's definition names it.
+    const missing: Record<string, unknown> = { ...handle };
+    delete missing.taskId;
+    const errors = wireSchemaErrors(
+      DRAFT_PROTOCOL_VERSION,
+      { jsonrpc: '2.0', id: 4, result: missing },
+      'tools/call'
+    );
+    expect(errors.join('\n')).toContain('CreateTaskResult');
+    expect(errors.join('\n')).toContain('taskId');
+  });
+
+  it('validates a task-augmented result against the core CreateTaskResult where a version carries it', () => {
+    expect(
+      wireSchemaErrors(
+        '2025-11-25',
+        {
+          jsonrpc: '2.0',
+          id: 5,
+          result: {
+            task: {
+              taskId: 'task_1',
+              status: 'working',
+              createdAt: '2026-08-29T00:00:00Z',
+              lastUpdatedAt: '2026-08-29T00:00:00Z',
+              ttl: 60000
+            }
+          }
+        },
+        'tools/call'
+      )
+    ).toEqual([]);
+  });
+
   it('accepts a JSON-RPC batch under 2025-03-26 and reports per-element errors', () => {
     expect(
       wireSchemaErrors('2025-03-26', [

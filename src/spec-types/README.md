@@ -22,6 +22,12 @@ npm run sync-schema -- <sha-or-ref>
 
 The `SOURCE` file records the spec commit the current copies came from.
 
+`ext-tasks.schema.json` is `schema/draft/schema.json` from the
+[ext-tasks](https://github.com/modelcontextprotocol/ext-tasks) repository
+(SEP-2663); `src/validation` validates a `resultType: "task"` result
+against its `CreateTaskResult` for versions whose core schema no longer
+carries one. `SOURCE.ext-tasks` records its commit.
+
 ## Import rule
 
 A scenario imports the schema matching its `source.introducedIn`:
