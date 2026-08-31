@@ -174,7 +174,7 @@ jobs:
 
 Conformance checks the wire protocol. [TOA](https://github.com/Carmel-Labs-Inc/toa) (`toa/0.1`) is separate signed JSON for tool delivery evidence (reach, invoke, functional, shape, and related layers). It is not a wire protocol and is not meant for every live `tools/call`.
 
-If your CI produces a `toa.json` from any emitter, you can optionally verify it after the conformance action. Off by default. No AgentStatus account is required to verify.
+If your CI produces a `toa.json` from AgentStatus (or another emitter whose key you pin), you can optionally verify it after the conformance action. Off by default. The example below requires `emitter.name=agentstatus` and uses the packaged AgentStatus key; pass `--public-key` for another issuer. No AgentStatus account is required to verify.
 
 ```yaml
       - uses: modelcontextprotocol/conformance@v0.1.10
