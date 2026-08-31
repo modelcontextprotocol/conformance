@@ -305,6 +305,26 @@ steps:
 | `verbose`           | No          | Show verbose output (default: false)            |
 | `node-version`      | No          | Node.js version (default: 20)                   |
 
+### Optional: Tool Outcome Attestation (TOA) after conformance
+
+Protocol conformance and tool-delivery evidence are different checks. This framework does not grade tool outcomes. If your SDK CI already has a signed [toa](https://github.com/Carmel-Labs-Inc/toa) JSON (`toa/0.1`), you can optionally fail the job when offline verify fails. TOA is not a conformance scenario. No AgentStatus account is required to verify.
+
+```yaml
+      - uses: modelcontextprotocol/conformance@v0.1.11
+        with:
+          mode: server
+          url: http://localhost:3001/mcp
+
+      # Optional. Provide toa.json from your emit step or an artifact.
+      - name: Verify tool delivery attestation
+        if: hashFiles('toa.json') != ''
+        run: |
+          pip install "git+https://github.com/Carmel-Labs-Inc/toa.git@345f24607919b5bdf143719b9ea062543cdfe88e#subdirectory=python"
+          toa-verify toa.json --require-layer functional=pass
+```
+
+See [`examples/toa-after-conformance.yml`](./examples/toa-after-conformance.yml). Pin the emitter public key with the flags documented in the toa repo when you need a specific signer.
+
 ## Example Clients
 
 - `examples/clients/typescript/everything-client.ts` - Single client that handles all scenarios based on scenario name (recommended)

@@ -170,6 +170,28 @@ jobs:
 
 ---
 
+## Optional: Tool Outcome Attestation (TOA) after conformance
+
+Conformance checks the wire protocol. [TOA](https://github.com/Carmel-Labs-Inc/toa) (`toa/0.1`) is separate signed JSON for tool delivery evidence (reach, invoke, functional, shape, and related layers). It is not a wire protocol and is not meant for every live `tools/call`.
+
+If your CI produces a `toa.json` from any emitter, you can optionally verify it after the conformance action. Off by default. No AgentStatus account is required to verify.
+
+```yaml
+      - uses: modelcontextprotocol/conformance@v0.1.10
+        with:
+          mode: server
+          url: http://localhost:3001/mcp
+          suite: active
+
+      - name: Verify tool delivery attestation
+        if: hashFiles('toa.json') != ''
+        run: |
+          pip install "git+https://github.com/Carmel-Labs-Inc/toa.git@345f24607919b5bdf143719b9ea062543cdfe88e#subdirectory=python"
+          toa-verify toa.json --require-layer functional=pass
+```
+
+Full copy-paste example: [`examples/toa-after-conformance.yml`](./examples/toa-after-conformance.yml).
+
 ## Writing Conformance Clients/Servers
 
 ### Example Client Pattern

@@ -1,0 +1,34 @@
+# Example only. Copy into an SDK or server repo as needed.
+# Protocol conformance, then optional TOA verify (delivery evidence).
+# TOA is not a conformance scenario.
+name: MCP Conformance and optional TOA
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  conformance-and-toa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up and start server
+        run: |
+          # Replace with your SDK / server start.
+          echo "start your MCP server here"
+          # my-server --port 3001 &
+          # timeout 15 bash -c 'until curl -s http://localhost:3001/mcp; do sleep 0.5; done'
+
+      - uses: modelcontextprotocol/conformance@v0.1.11
+        with:
+          mode: server
+          url: http://localhost:3001/mcp
+          # expected-failures: ./conformance-baseline.yml
+
+      # Optional: only runs when toa.json is present in the workspace.
+      - name: Verify tool delivery attestation
+        if: hashFiles('toa.json') != ''
+        run: |
+          pip install "git+https://github.com/Carmel-Labs-Inc/toa.git@345f24607919b5bdf143719b9ea062543cdfe88e#subdirectory=python"
+          toa-verify toa.json --require-layer functional=pass
