@@ -28,6 +28,8 @@ export interface ServerOptions {
   includeScopeInWwwAuth?: boolean;
   authMiddleware?: express.RequestHandler;
   tokenVerifier?: MockTokenVerifier;
+  /** Observe a successful tools/list or test-tool call after bearer validation. */
+  onMcpOperation?: () => void;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
 }
@@ -64,6 +66,7 @@ export function createServer(
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
+      options.onMcpOperation?.();
       return {
         tools: [
           {
@@ -78,6 +81,7 @@ export function createServer(
       CallToolRequestSchema,
       async (request): Promise<CallToolResult> => {
         if (request.params.name === 'test-tool') {
+          options.onMcpOperation?.();
           return {
             content: [{ type: 'text', text: 'test' }]
           };
@@ -208,6 +212,7 @@ export function createServer(
     }
     const { id, method } = v;
     if (method === 'tools/list') {
+      options.onMcpOperation?.();
       return res.json({
         jsonrpc: '2.0',
         id,
@@ -217,6 +222,7 @@ export function createServer(
       });
     }
     if (method === 'tools/call') {
+      options.onMcpOperation?.();
       return res.json({
         jsonrpc: '2.0',
         id,

@@ -33,6 +33,16 @@ export const ClientConformanceContextSchema = z.discriminatedUnion('name', [
     idp_token_endpoint: z.string()
   }),
   z.object({
+    name: z.literal('auth/enterprise-managed-authorization-refresh-token'),
+    client_id: z.string(),
+    client_secret: z.string(),
+    idp_client_id: z.string(),
+    idp_client_secret: z.string(),
+    idp_refresh_token: z.string(),
+    idp_issuer: z.string(),
+    idp_token_endpoint: z.string()
+  }),
+  z.object({
     name: z.literal('auth/wif-jwt-bearer'),
     client_id: z.string(),
     valid_jwt: z.string(),

@@ -770,13 +770,17 @@ registerScenario('auth/pre-registration', runPreRegistration);
 
 /**
  * Enterprise-Managed Authorization (SEP-990)
- * Tests the complete flow: IDP ID token -> authorization grant -> access token -> MCP access.
+ * Tests IDP ID-token or refresh-token exchange -> ID-JAG -> access token -> MCP access.
+ * The refresh-token scenario uses separate IdP credentials and preserves narrowed scope.
  */
 export async function runEnterpriseManagedAuthorization(
   serverUrl: string
 ): Promise<void> {
   const ctx = parseContext();
-  if (ctx.name !== 'auth/enterprise-managed-authorization') {
+  if (
+    ctx.name !== 'auth/enterprise-managed-authorization' &&
+    ctx.name !== 'auth/enterprise-managed-authorization-refresh-token'
+  ) {
     throw new Error(
       `Expected enterprise-managed-authorization context, got ${ctx.name}`
     );
@@ -828,21 +832,42 @@ export async function runEnterpriseManagedAuthorization(
   }
   logger.debug('Auth server supports jwt-bearer grant type');
 
-  // Step 1: Token Exchange at IdP (IDP ID token -> ID-JAG)
-  logger.debug('Step 1: Exchanging IDP ID token for ID-JAG at IdP...');
+  // Step 1: Token Exchange at IdP (ID token or refresh token -> ID-JAG)
+  logger.debug('Step 1: Exchanging the IDP credential for ID-JAG...');
   const tokenExchangeParams = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
     requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag',
     audience: asIssuer,
-    resource: resource,
-    subject_token: ctx.idp_id_token,
-    subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
-    client_id: ctx.idp_client_id
+    resource: resource
   });
+  const tokenExchangeHeaders: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded'
+  };
+  if (ctx.name === 'auth/enterprise-managed-authorization-refresh-token') {
+    tokenExchangeParams.set('subject_token', ctx.idp_refresh_token);
+    tokenExchangeParams.set(
+      'subject_token_type',
+      'urn:ietf:params:oauth:token-type:refresh_token'
+    );
+    const idpBasicAuth = Buffer.from(
+      `${encodeURIComponent(ctx.idp_client_id)}:${encodeURIComponent(ctx.idp_client_secret)}`
+    ).toString('base64');
+    tokenExchangeHeaders.Authorization = `Basic ${idpBasicAuth}`;
+    if (prm.scopes_supported?.length) {
+      tokenExchangeParams.set('scope', prm.scopes_supported.join(' '));
+    }
+  } else {
+    tokenExchangeParams.set('subject_token', ctx.idp_id_token);
+    tokenExchangeParams.set(
+      'subject_token_type',
+      'urn:ietf:params:oauth:token-type:id_token'
+    );
+    tokenExchangeParams.set('client_id', ctx.idp_client_id);
+  }
 
   const tokenExchangeResponse = await fetch(ctx.idp_token_endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: tokenExchangeHeaders,
     body: tokenExchangeParams
   });
 
@@ -863,6 +888,12 @@ export async function runEnterpriseManagedAuthorization(
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
     assertion: idJag
   });
+  if (
+    ctx.name === 'auth/enterprise-managed-authorization-refresh-token' &&
+    typeof tokenExchangeResult.scope === 'string'
+  ) {
+    jwtBearerParams.set('scope', tokenExchangeResult.scope);
+  }
 
   const basicAuth = Buffer.from(
     `${encodeURIComponent(ctx.client_id)}:${encodeURIComponent(ctx.client_secret)}`
@@ -913,8 +944,11 @@ export async function runEnterpriseManagedAuthorization(
   logger.debug('Enterprise-managed authorization flow completed successfully');
 }
 
-registerScenario(
-  'auth/enterprise-managed-authorization',
+registerScenarios(
+  [
+    'auth/enterprise-managed-authorization',
+    'auth/enterprise-managed-authorization-refresh-token'
+  ],
   runEnterpriseManagedAuthorization
 );
 

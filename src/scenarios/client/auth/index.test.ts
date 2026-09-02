@@ -10,6 +10,10 @@ import {
 } from './test_helpers/testClient';
 import { runClient as badPrmClient } from '../../../../examples/clients/typescript/auth-test-bad-prm';
 import {
+  runEmaRefreshBrokenClient,
+  type EmaRefreshDefect
+} from '../../../../examples/clients/typescript/ema-broken-clients';
+import {
   runWifJwtBearerWrongAudience,
   runWifJwtBearerMissingAssertion,
   runWifJwtBearerExpiredAssertion,
@@ -293,6 +297,93 @@ describe('Client Extension Scenarios', () => {
       await runClientAgainstScenario(runner, scenario.name);
     });
   }
+});
+
+describe('EMA refresh-token negative tests', () => {
+  const defects: EmaRefreshDefect[] = [
+    'ordinary-refresh',
+    'wrong-subject-type',
+    'unknown-refresh-token',
+    'missing-idp-auth',
+    'wrong-idp-auth',
+    'wrong-audience',
+    'wrong-resource',
+    'scope-escalation'
+  ];
+
+  test.each(defects)('rejects %s without issuing a token', async (defect) => {
+    let rejection:
+      | Awaited<ReturnType<typeof runEmaRefreshBrokenClient>>
+      | undefined;
+    const runner = new InlineClientRunner(async (serverUrl) => {
+      rejection = await runEmaRefreshBrokenClient(serverUrl, defect);
+    });
+    const checkId =
+      defect === 'scope-escalation'
+        ? 'complete-flow-jwt-bearer'
+        : 'complete-flow-token-exchange';
+    const checks = await runClientAgainstScenario(
+      runner,
+      'auth/enterprise-managed-authorization-refresh-token',
+      {
+        expectedFailureSlugs: [checkId],
+        expectedSuccessSlugs:
+          defect === 'scope-escalation' ? ['complete-flow-token-exchange'] : []
+      }
+    );
+
+    // Assert outside the runner, which tolerates client errors in negative tests.
+    // Missing progression checks alone must not make these tests pass.
+    expect(rejection).toBeDefined();
+    expect(rejection!.status).toBeGreaterThanOrEqual(400);
+    expect(rejection!.status).toBeLessThan(500);
+    expect(rejection!.body.error).toBeTypeOf('string');
+    expect(rejection!.body).not.toHaveProperty('access_token');
+    expect(
+      checks.find((check) => check.id === checkId)!.description
+    ).not.toMatch(/^Client did not/);
+  });
+
+  test.each([
+    'unissued-mcp-token',
+    'invalid-mcp-request',
+    'stops-after-token'
+  ] as const)('detects %s after successful token exchanges', async (defect) => {
+    let result:
+      | Awaited<ReturnType<typeof runEmaRefreshBrokenClient>>
+      | undefined;
+    const checks = await runClientAgainstScenario(
+      new InlineClientRunner(async (serverUrl) => {
+        result = await runEmaRefreshBrokenClient(serverUrl, defect);
+      }),
+      'auth/enterprise-managed-authorization-refresh-token',
+      {
+        expectedFailureSlugs: ['complete-flow-mcp-access'],
+        expectedSuccessSlugs: [
+          'complete-flow-token-exchange',
+          'complete-flow-jwt-bearer'
+        ]
+      }
+    );
+    expect(result).toBeDefined();
+    if (defect === 'unissued-mcp-token') {
+      expect(result!.status).toBe(401);
+      expect(result!.body.error).toBe('invalid_token');
+      expect(result!.body).not.toHaveProperty('access_token');
+      expect(
+        checks.find((check) => check.id === 'complete-flow-mcp-access')!
+          .description
+      ).not.toMatch(/^Client did not/);
+    } else if (defect === 'invalid-mcp-request') {
+      expect(result!.status).toBeGreaterThanOrEqual(400);
+      expect(result!.status).toBeLessThan(500);
+      expect(result!.body).not.toHaveProperty('access_token');
+    } else {
+      expect(result!.status).toBe(200);
+      expect(result!.body.access_token).toBeTypeOf('string');
+      expect(result!.body.scope).toBe('test:read');
+    }
+  });
 });
 
 // allowClientError: true because broken clients receive an error response from
