@@ -26,6 +26,7 @@ import { runClient as noPkceClient } from '../../../../examples/clients/typescri
 import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
 import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
 import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
+import { runClient as inertClient } from '../../../../examples/clients/typescript/auth-test-inert';
 import { runClient as issNormalizeClient } from '../../../../examples/clients/typescript/auth-test-iss-normalize';
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { runClient as dpopBearerClient } from '../../../../examples/clients/typescript/auth-test-dpop-bearer';
@@ -441,5 +442,38 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
     expect(count('token-request')).toBe(1);
     expect(count('pkce-code-verifier-sent')).toBe(1);
     expect(count('pkce-verifier-matches-challenge')).toBe(1);
+  });
+});
+
+// Reason-bound negative checks (issue #467).
+//
+// A negative check that reads only the final verdict scores SUCCESS whenever
+// the client fails to reach the requirement at all: "did not proceed" and
+// "never got far enough to decide" are the same observation. These tests pin
+// that the harness distinguishes them, so a client that cannot have performed
+// the validation cannot bank a pass for it.
+describe('Reason-bound negative checks (#467)', () => {
+  test('auth/resource-mismatch: an inert client does not pass by doing nothing', async () => {
+    // The inert client throws before any discovery request, so it never reads
+    // the mismatched `resource` it is required to validate. Bound only to the
+    // verdict (`!authorizationRequestMade`) this scored SUCCESS.
+    const runner = new InlineClientRunner(inertClient);
+    const checks = await runClientAgainstScenario(
+      runner,
+      'auth/resource-mismatch',
+      {
+        allowClientError: true,
+        expectedFailureSlugs: ['resource-mismatch-rejected']
+      }
+    );
+
+    const check = checks.find((c) => c.id === 'resource-mismatch-rejected');
+    expect(check).toBeDefined();
+    // Reported as untestable (#248), not as a plain violation: the client did
+    // not break the requirement, it never exercised it.
+    expect(check?.details?.untestable).toBe(true);
+    expect(check?.details?.propertyReached).toBe(false);
+    expect(check?.details?.stopReason).toBe('prm-not-requested');
+    expect(check?.errorMessage).toMatch(/^Not testable: /);
   });
 });
