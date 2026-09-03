@@ -30,6 +30,8 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /** Observe the `resource` identifier the PRM route served (RFC 8707 checks) */
+  onPrmRequest?: (requestData: { resource: string; timestamp: string }) => void;
 }
 
 export function createServer(
@@ -46,7 +48,8 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    onPrmRequest
   } = options;
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -129,6 +132,8 @@ export function createServer(
         (prmPath === '/.well-known/oauth-protected-resource'
           ? getBaseUrl()
           : `${getBaseUrl()}/mcp`);
+
+      onPrmRequest?.({ resource, timestamp: new Date().toISOString() });
 
       const prmResponse: any = {
         resource,

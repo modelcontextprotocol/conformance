@@ -35,6 +35,7 @@ import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/t
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
+import { runClient as resourceSlashClient } from '../../../../examples/clients/typescript/auth-test-resource-slash';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -64,6 +65,21 @@ const allowClientErrorScenarios = new Set<string>([
   'auth/metadata-issuer-mismatch'
 ]);
 
+/**
+ * Checks the everything-client is known to fail because of a bug in the SDK
+ * release it depends on. Each entry is asserted to still fail, so the entry
+ * must be removed as soon as the pinned SDK passes.
+ *
+ * - `resource-parameter-matches-prm` on the root-PRM scenario:
+ *   @modelcontextprotocol/sdk 1.x re-serializes a pathless PRM `resource`
+ *   through `URL.href`, adding a trailing slash (typescript-sdk#1968, fixed
+ *   on 2.x by #2581; 1.x backport #1972). Remove once the example's SDK
+ *   dependency includes the backport.
+ */
+const knownExampleClientFailures: Record<string, string[]> = {
+  'auth/metadata-var2': ['resource-parameter-matches-prm']
+};
+
 describe('Client Auth Scenarios', () => {
   // Generate individual test for each auth scenario
   for (const scenario of authScenariosList) {
@@ -78,7 +94,8 @@ describe('Client Auth Scenarios', () => {
       }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name, {
-        allowClientError: allowClientErrorScenarios.has(scenario.name)
+        allowClientError: allowClientErrorScenarios.has(scenario.name),
+        expectedFailureSlugs: knownExampleClientFailures[scenario.name]
       });
     });
   }
@@ -117,6 +134,15 @@ describe('Negative tests', () => {
     const runner = new InlineClientRunner(badPrmClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
       expectedFailureSlugs: ['prm-priority-order']
+    });
+  });
+
+  test('client appends a trailing slash to the PRM resource identifier', async () => {
+    // auth/metadata-var2 serves the PRM at the root, so its `resource` is a
+    // bare origin: exactly the value a URL parser rewrites with a "/".
+    const runner = new InlineClientRunner(resourceSlashClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-var2', {
+      expectedFailureSlugs: ['resource-parameter-matches-prm']
     });
   });
 
