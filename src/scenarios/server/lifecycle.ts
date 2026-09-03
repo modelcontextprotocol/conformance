@@ -10,6 +10,8 @@ import {
 import type { RunContext } from '../../connection';
 import {
   connectToServer,
+  type MCPClientConnection,
+  reportSetupFailure,
   terminateSessionRaw
 } from '../../connection/sdk-client';
 
@@ -47,49 +49,43 @@ and validates session ID format if one is assigned.`;
     const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
+    let connection: MCPClientConnection;
     try {
-      const connection = await connectToServer(serverUrl, {}, ctx.specVersion);
-
-      // The connection process already does initialization
-      // Check that we have a connected client
-      checks.push({
-        id: 'server-initialize',
-        name: 'ServerInitialize',
-        description:
-          'Server responds to initialize request with valid structure',
-        status: 'SUCCESS',
-        timestamp: new Date().toISOString(),
-        specReferences: [
-          {
-            id: 'MCP-Initialize',
-            url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
-          }
-        ],
-        details: {
-          serverUrl,
-          connected: true
-        }
-      });
-
-      await connection.close();
+      connection = await connectToServer(serverUrl, {}, ctx.specVersion);
     } catch (error) {
-      checks.push({
-        id: 'server-initialize',
-        name: 'ServerInitialize',
-        description:
-          'Server responds to initialize request with valid structure',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        errorMessage: `Failed to initialize: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: [
-          {
-            id: 'MCP-Initialize',
-            url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
-          }
-        ]
-      });
-      return checks;
+      // The handshake never completed, so neither the initialize check nor the
+      // session-id check below can be evaluated. Report a single setup failure
+      // rather than mislabeling it as one specific check failing (#248).
+      return reportSetupFailure(this.name, error);
     }
+
+    // The connection process already does initialization
+    // Check that we have a connected client
+    checks.push({
+      id: 'server-initialize',
+      name: 'ServerInitialize',
+      description: 'Server responds to initialize request with valid structure',
+      status: 'SUCCESS',
+      timestamp: new Date().toISOString(),
+      specReferences: [
+        {
+          id: 'MCP-Initialize',
+          url: 'https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle#initialization'
+        }
+      ],
+      details: {
+        serverUrl,
+        connected: true
+      }
+    });
+
+    // Teardown on an already-recorded handshake. The session-terminating
+    // DELETE inside close() is best-effort by design (see terminateSessionRaw),
+    // so what can still reject here is the client-side close, which is not a
+    // server conformance result. Keeping it in the connect try above reported
+    // it as `server-initialize-setup` and dropped the SUCCESS just recorded,
+    // which is the misattribution #248 is about.
+    await connection.close().catch(() => {});
 
     // Check: Session ID visible ASCII validation
     // Use a raw fetch to inspect the MCP-Session-Id response header,
