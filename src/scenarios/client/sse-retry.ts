@@ -467,8 +467,9 @@ export class SSERetryScenario implements Scenario {
         actualDelay > this.retryValue * this.VERY_LATE_MULTIPLIER;
       const withinTolerance = !tooEarly && !slightlyLate;
 
-      let status: 'SUCCESS' | 'FAILURE' | 'WARNING' = 'SUCCESS';
+      let status: ConformanceCheck['status'] = 'SUCCESS';
       let errorMessage: string | undefined;
+      let diagnosticMessage: string | undefined;
 
       if (tooEarly) {
         // Client reconnected too soon - MUST violation
@@ -480,8 +481,8 @@ export class SSERetryScenario implements Scenario {
         errorMessage = `Client reconnected very late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client appears to be ignoring the retry field and using its own backoff strategy.`;
       } else if (slightlyLate) {
         // Client reconnected slightly late - not a spec violation but suspicious
-        status = 'WARNING';
-        errorMessage = `Client reconnected slightly late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). This is acceptable but may indicate network delays.`;
+        status = 'INFO';
+        diagnosticMessage = `Client reconnected slightly late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). This is acceptable and may reflect network delays.`;
       }
 
       this.checks.push({
@@ -510,7 +511,8 @@ export class SSERetryScenario implements Scenario {
           tooEarly,
           slightlyLate,
           veryLate,
-          getConnectionCount: this.getConnectionCount
+          getConnectionCount: this.getConnectionCount,
+          ...(diagnosticMessage ? { message: diagnosticMessage } : {})
         }
       });
     } else {

@@ -68,6 +68,7 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import { CachingScenario } from './server/caching';
+import { ServerScopeChallengeScenario } from './server/scope-challenge';
 
 // InputRequiredResult scenarios from (SEP-2322)
 import {
@@ -151,7 +152,11 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksDispatchScenario(),
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario()
+  new TasksMrtrCompositionScenario(),
+
+  // SEP-2350 server scope challenges. Pending until the bundled reference SDK
+  // exposes the request-time challenge seam; targeted SDK runs can exercise it.
+  new ServerScopeChallengeScenario()
 ];
 
 // All client scenarios
@@ -212,6 +217,7 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
+  new ServerScopeChallengeScenario(),
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),

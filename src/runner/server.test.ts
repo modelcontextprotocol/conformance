@@ -6,7 +6,11 @@
 import http from 'http';
 import type { AddressInfo } from 'net';
 import { afterEach, beforeEach, describe, test, expect } from 'vitest';
-import { runServerConformanceTest } from './server';
+import {
+  printServerSummary,
+  runServerConformanceTest,
+  serverExitCode
+} from './server';
 import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../types';
 
 // The skip decision happens before any network request, so an unreachable
@@ -77,6 +81,7 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
       req.on('data', (chunk) => {
         buf += chunk;
       });
+
       req.on('end', () => {
         let id: unknown = null;
         try {
@@ -140,4 +145,54 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
       'io.modelcontextprotocol/tasks': {}
     });
   }, 30000);
+});
+
+describe('server warning summaries', () => {
+  test('reports warnings as non-green scenario results', () => {
+    const summary = printServerSummary([
+      {
+        scenario: 'warning-scenario',
+        checks: [
+          {
+            id: 'should-check',
+            name: 'ShouldCheck',
+            description: 'A SHOULD-level check',
+            status: 'WARNING',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }
+    ]);
+
+    expect(summary).toEqual({
+      totalPassed: 0,
+      totalFailed: 0,
+      totalWarnings: 1
+    });
+    expect(serverExitCode(summary.totalFailed, summary.totalWarnings)).toBe(1);
+  });
+
+  test('keeps informational diagnostics green and out of warning totals', () => {
+    const summary = printServerSummary([
+      {
+        scenario: 'sessionless-scenario',
+        checks: [
+          {
+            id: 'optional-session',
+            name: 'OptionalSession',
+            description: 'The server did not opt into session management',
+            status: 'INFO',
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }
+    ]);
+
+    expect(summary).toEqual({
+      totalPassed: 0,
+      totalFailed: 0,
+      totalWarnings: 0
+    });
+    expect(serverExitCode(summary.totalFailed, summary.totalWarnings)).toBe(0);
+  });
 });

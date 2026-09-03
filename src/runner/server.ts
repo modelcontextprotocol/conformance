@@ -163,24 +163,34 @@ export function printServerResults(
 
 export function printServerSummary(
   allResults: { scenario: string; checks: ConformanceCheck[] }[]
-): { totalPassed: number; totalFailed: number } {
+): { totalPassed: number; totalFailed: number; totalWarnings: number } {
   console.log('\n\n=== SUMMARY ===');
   let totalPassed = 0;
   let totalFailed = 0;
+  let totalWarnings = 0;
 
   for (const result of allResults) {
     const passed = result.checks.filter((c) => c.status === 'SUCCESS').length;
     const failed = result.checks.filter((c) => c.status === 'FAILURE').length;
+    const warnings = result.checks.filter((c) => c.status === 'WARNING').length;
     totalPassed += passed;
     totalFailed += failed;
+    totalWarnings += warnings;
 
-    const status = failed === 0 ? '✓' : '✗';
+    const status = failed === 0 && warnings === 0 ? '✓' : '✗';
+    const warningStr = warnings > 0 ? `, ${warnings} warnings` : '';
     console.log(
-      `${status} ${result.scenario}: ${passed} passed, ${failed} failed`
+      `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}`
     );
   }
 
-  console.log(`\nTotal: ${totalPassed} passed, ${totalFailed} failed`);
+  console.log(
+    `\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalWarnings} warnings`
+  );
 
-  return { totalPassed, totalFailed };
+  return { totalPassed, totalFailed, totalWarnings };
+}
+
+export function serverExitCode(failed: number, warnings: number): number {
+  return failed > 0 || warnings > 0 ? 1 : 0;
 }
