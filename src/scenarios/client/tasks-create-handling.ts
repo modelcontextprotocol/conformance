@@ -32,8 +32,8 @@ const SEP_2663_REF = {
 };
 
 interface Observations {
-  toolCallSeen: boolean;
-  toolCallDeclaredExtension: boolean;
+  toolCallCapabilityDeclarations: boolean[];
+  taskGetCapabilityDeclarations: boolean[];
   taskGetIds: string[];
 }
 
@@ -126,6 +126,17 @@ export class TasksClientCreateHandlingScenario implements Scenario {
           id,
           error: { code, message, ...(data ? { data } : {}) }
         });
+      const missingTasksCapability = () =>
+        error(
+          400,
+          MISSING_REQUIRED_CLIENT_CAPABILITY,
+          `Missing required client capability: ${TASKS_EXTENSION_ID}`,
+          {
+            requiredCapabilities: {
+              extensions: { [TASKS_EXTENSION_ID]: {} }
+            }
+          }
+        );
 
       if (method === 'tools/list') {
         return sendJson(
@@ -152,21 +163,11 @@ export class TasksClientCreateHandlingScenario implements Scenario {
       }
 
       if (method === 'tools/call') {
-        this.observations.toolCallSeen = true;
-        this.observations.toolCallDeclaredExtension =
-          clientDeclaredTasks(params);
+        const declaredTasks = clientDeclaredTasks(params);
+        this.observations.toolCallCapabilityDeclarations.push(declaredTasks);
 
-        if (!this.observations.toolCallDeclaredExtension) {
-          return error(
-            400,
-            MISSING_REQUIRED_CLIENT_CAPABILITY,
-            `Missing required client capability: ${TASKS_EXTENSION_ID}`,
-            {
-              requiredCapabilities: {
-                extensions: { [TASKS_EXTENSION_ID]: {} }
-              }
-            }
-          );
+        if (!declaredTasks) {
+          return missingTasksCapability();
         }
 
         return sendJson(
@@ -189,6 +190,12 @@ export class TasksClientCreateHandlingScenario implements Scenario {
       }
 
       if (method === 'tasks/get') {
+        const declaredTasks = clientDeclaredTasks(params);
+        this.observations.taskGetCapabilityDeclarations.push(declaredTasks);
+        if (!declaredTasks) {
+          return missingTasksCapability();
+        }
+
         const taskId = params.taskId;
         if (typeof taskId !== 'string' || taskId !== this.taskId) {
           return error(400, -32602, 'Unknown taskId');
@@ -245,22 +252,39 @@ export class TasksClientCreateHandlingScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    const toolCallSeen =
+      this.observations.toolCallCapabilityDeclarations.length > 0;
+    const toolCallDeclaredExtension =
+      toolCallSeen &&
+      this.observations.toolCallCapabilityDeclarations.every(Boolean);
+    const taskGetSeen =
+      this.observations.taskGetCapabilityDeclarations.length > 0;
+    const taskGetDeclaredExtension =
+      taskGetSeen &&
+      this.observations.taskGetCapabilityDeclarations.every(Boolean);
     const polledCreatedTask = this.observations.taskGetIds.includes(
       this.taskId
     );
     const passed =
-      this.observations.toolCallSeen &&
-      this.observations.toolCallDeclaredExtension &&
+      toolCallSeen &&
+      toolCallDeclaredExtension &&
+      taskGetSeen &&
+      taskGetDeclaredExtension &&
       polledCreatedTask;
 
     let errorMessage: string | undefined;
-    if (!this.observations.toolCallSeen) {
+    if (!toolCallSeen) {
       errorMessage = 'Client did not issue tools/call.';
-    } else if (!this.observations.toolCallDeclaredExtension) {
+    } else if (!toolCallDeclaredExtension) {
       errorMessage = `Client did not declare ${TASKS_EXTENSION_ID} in the tools/call per-request capabilities.`;
-    } else if (!polledCreatedTask) {
+    } else if (!taskGetSeen) {
       errorMessage =
         'Client received CreateTaskResult but did not retrieve it with tasks/get.';
+    } else if (!taskGetDeclaredExtension) {
+      errorMessage = `Client did not declare ${TASKS_EXTENSION_ID} in the tasks/get per-request capabilities.`;
+    } else if (!polledCreatedTask) {
+      errorMessage =
+        'Client did not retrieve the returned taskId with tasks/get.';
     }
 
     return [
@@ -274,8 +298,16 @@ export class TasksClientCreateHandlingScenario implements Scenario {
         errorMessage,
         specReferences: [SEP_2663_REF],
         details: {
-          toolCallSeen: this.observations.toolCallSeen,
-          declaredTasksExtension: this.observations.toolCallDeclaredExtension,
+          toolCallSeen,
+          toolCallDeclaredExtension,
+          taskGetSeen,
+          taskGetDeclaredExtension,
+          toolCallCapabilityDeclarations: [
+            ...this.observations.toolCallCapabilityDeclarations
+          ],
+          taskGetCapabilityDeclarations: [
+            ...this.observations.taskGetCapabilityDeclarations
+          ],
           taskGetIds: [...this.observations.taskGetIds]
         }
       }
@@ -284,8 +316,8 @@ export class TasksClientCreateHandlingScenario implements Scenario {
 
   private newObservations(): Observations {
     return {
-      toolCallSeen: false,
-      toolCallDeclaredExtension: false,
+      toolCallCapabilityDeclarations: [],
+      taskGetCapabilityDeclarations: [],
       taskGetIds: []
     };
   }
