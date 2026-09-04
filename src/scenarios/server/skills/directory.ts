@@ -33,6 +33,7 @@ import {
   skillsCheck,
   listAllResources,
   skillsListAll,
+  directoryReadAll,
   skillNameFromManifestUri
 } from './helpers';
 
@@ -210,6 +211,10 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
           'resources/directory/read',
           { uri: target.dirUri }
         );
+        // Every check below inspects the directory's children, so they need
+        // the whole directory rather than whichever slice fits one page.
+        const all = await directoryReadAll(conn, target.dirUri);
+        happy = { ...happy, resources: all.resources };
       } catch (e) {
         happyErr = e;
       }

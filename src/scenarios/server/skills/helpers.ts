@@ -376,3 +376,37 @@ export function resourcesArray(
 export function entryLabel(entry: SkillEntry, i: number): string {
   return typeof entry.uri === 'string' ? entry.uri : `skills[${i}]`;
 }
+
+/**
+ * Every child of a directory, following `nextCursor` until it clears.
+ *
+ * SEP-2640 says directory-read pagination mirrors `resources/list`, so a
+ * conformant server MAY split a directory across pages. Reading only the
+ * first page makes "no subdirectory here" indistinguishable from "the
+ * subdirectory is on page two".
+ */
+export async function directoryReadAll(
+  conn: Connection,
+  uri: string,
+  maxPages = 50
+): Promise<{ resources: SkillResource[]; pages: number; truncated: boolean }> {
+  const resources: SkillResource[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+
+  for (let i = 0; i < maxPages; i++) {
+    const page = await conn.request<{
+      resources?: SkillResource[];
+      nextCursor?: string;
+    }>('resources/directory/read', cursor ? { uri, cursor } : { uri });
+    resources.push(...(page.resources ?? []));
+    const next = page.nextCursor;
+    if (typeof next !== 'string' || next.length === 0) {
+      return { resources, pages: i + 1, truncated: false };
+    }
+    if (seen.has(next)) return { resources, pages: i + 1, truncated: true };
+    seen.add(next);
+    cursor = next;
+  }
+  return { resources, pages: maxPages, truncated: true };
+}
