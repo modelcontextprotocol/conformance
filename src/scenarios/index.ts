@@ -10,6 +10,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
+import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
@@ -335,7 +336,12 @@ const scenariosList: Scenario[] = [
   new JsonSchemaRefDerefScenario(),
 
   // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
-  new JsonSchema2020_12PreservationScenario()
+  new JsonSchema2020_12PreservationScenario(),
+
+  // SEP-2640 skills, client side. The harness is the server and grades what
+  // the client requests, which is how the retrieval-policy MUSTs become
+  // observable at all.
+  new SkillsNoPrefetchScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
