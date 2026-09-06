@@ -276,6 +276,23 @@ export function createTierCheckCommand(): Command {
           `No --requirements given; assessing every shipped revision: ${revisions.join(', ')}`
         );
         requirements = revisions.map(loadRequirements);
+      } else if (!specVersion && !options.skipConformance) {
+        // No target named at all. Score against the latest shipped revision's
+        // frozen requirement set rather than "the suite as it stands today":
+        // that keeps legacy-only scenarios (removed before this revision) and
+        // extensions out of the denominator, and makes a bare run mean the
+        // same thing from one release of this tool to the next. One URL can
+        // only be assumed to speak one wire, so unlike --sdk this claims the
+        // latest revision alone; pass --requirements to claim more.
+        const revisions = listRequirementRevisions();
+        const latest = revisions[revisions.length - 1];
+        if (latest) {
+          console.error(
+            `No --requirements or --spec-version given; scoring against the latest shipped revision (${latest}). ` +
+              `Pass --requirements ${revisions.join(',')} to claim every revision, or --spec-version for an unfrozen run.`
+          );
+          requirements = [loadRequirements(latest)];
+        }
       }
 
       if (!token) {
