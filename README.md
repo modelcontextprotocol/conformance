@@ -396,7 +396,7 @@ Clones are cached under `.sdk-under-test/` and reused (fetched) on subsequent ru
 
 ## Running a Scenario Across All SDKs
 
-When a change adds a check, or changes the severity of a check on an existing scenario, the question reviewers ask is "what does this do to each SDK?". The SDK matrix answers that in one command: it runs one selection (a scenario list, a suite, or a requirement set) through `conformance sdk` for every entry in `KNOWN_SDKS` and renders an SDK x check table (`matrix.md`) plus the raw results (`matrix.json`, per-SDK logs and `checks.json` files). One SDK failing to build never stops the others; its column says why.
+When a change adds a check, or changes the severity of a check on an existing scenario, the question reviewers ask is "what does this do to each SDK?". The SDK matrix answers that in one command: it runs one selection (a scenario list, a suite, or a requirement set) through `conformance sdk` for every entry in `KNOWN_SDKS` and renders an SDK x check table (`matrix.md`) plus the raw results (`matrix.json`, per-SDK logs and `checks.json` files). One SDK failing to build never stops the others; its column says why. The report leads with the question that matters for review: **Regressions**, meaning failing checks that the SDK's own expected-failures baseline does not already excuse (what would turn that SDK's CI red), plus baseline entries that now pass (stale) and SDKs that could not be run. Baselined failures are still shown, marked separately.
 
 There are three ways to run it, in order of preference.
 

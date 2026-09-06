@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { KNOWN_SDKS } from '../src/sdk-runner/known-sdks';
 import {
   REPO_ROOT,
@@ -10,9 +11,11 @@ import {
   collectModeResults,
   findMatrixFiles,
   hasRed,
+  judgeScenario,
   listKnownSdks,
   mergeMatrices,
   parseArgs,
+  parseBaselineYaml,
   parseSdkSpec,
   renderMarkdown,
   resolveSdkList,
@@ -282,6 +285,12 @@ describe('renderMarkdown', () => {
         client: {
           invocations: [],
           error: null,
+          // var2's failure is excused wholesale; 'initialize' passes, so that
+          // entry is stale.
+          baseline: {
+            file: 'test/conformance/expected-failures.yaml',
+            entries: ['auth/metadata-var2', 'initialize']
+          },
           scenarios: collectModeResults(path.join(tmp, 'ts/client'), 'client')
         }
       }
@@ -295,6 +304,11 @@ describe('renderMarkdown', () => {
         client: {
           invocations: [],
           error: null,
+          // Only the WARNING is excused (per-check); the FAILURE is not.
+          baseline: {
+            file: 'conformance/baseline.yml',
+            entries: ['auth/metadata-default:token-request']
+          },
           scenarios: collectModeResults(path.join(tmp, 'go/client'), 'client')
         }
       }
@@ -330,40 +344,65 @@ describe('renderMarkdown', () => {
       matrixFrom({ 'typescript-sdk': ts, 'go-sdk': go, 'rust-sdk': rust })
     );
 
-    // Overview rows. INFO is not scored: 4 SUCCESS in metadata-default + 1 in
-    // initialize, 1 FAILURE in metadata-var2.
+    // Overview rows. INFO is not scored: ts has 5 SUCCESS + 1 FAILURE, and
+    // that failure is baselined while 'initialize' is a stale entry.
     expect(md).toContain(
-      '| `typescript-sdk` | `aaaaaaa` | ❌ 1 failed, 0 warnings / 6 checks |'
+      '| `typescript-sdk` | `aaaaaaa` | ⚠️ 1 stale baseline, 1 baselined; 5/6 checks pass | `test/conformance/expected-failures.yaml` |'
     );
     expect(md).toMatch(
-      /\| `go-sdk` \| `bbbbbbb` \| ❌ 1 failed, 1 warnings \/ 2 checks \| go 1\.26\.5 \|/
+      /\| `go-sdk` \| `bbbbbbb` \| ❌ 1 unexpected, 1 baselined; 1\/2 checks pass \| `conformance\/baseline.yml` \| go 1\.26\.5 \|/
     );
     expect(md).toContain(
       "❌ build failed: failed to select a version for the requirement 'process-wrap"
     );
     expect(md).toContain('rustc missing');
-    // Scenario summary: initialize only ran for ts; go shows a dash.
-    expect(md).toMatch(/\| `initialize` \| ✅ 1\/1 \| — \| ❌ build failed/);
+
+    // Regressions section: the one unexcused failure, the stale entry, and
+    // the SDK that could not run.
+    const regressions = md.slice(
+      md.indexOf('### Regressions'),
+      md.indexOf('### client')
+    );
+    expect(regressions).toContain(
+      "1 failing check(s) not covered by the SDK's baseline"
+    );
+    expect(regressions).toMatch(
+      /\| `go-sdk` \| client \| `auth\/metadata-default` \| ❌ `resource-parameter-matches-prm` \|/
+    );
+    expect(regressions).not.toContain('token-request');
+    expect(regressions).not.toContain('prm-discovery');
+    expect(regressions).toContain('- `typescript-sdk` client: `initialize`');
+    expect(regressions).toMatch(/- `rust-sdk` client: build failed/);
+
+    // Scenario summary cells distinguish unexcused / baselined / stale.
+    expect(md).toMatch(
+      /\| `initialize` \| ✅ 1\/1 🧹stale baseline \| — \| ❌ build failed/
+    );
     expect(md).toMatch(
       /\| `auth\/metadata-default` \| ✅ 4\/4 \| ❌ 1\/2 \(\+1⚠️\) \|/
     );
     expect(md).toMatch(
-      /\| `auth\/metadata-var2` \| ❌ 0\/1 \| — \| ❌ build failed/
+      /\| `auth\/metadata-var2` \| ⭕ 0\/1 baselined \| — \| ❌ build failed/
     );
     // One combined SDK x check table per mode: ids are unioned across the
-    // three scenarios, a repeated id collapses to one row, worst status wins.
+    // three scenarios, a repeated id collapses to one row, and a baselined
+    // failure renders as ⭕ rather than ❌/⚠️.
     expect(md).toContain('<summary>client checks: 5 (3 scenarios)</summary>');
     expect(md.match(/^\| Check \|/gm)?.length).toBe(1);
     const rows = md
       .split('\n')
       .filter((l) => l.startsWith('| `token-request` |'));
-    expect(rows).toEqual(['| `token-request` | ✅ | ⚠️ | — |']);
+    expect(rows).toEqual(['| `token-request` | ✅ | ⭕ | — |']);
     expect(md).toContain('| `resource-parameter-matches-prm` | ✅ | ❌ | — |');
     expect(md).toContain('| `mcp-client-initialization` | ✅ | — | — |');
     // A check whose outcome differs between scenarios is starred and listed.
-    expect(md).toContain('| `prm-discovery` | ❌\\* | ✅ | — |');
+    expect(md).toContain('| `prm-discovery` | ⭕\\* | ✅ | — |');
     expect(md).toContain(
-      '- `typescript-sdk` `prm-discovery`: ✅ `auth/metadata-default`, ❌ `auth/metadata-var2`'
+      '- `typescript-sdk` `prm-discovery`: ✅ `auth/metadata-default`, ⭕ `auth/metadata-var2`'
+    );
+    // Baselined failures keep their messages in the per-mode table.
+    expect(md).toContain(
+      '<summary>client baselined failure messages (2)</summary>'
     );
     // Failure messages are escaped data.
     expect(md).not.toContain('<script>');
@@ -396,6 +435,73 @@ describe('renderMarkdown', () => {
     const red = structuredClone(green) as any;
     red.sdks.ts.modes.client.scenarios.a.checks[0].status = 'FAILURE';
     expect(hasRed(red)).toBe(true);
+    // ...unless the SDK's own baseline already excuses it.
+    const excused = structuredClone(red) as any;
+    excused.sdks.ts.modes.client.baseline = { file: 'b.yml', entries: ['a:x'] };
+    expect(hasRed(excused)).toBe(false);
+    // A baseline entry that no longer fails is stale, which is red again.
+    const stale = structuredClone(green) as any;
+    stale.sdks.ts.modes.client.baseline = { file: 'b.yml', entries: ['a'] };
+    expect(hasRed(stale)).toBe(true);
+  });
+});
+
+describe('baselines', () => {
+  it('parses expected-failures YAML with and without the yaml package', () => {
+    const text = [
+      '# comment',
+      'server:',
+      '  - tools-call-with-progress  # trailing comment',
+      "  - 'server-stateless:sep-2575-server-implements-discover'",
+      'client: [sse-retry, "auth/dpop"]',
+      ''
+    ].join('\n');
+    const expected = {
+      client: ['sse-retry', 'auth/dpop'],
+      server: [
+        'tools-call-with-progress',
+        'server-stateless:sep-2575-server-implements-discover'
+      ]
+    };
+    expect(parseBaselineYaml(text)).toEqual(expected);
+    const yamlParse = createRequire(import.meta.url)('yaml').parse;
+    expect(parseBaselineYaml(text, yamlParse)).toEqual(expected);
+    expect(parseBaselineYaml('', yamlParse)).toEqual({
+      client: [],
+      server: []
+    });
+  });
+
+  it('judgeScenario mirrors evaluateBaseline: wholesale, per-check, stale', () => {
+    const modeRec = {
+      baseline: { entries: ['whole', 'part:b', 'gone:z'] },
+      scenarios: {
+        whole: { checks: [{ id: 'a', status: 'FAILURE' }] },
+        part: {
+          checks: [
+            { id: 'a', status: 'FAILURE' },
+            { id: 'b', status: 'WARNING' }
+          ]
+        },
+        gone: { checks: [{ id: 'z', status: 'SUCCESS' }] },
+        clean: { checks: [{ id: 'q', status: 'FAILURE' }] }
+      }
+    };
+    expect(
+      judgeScenario(modeRec, 'whole').baselined.map((c: any) => c.id)
+    ).toEqual(['a']);
+    expect(judgeScenario(modeRec, 'whole').unexpected).toEqual([]);
+    const part = judgeScenario(modeRec, 'part');
+    expect(part.unexpected.map((c: any) => c.id)).toEqual(['a']);
+    expect(part.baselined.map((c: any) => c.id)).toEqual(['b']);
+    expect(judgeScenario(modeRec, 'gone').stale).toEqual(['gone:z']);
+    expect(
+      judgeScenario(modeRec, 'clean').unexpected.map((c: any) => c.id)
+    ).toEqual(['q']);
+    // No baseline at all: everything failing is unexpected, nothing is stale.
+    const bare = { baseline: null, scenarios: modeRec.scenarios };
+    expect(judgeScenario(bare, 'whole').unexpected).toHaveLength(1);
+    expect(judgeScenario(bare, 'gone').stale).toEqual([]);
   });
 });
 

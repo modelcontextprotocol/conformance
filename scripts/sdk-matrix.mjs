@@ -15,6 +15,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -61,7 +62,9 @@ Output:
   --merge <dir[,dir...]>       Run nothing; merge the matrix.json files found
                                under these directories and re-render
   --list-sdks [--json]         Print the KNOWN_SDKS names (of --ref, if given)
-  --strict                     Exit 1 if any SDK errored or any check failed
+  --strict                     Exit 1 if the run would turn any SDK's own CI
+                               red: a failure its baseline does not excuse, a
+                               stale baseline entry, or an SDK that errored
   --strict-errors              Exit 1 only if an SDK could not be built or run
   -h, --help
 `;
@@ -621,6 +624,84 @@ function headFromLog(output) {
   return m ? m[1] : undefined;
 }
 
+function expectedFailuresFromLog(output) {
+  const m = output.match(
+    /^\[sdk\] conformance (?:client|server) .*--expected-failures (\S+)/m
+  );
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Parse an expected-failures YAML file into { client: [...], server: [...] }
+ * entry strings ('<scenario>' or '<scenario>:<check-id>'). Uses the `yaml`
+ * package from the harness checkout when it is installed there, else a small
+ * parser that covers the block-list shape these files use.
+ */
+export function parseBaselineYaml(text, yamlParse) {
+  const norm = (list) =>
+    Array.isArray(list)
+      ? list
+          .filter((e) => typeof e === 'string' && e.trim())
+          .map((e) => e.trim())
+      : [];
+  if (yamlParse) {
+    try {
+      const doc = yamlParse(text) ?? {};
+      if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+        return { client: norm(doc.client), server: norm(doc.server) };
+      }
+    } catch {
+      // fall through to the minimal parser
+    }
+  }
+  const out = { client: [], server: [] };
+  let section = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\s+#.*$/, '').replace(/^#.*$/, '');
+    if (!line.trim()) continue;
+    const key = line.match(/^([A-Za-z_]+):\s*(\[(.*)\])?\s*$/);
+    if (key) {
+      section = key[1] in out ? key[1] : null;
+      if (section && key[2]) {
+        out[section].push(
+          ...key[3]
+            .split(',')
+            .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+            .filter(Boolean)
+        );
+      }
+      continue;
+    }
+    const item = line.match(/^\s*-\s+(.+?)\s*$/);
+    if (item && section) {
+      out[section].push(item[1].replace(/^['"]|['"]$/g, ''));
+    }
+  }
+  return out;
+}
+
+function loadYamlParse(harnessRoot) {
+  for (const base of [harnessRoot, REPO_ROOT]) {
+    try {
+      const req = createRequire(path.join(base, 'package.json'));
+      return req('yaml').parse;
+    } catch {
+      // not installed there
+    }
+  }
+  return undefined;
+}
+
+function readBaseline(file, mode, harnessRoot) {
+  try {
+    const text = fs.readFileSync(file, 'utf-8');
+    const parsed = parseBaselineYaml(text, loadYamlParse(harnessRoot));
+    return { file, entries: parsed[mode] ?? [] };
+  } catch (err) {
+    return { file, entries: [], error: String(err.message ?? err) };
+  }
+}
+
 async function runSdk(sdk, ctx) {
   const { opts, harness, cacheDir, outDir, serverLock } = ctx;
   const sdkDir = path.join(outDir, 'sdks', safeName(sdk.spec));
@@ -640,8 +721,14 @@ async function runSdk(sdk, ctx) {
 
   for (const mode of modes) {
     const modeOut = path.join(sdkDir, mode);
-    const modeRec = { invocations: [], error: null, scenarios: {} };
+    const modeRec = {
+      invocations: [],
+      error: null,
+      baseline: null,
+      scenarios: {}
+    };
     record.modes[mode] = modeRec;
+    let baselineFile;
     if (buildError) {
       // The build already failed under the previous mode; don't repeat it.
       modeRec.error = { ...buildError, inherited: true };
@@ -685,6 +772,7 @@ async function runSdk(sdk, ctx) {
       const r = mode === 'server' ? await serverLock(exec) : await exec();
       record.checkoutDir ??= checkoutDirFromLog(r.output) ?? null;
       record.head ??= headFromLog(r.output) ?? null;
+      baselineFile ??= expectedFailuresFromLog(r.output);
       const cls = classifyInvocation(r.output, r.exitCode);
       const inv = {
         scenario: scenario ?? null,
@@ -716,6 +804,15 @@ async function runSdk(sdk, ctx) {
       if (buildError) break;
     }
     modeRec.scenarios = collectModeResults(modeOut, mode);
+    // The SDK's own expected-failures baseline (the file `conformance sdk`
+    // passed as --expected-failures) is what separates "this change breaks
+    // that SDK's CI" from "that SDK already knows it fails this".
+    if (baselineFile) {
+      modeRec.baseline = readBaseline(baselineFile, mode, harness.root);
+      if (record.checkoutDir && modeRec.baseline) {
+        modeRec.baseline.file = path.relative(record.checkoutDir, baselineFile);
+      }
+    }
     // A requested scenario that left no checks.json is an execution error
     // for that scenario, distinct from a check that was simply not emitted.
     if (opts.scenario) {
@@ -758,7 +855,10 @@ const ICON = {
   FAILURE: '❌',
   WARNING: '⚠️',
   SKIPPED: '⏭️',
-  INFO: 'ℹ️'
+  INFO: 'ℹ️',
+  // Fails, but the SDK's own expected-failures baseline already lists it.
+  BASELINED: '⭕',
+  STALE: '\u{1F9F9}'
 };
 const DASH = '—';
 
@@ -786,6 +886,102 @@ export function summarizeChecks(checks) {
     total: n('SUCCESS') + n('FAILURE'),
     emitted: checks.length
   };
+}
+
+const isFailing = (status) => status === 'FAILURE' || status === 'WARNING';
+
+/** Baseline lookup for one mode record ({ has, scenarios, checks }). */
+function baselineIndex(modeRec) {
+  const entries = modeRec?.baseline?.entries ?? [];
+  const scenarios = new Set();
+  const checks = new Set();
+  for (const e of entries) {
+    if (e.includes(':')) checks.add(e);
+    else scenarios.add(e);
+  }
+  return { has: Boolean(modeRec?.baseline), scenarios, checks };
+}
+
+function isBaselined(idx, scenario, checkId) {
+  return (
+    idx.scenarios.has(scenario) || idx.checks.has(`${scenario}:${checkId}`)
+  );
+}
+
+/**
+ * Judge one scenario result against the SDK's own expected-failures baseline,
+ * mirroring evaluateBaseline in src/expected-failures.ts (FAILURE and WARNING
+ * both count as failing). `unexpected` are failing checks the baseline does not
+ * excuse: those turn that SDK's CI red, i.e. regressions from its point of
+ * view. `baselined` are failing checks it already expects. `stale` are baseline
+ * entries for this scenario that no longer fail, which also turns its CI red
+ * until the entry is removed.
+ */
+export function judgeScenario(modeRec, scenario) {
+  const out = { unexpected: [], baselined: [], stale: [] };
+  const r = modeRec?.scenarios?.[scenario];
+  if (!r || r.missing) return out;
+  const idx = baselineIndex(modeRec);
+  const failing = r.checks.filter((c) => isFailing(c.status));
+  for (const c of failing) {
+    (isBaselined(idx, scenario, c.id) ? out.baselined : out.unexpected).push(c);
+  }
+  if (idx.scenarios.has(scenario) && failing.length === 0) {
+    out.stale.push(scenario);
+  }
+  for (const e of idx.checks) {
+    const i = e.indexOf(':');
+    if (e.slice(0, i) !== scenario) continue;
+    const id = e.slice(i + 1);
+    const present = r.checks.filter((c) => c.id === id);
+    if (present.length && !present.some((c) => isFailing(c.status))) {
+      out.stale.push(e);
+    }
+  }
+  return out;
+}
+
+/**
+ * Everything in the matrix that would turn some SDK's own CI red (or could
+ * not be determined): unexpected failures, stale baseline entries, and SDKs
+ * that could not be built or run.
+ */
+export function findRegressions(matrix) {
+  const unexpected = [];
+  const stale = [];
+  const errors = [];
+  const noBaseline = [];
+  for (const s of Object.values(matrix.sdks)) {
+    for (const [mode, m] of Object.entries(s.modes)) {
+      if (m.error) {
+        errors.push({ sdk: s.spec, mode, error: m.error });
+        if (m.error.inherited || Object.keys(m.scenarios).length === 0)
+          continue;
+      }
+      const ran = Object.values(m.scenarios).some((sc) => !sc.missing);
+      if (ran && !m.baseline) noBaseline.push({ sdk: s.spec, mode });
+      for (const sc of Object.keys(m.scenarios).sort()) {
+        if (m.scenarios[sc].missing) {
+          errors.push({
+            sdk: s.spec,
+            mode,
+            error: {
+              phase: 'run',
+              reason: m.scenarios[sc].reason,
+              scenario: sc
+            }
+          });
+          continue;
+        }
+        const j = judgeScenario(m, sc);
+        for (const c of j.unexpected) {
+          unexpected.push({ sdk: s.spec, mode, scenario: sc, check: c });
+        }
+        for (const e of j.stale) stale.push({ sdk: s.spec, mode, entry: e });
+      }
+    }
+  }
+  return { unexpected, stale, errors, noBaseline };
 }
 
 /**
@@ -874,22 +1070,26 @@ function sdkStatusCell(s) {
     Object.values(m.scenarios).flatMap((sc) => sc.checks)
   );
   const sum = summarizeChecks(all);
+  let unexpected = 0;
+  let baselined = 0;
+  let stale = 0;
+  for (const [, m] of modes) {
+    for (const sc of Object.keys(m.scenarios)) {
+      const j = judgeScenario(m, sc);
+      unexpected += j.unexpected.length;
+      baselined += j.baselined.length;
+      stale += j.stale.length;
+    }
+  }
   const parts = [];
   if (missing) parts.push(`${missing} scenario(s) produced no results`);
-  if (sum.failed) {
-    parts.push(
-      `${sum.failed} failed, ${sum.warnings} warnings / ${sum.total} checks`
-    );
-  } else if (sum.warnings) {
-    parts.push(`${sum.warnings} warnings / ${sum.total} checks`);
-  } else parts.push(`${sum.passed}/${sum.total} checks`);
+  if (unexpected) parts.push(`${unexpected} unexpected`);
+  if (stale) parts.push(`${stale} stale baseline`);
+  if (baselined) parts.push(`${baselined} baselined`);
+  const head = parts.length ? `${parts.join(', ')}; ` : '';
   const icon =
-    missing || sum.failed
-      ? ICON.FAILURE
-      : sum.warnings
-        ? ICON.WARNING
-        : ICON.SUCCESS;
-  return `${icon} ${parts.join('; ')}`;
+    missing || unexpected ? ICON.FAILURE : stale ? ICON.WARNING : ICON.SUCCESS;
+  return `${icon} ${head}${sum.passed}/${sum.total} checks pass`;
 }
 
 /** `go version go1.26.5 linux/amd64` -> `1.26.5`, `v22.1.0` -> `22.1.0`. */
@@ -923,8 +1123,19 @@ function scenarioCell(m, sc) {
   const sum = summarizeChecks(r.checks);
   if (sum.emitted === 0) return `${DASH} 0 checks`;
   const warn = sum.warnings ? ` (+${sum.warnings}${ICON.WARNING})` : '';
-  if (sum.failed) return `${ICON.FAILURE} ${sum.passed}/${sum.total}${warn}`;
-  if (sum.warnings) return `${ICON.WARNING} ${sum.passed}/${sum.total}${warn}`;
+  const j = judgeScenario(m, sc);
+  if (j.unexpected.length) {
+    const icon = j.unexpected.some((c) => c.status === 'FAILURE')
+      ? ICON.FAILURE
+      : ICON.WARNING;
+    return `${icon} ${sum.passed}/${sum.total}${warn}`;
+  }
+  if (j.baselined.length) {
+    return `${ICON.BASELINED} ${sum.passed}/${sum.total}${warn} baselined`;
+  }
+  if (j.stale.length) {
+    return `${ICON.SUCCESS} ${sum.passed}/${sum.total} ${ICON.STALE}stale baseline`;
+  }
   return `${ICON.SUCCESS} ${sum.passed}/${sum.total}`;
 }
 
@@ -952,14 +1163,28 @@ function checkIds(sdks, mode, scenarios) {
  */
 function statusesByScenario(sdk, mode, scenarios, id) {
   const out = [];
+  const m = sdk.modes[mode];
+  const idx = baselineIndex(m);
   for (const sc of scenarios) {
-    const r = sdk.modes[mode]?.scenarios?.[sc];
+    const r = m?.scenarios?.[sc];
     if (!r || r.missing) continue;
     const statuses = r.checks.filter((c) => c.id === id).map((c) => c.status);
-    if (statuses.length)
-      out.push({ scenario: sc, status: worstStatus(statuses) });
+    if (statuses.length) {
+      const status = worstStatus(statuses);
+      out.push({
+        scenario: sc,
+        status,
+        baselined: isFailing(status) && isBaselined(idx, sc, id)
+      });
+    }
   }
   return out;
+}
+
+/** Icon for a (status, baselined) pair in the check table. */
+function statusIcon(status, baselined) {
+  if (baselined && isFailing(status)) return ICON.BASELINED;
+  return ICON[status] ?? cell(status, 12);
 }
 
 export function renderMarkdown(matrix) {
@@ -983,20 +1208,94 @@ export function renderMarkdown(matrix) {
     ''
   );
   lines.push(
-    `Legend: ${ICON.SUCCESS} SUCCESS, ${ICON.FAILURE} FAILURE, ${ICON.WARNING} WARNING, ${ICON.SKIPPED} SKIPPED, ${ICON.INFO} INFO, ${DASH} not emitted or not run. Summary cells are passed/(passed+failed) checks.`,
+    `Legend: ${ICON.SUCCESS} SUCCESS, ${ICON.FAILURE} FAILURE and ${ICON.WARNING} WARNING not in the SDK's own expected-failures baseline (would turn its CI red), ${ICON.BASELINED} fails but baselined by the SDK (its CI stays green), ${ICON.STALE} baselined but now passes (stale entry, also turns its CI red), ${ICON.SKIPPED} SKIPPED, ${ICON.INFO} INFO, ${DASH} not emitted or not run. Summary cells are passed/(passed+failed) checks.`,
     ''
   );
 
   lines.push(
-    '| SDK | SDK head | Status | Toolchain |',
-    '| --- | --- | --- | --- |'
+    '| SDK | SDK head | Status | Baseline | Toolchain |',
+    '| --- | --- | --- | --- | --- |'
   );
   for (const s of sdks) {
+    const files = [
+      ...new Set(
+        Object.values(s.modes)
+          .map((m) => m.baseline?.file)
+          .filter(Boolean)
+      )
+    ];
+    const baseline = files.length
+      ? files.map((f) => code(f, 80)).join(', ')
+      : 'none';
     lines.push(
-      `| ${code(s.spec)} | ${s.head ? code(s.head) : DASH} | ${sdkStatusCell(s)} | ${toolchainCell(s)} |`
+      `| ${code(s.spec)} | ${s.head ? code(s.head) : DASH} | ${sdkStatusCell(s)} | ${baseline} | ${toolchainCell(s)} |`
     );
   }
   lines.push('');
+
+  // The question this report exists to answer: does the harness change turn
+  // any SDK's own conformance CI red? That is every failing check the SDK's
+  // expected-failures baseline does not already excuse, plus baseline
+  // entries that now pass (stale), plus SDKs we could not run at all.
+  const reg = findRegressions(matrix);
+  lines.push('### Regressions', '');
+  if (
+    reg.unexpected.length === 0 &&
+    reg.stale.length === 0 &&
+    reg.errors.length === 0
+  ) {
+    lines.push(
+      `${ICON.SUCCESS} None. Every failing check is already in that SDK's expected-failures baseline, and every SDK built and ran.`,
+      ''
+    );
+  } else {
+    if (reg.unexpected.length) {
+      const cap = 60;
+      lines.push(
+        `${ICON.FAILURE} ${reg.unexpected.length} failing check(s) not covered by the SDK's baseline:`,
+        '',
+        '| SDK | Mode | Scenario | Check | Message |',
+        '| --- | --- | --- | --- | --- |',
+        ...reg.unexpected
+          .slice(0, cap)
+          .map(
+            (u) =>
+              `| ${code(u.sdk)} | ${u.mode} | ${code(u.scenario)} | ${ICON[u.check.status]} ${code(u.check.id)} | ${cell(u.check.errorMessage ?? u.check.description ?? '', 160) || DASH} |`
+          )
+      );
+      if (reg.unexpected.length > cap) {
+        lines.push(
+          `| | | | | ${reg.unexpected.length - cap} more in matrix.json |`
+        );
+      }
+      lines.push('');
+    }
+    if (reg.stale.length) {
+      lines.push(
+        `${ICON.STALE} ${reg.stale.length} stale baseline entr${reg.stale.length === 1 ? 'y' : 'ies'} (passes now; the SDK's CI fails until the entry is removed):`,
+        '',
+        ...reg.stale.map((s) => `- ${code(s.sdk)} ${s.mode}: ${code(s.entry)}`),
+        ''
+      );
+    }
+    if (reg.errors.length) {
+      lines.push(
+        `${ICON.FAILURE} Could not determine for:`,
+        '',
+        ...reg.errors.map(
+          (e) =>
+            `- ${code(e.sdk)} ${e.mode}${e.error.scenario ? ` ${code(e.error.scenario)}` : ''}: ${cell(e.error.inherited ? 'build failed (see above)' : errorLabel(e.error), 160)}`
+        ),
+        ''
+      );
+    }
+  }
+  if (reg.noBaseline.length) {
+    lines.push(
+      `No expected-failures baseline was applied for ${[...new Set(reg.noBaseline.map((n) => code(n.sdk)))].join(', ')} (none configured in KNOWN_SDKS, or a requirements run), so every failure there counts as unexpected.`,
+      ''
+    );
+  }
 
   const header = `| ${sdks.map((s) => code(s.spec)).join(' | ')} |`;
   const rule = `|${' --- |'.repeat(sdks.length)}`;
@@ -1047,14 +1346,21 @@ export function renderMarkdown(matrix) {
         const cells = sdks.map((s) => {
           const per = statusesByScenario(s, mode, scenarioNames, id);
           if (per.length === 0) return DASH;
-          const w = worstStatus(per.map((p) => p.status));
-          if (new Set(per.map((p) => p.status)).size > 1) {
+          const icons = per.map((p) => statusIcon(p.status, p.baselined));
+          // Worst first: an unexcused failure anywhere wins over a baselined
+          // one, which wins over a pass.
+          const worst =
+            per.find((p) => isFailing(p.status) && !p.baselined) ??
+            per.find((p) => isFailing(p.status)) ??
+            per.find((p) => p.status === worstStatus(per.map((q) => q.status)));
+          const icon = statusIcon(worst.status, worst.baselined);
+          if (new Set(icons).size > 1) {
             differs.push(
-              `- ${code(s.spec)} ${code(id)}: ${per.map((p) => `${ICON[p.status] ?? cell(p.status, 12)} ${code(p.scenario)}`).join(', ')}`
+              `- ${code(s.spec)} ${code(id)}: ${per.map((p, i) => `${icons[i]} ${code(p.scenario)}`).join(', ')}`
             );
-            return `${ICON[w] ?? cell(w, 12)}\\*`;
+            return `${icon}\\*`;
           }
-          return ICON[w] ?? cell(w, 12);
+          return icon;
         });
         lines.push(`| ${code(id)} | ${cells.join(' | ')} |`);
       }
@@ -1070,15 +1376,15 @@ export function renderMarkdown(matrix) {
       lines.push('</details>', '');
     }
 
+    // Unexcused failures are already listed under Regressions; this table is
+    // the baselined remainder, for context.
     const failures = [];
     for (const s of sdks) {
+      const m = s.modes[mode];
       for (const sc of scenarioNames) {
-        const r = s.modes[mode]?.scenarios?.[sc];
-        if (!r || r.missing) continue;
-        for (const c of r.checks) {
-          if (c.status !== 'FAILURE' && c.status !== 'WARNING') continue;
+        for (const c of judgeScenario(m, sc).baselined) {
           failures.push(
-            `| ${code(s.spec)} | ${code(sc)} | ${ICON[c.status]} ${code(c.id)} | ${cell(c.errorMessage ?? c.description ?? '', 200) || DASH} |`
+            `| ${code(s.spec)} | ${code(sc)} | ${ICON.BASELINED} ${code(c.id)} | ${cell(c.errorMessage ?? c.description ?? '', 200) || DASH} |`
           );
         }
       }
@@ -1086,7 +1392,7 @@ export function renderMarkdown(matrix) {
     if (failures.length) {
       const cap = 80;
       lines.push(
-        `<details><summary>${mode} failure and warning messages (${failures.length})</summary>`,
+        `<details><summary>${mode} baselined failure messages (${failures.length})</summary>`,
         '',
         '| SDK | Scenario | Check | Message |',
         '| --- | --- | --- | --- |',
@@ -1140,17 +1446,16 @@ function exitCodeFor(opts, matrix) {
   return 0;
 }
 
+/**
+ * True when anything in the matrix would turn some SDK's own CI red, or could
+ * not be determined: an unexcused failure, a stale baseline entry, or an SDK
+ * that could not be built or run.
+ */
 export function hasRed(matrix) {
-  for (const s of Object.values(matrix.sdks)) {
-    for (const m of Object.values(s.modes)) {
-      if (m.error) return true;
-      for (const sc of Object.values(m.scenarios)) {
-        if (sc.missing) return true;
-        if (sc.checks.some((c) => c.status === 'FAILURE')) return true;
-      }
-    }
-  }
-  return false;
+  const reg = findRegressions(matrix);
+  return (
+    reg.unexpected.length > 0 || reg.stale.length > 0 || reg.errors.length > 0
+  );
 }
 
 function writeOutputs(matrix, outDir) {
