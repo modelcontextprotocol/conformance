@@ -59,7 +59,7 @@ export { createServerStateful } from './stateful';
 export {
   createServerStateless,
   validateStatelessRequest,
-  withRequiredDraftResultFields,
+  withRequiredResultFields,
   CACHEABLE_RESULT_METHODS
 } from './stateless';
 export { createServerFor } from './select';

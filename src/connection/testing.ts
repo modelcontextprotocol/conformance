@@ -1,15 +1,17 @@
-import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
+import type { SpecVersion } from '../types';
+import { DEFAULT_TEST_SPEC_VERSION } from '../mock-server/testing';
 import { connectFor } from './select';
 import type { ConnectOptions, RunContext } from './index';
 
 /**
  * Build a RunContext for unit tests that drive a scenario directly.
- * Defaults to the latest dated spec version (stateful lifecycle) so existing
- * tests keep their pre-RunContext behaviour.
+ * Defaults to {@link DEFAULT_TEST_SPEC_VERSION} (the last stateful revision)
+ * so tests that stand up an SDK-based fixture server keep working; pass
+ * `'2026-07-28'` (or the draft) explicitly to exercise the stateless path.
  */
 export function testContext(
   serverUrl: string,
-  specVersion: SpecVersion = LATEST_SPEC_VERSION
+  specVersion: SpecVersion = DEFAULT_TEST_SPEC_VERSION
 ): RunContext {
   return {
     serverUrl,

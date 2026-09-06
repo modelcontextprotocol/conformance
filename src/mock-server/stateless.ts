@@ -9,10 +9,14 @@
  */
 
 import express from 'express';
-import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
+import {
+  LATEST_SPEC_VERSION,
+  protocolVersionFor,
+  type SpecVersion
+} from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockServer, RequestHandlers } from './index';
-import { STATELESS_SPEC_VERSIONS } from '../connection/select';
+import { STATELESS_PROTOCOL_VERSIONS } from '../connection/select';
 import { validateWireMessage } from '../validation/wire-schema';
 import { capabilitiesFromHandlers } from './stateful';
 
@@ -29,7 +33,7 @@ const META_KEYS = [
 /**
  * Operations whose results the 2026-07-28 revision marks cacheable: servers
  * MUST include the caching hints `ttlMs` and `cacheScope` on these results
- * (draft `CacheableResult`, server/utilities/caching).
+ * (`CacheableResult`, server/utilities/caching).
  */
 export const CACHEABLE_RESULT_METHODS: ReadonlySet<string> = new Set([
   'server/discover',
@@ -49,7 +53,7 @@ export const CACHEABLE_RESULT_METHODS: ReadonlySet<string> = new Set([
  * filled. A scenario that needs to send a deliberately non-conformant result
  * must build its own server instead of routing through this mock.
  */
-export function withRequiredDraftResultFields(
+export function withRequiredResultFields(
   method: string,
   result: unknown
 ): unknown {
@@ -159,7 +163,7 @@ export function validateStatelessRequest(
       body: {
         jsonrpc: '2.0',
         id,
-        result: withRequiredDraftResultFields(method, {
+        result: withRequiredResultFields(method, {
           supportedVersions,
           capabilities,
           // Spec PR #3002: server identity lives in the result `_meta`, not
@@ -189,9 +193,10 @@ export async function createServerStateless(
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
   const supportedVersions: readonly string[] = specVersion
-    ? [specVersion]
-    : STATELESS_SPEC_VERSIONS;
-  const wireVersion = specVersion ?? DRAFT_PROTOCOL_VERSION;
+    ? [protocolVersionFor(specVersion)]
+    : STATELESS_PROTOCOL_VERSIONS;
+  // Schema to validate traffic against; the latest release when unpinned.
+  const schemaVersion: SpecVersion = specVersion ?? LATEST_SPEC_VERSION;
 
   const app = express();
   app.use(express.json());
@@ -205,7 +210,7 @@ export async function createServerStateless(
     // An unparsed body (wrong or missing Content-Type) is a transport fault
     // surfaced by the HTTP-level checks, not a JSON-RPC message to validate.
     if (body !== undefined) {
-      validateWireMessage(wireVersion, req.body, {
+      validateWireMessage(schemaVersion, req.body, {
         origin: 'implementation',
         context: `client request '${body?.method ?? '(unknown)'}' to stateless mock`
       });
@@ -224,7 +229,7 @@ export async function createServerStateless(
         raw.error !== undefined && raw.id === null
           ? { ...raw, id: 0 }
           : payload;
-      validateWireMessage(wireVersion, validated, {
+      validateWireMessage(schemaVersion, validated, {
         origin: 'harness',
         context: `stateless mock response${method ? ` to '${method}'` : ''}`,
         requestMethod: method
@@ -254,7 +259,7 @@ export async function createServerStateless(
         {
           jsonrpc: '2.0',
           id,
-          result: withRequiredDraftResultFields(method, result)
+          result: withRequiredResultFields(method, result)
         },
         method
       );
