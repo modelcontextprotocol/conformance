@@ -10,7 +10,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const VERSIONS = ['2025-03-26', '2025-06-18', '2025-11-25', 'draft'] as const;
+const VERSIONS = [
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
+  '2026-07-28',
+  'draft'
+] as const;
 const SPEC_REPO =
   'https://github.com/modelcontextprotocol/modelcontextprotocol.git';
 const OUT_DIR = join(process.cwd(), 'src', 'spec-types');
