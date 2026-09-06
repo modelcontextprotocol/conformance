@@ -34,9 +34,9 @@ Source: `modelcontextprotocol/docs/community/sdk-tiers.mdx` in the spec reposito
 
 Every scenario in the conformance suite has a `specVersions` field indicating which spec version it targets. The valid values are defined as the `SpecVersion` type (as a list) in `src/types.ts` — run `node dist/index.js list` to see the current mapping of scenarios to spec versions.
 
-Date-versioned scenarios (e.g. `2025-06-18`, `2025-11-25`) count toward tier scoring. `draft` and `extension` scenarios are listed separately as informational.
+Date-versioned scenarios (e.g. `2025-06-18`, `2025-11-25`, `2026-07-28`) count toward tier scoring. `draft` (requirements newer than the latest dated release) and `extension` scenarios are listed separately as informational.
 
-The `--spec-version` CLI flag filters scenarios cumulatively for date versions (e.g. `--spec-version 2025-06-18` includes `2025-03-26` + `2025-06-18`). For `draft`/`extension`, it returns exact matches only.
+The `--spec-version` CLI flag selects the scenarios applicable at a revision: cumulative for date versions (e.g. `--spec-version 2025-06-18` includes `2025-03-26` + `2025-06-18`) minus anything that revision removed (`2026-07-28` drops the stateful-lifecycle scenarios); `draft` adds any draft-only scenarios on top of the latest release. Extension scenarios are never selected by `--spec-version` (use `--suite extensions`).
 
 The tier-check output includes a per-version pass rate breakdown alongside the aggregate.
 

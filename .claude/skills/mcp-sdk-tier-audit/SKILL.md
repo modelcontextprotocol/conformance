@@ -81,7 +81,8 @@ npm run --silent tier-check -- \
   --output json
 ```
 
-Omit `--requirements` only if the user did not name a revision. When it is set the
+Omit `--requirements` only if the user did not name a revision (the CLI then
+scores against the latest shipped revision's requirement set alone). When it is set the
 scorecard reports `requirements_revision`, both pass rates count exactly the
 scenarios that revision requires, and anything run but not scored carries a
 `notScoredReason` of `extension` or `added-after-release`. `requirements_revisions`
@@ -93,7 +94,7 @@ If no client-cmd was detected, omit the `--client-cmd` flag (client conformance 
 
 The CLI output includes server conformance pass rate, client conformance pass rate (with per-spec-version breakdown), issue triage compliance, P0 resolution times, label taxonomy, stable release status, policy signal files, and spec tracking gap. Parse the JSON output to feed into Step 4.
 
-The conformance results now include a `specVersions` field on each detail entry, enabling per-version pass rate analysis. The `list` command also shows spec version tags: `node dist/index.js list` shows `[2025-06-18]`, `[2025-11-25]`, `[draft]`, or `[extension]` next to each scenario.
+The conformance results now include a `specVersions` field on each detail entry, enabling per-version pass rate analysis. The `list` command also shows spec version tags: `node dist/index.js list` shows the dated revisions a scenario applies to (`[2025-06-18,2025-11-25,2026-07-28]`), `[draft]` for a scenario targeting the unreleased revision after the latest, or `[extension]`.
 
 ### Conformance Baseline Check
 
@@ -188,7 +189,7 @@ Informational (not scored for tier):
 | ------------ | ----- | --------- |
 | Client: Auth | 0/1   | 0/2       |
 
-The tier-scoring table only includes date-versioned scenarios. `draft` and `extension` scenarios are shown separately as informational — they do not affect tier advancement.
+The tier-scoring table only includes date-versioned scenarios (`2026-07-28` is a dated release and scores). `draft` (requirements newer than the latest release) and `extension` scenarios are shown separately as informational — they do not affect tier advancement.
 
 This immediately shows where failures concentrate. Failures clustered in Client: Auth / `2025-11-25` means "new auth features not yet implemented" — a scope gap, not a quality problem. Failures in Server or Client: Core are more concerning.
 
