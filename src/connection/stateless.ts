@@ -1,10 +1,10 @@
 /**
- * Stateless connection: 2026-x lifecycle (SEP-2575).
+ * Stateless connection: the 2026-07-28-and-later lifecycle (SEP-2575).
  *
  * No handshake. Every request carries `_meta` with protocolVersion, clientInfo,
  * and clientCapabilities, plus the standard headers (MCP-Protocol-Version,
  * Mcp-Method, Mcp-Name per SEP-2243). Implemented with raw fetch so the
- * conformance suite can test draft spec versions before the SDK supports them.
+ * conformance suite can test spec versions before the SDK supports them.
  *
  * Exports two layers:
  * - `sendStatelessRequest()` — low-level: returns `{status, headers, body,
@@ -12,7 +12,8 @@
  *   HTTP status or error codes use this directly.
  * - `connectStateless()` — high-level: a `Connection` whose `request()` calls
  *   `sendStatelessRequest()` and throws `JsonRpcError` on error responses.
- *   The runner picks this via `connectFor()` for `--spec-version draft`.
+ *   The runner picks this via `connectFor()` for stateless spec versions
+ *   (2026-07-28 onward, and the draft).
  *
  * Both build their requests through `buildStandardHeaders()` and
  * `withRequestMeta()` so a strictly-conformant server never rejects harness
@@ -20,7 +21,11 @@
  * (issues #311, #312, #315).
  */
 
-import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
+import {
+  LATEST_SPEC_VERSION,
+  protocolVersionFor,
+  type SpecVersion
+} from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
 import { validateWireMessage } from '../validation/wire-schema';
 import { JsonRpcError, type Connection, type ConnectOptions } from './index';
@@ -88,7 +93,8 @@ export function mcpNameForRequest(
  * Accept (both content types), MCP-Protocol-Version, Mcp-Method and (when the
  * method carries one) Mcp-Name. `options.headers` overrides or extends the
  * defaults, replacing any default whose name matches case-insensitively.
- * `options.specVersion` sets the MCP-Protocol-Version header (default: draft),
+ * `options.specVersion` sets the MCP-Protocol-Version header (default: the
+ * latest release),
  * so scenarios can send the spec version the run was invoked with.
  */
 export function buildStandardHeaders(
@@ -99,7 +105,9 @@ export function buildStandardHeaders(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
-    'MCP-Protocol-Version': options.specVersion ?? DRAFT_PROTOCOL_VERSION,
+    'MCP-Protocol-Version': protocolVersionFor(
+      options.specVersion ?? LATEST_SPEC_VERSION
+    ),
     'Mcp-Method': method
   };
   const name = mcpNameForRequest(method, params);
@@ -125,16 +133,17 @@ export function buildStandardHeaders(
 /**
  * Merge params with the conformant `_meta` required on every stateless
  * request. Keys already present in `params._meta` win over the defaults.
- * `specVersion` sets the declared protocolVersion (default: draft).
+ * `specVersion` sets the declared protocolVersion (default: the latest release).
  */
 export function withRequestMeta(
   params?: Record<string, unknown>,
-  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
+  specVersion: SpecVersion = LATEST_SPEC_VERSION
 ): Record<string, unknown> {
   return {
     ...params,
     _meta: {
-      'io.modelcontextprotocol/protocolVersion': specVersion,
+      'io.modelcontextprotocol/protocolVersion':
+        protocolVersionFor(specVersion),
       'io.modelcontextprotocol/clientInfo': CONFORMANCE_CLIENT_INFO,
       'io.modelcontextprotocol/clientCapabilities': DEFAULT_CLIENT_CAPABILITIES,
       ...(params?._meta as Record<string, unknown> | undefined)
@@ -250,7 +259,7 @@ export async function sendStatelessRequest(
   } = {}
 ): Promise<StatelessResponse> {
   const id = nextRequestId++;
-  const specVersion = options.specVersion ?? DRAFT_PROTOCOL_VERSION;
+  const specVersion = options.specVersion ?? LATEST_SPEC_VERSION;
   const headers = buildStandardHeaders(method, params, {
     headers: options.headers,
     specVersion: options.specVersion
@@ -359,7 +368,7 @@ export async function sendStatelessRequest(
  */
 export async function connectStateless(
   serverUrl: string,
-  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION,
+  specVersion: SpecVersion = LATEST_SPEC_VERSION,
   opts: ConnectOptions = {}
 ): Promise<Connection> {
   const notifications: JSONRPCNotification[] = [];

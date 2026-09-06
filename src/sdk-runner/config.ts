@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import {
-  DRAFT_PROTOCOL_VERSION,
-  SPEC_VERSION_TIMELINE,
-  isSpecVersion
+  DATED_SPEC_VERSIONS,
+  isSpecVersion,
+  protocolVersionFor,
+  type DatedSpecVersion
 } from '../types';
 
 // Fields an entry may vary per targeted spec version. Identity fields
@@ -52,27 +53,26 @@ export const SdkConfigSchema = z.object({
   // the flag isn't given (e.g. a v1 SDK pinned to the latest dated spec).
   // An explicit --spec-version on the sdk command always wins.
   specVersion: z.string().optional(),
-  // Per-spec-version defaults, keyed by the canonical spec version a run
-  // targets (--spec-version after alias resolution — so keys are the dated
-  // strings, never 'draft' — or the entry's own specVersion). Matched entries
-  // are merged over the base config field-by-field before CLI flags apply, so
-  // `sdk go-sdk --mode server --spec-version 2026-07-28` picks up the right
-  // server invocation with no manual overrides.
+  // Per-spec-version defaults, keyed by the dated spec version a run targets
+  // (--spec-version, a --requirements revision, or the entry's own
+  // specVersion; a `draft` run uses the entry for the draft's wire version).
+  // Matched entries are merged over the base config field-by-field before CLI
+  // flags apply, so `sdk go-sdk --mode server --spec-version 2026-07-28` picks
+  // up the right server invocation with no manual overrides.
   // Precedence: CLI flag > specOverrides > base entry.
   specOverrides: z
     .record(z.string(), SpecOverrideSchema)
     .superRefine((overrides, ctx) => {
-      // Keys must be canonical spec versions: a 'draft' key (or a typo'd
-      // date) would silently never match, because the requested version is
-      // resolved to its dated form before the lookup.
+      // Keys must be dated spec versions: a typo'd date would silently never
+      // match, and a 'draft' run is looked up by the draft's current wire
+      // version (DRAFT_PROTOCOL_VERSION) rather than the word 'draft'.
       for (const key of Object.keys(overrides)) {
-        if (!isSpecVersion(key)) {
+        if (!DATED_SPEC_VERSIONS.includes(key as DatedSpecVersion)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message:
-              `specOverrides key '${key}' is not a spec version. ` +
-              `Use one of: ${SPEC_VERSION_TIMELINE.join(', ')} ` +
-              `('draft' resolves to ${DRAFT_PROTOCOL_VERSION} before lookup, so key the dated form).`
+              `specOverrides key '${key}' is not a dated spec version. ` +
+              `Use one of: ${DATED_SPEC_VERSIONS.join(', ')}.`
           });
         }
       }
@@ -91,9 +91,13 @@ export function resolveConfigForSpec(
   config: SdkConfig,
   specVersion: string | undefined
 ): SdkConfig {
-  const override = specVersion
-    ? config.specOverrides?.[specVersion]
-    : undefined;
+  // Overlay keys are dated wire versions; a draft run resolves through the
+  // draft's current wire version so it reuses that revision's invocation.
+  const key =
+    specVersion && isSpecVersion(specVersion)
+      ? protocolVersionFor(specVersion)
+      : specVersion;
+  const override = key ? config.specOverrides?.[key] : undefined;
   if (!override) return config;
   const server =
     config.server || override.server

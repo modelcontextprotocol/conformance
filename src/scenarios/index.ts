@@ -4,10 +4,11 @@ import {
   ClientScenarioForAuthorizationServer,
   ScenarioSource,
   SpecVersion,
-  DatedSpecVersion,
   ScenarioSpecTag,
-  DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_SPEC_VERSION,
+  DRAFT_PROTOCOL_VERSION,
+  LATEST_SPEC_VERSION,
+  SPEC_VERSION_TIMELINE
 } from '../types';
 import { InitializeScenario } from './client/initialize';
 import { ToolsCallScenario } from './client/tools_call';
@@ -106,7 +107,6 @@ import {
 import {
   authScenariosList,
   backcompatScenariosList,
-  draftScenariosList,
   extensionScenariosList
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
@@ -249,14 +249,16 @@ const allClientScenariosList: ClientScenario[] = [
   new InputRequiredResultValidateInputScenario()
 ];
 
-// Scenarios that test requirements introduced in the in-progress draft spec.
-// They run via `--suite draft` (or `--suite all`) and are excluded from the
-// default `active` suite until the draft is published as a dated release.
+// Scenarios that test requirements introduced in the in-progress draft spec
+// (after the latest dated release). They run via `--suite draft` (or
+// `--suite all`) and are excluded from the default `active` suite until the
+// draft is published as a dated release and they are retagged to it. Empty
+// whenever no scenario targets an unreleased requirement.
 const draftClientScenariosList: ClientScenario[] =
   allClientScenariosList.filter(
     (scenario) =>
       'introducedIn' in scenario.source &&
-      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      scenario.source.introducedIn === DRAFT_SPEC_VERSION
   );
 
 // Active client scenarios (excludes pending and draft)
@@ -302,7 +304,6 @@ const scenariosList: Scenario[] = [
   new RequestMetadataScenario(),
   ...authScenariosList,
   ...backcompatScenariosList,
-  ...draftScenariosList,
   ...extensionScenariosList,
 
   // MRTR client conformance (SEP-2322)
@@ -388,13 +389,14 @@ export function listClientScenariosForAuthorizationServer(): string[] {
   return Array.from(clientScenariosForAuthorizationServer.keys());
 }
 
-// All client-testing scenarios that target the draft spec, derived from the
-// declared `source.introducedIn` rather than a hand-maintained list (covers
-// both the auth draft scenarios and the non-auth ones, e.g. SEP-2243/2575).
+// All client-testing scenarios that target the in-progress draft spec,
+// derived from the declared `source.introducedIn` rather than a
+// hand-maintained list. Empty whenever no scenario targets an unreleased
+// requirement.
 const draftSpecScenariosList: Scenario[] = scenariosList.filter(
   (scenario) =>
     'introducedIn' in scenario.source &&
-    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+    scenario.source.introducedIn === DRAFT_SPEC_VERSION
 );
 
 export function listDraftScenarios(): string[] {
@@ -410,27 +412,46 @@ export { listMetadataScenarios };
 // All valid spec versions, used by the CLI to validate --spec-version input.
 // 'extension' is intentionally excluded — extension scenarios are off-timeline
 // and selected via `--suite extensions`, not `--spec-version`.
-export const ALL_SPEC_VERSIONS: SpecVersion[] = [
-  ...DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
-];
+export const ALL_SPEC_VERSIONS: readonly SpecVersion[] = SPEC_VERSION_TIMELINE;
 
 export function resolveSpecVersion(value: string): SpecVersion {
-  if (value === 'draft') return DRAFT_PROTOCOL_VERSION;
   if (ALL_SPEC_VERSIONS.includes(value as SpecVersion)) {
+    if (value === DRAFT_SPEC_VERSION) {
+      // One line, stderr: people who passed `draft` to reach the 2026-07-28
+      // stateless era should know it is a dated release now.
+      console.error(
+        `Note: --spec-version draft targets the unreleased revision after ${LATEST_SPEC_VERSION} ` +
+          `(wire protocolVersion ${DRAFT_PROTOCOL_VERSION}). ${LATEST_SPEC_VERSION} is a released ` +
+          `revision; pass --spec-version ${LATEST_SPEC_VERSION} (or nothing) to target it.`
+      );
+    }
     return value as SpecVersion;
   }
   console.error(`Unknown spec version: ${value}`);
-  console.error(
-    `Valid versions: ${ALL_SPEC_VERSIONS.join(', ')} (or 'draft' as an alias for ${DRAFT_PROTOCOL_VERSION})`
-  );
+  console.error(`Valid versions: ${ALL_SPEC_VERSIONS.join(', ')}`);
   process.exit(1);
 }
 
-function versionIndex(
-  v: DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION
-): number {
+function versionIndex(v: SpecVersion): number {
   return ALL_SPEC_VERSIONS.indexOf(v);
+}
+
+/**
+ * The spec version a scenario runs at when `--spec-version` is omitted: the
+ * latest dated release if the scenario applies there, otherwise the newest
+ * revision inside its applicability window (the draft for draft-only
+ * scenarios, the last release before `removedIn` for removed ones). Keeps
+ * each scenario on a wire it was written for without the caller naming one.
+ */
+export function defaultSpecVersionFor(source: ScenarioSource): SpecVersion {
+  if ('extensionId' in source) return LATEST_SPEC_VERSION;
+  if (matchesSpecVersion(source, LATEST_SPEC_VERSION)) {
+    return LATEST_SPEC_VERSION;
+  }
+  const applicable = ALL_SPEC_VERSIONS.filter((v) =>
+    matchesSpecVersion(source, v)
+  );
+  return applicable[applicable.length - 1] ?? LATEST_SPEC_VERSION;
 }
 
 // Off-timeline sources (extensions etc.) are never selected by --spec-version.

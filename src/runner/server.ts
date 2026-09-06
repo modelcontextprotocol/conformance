@@ -1,12 +1,11 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import { ConformanceCheck, SpecVersion } from '../types';
 import {
-  ConformanceCheck,
-  SpecVersion,
-  LATEST_SPEC_VERSION,
-  DRAFT_PROTOCOL_VERSION
-} from '../types';
-import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
+  defaultSpecVersionFor,
+  getClientScenario,
+  isScenarioApplicableAt
+} from '../scenarios';
 import { connectFor, type RunContext } from '../connection';
 import {
   resetWireValidation,
@@ -77,16 +76,13 @@ export async function runServerConformanceTest(
   }
 
   // When --spec-version is omitted, infer the version from the scenario's
-  // declared source so draft-only scenarios get the draft (stateless)
-  // connection rather than the stateful latest-spec default. Extension
-  // scenarios are off-timeline; today every extension in this repo lives
-  // on draft, so they fall under the same inference.
+  // declared source so each scenario gets a connection speaking a wire it was
+  // written for: the latest release when it applies there, otherwise the
+  // newest revision in its window (draft-only → draft, removed → the last
+  // release before). Extension scenarios are off-timeline and run at the
+  // latest release.
   const resolvedSpecVersion =
-    specVersion ??
-    ('extensionId' in scenario.source ||
-    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION);
+    specVersion ?? defaultSpecVersionFor(scenario.source);
 
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
