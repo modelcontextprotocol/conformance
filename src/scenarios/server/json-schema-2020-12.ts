@@ -15,7 +15,8 @@ import {
   CheckStatus,
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  SpecVersion,
+  specVersionAtLeast
 } from '../../types.js';
 import type { RunContext } from '../../connection';
 import type { ListToolsResult } from '../../spec-types/2025-11-25';
@@ -69,18 +70,20 @@ export const JSON_SCHEMA_2020_12_FIXTURE = {
  * Preserving the broader JSON Schema 2020-12 vocabulary is good behavior at
  * any protocol version, so a server that preserves the keywords gets SUCCESS
  * regardless. Stripping them is only a conformance FAILURE when the run
- * targets a protocol version that includes SEP-2106 (the draft); when
- * targeting an earlier dated version the requirement does not apply, so the
- * check is SKIPPED rather than failed.
+ * targets a protocol version that includes SEP-2106 ({@link SEP_2106_SINCE}
+ * onward); when targeting an earlier dated version the requirement does not
+ * apply, so the check is SKIPPED rather than failed.
  */
+export const SEP_2106_SINCE: SpecVersion = '2026-07-28';
+
 export function sep2106KeywordCheckStatus(
   preserved: boolean,
-  targetProtocolVersion: string
+  targetVersion: SpecVersion
 ): CheckStatus {
   if (preserved) {
     return 'SUCCESS';
   }
-  return targetProtocolVersion === DRAFT_PROTOCOL_VERSION
+  return specVersionAtLeast(targetVersion, SEP_2106_SINCE)
     ? 'FAILURE'
     : 'SKIPPED';
 }
@@ -237,9 +240,9 @@ ${JSON.stringify(
       // inputSchema and must survive tools/list rather than being stripped to
       // properties/required. These checks are soft-gated on the protocol
       // version this run targets (see sep2106KeywordCheckStatus): stripping
-      // the keywords is only a FAILURE when targeting the draft version, and
-      // SKIPPED otherwise.
-      const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
+      // the keywords is only a FAILURE when targeting a version that includes
+      // SEP-2106, and SKIPPED otherwise.
+      const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${SEP_2106_SINCE})`;
 
       // Check 5: composition keywords (allOf / anyOf) preserved
       const allOf = inputSchema['allOf'];

@@ -5,17 +5,13 @@
  * tools/list, prompts/list, resources/list, resources/templates/list, resources/read
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import {
   JsonRpcError,
   type Connection,
   type RunContext
 } from '../../connection';
-import type { CacheableResult } from '../../spec-types/draft';
+import type { CacheableResult } from '../../spec-types/2026-07-28';
 
 const SPEC_REFS = [
   {
@@ -80,7 +76,7 @@ function buildPresenceCheck(
 
 export class CachingScenario implements ClientScenario {
   name = 'caching';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that servers include caching hints (ttlMs and cacheScope) on cacheable results (SEP-2549).
 
 **Server Implementation Requirements:**
@@ -96,10 +92,10 @@ Servers MUST include \`ttlMs\` (integer >= 0) and \`cacheScope\` ("public" or "p
     const checks: ConformanceCheck[] = [];
     const allFields: Array<{ endpoint: string; fields: CachingFields }> = [];
 
-    // SEP-2549 only exists in the draft spec, so each cacheable endpoint is
-    // queried over the version-appropriate connection. Under --spec-version
-    // draft that resolves to the stateless impl (SEP-2575): protocolVersion
-    // 2026-07-28 plus the cross-cutting _meta and standard headers
+    // SEP-2549 exists from 2026-07-28, so each cacheable endpoint is queried
+    // over the version-appropriate connection, which at that revision (and
+    // later) resolves to the stateless impl (SEP-2575): the run's
+    // protocolVersion plus the cross-cutting _meta and standard headers
     // (issue #315).
     let conn: Connection;
     try {

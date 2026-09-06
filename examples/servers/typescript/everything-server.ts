@@ -1235,7 +1235,7 @@ const LEGACY_SESSION_PROTOCOL_VERSIONS = [
   '2025-11-25'
 ];
 
-// Stateless (draft) operations whose results MUST carry the SEP-2549 caching
+// Stateless (2026-07-28+) operations whose results MUST carry the SEP-2549 caching
 // hints (`ttlMs`, `cacheScope`).
 const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
   'server/discover',
@@ -1246,9 +1246,9 @@ const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
   'resources/read'
 ]);
 
-/** Normalize a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
+/** Normalize a stateless (2026-07-28+) JSON-RPC response. These results MUST carry `resultType`
  * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
- * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
+ * not set so every stateless result is schema-valid. Errors pass through untouched. */
 function normalizeStatelessResponse(
   method: string,
   payload: { result?: Record<string, unknown>; [key: string]: unknown }
@@ -1620,7 +1620,8 @@ app.post('/mcp', async (req, res) => {
               {
                 uri: 'test://stateless-static-text',
                 name: 'Stateless Static Text',
-                description: 'A static text resource served on the draft path',
+                description:
+                  'A static text resource served on the stateless path',
                 mimeType: 'text/plain'
               }
             ],
@@ -1677,7 +1678,7 @@ app.post('/mcp', async (req, res) => {
               {
                 uri,
                 mimeType: 'text/plain',
-                text: 'Static text content from the stateless draft path.'
+                text: 'Static text content from the stateless path.'
               }
             ],
             ttlMs: 300000,

@@ -1,6 +1,7 @@
 import { getScenario } from '../../../index';
 import { testScenarioContext } from '../../../../mock-server/testing';
 import type { SpecVersion, ConformanceCheck } from '../../../../types';
+import { protocolVersionFor } from '../../../../types';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -96,9 +97,9 @@ export interface RunClientOptions {
   expectedSuccessSlugs?: string[];
   allowClientError?: boolean;
   /**
-   * Spec version to run the scenario at. Defaults to the latest dated spec
-   * version (see {@link testScenarioContext}). Pass the draft version to
-   * exercise checks gated to draft-only requirements.
+   * Spec version to run the scenario at. Defaults to the last stateful
+   * revision (see {@link testScenarioContext}). Pass `'2026-07-28'` to
+   * exercise checks gated to that revision, or the draft for draft-only ones.
    */
   specVersion?: SpecVersion;
 }
@@ -135,7 +136,9 @@ export async function runClientAgainstScenario(
     // Set environment variables for inline clients
     // These mirror what src/runner/client.ts does for spawned processes
     process.env.MCP_CONFORMANCE_SCENARIO = scenarioName;
-    process.env.MCP_CONFORMANCE_PROTOCOL_VERSION = ctx.specVersion;
+    process.env.MCP_CONFORMANCE_PROTOCOL_VERSION = protocolVersionFor(
+      ctx.specVersion
+    );
     if (urls.context) {
       process.env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
         name: scenarioName,

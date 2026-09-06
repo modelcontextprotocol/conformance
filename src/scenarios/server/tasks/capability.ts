@@ -12,7 +12,7 @@
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { MISSING_REQUIRED_CLIENT_CAPABILITY } from '../../../spec-types/draft';
+import { MISSING_REQUIRED_CLIENT_CAPABILITY } from '../../../spec-types/2026-07-28';
 import { SEP_2575_REF, SEP_2663_REF } from './mrtr-helpers';
 import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';

@@ -14,7 +14,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
+import { ScenarioUrls } from '../../types';
 import { createRequestLogger } from '../request-logger';
 import { randomUUID } from 'crypto';
 
@@ -477,7 +477,7 @@ export class ElicitationClientDefaultsScenario implements Scenario {
   name = 'elicitation-sep1034-client-defaults';
   readonly source = {
     introducedIn: '2025-11-25',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description =
     'Tests client applies default values for omitted elicitation fields (SEP-1034)';

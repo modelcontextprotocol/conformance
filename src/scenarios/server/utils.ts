@@ -2,11 +2,7 @@
  * Utilities test scenarios for MCP servers
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import type { RunContext } from '../../connection';
 import type { CompleteResult, EmptyResult } from '../../spec-types/2025-06-18';
 
@@ -14,7 +10,7 @@ export class LoggingSetLevelScenario implements ClientScenario {
   name = 'logging-set-level';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test setting logging level.
 
@@ -98,7 +94,7 @@ export class PingScenario implements ClientScenario {
   name = 'ping';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test ping utility for connection health check.
 

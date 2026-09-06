@@ -5,8 +5,7 @@ import {
   ScenarioUrls,
   ConformanceCheck,
   LATEST_SPEC_VERSION,
-  NEGOTIABLE_PROTOCOL_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
+  NEGOTIABLE_PROTOCOL_VERSIONS
 } from '../../types';
 import { clientChecks } from '../../checks/index';
 
@@ -14,7 +13,7 @@ export class InitializeScenario implements Scenario {
   name = 'initialize';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = 'Tests MCP client initialization handshake';
 
