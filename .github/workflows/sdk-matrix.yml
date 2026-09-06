@@ -1,0 +1,339 @@
+name: SDK matrix
+
+# Runs one conformance selection (a scenario list, a suite, or a requirement
+# set) against every SDK in KNOWN_SDKS (src/sdk-runner/known-sdks.ts) and
+# renders an SDK x check table, so the cross-SDK impact of a harness change can
+# be checked by any maintainer in one command instead of an ad-hoc set of local
+# toolchains. Example: post the table for a client-side check change onto its PR:
+#
+#   gh workflow run sdk-matrix.yml -R modelcontextprotocol/conformance \
+#     -f sdks=all -f mode=client \
+#     -f scenario=auth/metadata-var2,auth/metadata-default \
+#     -f pr=488 -f pr_comment=true
+#
+# `pr` selects what to test (the PR's merge ref, or its merge commit once the
+# PR has merged) and where the optional sticky comment goes; `ref` overrides
+# what to test. With neither, the dispatched branch is tested. The weekly
+# schedule runs both modes with each SDK's default suites and only writes the
+# step summary.
+#
+# Security model (the same split as traceability.yml):
+# - `plan` and `run` execute code from the ref under test, and `run` also
+#   builds and runs third-party SDK code. Both get a read-only token scope, no
+#   persisted git credentials and no secrets; the SDK build/run step never has
+#   a token in its environment.
+# - `report` runs no SDK code and no code from the ref under test: it checks
+#   out the dispatching branch, merges the uploaded JSON with its own copy of
+#   the script, and writes the step summary. Still read-only.
+# - `comment` is the only job with a write permission (pull-requests). It checks
+#   nothing out and runs no repository or SDK code; it posts the rendered table,
+#   read from the artifact, as data.
+# - The workflow is dispatch/schedule only, so it always runs as defined on a
+#   branch of this repository. Testing a fork PR via `pr=<n>` runs the fork's
+#   harness code only inside the unprivileged jobs, and `plan` flags it. Those
+#   jobs use no actions caches (a dispatch runs in the default branch's cache
+#   scope, so nothing an untrusted build could influence is saved or restored).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdks:
+        description: 'SDKs to run: "all" or a comma-separated list of KNOWN_SDKS names, each optionally name@ref (e.g. go-sdk@v1.2.0,rust-sdk)'
+        default: 'all'
+      mode:
+        description: 'Side to test'
+        type: choice
+        options: [client, server, both]
+        default: client
+      scenario:
+        description: 'Scenario name(s), comma-separated (e.g. auth/metadata-default). Leave scenario/suite/requirements all empty for the sdk command defaults.'
+      suite:
+        description: 'Suite to run instead of scenarios (e.g. auth, all, active)'
+      requirements:
+        description: 'Requirement set to run instead (e.g. 2026-07-28)'
+      ref:
+        description: 'Conformance branch, tag or sha to test. Default: the PR merge ref when `pr` is set, else the branch this was dispatched on.'
+      pr:
+        description: 'Conformance PR number. Tests refs/pull/<n>/merge (or the merge commit if already merged) and is where pr_comment posts.'
+      pr_comment:
+        description: 'Upsert a sticky comment with the table on that PR'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 7 * * 1' # Weekly, Monday 07:00 UTC (after the traceability refresh).
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-matrix-${{ inputs.pr || inputs.ref || github.ref }}-${{ inputs.mode || 'both' }}-${{ inputs.scenario || inputs.suite || inputs.requirements || 'default' }}
+  cancel-in-progress: true
+
+env:
+  SDKS: ${{ inputs.sdks || 'all' }}
+  MODE: ${{ inputs.mode || 'both' }}
+  SCENARIO: ${{ inputs.scenario }}
+  SUITE: ${{ inputs.suite }}
+  REQUIREMENTS: ${{ inputs.requirements }}
+  PR: ${{ inputs.pr }}
+  REF_INPUT: ${{ inputs.ref }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ref: ${{ steps.ref.outputs.ref }}
+      label: ${{ steps.ref.outputs.label }}
+      sha: ${{ steps.sha.outputs.sha }}
+      matrix: ${{ steps.sdks.outputs.matrix }}
+    steps:
+      - name: Resolve the conformance ref under test
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }} # read-only; only used to look up a merged PR's merge commit
+        run: |
+          set -euo pipefail
+          if [ -n "$PR" ] && ! [[ "$PR" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr must be a number (got '$PR')"; exit 1
+          fi
+          if [ -n "$REF_INPUT" ]; then
+            ref="$REF_INPUT"; label="$REF_INPUT"
+            [ -n "$PR" ] && label="$REF_INPUT (for PR #$PR)"
+          elif [ -n "$PR" ]; then
+            label="PR #$PR"
+            if git ls-remote --exit-code "https://github.com/$GITHUB_REPOSITORY.git" "refs/pull/$PR/merge" >/dev/null 2>&1; then
+              ref="refs/pull/$PR/merge"
+            else
+              # Merged (or conflicting) PRs have no merge ref; test the merge commit.
+              ref="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.merge_commit_sha // empty' || true)"
+              if [ -z "$ref" ]; then ref="refs/pull/$PR/head"; fi
+              label="PR #$PR (merged)"
+            fi
+          else
+            ref="$GITHUB_SHA"; label="${GITHUB_REF_NAME}"
+          fi
+          if [ -n "$PR" ]; then
+            head_repo="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.head.repo.full_name // empty' || true)"
+            if [ -n "$head_repo" ] && [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+              echo "::warning::PR #$PR comes from a fork ($head_repo). Its harness code runs unprivileged in the run jobs; dispatching it is the same trust decision as approving CI for that PR."
+            fi
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "Testing conformance at: $ref ($label)"
+
+      # The dispatching branch supplies the orchestration script; the ref under
+      # test supplies KNOWN_SDKS (it may predate the script).
+      - uses: actions/checkout@v6
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          path: under-test
+          persist-credentials: false
+      - id: sha
+        run: echo "sha=$(git -C under-test rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Expand the SDK list into a job matrix
+        id: sdks
+        run: |
+          set -euo pipefail
+          if [ "$SDKS" = "all" ]; then
+            list="$(node tooling/scripts/sdk-matrix.mjs --harness-dir under-test --list-sdks --json)"
+          else
+            list="$(jq -cn --arg s "$SDKS" '$s | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')"
+          fi
+          matrix="$(jq -cn --argjson l "$list" '$l | map({spec: ., id: gsub("[^A-Za-z0-9._-]"; "_")})')"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "SDK legs: $matrix"
+
+  run:
+    needs: plan
+    name: run (${{ matrix.spec }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      SPEC: ${{ matrix.spec }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          path: under-test
+          persist-credentials: false # no git token on disk while SDK code runs
+
+      # Toolchains, keyed off the SDK name. Node is always needed (the harness).
+      # No actions/cache use anywhere in this job (setup-* caches disabled):
+      # it executes code from the ref under test, which for a fork PR is
+      # untrusted, and a dispatch runs in the default branch's cache scope.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm for typescript-sdk)
+        if: contains(matrix.spec, 'typescript-sdk')
+        run: corepack enable
+      - uses: astral-sh/setup-uv@v7
+        if: contains(matrix.spec, 'python-sdk')
+        with:
+          enable-cache: false
+      - uses: actions/setup-go@v6
+        if: contains(matrix.spec, 'go-sdk')
+        with:
+          go-version: stable
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        if: contains(matrix.spec, 'rust-sdk')
+      - name: Resolve the .NET SDK version csharp-sdk pins (global.json)
+        if: contains(matrix.spec, 'csharp-sdk')
+        id: dotnet
+        run: |
+          set -euo pipefail
+          name="${SPEC%@*}"; ref="main"
+          case "$SPEC" in *@*) ref="${SPEC##*@}";; esac
+          case "$name" in */*) repo="$name";; *) repo="modelcontextprotocol/$name";; esac
+          v="$(curl -fsSL "https://raw.githubusercontent.com/$repo/$ref/global.json" | jq -r '.sdk.version // empty' | sed -E 's/^([0-9]+\.[0-9]+)\..*/\1.x/' || true)"
+          echo "version=${v:-10.0.x}" >> "$GITHUB_OUTPUT"
+          echo "dotnet-version: ${v:-10.0.x} (from $repo@$ref global.json)"
+      - uses: actions/setup-dotnet@v5
+        if: contains(matrix.spec, 'csharp-sdk')
+        with:
+          dotnet-version: ${{ steps.dotnet.outputs.version }}
+      - uses: ruby/setup-ruby@v1
+        if: contains(matrix.spec, 'ruby-sdk')
+        with:
+          ruby-version: '4.0' # what ruby-sdk's own conformance CI runs
+      - uses: actions/setup-java@v5
+        if: contains(matrix.spec, 'java-sdk') || contains(matrix.spec, 'kotlin-sdk')
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build the harness under test
+        working-directory: under-test
+        run: npm ci && npm run build
+
+      - name: Run the matrix leg for this SDK
+        # No token here: this step clones, builds and runs third-party SDK code.
+        # --strict-errors turns this leg red only when the SDK could not be
+        # built or run at all; check failures are results, reported in the table.
+        env:
+          SDK_MATRIX_HARNESS_REF: ${{ needs.plan.outputs.label }}
+          SDK_MATRIX_HARNESS_SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          node tooling/scripts/sdk-matrix.mjs \
+            --harness-dir under-test \
+            --sdks "$SPEC" \
+            --mode "$MODE" \
+            --scenario "$SCENARIO" --suite "$SUITE" --requirements "$REQUIREMENTS" \
+            --cache-dir "$RUNNER_TEMP/sdk-under-test" \
+            --title "SDK matrix: conformance ${SDK_MATRIX_HARNESS_REF} @ ${SDK_MATRIX_HARNESS_SHA}" \
+            --strict-errors \
+            -o results
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: sdk-matrix-${{ matrix.id }}
+          path: results
+          retention-days: 14
+          if-no-files-found: error
+
+  report:
+    needs: [plan, run]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # The dispatching branch's script only; nothing from the ref under test
+      # and no SDK code runs in this job.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sdk-matrix-*
+          path: artifacts
+      - name: Merge legs and write the step summary
+        env:
+          LABEL: ${{ needs.plan.outputs.label }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/sdk-matrix.mjs --merge artifacts -o merged \
+            --title "SDK matrix: conformance ${LABEL} @ ${SHA}" > /dev/null
+          cat merged/matrix.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-matrix
+          path: merged
+          retention-days: 30
+
+  comment:
+    needs: [plan, report]
+    if: ${{ !cancelled() && needs.report.result == 'success' && inputs.pr != '' && inputs.pr_comment == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-matrix
+          path: merged
+      - name: Upsert the sticky PR comment
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- conformance-sdk-matrix -->';
+            const issue_number = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(issue_number) || issue_number <= 0) {
+              core.setFailed(`Invalid PR number: ${process.env.PR_NUMBER}`);
+              return;
+            }
+            // The table is data produced from SDK output; it is read from the
+            // artifact and never interpolated into this script.
+            let table = fs.readFileSync('merged/matrix.md', 'utf8');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const footer = `\n\n<sub>Posted by the [sdk-matrix workflow run](${runUrl}); full logs and matrix.json are in that run's artifacts. Re-running the workflow with the same PR number updates this comment.</sub>\n`;
+            const max = 60000;
+            if (table.length > max) {
+              table = table.slice(0, table.lastIndexOf('\n', max)) +
+                '\n\n(Truncated; the full table is in the run summary and the sdk-matrix artifact.)';
+            }
+            const body = `${marker}\n${table}${footer}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number,
+              per_page: 100
+            });
+            const existing = comments.find(
+              (c) => c.user && c.user.type === 'Bot' && typeof c.body === 'string' && c.body.startsWith(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+              core.info(`Updated comment ${existing.html_url}`);
+            } else {
+              const { data } = await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+              core.info(`Created comment ${data.html_url}`);
+            }
