@@ -63,7 +63,7 @@ Be precise about what's **required** vs **optional**. A scenario description tha
 
 When in doubt about spec details (OAuth parameters, audiences, grant types), check the actual spec in `modelcontextprotocol` rather than guessing.
 
-**Code comments are short.** A comment states the rule being enforced and the non-obvious "why" in a few lines; spec history, process notes, review back-and-forth and PR context belong in the PR description (or an issue), not in the source. `npm run lint` warns (`local/comment-length`) on comment blocks over 15 lines (25 for a file header) — treat that warning as "move this to the PR description", not as an invitation to add an eslint-disable.
+**Code comments are short and standalone.** A comment states the rule being enforced and the non-obvious "why" in a few lines: invariants, ordering constraints, why-not. Delete comments that restate what the name or code already says, and never reference review-time or PR-time context (a reviewer ask, an option that was discussed, the history of a SEP): that belongs in the PR description or an issue, and a comment must make sense to a reader who never saw the PR. `npm run lint` warns (`local/comment-length`) on comment blocks over 15 lines (25 for a file header); treat that warning as "move this to the PR description", not as an invitation to add an eslint-disable.
 
 ## Reviewing PRs
 
