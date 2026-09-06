@@ -4,8 +4,18 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Fail any test during which a wire message violated the spec JSON schema.
+    setupFiles: ['./src/validation/vitest-hooks.ts'],
     include: ['**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'dist', '.sdk-under-test'],
+    exclude: [
+      '**/node_modules/**',
+      'dist',
+      '.sdk-under-test',
+      // Local tooling workspaces (Claude worktrees, SDK checkouts) must never
+      // be collected as test files.
+      '**/.claude/**',
+      '**/.sdk-under-test/**'
+    ],
     // Run test files sequentially to avoid port conflicts
     fileParallelism: false,
     // Increase timeout for server tests in CI

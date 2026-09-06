@@ -6,11 +6,13 @@
  * generated from them.
  */
 
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
+import { addResourceParameterChecks } from './helpers/resourceParameterChecks';
 import { SpecReferences } from './spec-references';
 import { Request, Response } from 'express';
 
@@ -76,6 +78,13 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
   const server = new ServerLifecycle();
   let checks: ConformanceCheck[] = [];
 
+  // Track resource parameters for RFC 8707 validation. metadata-var2 serves
+  // the PRM at the root, so its `resource` is a bare origin: the case a URL
+  // parser rewrites with a trailing slash.
+  let authorizationResource: string | undefined;
+  let tokenResource: string | undefined;
+  let prmResource: string | undefined;
+
   const routePrefix = config.authRoutePrefix || '';
   const isOpenIdConfiguration = config.oauthMetadataLocation.includes(
     'openid-configuration'
@@ -94,13 +103,25 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
 **OAuth metadata:** ${config.oauthMetadataLocation}
 `,
 
-    async start(): Promise<ScenarioUrls> {
+    async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
       checks = [];
+      authorizationResource = undefined;
+      tokenResource = undefined;
+      prmResource = undefined;
 
-      const authApp = createAuthServer(checks, authServer.getUrl, {
+      const authApp = createAuthServer(ctx, checks, authServer.getUrl, {
         metadataPath: config.oauthMetadataLocation,
         isOpenIdConfiguration,
-        ...(routePrefix && { routePrefix })
+        ...(routePrefix && { routePrefix }),
+        onAuthorizationRequest: ({ resource }) => {
+          authorizationResource = resource;
+        },
+        onTokenRequest: ({ body }) => {
+          tokenResource = body.resource;
+          // Same token the auth server mints by default; these scenarios
+          // request no scopes.
+          return { token: `test-token-${Date.now()}`, scopes: [] };
+        }
       });
 
       // If path-based OAuth metadata, trap root requests
@@ -131,9 +152,12 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
         ? () => `${authServer.getUrl()}${routePrefix}`
         : authServer.getUrl;
 
-      const app = createServer(checks, server.getUrl, getAuthServerUrl, {
+      const app = createServer(ctx, checks, server.getUrl, getAuthServerUrl, {
         prmPath: config.prmLocation,
-        includePrmInWwwAuth: config.inWwwAuth
+        includePrmInWwwAuth: config.inWwwAuth,
+        onPrmRequest: ({ resource }) => {
+          prmResource = resource;
+        }
       });
 
       // Add trap for root PRM requests if configured
@@ -196,6 +220,13 @@ function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
           });
         }
       }
+
+      // RFC 8707 Resource Parameter Validation Checks
+      addResourceParameterChecks(
+        checks,
+        { authorizationResource, tokenResource, prmResource },
+        new Date().toISOString()
+      );
 
       return checks;
     }

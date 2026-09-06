@@ -22,10 +22,12 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // v1.x — the published npm line. Same fixtures as v2; differs only in the
   // build (npm, not pnpm) and the baseline filename. Clones the typescript-sdk
-  // repo, defaulting to the `v1.x` branch.
+  // repo, defaulting to the `v1.x` branch. Targets the latest dated spec, so
+  // draft-only scenarios and checks are excluded by default.
   'typescript-sdk-v1': {
     repo: 'typescript-sdk',
     defaultRef: 'v1.x',
+    specVersion: '2025-11-25',
     build: 'npm ci && npm run build',
     client: {
       command: 'npx tsx test/conformance/src/everythingClient.ts'
@@ -36,13 +38,146 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     },
     expectedFailures: 'test/conformance/conformance-baseline.yml'
   },
+  // Fixtures live under conformance/ (everything-client + everything-server,
+  // mirroring scripts/{client,server}-conformance.sh). The server's -stateless
+  // flag defaults to true; the dated-spec (`active` suite) scenarios need the
+  // stateful transport, so the base command pins -stateless=false and the
+  // 2026-07-28 override drops it for the SEP-2575 stateless lifecycle.
   'go-sdk': {
-    build: 'go build -o ./.conformance-server ./examples/server/conformance',
-    // Upstream go-sdk has no client conformance fixture yet (see go-sdk#859).
+    build:
+      'go build -o ./.conformance-server ./conformance/everything-server && go build -o ./.conformance-client ./conformance/everything-client',
+    client: {
+      command: './.conformance-client'
+    },
     server: {
-      command: './.conformance-server -http=:3000',
+      command: './.conformance-server -http=localhost:3000 -stateless=false',
       url: 'http://localhost:3000'
+    },
+    expectedFailures: 'conformance/baseline.yml',
+    specOverrides: {
+      '2026-07-28': {
+        server: { command: './.conformance-server -http=localhost:3000' }
+      }
     }
+  },
+  // main — targets the 2026-07-28 revision. Same uv workspace layout as v1.x
+  // (client fixture in .github/actions/conformance/, mcp-everything-server
+  // workspace package). Two baselines exist upstream, one per spec target;
+  // the 2026-07-28 override picks the matching one.
+  'python-sdk': {
+    // Mirrors the SDK's own CI, which syncs the two conformance packages
+    // individually (--inexact so the second sync doesn't prune the first).
+    // --all-packages is unbuildable on main: an example package's declared
+    // README is missing, and uv builds every workspace member.
+    build:
+      'uv sync --frozen --all-extras --package mcp-everything-server && uv sync --frozen --all-extras --package mcp --inexact',
+    client: {
+      command: 'uv run --frozen python .github/actions/conformance/client.py'
+    },
+    server: {
+      command: 'uv run --frozen mcp-everything-server --port 3000',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: '.github/actions/conformance/expected-failures.yml',
+    specOverrides: {
+      '2026-07-28': {
+        expectedFailures:
+          '.github/actions/conformance/expected-failures.2026-07-28.yml'
+      }
+    }
+  },
+  // v1.x — the stable, published line of the python-sdk, analogous to
+  // typescript-sdk-v1. Clones the python-sdk repo, defaulting to the `v1.x`
+  // branch, and targets the latest
+  // dated spec so draft-only scenarios/checks are excluded by default. uv
+  // workspace: the `mcp` (client) and `mcp-everything-server` (server) packages
+  // are both members, so one `uv sync --all-packages` covers both modes.
+  // Fixtures live in the python-sdk repo (.github/actions/conformance/ and
+  // examples/servers/everything-server). `--port 3000` matches the url and the
+  // 3000 convention used above; the server's own default is 3001.
+  'python-sdk-v1': {
+    repo: 'python-sdk',
+    defaultRef: 'v1.x',
+    specVersion: '2025-11-25',
+    build: 'uv sync --frozen --all-extras --all-packages',
+    client: {
+      command: 'uv run --frozen python .github/actions/conformance/client.py'
+    },
+    server: {
+      command: 'uv run --frozen mcp-everything-server --port 3000',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: '.github/actions/conformance/expected-failures.yml'
+  },
+  // Fixtures live in conformance/ (the mcp-conformance package's
+  // conformance-client + conformance-server bins; the package is excluded from
+  // the workspace default-members, so build it explicitly). The server reads
+  // PORT and STATELESS from the environment: the stateful (dated-spec)
+  // lifecycle is the default, and the 2026-07-28 override sets STATELESS=1
+  // for the SEP-2575 stateless lifecycle.
+  // One default server serves every revision — rust-sdk's own CI starts a
+  // single un-flagged conformance-server and runs both the 2025-11-25 and
+  // 2026-07-28 legs against it. (A STATELESS=1 override here used to force the
+  // 2026 leg onto a mode the SDK's CI never exercises, failing its SEP-2575
+  // input-required scenarios.)
+  'rust-sdk': {
+    build: 'cargo build -p mcp-conformance',
+    client: {
+      command: './target/debug/conformance-client'
+    },
+    server: {
+      command: 'PORT=3000 ./target/debug/conformance-server',
+      url: 'http://localhost:3000/mcp'
+    }
+  },
+  // Fixtures live in tests/ModelContextProtocol.ConformanceClient and
+  // tests/ModelContextProtocol.ConformanceServer (requires the .NET 10 SDK,
+  // per global.json); build output goes to the repo-level artifacts/ tree
+  // (UseArtifactsOutput), not per-project bin/. The client binary takes the scenario as its first
+  // argument rather than reading MCP_CONFORMANCE_SCENARIO, so the command
+  // bridges the env var into argv ($1 is the server URL the harness appends).
+  // The server serves the stateful lifecycle at / and the SEP-2575 stateless
+  // lifecycle at /stateless from the same port; the 2026-07-28 override
+  // points runs at the stateless endpoint.
+  'csharp-sdk': {
+    build:
+      'dotnet build tests/ModelContextProtocol.ConformanceClient -c Release -f net10.0 && dotnet build tests/ModelContextProtocol.ConformanceServer -c Release -f net10.0',
+    client: {
+      command: `bash -c 'exec dotnet artifacts/bin/ModelContextProtocol.ConformanceClient/Release/net10.0/ModelContextProtocol.ConformanceClient.dll "$MCP_CONFORMANCE_SCENARIO" "$1"' conformance-client`
+    },
+    server: {
+      // Launch from the build-output directory: ASP.NET resolves
+      // appsettings.json from the content root (the cwd), and that file
+      // carries the AllowedHosts filter dns-rebinding-protection tests.
+      // Launched from the repo root it silently never loads.
+      command:
+        "bash -c 'cd artifacts/bin/ModelContextProtocol.ConformanceServer/Release/net10.0 && exec dotnet ModelContextProtocol.ConformanceServer.dll --urls http://localhost:3000'",
+      url: 'http://localhost:3000'
+    },
+    specOverrides: {
+      '2026-07-28': {
+        server: { url: 'http://localhost:3000/stateless' }
+      }
+    }
+  },
+  // Fixtures live under conformance/ (server.rb + client.rb, the same files
+  // the SDK's own `rake conformance` CI drives). The client reads
+  // MCP_CONFORMANCE_SCENARIO from the environment and the server URL from argv.
+  // One dual-era server serves every revision from the same /mcp endpoint —
+  // the stateful (dated-spec) handshake and the SEP-2575 stateless lifecycle
+  // side by side — so no specOverrides are needed. The rake task reads PORT
+  // from the environment (the SDK's own default is 9292); PORT=3000 matches
+  // the 3000 convention used above.
+  'ruby-sdk': {
+    build: 'bundle install',
+    client: {
+      command: 'bundle exec ruby conformance/client.rb'
+    },
+    server: {
+      command: 'PORT=3000 bundle exec rake conformance:server',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: 'conformance/expected_failures.yml'
   }
 };
 

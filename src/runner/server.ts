@@ -1,7 +1,17 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
-import { getClientScenario } from '../scenarios';
+import {
+  ConformanceCheck,
+  SpecVersion,
+  LATEST_SPEC_VERSION,
+  DRAFT_PROTOCOL_VERSION
+} from '../types';
+import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
+import { connectFor, type RunContext } from '../connection';
+import {
+  resetWireValidation,
+  wireSchemaChecks
+} from '../validation/wire-schema';
 import { createResultDir, formatPrettyChecks } from './utils';
 
 /**
@@ -17,14 +27,64 @@ function formatMarkdown(text: string): string {
   );
 }
 
+/**
+ * Bound `scenario.run` so a server that accepts connections but never answers
+ * fails one scenario instead of stalling the whole suite.
+ *
+ * The losing promise is left pending on purpose: a scenario blocked on a socket
+ * read has no cancellation channel, so there is nothing to await. Its rejection
+ * is swallowed to keep a late failure from surfacing as an unhandled rejection
+ * against whichever scenario happens to be running by then.
+ */
+async function runScenarioBounded(
+  run: Promise<ConformanceCheck[]>,
+  scenarioName: string,
+  timeout: number
+): Promise<ConformanceCheck[]> {
+  const timedOut = Symbol('timed-out');
+  let timeoutHandle: NodeJS.Timeout | undefined;
+
+  run.catch(() => {});
+
+  const result = await Promise.race([
+    run,
+    new Promise<typeof timedOut>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve(timedOut), timeout);
+    })
+  ]);
+  clearTimeout(timeoutHandle);
+
+  if (result !== timedOut) {
+    return result;
+  }
+
+  console.log(`\nScenario timed out after ${timeout}ms`);
+  return [
+    {
+      id: 'scenario-timeout',
+      name: 'Scenario completes within the timeout',
+      description:
+        'The scenario must finish within the configured timeout. A server that ' +
+        'accepts the connection but never responds leaves it running forever.',
+      status: 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: `Scenario '${scenarioName}' did not complete within ${timeout}ms. The server under test accepted the connection but did not finish the exchange.`
+    }
+  ];
+}
+
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
-  outputDir?: string
+  outputDir?: string,
+  specVersion?: SpecVersion,
+  force = false,
+  timeout: number = 30000
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
   scenarioDescription: string;
+  skipped?: boolean;
 }> {
   let resultDir: string | undefined;
 
@@ -36,11 +96,61 @@ export async function runServerConformanceTest(
   // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
 
+  // An explicitly-requested spec version outside the scenario's applicability
+  // window is a contradiction: running anyway would test something other than
+  // what the flag claims. Skip (exit 0) unless --force.
+  if (
+    specVersion !== undefined &&
+    !force &&
+    !isScenarioApplicableAt(scenario.source, specVersion)
+  ) {
+    const introduced =
+      'introducedIn' in scenario.source
+        ? `introduced in ${scenario.source.introducedIn}` +
+          (scenario.source.removedIn !== undefined
+            ? `, removed in ${scenario.source.removedIn}`
+            : '')
+        : 'extension scenario, not on the spec timeline';
+    console.log(
+      `SKIPPED: scenario '${scenarioName}' is not applicable at spec version ` +
+        `${specVersion} (${introduced}). Use --force to run it anyway.`
+    );
+    return {
+      checks: [],
+      resultDir,
+      scenarioDescription: scenario.description,
+      skipped: true
+    };
+  }
+
+  // When --spec-version is omitted, infer the version from the scenario's
+  // declared source so draft-only scenarios get the draft (stateless)
+  // connection rather than the stateful latest-spec default. Extension
+  // scenarios are off-timeline; today every extension in this repo lives
+  // on draft, so they fall under the same inference.
+  const resolvedSpecVersion =
+    specVersion ??
+    ('extensionId' in scenario.source ||
+    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      ? DRAFT_PROTOCOL_VERSION
+      : LATEST_SPEC_VERSION);
+
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
-  const checks = await scenario.run(serverUrl);
+  const ctx: RunContext = {
+    serverUrl,
+    specVersion: resolvedSpecVersion,
+    connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
+  };
+  resetWireValidation();
+  const checks = await runScenarioBounded(
+    scenario.run(ctx),
+    scenarioName,
+    timeout
+  );
+  checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
   if (resultDir) {
     await fs.writeFile(

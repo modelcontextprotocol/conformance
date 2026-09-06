@@ -81,6 +81,14 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'MCP-Resource-Parameter-Implementation',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#resource-parameter-implementation'
   },
+  MCP_CANONICAL_SERVER_URI: {
+    id: 'MCP-Canonical-Server-URI',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#canonical-server-uri'
+  },
+  RFC_9728_RESOURCE_IDENTITY: {
+    id: 'RFC-9728-resource-identity',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3'
+  },
   MCP_PREREGISTRATION: {
     id: 'MCP-Preregistration',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#preregistration'
@@ -104,10 +112,47 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   SEP_990_ENTERPRISE_OAUTH: {
     id: 'SEP-990-Enterprise-Managed-OAuth',
-    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-oauth.mdx'
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-managed-authorization.mdx'
   },
   SEP_2207_REFRESH_TOKEN_GUIDANCE: {
     id: 'SEP-2207-Refresh-Token-Guidance',
     url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2207'
+  },
+  SEP_1933_WIF: {
+    id: 'SEP-1933-Workload-Identity-Federation',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933'
+  },
+  // DPoP (SEP-1932 / RFC 9449) — client concerns.
+  SEP_1932_DPOP: {
+    id: 'SEP-1932-DPoP',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932'
+  },
+  DPOP_EXTENSION: {
+    id: 'MCP-DPoP-Extension',
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/pieterkas-dpop-extension/specification/draft/dpop-extension.mdx'
+  },
+  RFC_9449_PROOF_SYNTAX: {
+    id: 'RFC-9449-dpop-proof-jwt-syntax',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-4.2'
+  },
+  RFC_9449_CHECKING_PROOFS: {
+    id: 'RFC-9449-checking-dpop-proofs',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-4.3'
+  },
+  RFC_9449_AUTH_SCHEME: {
+    id: 'RFC-9449-dpop-authentication-scheme',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-7.1'
+  },
+  RFC_9449_TOKEN_REQUEST: {
+    id: 'RFC-9449-dpop-access-token-request',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-5'
+  },
+  RFC_9449_AS_NONCE: {
+    id: 'RFC-9449-authorization-server-provided-nonce',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-8'
+  },
+  RFC_9449_RS_NONCE: {
+    id: 'RFC-9449-resource-server-provided-nonce',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-9'
   }
 };

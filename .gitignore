@@ -6,3 +6,4 @@ dist/
 .idea/
 .claude/settings.local.json
 .sdk-under-test/
+.sync-schema-tmp/

@@ -14,9 +14,11 @@ import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
+import { MRTRClientScenario } from './client/mrtr-client';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { SessionLifecycleScenario } from './server/session-lifecycle';
 import { ServerStatelessScenario } from './server/stateless';
 
 import {
@@ -65,6 +67,36 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { CachingScenario } from './server/caching';
+
+// InputRequiredResult scenarios from (SEP-2322)
+import {
+  InputRequiredResultBasicElicitationScenario,
+  InputRequiredResultBasicSamplingScenario,
+  InputRequiredResultBasicListRootsScenario,
+  InputRequiredResultRequestStateScenario,
+  InputRequiredResultMultipleInputRequestsScenario,
+  InputRequiredResultMultiRoundScenario,
+  InputRequiredResultMissingInputResponseScenario,
+  InputRequiredResultNonToolRequestScenario,
+  InputRequiredResultResultTypeScenario,
+  InputRequiredResultUnsupportedMethodsScenario,
+  InputRequiredResultTamperedStateScenario,
+  InputRequiredResultCapabilityCheckScenario,
+  InputRequiredResultIgnoreExtraParamsScenario,
+  InputRequiredResultValidateInputScenario
+} from './server/input-required-result';
+
+import { TasksLifecycleScenario } from './server/tasks/lifecycle';
+import { TasksCapabilityNegotiationScenario } from './server/tasks/capability';
+import { TasksWireFieldsScenario } from './server/tasks/wire-fields';
+import { TasksRequestStateRemovalScenario } from './server/tasks/request-state';
+import { TasksMRTRInputScenario } from './server/tasks/mrtr-input';
+import { TasksRequestHeadersScenario } from './server/tasks/headers';
+import { TasksDispatchScenario } from './server/tasks/dispatch';
+import { TasksStatusNotificationsScenario } from './server/tasks/notifications';
+import { TasksRequiredTaskErrorScenario } from './server/tasks/required-task-error';
+import { TasksMrtrCompositionScenario } from './server/tasks/composition';
 
 import {
   HttpHeaderValidationScenario,
@@ -79,12 +111,15 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
 import {
   HttpCustomHeadersScenario,
   HttpInvalidToolHeadersScenario
 } from './client/http-custom-headers';
+import { JsonSchemaRefDerefScenario } from './client/json-schema-ref-deref';
+import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020-12-preservation';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -99,15 +134,31 @@ const pendingClientScenariosList: ClientScenario[] = [
 
   // HTTP Standardization (SEP-2243)
   // Pending until the everything-server fully implements SEP-2243
-  // header validation (case-insensitive names, whitespace trimming, -32001 error code)
+  // header validation (case-insensitive names, whitespace trimming, -32020 error code)
   new HttpHeaderValidationScenario(),
-  new HttpCustomHeaderServerValidationScenario()
+  new HttpCustomHeaderServerValidationScenario(),
+
+  // SEP-2663 Tasks extension. Pending because the everything-server
+  // does not implement io.modelcontextprotocol/tasks; targeted runs
+  // point at a SEP-2663-conformant fixture via
+  // `npm start -- server --scenario tasks-* --url <fixture>`.
+  new TasksLifecycleScenario(),
+  new TasksCapabilityNegotiationScenario(),
+  new TasksWireFieldsScenario(),
+  new TasksRequestStateRemovalScenario(),
+  new TasksMRTRInputScenario(),
+  new TasksRequestHeadersScenario(),
+  new TasksDispatchScenario(),
+  new TasksStatusNotificationsScenario(),
+  new TasksRequiredTaskErrorScenario(),
+  new TasksMrtrCompositionScenario()
 ];
 
 // All client scenarios
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new SessionLifecycleScenario(),
   new ServerStatelessScenario(),
 
   // Utilities scenarios
@@ -162,18 +213,60 @@ const allClientScenariosList: ClientScenario[] = [
   // Security scenarios
   new DNSRebindingProtectionScenario(),
 
+  // Caching scenarios (SEP-2549)
+  new CachingScenario(),
   // HTTP Standardization scenarios (SEP-2243)
   new HttpHeaderValidationScenario(),
-  new HttpCustomHeaderServerValidationScenario()
+  new HttpCustomHeaderServerValidationScenario(),
+
+  // SEP-2663 Tasks extension. Pending against the everything-server;
+  // targeted runs point at a SEP-2663-conformant fixture.
+  new TasksLifecycleScenario(),
+  new TasksCapabilityNegotiationScenario(),
+  new TasksWireFieldsScenario(),
+  new TasksRequestStateRemovalScenario(),
+  new TasksMRTRInputScenario(),
+  new TasksRequestHeadersScenario(),
+  new TasksDispatchScenario(),
+  new TasksStatusNotificationsScenario(),
+  new TasksRequiredTaskErrorScenario(),
+  new TasksMrtrCompositionScenario(),
+
+  // InputRequiredResult scenarios (SEP-2322)
+  new InputRequiredResultBasicElicitationScenario(),
+  new InputRequiredResultBasicSamplingScenario(),
+  new InputRequiredResultBasicListRootsScenario(),
+  new InputRequiredResultRequestStateScenario(),
+  new InputRequiredResultMultipleInputRequestsScenario(),
+  new InputRequiredResultMultiRoundScenario(),
+  new InputRequiredResultMissingInputResponseScenario(),
+  new InputRequiredResultNonToolRequestScenario(),
+  new InputRequiredResultResultTypeScenario(),
+  new InputRequiredResultUnsupportedMethodsScenario(),
+  new InputRequiredResultTamperedStateScenario(),
+  new InputRequiredResultCapabilityCheckScenario(),
+  new InputRequiredResultIgnoreExtraParamsScenario(),
+  new InputRequiredResultValidateInputScenario()
 ];
 
-// Active client scenarios (excludes pending)
+// Scenarios that test requirements introduced in the in-progress draft spec.
+// They run via `--suite draft` (or `--suite all`) and are excluded from the
+// default `active` suite until the draft is published as a dated release.
+const draftClientScenariosList: ClientScenario[] =
+  allClientScenariosList.filter(
+    (scenario) =>
+      'introducedIn' in scenario.source &&
+      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+  );
+
+// Active client scenarios (excludes pending and draft)
 const activeClientScenariosList: ClientScenario[] =
   allClientScenariosList.filter(
     (scenario) =>
       !pendingClientScenariosList.some(
         (pending) => pending.name === scenario.name
-      )
+      ) &&
+      !draftClientScenariosList.some((draft) => draft.name === scenario.name)
   );
 
 // Client scenarios map - built from list
@@ -182,15 +275,17 @@ export const clientScenarios = new Map<string, ClientScenario>(
 );
 
 // All client scenarios for authorization server
-const allClientScenariosListForAuthorizationServer: ClientScenario[] = [
-  // Authorization server scenarios
-  new AuthorizationServerMetadataEndpointScenario()
-];
+const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizationServer[] =
+  [
+    // Authorization server scenarios
+    new AuthorizationServerMetadataEndpointScenario(),
+    new AuthorizationCodeGrantScenario()
+  ];
 
 // Client scenarios map for authorization server - built from list
 export const clientScenariosForAuthorizationServer = new Map<
   string,
-  ClientScenario
+  ClientScenarioForAuthorizationServer
 >(
   allClientScenariosListForAuthorizationServer.map((scenario) => [
     scenario.name,
@@ -210,10 +305,19 @@ const scenariosList: Scenario[] = [
   ...draftScenariosList,
   ...extensionScenariosList,
 
+  // MRTR client conformance (SEP-2322)
+  new MRTRClientScenario(),
+
   // HTTP Standardization scenarios (SEP-2243)
   new HttpStandardHeadersScenario(),
   new HttpCustomHeadersScenario(),
-  new HttpInvalidToolHeadersScenario()
+  new HttpInvalidToolHeadersScenario(),
+
+  // JSON Schema network $ref dereferencing (SEP-2106)
+  new JsonSchemaRefDerefScenario(),
+
+  // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
+  new JsonSchema2020_12PreservationScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -284,8 +388,21 @@ export function listClientScenariosForAuthorizationServer(): string[] {
   return Array.from(clientScenariosForAuthorizationServer.keys());
 }
 
+// All client-testing scenarios that target the draft spec, derived from the
+// declared `source.introducedIn` rather than a hand-maintained list (covers
+// both the auth draft scenarios and the non-auth ones, e.g. SEP-2243/2575).
+const draftSpecScenariosList: Scenario[] = scenariosList.filter(
+  (scenario) =>
+    'introducedIn' in scenario.source &&
+    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+);
+
 export function listDraftScenarios(): string[] {
-  return draftScenariosList.map((scenario) => scenario.name);
+  return draftSpecScenariosList.map((scenario) => scenario.name);
+}
+
+export function listDraftClientScenarios(): string[] {
+  return draftClientScenariosList.map((scenario) => scenario.name);
 }
 
 export { listMetadataScenarios };
@@ -317,7 +434,7 @@ function versionIndex(
 }
 
 // Off-timeline sources (extensions etc.) are never selected by --spec-version.
-function matchesSpecVersion(
+export function matchesSpecVersion(
   source: ScenarioSource,
   version: SpecVersion
 ): boolean {
@@ -327,6 +444,18 @@ function matchesSpecVersion(
     (source.removedIn === undefined ||
       versionIndex(version) < versionIndex(source.removedIn))
   );
+}
+
+/**
+ * Whether a scenario's applicability window covers `version`. Used by the
+ * runner to skip explicitly-requested scenario/spec-version combinations
+ * that contradict (e.g. a draft-only scenario at a dated spec version).
+ */
+export function isScenarioApplicableAt(
+  source: ScenarioSource,
+  version: SpecVersion
+): boolean {
+  return matchesSpecVersion(source, version);
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {

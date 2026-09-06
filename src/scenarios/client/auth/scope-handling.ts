@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types';
 import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
@@ -5,6 +6,7 @@ import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
+import { DRAFT_PROTOCOL_VERSION, specVersionAtLeast } from '../../../types';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -22,13 +24,13 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const expectedScope = 'mcp:basic';
     const tokenVerifier = new MockTokenVerifier(this.checks, [expectedScope]);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client used the scope from WWW-Authenticate header
@@ -53,6 +55,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -108,13 +111,13 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client requested all scopes from scopes_supported
@@ -148,6 +151,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -204,12 +208,12 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client omitted scope parameter
@@ -232,6 +236,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
     await this.authServer.start(authApp);
 
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -290,9 +295,17 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  // SEP-2350's set-wise union requirement was introduced in 2026-07-28 (the
+  // current draft); it was not a requirement at 2025-11-25, where
+  // non-accumulating re-auth is conformant. Gate the union check accordingly.
+  private unionRequired = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
+    this.unionRequired = specVersionAtLeast(
+      ctx.specVersion,
+      DRAFT_PROTOCOL_VERSION
+    );
 
     const initialScope = 'mcp:basic';
     // tools/call gates on mcp:write only (not the union) so the scenario can
@@ -303,7 +316,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
     const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;
@@ -348,22 +361,24 @@ export class ScopeStepUpAuthScenario implements Scenario {
             }
           });
 
-          const retainedPrior = requestedScopes.includes(initialScope);
-          this.checks.push({
-            id: 'sep-2350-scope-union-on-reauth',
-            name: 'Client accumulates previously-granted scopes on re-authorization',
-            description: retainedPrior
-              ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
-              : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
-            status: retainedPrior ? 'SUCCESS' : 'WARNING',
-            timestamp: data.timestamp,
-            specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
-            details: {
-              previouslyGranted: initialScope,
-              challengedScope: stepUpScope,
-              requestedScope: data.scope || 'none'
-            }
-          });
+          if (this.unionRequired) {
+            const retainedPrior = requestedScopes.includes(initialScope);
+            this.checks.push({
+              id: 'sep-2350-scope-union-on-reauth',
+              name: 'Client accumulates previously-granted scopes on re-authorization',
+              description: retainedPrior
+                ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
+                : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
+              status: retainedPrior ? 'SUCCESS' : 'WARNING',
+              timestamp: data.timestamp,
+              specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+              details: {
+                previouslyGranted: initialScope,
+                challengedScope: stepUpScope,
+                requestedScope: data.scope || 'none'
+              }
+            });
+          }
         }
       }
     });
@@ -437,6 +452,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
     };
 
     const baseApp = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -495,15 +511,17 @@ export class ScopeStepUpAuthScenario implements Scenario {
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
-      this.checks.push({
-        id: 'sep-2350-scope-union-on-reauth',
-        name: 'Client accumulates previously-granted scopes on re-authorization',
-        description:
-          'Client did not make a second authorization request - scope union check could not be performed',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
-      });
+      if (this.unionRequired) {
+        this.checks.push({
+          id: 'sep-2350-scope-union-on-reauth',
+          name: 'Client accumulates previously-granted scopes on re-authorization',
+          description:
+            'Client did not make a second authorization request - scope union check could not be performed',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
+        });
+      }
     }
 
     return this.checks;
@@ -528,14 +546,14 @@ export class ScopeRetryLimitScenario implements Scenario {
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
 
     const requiredScope = 'mcp:admin';
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
     let authRequestCount = 0;
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         authRequestCount++;
@@ -613,6 +631,7 @@ export class ScopeRetryLimitScenario implements Scenario {
     };
 
     const baseApp = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,

@@ -1,3 +1,4 @@
+import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
@@ -5,6 +6,7 @@ import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
+import { untestableCheck } from '../../untestable.js';
 
 /**
  * Scenario: Resource Mismatch Detection
@@ -37,13 +39,13 @@ export class ResourceMismatchScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private authorizationRequestMade = false;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
     this.authorizationRequestMade = false;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: ['none'],
       onAuthorizationRequest: () => {
@@ -60,6 +62,7 @@ export class ResourceMismatchScenario implements Scenario {
 
     // Create server that returns a mismatched resource in PRM
     const app = createServer(
+      ctx,
       this.checks,
       this.server.getUrl,
       this.authServer.getUrl,
@@ -88,25 +91,57 @@ export class ResourceMismatchScenario implements Scenario {
       SpecReferences.MCP_RESOURCE_PARAMETER
     ];
 
-    // The test passes if the client did NOT make an authorization request
-    // (meaning it correctly rejected the mismatched resource)
+    // Reason-bound verdict (#467). "Did not proceed with authorization" is not
+    // by itself evidence of validation: a client that never fetched the PRM
+    // document never read the mismatched `resource`, so it cannot have
+    // compared it. Absent that fetch the requirement was never exercised,
+    // which is the untestable case (#248) rather than a pass or a violation.
     if (!this.checks.some((c) => c.id === 'resource-mismatch-rejected')) {
-      const correctlyRejected = !this.authorizationRequestMade;
-      this.checks.push({
-        id: 'resource-mismatch-rejected',
-        name: 'Client rejects mismatched resource',
-        description: correctlyRejected
-          ? 'Client correctly rejected authorization when PRM resource does not match server URL'
-          : 'Client MUST validate that PRM resource matches the server URL before proceeding with authorization',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: specRefs,
-        details: {
-          prmResource: 'https://evil.example.com/mcp',
-          expectedBehavior: 'Client should NOT proceed with authorization',
-          authorizationRequestMade: this.authorizationRequestMade
-        }
-      });
+      const prmRequested = this.checks.some(
+        (c) => c.id === 'prm-pathbased-requested'
+      );
+      const correctlyRejected = prmRequested && !this.authorizationRequestMade;
+      const observations = {
+        prmResource: 'https://evil.example.com/mcp',
+        expectedBehavior: 'Client should NOT proceed with authorization',
+        prmRequested,
+        authorizationRequestMade: this.authorizationRequestMade
+      };
+
+      if (!prmRequested) {
+        const check = untestableCheck(
+          'resource-mismatch-rejected',
+          'Client rejects mismatched resource',
+          'Client MUST validate that PRM resource matches the server URL before proceeding with authorization',
+          'client never requested the Protected Resource Metadata document, so it never read the resource value it was required to validate',
+          specRefs
+        );
+        check.details = {
+          ...check.details,
+          ...observations,
+          propertyReached: false,
+          stopReason: 'prm-not-requested'
+        };
+        this.checks.push(check);
+      } else {
+        this.checks.push({
+          id: 'resource-mismatch-rejected',
+          name: 'Client rejects mismatched resource',
+          description: correctlyRejected
+            ? 'Client correctly rejected authorization when PRM resource does not match server URL'
+            : 'Client MUST validate that PRM resource matches the server URL before proceeding with authorization',
+          status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
+          timestamp,
+          specReferences: specRefs,
+          details: {
+            ...observations,
+            propertyReached: true,
+            stopReason: correctlyRejected
+              ? 'declined-after-reading-prm'
+              : 'proceeded-to-authorization'
+          }
+        });
+      }
     }
 
     return this.checks;

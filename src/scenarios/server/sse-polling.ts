@@ -8,10 +8,16 @@
  * - Replaying events when client reconnects with Last-Event-ID
  */
 
-import { ClientScenario, ConformanceCheck } from '../../types.js';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../types.js';
+import type { RunContext } from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { terminateSessionBestEffort } from '../../connection/sdk-client';
 
 function createLoggingFetch(checks: ConformanceCheck[]) {
   return async (url: string, options: RequestInit): Promise<Response> => {
@@ -67,14 +73,19 @@ function createLoggingFetch(checks: ConformanceCheck[]) {
 
 export class ServerSSEPollingScenario implements ClientScenario {
   name = 'server-sse-polling';
-  readonly source = { introducedIn: '2025-11-25' } as const;
+  readonly source = {
+    introducedIn: '2025-11-25',
+    removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
   description =
     'Test server SSE polling via test_reconnection tool that closes stream mid-call (SEP-1699)';
 
-  async run(serverUrl: string): Promise<ConformanceCheck[]> {
+  async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const { serverUrl, specVersion } = ctx;
     const checks: ConformanceCheck[] = [];
 
     let sessionId: string | undefined;
+    let negotiatedProtocolVersion: string | undefined;
     let client: Client | undefined;
     let transport: StreamableHTTPClientTransport | undefined;
 
@@ -96,8 +107,9 @@ export class ServerSSEPollingScenario implements ClientScenario {
       transport = new StreamableHTTPClientTransport(new URL(serverUrl));
       await client.connect(transport);
 
-      // Extract session ID from transport (accessing internal state)
-      sessionId = (transport as unknown as { sessionId?: string }).sessionId;
+      // Extract session ID and negotiated protocol version from transport
+      sessionId = transport.sessionId;
+      negotiatedProtocolVersion = transport.protocolVersion;
 
       if (!sessionId) {
         checks.push({
@@ -129,7 +141,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream, application/json',
           ...(sessionId && { 'mcp-session-id': sessionId }),
-          'mcp-protocol-version': '2025-03-26'
+          'mcp-protocol-version': negotiatedProtocolVersion ?? specVersion
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
@@ -408,7 +420,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           headers: {
             Accept: 'text/event-stream',
             'mcp-session-id': sessionId,
-            'mcp-protocol-version': '2025-03-26',
+            'mcp-protocol-version': negotiatedProtocolVersion ?? specVersion,
             'last-event-id': lastEventId
           }
         });
@@ -587,7 +599,11 @@ export class ServerSSEPollingScenario implements ClientScenario {
         ]
       });
     } finally {
-      // Clean up
+      // Clean up: terminate the session before closing the client so the
+      // server is left hermetic.
+      if (transport) {
+        await terminateSessionBestEffort(transport, serverUrl);
+      }
       if (client) {
         try {
           await client.close();

@@ -3,12 +3,19 @@
 /**
  * Well-behaved client that validates the iss parameter in authorization responses.
  *
+ * Per RFC 8414 §3.3:
+ * - The issuer in the retrieved AS metadata document MUST be identical to the
+ *   issuer identifier used to construct the well-known URL; otherwise the
+ *   metadata MUST NOT be used.
+ *
  * Per RFC 9207:
  * - If the AS advertises authorization_response_iss_parameter_supported: true,
  *   the client MUST require iss in the redirect and MUST validate it against
  *   the AS metadata issuer.
- * - If the AS does NOT advertise support, the client MUST reject any redirect
- *   that unexpectedly contains an iss parameter.
+ * - If the AS does NOT advertise support but the redirect contains iss anyway,
+ *   the client MUST still compare it to the recorded issuer and reject on
+ *   mismatch (SEP-2468 validation table row 3).
+ * - Comparison is simple string comparison — no URL normalization.
  */
 
 import { createHash, randomBytes } from 'crypto';
@@ -74,6 +81,15 @@ async function oauthFlowWithIssValidation(
     throw new Error(`Failed to fetch AS metadata: ${asResponse.status}`);
   }
   const asMetadata = await asResponse.json();
+
+  // RFC 8414 §3.3: the issuer in the metadata document must be identical
+  // (simple string comparison) to the issuer identifier used to construct
+  // the well-known URL. On mismatch the metadata must not be used.
+  if (asMetadata.issuer !== authServerUrl) {
+    throw new Error(
+      `AS metadata issuer mismatch: expected '${authServerUrl}', got '${asMetadata.issuer}'`
+    );
+  }
 
   const expectedIssuer: string = asMetadata.issuer;
   const issParameterSupported: boolean =

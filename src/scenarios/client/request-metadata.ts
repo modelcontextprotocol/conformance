@@ -1,10 +1,44 @@
+import {
+  withRequiredDraftResultFields,
+  type ScenarioContext
+} from '../../mock-server';
 import http from 'http';
 import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
+  CheckStatus,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
+
+/**
+ * Severity ranking used to latch per-id check results: a single
+ * non-conformant request is a violation even if later requests are
+ * conformant, so a later better status must never overwrite a worse one.
+ */
+const STATUS_SEVERITY: Record<CheckStatus, number> = {
+  FAILURE: 3,
+  WARNING: 2,
+  SUCCESS: 1,
+  INFO: 1,
+  SKIPPED: 0
+};
+
+/**
+ * Every check ID this scenario can emit. Declared-but-unemitted checks are
+ * backfilled as FAILURE by getChecks(), so the emitted ID set is the same for
+ * every client. The positive-path test asserts this list is exact.
+ */
+export const DECLARED_CHECK_IDS = [
+  'sep-2575-http-client-sends-version-header',
+  'sep-2575-client-populates-meta',
+  'sep-2575-client-sends-client-info',
+  'sep-2575-http-version-header-matches-meta',
+  'sep-2575-client-declares-roots-capability',
+  'sep-2575-client-declares-sampling-capability',
+  'sep-2575-client-declares-elicitation-capability',
+  'sep-2575-client-retry-supported-version'
+] as const;
 
 export class RequestMetadataScenario implements Scenario {
   name = 'request-metadata';
@@ -15,10 +49,12 @@ export class RequestMetadataScenario implements Scenario {
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
   private hasSimulatedRejection = false;
+  private requestsObserved = 0;
 
-  async start(): Promise<ScenarioUrls> {
+  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.hasSimulatedRejection = false;
     this.checks = [];
+    this.requestsObserved = 0;
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);
@@ -46,15 +82,46 @@ export class RequestMetadataScenario implements Scenario {
   }
 
   getChecks(): ConformanceCheck[] {
+    // Declared but never emitted -> FAILURE. A check that is legitimately not
+    // applicable must be emitted as SKIPPED explicitly to avoid this.
+    for (const id of DECLARED_CHECK_IDS) {
+      if (!this.checks.some((c) => c.id === id)) {
+        this.checks.push({
+          id,
+          name: 'NotObserved',
+          description: `Declared check ${id} was never emitted`,
+          status: 'FAILURE',
+          errorMessage:
+            this.requestsObserved === 0
+              ? 'Check was not observed: the client never sent a request to the scenario server (no handler registered for this scenario?)'
+              : 'Check was not observed: no request exercised it',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'SEP-2575',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+            }
+          ],
+          details: { observed: false, requestsObserved: this.requestsObserved }
+        });
+      }
+    }
     return this.checks;
   }
 
   private addOrUpdateCheck(check: ConformanceCheck): void {
     const index = this.checks.findIndex((c) => c.id === check.id);
-    if (index !== -1) {
-      this.checks[index] = check;
-    } else {
+    if (index === -1) {
       this.checks.push(check);
+      return;
+    }
+    // Keep the worst status observed for this id (FAILURE > WARNING > SUCCESS
+    // > SKIPPED): an equal-or-worse result replaces the stored check (so its
+    // details stay fresh), but a better result must not erase a violation
+    // recorded from an earlier request.
+    const existing = this.checks[index];
+    if (STATUS_SEVERITY[check.status] >= STATUS_SEVERITY[existing.status]) {
+      this.checks[index] = check;
     }
   }
 
@@ -62,12 +129,40 @@ export class RequestMetadataScenario implements Scenario {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
+    // This scenario only evaluates the metadata attached to POST requests.
+    // Clients may probe a Streamable HTTP endpoint with an empty-body GET
+    // before sending MCP requests, so reject unsupported methods before
+    // attempting to parse a JSON-RPC body.
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end('Method Not Allowed');
+      return;
+    }
+
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
     });
     req.on('end', () => {
-      const request = JSON.parse(body);
+      let request;
+      try {
+        request = JSON.parse(body);
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: -32700,
+              message: `Parse error: ${String(error)}`
+            }
+          })
+        );
+        return;
+      }
+
+      this.requestsObserved++;
 
       // Extract version and headers
       const meta = request.params?._meta;
@@ -94,17 +189,19 @@ export class RequestMetadataScenario implements Scenario {
 
       // 2. "Every client request MUST include the following
       //  io.modelcontextprotocol/* fields in _meta: protocolVersion,
-      //  clientInfo, clientCapabilities."
+      //  clientCapabilities." clientInfo is a SHOULD since spec PR #3002 and
+      // is tracked by its own check below, so requirement levels never blend
+      // in one check id.
       const hasClientInfo = meta?.['io.modelcontextprotocol/clientInfo'];
       const hasCapabilities =
         meta?.['io.modelcontextprotocol/clientCapabilities'];
-      const metaIsValid = metaVersion && hasClientInfo && hasCapabilities;
+      const metaIsValid = metaVersion && hasCapabilities;
 
       this.addOrUpdateCheck({
         id: 'sep-2575-client-populates-meta',
         name: 'ClientPopulatesMeta',
         description:
-          'Client populates _meta on every request with all three required fields',
+          'Client populates _meta on every request with the required fields (protocolVersion, clientCapabilities)',
         status: metaIsValid ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [
@@ -116,26 +213,49 @@ export class RequestMetadataScenario implements Scenario {
         details: { method: request.method, meta }
       });
 
+      // 2b. clientInfo SHOULD (spec PR #3002): absence is a WARNING, never a
+      // FAILURE — a dedicated id so adoption is trackable on its own.
+      this.addOrUpdateCheck({
+        id: 'sep-2575-client-sends-client-info',
+        name: 'ClientSendsClientInfo',
+        description:
+          "Client SHOULD include io.modelcontextprotocol/clientInfo in every request's _meta (spec PR #3002)",
+        status: hasClientInfo ? 'SUCCESS' : 'WARNING',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+          }
+        ],
+        details: { method: request.method, meta }
+      });
+
       // 3. "The header value MUST match the io.modelcontextprotocol/protocolVersion
-      //  field carried in the request body's _meta." Only meaningful when both
-      // are present; absence is already covered by the two checks above.
-      if (headerVersion !== undefined && metaVersion !== undefined) {
-        this.addOrUpdateCheck({
-          id: 'sep-2575-http-version-header-matches-meta',
-          name: 'ClientVersionHeaderMatchesMeta',
-          description:
-            'MCP-Protocol-Version header matches _meta.protocolVersion',
-          status: headerVersion === metaVersion ? 'SUCCESS' : 'FAILURE',
-          timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-2575',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
-            }
-          ],
-          details: { headerVersion, metaVersion }
-        });
-      }
+      //  field carried in the request body's _meta." Only comparable when both
+      // are present; absence is already covered by the two checks above, so
+      // emit SKIPPED rather than falling through to the declared-check failure.
+      const bothVersionsPresent =
+        headerVersion !== undefined && metaVersion !== undefined;
+      this.addOrUpdateCheck({
+        id: 'sep-2575-http-version-header-matches-meta',
+        name: 'ClientVersionHeaderMatchesMeta',
+        description:
+          'MCP-Protocol-Version header matches _meta.protocolVersion',
+        status: !bothVersionsPresent
+          ? 'SKIPPED'
+          : headerVersion === metaVersion
+            ? 'SUCCESS'
+            : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+          }
+        ],
+        details: { headerVersion, metaVersion }
+      });
 
       // 4. Optional client capabilities conditional verification
       const capabilities = meta?.['io.modelcontextprotocol/clientCapabilities'];
@@ -209,10 +329,12 @@ export class RequestMetadataScenario implements Scenario {
             jsonrpc: '2.0',
             id: request.id ?? null,
             error: {
-              code: -32001,
+              // UnsupportedProtocolVersionError per the draft schema.
+              code: -32022,
               message: 'Unsupported protocol version',
               data: {
-                supported: [DRAFT_PROTOCOL_VERSION]
+                supported: [DRAFT_PROTOCOL_VERSION],
+                requested: String(headerVersion ?? metaVersion ?? '')
               }
             }
           })
@@ -248,11 +370,11 @@ export class RequestMetadataScenario implements Scenario {
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
-            result: {
+            result: withRequiredDraftResultFields(request.method, {
               supportedVersions: [DRAFT_PROTOCOL_VERSION],
               capabilities: {},
               serverInfo: { name: 'test', version: '1.0' }
-            }
+            })
           })
         );
         return;
@@ -266,7 +388,13 @@ export class RequestMetadataScenario implements Scenario {
         result = { content: [] };
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: request.id,
+          result: withRequiredDraftResultFields(request.method, result)
+        })
+      );
     });
   }
 }

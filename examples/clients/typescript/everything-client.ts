@@ -19,8 +19,17 @@ import {
   ClientCredentialsProvider,
   PrivateKeyJwtProvider
 } from '@modelcontextprotocol/sdk/client/auth-extensions.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+import type {
+  OAuthClientInformation,
+  OAuthClientMetadata,
+  OAuthTokens
+} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
+import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
+import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -33,6 +42,7 @@ import {
 } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { runClient as issValidationClient } from './auth-test-iss-validation.js';
+import { runClient as dpopClient } from './auth-test-dpop.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -70,10 +80,135 @@ export function getHandler(scenarioName: string): ScenarioHandler | undefined {
 }
 
 // ============================================================================
-// Basic scenarios (initialize, tools-call)
+// Stateless requester (SEP-2575 / 2026-x lifecycle)
+//
+// Shim for the fact that the SDK Client doesn't support stateless mode yet.
+// Carry-forward handlers below pick this when the runner says the resolved
+// spec version is stateless, so the same handler exercises both lifecycles.
+// ============================================================================
+
+const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
+
+// Lifecycle decision: derived from the runner-provided protocol version.
+// The version→lifecycle mapping is spec knowledge a client must own; this
+// in-repo client imports the stateless version set from src/ so it cannot
+// drift from the runner's mapping.
+const USE_STATELESS_LIFECYCLE = PROTOCOL_VERSION
+  ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(PROTOCOL_VERSION)
+  : false;
+
+// Wire protocolVersion for stateless requests: the runner-resolved version
+// when available (so a dated stateless release is exercised under its own
+// identifier), the current draft otherwise.
+const STATELESS_PROTOCOL_VERSION = PROTOCOL_VERSION ?? DRAFT_PROTOCOL_VERSION;
+
+const STATELESS_META_BASE = {
+  'io.modelcontextprotocol/clientInfo': {
+    name: 'conformance-test-client',
+    version: '1.0.0'
+  },
+  'io.modelcontextprotocol/clientCapabilities': {
+    tools: {},
+    roots: {},
+    sampling: {},
+    elicitation: {}
+  }
+};
+
+let _nextStatelessId = 1;
+async function statelessRequest(
+  serverUrl: string,
+  method: string,
+  params: Record<string, unknown> = {}
+): Promise<any> {
+  const _meta = {
+    'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
+    ...STATELESS_META_BASE,
+    ...((params._meta as object | undefined) ?? {})
+  };
+  const response = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Servers built on the SDK's StreamableHTTPServerTransport reject
+      // requests that don't accept both JSON and SSE responses.
+      Accept: 'application/json, text/event-stream',
+      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: _nextStatelessId++,
+      method,
+      params: { ...params, _meta }
+    })
+  });
+  const body = await response.json();
+  if (body.error) {
+    throw new Error(
+      `${method} failed: ${body.error.code} ${body.error.message}`
+    );
+  }
+  return body.result;
+}
+
+// ============================================================================
+// Basic scenarios (initialize, tools_call)
 // ============================================================================
 
 async function runBasicClient(serverUrl: string): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug('Stateless lifecycle: calling tools/list + tools/call');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    const tool = list?.tools?.[0];
+    if (tool) {
+      const result = await statelessRequest(serverUrl, 'tools/call', {
+        name: tool.name,
+        arguments: { a: 2, b: 3 }
+      });
+      logger.debug('Successfully called tool:', JSON.stringify(result));
+    }
+    return;
+  }
+
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  await client.connect(transport);
+  logger.debug('Successfully connected to MCP server');
+
+  const list = await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  const tool = list.tools[0];
+  if (tool) {
+    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+    logger.debug('Successfully called tool');
+  }
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
+
+// SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
+// contains a network-URI $ref. A conformant client lists tools normally and
+// simply never fetches that URI. The scenario's mock only serves tools/list,
+// so this handler stops after listing instead of reusing runBasicClient
+// (whose tools/call would get -32601 and fail the run).
+async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug('Stateless lifecycle: calling tools/list');
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    logger.debug('Successfully listed tools:', JSON.stringify(list));
+    return;
+  }
+
   const client = new Client(
     { name: 'test-client', version: '1.0.0' },
     { capabilities: {} }
@@ -91,7 +226,70 @@ async function runBasicClient(serverUrl: string): Promise<void> {
   logger.debug('Connection closed successfully');
 }
 
-registerScenarios(['initialize', 'tools-call'], runBasicClient);
+registerScenario('json-schema-ref-no-deref', runListToolsOnlyClient);
+
+// ============================================================================
+// json-schema-2020-12-preservation (SEP-1613, SEP-2106, Issue #101)
+//
+// Scenario contract:
+//   1. tools/list — observe `json_schema_2020_12_tool` and its inputSchema
+//   2. tools/call json_schema_echo with `{ schema: <observed inputSchema> }`
+// The scenario diffs the echoed schema against its fixture to detect
+// client-side keyword stripping; this handler just round-trips the schema
+// verbatim, which is the compliant behavior.
+// ============================================================================
+
+const FOCAL_TOOL_NAME = 'json_schema_2020_12_tool';
+const ECHO_TOOL_NAME = 'json_schema_echo';
+
+async function runJsonSchema2020_12PreservationClient(
+  serverUrl: string
+): Promise<void> {
+  if (USE_STATELESS_LIFECYCLE) {
+    logger.debug(
+      'Stateless lifecycle: listing tools and echoing observed schema'
+    );
+    const list = await statelessRequest(serverUrl, 'tools/list');
+    const focal = list?.tools?.find(
+      (t: { name: string }) => t.name === FOCAL_TOOL_NAME
+    );
+    if (!focal) {
+      throw new Error(`Focal tool '${FOCAL_TOOL_NAME}' not advertised`);
+    }
+    await statelessRequest(serverUrl, 'tools/call', {
+      name: ECHO_TOOL_NAME,
+      arguments: { schema: focal.inputSchema }
+    });
+    logger.debug('Successfully echoed observed inputSchema');
+    return;
+  }
+
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+  await client.connect(transport);
+  try {
+    const list = await client.listTools();
+    const focal = list.tools.find((t) => t.name === FOCAL_TOOL_NAME);
+    if (!focal) {
+      throw new Error(`Focal tool '${FOCAL_TOOL_NAME}' not advertised`);
+    }
+    await client.callTool({
+      name: ECHO_TOOL_NAME,
+      arguments: { schema: focal.inputSchema as Record<string, unknown> }
+    });
+    logger.debug('Successfully echoed observed inputSchema');
+  } finally {
+    await transport.close();
+  }
+}
+
+registerScenario(
+  'json-schema-2020-12-preservation',
+  runJsonSchema2020_12PreservationClient
+);
 
 // ============================================================================
 // request-metadata scenario (SEP-2575)
@@ -100,20 +298,9 @@ registerScenarios(['initialize', 'tools-call'], runBasicClient);
 async function runRequestMetadataClient(serverUrl: string): Promise<void> {
   logger.debug('Starting request-metadata client flow...');
 
-  const meta = {
-    'io.modelcontextprotocol/clientInfo': {
-      name: 'conformance-test-client',
-      version: '1.0.0'
-    },
-    'io.modelcontextprotocol/clientCapabilities': {
-      tools: {},
-      roots: {},
-      sampling: {},
-      elicitation: {}
-    }
-  };
+  const meta = STATELESS_META_BASE;
 
-  let activeVersion = 'DRAFT-2026-v1';
+  let activeVersion = STATELESS_PROTOCOL_VERSION;
 
   const sendRequestWithNegotiation = async (
     method: string,
@@ -149,13 +336,16 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
       const clone = response.clone();
       try {
         const errorResult = await clone.json();
-        if (errorResult.error?.code === -32001) {
+        // UnsupportedProtocolVersionError is -32022 in the draft schema.
+        if (errorResult.error?.code === -32022) {
           logger.debug(
             'Received UnsupportedProtocolVersionError, starting negotiation...'
           );
           const serverSupported: string[] =
             errorResult.error.data?.supported || [];
-          const clientSupported = ['DRAFT-2026-v1'];
+          const clientSupported = [
+            ...new Set([STATELESS_PROTOCOL_VERSION, DRAFT_PROTOCOL_VERSION])
+          ];
           const mutuallySupported = clientSupported.filter((v) =>
             serverSupported.includes(v)
           );
@@ -351,7 +541,9 @@ registerScenarios(
   [
     'auth/iss-supported-missing',
     'auth/iss-wrong-issuer',
-    'auth/iss-unexpected'
+    'auth/iss-unexpected',
+    'auth/iss-normalized',
+    'auth/metadata-issuer-mismatch'
   ],
   issValidationClient
 );
@@ -549,6 +741,10 @@ export async function runPreRegistration(serverUrl: string): Promise<void> {
     redirect_uris: ['http://localhost:3000/callback']
   });
 
+  // Associate the pre-registered credentials with the AS that issued them,
+  // keyed by its issuer (Authorization Server Binding).
+  provider.bindIssuer(ctx.issuer);
+
   // Use the provider-based middleware
   const oauthFetch = withOAuthRetryWithProvider(
     provider,
@@ -725,6 +921,257 @@ registerScenario(
   'auth/enterprise-managed-authorization',
   runEnterpriseManagedAuthorization
 );
+
+// ============================================================================
+// DPoP client conformance (SEP-1932)
+// ============================================================================
+
+registerScenario('auth/dpop', dpopClient);
+registerScenario('auth/dpop-nonce', dpopClient);
+
+// ============================================================================
+// MRTR client conformance (SEP-2322)
+// ============================================================================
+
+async function runMRTRClient(serverUrl: string): Promise<void> {
+  let nextId = 1;
+
+  async function sendRpc(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<{
+    id: number;
+    result?: Record<string, unknown>;
+    error?: { code: number; message: string };
+  }> {
+    const id = nextId++;
+    const body: Record<string, unknown> = {
+      jsonrpc: '2.0',
+      id,
+      method
+    };
+    if (params) body.params = params;
+
+    const resp = await fetch(serverUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (resp.status === 204) return { id, result: {} };
+    return (await resp.json()) as {
+      id: number;
+      result?: Record<string, unknown>;
+      error?: { code: number; message: string };
+    };
+  }
+
+  // List tools
+  const toolsResp = await sendRpc('tools/list');
+  const tools =
+    (toolsResp.result as { tools: Array<{ name: string }> })?.tools ?? [];
+  logger.debug(
+    'Available tools:',
+    tools.map((t) => t.name)
+  );
+
+  // Tool 1: test_mrtr_echo_state — call, get InputRequiredResult with requestState, retry
+  const r1 = await sendRpc('tools/call', {
+    name: 'test_mrtr_echo_state',
+    arguments: {}
+  });
+
+  const r1Result = r1.result as Record<string, unknown> | undefined;
+  if (r1Result?.resultType === 'input_required') {
+    const inputRequests = r1Result.inputRequests as Record<string, unknown>;
+    const requestState = r1Result.requestState as string | undefined;
+
+    // Build inputResponses by fulfilling each inputRequest
+    const inputResponses: Record<string, unknown> = {};
+    for (const [key, req] of Object.entries(inputRequests)) {
+      const request = req as { method: string; params: unknown };
+      if (request.method === 'elicitation/create') {
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
+      }
+    }
+
+    // Call an unrelated tool BEFORE retrying — must NOT carry over inputResponses/requestState
+    await sendRpc('tools/call', {
+      name: 'test_mrtr_unrelated',
+      arguments: {}
+    });
+    logger.debug(
+      'test_mrtr_unrelated: called without MRTR state (isolation check)'
+    );
+
+    // Retry with inputResponses + requestState echoed back unchanged
+    const retryParams: Record<string, unknown> = {
+      name: 'test_mrtr_echo_state',
+      arguments: {},
+      inputResponses
+    };
+    if (requestState !== undefined) {
+      retryParams.requestState = requestState;
+    }
+
+    await sendRpc('tools/call', retryParams);
+    logger.debug('test_mrtr_echo_state: MRTR flow completed');
+  }
+
+  // Tool 2: test_mrtr_no_state — call, get InputRequiredResult WITHOUT requestState, retry without it
+  const r2 = await sendRpc('tools/call', {
+    name: 'test_mrtr_no_state',
+    arguments: {}
+  });
+
+  const r2Result = r2.result as Record<string, unknown> | undefined;
+  if (r2Result?.resultType === 'input_required') {
+    const inputRequests = r2Result.inputRequests as Record<string, unknown>;
+
+    // Build inputResponses
+    const inputResponses: Record<string, unknown> = {};
+    for (const [key, req] of Object.entries(inputRequests)) {
+      const request = req as { method: string; params: unknown };
+      if (request.method === 'elicitation/create') {
+        inputResponses[key] = {
+          action: 'accept',
+          content: { confirmed: true }
+        };
+      }
+    }
+
+    // Retry WITHOUT requestState (server didn't send one)
+    await sendRpc('tools/call', {
+      name: 'test_mrtr_no_state',
+      arguments: {},
+      inputResponses
+    });
+    logger.debug('test_mrtr_no_state: MRTR flow completed');
+  }
+
+  // Tool 3: test_mrtr_no_result_type — returns result without resultType field
+  // Client must treat it as complete (default) and NOT retry
+  const r3 = await sendRpc('tools/call', {
+    name: 'test_mrtr_no_result_type',
+    arguments: {}
+  });
+
+  const r3Result = r3.result as Record<string, unknown> | undefined;
+  if (r3Result && !r3Result.resultType) {
+    // No resultType means default to "complete" — do nothing, don't retry
+    logger.debug(
+      'test_mrtr_no_result_type: result has no resultType, treating as complete'
+    );
+  }
+
+  logger.debug('MRTR client scenario completed');
+}
+
+registerScenario('sep-2322-client-request-state', runMRTRClient);
+
+// ============================================================================
+// WIF JWT-bearer scenario
+// ============================================================================
+
+class WifJwtBearerProvider implements OAuthClientProvider {
+  private _tokens?: OAuthTokens;
+  private _clientInfo: OAuthClientInformation;
+  private readonly _clientMetadata: OAuthClientMetadata;
+  private hasAttempted = false;
+
+  // Pass null for assertion to deliberately omit it (missing-assertion negative tests).
+  constructor(
+    private readonly assertion: string | null,
+    clientId: string,
+    private readonly scope?: string
+  ) {
+    this._clientInfo = { client_id: clientId };
+    this._clientMetadata = {
+      client_name: 'conformance-wif-jwt-bearer',
+      redirect_uris: [],
+      grant_types: [JWT_BEARER_GRANT_TYPE],
+      token_endpoint_auth_method: 'none'
+    };
+  }
+
+  get redirectUrl(): undefined {
+    return undefined;
+  }
+
+  get clientMetadata(): OAuthClientMetadata {
+    return this._clientMetadata;
+  }
+
+  clientInformation(): OAuthClientInformation {
+    return this._clientInfo;
+  }
+
+  saveClientInformation(info: OAuthClientInformation): void {
+    this._clientInfo = info;
+  }
+
+  tokens(): OAuthTokens | undefined {
+    return this._tokens;
+  }
+
+  saveTokens(tokens: OAuthTokens): void {
+    this._tokens = tokens;
+  }
+
+  redirectToAuthorization(): void {
+    throw new Error('redirectToAuthorization is not used for JWT-bearer flow');
+  }
+
+  saveCodeVerifier(): void {}
+
+  codeVerifier(): string {
+    throw new Error('codeVerifier is not used for JWT-bearer flow');
+  }
+
+  prepareTokenRequest(scope?: string): URLSearchParams {
+    if (this.hasAttempted) {
+      throw new Error('JWT-bearer grant must not be retried after failure');
+    }
+    this.hasAttempted = true;
+    const params = new URLSearchParams({ grant_type: JWT_BEARER_GRANT_TYPE });
+    if (this.assertion !== null) params.set('assertion', this.assertion);
+    const effectiveScope = this.scope ?? scope;
+    if (effectiveScope) params.set('scope', effectiveScope);
+    return params;
+  }
+}
+
+export async function runWifJwtBearer(serverUrl: string): Promise<void> {
+  const ctx = parseContext();
+  if (ctx.name !== 'auth/wif-jwt-bearer') {
+    throw new Error(`Expected wif-jwt-bearer context, got ${ctx.name}`);
+  }
+
+  const provider = new WifJwtBearerProvider(ctx.valid_jwt, ctx.client_id);
+
+  const client = new Client(
+    { name: 'conformance-wif-jwt-bearer', version: '1.0.0' },
+    { capabilities: {} }
+  );
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
+    authProvider: provider
+  });
+
+  await client.connect(transport);
+  logger.debug('Successfully connected with JWT-bearer assertion');
+
+  await client.listTools();
+  logger.debug('Successfully listed tools');
+
+  await transport.close();
+  logger.debug('Connection closed successfully');
+}
+
+registerScenario('auth/wif-jwt-bearer', runWifJwtBearer);
 
 // ============================================================================
 // Main entry point

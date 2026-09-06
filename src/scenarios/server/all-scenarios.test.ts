@@ -1,6 +1,17 @@
+import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import { createServer } from 'net';
-import { getClientScenario, listActiveClientScenarios } from '../index';
+import {
+  getClientScenario,
+  listActiveClientScenarios,
+  listDraftClientScenarios,
+  listPendingClientScenarios
+} from '../index';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  LATEST_SPEC_VERSION,
+  type SpecVersion
+} from '../../types';
 import path from 'path';
 
 function getFreePort(): Promise<number> {
@@ -116,35 +127,76 @@ describe('Server Scenarios', () => {
     }
   });
 
-  // Generate individual test for each scenario
-  const scenarios = listActiveClientScenarios();
+  // Generate individual test for each scenario: the active suite plus the
+  // draft-spec scenarios that aren't parked in `pending` — the same set this
+  // file covered before draft scenarios were split out of `active`.
+  const pendingScenarios = new Set(listPendingClientScenarios());
+  const scenarios = [
+    ...listActiveClientScenarios(),
+    ...listDraftClientScenarios().filter((name) => !pendingScenarios.has(name))
+  ];
+
+  async function expectScenarioToPass(
+    scenarioName: string,
+    specVersion?: SpecVersion
+  ): Promise<void> {
+    const scenario = getClientScenario(scenarioName);
+    expect(scenario).toBeDefined();
+
+    if (!scenario) {
+      throw new Error(`Scenario ${scenarioName} not found`);
+    }
+
+    // Draft-only scenarios expect the draft (stateless) connection. Other
+    // scenarios normally use the latest stateful wire unless a test overrides it.
+    const targetSpecVersion =
+      specVersion ??
+      ('introducedIn' in scenario.source &&
+      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+        ? DRAFT_PROTOCOL_VERSION
+        : LATEST_SPEC_VERSION);
+
+    const checks = await scenario.run(
+      testContext(serverUrl, targetSpecVersion)
+    );
+
+    // Verify checks were returned
+    expect(checks.length).toBeGreaterThan(0);
+
+    // Verify all checks passed
+    const failures = checks.filter((c) => c.status === 'FAILURE');
+    if (failures.length > 0) {
+      const failureMessages = failures
+        .map((c) => `${c.name}: ${c.errorMessage || c.description}`)
+        .join('\n  ');
+      throw new Error(`Scenario failed with checks:\n  ${failureMessages}`);
+    }
+
+    // All checks should be non-FAILURE (SUCCESS, WARNING, or INFO are acceptable)
+    const nonFailures = checks.filter((c) => c.status !== 'FAILURE');
+    expect(nonFailures.length).toBe(checks.length);
+  }
 
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {
-      const scenario = getClientScenario(scenarioName);
-      expect(scenario).toBeDefined();
-
-      if (!scenario) {
-        throw new Error(`Scenario ${scenarioName} not found`);
-      }
-
-      const checks = await scenario.run(serverUrl);
-
-      // Verify checks were returned
-      expect(checks.length).toBeGreaterThan(0);
-
-      // Verify all checks passed
-      const failures = checks.filter((c) => c.status === 'FAILURE');
-      if (failures.length > 0) {
-        const failureMessages = failures
-          .map((c) => `${c.name}: ${c.errorMessage || c.description}`)
-          .join('\n  ');
-        throw new Error(`Scenario failed with checks:\n  ${failureMessages}`);
-      }
-
-      // All checks should be non-FAILURE (SUCCESS, WARNING, or INFO are acceptable)
-      const nonFailures = checks.filter((c) => c.status !== 'FAILURE');
-      expect(nonFailures.length).toBe(checks.length);
+      await expectScenarioToPass(scenarioName);
     }, 10000); // 10 second timeout per scenario
+  }
+
+  // These scenarios are introduced before the stateless protocol, so the normal
+  // fixture matrix exercises them on the latest stateful wire. Run them again on
+  // the modern wire to cover the streamed response adapter used by tools/call.
+  for (const scenarioName of [
+    'tools-call-simple-text',
+    'tools-call-image',
+    'tools-call-audio',
+    'tools-call-embedded-resource',
+    'tools-call-mixed-content',
+    'tools-call-error',
+    'tools-call-with-progress'
+  ]) {
+    it(`${scenarioName} on ${DRAFT_PROTOCOL_VERSION}`, async () => {
+      await expectScenarioToPass(scenarioName, DRAFT_PROTOCOL_VERSION);
+    }, 10000);
   }
 });

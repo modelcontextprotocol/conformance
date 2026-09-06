@@ -1,0 +1,38 @@
+sep: 2260
+spec_url: https://modelcontextprotocol.io/specification/draft/basic/transports#streamable-http
+requirements:
+  - text: 'roots/list, sampling/createMessage, and elicitation/create requests MUST NOT be sent on standalone streams.'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+  - text: 'Clients MUST return standard JSON-RPC errors for common failure cases: Server sends an elicitation/create request with no associated client-to-server request: -32602 (Invalid params)'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/elicitation
+  - text: 'Clients SHOULD return standard JSON-RPC errors for common failure cases: Server sends a roots/list request with no associated client-to-server request: -32602 (Invalid params)'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/roots
+  - text: 'Clients SHOULD return errors for common failure cases: Sampling request not associated with a client-to-server request: -32602 (Invalid params)'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/sampling
+
+  - text: 'These messages MUST relate to the originating client request.'
+    excluded: 'Semantic association ("relate to") is not protocol-observable. The harness cannot determine whether a server request conceptually relates to the client request without understanding application logic.'
+  - text: 'Implementations SHOULD prefer transport-level SSE keepalive mechanisms for idle-connection maintenance.'
+    excluded: 'Implementation preference for keepalive mechanism choice; not observable on the wire.'
+    url: https://modelcontextprotocol.io/specification/draft/basic/utilities/ping
+  - text: 'Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/elicitation
+  - text: 'Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/elicitation
+  - text: 'Servers MUST send sampling/createMessage requests only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/sampling
+  - text: 'Standalone server-initiated sampling on independent communication streams (unrelated to any client request) is not supported and MUST NOT be implemented.'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/sampling
+  - text: 'Servers MUST send server-to-client requests (such as roots/list, sampling/createMessage, or elicitation/create) only in association with an originating client request (e.g., during tools/call, resources/read, or prompts/get processing).'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/roots
+  - text: 'Standalone server-initiated requests of these types on independent communication streams (unrelated to any client request) are not supported and MUST NOT be implemented.'
+    excluded: 'No longer needed this behavior is enabled by default SEP-2322 MRTR.'
+    url: https://modelcontextprotocol.io/specification/draft/client/roots

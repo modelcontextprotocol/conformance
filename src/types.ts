@@ -1,3 +1,7 @@
+import type { RunContext } from './connection';
+import type { ScenarioContext } from './mock-server';
+import type { AuthorizationServerOptions } from './schemas';
+
 export type CheckStatus =
   | 'SUCCESS'
   | 'FAILURE'
@@ -17,6 +21,11 @@ export interface ConformanceCheck {
   status: CheckStatus;
   timestamp: string;
   specReferences?: SpecReference[];
+  /**
+   * Optional spec-version range for this individual check. When set, runners
+   * drop the check for `--spec-version` values outside the range.
+   */
+  source?: ScenarioSource;
   details?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   errorMessage?: string;
@@ -38,7 +47,7 @@ export const LATEST_SPEC_VERSION: DatedSpecVersion = '2025-11-25';
  * `LATEST_PROTOCOL_VERSION` in the spec repo's `schema/draft/schema.ts`;
  * bump when that constant changes.
  */
-export const DRAFT_PROTOCOL_VERSION = 'DRAFT-2026-v1';
+export const DRAFT_PROTOCOL_VERSION = '2026-07-28';
 
 // Wire protocolVersion strings the mock server will negotiate on initialize.
 export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
@@ -54,6 +63,31 @@ export const NEGOTIABLE_PROTOCOL_VERSIONS: readonly string[] = [
  */
 export type SpecVersion = DatedSpecVersion | typeof DRAFT_PROTOCOL_VERSION;
 
+/** Spec versions in timeline order, dated revisions followed by the draft. */
+export const SPEC_VERSION_TIMELINE: readonly SpecVersion[] = [
+  ...DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
+];
+
+/** True when `v` names a known spec version (dated or draft). */
+export function isSpecVersion(v: unknown): v is SpecVersion {
+  return SPEC_VERSION_TIMELINE.includes(v as SpecVersion);
+}
+
+/**
+ * True when `v` is at or after `threshold` on the spec timeline. Lets a check
+ * gate itself to the version that introduced its requirement (e.g. a draft-only
+ * requirement passes `DRAFT_PROTOCOL_VERSION` as the threshold).
+ */
+export function specVersionAtLeast(
+  v: SpecVersion,
+  threshold: SpecVersion
+): boolean {
+  return (
+    SPEC_VERSION_TIMELINE.indexOf(v) >= SPEC_VERSION_TIMELINE.indexOf(threshold)
+  );
+}
+
 // Scenarios may also be tagged 'extension' to mark them as off-timeline
 // (selectable via --suite extensions, never via --spec-version). See #256.
 export type ScenarioSpecTag = SpecVersion | 'extension';
@@ -65,7 +99,10 @@ export type ScenarioSpecTag = SpecVersion | 'extension';
  */
 export const EXTENSION_IDS = [
   'io.modelcontextprotocol/oauth-client-credentials',
-  'io.modelcontextprotocol/enterprise-managed-authorization'
+  'io.modelcontextprotocol/enterprise-managed-authorization',
+  'io.modelcontextprotocol/auth/dpop',
+  'io.modelcontextprotocol/auth/wif',
+  'io.modelcontextprotocol/tasks'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
@@ -100,7 +137,7 @@ export interface Scenario {
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
    */
   allowClientError?: boolean;
-  start(): Promise<ScenarioUrls>;
+  start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
 }
@@ -109,12 +146,15 @@ export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(ctx: RunContext): Promise<ConformanceCheck[]>;
 }
 
 export interface ClientScenarioForAuthorizationServer {
   name: string;
   description: string;
   source: ScenarioSource;
-  run(serverUrl: string): Promise<ConformanceCheck[]>;
+  run(
+    options: AuthorizationServerOptions,
+    details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]>;
 }
