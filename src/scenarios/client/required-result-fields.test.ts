@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { testScenarioContext } from '../../mock-server/testing';
-import { withRequiredDraftResultFields } from '../../mock-server';
+import { withRequiredResultFields } from '../../mock-server';
 import { wireSchemaErrors } from '../../validation/wire-schema';
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
+// Stateless-lifecycle tests pin the first stateless release.
+const STATELESS = '2026-07-28' as const;
 import { HttpStandardHeadersScenario } from './http-standard-headers';
 import {
   HttpCustomHeadersScenario,
@@ -23,7 +24,7 @@ import { JsonSchemaRefDerefScenario } from './json-schema-ref-deref';
  */
 
 const meta = {
-  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/protocolVersion': STATELESS,
   'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
@@ -49,7 +50,7 @@ const CACHEABLE_FIELDS = {
 
 const DISCOVER_FIELDS = {
   ...CACHEABLE_FIELDS,
-  supportedVersions: [DRAFT_PROTOCOL_VERSION]
+  supportedVersions: [STATELESS]
 };
 
 describe('hand-rolled mock servers serve server/discover (2026-07-28)', () => {
@@ -85,7 +86,7 @@ describe('hand-rolled mock servers serve server/discover (2026-07-28)', () => {
     it(`${c.name} returns a valid DiscoverResult`, async () => {
       const scenario = c.make();
       const { serverUrl } = await scenario.start(
-        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+        testScenarioContext(STATELESS)
       );
       try {
         const { status, body } = await post(
@@ -96,7 +97,7 @@ describe('hand-rolled mock servers serve server/discover (2026-07-28)', () => {
             method: 'server/discover',
             params: { _meta: meta }
           },
-          { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+          { 'mcp-protocol-version': STATELESS }
         );
         expect(status).toBe(200);
         expect(body.result).toMatchObject({
@@ -112,11 +113,9 @@ describe('hand-rolled mock servers serve server/discover (2026-07-28)', () => {
 });
 
 describe('http-standard-headers mock results (2026-07-28)', () => {
-  it('carries the draft-required result members on every handled method', async () => {
+  it('carries the 2026-07-28-required result members on every handled method', async () => {
     const scenario = new HttpStandardHeadersScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const cases: Array<{
         method: string;
@@ -184,9 +183,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
   // scenario's header checks ran.
   it('http-standard-headers answers resources/templates/list with a valid empty result', async () => {
     const scenario = new HttpStandardHeadersScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const { status, body } = await post(
         serverUrl,
@@ -204,11 +201,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
         resourceTemplates: []
       });
       expect(
-        wireSchemaErrors(
-          DRAFT_PROTOCOL_VERSION,
-          body,
-          'resources/templates/list'
-        )
+        wireSchemaErrors(STATELESS, body, 'resources/templates/list')
       ).toEqual([]);
     } finally {
       await scenario.stop();
@@ -254,7 +247,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
     it(`${s.name} answers unrouted list methods with valid empty results`, async () => {
       const scenario = s.make();
       const { serverUrl } = await scenario.start(
-        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+        testScenarioContext(STATELESS)
       );
       try {
         let id = 1;
@@ -266,10 +259,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
           );
           expect(status, method).toBe(200);
           expect(body.result[listMember.get(method)!], method).toEqual([]);
-          expect(
-            wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
-            method
-          ).toEqual([]);
+          expect(wireSchemaErrors(STATELESS, body, method), method).toEqual([]);
           if (method === 'tasks/list') {
             expect(wireSchemaErrors('2025-11-25', body, method)).toEqual([]);
           }
@@ -288,7 +278,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
     it(`${s.name} answers Object.prototype-colliding method names with a valid generic result`, async () => {
       const scenario = s.make();
       const { serverUrl } = await scenario.start(
-        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+        testScenarioContext(STATELESS)
       );
       try {
         let id = 1;
@@ -305,10 +295,7 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
           );
           expect(status, method).toBe(200);
           expect(body.result, method).toEqual({ resultType: 'complete' });
-          expect(
-            wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
-            method
-          ).toEqual([]);
+          expect(wireSchemaErrors(STATELESS, body, method), method).toEqual([]);
         }
       } finally {
         await scenario.stop();
@@ -323,10 +310,10 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
     const preFix = {
       jsonrpc: '2.0',
       id: 1,
-      result: withRequiredDraftResultFields('resources/templates/list', {})
+      result: withRequiredResultFields('resources/templates/list', {})
     };
     const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
+      STATELESS,
       preFix,
       'resources/templates/list'
     );
@@ -337,11 +324,9 @@ describe('generic fallback answers unrouted list methods schema-valid (#474)', (
 });
 
 describe('http-custom-headers mock results (2026-07-28)', () => {
-  it('carries the draft-required result members', async () => {
+  it('carries the 2026-07-28-required result members', async () => {
     const scenario = new HttpCustomHeadersScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const list = await post(serverUrl, {
         jsonrpc: '2.0',
@@ -368,11 +353,9 @@ describe('http-custom-headers mock results (2026-07-28)', () => {
 });
 
 describe('http-invalid-tool-headers mock results (2026-07-28)', () => {
-  it('carries the draft-required result members', async () => {
+  it('carries the 2026-07-28-required result members', async () => {
     const scenario = new HttpInvalidToolHeadersScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const list = await post(serverUrl, {
         jsonrpc: '2.0',
@@ -396,12 +379,10 @@ describe('http-invalid-tool-headers mock results (2026-07-28)', () => {
 });
 
 describe('request-metadata mock results (2026-07-28)', () => {
-  it('carries the draft-required result members after the simulated rejection', async () => {
+  it('carries the 2026-07-28-required result members after the simulated rejection', async () => {
     const scenario = new RequestMetadataScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
-    const headers = { 'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION };
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
+    const headers = { 'MCP-Protocol-Version': STATELESS };
     try {
       // The first request is always answered with the simulated -32022
       // rejection (retry probe); results are served from the second on.
@@ -466,11 +447,9 @@ describe('request-metadata mock results (2026-07-28)', () => {
 });
 
 describe('sep-2322-client-request-state mock results (2026-07-28)', () => {
-  it('carries the draft-required result members on conformant results and keeps the deliberate omission', async () => {
+  it('carries the 2026-07-28-required result members on conformant results and keeps the deliberate omission', async () => {
     const scenario = new MRTRClientScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const list = await post(serverUrl, {
         jsonrpc: '2.0',
