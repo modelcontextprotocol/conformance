@@ -10,15 +10,17 @@ import {
   getScenarioSpecVersions,
   matchesSpecVersion,
   resolveSpecVersion,
+  defaultSpecVersionFor,
   ALL_SPEC_VERSIONS,
   scenarios,
   clientScenarios
 } from './index';
 import {
   DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION,
+  DRAFT_SPEC_VERSION,
   LATEST_SPEC_VERSION
 } from '../types';
+import { listRequirementRevisions } from '../requirements';
 
 describe('specVersions helpers', () => {
   // The ScenarioSource union (introducedIn XOR extensionId) is enforced by the
@@ -59,21 +61,42 @@ describe('specVersions helpers', () => {
     expect(current.length).toBeGreaterThan(overlap.length);
   });
 
-  it('every scenario in latest but not in draft is explicitly removedIn: DRAFT', () => {
+  it('2026-07-28 drops the stateful-lifecycle scenarios and adds its own', () => {
+    const previous = new Set(listScenariosForSpec('2025-11-25'));
+    const current = new Set(listScenariosForSpec('2026-07-28'));
+    // removedIn: '2026-07-28'
+    expect(previous.has('initialize')).toBe(true);
+    expect(current.has('initialize')).toBe(false);
+    // introducedIn: '2026-07-28'
+    expect(previous.has('request-metadata')).toBe(false);
+    expect(current.has('request-metadata')).toBe(true);
+    expect(current.has('auth/iss-supported')).toBe(true);
+    // carried forward
+    expect(current.has('tools_call')).toBe(true);
+  });
+
+  it('every scenario in latest but not in draft is explicitly removedIn: draft', () => {
     const latest = new Set(listScenariosForSpec(LATEST_SPEC_VERSION));
-    const draft = new Set(listScenariosForSpec(DRAFT_PROTOCOL_VERSION));
+    const draft = new Set(listScenariosForSpec(DRAFT_SPEC_VERSION));
     for (const name of latest) {
       if (!draft.has(name)) {
         const s = getScenario(name)!;
         expect(
           'removedIn' in s.source && s.source.removedIn,
           `"${name}" is in ${LATEST_SPEC_VERSION} but not in draft without removedIn`
-        ).toBe(DRAFT_PROTOCOL_VERSION);
+        ).toBe(DRAFT_SPEC_VERSION);
       }
     }
     for (const name of listDraftScenarios()) {
       expect(draft.has(name)).toBe(true);
     }
+  });
+
+  it('LATEST_SPEC_VERSION has a frozen requirement set', () => {
+    // tier-check defaults to the latest requirement set; promoting a new
+    // dated revision without freezing its requirements would leave that
+    // default pointing at the previous release.
+    expect(listRequirementRevisions()).toContain(LATEST_SPEC_VERSION);
   });
 
   it('draft-introduced scenarios are not matched by any dated spec version', () => {
@@ -88,14 +111,50 @@ describe('specVersions helpers', () => {
     }
   });
 
-  it("resolveSpecVersion accepts 'draft' as an alias", () => {
-    expect(resolveSpecVersion('draft')).toBe(DRAFT_PROTOCOL_VERSION);
+  it("resolveSpecVersion accepts 'draft' and dated versions", () => {
+    expect(resolveSpecVersion('draft')).toBe(DRAFT_SPEC_VERSION);
+    expect(resolveSpecVersion('2026-07-28')).toBe('2026-07-28');
     expect(resolveSpecVersion(LATEST_SPEC_VERSION)).toBe(LATEST_SPEC_VERSION);
+  });
+
+  describe('defaultSpecVersionFor', () => {
+    it('uses the latest release for scenarios that apply there', () => {
+      expect(defaultSpecVersionFor({ introducedIn: '2025-06-18' })).toBe(
+        LATEST_SPEC_VERSION
+      );
+      expect(defaultSpecVersionFor({ introducedIn: LATEST_SPEC_VERSION })).toBe(
+        LATEST_SPEC_VERSION
+      );
+    });
+    it('uses the draft for draft-only scenarios', () => {
+      expect(defaultSpecVersionFor({ introducedIn: DRAFT_SPEC_VERSION })).toBe(
+        DRAFT_SPEC_VERSION
+      );
+    });
+    it('uses the last release before removedIn for removed scenarios', () => {
+      expect(
+        defaultSpecVersionFor({
+          introducedIn: '2025-06-18',
+          removedIn: '2026-07-28'
+        })
+      ).toBe('2025-11-25');
+      expect(
+        defaultSpecVersionFor({
+          introducedIn: '2025-03-26',
+          removedIn: '2025-06-18'
+        })
+      ).toBe('2025-03-26');
+    });
+    it('uses the latest release for extensions', () => {
+      expect(
+        defaultSpecVersionFor({ extensionId: 'io.modelcontextprotocol/tasks' })
+      ).toBe(LATEST_SPEC_VERSION);
+    });
   });
 
   describe('matchesSpecVersion (per-check gating)', () => {
     const src = { introducedIn: '2025-11-25' } as const;
-    it.each(['2025-11-25', DRAFT_PROTOCOL_VERSION] as const)(
+    it.each(['2025-11-25', '2026-07-28', DRAFT_SPEC_VERSION] as const)(
       'includes %s',
       (v) => expect(matchesSpecVersion(src, v)).toBe(true)
     );
@@ -123,7 +182,7 @@ describe('draft suite membership', () => {
     for (const [name, scenario] of scenarios) {
       if (
         'introducedIn' in scenario.source &&
-        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+        scenario.source.introducedIn === DRAFT_SPEC_VERSION
       ) {
         expect(
           draftClientTesting.has(name),
@@ -136,7 +195,7 @@ describe('draft suite membership', () => {
     for (const [name, scenario] of clientScenarios) {
       if (
         'introducedIn' in scenario.source &&
-        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+        scenario.source.introducedIn === DRAFT_SPEC_VERSION
       ) {
         expect(
           draftServerTesting.has(name),
@@ -146,16 +205,20 @@ describe('draft suite membership', () => {
     }
   });
 
-  it('the draft suite covers the non-auth draft client scenarios', () => {
+  it('scenarios that shipped in 2026-07-28 are in the default suites, not draft', () => {
     const draft = new Set(listDraftScenarios());
-    expect(draft.has('request-metadata')).toBe(true);
-    expect(draft.has('http-standard-headers')).toBe(true);
-    expect(draft.has('sep-2322-client-request-state')).toBe(true);
+    expect(draft.has('request-metadata')).toBe(false);
+    expect(draft.has('http-standard-headers')).toBe(false);
+    expect(draft.has('sep-2322-client-request-state')).toBe(false);
+
+    const active = new Set(listActiveClientScenarios());
+    expect(active.has('server-stateless')).toBe(true);
+    expect(active.has('caching')).toBe(true);
+    expect(active.has('input-required-result-basic-elicitation')).toBe(true);
   });
 
   it('draft server-testing scenarios are excluded from the active suite', () => {
     const active = new Set(listActiveClientScenarios());
-    expect(listDraftClientScenarios().length).toBeGreaterThan(0);
     for (const name of listDraftClientScenarios()) {
       expect(
         active.has(name),

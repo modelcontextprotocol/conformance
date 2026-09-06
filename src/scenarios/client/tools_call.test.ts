@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ToolsCallScenario } from './tools_call';
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
+// Stateless-lifecycle tests pin the first stateless release.
+const STATELESS = '2026-07-28' as const;
 
 describe('tools_call scenario', () => {
   it('emits a single FAILURE check when the tool was never called', async () => {
@@ -21,9 +22,9 @@ describe('tools_call scenario', () => {
     }
   });
 
-  it('serves spec-valid results at the draft (2026-07-28) version', async () => {
+  it('serves spec-valid results at the 2026-07-28 version', async () => {
     const meta = {
-      'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/protocolVersion': STATELESS,
       'io.modelcontextprotocol/clientInfo': {
         name: 'test-client',
         version: '1.0.0'
@@ -35,7 +36,7 @@ describe('tools_call scenario', () => {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'mcp-protocol-version': DRAFT_PROTOCOL_VERSION
+          'mcp-protocol-version': STATELESS
         },
         body: JSON.stringify(body)
       });
@@ -43,9 +44,7 @@ describe('tools_call scenario', () => {
     }
 
     const scenario = new ToolsCallScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       const list = await post(serverUrl, {
         jsonrpc: '2.0',

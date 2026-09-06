@@ -11,6 +11,10 @@ import {
   RequestMetadataScenario
 } from './request-metadata';
 
+// request-metadata is a 2026-07-28 scenario; drive it at that revision so the
+// mock advertises (and the clients below send) the matching wire version.
+const STATELESS = '2026-07-28' as const;
+
 // A bad client that does not send _meta
 async function badClient(serverUrl: string) {
   const response = await fetch(serverUrl, {
@@ -29,7 +33,7 @@ async function badClient(serverUrl: string) {
 }
 
 const goodMeta = {
-  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/protocolVersion': STATELESS,
   'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1.0' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
@@ -155,7 +159,9 @@ describe('request-metadata client scenario — positive test', () => {
     }
 
     const runner = new InlineClientRunner(clientFn);
-    await runClientAgainstScenario(runner, 'request-metadata');
+    await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS
+    });
 
     // Extract checks directly from the scenario instance
     const checks = scenario.getChecks();
@@ -210,7 +216,7 @@ describe('request-metadata client scenario — client never connects', () => {
       throw new Error('Scenario not found');
     }
 
-    await scenario.start(testScenarioContext());
+    await scenario.start(testScenarioContext(STATELESS));
     try {
       const checks = scenario.getChecks();
       const byId = new Map(checks.map((c) => [c.id, c]));
@@ -230,6 +236,7 @@ describe('request-metadata client scenario — client never connects', () => {
   test('does not overwrite checks recorded from a real request', async () => {
     const runner = new InlineClientRunner(badClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: [
         'sep-2575-client-populates-meta',
         'sep-2575-http-client-sends-version-header'
@@ -254,7 +261,9 @@ describe('request-metadata client scenario — HTTP handling', () => {
     'rejects an empty-body %s request without parsing it as JSON',
     async (method) => {
       const scenario = new RequestMetadataScenario();
-      const { serverUrl } = await scenario.start(testScenarioContext());
+      const { serverUrl } = await scenario.start(
+        testScenarioContext(STATELESS)
+      );
 
       try {
         const response = await fetch(serverUrl, { method });
@@ -270,7 +279,7 @@ describe('request-metadata client scenario — HTTP handling', () => {
 
   test('returns a JSON-RPC parse error for malformed POST bodies', async () => {
     const scenario = new RequestMetadataScenario();
-    const { serverUrl } = await scenario.start(testScenarioContext());
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
 
     try {
       const response = await fetch(serverUrl, {
@@ -295,6 +304,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client fails when omitting _meta', async () => {
     const runner = new InlineClientRunner(badClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: [
         'sep-2575-client-populates-meta',
         'sep-2575-http-client-sends-version-header'
@@ -305,6 +315,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client fails when missing version header', async () => {
     const runner = new InlineClientRunner(missingHeaderClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: ['sep-2575-http-client-sends-version-header']
     });
   });
@@ -312,6 +323,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client fails when header disagrees with _meta', async () => {
     const runner = new InlineClientRunner(mismatchedHeaderClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: ['sep-2575-http-version-header-matches-meta']
     });
   });
@@ -319,6 +331,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client fails retry check when it does not handle 400 rejection', async () => {
     const runner = new InlineClientRunner(nonRetryingClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: ['sep-2575-client-retry-supported-version']
     });
   });
@@ -326,6 +339,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client aborts cleanly without hanging when negotiation has empty version intersection', async () => {
     const runner = new InlineClientRunner(incompatibleVersionClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: ['sep-2575-client-retry-supported-version']
     });
   });
@@ -333,6 +347,7 @@ describe('request-metadata client scenario — negative tests', () => {
   test('client triggers failures for malformed capabilities', async () => {
     const runner = new InlineClientRunner(malformedCapabilitiesClient);
     await runClientAgainstScenario(runner, 'request-metadata', {
+      specVersion: STATELESS,
       expectedFailureSlugs: [
         'sep-2575-client-declares-roots-capability',
         'sep-2575-client-declares-elicitation-capability'

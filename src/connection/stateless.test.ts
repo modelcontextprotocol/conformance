@@ -12,14 +12,18 @@ import {
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES
 } from './stateless';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import {
+  DRAFT_PROTOCOL_VERSION,
+  DRAFT_SPEC_VERSION,
+  LATEST_SPEC_VERSION
+} from '../types';
 import { takeWireViolations } from '../validation/wire-schema';
 
 describe('buildStandardHeaders', () => {
-  test('sets the standard headers pinned to the draft protocol version', () => {
+  test('sets the standard headers pinned to the latest release', () => {
     const headers = buildStandardHeaders('tools/list');
     expect(headers['Mcp-Method']).toBe('tools/list');
-    expect(headers['MCP-Protocol-Version']).toBe(DRAFT_PROTOCOL_VERSION);
+    expect(headers['MCP-Protocol-Version']).toBe(LATEST_SPEC_VERSION);
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers.Accept).toContain('application/json');
     expect(headers.Accept).toContain('text/event-stream');
@@ -51,7 +55,7 @@ describe('withRequestMeta', () => {
     const params = withRequestMeta({ name: 'echo' });
     const meta = params._meta as Record<string, unknown>;
     expect(meta['io.modelcontextprotocol/protocolVersion']).toBe(
-      DRAFT_PROTOCOL_VERSION
+      LATEST_SPEC_VERSION
     );
     expect(meta['io.modelcontextprotocol/clientInfo']).toEqual(
       CONFORMANCE_CLIENT_INFO
@@ -126,9 +130,17 @@ describe('spec version plumbing', () => {
     expect(headers['MCP-Protocol-Version']).toBe('2025-11-25');
   });
 
-  test('buildStandardHeaders defaults to the draft version', () => {
+  test('buildStandardHeaders defaults to the latest release', () => {
     const headers = buildStandardHeaders('tools/list');
+    expect(headers['MCP-Protocol-Version']).toBe(LATEST_SPEC_VERSION);
+  });
+
+  test('buildStandardHeaders sends the draft wire version, not the word draft', () => {
+    const headers = buildStandardHeaders('tools/list', undefined, {
+      specVersion: DRAFT_SPEC_VERSION
+    });
     expect(headers['MCP-Protocol-Version']).toBe(DRAFT_PROTOCOL_VERSION);
+    expect(headers['MCP-Protocol-Version']).not.toBe(DRAFT_SPEC_VERSION);
   });
 
   test('withRequestMeta declares the requested spec version in _meta', () => {
@@ -137,8 +149,16 @@ describe('spec version plumbing', () => {
     expect(meta['io.modelcontextprotocol/protocolVersion']).toBe('2025-11-25');
   });
 
-  test('withRequestMeta defaults to the draft version', () => {
+  test('withRequestMeta defaults to the latest release', () => {
     const params = withRequestMeta({});
+    const meta = params._meta as Record<string, unknown>;
+    expect(meta['io.modelcontextprotocol/protocolVersion']).toBe(
+      LATEST_SPEC_VERSION
+    );
+  });
+
+  test('withRequestMeta declares the draft wire version for a draft run', () => {
+    const params = withRequestMeta({}, DRAFT_SPEC_VERSION);
     const meta = params._meta as Record<string, unknown>;
     expect(meta['io.modelcontextprotocol/protocolVersion']).toBe(
       DRAFT_PROTOCOL_VERSION

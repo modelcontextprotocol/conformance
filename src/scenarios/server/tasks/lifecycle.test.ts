@@ -1,7 +1,8 @@
 import { describe, test, expect, afterEach } from 'vitest';
 import { testContext } from '../../../connection/testing';
 import { TasksLifecycleScenario } from './lifecycle';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+// Stateless-lifecycle tests pin the first stateless release.
+const STATELESS = '2026-07-28' as const;
 import type { ConformanceCheck } from '../../../types';
 
 /**
@@ -21,7 +22,7 @@ function mockServer() {
     let result: any;
     if (body.method === 'server/discover') {
       result = {
-        supportedVersions: [DRAFT_PROTOCOL_VERSION],
+        supportedVersions: [STATELESS],
         capabilities: { tools: {} },
         serverInfo: { name: 'taskless-server', version: '1.0.0' }
       };
@@ -66,7 +67,7 @@ describe('tasks-lifecycle — no task created', () => {
     const mockUrl = mockServer();
     const scenario = new TasksLifecycleScenario();
     const checks: ConformanceCheck[] = await scenario.run(
-      testContext(mockUrl, DRAFT_PROTOCOL_VERSION)
+      testContext(mockUrl, STATELESS)
     );
 
     const gated = checks.filter((c) =>

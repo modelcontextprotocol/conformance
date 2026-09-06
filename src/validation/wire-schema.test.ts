@@ -1,6 +1,4 @@
 import { createServer, type Server } from 'http';
-import rawSchema2025_06_18 from '../spec-types/2025-06-18.schema.json';
-import rawSchema2025_11_25 from '../spec-types/2025-11-25.schema.json';
 import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { sendStatelessRequest } from '../connection/stateless';
 import {
@@ -472,7 +470,7 @@ describe('withWireRecorder', () => {
   });
 });
 
-describe('schema errata', () => {
+describe('NumberSchema bounds (generator bug fixed upstream, modelcontextprotocol#2710/#3139)', () => {
   const elicitWithScore = (score: Record<string, unknown>) => ({
     jsonrpc: '2.0',
     id: 1,
@@ -483,7 +481,19 @@ describe('schema errata', () => {
     }
   });
 
-  it('accepts fractional NumberSchema bounds/defaults at 2025-11-25 (spec generator bug, modelcontextprotocol#2710)', () => {
+  it.each(['2025-06-18', '2025-11-25'] as const)(
+    'accepts fractional NumberSchema bounds at %s from the vendored schema itself',
+    (version) => {
+      expect(
+        wireSchemaErrors(
+          version,
+          elicitWithScore({ type: 'number', minimum: 0.5, maximum: 99.5 })
+        )
+      ).toEqual([]);
+    }
+  );
+
+  it('accepts a fractional NumberSchema default at 2025-11-25', () => {
     expect(
       wireSchemaErrors(
         '2025-11-25',
@@ -495,44 +505,5 @@ describe('schema errata', () => {
         })
       )
     ).toEqual([]);
-    // The erratum makes 2025-11-25 agree with the fixed draft schema.
-    expect(
-      wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
-        elicitWithScore({
-          type: 'number',
-          minimum: 0.5,
-          maximum: 99.5,
-          default: 95.5
-        })
-      )
-    ).toEqual([]);
-  });
-
-  it('accepts fractional NumberSchema bounds at 2025-06-18 (same generator bug, no default there)', () => {
-    expect(
-      wireSchemaErrors(
-        '2025-06-18',
-        elicitWithScore({ type: 'number', minimum: 0.5, maximum: 99.5 })
-      )
-    ).toEqual([]);
-  });
-
-  it('tripwire: delete applySchemaErrata once the vendored schemas are fixed (modelcontextprotocol#3139)', () => {
-    const numberSchema = (raw: Record<string, unknown>, defsKey: string) =>
-      (
-        raw[defsKey] as Record<
-          string,
-          { properties: Record<string, { type: string }> }
-        >
-      ).NumberSchema.properties;
-    expect(
-      numberSchema(rawSchema2025_11_25, '$defs').default.type,
-      'the re-vendored 2025-11-25 schema no longer needs the erratum — delete its applySchemaErrata branch'
-    ).toBe('integer');
-    expect(
-      numberSchema(rawSchema2025_06_18, 'definitions').minimum.type,
-      'the re-vendored 2025-06-18 schema no longer needs the erratum — delete its applySchemaErrata branch'
-    ).toBe('integer');
   });
 });

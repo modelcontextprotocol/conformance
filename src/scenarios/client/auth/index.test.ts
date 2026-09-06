@@ -1,7 +1,6 @@
 import {
   authScenariosList,
   backcompatScenariosList,
-  draftScenariosList,
   extensionScenariosList
 } from './index';
 import {
@@ -37,7 +36,6 @@ import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typ
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { testScenarioContext } from '../../../mock-server/testing';
 import { ClientConformanceContextSchema } from '../../../schemas/context';
 
@@ -95,21 +93,6 @@ describe('Client Back-compat Scenarios', () => {
       }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name);
-    });
-  }
-});
-
-describe('Client Draft Scenarios', () => {
-  for (const scenario of draftScenariosList) {
-    test(`${scenario.name} passes`, async () => {
-      const clientFn = getHandler(scenario.name);
-      if (!clientFn) {
-        throw new Error(`No handler registered for scenario: ${scenario.name}`);
-      }
-      const runner = new InlineClientRunner(clientFn);
-      await runClientAgainstScenario(runner, scenario.name, {
-        allowClientError: allowClientErrorScenarios.has(scenario.name)
-      });
     });
   }
 });
@@ -179,12 +162,12 @@ describe('Negative tests', () => {
   });
 
   test('client only responds to 401, not 403', async () => {
-    // Run at draft so the SEP-2350 union check is also emitted: a client that
-    // never makes the second authorization request fails both the escalation
-    // check and the union check.
+    // Run at 2026-07-28 so the SEP-2350 union check is also emitted: a client
+    // that never makes the second authorization request fails both the
+    // escalation check and the union check.
     const runner = new InlineClientRunner(ignore403Client);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
-      specVersion: DRAFT_PROTOCOL_VERSION,
+      specVersion: '2026-07-28',
       expectedFailureSlugs: [
         'scope-step-up-escalation',
         'sep-2350-scope-union-on-reauth'
@@ -192,12 +175,12 @@ describe('Negative tests', () => {
     });
   });
 
-  test('client echoes challenge scope without accumulating prior grant (SEP-2350) at draft', async () => {
-    // The set-wise union requirement (SEP-2350) was added in the draft spec
-    // (2026-07-28); a client that echoes only the challenged scope fails it.
+  test('client echoes challenge scope without accumulating prior grant (SEP-2350) at 2026-07-28', async () => {
+    // The set-wise union requirement (SEP-2350) was added in 2026-07-28; a
+    // client that echoes only the challenged scope fails it.
     const runner = new InlineClientRunner(echoScopeClient);
     await runClientAgainstScenario(runner, 'auth/scope-step-up', {
-      specVersion: DRAFT_PROTOCOL_VERSION,
+      specVersion: '2026-07-28',
       expectedFailureSlugs: ['sep-2350-scope-union-on-reauth']
     });
   });
@@ -243,12 +226,12 @@ describe('Negative tests', () => {
     );
   });
 
-  test('client omits application_type during DCR (SEP-837) at draft', async () => {
-    // SEP-837 is a draft-spec requirement, so the check is only enforced when
-    // the run targets the draft version.
+  test('client omits application_type during DCR (SEP-837) at 2026-07-28', async () => {
+    // SEP-837 is a 2026-07-28 requirement, so the check is only enforced when
+    // the run targets that revision or later.
     const runner = new InlineClientRunner(noAppTypeClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
-      specVersion: DRAFT_PROTOCOL_VERSION,
+      specVersion: '2026-07-28',
       expectedFailureSlugs: ['sep-837-application-type-present']
     });
   });

@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isStatefulVersion, STATELESS_SPEC_VERSIONS } from './select';
+import {
+  isStatefulVersion,
+  STATELESS_PROTOCOL_VERSIONS,
+  STATELESS_SPEC_VERSIONS
+} from './select';
 import { connectStateless } from './stateless';
 import { JsonRpcError } from './index';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { DRAFT_PROTOCOL_VERSION, DRAFT_SPEC_VERSION } from '../types';
 import { takeWireViolations } from '../validation/wire-schema';
 
 describe('STATELESS_SPEC_VERSIONS', () => {
@@ -12,8 +16,18 @@ describe('STATELESS_SPEC_VERSIONS', () => {
       expect(isStatefulVersion(v)).toBe(false);
     }
   });
-  it('currently contains only the draft version', () => {
-    expect(STATELESS_SPEC_VERSIONS).toEqual([DRAFT_PROTOCOL_VERSION]);
+  it('contains 2026-07-28 and the draft, in timeline order', () => {
+    expect(STATELESS_SPEC_VERSIONS).toEqual(['2026-07-28', DRAFT_SPEC_VERSION]);
+  });
+  it('maps to deduplicated wire versions', () => {
+    // The draft shares 2026-07-28's wire string until the spec repo gives the
+    // next draft its own marker; either way every entry is a wire string.
+    expect(STATELESS_PROTOCOL_VERSIONS).toContain('2026-07-28');
+    expect(STATELESS_PROTOCOL_VERSIONS).toContain(DRAFT_PROTOCOL_VERSION);
+    expect(new Set(STATELESS_PROTOCOL_VERSIONS).size).toBe(
+      STATELESS_PROTOCOL_VERSIONS.length
+    );
+    expect(STATELESS_PROTOCOL_VERSIONS).not.toContain(DRAFT_SPEC_VERSION);
   });
 });
 

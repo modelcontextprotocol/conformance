@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { parseSdkSpec } from './checkout';
 import { lookupBuiltinConfig, KNOWN_SDKS } from './known-sdks';
 import { SdkConfigSchema, resolveConfigForSpec } from './config';
@@ -167,9 +168,23 @@ describe('resolveConfigForSpec', () => {
       server: { command: 'x', url: 'http://localhost:3000' },
       specOverrides: { draft: { server: { command: 'y' } } }
     };
-    expect(() => SdkConfigSchema.parse(bad)).toThrow(/not a spec version/);
+    expect(() => SdkConfigSchema.parse(bad)).toThrow(
+      /not a dated spec version/
+    );
     const typo = { ...bad, specOverrides: { '2026-7-28': {} } };
-    expect(() => SdkConfigSchema.parse(typo)).toThrow(/not a spec version/);
+    expect(() => SdkConfigSchema.parse(typo)).toThrow(
+      /not a dated spec version/
+    );
+  });
+
+  it("resolves a 'draft' run through the draft's wire version", () => {
+    // The draft currently shares 2026-07-28's wire string, so a draft run
+    // reuses that revision's invocation rather than matching nothing.
+    const resolved = resolveConfigForSpec(KNOWN_SDKS['go-sdk'], 'draft');
+    expect(resolved.server?.command).toBe(
+      resolveConfigForSpec(KNOWN_SDKS['go-sdk'], DRAFT_PROTOCOL_VERSION).server
+        ?.command
+    );
   });
 
   it('returns the base config when no spec version is given', () => {

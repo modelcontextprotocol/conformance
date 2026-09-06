@@ -7,58 +7,62 @@ import http from 'http';
 import type { AddressInfo } from 'net';
 import { afterEach, beforeEach, describe, test, expect } from 'vitest';
 import { runServerConformanceTest } from './server';
-import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../types';
+import { DRAFT_SPEC_VERSION, LATEST_SPEC_VERSION } from '../types';
 
 // The skip decision happens before any network request, so an unreachable
 // URL proves the scenario was not run.
 const UNREACHABLE_URL = 'http://127.0.0.1:9/mcp';
 
 describe('runServerConformanceTest spec-version applicability', () => {
-  test('skips a draft-only scenario at an explicit dated spec version', async () => {
+  test('skips a 2026-07-28 scenario at an explicit earlier spec version', async () => {
     const result = await runServerConformanceTest(
       UNREACHABLE_URL,
       'server-stateless',
       undefined,
-      LATEST_SPEC_VERSION
+      '2025-11-25'
     );
     expect(result.skipped).toBe(true);
     expect(result.checks).toEqual([]);
   });
 
-  test('skips a removed-in-draft scenario at the draft spec version', async () => {
-    // server-initialize tests the stateful handshake, which the draft
-    // (stateless) lifecycle removed.
-    const result = await runServerConformanceTest(
-      UNREACHABLE_URL,
-      'server-initialize',
-      undefined,
-      DRAFT_PROTOCOL_VERSION
-    );
-    expect(result.skipped).toBe(true);
-    expect(result.checks).toEqual([]);
-  });
+  test.each([LATEST_SPEC_VERSION, DRAFT_SPEC_VERSION] as const)(
+    'skips a removed-in-2026-07-28 scenario at %s',
+    async (version) => {
+      // server-initialize tests the stateful handshake, which the 2026-07-28
+      // (stateless) lifecycle removed; the draft comes after it.
+      const result = await runServerConformanceTest(
+        UNREACHABLE_URL,
+        'server-initialize',
+        undefined,
+        version
+      );
+      expect(result.skipped).toBe(true);
+      expect(result.checks).toEqual([]);
+    }
+  );
 
   test('does not skip an applicable scenario/spec-version combination', async () => {
-    // server-stateless at draft is applicable; the runner proceeds to run it
-    // (against an unreachable server, so checks exist and report failures —
-    // the point is only that it was not skipped).
+    // server-stateless at the draft is applicable (introduced 2026-07-28, not
+    // removed); the runner proceeds to run it (against an unreachable server,
+    // so checks exist and report failures — the point is only that it was
+    // not skipped).
     const result = await runServerConformanceTest(
       UNREACHABLE_URL,
       'server-stateless',
       undefined,
-      DRAFT_PROTOCOL_VERSION
+      DRAFT_SPEC_VERSION
     );
     expect(result.skipped).toBeUndefined();
     expect(result.checks.length).toBeGreaterThan(0);
   }, 60000);
 });
 
-describe('runServerConformanceTest wire selection for draft-only scenarios', () => {
+describe('runServerConformanceTest wire selection for stateless-era scenarios', () => {
   // Regression: the CLI used to silently emit the legacy initialize+session
-  // wire when running a draft-only scenario, producing requests with no
+  // wire when running a 2026-07-28-only scenario, producing requests with no
   // `_meta.io.modelcontextprotocol/*` envelope (and `initialize` rather
   // than `server/discover`). Deriving wire from spec version on the
-  // RunContext makes the CLI emit SEP-2575 stateless traffic on draft.
+  // RunContext makes the CLI emit SEP-2575 stateless traffic there.
   let server: http.Server;
   let url: string;
   const captured: Array<{ method?: string; params?: Record<string, unknown> }> =
@@ -126,8 +130,9 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
     const first = captured[0];
     const meta = first.params?._meta as Record<string, unknown> | undefined;
     expect(meta).toBeDefined();
+    // Extension scenarios run at the latest release when no version is given.
     expect(meta?.['io.modelcontextprotocol/protocolVersion']).toBe(
-      DRAFT_PROTOCOL_VERSION
+      LATEST_SPEC_VERSION
     );
     expect(meta?.['io.modelcontextprotocol/clientInfo']).toBeDefined();
     expect(meta?.['io.modelcontextprotocol/clientCapabilities']).toBeDefined();
