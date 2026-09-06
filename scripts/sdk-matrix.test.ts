@@ -353,7 +353,7 @@ describe('renderMarkdown', () => {
     // One combined SDK x check table per mode: ids are unioned across the
     // three scenarios, a repeated id collapses to one row, worst status wins.
     expect(md).toContain('<summary>client checks: 5 (3 scenarios)</summary>');
-    expect(md.match(/\| Check \|/g)?.length).toBe(1);
+    expect(md.match(/^\| Check \|/gm)?.length).toBe(1);
     const rows = md
       .split('\n')
       .filter((l) => l.startsWith('| `token-request` |'));
