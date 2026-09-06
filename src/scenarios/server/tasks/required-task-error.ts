@@ -1,3 +1,4 @@
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * SEP-2663 Tasks Extension — required-task error conformance.
  *

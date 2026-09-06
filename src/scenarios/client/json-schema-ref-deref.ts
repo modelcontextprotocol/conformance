@@ -9,6 +9,7 @@ import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
 
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * Scenario: JSON Schema network $ref dereferencing (SEP-2106)
  *

@@ -79,6 +79,7 @@ const CHECK_DEFS: Record<
   }
 };
 
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * Scenario: DPoP sender-constrained tokens — MCP client (SEP-1932 / RFC 9449).
  *

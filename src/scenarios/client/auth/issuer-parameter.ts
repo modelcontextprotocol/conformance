@@ -14,6 +14,7 @@ const metadataSpecRefs = [
   SpecReferences.MCP_AUTH_DISCOVERY
 ];
 
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * Reason-bound verdict for the RFC 9207 `iss` rejection checks (issue #467).
  *

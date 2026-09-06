@@ -150,6 +150,7 @@ export async function loadExpectedFailures(
   return result;
 }
 
+// eslint-disable-next-line local/comment-length -- pre-existing baseline evaluation contract
 /**
  * Evaluate scenario results against an expected-failures baseline.
  *
