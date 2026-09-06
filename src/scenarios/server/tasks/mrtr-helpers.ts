@@ -38,7 +38,14 @@ export function failureCheck(
   };
 }
 
-/** Build a SKIPPED check (preserves id stability so Ctrl+F still finds it). */
+/**
+ * Build a SKIPPED check (preserves id stability so Ctrl+F still finds it).
+ *
+ * Use ONLY for checks that are legitimately not applicable (e.g. a harness
+ * gap the suite itself tracks). A check whose prerequisite is missing on the
+ * server under test must use untestableCheck from src/scenarios/untestable.ts
+ * instead — SKIPPED reads as green in every consumer (issue #248).
+ */
 export function skipCheck(
   id: string,
   name: string,

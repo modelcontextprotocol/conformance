@@ -11,17 +11,17 @@ requirements:
   - check: sep-2663-client-rejects-task-result-on-unsupported
     text: 'A client that receives CreateTaskResult in response to an unsupported request type MUST interpret this as an invalid response to the request.'
 
-  # The spec sentence "MUST return an error with the code -32003 ...,
+  # The spec sentence "MUST return an error with the code -32021 ...,
   # indicating the required extension in the error response" couples two
   # observable requirements: the JSON-RPC error code, and the data-shape
   # that names the missing extension. Split into two YAML entries so each
   # is verifiable independently — Check 1 fires on code mismatch, Check 2
   # fires on payload shape.
-  - check: sep-2663-server-returns-32003-when-required
-    text: 'If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32003 (Missing Required Client Capability).'
+  - check: sep-2663-server-returns-missing-capability-when-required
+    text: 'If a server is unable to service a request to a client that does not declare this extension capability without returning CreateTaskResult, the server MUST return an error with the code -32021 (Missing Required Client Capability).'
 
-  - check: sep-2663-server-returns-32003-data-shape
-    text: 'The -32003 error response MUST indicate the required extension in the error response payload (the spec example shows a `data.requiredCapabilities.extensions["io.modelcontextprotocol/tasks"]` shape).'
+  - check: sep-2663-server-returns-missing-capability-data-shape
+    text: 'The -32021 error response MUST indicate the required extension in the error response payload (the spec example shows a `data.requiredCapabilities.extensions["io.modelcontextprotocol/tasks"]` shape).'
 
   # ── Polymorphic Results ───────────────────────────────────────────────────
   - check: sep-2663-result-type-task-on-create
@@ -93,7 +93,7 @@ requirements:
     text: 'The resultType field MUST be set to "complete" on CancelTaskResult as it is the standard result shape for the tasks/cancel request.'
 
   # ── Task Status Notifications ─────────────────────────────────────────────
-  - check: sep-2663-subscribe-32003-non-declaring
+  - check: sep-2663-subscribe-missing-capability-non-declaring
     text: 'If a client requests task status notifications but does not declare the io.modelcontextprotocol/tasks extension capability, the server MUST return a JSON-RPC error specifying the missing capabilities:'
 
   - check: sep-2663-no-progress-or-message-on-task-stream
@@ -124,7 +124,7 @@ requirements:
   - check: sep-2663-tasks-update-cancel-invalid-task-id-32602
     text: 'Servers SHOULD return this error for tasks/update and tasks/cancel.'
 
-  - check: sep-2663-tasks-methods-non-declaring-32003
+  - check: sep-2663-tasks-methods-non-declaring
     text: 'Servers MUST return this error for non-declaring clients issuing tasks/get, tasks/update, and tasks/cancel requests.'
 
   # ── Task Execution Errors ─────────────────────────────────────────────────

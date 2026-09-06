@@ -22,6 +22,7 @@ import {
   mockListRootsResponse,
   MRTR_SPEC_REFERENCES
 } from './input-required-result-helpers';
+import { notTestable } from '../untestable';
 
 // ─── A1: Basic Elicitation ────────────────────────────────────────────────────
 
@@ -1424,14 +1425,28 @@ Only include inputRequests for methods the client supports. For example, if the 
 
       const result = resp.result;
       const errors: string[] = [];
+      let untestable = false;
 
       if (resp.error) {
         errors.push(`JSON-RPC error: ${resp.error.message}`);
       } else if (!result) {
         errors.push('No result in response');
-      } else if (isInputRequiredResult(result) && result.inputRequests) {
+      } else if (isInputRequiredResult(result)) {
+        const inputRequests = Object.entries(result.inputRequests ?? {});
+        // `inputRequests` is optional (a result carrying only `requestState` is
+        // still valid), so naming none does not violate the MUST NOT this check
+        // scores — but it leaves nothing to scan, and the loop below would then
+        // record no error at all, scoring SUCCESS without having verified it.
+        if (inputRequests.length === 0) {
+          untestable = true;
+          errors.push(
+            notTestable(
+              'server returned no inputRequests, so the capability restriction was never exercised'
+            )
+          );
+        }
         // Check that no elicitation requests are included (client didn't declare it)
-        for (const [key, req] of Object.entries(result.inputRequests)) {
+        for (const [key, req] of inputRequests) {
           if (req.method === 'elicitation/create') {
             errors.push(
               `Server included elicitation/create inputRequest (key: "${key}") ` +
@@ -1454,7 +1469,7 @@ Only include inputRequests for methods the client supports. For example, if the 
         timestamp: new Date().toISOString(),
         errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
         specReferences: MRTR_SPEC_REFERENCES,
-        details: { result }
+        details: untestable ? { result, untestable: true } : { result }
       });
     } catch (error) {
       checks.push({
@@ -1567,14 +1582,21 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
     const checks: ConformanceCheck[] = [];
 
     try {
-      // Send inputResponses with invalid structure (number instead of object for the response)
-      const resp = await sendRpc(serverUrl, 'tools/call', {
-        name: 'test_input_required_result_elicitation',
-        arguments: {},
-        inputResponses: {
-          user_name: 12345 as unknown as Record<string, unknown>
-        }
-      });
+      // Send inputResponses with invalid structure (number instead of object
+      // for the response). Deliberately schema-invalid, so wire-schema
+      // validation is skipped for this call.
+      const resp = await sendRpc(
+        serverUrl,
+        'tools/call',
+        {
+          name: 'test_input_required_result_elicitation',
+          arguments: {},
+          inputResponses: {
+            user_name: 12345 as unknown as Record<string, unknown>
+          }
+        },
+        { skipValidation: true }
+      );
 
       const validateErrors: string[] = [];
 
@@ -1599,12 +1621,18 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
         details: { result: resp.result, error: resp.error }
       });
 
-      // Also test: send completely malformed inputResponses (null)
-      const resp2 = await sendRpc(serverUrl, 'tools/call', {
-        name: 'test_input_required_result_elicitation',
-        arguments: {},
-        inputResponses: null as unknown as Record<string, unknown>
-      });
+      // Also test: send completely malformed inputResponses (null).
+      // Deliberately schema-invalid; skip wire-schema validation.
+      const resp2 = await sendRpc(
+        serverUrl,
+        'tools/call',
+        {
+          name: 'test_input_required_result_elicitation',
+          arguments: {},
+          inputResponses: null as unknown as Record<string, unknown>
+        },
+        { skipValidation: true }
+      );
 
       const protocolErrors: string[] = [];
 

@@ -1,6 +1,6 @@
 import { getScenario } from '../../../index';
 import { testScenarioContext } from '../../../../mock-server/testing';
-import type { SpecVersion } from '../../../../types';
+import type { SpecVersion, ConformanceCheck } from '../../../../types';
 import { spawn } from 'child_process';
 
 const CLIENT_TIMEOUT = 10000; // 10 seconds for client to complete
@@ -87,6 +87,13 @@ export class InlineClientRunner implements ClientRunner {
 
 export interface RunClientOptions {
   expectedFailureSlugs?: string[];
+  /**
+   * Slugs that MUST be present and SUCCESS. Use alongside expectedFailureSlugs
+   * to pin that a specific check is *not* collateral damage of the injected
+   * defect (e.g. a client that skips the nonce retry still passes
+   * token-request-proof because it did present a valid proof).
+   */
+  expectedSuccessSlugs?: string[];
   allowClientError?: boolean;
   /**
    * Spec version to run the scenario at. Defaults to the latest dated spec
@@ -100,9 +107,10 @@ export async function runClientAgainstScenario(
   clientRunner: ClientRunner,
   scenarioName: string,
   options: RunClientOptions = {}
-): Promise<void> {
+): Promise<ConformanceCheck[]> {
   const {
     expectedFailureSlugs = [],
+    expectedSuccessSlugs = [],
     allowClientError = false,
     specVersion
   } = options;
@@ -118,6 +126,10 @@ export async function runClientAgainstScenario(
   const ctx = testScenarioContext(specVersion);
   const urls = await scenario.start(ctx);
   const serverUrl = urls.serverUrl;
+
+  // The emitted checks, returned to the caller for assertions the standard
+  // pass/fail options don't cover (e.g. counting occurrences of a shared check).
+  let collected: ConformanceCheck[] = [];
 
   try {
     // Set environment variables for inline clients
@@ -143,6 +155,7 @@ export async function runClientAgainstScenario(
 
     // Get checks from the scenario
     const checks = scenario.getChecks();
+    collected = checks;
 
     // Verify checks were returned
     if (checks.length === 0) {
@@ -151,6 +164,15 @@ export async function runClientAgainstScenario(
 
     // Filter out INFO checks
     const nonInfoChecks = checks.filter((c) => c.status !== 'INFO');
+
+    // Slugs that must be present and SUCCESS (independent of the failure set).
+    for (const slug of expectedSuccessSlugs) {
+      const check = checks.find((c) => c.id === slug);
+      if (!check) {
+        throw new Error(`Expected-success check ${slug} not found`);
+      }
+      expect(check.status).toBe('SUCCESS');
+    }
 
     // Check for expected failures
     if (expectedFailureSlugs.length > 0) {
@@ -198,4 +220,6 @@ export async function runClientAgainstScenario(
     // Stop the scenario server
     await scenario.stop();
   }
+
+  return collected;
 }

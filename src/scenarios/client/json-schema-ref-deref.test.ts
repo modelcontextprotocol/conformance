@@ -8,6 +8,8 @@ import {
 } from './auth/test_helpers/testClient';
 import { JsonSchemaRefDerefScenario } from './json-schema-ref-deref';
 import { getScenario } from '../index';
+import { sendStatelessRequest } from '../../connection/stateless';
+import { DRAFT_PROTOCOL_VERSION } from '../../types';
 
 /**
  * SEP-2106: implementations MUST NOT automatically dereference $ref values
@@ -71,6 +73,36 @@ async function dereferencingClient(serverUrl: string): Promise<void> {
   await transport.close();
 }
 
+/**
+ * SEP-2575 stateless client: probe `server/discover` first, then honor the
+ * negotiated protocol version on subsequent requests. Regression client for
+ * issue #397 — the scenario's hand-rolled `server/discover` advertises the
+ * draft version, so the pinned SDK transport must not reject that version's
+ * MCP-Protocol-Version header on the follow-up tools/list.
+ */
+async function statelessDraftClient(serverUrl: string): Promise<void> {
+  const discover = await sendStatelessRequest(serverUrl, 'server/discover');
+  const supportedVersions = (
+    discover.body?.result as { supportedVersions?: string[] } | undefined
+  )?.supportedVersions;
+  if (!supportedVersions?.includes(DRAFT_PROTOCOL_VERSION)) {
+    throw new Error(
+      `server/discover did not advertise ${DRAFT_PROTOCOL_VERSION}: ` +
+        JSON.stringify(supportedVersions)
+    );
+  }
+
+  // sendStatelessRequest sends MCP-Protocol-Version: <draft> by default —
+  // exactly what a client that honors the negotiated version would do.
+  const tools = await sendStatelessRequest(serverUrl, 'tools/list');
+  if (tools.status !== 200 || tools.body?.result === undefined) {
+    throw new Error(
+      `tools/list with the negotiated draft version failed: HTTP ${tools.status} ` +
+        JSON.stringify(tools.body ?? tools.text)
+    );
+  }
+}
+
 describe('json-schema-ref-no-deref (SEP-2106)', () => {
   test('scenario is registered', () => {
     expect(getScenario('json-schema-ref-no-deref')).toBeDefined();
@@ -79,6 +111,13 @@ describe('json-schema-ref-no-deref (SEP-2106)', () => {
   test('compliant client passes: network $ref is not fetched', async () => {
     await runClientAgainstScenario(
       new InlineClientRunner(compliantClient),
+      'json-schema-ref-no-deref'
+    );
+  });
+
+  test('stateless draft client passes: negotiated version reaches tools/list (issue #397)', async () => {
+    await runClientAgainstScenario(
+      new InlineClientRunner(statelessDraftClient),
       'json-schema-ref-no-deref'
     );
   });

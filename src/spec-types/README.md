@@ -1,13 +1,18 @@
 # spec-types
 
-Vendored copies of `schema/{version}/schema.ts` from the
+Vendored copies of `schema/{version}/schema.ts` and
+`schema/{version}/schema.json` from the
 [modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol)
 spec repository.
 
-These are the canonical TypeScript types for each protocol version. The
-conformance suite imports types from here rather than from
+The `.ts` files are the canonical TypeScript types for each protocol version.
+The conformance suite imports types from here rather than from
 `@modelcontextprotocol/sdk` so that it can test draft spec versions before any
 SDK has implemented them.
+
+The `.schema.json` files are the matching JSON Schemas; `src/validation`
+compiles them (per version) to validate every JSON-RPC message the harness
+sends or receives at runtime.
 
 **Do not edit these files by hand.** To refresh:
 

@@ -12,6 +12,7 @@
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
+import { MISSING_REQUIRED_CLIENT_CAPABILITY } from '../../../spec-types/draft';
 import { SEP_2575_REF, SEP_2663_REF } from './mrtr-helpers';
 import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
@@ -117,16 +118,16 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
       });
     }
 
-    // Check 2: tasks/* methods rejected with -32003 (Missing Required
-    // Client Capability) when the client did not negotiate the tasks
-    // extension. Follows the SEP-2575 §"Missing Required Capabilities"
-    // pattern — same code path as the required-task-error scenario and
-    // (when implemented) subscriptions/listen for tasks.
+    // Check 2: tasks/* methods rejected with the
+    // MissingRequiredClientCapability error when the client did not
+    // negotiate the tasks extension. Follows the SEP-2575 §"Missing
+    // Required Capabilities" pattern — same code path as the
+    // required-task-error scenario and (when implemented)
+    // subscriptions/listen for tasks.
     {
-      const id = 'sep-2663-tasks-methods-non-declaring-32003';
+      const id = 'sep-2663-tasks-methods-non-declaring';
       const name = 'TasksMethodsGatedWithoutExtension';
-      const description =
-        'tasks/get, tasks/update, tasks/cancel return -32003 when the client did not negotiate the tasks extension (SEP-2575 Missing Required Capabilities)';
+      const description = `tasks/get, tasks/update, tasks/cancel return ${MISSING_REQUIRED_CLIENT_CAPABILITY} when the client did not negotiate the tasks extension (SEP-2575 Missing Required Capabilities)`;
       const cases: Array<{ method: string; params: any }> = [
         { method: 'tasks/get', params: { taskId: 'gate-test' } },
         {
@@ -141,9 +142,9 @@ export class TasksCapabilityNegotiationScenario implements ClientScenario {
           await withoutExt.request(tc.method, tc.params);
           errs.push(`${tc.method} MUST reject (it returned a result)`);
         } catch (e: any) {
-          if (e.code !== -32003) {
+          if (e.code !== MISSING_REQUIRED_CLIENT_CAPABILITY) {
             errs.push(
-              `${tc.method} MUST return -32003; got ${e.code ?? '<missing>'}`
+              `${tc.method} MUST return ${MISSING_REQUIRED_CLIENT_CAPABILITY}; got ${e.code ?? '<missing>'}`
             );
           }
         }

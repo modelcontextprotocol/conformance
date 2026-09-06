@@ -7,13 +7,13 @@
  * to route or shape JSON-RPC traffic without parsing the body. The
  * server MUST reject requests where the routing headers disagree with
  * (or are missing for a name-carrying body) the JSON-RPC envelope, with
- * HTTP 400 + JSON-RPC `-32001 HeaderMismatch`.
+ * HTTP 400 + JSON-RPC `-32020 HeaderMismatch`.
  *
  * This scenario exercises the validation on the tasks surface
  * specifically — the upstream `http-header-validation` scenario covers
  * the general case; here we verify mcpkit's tasks/* methods route
  * through the same validator (matched headers → success; mismatched
- * header → -32001).
+ * header → -32020).
  *
  * Required server fixtures:
  *   - greet         — sync-only, returns "Hello, {name}!"
@@ -24,11 +24,12 @@ import { McpError } from '@modelcontextprotocol/sdk/types.js';
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
+import { HEADER_MISMATCH } from '../../../spec-types/draft';
 import { SEP_2243_REF, SEP_2663_REF } from './mrtr-helpers';
 import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';
 
-const HEADER_MISMATCH_ERROR_CODE = -32001;
+const HEADER_MISMATCH_ERROR_CODE = HEADER_MISMATCH;
 
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
@@ -53,7 +54,7 @@ into the HTTP layer for routing intermediaries:
 Per SEP-2243 §"Server Behavior", servers that process the request body
 MUST validate that header values match the body. Per its "Validation
 Failure Conditions", both missing required headers and mismatched
-values trigger rejection with JSON-RPC error code \`-32001\`
+values trigger rejection with JSON-RPC error code \`-32020\`
 (HeaderMismatch) and HTTP 400.
 
 **Required server fixtures (\`tools/list\` MUST include all):**
@@ -190,8 +191,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
     {
       const id = 'tasks-headers-reject-mismatched-method';
       const name = 'TasksHeadersRejectMismatchedMethod';
-      const description =
-        'When Mcp-Method header disagrees with body on a tools/call, server MUST reject with -32001 HeaderMismatch (SEP-2243 §Server Validation)';
+      const description = `When Mcp-Method header disagrees with body on a tools/call, server MUST reject with ${HEADER_MISMATCH_ERROR_CODE} HeaderMismatch (SEP-2243 §Server Validation)`;
       try {
         await conn.request(
           'tools/call',
@@ -204,8 +204,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
           description,
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          errorMessage:
-            'tools/call with Mcp-Method: tasks/get returned a successful response; SEP-2243 requires -32001 rejection',
+          errorMessage: `tools/call with Mcp-Method: tasks/get returned a successful response; SEP-2243 requires ${HEADER_MISMATCH_ERROR_CODE} rejection`,
           specReferences: [SEP_2243_REF]
         });
       } catch (error) {
@@ -227,7 +226,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
             description,
             status: 'FAILURE',
             timestamp: new Date().toISOString(),
-            errorMessage: `expected -32001 HeaderMismatch; got ${code ?? errMsg(error)}`,
+            errorMessage: `expected ${HEADER_MISMATCH_ERROR_CODE} HeaderMismatch; got ${code ?? errMsg(error)}`,
             specReferences: [SEP_2243_REF]
           });
         }
@@ -244,8 +243,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
     {
       const id = 'sep-2663-server-rejects-mismatched-mcp-name-on-tasks-get';
       const name = 'Sep2663ServerRejectsMismatchedMcpNameOnTasksGet';
-      const description =
-        'When Mcp-Name header disagrees with params.taskId on tasks/get, server MUST reject with -32001 HeaderMismatch';
+      const description = `When Mcp-Name header disagrees with params.taskId on tasks/get, server MUST reject with ${HEADER_MISMATCH_ERROR_CODE} HeaderMismatch`;
       if (!routingTaskId) {
         checks.push({
           id,
@@ -270,8 +268,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
             description,
             status: 'FAILURE',
             timestamp: new Date().toISOString(),
-            errorMessage:
-              'tasks/get with mismatched Mcp-Name returned a result; SEP-2243 requires -32001 rejection',
+            errorMessage: `tasks/get with mismatched Mcp-Name returned a result; SEP-2243 requires ${HEADER_MISMATCH_ERROR_CODE} rejection`,
             specReferences: [SEP_2243_REF, SEP_2663_REF]
           });
         } catch (error) {
@@ -293,7 +290,7 @@ values trigger rejection with JSON-RPC error code \`-32001\`
               description,
               status: 'FAILURE',
               timestamp: new Date().toISOString(),
-              errorMessage: `expected -32001 HeaderMismatch; got ${code ?? errMsg(error)}`,
+              errorMessage: `expected ${HEADER_MISMATCH_ERROR_CODE} HeaderMismatch; got ${code ?? errMsg(error)}`,
               specReferences: [SEP_2243_REF, SEP_2663_REF]
             });
           }

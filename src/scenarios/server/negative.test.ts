@@ -4,11 +4,13 @@ import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
+import { ToolsListScenario } from './tools';
 import {
   JsonSchema2020_12Scenario,
   sep2106KeywordCheckStatus
 } from './json-schema-2020-12';
 import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
+import { takeWireViolations } from '../../validation/wire-schema';
 
 function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
@@ -158,6 +160,10 @@ describe('Server scenario negative tests', () => {
         expect(check).toBeDefined();
         expect(check?.status).toBe('FAILURE');
       }
+
+      // This fixture's whole point is omitting the caching hints the draft
+      // schema requires, so its responses are wire-schema-invalid by design.
+      expect(takeWireViolations().violations.length).toBeGreaterThan(0);
     }, 15000);
   });
 
@@ -208,6 +214,78 @@ describe('Server scenario negative tests', () => {
         (c) => c.id === 'sep-2106-anchor-keyword-preserved'
       );
       expect(anchor?.status).toBe('SKIPPED');
+    }, 10000);
+  });
+
+  describe('tools-list-deterministic-order', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3008;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/tools-list-rotated-order.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits WARNING for deterministic-order while tools-list still passes against a server that rotates its tool list', async () => {
+      const scenario = new ToolsListScenario();
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+      );
+
+      const list = checks.find((c) => c.id === 'tools-list');
+      expect(list?.status).toBe('SUCCESS');
+
+      const order = checks.find(
+        (c) => c.id === 'tools-list-deterministic-order'
+      );
+      expect(order?.status).toBe('WARNING');
+      expect(order?.errorMessage).toMatch(/different order/);
+      expect(order?.details).toMatchObject({ toolCount: 4, probes: 3 });
+      expect(order?.details?.untestable).toBeUndefined();
+    }, 10000);
+  });
+
+  describe('tools-name-format', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3009;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/invalid-tool-names.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits WARNING for tools-name-format against a server advertising invalid tool names', async () => {
+      const scenario = new ToolsListScenario();
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`, '2025-11-25')
+      );
+
+      const formatCheck = checks.find((c) => c.id === 'tools-name-format');
+      expect(formatCheck?.status).toBe('WARNING');
+      expect(formatCheck?.errorMessage).toContain('bad tool name');
+      expect(formatCheck?.details).toMatchObject({
+        results: expect.objectContaining({
+          'bad tool name': expect.stringMatching(/invalid:/)
+        })
+      });
     }, 10000);
   });
 

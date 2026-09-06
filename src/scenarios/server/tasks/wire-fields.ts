@@ -13,8 +13,9 @@
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
 import { SEP_2663_REF } from './mrtr-helpers';
-import { errMsg, failureCheck, skipCheck } from './mrtr-helpers';
+import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID, waitForTerminal } from './helpers';
+import { untestableCheck } from '../../untestable';
 
 export class TasksWireFieldsScenario implements ClientScenario {
   name = 'tasks-wire-fields';
@@ -155,7 +156,13 @@ export class TasksWireFieldsScenario implements ClientScenario {
         'Task remains accessible via tasks/get for the duration of its ttlMs';
       if (!createdTaskId) {
         checks.push(
-          skipCheck(id, name, description, 'no task created', [SEP_2663_REF])
+          untestableCheck(
+            id,
+            name,
+            description,
+            'no task was created by the preceding step, so this check could not be exercised',
+            [SEP_2663_REF]
+          )
         );
       } else {
         try {
@@ -204,7 +211,13 @@ export class TasksWireFieldsScenario implements ClientScenario {
         const taskId = created.taskId;
         if (!taskId) {
           checks.push(
-            skipCheck(id, name, description, 'no task created', [SEP_2663_REF])
+            untestableCheck(
+              id,
+              name,
+              description,
+              'no task was created by the preceding step, so this check could not be exercised',
+              [SEP_2663_REF]
+            )
           );
         } else {
           const terminal = await waitForTerminal(conn, taskId);

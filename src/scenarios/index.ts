@@ -18,6 +18,7 @@ import { MRTRClientScenario } from './client/mrtr-client';
 
 // Import all new server test scenarios
 import { ServerInitializeScenario } from './server/lifecycle';
+import { SessionLifecycleScenario } from './server/session-lifecycle';
 import { ServerStatelessScenario } from './server/stateless';
 
 import {
@@ -110,6 +111,7 @@ import {
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
+import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
 import {
@@ -117,6 +119,7 @@ import {
   HttpInvalidToolHeadersScenario
 } from './client/http-custom-headers';
 import { JsonSchemaRefDerefScenario } from './client/json-schema-ref-deref';
+import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020-12-preservation';
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -155,6 +158,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 const allClientScenariosList: ClientScenario[] = [
   // Lifecycle scenarios
   new ServerInitializeScenario(),
+  new SessionLifecycleScenario(),
   new ServerStatelessScenario(),
 
   // Utilities scenarios
@@ -274,7 +278,8 @@ export const clientScenarios = new Map<string, ClientScenario>(
 const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizationServer[] =
   [
     // Authorization server scenarios
-    new AuthorizationServerMetadataEndpointScenario()
+    new AuthorizationServerMetadataEndpointScenario(),
+    new AuthorizationCodeGrantScenario()
   ];
 
 // Client scenarios map for authorization server - built from list
@@ -309,7 +314,10 @@ const scenariosList: Scenario[] = [
   new HttpInvalidToolHeadersScenario(),
 
   // JSON Schema network $ref dereferencing (SEP-2106)
-  new JsonSchemaRefDerefScenario()
+  new JsonSchemaRefDerefScenario(),
+
+  // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
+  new JsonSchema2020_12PreservationScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
@@ -426,7 +434,7 @@ function versionIndex(
 }
 
 // Off-timeline sources (extensions etc.) are never selected by --spec-version.
-function matchesSpecVersion(
+export function matchesSpecVersion(
   source: ScenarioSource,
   version: SpecVersion
 ): boolean {

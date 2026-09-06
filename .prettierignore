@@ -4,10 +4,11 @@
 # output (and the refresh workflow's `git diff` check).
 src/seps/traceability.json
 
-# Vendored verbatim from modelcontextprotocol/schema/{version}/schema.ts via
-# `npm run sync-schema`. Keep byte-identical with upstream so the SOURCE pin
-# is meaningful and re-syncing produces a clean diff.
+# Vendored verbatim from modelcontextprotocol/schema/{version}/schema.ts and
+# schema.json via `npm run sync-schema`. Keep byte-identical with upstream so
+# the SOURCE pin is meaningful and re-syncing produces a clean diff.
 src/spec-types/*.ts
+src/spec-types/*.schema.json
 
 # Local tooling workspaces (not part of the repo).
 .claude/
