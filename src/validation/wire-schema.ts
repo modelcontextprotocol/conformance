@@ -15,6 +15,7 @@ import schema2025_03_26 from '../spec-types/2025-03-26.schema.json';
 import schema2025_06_18 from '../spec-types/2025-06-18.schema.json';
 import schema2025_11_25 from '../spec-types/2025-11-25.schema.json';
 import schemaDraft from '../spec-types/draft.schema.json';
+import schemaExtTasks from '../spec-types/ext-tasks.schema.json';
 
 export type WireOrigin = 'harness' | 'implementation';
 
@@ -169,6 +170,31 @@ function compileSpec(specVersion: SpecVersion): CompiledSpec {
   return compiled;
 }
 
+// The tasks extension (SEP-2663) has a schema of its own, 2020-12 like the
+// draft's; a task-augmented result is validated against it where the core
+// schema no longer carries a CreateTaskResult. One instance for every
+// version, compiled on first use.
+const EXT_TASKS_SCHEMA_ID = 'mcp://ext-tasks/draft/schema.json';
+let extTasksAjv: Ajv2020 | undefined;
+const extTasksValidators = new Map<string, ValidateFunction>();
+
+function extTasksValidatorFor(defName: string): ValidateFunction {
+  let v = extTasksValidators.get(defName);
+  if (!v) {
+    if (!extTasksAjv) {
+      extTasksAjv = new Ajv2020({ strict: false, allErrors: true });
+      addFormats(extTasksAjv);
+      extTasksAjv.addFormat('byte', true);
+      extTasksAjv.addSchema({ ...schemaExtTasks, $id: EXT_TASKS_SCHEMA_ID });
+    }
+    v = extTasksAjv.compile({
+      $ref: `${EXT_TASKS_SCHEMA_ID}#/$defs/${defName}`
+    });
+    extTasksValidators.set(defName, v);
+  }
+  return v;
+}
+
 /** Dispatch maps extracted from a version's schema (method → request/notification def,
  * `error.code` const → error def). Exposed so a unit test can pin them: if a schema sync
  * restructures what the extraction walks, validation silently degrades to envelope-only. */
@@ -262,14 +288,40 @@ export function wireSchemaErrors(
   if (msg.result !== undefined) {
     // SEP-2322 (MRTR): any request may be answered with an InputRequiredResult
     // instead of its method's result type; discriminate on resultType.
+    const resultType = (msg.result as Record<string, unknown> | null)
+      ?.resultType;
     const inputRequired =
-      (msg.result as Record<string, unknown> | null)?.resultType ===
-        'input_required' && 'InputRequiredResult' in spec.defs;
+      resultType === 'input_required' && 'InputRequiredResult' in spec.defs;
+    // SEP-2663 (tasks): likewise a CreateTaskResult, from the core schema
+    // where a version still carries it (2025-11-25, nested under `task`
+    // and without a discriminator) and from the tasks extension schema
+    // once it moved there (2026-07-28, flat, `resultType: "task"`).
+    const result = msg.result as Record<string, unknown> | null;
+    const task =
+      resultType === 'task' ||
+      ('CreateTaskResult' in spec.defs &&
+        typeof result?.task === 'object' &&
+        result?.task !== null);
+    if (task && !('CreateTaskResult' in spec.defs)) {
+      const v = extTasksValidatorFor('CreateTaskResult');
+      const typed = v(msg.result)
+        ? []
+        : formatErrors('CreateTaskResult', v.errors).map(
+            (e) => `${e} (result of '${requestMethod}', tasks extension)`
+          );
+      if (typed.length > 0) return typed;
+      return validateAgainst(
+        firstDef('JSONRPCResultResponse', 'JSONRPCResponse'),
+        message
+      );
+    }
     const resultDefName = inputRequired
       ? 'InputRequiredResult'
-      : requestMethod !== undefined
-        ? spec.resultDefs.get(requestMethod)
-        : undefined;
+      : task
+        ? 'CreateTaskResult'
+        : requestMethod !== undefined
+          ? spec.resultDefs.get(requestMethod)
+          : undefined;
     if (resultDefName) {
       const typed = validateAgainst(resultDefName, msg.result).map(
         (e) => `${e} (result of '${requestMethod}')`
