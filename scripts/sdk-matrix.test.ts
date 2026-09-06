@@ -54,6 +54,11 @@ beforeAll(() => {
     check('token-request', 'SUCCESS'),
     check('token-request', 'SUCCESS')
   ]);
+  // Same check id with a different outcome in a sibling scenario, to
+  // exercise the "differs by scenario" breakout of the combined check table.
+  writeChecks('ts/client/auth/metadata-var2-2026-09-06T11-00-02-000Z', [
+    check('prm-discovery', 'FAILURE', { errorMessage: 'var2 only' })
+  ]);
   writeChecks('ts/client/initialize-2026-09-06T11-00-01-000Z', [
     check('mcp-client-initialization', 'SUCCESS'),
     check('server-info', 'INFO')
@@ -202,6 +207,7 @@ describe('collectModeResults', () => {
     const r = collectModeResults(path.join(tmp, 'ts/client'), 'client');
     expect(Object.keys(r).sort()).toEqual([
       'auth/metadata-default',
+      'auth/metadata-var2',
       'initialize'
     ]);
     expect(r['auth/metadata-default'].checks.map((c: any) => c.status)).toEqual(
@@ -324,9 +330,11 @@ describe('renderMarkdown', () => {
       matrixFrom({ 'typescript-sdk': ts, 'go-sdk': go, 'rust-sdk': rust })
     );
 
-    // Overview rows
-    // INFO is not scored: 4 SUCCESS in metadata-default + 1 in initialize.
-    expect(md).toContain('| `typescript-sdk` | `aaaaaaa` | ✅ 5/5 checks |');
+    // Overview rows. INFO is not scored: 4 SUCCESS in metadata-default + 1 in
+    // initialize, 1 FAILURE in metadata-var2.
+    expect(md).toContain(
+      '| `typescript-sdk` | `aaaaaaa` | ❌ 1 failed, 0 warnings / 6 checks |'
+    );
     expect(md).toMatch(
       /\| `go-sdk` \| `bbbbbbb` \| ❌ 1 failed, 1 warnings \/ 2 checks \| go 1\.26\.5 \|/
     );
@@ -339,12 +347,24 @@ describe('renderMarkdown', () => {
     expect(md).toMatch(
       /\| `auth\/metadata-default` \| ✅ 4\/4 \| ❌ 1\/2 \(\+1⚠️\) \|/
     );
-    // Per-check table: repeated id collapses to one row; worst status wins.
+    expect(md).toMatch(
+      /\| `auth\/metadata-var2` \| ❌ 0\/1 \| — \| ❌ build failed/
+    );
+    // One combined SDK x check table per mode: ids are unioned across the
+    // three scenarios, a repeated id collapses to one row, worst status wins.
+    expect(md).toContain('<summary>client checks: 5 (3 scenarios)</summary>');
+    expect(md.match(/\| Check \|/g)?.length).toBe(1);
     const rows = md
       .split('\n')
       .filter((l) => l.startsWith('| `token-request` |'));
     expect(rows).toEqual(['| `token-request` | ✅ | ⚠️ | — |']);
     expect(md).toContain('| `resource-parameter-matches-prm` | ✅ | ❌ | — |');
+    expect(md).toContain('| `mcp-client-initialization` | ✅ | — | — |');
+    // A check whose outcome differs between scenarios is starred and listed.
+    expect(md).toContain('| `prm-discovery` | ❌\\* | ✅ | — |');
+    expect(md).toContain(
+      '- `typescript-sdk` `prm-discovery`: ✅ `auth/metadata-default`, ❌ `auth/metadata-var2`'
+    );
     // Failure messages are escaped data.
     expect(md).not.toContain('<script>');
     expect(md).toContain('&lt;script&gt;');

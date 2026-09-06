@@ -928,19 +928,38 @@ function scenarioCell(m, sc) {
   return `${ICON.SUCCESS} ${sum.passed}/${sum.total}`;
 }
 
-function checkIds(sdks, mode, scenario) {
+/** Check ids across the given scenarios, in first-seen order. */
+function checkIds(sdks, mode, scenarios) {
   const ids = [];
   const seen = new Set();
-  for (const s of sdks) {
-    const r = s.modes[mode]?.scenarios?.[scenario];
-    if (!r) continue;
-    for (const c of r.checks) {
-      if (seen.has(c.id)) continue;
-      seen.add(c.id);
-      ids.push(c.id);
+  for (const sc of scenarios) {
+    for (const s of sdks) {
+      const r = s.modes[mode]?.scenarios?.[sc];
+      if (!r) continue;
+      for (const c of r.checks) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        ids.push(c.id);
+      }
     }
   }
   return ids;
+}
+
+/**
+ * One SDK's statuses for a check id, per scenario that emitted it:
+ * [{ scenario, status }] with status = worst within that scenario.
+ */
+function statusesByScenario(sdk, mode, scenarios, id) {
+  const out = [];
+  for (const sc of scenarios) {
+    const r = sdk.modes[mode]?.scenarios?.[sc];
+    if (!r || r.missing) continue;
+    const statuses = r.checks.filter((c) => c.id === id).map((c) => c.status);
+    if (statuses.length)
+      out.push({ scenario: sc, status: worstStatus(statuses) });
+  }
+  return out;
 }
 
 export function renderMarkdown(matrix) {
@@ -1006,34 +1025,49 @@ export function renderMarkdown(matrix) {
     }
     lines.push('');
 
-    const totalRows = scenarioNames.reduce(
-      (acc, sc) => acc + checkIds(sdks, mode, sc).length,
-      0
-    );
-    const open = totalRows <= 60 ? ' open' : '';
-    for (const sc of scenarioNames) {
-      const ids = checkIds(sdks, mode, sc);
-      if (ids.length === 0) continue;
+    // One SDK x check table per mode. Check ids are unioned across scenarios
+    // (several scenarios usually emit the same ids, e.g. every auth/* flow);
+    // a cell is the worst status across the scenarios that emitted it, and
+    // any check whose result differs between scenarios is broken out below.
+    const ids = checkIds(sdks, mode, scenarioNames);
+    if (ids.length) {
+      const open = ids.length <= 60 ? ' open' : '';
+      const differs = [];
+      const scope =
+        scenarioNames.length === 1
+          ? cell(scenarioNames[0])
+          : `${scenarioNames.length} scenarios`;
       lines.push(
-        `<details${open}><summary>${cell(sc)}: ${ids.length} checks</summary>`,
+        `<details${open}><summary>${mode} checks: ${ids.length} (${scope})</summary>`,
         '',
         `| Check ${header}`,
         `| --- ${rule}`
       );
       for (const id of ids) {
         const cells = sdks.map((s) => {
-          const r = s.modes[mode]?.scenarios?.[sc];
-          if (!r || r.missing) return DASH;
-          const statuses = r.checks
-            .filter((c) => c.id === id)
-            .map((c) => c.status);
-          if (statuses.length === 0) return DASH;
-          const w = worstStatus(statuses);
+          const per = statusesByScenario(s, mode, scenarioNames, id);
+          if (per.length === 0) return DASH;
+          const w = worstStatus(per.map((p) => p.status));
+          if (new Set(per.map((p) => p.status)).size > 1) {
+            differs.push(
+              `- ${code(s.spec)} ${code(id)}: ${per.map((p) => `${ICON[p.status] ?? cell(p.status, 12)} ${code(p.scenario)}`).join(', ')}`
+            );
+            return `${ICON[w] ?? cell(w, 12)}\\*`;
+          }
           return ICON[w] ?? cell(w, 12);
         });
         lines.push(`| ${code(id)} | ${cells.join(' | ')} |`);
       }
-      lines.push('', '</details>', '');
+      lines.push('');
+      if (differs.length) {
+        lines.push(
+          '\\* differs by scenario (cell shows the worst):',
+          '',
+          ...differs,
+          ''
+        );
+      }
+      lines.push('</details>', '');
     }
 
     const failures = [];
