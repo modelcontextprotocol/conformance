@@ -35,11 +35,6 @@ name: SDK matrix
 #   scope, so nothing an untrusted build could influence is saved or restored).
 
 on:
-  # TEMPORARY, reverted before merge: workflow_dispatch only works once the
-  # workflow exists on the default branch, so this lets the branch exercise the
-  # workflow on Actions. Push runs use the defaults marked 'push' below.
-  push:
-    branches: [paulc/sdk-matrix]
   workflow_dispatch:
     inputs:
       sdks:
@@ -76,8 +71,8 @@ concurrency:
 
 env:
   SDKS: ${{ inputs.sdks || 'all' }}
-  MODE: ${{ inputs.mode || (github.event_name == 'push' && 'client') || 'both' }}
-  SCENARIO: ${{ inputs.scenario || (github.event_name == 'push' && 'auth/metadata-var2,auth/metadata-default') || '' }}
+  MODE: ${{ inputs.mode || 'both' }}
+  SCENARIO: ${{ inputs.scenario }}
   SUITE: ${{ inputs.suite }}
   REQUIREMENTS: ${{ inputs.requirements }}
   PR: ${{ inputs.pr }}
