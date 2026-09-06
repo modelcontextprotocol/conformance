@@ -1,24 +1,69 @@
 /**
  * Stateless mock server: 2026-x lifecycle (SEP-2575).
  *
- * No initialize handshake. Validates `_meta` (protocolVersion / clientInfo /
- * clientCapabilities) and the `MCP-Protocol-Version` header on every request,
+ * No initialize handshake. Validates `_meta` (protocolVersion /
+ * clientCapabilities — `clientInfo` is a SHOULD since spec PR #3002 and is
+ * never required) and the `MCP-Protocol-Version` header on every request,
  * serves `server/discover`, and routes other methods to the supplied handlers.
  * Implemented with raw express so it can front-run SDK support.
  */
 
 import express from 'express';
-import type { SpecVersion } from '../types';
+import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
+import { validateWireMessage } from '../validation/wire-schema';
 import { capabilitiesFromHandlers } from './stateful';
 
+/**
+ * The required per-request `_meta` keys. `io.modelcontextprotocol/clientInfo`
+ * is deliberately absent: spec PR #3002 demoted it to SHOULD, so a request
+ * without it is valid.
+ */
 const META_KEYS = [
   'io.modelcontextprotocol/protocolVersion',
-  'io.modelcontextprotocol/clientInfo',
   'io.modelcontextprotocol/clientCapabilities'
 ] as const;
+
+/**
+ * Operations whose results the 2026-07-28 revision marks cacheable: servers
+ * MUST include the caching hints `ttlMs` and `cacheScope` on these results
+ * (draft `CacheableResult`, server/utilities/caching).
+ */
+export const CACHEABLE_RESULT_METHODS: ReadonlySet<string> = new Set([
+  'server/discover',
+  'tools/list',
+  'prompts/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read'
+]);
+
+/**
+ * Fill in the result members the 2026-07-28 revision requires of servers when
+ * the handler did not set them itself: every result MUST carry `resultType`,
+ * and results of the cacheable operations MUST also carry `ttlMs` and
+ * `cacheScope`. Members the handler set are preserved (e.g. a handler may
+ * return `resultType: 'input_required'`); only absent (or undefined) ones are
+ * filled. A scenario that needs to send a deliberately non-conformant result
+ * must build its own server instead of routing through this mock.
+ */
+export function withRequiredDraftResultFields(
+  method: string,
+  result: unknown
+): unknown {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+  const stamped: Record<string, unknown> = { ...result };
+  stamped.resultType ??= 'complete';
+  if (CACHEABLE_RESULT_METHODS.has(method)) {
+    stamped.ttlMs ??= 0;
+    stamped.cacheScope ??= 'private';
+  }
+  return stamped;
+}
 
 type IncomingHeaders = Record<string, string | string[] | undefined>;
 
@@ -45,7 +90,7 @@ export type StatelessValidation =
  * `auth/helpers/createServer.ts`) uses the same validation as this module.
  *
  * `supportedVersions` is the list of wire protocolVersion strings this
- * endpoint accepts; anything else is rejected with -32004 carrying
+ * endpoint accepts; anything else is rejected with -32022 carrying
  * `{ supported, requested }` in the error data, and the list is echoed in
  * the `server/discover` result.
  */
@@ -69,7 +114,7 @@ export function validateStatelessRequest(
 
   const headerVersion = req.headers['mcp-protocol-version'];
   if (!headerVersion) {
-    return reject(400, -32001, 'Missing MCP-Protocol-Version header');
+    return reject(400, -32020, 'Missing MCP-Protocol-Version header');
   }
   const missing = META_KEYS.filter((k) => meta?.[k] === undefined);
   if (missing.length > 0) {
@@ -82,7 +127,7 @@ export function validateStatelessRequest(
   if (meta?.[META_KEYS[0]] !== headerVersion) {
     return reject(
       400,
-      -32001,
+      -32020,
       'MCP-Protocol-Version header does not match _meta.protocolVersion'
     );
   }
@@ -97,7 +142,7 @@ export function validateStatelessRequest(
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'Unsupported protocol version',
           data: {
             supported: supportedVersions,
@@ -114,11 +159,18 @@ export function validateStatelessRequest(
       body: {
         jsonrpc: '2.0',
         id,
-        result: {
+        result: withRequiredDraftResultFields(method, {
           supportedVersions,
           capabilities,
-          serverInfo: { name: 'conformance-mock-server', version: '1.0.0' }
-        }
+          // Spec PR #3002: server identity lives in the result `_meta`, not
+          // the DiscoverResult body.
+          _meta: {
+            'io.modelcontextprotocol/serverInfo': {
+              name: 'conformance-mock-server',
+              version: '1.0.0'
+            }
+          }
+        })
       }
     };
   }
@@ -139,6 +191,7 @@ export async function createServerStateless(
   const supportedVersions: readonly string[] = specVersion
     ? [specVersion]
     : STATELESS_SPEC_VERSIONS;
+  const wireVersion = specVersion ?? DRAFT_PROTOCOL_VERSION;
 
   const app = express();
   app.use(express.json());
@@ -149,16 +202,46 @@ export async function createServerStateless(
     // requests are captured too, matching the stateful impl and the
     // MockServer.recorded contract.
     const body = req.body as Record<string, unknown> | undefined;
+    // An unparsed body (wrong or missing Content-Type) is a transport fault
+    // surfaced by the HTTP-level checks, not a JSON-RPC message to validate.
+    if (body !== undefined) {
+      validateWireMessage(wireVersion, req.body, {
+        origin: 'implementation',
+        context: `client request '${body?.method ?? '(unknown)'}' to stateless mock`
+      });
+    }
     if (body?.method && body.method !== 'server/discover') {
       recorded.push(req.body as JSONRPCRequest);
     }
+    const sendJson = (status: number, payload: object, method?: string) => {
+      // JSON-RPC 2.0 mandates `id: null` on error replies when the request id
+      // could not be determined, but the spec's RequestId is string|integer;
+      // validate with a placeholder id so the mandated null is not recorded
+      // as a harness violation (mirrors connection/stateless.ts's
+      // withNullIdCarveOut).
+      const raw = payload as Record<string, unknown>;
+      const validated =
+        raw.error !== undefined && raw.id === null
+          ? { ...raw, id: 0 }
+          : payload;
+      validateWireMessage(wireVersion, validated, {
+        origin: 'harness',
+        context: `stateless mock response${method ? ` to '${method}'` : ''}`,
+        requestMethod: method
+      });
+      return res.status(status).json(payload);
+    };
     const v = validateStatelessRequest(req, capabilities, supportedVersions);
     if (v.kind !== 'route') {
-      return res.status(v.status).json(v.body);
+      return sendJson(
+        v.status,
+        v.body,
+        v.kind === 'handled' ? (body?.method as string) : undefined
+      );
     }
     const { id, method, params } = v;
     const error = (status: number, code: number, message: string) =>
-      res.status(status).json({ jsonrpc: '2.0', id, error: { code, message } });
+      sendJson(status, { jsonrpc: '2.0', id, error: { code, message } });
 
     const handler = handlers[method];
     if (!handler) {
@@ -166,7 +249,15 @@ export async function createServerStateless(
     }
     try {
       const result = await handler(params, req.body as JSONRPCRequest);
-      return res.json({ jsonrpc: '2.0', id, result });
+      return sendJson(
+        200,
+        {
+          jsonrpc: '2.0',
+          id,
+          result: withRequiredDraftResultFields(method, result)
+        },
+        method
+      );
     } catch (e) {
       return error(500, -32603, e instanceof Error ? e.message : String(e));
     }

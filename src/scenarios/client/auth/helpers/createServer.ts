@@ -12,6 +12,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
 import {
   validateStatelessRequest,
+  withRequiredDraftResultFields,
   type ScenarioContext
 } from '../../../../mock-server';
 import { isStatefulVersion } from '../../../../connection/select';
@@ -29,6 +30,8 @@ export interface ServerOptions {
   tokenVerifier?: MockTokenVerifier;
   /** Override the resource field in PRM response (for testing resource mismatch) */
   prmResourceOverride?: string;
+  /** Observe the `resource` identifier the PRM route served (RFC 8707 checks) */
+  onPrmRequest?: (requestData: { resource: string; timestamp: string }) => void;
 }
 
 export function createServer(
@@ -45,7 +48,8 @@ export function createServer(
     includePrmInWwwAuth = true,
     includeScopeInWwwAuth = false,
     tokenVerifier,
-    prmResourceOverride
+    prmResourceOverride,
+    onPrmRequest
   } = options;
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -129,6 +133,8 @@ export function createServer(
           ? getBaseUrl()
           : `${getBaseUrl()}/mcp`);
 
+      onPrmRequest?.({ resource, timestamp: new Date().toISOString() });
+
       const prmResponse: any = {
         resource,
         authorization_servers: [getAuthServerUrl()]
@@ -210,16 +216,18 @@ export function createServer(
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: {
+        result: withRequiredDraftResultFields(method, {
           tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
-        }
+        })
       });
     }
     if (method === 'tools/call') {
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: { content: [{ type: 'text', text: 'test' }] }
+        result: withRequiredDraftResultFields(method, {
+          content: [{ type: 'text', text: 'test' }]
+        })
       });
     }
     return res.status(404).json({

@@ -22,7 +22,8 @@
 
 import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCNotification } from '../spec-types/2025-11-25';
-import { JsonRpcError, type Connection } from './index';
+import { validateWireMessage } from '../validation/wire-schema';
+import { JsonRpcError, type Connection, type ConnectOptions } from './index';
 
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
@@ -58,7 +59,9 @@ let nextRequestId = 1;
 
 /**
  * The `Mcp-Name` source field per SEP-2243: `params.name` for tools/call and
- * prompts/get, `params.uri` for resources/read; absent otherwise.
+ * prompts/get, `params.uri` for resources/read, `params.taskId` for the
+ * SEP-2663 tasks methods (`tasks/get`, `tasks/update`, `tasks/cancel`).
+ * Absent otherwise.
  */
 export function mcpNameForRequest(
   method: string,
@@ -69,6 +72,13 @@ export function mcpNameForRequest(
   }
   if (method === 'resources/read') {
     return typeof params?.uri === 'string' ? params.uri : undefined;
+  }
+  if (
+    method === 'tasks/get' ||
+    method === 'tasks/update' ||
+    method === 'tasks/cancel'
+  ) {
+    return typeof params?.taskId === 'string' ? params.taskId : undefined;
   }
   return undefined;
 }
@@ -233,19 +243,47 @@ export async function sendStatelessRequest(
     headers?: Record<string, string>;
     timeoutMs?: number;
     specVersion?: SpecVersion;
+    /** Skip wire-schema validation of the *outgoing request* only (for intentionally
+     * malformed traffic). Responses stay validated, with one carve-out: JSON-RPC 2.0
+     * requires `id: null` on errors for unprocessable requests, which RequestId forbids. */
+    skipValidation?: boolean;
   } = {}
 ): Promise<StatelessResponse> {
   const id = nextRequestId++;
+  const specVersion = options.specVersion ?? DRAFT_PROTOCOL_VERSION;
   const headers = buildStandardHeaders(method, params, {
     headers: options.headers,
     specVersion: options.specVersion
   });
-  const body = JSON.stringify({
+  const request = {
     jsonrpc: '2.0',
     id,
     method,
     params: withRequestMeta(params, options.specVersion)
-  });
+  };
+  if (!options.skipValidation) {
+    validateWireMessage(specVersion, request, {
+      origin: 'harness',
+      context: `stateless request '${method}'`
+    });
+  }
+  const body = JSON.stringify(request);
+
+  // See the `skipValidation` doc above: on a skip-validated request, tolerate the
+  // JSON-RPC 2.0 `id: null` an error response must carry when the request could not be
+  // processed, by validating the rest of the shape with the request's real id substituted.
+  const withNullIdCarveOut = (event: unknown): unknown => {
+    if (
+      options.skipValidation &&
+      typeof event === 'object' &&
+      event !== null &&
+      (event as Record<string, unknown>).error !== undefined &&
+      (event as Record<string, unknown>).id === null
+    ) {
+      return { ...(event as Record<string, unknown>), id };
+    }
+    return event;
+  };
 
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -266,6 +304,13 @@ export async function sendStatelessRequest(
       // Read the stream incrementally and resolve on the matching response —
       // a server that keeps the stream open must not stall the harness.
       const { events, body: matched } = await readSseJsonRpcResponse(res, id);
+      for (const event of events) {
+        validateWireMessage(specVersion, withNullIdCarveOut(event), {
+          origin: 'implementation',
+          context: `SSE event during '${method}'`,
+          requestMethod: event === matched ? method : undefined
+        });
+      }
       return {
         status: res.status,
         headers: res.headers,
@@ -277,11 +322,19 @@ export async function sendStatelessRequest(
 
     const text = await res.text();
     try {
+      const parsed = text ? (JSON.parse(text) as JsonRpcResponse) : undefined;
+      if (parsed !== undefined) {
+        validateWireMessage(specVersion, withNullIdCarveOut(parsed), {
+          origin: 'implementation',
+          context: `response to '${method}'`,
+          requestMethod: method
+        });
+      }
       return {
         status: res.status,
         headers: res.headers,
         contentType,
-        body: text ? (JSON.parse(text) as JsonRpcResponse) : undefined
+        body: parsed
       };
     } catch {
       return { status: res.status, headers: res.headers, contentType, text };
@@ -298,21 +351,52 @@ export async function sendStatelessRequest(
  * `sendStatelessRequest()`: classifies SSE-stream events into the notification
  * sink, surfaces server→client *requests* on the response stream as a spec
  * violation, and throws `JsonRpcError` on error responses.
+ *
+ * Session bootstrap on the stateless wire is `server/discover` (SEP-2575's
+ * replacement for `initialize`). The result is exposed via
+ * `connection.discover()` so scenarios can inspect server capabilities,
+ * serverInfo, and supported protocol versions.
  */
 export async function connectStateless(
   serverUrl: string,
-  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION
+  specVersion: SpecVersion = DRAFT_PROTOCOL_VERSION,
+  opts: ConnectOptions = {}
 ): Promise<Connection> {
   const notifications: JSONRPCNotification[] = [];
+  const capabilities = opts.capabilities ?? DEFAULT_CLIENT_CAPABILITIES;
+  const clientInfo = opts.clientInfo ?? CONFORMANCE_CLIENT_INFO;
 
-  async function request<R>(
-    method: string,
+  // The Connection layer is the single place that knows about
+  // connect-time capabilities / clientInfo. We fold them into the
+  // request's `_meta` here (the trailing `params._meta` spread in
+  // `withRequestMeta` lets us override its defaults) so that
+  // `sendStatelessRequest` and `withRequestMeta` keep their upstream
+  // signatures untouched.
+  function withConnectMeta(
     params?: Record<string, unknown>
-  ): Promise<R> {
-    const response = await sendStatelessRequest(serverUrl, method, params, {
-      specVersion
-    });
+  ): Record<string, unknown> {
+    return {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/clientCapabilities': capabilities,
+        'io.modelcontextprotocol/clientInfo': clientInfo,
+        ...(params?._meta as Record<string, unknown> | undefined)
+      }
+    };
+  }
 
+  async function send(
+    method: string,
+    params?: Record<string, unknown>,
+    extraHeaders?: Record<string, string>
+  ): Promise<StatelessResponse> {
+    return sendStatelessRequest(serverUrl, method, withConnectMeta(params), {
+      specVersion,
+      headers: extraHeaders
+    });
+  }
+
+  function drainEvents(response: StatelessResponse): void {
     for (const event of response.events ?? []) {
       if (typeof event !== 'object' || event === null) continue;
       if ('method' in event && !('id' in event)) {
@@ -324,7 +408,9 @@ export async function connectStateless(
         );
       }
     }
+  }
 
+  function unwrap<R>(method: string, response: StatelessResponse): R {
     const rpcError = response.body?.error;
     // Only a properly-shaped JSON-RPC error becomes a JsonRpcError; anything
     // else (e.g. a proxy's `{"error": "upstream timeout"}`) falls through so
@@ -350,8 +436,31 @@ export async function connectStateless(
     return response.body.result as R;
   }
 
+  // SEP-2575 has no required handshake. `_meta.clientCapabilities` on
+  // every request is authoritative per spec, so `server/discover` is
+  // strictly a client-side query ("what does the server advertise?").
+  // We deliberately do NOT run it eagerly — a server that ignores
+  // per-request `_meta` until a prior `server/discover` has registered
+  // the session is non-conformant, and the conformance suite's job is
+  // to surface that, not paper over it.
+  let discoverPromise: Promise<Record<string, unknown>> | undefined;
+
+  async function request<R>(
+    method: string,
+    params?: Record<string, unknown>,
+    extraHeaders?: Record<string, string>
+  ): Promise<R> {
+    const response = await send(method, params, extraHeaders);
+    drainEvents(response);
+    return unwrap<R>(method, response);
+  }
+
   return {
     notifications,
+    discover(): Promise<Record<string, unknown>> {
+      return (discoverPromise ??=
+        request<Record<string, unknown>>('server/discover'));
+    },
     request,
     close: async () => {}
   };

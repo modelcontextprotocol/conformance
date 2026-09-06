@@ -1,7 +1,10 @@
 import type { ScenarioContext } from '../../mock-server';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ListToolsRequestSchema,
+  LATEST_PROTOCOL_VERSION as SDK_LATEST_PROTOCOL_VERSION
+} from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
 import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
@@ -44,6 +47,9 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     onToolsListed();
     return {
+      resultType: 'complete',
+      ttlMs: 0,
+      cacheScope: 'private',
       tools: [
         {
           name: TOOL_NAME,
@@ -106,6 +112,44 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     });
 
     app.post('/mcp', async (req: Request, res: Response) => {
+      // The bundled SDK server below predates the 2026-07-28 lifecycle and
+      // does not implement server/discover; answer it directly so a client
+      // that negotiates first can proceed to tools/list.
+      if (
+        (req.body as Record<string, unknown> | undefined)?.method ===
+        'server/discover'
+      ) {
+        return res.json({
+          jsonrpc: '2.0',
+          id: (req.body as Record<string, unknown>).id ?? null,
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            capabilities: { tools: {} },
+            serverInfo: {
+              name: 'json-schema-ref-deref-server',
+              version: '1.0.0'
+            }
+          }
+        });
+      }
+      // Second half of the same workaround: the pinned SDK transport
+      // whitelists MCP-Protocol-Version headers and would reject the draft
+      // version that the server/discover response above advertises with an
+      // HTTP 400. Rewrite it to the newest version the SDK understands so a
+      // client that honors the negotiated version can reach tools/list.
+      if (req.headers['mcp-protocol-version'] === DRAFT_PROTOCOL_VERSION) {
+        req.headers['mcp-protocol-version'] = SDK_LATEST_PROTOCOL_VERSION;
+        // The SDK's Node adapter rebuilds its web-standard Request from
+        // rawHeaders, not the parsed headers object, so patch those too.
+        for (let i = 0; i < req.rawHeaders.length; i += 2) {
+          if (req.rawHeaders[i].toLowerCase() === 'mcp-protocol-version') {
+            req.rawHeaders[i + 1] = SDK_LATEST_PROTOCOL_VERSION;
+          }
+        }
+      }
       try {
         // Stateless: fresh server and transport per request
         const server = createMcpServer(this.canaryUrl(), () => {

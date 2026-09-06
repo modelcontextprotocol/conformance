@@ -539,10 +539,10 @@ function createMcpServer() {
         prompt: z.string().describe('The prompt to send to the LLM')
       }
     },
-    async (args: { prompt: string }) => {
+    async (args: { prompt: string }, { sendRequest }) => {
       try {
-        // Request sampling from client
-        const result = await mcpServer.server.request(
+        // Request sampling from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'sampling/createMessage',
             params: {
@@ -599,10 +599,10 @@ function createMcpServer() {
         message: z.string().describe('The message to show the user')
       }
     },
-    async (args: { message: string }) => {
+    async (args: { message: string }, { sendRequest }) => {
       try {
-        // Request user input from client
-        const result = await mcpServer.server.request(
+        // Request user input from client on the tool call's stream
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -651,10 +651,10 @@ function createMcpServer() {
       description: 'Tests elicitation with default values per SEP-1034',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with default values for all primitive types
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -726,10 +726,10 @@ function createMcpServer() {
         'Tests elicitation with enum schema improvements per SEP-1330',
       inputSchema: {}
     },
-    async () => {
+    async (_args, { sendRequest }) => {
       try {
         // Request user input with all 5 enum schema variants
-        const result = await mcpServer.server.request(
+        const result = await sendRequest(
           {
             method: 'elicitation/create',
             params: {
@@ -1225,6 +1225,54 @@ app.use(
   })
 );
 
+// Protocol revisions that use the initialize/session lifecycle. The
+// per-request `_meta` and header/body validation requirements apply to
+// 2026-07-28 and later, not to traffic from these revisions.
+const LEGACY_SESSION_PROTOCOL_VERSIONS = [
+  '2024-11-05',
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25'
+];
+
+// Stateless (draft) operations whose results MUST carry the SEP-2549 caching
+// hints (`ttlMs`, `cacheScope`).
+const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
+  'server/discover',
+  'tools/list',
+  'prompts/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read'
+]);
+
+/** Normalize a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
+ * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
+ * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
+function normalizeStatelessResponse(
+  method: string,
+  payload: { result?: Record<string, unknown>; [key: string]: unknown }
+): { result?: Record<string, unknown>; [key: string]: unknown } {
+  const result = payload.result;
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    result.resultType ??= 'complete';
+    if (STATELESS_CACHEABLE_METHODS.has(method)) {
+      result.ttlMs ??= 0;
+      result.cacheScope ??= 'private';
+    }
+  }
+  return payload;
+}
+
+/** Send a normalized stateless response as JSON. */
+function sendStatelessJson(
+  res: import('express').Response,
+  method: string,
+  payload: { result?: Record<string, unknown>; [key: string]: unknown }
+): import('express').Response {
+  return res.json(normalizeStatelessResponse(method, payload));
+}
+
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
@@ -1236,24 +1284,34 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  if (!sessionId && (reqVersion || meta)) {
+  // A request that carries no `_meta` and names a legacy session-era revision
+  // in the header is legacy traffic; it is served by the session path below
+  // instead of being rejected for missing per-request metadata.
+  const isLegacySessionEraRequest =
+    meta === undefined &&
+    reqVersion !== undefined &&
+    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
+
+  if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
     // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
-        error: { code: -32001, message: 'Missing MCP-Protocol-Version header' }
+        error: { code: -32020, message: 'Missing MCP-Protocol-Version header' }
       });
     }
 
-    // Per-Request Metadata Integrity Checks (Fields verification)
+    // Per-Request Metadata Integrity Checks (Fields verification).
+    // A request missing any required `_meta` field is malformed: -32602 and,
+    // on HTTP, status 400 Bad Request. `clientInfo` is a SHOULD since spec
+    // PR #3002 and is never required.
     if (
       !meta ||
       !meta['io.modelcontextprotocol/protocolVersion'] ||
-      !meta['io.modelcontextprotocol/clientInfo'] ||
       !meta['io.modelcontextprotocol/clientCapabilities']
     ) {
-      return res.status(200).json({
+      return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -1263,25 +1321,25 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
-    // Header Mismatch Verification (-32001, HTTP 400)
+    // Header Mismatch Verification (-32020, HTTP 400)
     if (reqVersion !== metaVersion) {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32001,
+          code: -32020,
           message: 'Mismatched MCP-Protocol-Version header'
         }
       });
     }
 
-    // Protocol Version Negotiation Matrix (-32004, HTTP 400)
+    // Protocol Version Negotiation Matrix (-32022, HTTP 400)
     if (metaVersion !== '2026-07-28') {
       return res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
-          code: -32004,
+          code: -32022,
           message: 'UnsupportedProtocolVersionError',
           data: {
             supported: ['2026-07-28'],
@@ -1340,7 +1398,7 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'server/discover') {
-      return res.json({
+      return sendStatelessJson(res, method, {
         jsonrpc: '2.0',
         id,
         result: {
@@ -1352,7 +1410,13 @@ app.post('/mcp', async (req, res) => {
             // served on this path, so the capability must be declared too.
             resources: {}
           },
-          serverInfo: { name: 'everything-stateless-server', version: '1.0.0' }
+          // Spec PR #3002: server identity lives in the result `_meta`.
+          _meta: {
+            'io.modelcontextprotocol/serverInfo': {
+              name: 'everything-stateless-server',
+              version: '1.0.0'
+            }
+          }
         }
       });
     }
@@ -1364,7 +1428,7 @@ app.post('/mcp', async (req, res) => {
           { method: 'tools/list', params: {} },
           ResultSchema as any
         )) as { tools: any[]; [k: string]: unknown };
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1440,7 +1504,7 @@ app.post('/mcp', async (req, res) => {
           }
         });
       } catch (e: any) {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data: e.data }
@@ -1458,7 +1522,7 @@ app.post('/mcp', async (req, res) => {
           { method: 'prompts/list', params: {} },
           ResultSchema as any
         )) as { prompts: any[]; [k: string]: unknown };
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1475,7 +1539,7 @@ app.post('/mcp', async (req, res) => {
           }
         });
       } catch (e: any) {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data: e.data }
@@ -1496,7 +1560,7 @@ app.post('/mcp', async (req, res) => {
             inputResponses['user_context'],
             'context'
           );
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1512,7 +1576,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1546,7 +1610,7 @@ app.post('/mcp', async (req, res) => {
           { method: 'resources/list', params: {} },
           ResultSchema as any
         )) as { resources: any[]; [k: string]: unknown };
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1565,7 +1629,7 @@ app.post('/mcp', async (req, res) => {
           }
         });
       } catch (e: any) {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data: e.data }
@@ -1582,7 +1646,7 @@ app.post('/mcp', async (req, res) => {
           { method: 'resources/templates/list', params: {} },
           ResultSchema as any
         )) as { resourceTemplates: any[]; [k: string]: unknown };
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1592,7 +1656,7 @@ app.post('/mcp', async (req, res) => {
           }
         });
       } catch (e: any) {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data: e.data }
@@ -1605,7 +1669,7 @@ app.post('/mcp', async (req, res) => {
     if (method === 'resources/read') {
       const uri = params.uri as string | undefined;
       if (uri === 'test://stateless-static-text') {
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1635,19 +1699,21 @@ app.post('/mcp', async (req, res) => {
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];
 
-        // Missing Required Client Capability Check (-32003, HTTP 400)
+        // Missing Required Client Capability Check (-32021, HTTP 400)
         if (!clientCaps?.sampling) {
           return res.status(400).json({
             jsonrpc: '2.0',
             id,
             error: {
-              code: -32003,
+              code: -32021,
               message: 'MissingRequiredClientCapabilityError',
-              data: { requiredCapabilities: ['sampling'] }
+              // Per the schema, requiredCapabilities is a ClientCapabilities
+              // object keyed by the missing capability, not an array of names.
+              data: { requiredCapabilities: { sampling: {} } }
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: { content: [{ type: 'text', text: 'Success' }] }
@@ -1659,13 +1725,13 @@ app.post('/mcp', async (req, res) => {
       if (name === 'test_input_required_result_elicitation') {
         if (inputResponses?.['user_name']) {
           const userName = getMrtInputText(inputResponses['user_name'], 'name');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: { content: [{ type: 'text', text: `Hello, ${userName}!` }] }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1694,7 +1760,7 @@ app.post('/mcp', async (req, res) => {
             unknown
           >;
           const content = sample.content as Record<string, unknown> | undefined;
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1707,7 +1773,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1742,7 +1808,7 @@ app.post('/mcp', async (req, res) => {
           const roots = Array.isArray(rootsResult.roots)
             ? rootsResult.roots
             : [];
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1750,7 +1816,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1768,7 +1834,7 @@ app.post('/mcp', async (req, res) => {
           const ok = (inputResponses['confirm'] as Record<string, unknown>)
             ?.content as Record<string, unknown> | undefined;
           if (state.kind === 'request-state' && ok?.ok === true) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -1779,7 +1845,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1832,7 +1898,7 @@ app.post('/mcp', async (req, res) => {
             const roots = Array.isArray(rootsResult.roots)
               ? rootsResult.roots
               : [];
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -1846,7 +1912,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1887,7 +1953,7 @@ app.post('/mcp', async (req, res) => {
 
       if (name === 'test_input_required_result_multi_round') {
         if (!requestState) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1912,7 +1978,7 @@ app.post('/mcp', async (req, res) => {
         const state = JSON.parse(requestState) as Record<string, unknown>;
         if (state.round === 1 && inputResponses?.['step1']) {
           const userName = getMrtInputText(inputResponses['step1'], 'name');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1942,7 +2008,7 @@ app.post('/mcp', async (req, res) => {
           const userName =
             typeof state.name === 'string' ? state.name : 'friend';
           const color = getMrtInputText(inputResponses['step2'], 'color');
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -1956,7 +2022,7 @@ app.post('/mcp', async (req, res) => {
           });
         }
         // Fallback: restart
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -1983,7 +2049,7 @@ app.post('/mcp', async (req, res) => {
         if (requestState) {
           const verified = verifyMrtState(requestState);
           if (!verified) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               error: {
@@ -1993,7 +2059,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
           if (verified.kind === 'tamper-test' && inputResponses?.['confirm']) {
-            return res.json({
+            return sendStatelessJson(res, method, {
               jsonrpc: '2.0',
               id,
               result: {
@@ -2004,7 +2070,7 @@ app.post('/mcp', async (req, res) => {
             });
           }
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -2065,7 +2131,7 @@ app.post('/mcp', async (req, res) => {
         }
 
         if (inputResponses && Object.keys(inputResponses).length > 0) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -2079,7 +2145,7 @@ app.post('/mcp', async (req, res) => {
           });
         }
         if (Object.keys(inputRequests).length === 0) {
-          return res.json({
+          return sendStatelessJson(res, method, {
             jsonrpc: '2.0',
             id,
             result: {
@@ -2089,7 +2155,7 @@ app.post('/mcp', async (req, res) => {
             }
           });
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: {
@@ -2169,7 +2235,7 @@ app.post('/mcp', async (req, res) => {
         } else {
           notifyListenStreams('prompts', 'notifications/prompts/list_changed');
         }
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           result: { content: [{ type: 'text', text: 'Mutation triggered' }] }
@@ -2199,7 +2265,9 @@ app.post('/mcp', async (req, res) => {
           ResultSchema as any
         );
         for (const n of dispatch.drainNotifications()) write(n);
-        write({ jsonrpc: '2.0', id, result });
+        write(
+          normalizeStatelessResponse(method, { jsonrpc: '2.0', id, result })
+        );
       } catch (e: any) {
         for (const n of dispatch.drainNotifications()) write(n);
         write({
@@ -2227,14 +2295,14 @@ app.post('/mcp', async (req, res) => {
           { method, params },
           ResultSchema as any
         );
-        return res.json({ jsonrpc: '2.0', id, result });
+        return sendStatelessJson(res, method, { jsonrpc: '2.0', id, result });
       } catch (e: any) {
         // SEP-2164: unknown resources get -32602 with the requested uri in
         // data; the SDK's McpError does not populate data itself.
         const data =
           e.data ??
           (method === 'resources/read' ? { uri: params.uri } : undefined);
-        return res.json({
+        return sendStatelessJson(res, method, {
           jsonrpc: '2.0',
           id,
           error: { code: e.code ?? -32603, message: e.message, data }
@@ -2308,6 +2376,18 @@ app.post('/mcp', async (req, res) => {
       await mcpServer.connect(transport);
       await transport.handleRequest(req, res, req.body);
       return;
+    } else if (sessionId) {
+      // Session ID was provided but no transport matches it — the session
+      // has been terminated or was never issued. Spec: HTTP 404.
+      res.status(404).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32001,
+          message: 'Session not found'
+        },
+        id: null
+      });
+      return;
     } else {
       res.status(400).json({
         jsonrpc: '2.0',
@@ -2367,8 +2447,14 @@ app.get('/mcp', async (req, res) => {
 app.delete('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
-  if (!sessionId || !transports[sessionId]) {
+  if (!sessionId) {
     res.status(400).send('Invalid or missing session ID');
+    return;
+  }
+
+  if (!transports[sessionId]) {
+    // Session has been terminated or was never issued. Spec: HTTP 404.
+    res.status(404).send('Session not found');
     return;
   }
 

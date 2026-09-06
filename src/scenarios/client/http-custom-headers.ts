@@ -68,6 +68,7 @@ const INVALID_TOOL_CONSTRAINT_IDS: Record<string, string> = {
   invalid_object_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_array_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_null_header: 'sep-2243-x-mcp-header-primitive-only',
+  invalid_number_header: 'sep-2243-x-mcp-header-primitive-only',
   invalid_duplicate_same_case: 'sep-2243-x-mcp-header-unique',
   invalid_duplicate_diff_case: 'sep-2243-x-mcp-header-unique',
   invalid_space_in_name: 'sep-2243-x-mcp-header-charset',
@@ -127,7 +128,7 @@ function validateEncodedHeader(
       return `Value '${bodyValue}' requires Base64 encoding but header was sent as plain: '${rawHeader}'`;
     }
     const decoded = Buffer.from(base64Match[1], 'base64').toString('utf-8');
-    if (valueType === 'number') {
+    if (valueType === 'number' || valueType === 'integer') {
       return compareNumericValues(decoded, bodyValue);
     }
     if (decoded !== bodyValue) {
@@ -137,7 +138,7 @@ function validateEncodedHeader(
   }
   // Plain ASCII - compare directly (after decoding if Base64 was used)
   const decoded = decodeHeaderValue(rawHeader);
-  if (valueType === 'number') {
+  if (valueType === 'number' || valueType === 'integer') {
     return compareNumericValues(decoded, bodyValue);
   }
   if (decoded !== bodyValue) {
@@ -276,6 +277,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private',
         tools: [
           {
             name: 'test_custom_headers',
@@ -290,7 +294,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                   'x-mcp-header': 'Region'
                 },
                 priority: {
-                  type: 'number',
+                  type: 'integer',
                   description: 'Integer numeric value',
                   'x-mcp-header': 'Priority'
                 },
@@ -317,8 +321,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                 },
                 float_val: {
                   type: 'number',
-                  description: 'Floating point numeric value',
-                  'x-mcp-header': 'FloatVal'
+                  description:
+                    'Floating point value — no x-mcp-header annotation, should not be mirrored'
                 },
                 non_ascii_val: {
                   type: 'string',
@@ -390,7 +394,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                   'x-mcp-header': 'Region'
                 },
                 priority: {
-                  type: 'number',
+                  type: 'integer',
                   description: 'Integer numeric value',
                   'x-mcp-header': 'Priority'
                 },
@@ -446,8 +450,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       // Check Mcp-Param-Region header (plain ASCII string)
       this.checkParamHeader(req, 'Region', args.region, 'string');
 
-      // Check Mcp-Param-Priority header (integer number)
-      this.checkParamHeader(req, 'Priority', args.priority, 'number');
+      // Check Mcp-Param-Priority header (integer)
+      this.checkParamHeader(req, 'Priority', args.priority, 'integer');
 
       // Check Mcp-Param-Verbose header (boolean value)
       // checkParamHeader already FAILs on missing header, so this also covers
@@ -472,10 +476,25 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
         this.checkParamHeader(req, 'Method', args.method_val, 'string');
       }
 
-      // Check Mcp-Param-FloatVal header (floating point number)
-      if (args.float_val !== undefined && args.float_val !== null) {
-        this.checkParamHeader(req, 'FloatVal', args.float_val, 'number');
-      }
+      // float_val is intentionally unannotated: SEP-2243 forbids x-mcp-header on
+      // `number`-typed properties, so it is served without one. Assert no header
+      // was sent — same "designated params only" rule as the `query` check below.
+      const floatHeader = req.headers['mcp-param-floatval'] as
+        | string
+        | undefined;
+      this.checks.push({
+        id: 'sep-2243-client-mirrors-designated-params',
+        name: 'ClientCustomHeaderNoMirrorNumber',
+        description:
+          'Client MUST NOT add Mcp-Param headers for parameters without x-mcp-header (number-typed float_val is served unannotated per SEP-2243)',
+        status: floatHeader === undefined ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage:
+          floatHeader !== undefined
+            ? `Found unexpected Mcp-Param-FloatVal header '${floatHeader}' for an unannotated number parameter`
+            : undefined,
+        specReferences: [SPEC_REFERENCE_CUSTOM]
+      });
 
       // Check Mcp-Param-NonAscii header (requires Base64 encoding)
       if (args.non_ascii_val !== undefined && args.non_ascii_val !== null) {
@@ -591,6 +610,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'Custom headers test completed' }]
       }
     });
@@ -648,7 +668,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       typeof bodyValue === 'string' && needsBase64Encoding(String(bodyValue));
     const checkId = needsBase64
       ? 'sep-2243-client-base64-unsafe'
-      : valueType === 'number' || valueType === 'boolean'
+      : valueType === 'number' ||
+          valueType === 'integer' ||
+          valueType === 'boolean'
         ? 'sep-2243-client-encode-values'
         : 'sep-2243-client-mirrors-designated-params';
 
@@ -760,6 +782,9 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
+        ttlMs: 0,
+        cacheScope: 'private',
         tools: [
           // ── Valid tool (should be kept by client) ──
           {
@@ -834,6 +859,23 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
                 nil: { type: 'null', 'x-mcp-header': 'Nil' }
               },
               required: ['nil']
+            }
+          },
+
+          // ── Invalid: x-mcp-header on number type ──
+          // `number` is a JSON Schema primitive but SEP-2243 excludes it from
+          // the permitted set: "Parameters with type `number` are not
+          // permitted." Only integer, string and boolean may be annotated.
+          {
+            name: 'invalid_number_header',
+            description:
+              'x-mcp-header MUST NOT be on number type (MUST be rejected)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                score: { type: 'number', 'x-mcp-header': 'Score' }
+              },
+              required: ['score']
             }
           },
 
@@ -938,6 +980,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'Tool call received' }]
       }
     });

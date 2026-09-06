@@ -8,6 +8,11 @@
  * 2. Returns InputRequiredResult on `tools/list` (unsupported method)
  * 3. Accepts tampered requestState without integrity verification
  *
+ * Plus one case that is not a violation at all:
+ *
+ * 4. Answers with a conformant input_required result that names no input
+ *    request, leaving the capability check with nothing to verify.
+ *
  * The conformance scenarios should emit FAILURE against this server.
  */
 
@@ -54,6 +59,11 @@ handlers['tools/list'] = () => ({
       name: 'test_input_required_result_tampered_state',
       description: 'Test tool for tampered state',
       inputSchema: { type: 'object' as const, properties: {} }
+    },
+    {
+      name: 'test_input_required_result_capabilities',
+      description: 'Test tool for client capability handling',
+      inputSchema: { type: 'object' as const, properties: {} }
     }
   ]
 });
@@ -91,6 +101,16 @@ handlers['tools/call'] = (params) => {
             }
           }
         }
+      };
+    }
+
+    case 'test_input_required_result_capabilities': {
+      // BUG 4: Conformant on its face — `requestState` satisfies "at least one
+      // of inputRequests or requestState" — but it names no input request, so
+      // the capability restriction under test is never exercised.
+      return {
+        resultType: 'input_required',
+        requestState: 'no-input-requested'
       };
     }
 

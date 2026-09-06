@@ -8,6 +8,6 @@ export function createServerFor(
   specVersion: SpecVersion
 ): (handlers: RequestHandlers) => Promise<MockServer> {
   return isStatefulVersion(specVersion)
-    ? createServerStateful
+    ? (handlers) => createServerStateful(handlers, specVersion)
     : (handlers) => createServerStateless(handlers, specVersion);
 }

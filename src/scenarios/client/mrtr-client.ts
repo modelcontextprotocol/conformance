@@ -87,6 +87,22 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     const { id, method, params } = body;
 
     switch (method) {
+      case 'server/discover': {
+        res.json({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            capabilities: { tools: {} },
+            serverInfo: { name: 'mrtr-mock-server', version: '1.0.0' }
+          }
+        });
+        return;
+      }
+
       case 'notifications/initialized': {
         res.status(204).end();
         return;
@@ -96,7 +112,12 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
         res.json({
           jsonrpc: '2.0',
           id,
-          result: { tools: TOOLS }
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            tools: TOOLS
+          }
         });
         return;
       }
@@ -141,7 +162,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
         res.json({
           jsonrpc: '2.0',
           id,
-          result: { action: 'accept', content: { confirmed: true } }
+          result: {
+            resultType: 'complete',
+            action: 'accept',
+            content: { confirmed: true }
+          }
         });
         return;
       }
@@ -258,6 +283,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'echo-state-ok' }]
       }
     });
@@ -324,6 +350,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'no-state-ok' }]
       }
     });
@@ -370,6 +397,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       jsonrpc: '2.0',
       id,
       result: {
+        resultType: 'complete',
         content: [{ type: 'text', text: 'unrelated-ok' }]
       }
     });
@@ -403,7 +431,10 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       res.json({
         jsonrpc: '2.0',
         id,
-        result: { content: [{ type: 'text', text: 'unexpected-retry' }] }
+        result: {
+          resultType: 'complete',
+          content: [{ type: 'text', text: 'unexpected-retry' }]
+        }
       });
       return;
     }

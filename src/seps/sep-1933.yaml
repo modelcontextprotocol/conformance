@@ -1,0 +1,35 @@
+sep: 1933
+spec_url: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933
+requirements:
+  - check: wif-grant-type
+    text: 'The request includes grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer (RFC 7523 §2.1 — clients MUST use this grant type for JWT-bearer authorization grants)'
+
+  - check: wif-assertion-missing
+    text: 'The request includes assertion: <workload-jwt> (RFC 7523 §2.1 — the assertion parameter is REQUIRED and MUST contain the JWT)'
+
+  - check: wif-assertion-verified
+    text: 'Client successfully authenticates to the MCP authorization server using a JWT-bearer grant with a valid workload identity JWT assertion'
+
+  - check: wif-assertion-expired
+    text: 'The JWT MUST contain an exp claim and the authorization server MUST reject assertions whose exp has passed (RFC 7523 §3 — client MUST surface this error and not silently ignore it)'
+
+  - check: wif-assertion-audience
+    text: 'The JWT MUST contain an aud claim identifying the authorization server (RFC 7523 §3 — client MUST surface invalid audience errors and not silently ignore them)'
+
+  - check: wif-assertion-malformed
+    text: 'The authorization server MUST reject JWTs with invalid signatures or malformed claims (RFC 7523 §3 — client MUST surface verification failures)'
+
+  - check: wif-no-retry
+    text: 'Clients should not retry a JWT-bearer token request after the authorization server has rejected the assertion, including after invalid_scope responses (WARNING until SEP-1933 lands normative spec text; RFC 7523 is silent on client retry behaviour)'
+
+  - check: wif-grant-fallback
+    text: 'When the authorization server returns unauthorized_client for a JWT-bearer token request, the client should not fall back to a different grant type (WARNING until SEP-1933 lands normative spec text; RFC 7523 §2.1 defines the grant but does not forbid grant-type switching after failure)'
+
+  - text: 'The JWT MUST include an iss (issuer) claim identifying the workload identity provider (RFC 7523 §3)'
+    excluded: 'Issuer validation is AS policy; the client presents a pre-signed token and cannot vary the iss value. The scenario does not expose issuer in context because it is not a client-observable parameter — the client has no mechanism to select or alter the iss of an assertion it did not construct.'
+
+  - text: 'The JWT MUST include a sub (subject) claim identifying the workload (RFC 7523 §3)'
+    excluded: 'Subject allowlist enforcement is AS policy; the client has no control over the subject in a pre-signed IdP token. From the client perspective this collapses to a generic invalid_grant response, already covered by existing checks.'
+
+  - text: 'The JWT MUST include a jti (JWT ID) claim to prevent replay (RFC 7523 §3, recommended)'
+    excluded: 'Replay detection is AS policy; the client cannot influence jti uniqueness across requests. No client-observable protocol difference from other invalid_grant responses.'

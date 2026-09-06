@@ -1,13 +1,19 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ConformanceCheck } from '../types';
-import { getClientScenarioForAuthorizationServer } from '../scenarios';
-import { createResultDir } from './utils';
+import { ConformanceCheck, SpecVersion } from '../types';
+import {
+  getClientScenarioForAuthorizationServer,
+  matchesSpecVersion
+} from '../scenarios';
+import { createResultDir, formatPrettyChecks } from './utils';
+import { AuthorizationServerOptions } from '../schemas';
 
 export async function runAuthorizationServerConformanceTest(
-  serverUrl: string,
+  options: AuthorizationServerOptions,
   scenarioName: string,
-  outputDir?: string
+  details: Record<string, unknown>,
+  outputDir?: string,
+  specVersion?: SpecVersion
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -28,25 +34,73 @@ export async function runAuthorizationServerConformanceTest(
   const scenario = getClientScenarioForAuthorizationServer(scenarioName)!;
 
   console.log(
-    `Running client scenario for authorization server '${scenarioName}' against server: ${serverUrl}`
+    `Running client scenario for authorization server '${scenarioName}' against server: ${options.url}`
   );
 
-  const checks = await scenario.run(serverUrl);
+  const checks = await scenario.run(options, details);
+  const filtered = specVersion
+    ? checks.filter(
+        (c) => !c.source || matchesSpecVersion(c.source, specVersion)
+      )
+    : checks;
 
   if (resultDir) {
     await fs.writeFile(
       path.join(resultDir, 'checks.json'),
-      JSON.stringify(checks, null, 2)
+      JSON.stringify(filtered, null, 2)
     );
 
     console.log(`Results saved to ${resultDir}`);
   }
 
   return {
-    checks,
+    checks: filtered,
     resultDir,
     scenarioDescription: scenario.description
   };
+}
+
+export function printAuthorizationServerResults(
+  checks: ConformanceCheck[],
+  scenarioDescription: string,
+  verbose: boolean = false
+): {
+  passed: number;
+  failed: number;
+  denominator: number;
+  warnings: number;
+} {
+  const denominator = checks.filter(
+    (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
+  ).length;
+  const passed = checks.filter((c) => c.status === 'SUCCESS').length;
+  const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const warnings = checks.filter((c) => c.status === 'WARNING').length;
+
+  if (verbose) {
+    console.log(JSON.stringify(checks, null, 2));
+  } else {
+    console.log(`Checks:\n${formatPrettyChecks(checks)}`);
+  }
+
+  console.log(`\nTest Results:`);
+  console.log(
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+  );
+
+  if (failed > 0) {
+    console.log('\n=== Failed Checks ===');
+    checks
+      .filter((c) => c.status === 'FAILURE')
+      .forEach((c) => {
+        console.log(`\n  - ${c.name}: ${c.description}`);
+        if (c.errorMessage) {
+          console.log(`    Error: ${c.errorMessage}`);
+        }
+      });
+  }
+
+  return { passed, failed, denominator, warnings };
 }
 
 export function printAuthorizationServerSummary(

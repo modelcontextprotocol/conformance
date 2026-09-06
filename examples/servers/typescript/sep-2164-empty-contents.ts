@@ -7,6 +7,9 @@
  * contents array for any resources/read request, violating the SEP-2164 MUST
  * NOT. The sep-2164-resource-not-found scenario should emit FAILURE for
  * sep-2164-no-empty-contents against this server.
+ *
+ * Responses are otherwise schema-valid (resultType and SEP-2549 caching hints present);
+ * an empty contents array is schema-valid too, forbidden only by the SEP-2164 prose.
  */
 
 import express from 'express';
@@ -25,16 +28,37 @@ app.post('/mcp', (req, res) => {
         jsonrpc: '2.0',
         id,
         result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
           supportedVersions: ['2026-07-28'],
           capabilities: { resources: {} },
           serverInfo: { name: 'sep-2164-empty-contents', version: '1.0.0' }
         }
       });
     case 'resources/list':
-      return res.json({ jsonrpc: '2.0', id, result: { resources: [] } });
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
+          resources: []
+        }
+      });
     case 'resources/read':
       // Deliberately return an empty contents array instead of an error.
-      return res.json({ jsonrpc: '2.0', id, result: { contents: [] } });
+      return res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          resultType: 'complete',
+          ttlMs: 0,
+          cacheScope: 'private',
+          contents: []
+        }
+      });
     default:
       return res.status(404).json({
         jsonrpc: '2.0',

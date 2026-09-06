@@ -6,6 +6,7 @@ import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
+import { DRAFT_PROTOCOL_VERSION, specVersionAtLeast } from '../../../types';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -294,9 +295,17 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  // SEP-2350's set-wise union requirement was introduced in 2026-07-28 (the
+  // current draft); it was not a requirement at 2025-11-25, where
+  // non-accumulating re-auth is conformant. Gate the union check accordingly.
+  private unionRequired = false;
 
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
+    this.unionRequired = specVersionAtLeast(
+      ctx.specVersion,
+      DRAFT_PROTOCOL_VERSION
+    );
 
     const initialScope = 'mcp:basic';
     // tools/call gates on mcp:write only (not the union) so the scenario can
@@ -352,22 +361,24 @@ export class ScopeStepUpAuthScenario implements Scenario {
             }
           });
 
-          const retainedPrior = requestedScopes.includes(initialScope);
-          this.checks.push({
-            id: 'sep-2350-scope-union-on-reauth',
-            name: 'Client accumulates previously-granted scopes on re-authorization',
-            description: retainedPrior
-              ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
-              : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
-            status: retainedPrior ? 'SUCCESS' : 'WARNING',
-            timestamp: data.timestamp,
-            specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
-            details: {
-              previouslyGranted: initialScope,
-              challengedScope: stepUpScope,
-              requestedScope: data.scope || 'none'
-            }
-          });
+          if (this.unionRequired) {
+            const retainedPrior = requestedScopes.includes(initialScope);
+            this.checks.push({
+              id: 'sep-2350-scope-union-on-reauth',
+              name: 'Client accumulates previously-granted scopes on re-authorization',
+              description: retainedPrior
+                ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
+                : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
+              status: retainedPrior ? 'SUCCESS' : 'WARNING',
+              timestamp: data.timestamp,
+              specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+              details: {
+                previouslyGranted: initialScope,
+                challengedScope: stepUpScope,
+                requestedScope: data.scope || 'none'
+              }
+            });
+          }
         }
       }
     });
@@ -500,15 +511,17 @@ export class ScopeStepUpAuthScenario implements Scenario {
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
-      this.checks.push({
-        id: 'sep-2350-scope-union-on-reauth',
-        name: 'Client accumulates previously-granted scopes on re-authorization',
-        description:
-          'Client did not make a second authorization request - scope union check could not be performed',
-        status: 'FAILURE',
-        timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
-      });
+      if (this.unionRequired) {
+        this.checks.push({
+          id: 'sep-2350-scope-union-on-reauth',
+          name: 'Client accumulates previously-granted scopes on re-authorization',
+          description:
+            'Client did not make a second authorization request - scope union check could not be performed',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
+        });
+      }
     }
 
     return this.checks;
