@@ -5,13 +5,10 @@ import { runAsCli } from './helpers/cliRunner';
 /**
  * Broken client that gives up before performing any discovery request.
  *
- * BUG: it never fetches Protected Resource Metadata, so it never reads — let
- * alone validates — the `resource` value the scenario mismatches on purpose.
- *
- * It exists to pin issue #467. `auth/resource-mismatch` decides its verdict
- * from `!authorizationRequestMade` alone, and a client that does nothing at
- * all satisfies that verdict, so the check scores SUCCESS for a client that
- * cannot possibly have performed the validation under test.
+ * BUG: it never fetches Protected Resource Metadata, so it cannot have
+ * validated the `resource` value `auth/resource-mismatch` mismatches on
+ * purpose. Pins #467: the negative checks must report this client as
+ * untestable, not as having correctly rejected anything.
  */
 export async function runClient(_serverUrl: string): Promise<void> {
   throw new Error(

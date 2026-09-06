@@ -14,28 +14,14 @@ const metadataSpecRefs = [
   SpecReferences.MCP_AUTH_DISCOVERY
 ];
 
-// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
- * Reason-bound verdict for the RFC 9207 `iss` rejection checks (issue #467).
- *
- * `authReached && !tokenRequestMade` is a verdict, not a reason. SEP-2468
- * conditions every one of these requirements on the issuer the client recorded
- * "from the selected authorization server validated metadata document", so a
- * client that never retrieved that document cannot have performed the
- * comparison under test — yet it satisfies the verdict, because not reaching
- * the token endpoint is exactly what a client that fell over earlier also
- * does. Absent the retrieval the requirement was never exercised, which is the
- * untestable case (#248) rather than a pass or a violation.
- *
- * `auth/metadata-issuer-mismatch` in this same file already gates on the
- * metadata fetch; the other checks did not. Keeping the policy in one function
- * is deliberate: the duplication is what let five of six sites drift apart.
- *
- * Residual gap, deliberately not papered over: a client that receives the
- * redirect and then aborts before the token request for an unrelated reason is
- * still indistinguishable from one that rejected on `iss`. Closing that needs
- * a signal from inside the client, which a black-box harness does not have.
- * What this closes is the "never reached the requirement at all" class.
+ * Verdict for the RFC 9207 `iss` rejection checks. "Reached the authorization
+ * endpoint and made no token request" only proves rejection if the client also
+ * fetched the AS metadata that carries the issuer it must compare against;
+ * without that fetch the requirement was never exercised, so the check is
+ * reported as untestable (#248) rather than passed or failed. A client that
+ * aborts after the redirect for an unrelated reason is still indistinguishable
+ * from one that rejected on `iss`; a black-box harness cannot close that gap.
  */
 function issRejectionCheck(opts: {
   id: string;
