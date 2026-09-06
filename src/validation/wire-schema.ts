@@ -262,12 +262,20 @@ export function wireSchemaErrors(
   if (msg.result !== undefined) {
     // SEP-2322 (MRTR): any request may be answered with an InputRequiredResult
     // instead of its method's result type; discriminate on resultType.
+    const resultType = (msg.result as Record<string, unknown> | null)
+      ?.resultType;
     const inputRequired =
-      (msg.result as Record<string, unknown> | null)?.resultType ===
-        'input_required' && 'InputRequiredResult' in spec.defs;
+      resultType === 'input_required' && 'InputRequiredResult' in spec.defs;
+    // Tasks v2 is a protocol extension, so its CreateTaskResult is
+    // intentionally absent from the core draft schema. Validate the base
+    // Result envelope instead of incorrectly requiring CallToolResult.content.
+    const tasksCreateResult =
+      specVersion === DRAFT_PROTOCOL_VERSION &&
+      requestMethod === 'tools/call' &&
+      resultType === 'task';
     const resultDefName = inputRequired
       ? 'InputRequiredResult'
-      : requestMethod !== undefined
+      : !tasksCreateResult && requestMethod !== undefined
         ? spec.resultDefs.get(requestMethod)
         : undefined;
     if (resultDefName) {
