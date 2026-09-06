@@ -36,7 +36,11 @@ import {
   resolveSpecVersion
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
-import { ConformanceCheck, LATEST_SPEC_VERSION } from './types';
+import {
+  ConformanceCheck,
+  DATED_SPEC_VERSIONS,
+  LATEST_SPEC_VERSION
+} from './types';
 import {
   AuthorizationServerOptionsSchema,
   ClientOptionsSchema,
@@ -83,7 +87,7 @@ function resolveRequirements(
   // failure this flag exists to prevent.
   if (revision === '') {
     console.error(
-      '--requirements needs a revision, such as 2026-07-28. Run `conformance list` to see which are available.'
+      `--requirements needs a revision, such as ${LATEST_SPEC_VERSION}. Run \`conformance list\` to see which are available.`
     );
     process.exit(1);
   }
@@ -186,6 +190,11 @@ function requiredScenariosOrExit(
   }
 }
 
+const SPEC_VERSION_HELP =
+  `Target a spec revision: a dated release (${DATED_SPEC_VERSIONS.join(', ')}) ` +
+  'or "draft" for the unreleased revision after the latest. Selects the scenarios ' +
+  'applicable at that revision and the wire version they run at';
+
 /**
  * The draft suites hold scenarios for requirements newer than the latest
  * release. Right after a release they are empty (everything that was "draft"
@@ -242,17 +251,14 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Target a spec revision: a dated release (e.g. 2025-11-25, 2026-07-28) or "draft" for the unreleased revision after the latest. Selects the scenarios applicable at that revision and the wire they run at'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option(
     '--requirements <revision>',
-    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+    `Run exactly the scenarios a spec revision requires, frozen at its release (e.g. ${LATEST_SPEC_VERSION}). Replaces --suite and --spec-version`
   )
   .option('--verbose', 'Show verbose output')
   .action(async (options, cmd) => {
@@ -558,17 +564,14 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Target a spec revision: a dated release (e.g. 2025-11-25, 2026-07-28) or "draft" for the unreleased revision after the latest. Selects the scenarios applicable at that revision and the wire they run at'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option(
     '--requirements <revision>',
-    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+    `Run exactly the scenarios a spec revision requires, frozen at its release (e.g. ${LATEST_SPEC_VERSION}). Replaces --suite and --spec-version`
   )
   .option('--timeout <ms>', 'Per-scenario timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
@@ -791,10 +794,7 @@ program
     3000
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Target a spec revision: a dated release (e.g. 2025-11-25, 2026-07-28) or "draft" for the unreleased revision after the latest. Selects the scenarios applicable at that revision and the wire they run at'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -951,10 +951,7 @@ program
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
   .option('--authorization', 'List authorization server scenarios')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec revision: a dated release (e.g. 2025-11-25, 2026-07-28) or "draft" for the unreleased revision after the latest'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--requirements <revision>',
     'List exactly what a spec revision requires, frozen at its release'

@@ -16,8 +16,18 @@ describe('STATELESS_SPEC_VERSIONS', () => {
       expect(isStatefulVersion(v)).toBe(false);
     }
   });
-  it('contains 2026-07-28 and the draft, in timeline order', () => {
-    expect(STATELESS_SPEC_VERSIONS).toEqual(['2026-07-28', DRAFT_SPEC_VERSION]);
+  it('holds every revision from 2026-07-28 on, ending with the draft', () => {
+    expect(STATELESS_SPEC_VERSIONS[0]).toBe('2026-07-28');
+    expect(STATELESS_SPEC_VERSIONS[STATELESS_SPEC_VERSIONS.length - 1]).toBe(
+      DRAFT_SPEC_VERSION
+    );
+    for (const stateful of [
+      '2025-03-26',
+      '2025-06-18',
+      '2025-11-25'
+    ] as const) {
+      expect(STATELESS_SPEC_VERSIONS).not.toContain(stateful);
+    }
   });
   it('maps to deduplicated wire versions', () => {
     // The draft shares 2026-07-28's wire string until the spec repo gives the

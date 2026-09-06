@@ -1,5 +1,4 @@
 import { createServer, type Server } from 'http';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { sendStatelessRequest } from '../connection/stateless';
 import {
   resetWireValidation,
@@ -11,8 +10,11 @@ import {
   withWireRecorder
 } from './wire-schema';
 
+// The stateless-lifecycle schema under test is the 2026-07-28 release.
+const STATELESS = '2026-07-28' as const;
+
 const META = {
-  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/protocolVersion': STATELESS,
   'io.modelcontextprotocol/clientInfo': { name: 'c', version: '1' },
   'io.modelcontextprotocol/clientCapabilities': { sampling: {} }
 };
@@ -50,11 +52,8 @@ function listen(
 }
 
 describe('wireSchemaErrors', () => {
-  it('rejects the PR #376 hallucinated requiredCapabilities array under the draft schema', () => {
-    const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
-      PR_376_INVALID_ERROR
-    );
+  it('rejects the PR #376 hallucinated requiredCapabilities array under the 2026-07-28 schema', () => {
+    const errors = wireSchemaErrors(STATELESS, PR_376_INVALID_ERROR);
     expect(errors).toEqual([
       expect.stringContaining(
         'MissingRequiredClientCapabilityError/error/data/requiredCapabilities: must be object'
@@ -64,7 +63,7 @@ describe('wireSchemaErrors', () => {
 
   it('accepts the spec-valid ClientCapabilities object shape', () => {
     expect(
-      wireSchemaErrors(DRAFT_PROTOCOL_VERSION, {
+      wireSchemaErrors(STATELESS, {
         jsonrpc: '2.0',
         id: 1,
         error: {
@@ -84,7 +83,7 @@ describe('wireSchemaErrors', () => {
 
   it('validates typed requests by method const', () => {
     expect(
-      wireSchemaErrors(DRAFT_PROTOCOL_VERSION, {
+      wireSchemaErrors(STATELESS, {
         jsonrpc: '2.0',
         id: 2,
         method: 'tools/call',
@@ -98,9 +97,9 @@ describe('wireSchemaErrors', () => {
   });
 
   it('validates results against the typed result definition for the request method', () => {
-    // Draft results must carry resultType / ttlMs / cacheScope.
+    // 2026-07-28 results must carry resultType / ttlMs / cacheScope.
     const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
+      STATELESS,
       { jsonrpc: '2.0', id: 3, result: { tools: [] } },
       'tools/list'
     );
@@ -140,7 +139,7 @@ describe('wire-schema choke points and checks', () => {
     try {
       resetWireValidation();
       await sendStatelessRequest(url, 'tools/list');
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       const wire = checks.find((c) => c.id === 'wire-schema-valid');
       expect(wire?.status).toBe('FAILURE');
       expect(wire?.errorMessage).toContain('requiredCapabilities');
@@ -167,7 +166,7 @@ describe('wire-schema choke points and checks', () => {
       resetWireValidation();
       // tools/call without params.name violates CallToolRequest.
       await sendStatelessRequest(url, 'tools/call', { arguments: {} });
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       const harness = checks.find((c) => c.id === 'wire-schema-harness-error');
       expect(harness?.status).toBe('FAILURE');
       expect(harness?.errorMessage).toContain('HARNESS ERROR');
@@ -254,7 +253,7 @@ describe('wire-schema choke points and checks', () => {
     try {
       resetWireValidation();
       await sendStatelessRequest(url, 'tools/list');
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       expect(checks).toHaveLength(1);
       expect(checks[0].id).toBe('wire-schema-valid');
       expect(checks[0].status).toBe('SUCCESS');
@@ -266,7 +265,7 @@ describe('wire-schema choke points and checks', () => {
 
   it('emits no checks when no wire traffic was observed', () => {
     resetWireValidation();
-    expect(wireSchemaChecks(DRAFT_PROTOCOL_VERSION)).toEqual([]);
+    expect(wireSchemaChecks(STATELESS)).toEqual([]);
   });
 });
 
@@ -320,10 +319,10 @@ describe('specDispatchMaps', () => {
     'notifications/tasks/status': 'TaskStatusNotification'
   };
 
-  // The draft (SEP-2575) drops the initialize/session lifecycle, ping,
+  // 2026-07-28 (SEP-2575) drops the initialize/session lifecycle, ping,
   // logging/setLevel, roots-changed, tasks, and resource subscriptions, and
   // adds server/discover plus subscriptions/listen.
-  const METHOD_DEFS_DRAFT: Record<string, string> = (() => {
+  const METHOD_DEFS_2026: Record<string, string> = (() => {
     const defs: Record<string, string> = {
       ...METHOD_DEFS_2025_11_25,
       'server/discover': 'DiscoverRequest',
@@ -360,8 +359,8 @@ describe('specDispatchMaps', () => {
       { '-32042': 'URLElicitationRequiredError' }
     ],
     [
-      DRAFT_PROTOCOL_VERSION,
-      METHOD_DEFS_DRAFT,
+      STATELESS,
+      METHOD_DEFS_2026,
       {
         '-32020': 'HeaderMismatchError',
         '-32021': 'MissingRequiredClientCapabilityError',
@@ -397,13 +396,11 @@ describe('specDispatchMaps', () => {
       specDispatchMaps('2025-11-25').resultDefs.get('elicitation/create')
     ).toBe('ElicitResult');
     expect(
-      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get(
-        'elicitation/create'
-      )
+      specDispatchMaps(STATELESS).resultDefs.get('elicitation/create')
     ).toBe('ElicitResult');
-    expect(
-      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get('server/discover')
-    ).toBe('DiscoverResult');
+    expect(specDispatchMaps(STATELESS).resultDefs.get('server/discover')).toBe(
+      'DiscoverResult'
+    );
   });
 });
 
@@ -440,7 +437,7 @@ describe('withWireRecorder', () => {
 
     const scopeResult = withWireRecorder(async () => {
       const server = createServer((_req, res) => {
-        validateWireMessage(DRAFT_PROTOCOL_VERSION, PR_376_INVALID_ERROR, {
+        validateWireMessage(STATELESS, PR_376_INVALID_ERROR, {
           origin: 'implementation',
           context: 'inbound message to in-scope server'
         });

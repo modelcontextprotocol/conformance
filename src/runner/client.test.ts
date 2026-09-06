@@ -58,8 +58,7 @@ describe('runConformanceTest spec-version applicability', () => {
       DRAFT_SPEC_VERSION
     );
     expect(result.skipped).toBeUndefined();
-    expect(result.clientOutput?.stdout).toContain(DRAFT_PROTOCOL_VERSION);
-    expect(result.clientOutput?.stdout).not.toContain(DRAFT_SPEC_VERSION);
+    expect(result.clientOutput?.stdout.trim()).toBe(DRAFT_PROTOCOL_VERSION);
   }, 30000);
 
   test('infers the latest release for a scenario that applies there when --spec-version is omitted', async () => {

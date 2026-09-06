@@ -1,6 +1,7 @@
 import type { RunContext } from './connection';
 import type { ScenarioContext } from './mock-server';
 import type { AuthorizationServerOptions } from './schemas';
+import { LATEST_PROTOCOL_VERSION as DRAFT_SCHEMA_PROTOCOL_VERSION } from './spec-types/draft';
 
 export type CheckStatus =
   | 'SUCCESS'
@@ -32,6 +33,12 @@ export interface ConformanceCheck {
   logs?: string[];
 }
 
+/**
+ * Released spec revisions the suite can target, oldest first. Publishing a
+ * new revision means appending its date here and running
+ * `npm run sync-schema -- <release tag>`; see src/spec-types/README.md for
+ * the full checklist. The last entry is {@link LATEST_SPEC_VERSION}.
+ */
 export const DATED_SPEC_VERSIONS = [
   '2025-03-26',
   '2025-06-18',
@@ -41,7 +48,17 @@ export const DATED_SPEC_VERSIONS = [
 
 export type DatedSpecVersion = (typeof DATED_SPEC_VERSIONS)[number];
 
-export const LATEST_SPEC_VERSION: DatedSpecVersion = '2026-07-28';
+type Last<T extends readonly unknown[]> = T extends readonly [
+  ...unknown[],
+  infer L
+]
+  ? L
+  : never;
+
+/** The most recent released revision: the last entry of {@link DATED_SPEC_VERSIONS}. */
+export const LATEST_SPEC_VERSION = DATED_SPEC_VERSIONS[
+  DATED_SPEC_VERSIONS.length - 1
+] as Last<typeof DATED_SPEC_VERSIONS>;
 
 /**
  * Names the in-progress spec revision: whatever `docs/specification/draft/`
@@ -53,15 +70,15 @@ export const LATEST_SPEC_VERSION: DatedSpecVersion = '2026-07-28';
 export const DRAFT_SPEC_VERSION = 'draft';
 
 /**
- * Wire `protocolVersion` the draft currently declares. Mirrors
- * `LATEST_PROTOCOL_VERSION` in the spec repo's `schema/draft/schema.ts`
- * (vendored at `src/spec-types/draft.ts`); bump when that constant changes.
- * Right after a release the spec repo leaves this equal to the released
- * revision until the next draft gets its own marker, so it can coincide with
- * {@link LATEST_SPEC_VERSION}; {@link DRAFT_SPEC_VERSION} is what keeps the
- * draft distinct on the timeline regardless.
+ * Wire `protocolVersion` the draft currently declares: `LATEST_PROTOCOL_VERSION`
+ * from the vendored `schema/draft/schema.ts`, so it tracks the spec repo with
+ * `npm run sync-schema` and needs no edit here. Right after a release the spec
+ * repo leaves this equal to the released revision until the next draft gets
+ * its own marker, so it can coincide with {@link LATEST_SPEC_VERSION};
+ * {@link DRAFT_SPEC_VERSION} is what keeps the draft distinct on the timeline
+ * regardless.
  */
-export const DRAFT_PROTOCOL_VERSION = '2026-07-28';
+export const DRAFT_PROTOCOL_VERSION: string = DRAFT_SCHEMA_PROTOCOL_VERSION;
 
 /**
  * A spec revision the conformance suite can target via `--spec-version`:

@@ -6,16 +6,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Ajv, type ValidateFunction, type ErrorObject } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { default as addFormats } from 'ajv-formats';
-import {
-  DRAFT_SPEC_VERSION,
-  type ConformanceCheck,
-  type SpecVersion
-} from '../types';
-import schema2025_03_26 from '../spec-types/2025-03-26.schema.json';
-import schema2025_06_18 from '../spec-types/2025-06-18.schema.json';
-import schema2025_11_25 from '../spec-types/2025-11-25.schema.json';
-import schema2026_07_28 from '../spec-types/2026-07-28.schema.json';
-import schemaDraft from '../spec-types/draft.schema.json';
+import { type ConformanceCheck, type SpecVersion } from '../types';
+import { SPEC_SCHEMAS } from '../spec-types/schemas';
 
 export type WireOrigin = 'harness' | 'implementation';
 
@@ -36,14 +28,6 @@ export interface WireSchemaViolation {
   errors: string[];
   message: unknown;
 }
-
-const SCHEMAS: Record<SpecVersion, Record<string, unknown>> = {
-  '2025-03-26': schema2025_03_26,
-  '2025-06-18': schema2025_06_18,
-  '2025-11-25': schema2025_11_25,
-  '2026-07-28': schema2026_07_28,
-  [DRAFT_SPEC_VERSION]: schemaDraft
-};
 
 /** Spec-repo `schema/<dir>` name for a version; `SpecVersion` values already are one. */
 export function schemaDirFor(specVersion: SpecVersion): string {
@@ -81,7 +65,7 @@ function compileSpec(specVersion: SpecVersion): CompiledSpec {
   let compiled = compiledSpecs.get(specVersion);
   if (compiled) return compiled;
 
-  const schema = SCHEMAS[specVersion];
+  const schema = SPEC_SCHEMAS[specVersion];
   const is2020 =
     typeof schema.$schema === 'string' && schema.$schema.includes('2020-12');
   // The spec schemas are not authored for ajv strict mode; validate them
