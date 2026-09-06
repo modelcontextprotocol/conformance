@@ -1,0 +1,1273 @@
+#!/usr/bin/env node
+// Run one conformance selection (scenario / suite / requirement set) across
+// every SDK in KNOWN_SDKS and render an SDK x check matrix.
+//
+// This is deliberately thin orchestration over `conformance sdk`: cloning,
+// building and running each SDK is that command's job. This script only fans
+// out over SDKs (one SDK's failure never stops the others), captures each
+// run's log and the checks.json files it writes, and aggregates them into
+// matrix.json + matrix.md. `--merge` re-renders from previously written
+// matrix.json files, which is how the CI report job combines per-SDK legs.
+//
+// Usage: node scripts/sdk-matrix.mjs --mode client --scenario auth/metadata-default
+//        node scripts/sdk-matrix.mjs --help
+
+import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const REPO_ROOT = path.resolve(HERE, '..');
+const DEFAULT_HARNESS_REPO =
+  'https://github.com/modelcontextprotocol/conformance.git';
+
+// ---------------------------------------------------------------------------
+// CLI parsing
+
+const HELP = `Usage: node scripts/sdk-matrix.mjs [options]
+
+Runs \`conformance sdk <name>\` for each SDK and aggregates the results into
+<output>/matrix.json and <output>/matrix.md (also printed to stdout).
+
+Selection:
+  --sdks <all|a,b,...>         SDKs to run: KNOWN_SDKS names, optionally
+                               name@ref (default: all)
+  --mode <client|server|both>  Side to test (default: client)
+  --scenario <a,b,...>         Scenario(s) to run (one sdk invocation each)
+  --suite <name>               Suite to run instead of scenarios
+  --requirements <rev>         Requirement set to run instead (e.g. 2026-07-28)
+  --spec-version <v>           Passed through to \`conformance sdk\`
+  --timeout <ms>               Passed through to \`conformance sdk\`
+
+Harness:
+  --ref <git-ref|PR-number>    Conformance ref to test. A bare number is a PR
+                               (fetched as pull/<n>/head). Default: this
+                               checkout, rebuilt first.
+  --harness-repo <url>         Where --ref is fetched from (default: upstream)
+  --harness-dir <dir>          Use this already-built conformance checkout as
+                               the harness (its dist/ and KNOWN_SDKS) instead
+                               of this one; nothing is rebuilt
+  --skip-harness-build         Don't rebuild this checkout before running
+  --skip-build                 Reuse each SDK's previous build (passed through)
+  --cache-dir <dir>            SDK clone/build cache (default: .sdk-under-test)
+  --concurrency <n>            SDKs in flight at once (default: 2). Server-mode
+                               runs are serialized regardless, because every
+                               SDK's conformance server listens on port 3000.
+
+Output:
+  -o, --output <dir>           Result directory (default: sdk-matrix-results)
+  --title <text>               Heading for matrix.md
+  --merge <dir[,dir...]>       Run nothing; merge the matrix.json files found
+                               under these directories and re-render
+  --list-sdks [--json]         Print the KNOWN_SDKS names (of --ref, if given)
+  --strict                     Exit 1 if any SDK errored or any check failed
+  --strict-errors              Exit 1 only if an SDK could not be built or run
+  -h, --help
+`;
+
+export function parseArgs(argv) {
+  const opts = {
+    sdks: 'all',
+    mode: 'client',
+    scenario: undefined,
+    suite: undefined,
+    requirements: undefined,
+    specVersion: undefined,
+    timeout: undefined,
+    ref: undefined,
+    harnessRepo: DEFAULT_HARNESS_REPO,
+    harnessDir: undefined,
+    skipHarnessBuild: false,
+    skipBuild: false,
+    cacheDir: undefined,
+    concurrency: 2,
+    output: 'sdk-matrix-results',
+    title: undefined,
+    merge: [],
+    listSdks: false,
+    json: false,
+    strict: false,
+    strictErrors: false,
+    help: false
+  };
+  const takesValue = {
+    '--sdks': 'sdks',
+    '--mode': 'mode',
+    '--scenario': 'scenario',
+    '--suite': 'suite',
+    '--requirements': 'requirements',
+    '--spec-version': 'specVersion',
+    '--timeout': 'timeout',
+    '--ref': 'ref',
+    '--pr': 'ref',
+    '--harness-repo': 'harnessRepo',
+    '--harness-dir': 'harnessDir',
+    '--cache-dir': 'cacheDir',
+    '--concurrency': 'concurrency',
+    '-o': 'output',
+    '--output': 'output',
+    '--title': 'title',
+    '--merge': 'merge'
+  };
+  const flags = {
+    '--skip-harness-build': 'skipHarnessBuild',
+    '--skip-build': 'skipBuild',
+    '--list-sdks': 'listSdks',
+    '--json': 'json',
+    '--strict': 'strict',
+    '--strict-errors': 'strictErrors',
+    '-h': 'help',
+    '--help': 'help'
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const key = eq > 0 ? arg.slice(0, eq) : arg;
+    const inline = eq > 0 ? arg.slice(eq + 1) : undefined;
+    if (key in takesValue) {
+      const value = inline ?? argv[++i];
+      if (value === undefined || value === '' || value.startsWith('--')) {
+        // Empty values come from unset workflow inputs; treat as "not given".
+        if (value === '') continue;
+        throw new Error(`${key} requires a value`);
+      }
+      if (key === '--merge') opts.merge.push(...splitList(value));
+      else if (key === '--concurrency') opts.concurrency = Number(value);
+      else opts[takesValue[key]] = value;
+    } else if (key in flags) {
+      opts[flags[key]] = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!['client', 'server', 'both'].includes(opts.mode)) {
+    throw new Error(`--mode must be client, server or both (got ${opts.mode})`);
+  }
+  const selections = [opts.scenario, opts.suite, opts.requirements].filter(
+    (v) => v !== undefined
+  );
+  if (selections.length > 1) {
+    throw new Error('Pass at most one of --scenario, --suite, --requirements');
+  }
+  if (!Number.isInteger(opts.concurrency) || opts.concurrency < 1) {
+    throw new Error('--concurrency must be a positive integer');
+  }
+  return opts;
+}
+
+export function splitList(value) {
+  return String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// KNOWN_SDKS discovery
+//
+// The SDK list comes from the harness under test (which may be an older ref
+// that predates this script), so it is read from that checkout's source rather
+// than imported. KNOWN_SDKS is a prettier-formatted object literal whose
+// top-level keys sit at two-space indent; the unit test cross-checks this
+// parse against the real module so a format change can't silently drift.
+
+export function parseKnownSdkNames(source) {
+  const start = source.indexOf('export const KNOWN_SDKS');
+  if (start < 0) throw new Error('KNOWN_SDKS not found in known-sdks.ts');
+  const names = [];
+  for (const m of source.slice(start).matchAll(/^ {2}'([^']+)':\s*\{/gm)) {
+    names.push(m[1]);
+  }
+  if (names.length === 0) {
+    throw new Error('No SDK entries parsed from KNOWN_SDKS');
+  }
+  return names;
+}
+
+export function listKnownSdks(harnessRoot) {
+  const file = path.join(harnessRoot, 'src', 'sdk-runner', 'known-sdks.ts');
+  return parseKnownSdkNames(fs.readFileSync(file, 'utf-8'));
+}
+
+/** `name[@ref]` -> { spec, name, ref }. Mirrors parseSdkSpec in checkout.ts. */
+export function parseSdkSpec(spec) {
+  const at = spec.lastIndexOf('@');
+  if (at <= 0) return { spec, name: spec, ref: undefined };
+  const ref = spec.slice(at + 1) || undefined;
+  return { spec, name: spec.slice(0, at), ref };
+}
+
+/** The KNOWN_SDKS key a spec resolves to (basename of owner/repo). */
+export function sdkKey(name) {
+  return name.split('/').pop();
+}
+
+export function resolveSdkList(sdksArg, known) {
+  if (!sdksArg || sdksArg === 'all') return known.map((k) => parseSdkSpec(k));
+  return splitList(sdksArg).map((s) => parseSdkSpec(s));
+}
+
+/** Filesystem/artifact-safe form of an SDK spec. */
+export function safeName(spec) {
+  return spec.replace(/[^A-Za-z0-9._-]+/g, '_');
+}
+
+// ---------------------------------------------------------------------------
+// Toolchain probes, reported per SDK so a red cell can be read against the
+// toolchain that produced it.
+
+const PROBES = {
+  node: ['node', ['--version']],
+  npm: ['npm', ['--version']],
+  pnpm: ['pnpm', ['--version']],
+  uv: ['uv', ['--version']],
+  python: ['python3', ['--version']],
+  go: ['go', ['version']],
+  cargo: ['cargo', ['--version']],
+  rustc: ['rustc', ['--version']],
+  dotnet: ['dotnet', ['--version']],
+  ruby: ['ruby', ['--version']],
+  bundler: ['bundle', ['--version']],
+  java: ['java', ['-version']]
+};
+
+const SDK_PROBES = [
+  [/typescript-sdk/, ['node', 'pnpm', 'npm']],
+  [/python-sdk/, ['uv', 'python']],
+  [/go-sdk/, ['go']],
+  [/rust-sdk/, ['cargo', 'rustc']],
+  [/csharp-sdk/, ['dotnet']],
+  [/ruby-sdk/, ['ruby', 'bundler']],
+  [/java-sdk|kotlin-sdk/, ['java']]
+];
+
+export function probesFor(sdkName) {
+  for (const [re, probes] of SDK_PROBES) {
+    if (re.test(sdkName)) return probes;
+  }
+  return ['node'];
+}
+
+function probeToolchain(sdkName, cwd) {
+  const out = {};
+  for (const key of probesFor(sdkName)) {
+    const [cmd, args] = PROBES[key];
+    try {
+      // Probe inside the SDK checkout when we have it, so per-repo pins
+      // (rust-toolchain.toml, packageManager, .python-version) are reflected.
+      const r = spawnSync(cmd, args, {
+        cwd: cwd && fs.existsSync(cwd) ? cwd : undefined,
+        encoding: 'utf-8',
+        timeout: 120_000,
+        env: { ...process.env, COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' }
+      });
+      if (r.error || r.status !== 0) {
+        out[key] = null;
+        continue;
+      }
+      const text = `${r.stdout || ''}\n${r.stderr || ''}`.trim();
+      out[key] = text.split('\n')[0].trim() || null;
+    } catch {
+      out[key] = null;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Process helpers
+
+function run(cmd, args, { cwd, logFile, prefix, env } = {}) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const log = logFile ? fs.createWriteStream(logFile, { flags: 'a' }) : null;
+    if (log) log.write(`$ ${cmd} ${args.join(' ')}\n`);
+    const child = spawn(cmd, args, {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let captured = '';
+    let partial = '';
+    const onData = (chunk) => {
+      const text = chunk.toString();
+      captured += text;
+      if (captured.length > 4_000_000) captured = captured.slice(-2_000_000);
+      if (log) log.write(text);
+      if (prefix !== undefined) {
+        const pieces = (partial + text).split('\n');
+        partial = pieces.pop() ?? '';
+        for (const line of pieces) process.stderr.write(`${prefix}${line}\n`);
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('error', (err) => {
+      captured += `\nspawn error: ${err.message}\n`;
+      if (log) log.end(`\nspawn error: ${err.message}\n`);
+      resolve({
+        exitCode: -1,
+        output: captured,
+        durationMs: Date.now() - started
+      });
+    });
+    child.on('close', (code) => {
+      if (prefix !== undefined && partial) {
+        process.stderr.write(`${prefix}${partial}\n`);
+      }
+      if (log) log.end(`\n[exit ${code}]\n`);
+      resolve({
+        exitCode: code ?? -1,
+        output: captured,
+        durationMs: Date.now() - started
+      });
+    });
+  });
+}
+
+function git(args, cwd) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf-8' });
+  if (r.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.stdout}`);
+  }
+  return r.stdout.trim();
+}
+
+function tryGit(args, cwd) {
+  try {
+    return git(args, cwd) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Promise pool: run `fn` over items with at most `n` in flight. */
+export async function pool(items, n, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(n, items.length) },
+    async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i], i);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+/** A minimal async mutex. */
+function createLock() {
+  let tail = Promise.resolve();
+  return (fn) => {
+    const runIt = tail.then(fn, fn);
+    tail = runIt.catch(() => {});
+    return runIt;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Harness preparation (--ref)
+
+async function prepareHarness(opts, cacheDir, outDir) {
+  if (opts.harnessDir) {
+    // An existing, already-built checkout (CI builds the ref under test in a
+    // separate directory and drives it with this branch's script).
+    const root = path.resolve(opts.harnessDir);
+    if (!opts.listSdks && !fs.existsSync(path.join(root, 'dist', 'index.js'))) {
+      throw new Error(
+        `No dist/index.js in --harness-dir ${root}; run npm ci && npm run build there`
+      );
+    }
+    return { root, ...describeCheckout(root) };
+  }
+  if (!opts.ref) {
+    const root = REPO_ROOT;
+    if (!opts.skipHarnessBuild) {
+      console.error('[matrix] Building harness (npm run build)');
+      const logFile = path.join(outDir, 'harness-build.log');
+      const r = await run('npm', ['run', 'build', '--silent'], {
+        cwd: root,
+        logFile
+      });
+      if (r.exitCode !== 0) {
+        throw new Error(`Harness build failed (see ${logFile})`);
+      }
+    }
+    if (!fs.existsSync(path.join(root, 'dist', 'index.js'))) {
+      throw new Error(`No dist/index.js in ${root}; run npm run build`);
+    }
+    return { root, ...describeCheckout(root) };
+  }
+
+  // A separate clone (not a worktree of this checkout) so this also works
+  // where the invoking checkout has no usable .git, e.g. a bind-mounted
+  // worktree inside the container.
+  const isPr = /^\d+$/.test(opts.ref);
+  const refspec = isPr ? `pull/${opts.ref}/head` : opts.ref;
+  const root = path.join(cacheDir, '_harness', 'conformance');
+  fs.mkdirSync(path.dirname(root), { recursive: true });
+  if (!fs.existsSync(path.join(root, '.git'))) {
+    console.error(`[matrix] Cloning ${opts.harnessRepo} -> ${root}`);
+    git(['clone', opts.harnessRepo, root], path.dirname(root));
+  }
+  console.error(`[matrix] Fetching ${refspec} from ${opts.harnessRepo}`);
+  git(['fetch', opts.harnessRepo, refspec], root);
+  const sha = git(['rev-parse', 'FETCH_HEAD'], root);
+  git(['checkout', '--detach', '--force', sha], root);
+  git(['clean', '-fdx', '-e', 'node_modules', '-e', 'dist'], root);
+
+  const logFile = path.join(outDir, 'harness-build.log');
+  const lock = fs.readFileSync(path.join(root, 'package-lock.json'), 'utf-8');
+  const lockStamp = `${lock.length}:${simpleHash(lock)}`;
+  const stampFile = path.join(root, 'node_modules', '.sdk-matrix-lock');
+  const prev = fs.existsSync(stampFile)
+    ? fs.readFileSync(stampFile, 'utf-8')
+    : '';
+  if (prev !== lockStamp) {
+    console.error('[matrix] Installing harness dependencies (npm ci)');
+    const r = await run('npm', ['ci'], { cwd: root, logFile });
+    if (r.exitCode !== 0) {
+      throw new Error(`npm ci failed for --ref ${opts.ref} (see ${logFile})`);
+    }
+    fs.writeFileSync(stampFile, lockStamp);
+  }
+  console.error('[matrix] Building harness at ref (npm run build)');
+  const r = await run('npm', ['run', 'build', '--silent'], {
+    cwd: root,
+    logFile
+  });
+  if (r.exitCode !== 0) {
+    throw new Error(
+      `Harness build failed for --ref ${opts.ref} (see ${logFile})`
+    );
+  }
+  return {
+    root,
+    ref: isPr ? `PR #${opts.ref}` : opts.ref,
+    sha: sha.slice(0, 12),
+    version: readVersion(root)
+  };
+}
+
+function simpleHash(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}
+
+function readVersion(root) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'))
+      .version;
+  } catch {
+    return undefined;
+  }
+}
+
+function describeCheckout(root) {
+  // Env overrides let a wrapper (the docker script) label a checkout whose
+  // .git is not resolvable from where this runs.
+  return {
+    ref:
+      process.env.SDK_MATRIX_HARNESS_REF ||
+      tryGit(['rev-parse', '--abbrev-ref', 'HEAD'], root) ||
+      'unknown',
+    sha:
+      process.env.SDK_MATRIX_HARNESS_SHA ||
+      tryGit(['rev-parse', '--short=12', 'HEAD'], root) ||
+      'unknown',
+    version: readVersion(root)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Running one SDK
+
+/**
+ * Classify a `conformance sdk` invocation from its combined output. The sdk
+ * command logs `[sdk] <step>` progress lines and, on a thrown error, a final
+ * `[sdk] <message>`; `[sdk] conformance <client|server> ...` is printed right
+ * before scenarios start, so its absence means the run never got that far.
+ */
+export function classifyInvocation(output, exitCode) {
+  if (/^\[sdk\] conformance (client|server)\b/m.test(output)) {
+    return { phase: 'ran', exitCode };
+  }
+  const progress =
+    /^(Fetching|Cloning|Checking out|HEAD is|Building:|No build command|Starting server|Server ready|Stopping server|conformance )/;
+  let reason;
+  for (const m of output.matchAll(/^\[sdk\] (.+)$/gm)) {
+    if (!progress.test(m[1])) reason = m[1];
+  }
+  let phase = 'setup';
+  if (/^\[sdk\] Starting server/m.test(output)) phase = 'server-start';
+  else if (/^\[sdk\] Building:/m.test(output)) phase = 'build';
+  else if (/^\[sdk\] (Cloning|Fetching|Checking out)/m.test(output)) {
+    phase = 'checkout';
+  }
+  return {
+    phase,
+    exitCode,
+    reason: reason ?? `exited with code ${exitCode} before running scenarios`,
+    detail: firstErrorLine(output)
+  };
+}
+
+/** First line that looks like a toolchain error, for the one-line summary. */
+export function firstErrorLine(output) {
+  const patterns = [
+    /failed to select a version for the requirement.*$/m,
+    /^error(\[E\d+\])?: .+$/m,
+    /^npm (ERR!|error) .+$/m,
+    /ERR_PNPM_[A-Z_]+.*$/m,
+    /^.*error (CS|MSB|NU|NETSDK)\d+: .+$/m,
+    /^.*(command not found|not found in PATH|No such file or directory).*$/m,
+    /^.*Could not (find|locate) .+$/m,
+    /^\s*(E|e)rror:? .+$/m
+  ];
+  for (const re of patterns) {
+    const m = output.match(re);
+    if (m) return m[0].trim().slice(0, 240);
+  }
+  return undefined;
+}
+
+export function tailLines(text, n) {
+  const lines = String(text).replace(/\r/g, '').split('\n');
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  return lines.slice(-n).join('\n');
+}
+
+/**
+ * Collect checks.json files written under one mode's output dir into
+ * { scenarioName: { checks, resultDir } }. Result dirs are named
+ * `<scenario>-<ISO timestamp>` (server mode: `server-<scenario>-<ts>`), and a
+ * scenario name containing '/' nests directories. When a scenario ran more
+ * than once the latest timestamp wins.
+ */
+export function collectModeResults(modeDir, mode) {
+  const found = {};
+  if (!fs.existsSync(modeDir)) return {};
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (entry.name !== 'checks.json') continue;
+      let rel = path
+        .relative(modeDir, path.dirname(full))
+        .split(path.sep)
+        .join('/');
+      const ts = rel.match(/-(\d{4}-\d{2}-\d{2}T[\d-]+Z)$/);
+      const stamp = ts ? ts[1] : '';
+      if (ts) rel = rel.slice(0, -ts[0].length);
+      if (mode === 'server' && rel.startsWith('server-')) {
+        rel = rel.slice('server-'.length);
+      }
+      let checks;
+      try {
+        checks = JSON.parse(fs.readFileSync(full, 'utf-8'));
+        if (!Array.isArray(checks)) throw new Error('not an array');
+      } catch (err) {
+        checks = [
+          {
+            id: rel,
+            name: rel,
+            status: 'FAILURE',
+            description: 'checks.json could not be parsed',
+            errorMessage: String(err)
+          }
+        ];
+      }
+      if (!found[rel] || found[rel].stamp < stamp) {
+        found[rel] = { stamp, resultDir: path.dirname(full), checks };
+      }
+    }
+  };
+  walk(modeDir);
+  const out = {};
+  for (const [name, v] of Object.entries(found)) {
+    out[name] = { resultDir: v.resultDir, checks: v.checks.map(slimCheck) };
+  }
+  return out;
+}
+
+function slimCheck(c) {
+  const slim = {
+    id: String(c.id ?? ''),
+    status: String(c.status ?? 'UNKNOWN')
+  };
+  if (c.name && c.name !== c.id) slim.name = String(c.name);
+  if (c.description) slim.description = String(c.description);
+  if (c.errorMessage) slim.errorMessage = String(c.errorMessage);
+  return slim;
+}
+
+function checkoutDirFromLog(output) {
+  const m =
+    output.match(/^\[sdk\] Cloning \S+ -> (.+)$/m) ||
+    output.match(/^\[sdk\] Fetching \S+ \(cached at (.+)\)$/m);
+  return m ? m[1].trim() : undefined;
+}
+
+function headFromLog(output) {
+  const m = output.match(/^\[sdk\] HEAD is (\S+)/m);
+  return m ? m[1] : undefined;
+}
+
+async function runSdk(sdk, ctx) {
+  const { opts, harness, cacheDir, outDir, serverLock } = ctx;
+  const sdkDir = path.join(outDir, 'sdks', safeName(sdk.spec));
+  fs.mkdirSync(sdkDir, { recursive: true });
+  const record = {
+    spec: sdk.spec,
+    name: sdk.name,
+    requestedRef: sdk.ref ?? null,
+    head: null,
+    checkoutDir: null,
+    toolchain: {},
+    modes: {}
+  };
+  const modes = opts.mode === 'both' ? ['client', 'server'] : [opts.mode];
+  let built = opts.skipBuild;
+  let buildError = null;
+
+  for (const mode of modes) {
+    const modeOut = path.join(sdkDir, mode);
+    const modeRec = { invocations: [], error: null, scenarios: {} };
+    record.modes[mode] = modeRec;
+    if (buildError) {
+      // The build already failed under the previous mode; don't repeat it.
+      modeRec.error = { ...buildError, inherited: true };
+      continue;
+    }
+    // `conformance sdk --scenario` takes one scenario, so a list means one
+    // invocation each; everything after the first reuses the build.
+    const selections = opts.scenario ? splitList(opts.scenario) : [null];
+    for (const scenario of selections) {
+      const args = [
+        path.join(harness.root, 'dist', 'index.js'),
+        'sdk',
+        sdk.spec,
+        '--mode',
+        mode,
+        '--cache-dir',
+        cacheDir,
+        '-o',
+        modeOut
+      ];
+      if (scenario) args.push('--scenario', scenario);
+      else if (opts.suite) args.push('--suite', opts.suite);
+      else if (opts.requirements)
+        args.push('--requirements', opts.requirements);
+      if (opts.specVersion) args.push('--spec-version', opts.specVersion);
+      if (opts.timeout) args.push('--timeout', opts.timeout);
+      if (built) args.push('--skip-build');
+      const label = scenario ?? opts.suite ?? opts.requirements ?? 'default';
+      const logFile = path.join(sdkDir, `${mode}-${safeName(label)}.log`);
+      console.error(`[matrix] ${sdk.spec} ${mode} ${label}: starting`);
+      const exec = () =>
+        run(process.execPath, args, {
+          cwd: harness.root,
+          logFile,
+          prefix: `[${sdk.spec}] `,
+          env: { COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' }
+        });
+      // Every SDK's conformance server binds port 3000, so server-mode runs
+      // never overlap across SDKs; client-mode mock servers use ephemeral
+      // ports and run concurrently.
+      const r = mode === 'server' ? await serverLock(exec) : await exec();
+      record.checkoutDir ??= checkoutDirFromLog(r.output) ?? null;
+      record.head ??= headFromLog(r.output) ?? null;
+      const cls = classifyInvocation(r.output, r.exitCode);
+      const inv = {
+        scenario: scenario ?? null,
+        args: args.slice(1),
+        exitCode: r.exitCode,
+        durationMs: r.durationMs,
+        phase: cls.phase,
+        logFile: path.relative(outDir, logFile)
+      };
+      if (cls.phase !== 'ran') {
+        inv.reason = cls.reason;
+        if (cls.detail) inv.detail = cls.detail;
+        inv.tail = tailLines(r.output, 40);
+        modeRec.error ??= {
+          phase: cls.phase,
+          reason: cls.reason,
+          detail: cls.detail ?? null,
+          logFile: inv.logFile,
+          tail: inv.tail
+        };
+        if (cls.phase !== 'server-start') buildError = modeRec.error;
+      } else {
+        built = true;
+      }
+      modeRec.invocations.push(inv);
+      console.error(
+        `[matrix] ${sdk.spec} ${mode} ${label}: ${cls.phase} (exit ${r.exitCode}, ${Math.round(r.durationMs / 1000)}s)`
+      );
+      if (buildError) break;
+    }
+    modeRec.scenarios = collectModeResults(modeOut, mode);
+    // A requested scenario that left no checks.json is an execution error
+    // for that scenario, distinct from a check that was simply not emitted.
+    if (opts.scenario) {
+      for (const s of splitList(opts.scenario)) {
+        if (modeRec.scenarios[s]) continue;
+        const inv = modeRec.invocations.find((i) => i.scenario === s);
+        modeRec.scenarios[s] = {
+          resultDir: null,
+          checks: [],
+          missing: true,
+          reason:
+            inv?.detail ??
+            inv?.reason ??
+            modeRec.error?.reason ??
+            (inv ? `no checks.json written (exit ${inv.exitCode})` : 'not run')
+        };
+      }
+    }
+  }
+  record.toolchain = probeToolchain(sdk.name, record.checkoutDir ?? undefined);
+  fs.writeFileSync(
+    path.join(sdkDir, 'result.json'),
+    JSON.stringify(record, null, 2)
+  );
+  return record;
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation + rendering
+
+const STATUS_RANK = {
+  FAILURE: 5,
+  WARNING: 4,
+  SUCCESS: 3,
+  INFO: 2,
+  SKIPPED: 1
+};
+const ICON = {
+  SUCCESS: '✅',
+  FAILURE: '❌',
+  WARNING: '⚠️',
+  SKIPPED: '⏭️',
+  INFO: 'ℹ️'
+};
+const DASH = '—';
+
+export function worstStatus(statuses) {
+  let worst;
+  for (const s of statuses) {
+    if (
+      worst === undefined ||
+      (STATUS_RANK[s] ?? 0) > (STATUS_RANK[worst] ?? 0)
+    ) {
+      worst = s;
+    }
+  }
+  return worst;
+}
+
+export function summarizeChecks(checks) {
+  const n = (s) => checks.filter((c) => c.status === s).length;
+  // Denominator matches the harness's own summary: SUCCESS + FAILURE.
+  // WARNING/INFO/SKIPPED are reported alongside, not scored.
+  return {
+    passed: n('SUCCESS'),
+    failed: n('FAILURE'),
+    warnings: n('WARNING'),
+    total: n('SUCCESS') + n('FAILURE'),
+    emitted: checks.length
+  };
+}
+
+/**
+ * Escape text for a markdown table cell. Everything rendered comes from SDK
+ * output or check messages, so it is treated as data: no raw HTML, no pipes,
+ * no line breaks, no link/image syntax, no @-mentions, bounded length.
+ */
+export function cell(text, max = 140) {
+  let s = String(text ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (s.length > max) s = `${s.slice(0, max - 1)}…`;
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/`/g, "'")
+    .replace(/@/g, '@​');
+}
+
+function code(text, max = 200) {
+  const c = cell(text, max);
+  return c ? `\`${c}\`` : DASH;
+}
+
+export function mergeMatrices(matrices) {
+  if (matrices.length === 0) throw new Error('Nothing to merge');
+  const base = structuredClone(matrices[0]);
+  base.sdks = {};
+  for (const m of matrices) {
+    for (const [k, v] of Object.entries(m.sdks ?? {})) base.sdks[k] = v;
+  }
+  base.generatedAt = new Date().toISOString();
+  return base;
+}
+
+/** matrix.json files directly in, or up to three levels under, each dir. */
+export function findMatrixFiles(dirs) {
+  const files = [];
+  const walk = (dir, depth) => {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    const direct = path.join(dir, 'matrix.json');
+    if (fs.existsSync(direct)) {
+      files.push(direct);
+      return;
+    }
+    if (depth >= 3) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  for (const d of dirs) walk(path.resolve(d), 0);
+  return files;
+}
+
+export function errorLabel(err) {
+  const what =
+    err.phase === 'build'
+      ? 'build failed'
+      : err.phase === 'checkout'
+        ? 'checkout failed'
+        : err.phase === 'server-start'
+          ? 'server failed to start'
+          : 'failed before running';
+  return `${what}: ${err.detail ?? err.reason}`;
+}
+
+function sdkStatusCell(s) {
+  const modes = Object.entries(s.modes);
+  const errors = modes
+    .filter(([, m]) => m.error && !m.error.inherited)
+    .map(
+      ([mode, m]) =>
+        `${modes.length > 1 ? `${mode}: ` : ''}${errorLabel(m.error)}`
+    );
+  if (errors.length) return `${ICON.FAILURE} ${cell(errors.join('; '), 220)}`;
+  const missing = modes.flatMap(([, m]) =>
+    Object.values(m.scenarios).filter((sc) => sc.missing)
+  ).length;
+  const all = modes.flatMap(([, m]) =>
+    Object.values(m.scenarios).flatMap((sc) => sc.checks)
+  );
+  const sum = summarizeChecks(all);
+  const parts = [];
+  if (missing) parts.push(`${missing} scenario(s) produced no results`);
+  if (sum.failed) {
+    parts.push(
+      `${sum.failed} failed, ${sum.warnings} warnings / ${sum.total} checks`
+    );
+  } else if (sum.warnings) {
+    parts.push(`${sum.warnings} warnings / ${sum.total} checks`);
+  } else parts.push(`${sum.passed}/${sum.total} checks`);
+  const icon =
+    missing || sum.failed
+      ? ICON.FAILURE
+      : sum.warnings
+        ? ICON.WARNING
+        : ICON.SUCCESS;
+  return `${icon} ${parts.join('; ')}`;
+}
+
+/** `go version go1.26.5 linux/amd64` -> `1.26.5`, `v22.1.0` -> `22.1.0`. */
+export function shortVersion(text) {
+  return String(text)
+    .replace(
+      /^(v|go version go|go version |cargo |rustc |ruby |Bundler version |Python |uv |openjdk version )/,
+      ''
+    )
+    .replace(/ \(.*$/, '')
+    .replace(/ (linux|darwin|windows)\/\S+$/, '')
+    .replace(/^"(.*)"$/, '$1');
+}
+
+function toolchainCell(s) {
+  const parts = Object.entries(s.toolchain ?? {}).map(
+    ([k, v]) => `${k} ${v === null ? 'missing' : cell(shortVersion(v), 32)}`
+  );
+  return parts.length ? parts.join(', ') : DASH;
+}
+
+function scenarioCell(m, sc) {
+  if (!m) return DASH;
+  const r = m.scenarios[sc];
+  if (m.error && (!r || r.missing || r.checks.length === 0)) {
+    return `${ICON.FAILURE} ${cell(errorLabel(m.error), 90)}`;
+  }
+  if (!r) return DASH;
+  if (r.missing)
+    return `${ICON.FAILURE} no results: ${cell(r.reason ?? '', 80)}`;
+  const sum = summarizeChecks(r.checks);
+  if (sum.emitted === 0) return `${DASH} 0 checks`;
+  const warn = sum.warnings ? ` (+${sum.warnings}${ICON.WARNING})` : '';
+  if (sum.failed) return `${ICON.FAILURE} ${sum.passed}/${sum.total}${warn}`;
+  if (sum.warnings) return `${ICON.WARNING} ${sum.passed}/${sum.total}${warn}`;
+  return `${ICON.SUCCESS} ${sum.passed}/${sum.total}`;
+}
+
+function checkIds(sdks, mode, scenario) {
+  const ids = [];
+  const seen = new Set();
+  for (const s of sdks) {
+    const r = s.modes[mode]?.scenarios?.[scenario];
+    if (!r) continue;
+    for (const c of r.checks) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      ids.push(c.id);
+    }
+  }
+  return ids;
+}
+
+export function renderMarkdown(matrix) {
+  const sdks = Object.values(matrix.sdks);
+  const lines = [];
+  lines.push(`## ${cell(matrix.title ?? 'SDK matrix', 200)}`, '');
+  const h = matrix.harness ?? {};
+  const sel = matrix.selection ?? {};
+  const what = sel.scenario
+    ? `scenario ${splitList(sel.scenario)
+        .map((s) => code(s))
+        .join(', ')}`
+    : sel.suite
+      ? `suite ${code(sel.suite)}`
+      : sel.requirements
+        ? `requirements ${code(sel.requirements)}`
+        : 'default suites';
+  const version = h.version ? `, v${cell(h.version, 40)}` : '';
+  lines.push(
+    `Conformance ${code(h.ref ?? 'unknown')} (${code(h.sha ?? 'unknown')}${version}), mode ${code(sel.mode ?? '?')}, ${what}. Generated ${cell(matrix.generatedAt, 40)}${matrix.host?.runner ? ` on ${cell(matrix.host.runner, 20)}` : ''}.`,
+    ''
+  );
+  lines.push(
+    `Legend: ${ICON.SUCCESS} SUCCESS, ${ICON.FAILURE} FAILURE, ${ICON.WARNING} WARNING, ${ICON.SKIPPED} SKIPPED, ${ICON.INFO} INFO, ${DASH} not emitted or not run. Summary cells are passed/(passed+failed) checks.`,
+    ''
+  );
+
+  lines.push(
+    '| SDK | SDK head | Status | Toolchain |',
+    '| --- | --- | --- | --- |'
+  );
+  for (const s of sdks) {
+    lines.push(
+      `| ${code(s.spec)} | ${s.head ? code(s.head) : DASH} | ${sdkStatusCell(s)} | ${toolchainCell(s)} |`
+    );
+  }
+  lines.push('');
+
+  const header = `| ${sdks.map((s) => code(s.spec)).join(' | ')} |`;
+  const rule = `|${' --- |'.repeat(sdks.length)}`;
+  const modes = [...new Set(sdks.flatMap((s) => Object.keys(s.modes)))];
+  for (const mode of modes) {
+    lines.push(`### ${mode}`, '');
+    const scenarioNames = [
+      ...new Set(
+        sdks.flatMap((s) => Object.keys(s.modes[mode]?.scenarios ?? {}))
+      )
+    ].sort();
+    if (scenarioNames.length === 0) {
+      const anyError = sdks.some((s) => s.modes[mode]?.error);
+      lines.push(
+        anyError
+          ? '_No scenario results; see errors below._'
+          : '_No scenario results._',
+        ''
+      );
+      continue;
+    }
+    lines.push(`| Scenario ${header}`, `| --- ${rule}`);
+    for (const sc of scenarioNames) {
+      const cells = sdks.map((s) => scenarioCell(s.modes[mode], sc));
+      lines.push(`| ${code(sc)} | ${cells.join(' | ')} |`);
+    }
+    lines.push('');
+
+    const totalRows = scenarioNames.reduce(
+      (acc, sc) => acc + checkIds(sdks, mode, sc).length,
+      0
+    );
+    const open = totalRows <= 60 ? ' open' : '';
+    for (const sc of scenarioNames) {
+      const ids = checkIds(sdks, mode, sc);
+      if (ids.length === 0) continue;
+      lines.push(
+        `<details${open}><summary>${cell(sc)}: ${ids.length} checks</summary>`,
+        '',
+        `| Check ${header}`,
+        `| --- ${rule}`
+      );
+      for (const id of ids) {
+        const cells = sdks.map((s) => {
+          const r = s.modes[mode]?.scenarios?.[sc];
+          if (!r || r.missing) return DASH;
+          const statuses = r.checks
+            .filter((c) => c.id === id)
+            .map((c) => c.status);
+          if (statuses.length === 0) return DASH;
+          const w = worstStatus(statuses);
+          return ICON[w] ?? cell(w, 12);
+        });
+        lines.push(`| ${code(id)} | ${cells.join(' | ')} |`);
+      }
+      lines.push('', '</details>', '');
+    }
+
+    const failures = [];
+    for (const s of sdks) {
+      for (const sc of scenarioNames) {
+        const r = s.modes[mode]?.scenarios?.[sc];
+        if (!r || r.missing) continue;
+        for (const c of r.checks) {
+          if (c.status !== 'FAILURE' && c.status !== 'WARNING') continue;
+          failures.push(
+            `| ${code(s.spec)} | ${code(sc)} | ${ICON[c.status]} ${code(c.id)} | ${cell(c.errorMessage ?? c.description ?? '', 200) || DASH} |`
+          );
+        }
+      }
+    }
+    if (failures.length) {
+      const cap = 80;
+      lines.push(
+        `<details><summary>${mode} failure and warning messages (${failures.length})</summary>`,
+        '',
+        '| SDK | Scenario | Check | Message |',
+        '| --- | --- | --- | --- |',
+        ...failures.slice(0, cap)
+      );
+      if (failures.length > cap) {
+        lines.push(`| | | | ${failures.length - cap} more in matrix.json |`);
+      }
+      lines.push('', '</details>', '');
+    }
+  }
+
+  const errs = [];
+  for (const s of sdks) {
+    for (const [mode, m] of Object.entries(s.modes)) {
+      if (m.error && !m.error.inherited) errs.push([s, mode, m.error]);
+    }
+  }
+  if (errs.length) {
+    lines.push('### Build and execution errors', '');
+    for (const [s, mode, e] of errs) {
+      const tail = tailLines(String(e.tail ?? ''), 25).replace(/```/g, "'''");
+      lines.push(
+        `<details><summary>${cell(s.spec)} (${mode}): ${cell(errorLabel(e), 160)}</summary>`,
+        '',
+        `${cell(e.reason ?? '', 300)} (log: ${code(e.logFile ?? 'n/a')})`,
+        '',
+        '```text',
+        tail || '(no output captured)',
+        '```',
+        '',
+        '</details>',
+        ''
+      );
+    }
+  }
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+export function hasErrors(matrix) {
+  return Object.values(matrix.sdks).some((s) =>
+    Object.values(s.modes).some(
+      (m) => m.error || Object.values(m.scenarios).some((sc) => sc.missing)
+    )
+  );
+}
+
+function exitCodeFor(opts, matrix) {
+  if (opts.strict && hasRed(matrix)) return 1;
+  if (opts.strictErrors && hasErrors(matrix)) return 1;
+  return 0;
+}
+
+export function hasRed(matrix) {
+  for (const s of Object.values(matrix.sdks)) {
+    for (const m of Object.values(s.modes)) {
+      if (m.error) return true;
+      for (const sc of Object.values(m.scenarios)) {
+        if (sc.missing) return true;
+        if (sc.checks.some((c) => c.status === 'FAILURE')) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function writeOutputs(matrix, outDir) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const md = renderMarkdown(matrix);
+  fs.writeFileSync(
+    path.join(outDir, 'matrix.json'),
+    JSON.stringify(matrix, null, 2)
+  );
+  fs.writeFileSync(path.join(outDir, 'matrix.md'), md);
+  process.stdout.write(md);
+  console.error(
+    `\n[matrix] Wrote ${path.join(outDir, 'matrix.json')} and matrix.md`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// main
+
+export async function main(argv) {
+  let opts;
+  try {
+    opts = parseArgs(argv);
+  } catch (err) {
+    console.error(`${err.message}\n\n${HELP}`);
+    return 2;
+  }
+  if (opts.help) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  const outDir = path.resolve(opts.output);
+  if (!opts.listSdks) fs.mkdirSync(outDir, { recursive: true });
+  const cacheDir = path.resolve(
+    opts.cacheDir ?? path.join(REPO_ROOT, '.sdk-under-test')
+  );
+
+  if (opts.merge.length) {
+    const files = findMatrixFiles(opts.merge);
+    if (files.length === 0) {
+      console.error(
+        `[matrix] No matrix.json found under: ${opts.merge.join(', ')}`
+      );
+      return 1;
+    }
+    console.error(`[matrix] Merging ${files.length} matrix.json file(s)`);
+    const merged = mergeMatrices(
+      files.map((f) => JSON.parse(fs.readFileSync(f, 'utf-8')))
+    );
+    if (opts.title) merged.title = opts.title;
+    writeOutputs(merged, outDir);
+    return exitCodeFor(opts, merged);
+  }
+
+  let harness;
+  try {
+    harness = await prepareHarness(
+      opts.listSdks ? { ...opts, skipHarnessBuild: true } : opts,
+      cacheDir,
+      outDir
+    );
+  } catch (err) {
+    console.error(`[matrix] ${err.message}`);
+    return 1;
+  }
+  const known = listKnownSdks(harness.root);
+  if (opts.listSdks) {
+    process.stdout.write(
+      opts.json ? `${JSON.stringify(known)}\n` : `${known.join('\n')}\n`
+    );
+    return 0;
+  }
+  const sdks = resolveSdkList(opts.sdks, known);
+  for (const s of sdks) {
+    if (!known.includes(sdkKey(s.name))) {
+      console.error(
+        `[matrix] warning: ${s.name} is not in KNOWN_SDKS at ${harness.ref} (known: ${known.join(', ')})`
+      );
+    }
+  }
+  console.error(
+    `[matrix] Harness ${harness.ref} (${harness.sha}); SDKs: ${sdks.map((s) => s.spec).join(', ')}; mode ${opts.mode}; cache ${cacheDir}`
+  );
+
+  const ctx = { opts, harness, cacheDir, outDir, serverLock: createLock() };
+  const records = await pool(sdks, opts.concurrency, async (sdk) => {
+    try {
+      return await runSdk(sdk, ctx);
+    } catch (err) {
+      // An orchestration bug for one SDK is recorded, never fatal.
+      const mode = opts.mode === 'both' ? 'client' : opts.mode;
+      return {
+        spec: sdk.spec,
+        name: sdk.name,
+        requestedRef: sdk.ref ?? null,
+        head: null,
+        checkoutDir: null,
+        toolchain: {},
+        modes: {
+          [mode]: {
+            invocations: [],
+            error: {
+              phase: 'setup',
+              reason: `sdk-matrix internal error: ${err.message}`,
+              detail: null,
+              logFile: null,
+              tail: String(err.stack ?? err)
+            },
+            scenarios: {}
+          }
+        }
+      };
+    }
+  });
+
+  const matrix = {
+    title: opts.title ?? `SDK matrix: conformance ${harness.ref}`,
+    generatedAt: new Date().toISOString(),
+    harness: { ref: harness.ref, sha: harness.sha, version: harness.version },
+    selection: {
+      mode: opts.mode,
+      scenario: opts.scenario ?? null,
+      suite: opts.suite ?? null,
+      requirements: opts.requirements ?? null,
+      specVersion: opts.specVersion ?? null
+    },
+    host: {
+      platform: process.platform,
+      arch: process.arch,
+      node: process.version,
+      runner: process.env.GITHUB_ACTIONS
+        ? 'github-actions'
+        : process.env.SDK_MATRIX_IN_DOCKER
+          ? 'docker'
+          : 'local'
+    },
+    sdks: Object.fromEntries(records.map((r) => [r.spec, r]))
+  };
+  writeOutputs(matrix, outDir);
+  return exitCodeFor(opts, matrix);
+}
+
+const invokedDirectly =
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (invokedDirectly) {
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (err) => {
+      console.error(err);
+      process.exit(1);
+    }
+  );
+}
