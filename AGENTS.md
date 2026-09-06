@@ -46,6 +46,7 @@ Keep scenarios separate when they're genuinely independent features or when they
 - Start with **one end-to-end scenario** covering the happy path with many checks along the way.
 - Don't add "step 1 only" and "step 1+2" as separate scenarios — the second subsumes the first.
 - Register the scenario in the appropriate suite list in `src/scenarios/index.ts` (`core`, `extensions`, `backcompat`, etc.).
+- Set `source.introducedIn` to the dated revision the requirement shipped in (e.g. `'2026-07-28'`). Use `DRAFT_SPEC_VERSION` only for a requirement that is in `docs/specification/draft/` but not yet in a dated release; such scenarios run under `--suite draft` / `--spec-version draft` and stay out of the default suite and tier scoring until the draft ships and they are retagged to its date. `DRAFT_PROTOCOL_VERSION` is the draft's wire string, not a tag.
 
 ## Check conventions
 
