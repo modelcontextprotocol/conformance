@@ -45,6 +45,16 @@ import {
 import type { AuthorizationServerOptions } from './schemas';
 import { withWireRecorder } from './validation/wire-schema';
 import {
+  filterScenariosByRequirements,
+  Leg,
+  listRequirementRevisions,
+  loadRequirements,
+  notScoredScenarios,
+  REASONS,
+  RequirementSet,
+  scoredScenarios
+} from './requirements';
+import {
   loadExpectedFailures,
   evaluateBaseline,
   printBaselineResults
@@ -59,6 +69,123 @@ import packageJson from '../package.json';
 // The `client` command tests Scenario objects (which test clients),
 // and the `server` command tests ClientScenario objects (which test servers).
 // This matches the inverted naming in scenarios/index.ts.
+/**
+ * Resolve `--requirements`. A requirement set replaces suite and spec-version
+ * selection: it already names exactly the scenarios that revision requires.
+ */
+function resolveRequirements(
+  revision: string | undefined,
+  conflicts: { specVersion?: string; suiteFromCli?: boolean; scenario?: string }
+): RequirementSet | undefined {
+  if (revision === undefined) return undefined;
+  // An explicitly passed empty value is a script whose variable did not expand.
+  // Ignoring it would silently score against the whole suite, which is the
+  // failure this flag exists to prevent.
+  if (revision === '') {
+    console.error(
+      '--requirements needs a revision, such as 2026-07-28. Run `conformance list` to see which are available.'
+    );
+    process.exit(1);
+  }
+  const combined = conflicts.specVersion
+    ? '--spec-version'
+    : conflicts.suiteFromCli
+      ? '--suite'
+      : conflicts.scenario
+        ? '--scenario'
+        : undefined;
+  if (combined) {
+    console.error(
+      `--requirements cannot be combined with ${combined}: a requirement set already fixes which scenarios run.`
+    );
+    process.exit(1);
+  }
+  try {
+    return loadRequirements(revision);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+/**
+ * Exit status under a requirement set. Scenarios the set runs without scoring
+ * (extensions, post-release additions) are reported but must not fail the run:
+ * otherwise the documented command red-flags an implementation that meets every
+ * requirement the revision actually imposes.
+ */
+function requirementsExitCode(
+  requirements: RequirementSet,
+  leg: Leg,
+  results: { scenario: string; checks: ConformanceCheck[] }[]
+): number {
+  const scored = new Set(scoredScenarios(requirements, leg));
+  const unscored = results.filter((r) => !scored.has(r.scenario));
+  if (unscored.length > 0) {
+    const failing = unscored.filter((r) =>
+      r.checks.some((c) => c.status === 'FAILURE')
+    );
+    console.log(
+      `\nNot scored for ${requirements.revision}: ${unscored.length} scenario(s) run, ${failing.length} failing. These do not affect conformance.`
+    );
+    for (const r of unscored) {
+      const why = notScoredScenarios(requirements, leg).find(
+        (e) => e.scenario === r.scenario
+      );
+      const failed = r.checks.some((c) => c.status === 'FAILURE');
+      console.log(
+        `  ${failed ? '\u2717' : '\u2713'} ${r.scenario} (${why?.reason ?? 'not scored'})`
+      );
+    }
+  }
+  const scoredFailed = results
+    .filter((r) => scored.has(r.scenario))
+    .some((r) => r.checks.some((c) => c.status === 'FAILURE'));
+  return scoredFailed ? 1 : 0;
+}
+
+/** Print one revision's requirement set. `list` is display-only, so it can show several. */
+function listOneRequirementSet(revision: string, specVersion?: string): void {
+  const requirements = resolveRequirements(revision, { specVersion })!;
+  const legs: [string, string[]][] = [
+    ['Server scenarios (test against a server)', requirements.server],
+    ['Client scenarios (test against a client)', requirements.client]
+  ];
+  const total = legs.reduce((n, [, names]) => n + names.length, 0);
+  console.log(
+    `Required for ${requirements.revision} (${total} scenarios, frozen; run at the ${requirements.revision} wire):\n`
+  );
+  for (const [title, names] of legs) {
+    if (names.length === 0) continue;
+    console.log(`${title}:`);
+    names.forEach((name) => console.log(`  - ${name}`));
+    console.log('');
+  }
+  if (requirements.notScored.length > 0) {
+    console.log('Run and reported, but never scored:');
+    for (const reason of REASONS) {
+      const entries = requirements.notScored.filter((e) => e.reason === reason);
+      if (entries.length === 0) continue;
+      console.log(`  ${reason} (${entries.length}):`);
+      entries.forEach((e) => console.log(`    - ${e.scenario} [${e.leg}]`));
+    }
+    console.log('');
+  }
+}
+
+function requiredScenariosOrExit(
+  allScenarios: string[],
+  requirements: RequirementSet,
+  command: Leg
+): string[] {
+  try {
+    return filterScenariosByRequirements(allScenarios, requirements, command);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
 function filterScenariosBySpecVersion(
   allScenarios: string[],
   version: SpecVersion,
@@ -109,18 +236,36 @@ program
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
+  .option(
+    '--requirements <revision>',
+    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+  )
   .option('--verbose', 'Show verbose output')
-  .action(async (options) => {
+  .action(async (options, cmd) => {
     try {
       const timeout = parseInt(options.timeout, 10);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
-      const specVersionFilter = options.specVersion
-        ? resolveSpecVersion(options.specVersion)
-        : undefined;
+      const requirements = resolveRequirements(options.requirements, {
+        specVersion: options.specVersion,
+        suiteFromCli: cmd.getOptionValueSource('suite') === 'cli',
+        scenario: options.scenario
+      });
+      // A requirement set decides two different things, and only the first is
+      // its scenario list. The revision it names is also the wire version those
+      // scenarios must speak: 2025-11-25 and 2026-07-28 are different protocols
+      // (stateful initialize handshake vs stateless per-request _meta), and a
+      // scenario emits different checks under each. Leaving this unset ran the
+      // right set against LATEST_SPEC_VERSION, which is a different wire than
+      // the one named on the flag.
+      const specVersionFilter = requirements
+        ? resolveSpecVersion(requirements.revision)
+        : options.specVersion
+          ? resolveSpecVersion(options.specVersion)
+          : undefined;
 
       // Handle suite mode
-      if (options.suite) {
+      if (options.suite || options.requirements !== undefined) {
         if (!options.command) {
           console.error('--command is required when using --suite');
           process.exit(1);
@@ -138,23 +283,37 @@ program
             listAuthScenarios().filter((name) => name.startsWith('auth/scope-'))
         };
 
-        const suiteName = options.suite.toLowerCase();
-        if (!suites[suiteName]) {
-          console.error(`Unknown suite: ${suiteName}`);
-          console.error(`Available suites: ${Object.keys(suites).join(', ')}`);
-          process.exit(1);
-        }
-
-        let scenarios = suites[suiteName]();
-        if (specVersionFilter) {
-          scenarios = filterScenariosBySpecVersion(
-            scenarios,
-            specVersionFilter,
+        let scenarios: string[];
+        let selection: string;
+        if (requirements) {
+          scenarios = requiredScenariosOrExit(
+            listScenarios(),
+            requirements,
             'client'
           );
+          selection = `requirements ${requirements.revision}`;
+        } else {
+          const suiteName = options.suite.toLowerCase();
+          if (!suites[suiteName]) {
+            console.error(`Unknown suite: ${suiteName}`);
+            console.error(
+              `Available suites: ${Object.keys(suites).join(', ')}`
+            );
+            process.exit(1);
+          }
+
+          scenarios = suites[suiteName]();
+          if (specVersionFilter) {
+            scenarios = filterScenariosBySpecVersion(
+              scenarios,
+              specVersionFilter,
+              'client'
+            );
+          }
+          selection = `${suiteName} suite`;
         }
         console.log(
-          `Running ${suiteName} suite (${scenarios.length} scenarios) in parallel...\n`
+          `Running ${selection} (${scenarios.length} scenarios) in parallel...\n`
         );
 
         const results = await Promise.all(
@@ -169,7 +328,9 @@ program
                   timeout,
                   outputDir,
                   specVersionFilter,
-                  options.force ?? false
+                  // a requirement set decides membership, so its choice outranks a
+                  // scenario's own applicability window at the pinned revision
+                  options.force || Boolean(requirements)
                 )
               );
               return {
@@ -256,12 +417,33 @@ program
             options.expectedFailures
           );
           const baselineScenarios = expectedFailuresConfig.client ?? [];
-          const baselineResult = evaluateBaseline(results, baselineScenarios);
+          // Under a requirement set, the baseline judges scored scenarios only:
+          // a not_scored scenario cannot fail the run, so it must not surface
+          // as an "unexpected failure" either.
+          const scoredOnly = requirements
+            ? new Set(scoredScenarios(requirements, 'client'))
+            : undefined;
+          const baselineResult = evaluateBaseline(
+            scoredOnly
+              ? results.filter((r) => scoredOnly.has(r.scenario))
+              : results,
+            baselineScenarios
+          );
           printBaselineResults(baselineResult);
           process.exit(baselineResult.exitCode);
         }
 
-        process.exit(totalFailed > 0 || totalWarnings > 0 ? 1 : 0);
+        process.exit(
+          requirements
+            ? requirementsExitCode(
+                requirements,
+                'client',
+                results.map((r) => ({ scenario: r.scenario, checks: r.checks }))
+              )
+            : totalFailed > 0 || totalWarnings > 0
+              ? 1
+              : 0
+        );
       }
 
       // Require either --scenario or --suite
@@ -369,17 +551,35 @@ program
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
+  .option(
+    '--requirements <revision>',
+    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+  )
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
-  .action(async (options) => {
+  .action(async (options, cmd) => {
     try {
       // Validate options with Zod
       const validated = ServerOptionsSchema.parse(options);
 
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
-      const specVersionFilter = options.specVersion
-        ? resolveSpecVersion(options.specVersion)
-        : undefined;
+      const requirements = resolveRequirements(options.requirements, {
+        specVersion: options.specVersion,
+        suiteFromCli: cmd.getOptionValueSource('suite') === 'cli',
+        scenario: options.scenario
+      });
+      // A requirement set decides two different things, and only the first is
+      // its scenario list. The revision it names is also the wire version those
+      // scenarios must speak: 2025-11-25 and 2026-07-28 are different protocols
+      // (stateful initialize handshake vs stateless per-request _meta), and a
+      // scenario emits different checks under each. Leaving this unset ran the
+      // right set against LATEST_SPEC_VERSION, which is a different wire than
+      // the one named on the flag.
+      const specVersionFilter = requirements
+        ? resolveSpecVersion(requirements.revision)
+        : options.specVersion
+          ? resolveSpecVersion(options.specVersion)
+          : undefined;
 
       // If a single scenario is specified, run just that one
       if (validated.scenario) {
@@ -421,8 +621,16 @@ program
         // Run scenarios based on suite
         const suite = options.suite?.toLowerCase() || 'active';
         let scenarios: string[];
+        let selection = `${suite} suite`;
 
-        if (suite === 'all') {
+        if (requirements) {
+          scenarios = requiredScenariosOrExit(
+            listClientScenarios(),
+            requirements,
+            'server'
+          );
+          selection = `requirements ${requirements.revision}`;
+        } else if (suite === 'all') {
           scenarios = listClientScenarios();
         } else if (suite === 'active' || suite === 'core') {
           // 'core' is an alias for 'active' - tier 1 requirements
@@ -439,7 +647,7 @@ program
           process.exit(1);
         }
 
-        if (specVersionFilter) {
+        if (specVersionFilter && !requirements) {
           scenarios = filterScenariosBySpecVersion(
             scenarios,
             specVersionFilter,
@@ -448,7 +656,7 @@ program
         }
 
         console.log(
-          `Running ${suite} suite (${scenarios.length} scenarios) against ${validated.url}\n`
+          `Running ${selection} (${scenarios.length} scenarios) against ${validated.url}\n`
         );
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
@@ -464,7 +672,10 @@ program
                 validated.url,
                 scenarioName,
                 outputDir,
-                specVersionFilter
+                specVersionFilter,
+                // a requirement set decides membership, so its choice outranks a
+                // scenario's own applicability window at the pinned revision
+                Boolean(requirements)
               )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
@@ -494,15 +705,28 @@ program
             options.expectedFailures
           );
           const baselineScenarios = expectedFailuresConfig.server ?? [];
+          // Same scored-only rule as the client leg: not_scored scenarios are
+          // outside both the pass rate and the baseline.
+          const scoredOnly = requirements
+            ? new Set(scoredScenarios(requirements, 'server'))
+            : undefined;
           const baselineResult = evaluateBaseline(
-            allResults,
+            scoredOnly
+              ? allResults.filter((r) => scoredOnly.has(r.scenario))
+              : allResults,
             baselineScenarios
           );
           printBaselineResults(baselineResult);
           process.exit(baselineResult.exitCode);
         }
 
-        process.exit(totalFailed > 0 ? 1 : 0);
+        process.exit(
+          requirements
+            ? requirementsExitCode(requirements, 'server', allResults)
+            : totalFailed > 0
+              ? 1
+              : 0
+        );
       }
     } catch (error) {
       if (error instanceof ZodError) {
@@ -700,7 +924,9 @@ program.addCommand(createTraceabilityCommand());
 // List scenarios command
 program
   .command('list')
-  .description('List available test scenarios')
+  .description(
+    `List available test scenarios. Requirement sets available: ${listRequirementRevisions().join(', ') || 'none'}`
+  )
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
   .option('--authorization', 'List authorization server scenarios')
@@ -708,10 +934,21 @@ program
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
+  .option(
+    '--requirements <revision>',
+    'List exactly what a spec revision requires, frozen at its release'
+  )
   .action((options) => {
     const specVersionFilter = options.specVersion
       ? resolveSpecVersion(options.specVersion)
       : undefined;
+
+    if (options.requirements !== undefined) {
+      for (const rev of String(options.requirements).split(',')) {
+        listOneRequirementSet(rev.trim(), options.specVersion);
+      }
+      return;
+    }
 
     if (
       options.server ||

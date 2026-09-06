@@ -38,6 +38,8 @@ import { runClient as dpopClient } from '../../../../examples/clients/typescript
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { testScenarioContext } from '../../../mock-server/testing';
+import { ClientConformanceContextSchema } from '../../../schemas/context';
 
 beforeAll(() => {
   setLogLevel('error');
@@ -110,6 +112,37 @@ describe('Client Draft Scenarios', () => {
       });
     });
   }
+});
+
+describe('auth/pre-registration context', () => {
+  // Authorization Server Binding: the context issuer is only usable as a
+  // binding key if it equals the issuer the mock AS publishes in its metadata.
+  test('supplies the issuer the mock AS publishes in its metadata', async () => {
+    const scenario = authScenariosList.find(
+      (s) => s.name === 'auth/pre-registration'
+    );
+    if (!scenario) {
+      throw new Error('auth/pre-registration scenario not found');
+    }
+    const urls = await scenario.start(testScenarioContext());
+    try {
+      const context = ClientConformanceContextSchema.parse({
+        name: 'auth/pre-registration',
+        ...urls.context
+      });
+      if (context.name !== 'auth/pre-registration') {
+        throw new Error(`Unexpected context variant: ${context.name}`);
+      }
+      const res = await fetch(
+        `${context.issuer}/.well-known/oauth-authorization-server`
+      );
+      expect(res.ok).toBe(true);
+      const metadata = (await res.json()) as { issuer?: string };
+      expect(metadata.issuer).toBe(context.issuer);
+    } finally {
+      await scenario.stop();
+    }
+  });
 });
 
 describe('Negative tests', () => {

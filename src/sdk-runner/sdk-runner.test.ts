@@ -141,6 +141,19 @@ describe('lookupBuiltinConfig', () => {
     expect(rs?.server?.url).toBe('http://localhost:3000/mcp');
   });
 
+  it('exposes ruby-sdk with the conformance/ fixtures and a baseline', () => {
+    const rb = lookupBuiltinConfig('ruby-sdk');
+    expect(rb?.build).toBe('bundle install');
+    expect(rb?.client?.command).toBe('bundle exec ruby conformance/client.rb');
+    expect(rb?.server?.command).toBe(
+      'PORT=3000 bundle exec rake conformance:server'
+    );
+    expect(rb?.server?.url).toBe('http://localhost:3000/mcp');
+    expect(rb?.expectedFailures).toBe('conformance/expected_failures.yml');
+    // One dual-era server serves every revision, so no per-spec overrides.
+    expect(rb?.specOverrides).toBeUndefined();
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
@@ -202,11 +215,17 @@ describe('resolveConfigForSpec', () => {
     expect(resolved.server?.command).toContain('mcp-everything-server');
   });
 
-  it('prefixes STATELESS=1 for rust-sdk at 2026-07-28', () => {
-    const resolved = resolveConfigForSpec(KNOWN_SDKS['rust-sdk'], '2026-07-28');
-    expect(resolved.server?.command).toBe(
-      'STATELESS=1 PORT=3000 ./target/debug/conformance-server'
-    );
+  it('runs rust-sdk with the same default server at every revision', () => {
+    // Mirrors rust-sdk's own CI, which starts one un-flagged server and runs
+    // both the 2025-11-25 and 2026-07-28 legs against it. A STATELESS=1
+    // override here forced the 2026 leg onto a mode that CI never exercises
+    // and that fails its SEP-2575 input-required scenarios.
+    for (const rev of ['2025-11-25', '2026-07-28']) {
+      const resolved = resolveConfigForSpec(KNOWN_SDKS['rust-sdk'], rev);
+      expect(resolved.server?.command).toBe(
+        'PORT=3000 ./target/debug/conformance-server'
+      );
+    }
   });
 
   it('does not mutate the base entry', () => {

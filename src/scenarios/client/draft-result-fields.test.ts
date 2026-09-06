@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { testScenarioContext } from '../../mock-server/testing';
+import { withRequiredDraftResultFields } from '../../mock-server';
+import { wireSchemaErrors } from '../../validation/wire-schema';
 import { DRAFT_PROTOCOL_VERSION } from '../../types';
 import { HttpStandardHeadersScenario } from './http-standard-headers';
 import {
   HttpCustomHeadersScenario,
   HttpInvalidToolHeadersScenario
 } from './http-custom-headers';
+import type { BaseHttpScenario } from './http-base';
 import { RequestMetadataScenario } from './request-metadata';
 import { MRTRClientScenario } from './mrtr-client';
 import { JsonSchemaRefDerefScenario } from './json-schema-ref-deref';
@@ -134,7 +137,8 @@ describe('http-standard-headers mock results (2026-07-28)', () => {
           cacheable: true
         },
         // Not explicitly handled by the scenario — exercises the method-aware
-        // generic fallback, which must still add the caching hints.
+        // generic fallback, which must still add the caching hints and the
+        // required (empty) list member.
         { method: 'resources/templates/list', cacheable: true },
         { method: 'prompts/list', cacheable: true },
         {
@@ -168,6 +172,167 @@ describe('http-standard-headers mock results (2026-07-28)', () => {
     } finally {
       await scenario.stop();
     }
+  });
+});
+
+describe('generic fallback answers unrouted list methods schema-valid (#474)', () => {
+  // http-standard-headers advertises `resources` but has no
+  // resources/templates/list route; the request falls through to the generic
+  // fallback in BaseHttpScenario. Before the fix the reply had no
+  // `resourceTemplates` member, so strictly-validating clients (e.g.
+  // cloudflare/agents MCPClientManager) dropped the connection before the
+  // scenario's header checks ran.
+  it('http-standard-headers answers resources/templates/list with a valid empty result', async () => {
+    const scenario = new HttpStandardHeadersScenario();
+    const { serverUrl } = await scenario.start(
+      testScenarioContext(DRAFT_PROTOCOL_VERSION)
+    );
+    try {
+      const { status, body } = await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'resources/templates/list',
+          params: {}
+        },
+        { 'Mcp-Method': 'resources/templates/list' }
+      );
+      expect(status).toBe(200);
+      expect(body.result).toEqual({
+        ...CACHEABLE_FIELDS,
+        resourceTemplates: []
+      });
+      expect(
+        wireSchemaErrors(
+          DRAFT_PROTOCOL_VERSION,
+          body,
+          'resources/templates/list'
+        )
+      ).toEqual([]);
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  // Every list-shaped method a scenario does not route must reach the
+  // fallback and come back with its required (empty) list member, on all
+  // three BaseHttpScenario subclasses. http-standard-headers routes the
+  // tools/resources/prompts lists itself; the custom-headers scenarios route
+  // only initialize and tools/*. tasks/list has no typed result in the draft
+  // schema (2025-11-25 only), so it is additionally validated at 2025-11-25.
+  const listMember = new Map([
+    ['resources/list', 'resources'],
+    ['resources/templates/list', 'resourceTemplates'],
+    ['prompts/list', 'prompts'],
+    ['roots/list', 'roots'],
+    ['tasks/list', 'tasks']
+  ]);
+  const subclasses: Array<{
+    name: string;
+    make: () => BaseHttpScenario;
+    unrouted: string[];
+  }> = [
+    {
+      name: 'http-standard-headers',
+      make: () => new HttpStandardHeadersScenario(),
+      unrouted: ['resources/templates/list', 'roots/list', 'tasks/list']
+    },
+    {
+      name: 'http-custom-headers',
+      make: () => new HttpCustomHeadersScenario(),
+      unrouted: [...listMember.keys()]
+    },
+    {
+      name: 'http-invalid-tool-headers',
+      make: () => new HttpInvalidToolHeadersScenario(),
+      unrouted: [...listMember.keys()]
+    }
+  ];
+
+  for (const s of subclasses) {
+    it(`${s.name} answers unrouted list methods with valid empty results`, async () => {
+      const scenario = s.make();
+      const { serverUrl } = await scenario.start(
+        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+      );
+      try {
+        let id = 1;
+        for (const method of s.unrouted) {
+          const { status, body } = await post(
+            serverUrl,
+            { jsonrpc: '2.0', id: id++, method, params: {} },
+            { 'Mcp-Method': method }
+          );
+          expect(status, method).toBe(200);
+          expect(body.result[listMember.get(method)!], method).toEqual([]);
+          expect(
+            wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
+            method
+          ).toEqual([]);
+          if (method === 'tasks/list') {
+            expect(wireSchemaErrors('2025-11-25', body, method)).toEqual([]);
+          }
+        }
+      } finally {
+        await scenario.stop();
+      }
+    });
+  }
+
+  // Method names that collide with Object.prototype must miss the empty-list
+  // lookup and get the plain generic result — an object-literal map here once
+  // returned Object.prototype functions, which JSON.stringify drops, leaving
+  // a reply with neither result nor error.
+  for (const s of subclasses) {
+    it(`${s.name} answers Object.prototype-colliding method names with a valid generic result`, async () => {
+      const scenario = s.make();
+      const { serverUrl } = await scenario.start(
+        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+      );
+      try {
+        let id = 1;
+        for (const method of [
+          'constructor',
+          'toString',
+          'valueOf',
+          'hasOwnProperty'
+        ]) {
+          const { status, body } = await post(
+            serverUrl,
+            { jsonrpc: '2.0', id: id++, method, params: {} },
+            { 'Mcp-Method': method }
+          );
+          expect(status, method).toBe(200);
+          expect(body.result, method).toEqual({ resultType: 'complete' });
+          expect(
+            wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
+            method
+          ).toEqual([]);
+        }
+      } finally {
+        await scenario.stop();
+      }
+    });
+  }
+
+  // Regression pin: the pre-fix fallback payload (required draft fields only,
+  // no list member) is rejected by the spec schema — proves the assertions
+  // above have teeth.
+  it('rejects the pre-fix bare fallback result for resources/templates/list', () => {
+    const preFix = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: withRequiredDraftResultFields('resources/templates/list', {})
+    };
+    const errors = wireSchemaErrors(
+      DRAFT_PROTOCOL_VERSION,
+      preFix,
+      'resources/templates/list'
+    );
+    expect(errors.join('\n')).toContain(
+      "must have required property 'resourceTemplates'"
+    );
   });
 });
 

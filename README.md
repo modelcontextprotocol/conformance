@@ -66,6 +66,7 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 - `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
 - `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `2026-07-28`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
 - `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
+- `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
@@ -83,6 +84,7 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 - `--url` - URL of the server to test
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
 - `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
+- `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
 
@@ -115,6 +117,74 @@ synthetic checks alongside the scenario's own:
 Scenarios that exchange no instrumented wire traffic (see issue #418) emit
 neither check. Like any other check, `wire-schema-valid` can be baselined via
 the expected-failures file.
+
+## Conformance Requirements
+
+`--suite` and `--spec-version` describe the suite as it is today. Neither answers
+"which scenarios did I need to pass to conform to the spec released on
+2026-07-28", because the suite keeps growing: a scenario merged after a revision
+ships still carries that revision's applicability tag, so it is
+indistinguishable from one that existed at release.
+
+A requirement set answers that question. Each `requirements/<revision>.yaml`
+names the scenarios a revision requires, for the two roles the specification
+defines: an MCP server acting as an OAuth resource server, and an MCP client
+acting as an OAuth client. It deliberately covers no authorization-server
+scenarios, because the specification puts authorization server implementation
+beyond its own scope, so those scenarios serve people deploying an authorization
+server rather than implementations of MCP itself.
+
+**Scenarios run at their revision's wire version.** That is the point of a
+per-revision set, not a label on it: the dated revisions through `2025-11-25`
+use the stateful initialize handshake and `2026-07-28` is stateless with
+per-request `_meta`, and a scenario emits different checks under each. A
+scenario belonging to both revisions must therefore be run twice, once under
+each set. Passing it on one wire says nothing about the other:
+
+```bash
+# what does conforming to 2026-07-28 actually require?
+npx @modelcontextprotocol/conformance list --requirements 2026-07-28
+
+# run exactly that
+npx @modelcontextprotocol/conformance server --url http://localhost:3000/mcp --requirements 2026-07-28
+```
+
+`--requirements` replaces `--suite`, `--spec-version` and `--scenario`, since the
+set already names every scenario that runs and the revision fixes the wire they
+run at. Without it nothing changes: the default is still to run everything, which
+is where completeness lives.
+
+`tier-check` takes several at once, and every one of them must pass for Tier 1:
+
+```bash
+npx @modelcontextprotocol/conformance tier-check --repo <owner/repo> \
+  --conformance-server-url http://localhost:3000/mcp \
+  --requirements 2025-11-25,2026-07-28
+```
+
+Only scenarios a revision actually requires decide the exit code and the pass
+rate. Anything run without being scored is reported separately and cannot fail
+the run.
+
+Requirement sets are frozen, and `not_scored` holds what a revision runs and
+reports without counting. Two reasons qualify, and the report names which
+applies:
+
+| Reason                | Meaning                                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extension`           | Optional by definition. SEP-1730: "Experimental features and protocol extensions (such as Tasks and MCP Apps) are not required for any tier."              |
+| `added-after-release` | The scenario did not exist when the revision shipped, so no implementation could have been passing it.                                                     |
+| `pending`             | The suite's own reference fixture cannot pass it yet, so it cannot be required — but the implementation under test may pass it, so it runs for visibility. |
+
+Both still run, so a failing extension stays visible in the report; neither moves
+the pass rate. Promoting an entry into the required lists is a deliberate,
+reviewable change, which is how the suite grows without retroactively failing
+anyone.
+
+This is the project's contract and lives in this repository. It is the opposite
+of an [expected-failures](#expected-failures) baseline, which lives in an
+implementation's own repository and records what that implementation knows it
+fails. A baselined failure is still a failure against a requirement set.
 
 ## Expected Failures
 
@@ -326,26 +396,86 @@ Clones are cached under `.sdk-under-test/` and reused (fetched) on subsequent ru
 
 ## SDK Tier Assessment
 
-The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System):
+The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System). There are two ways to run it, and they answer different questions.
+
+### 1. The CLI, for the deterministic half
+
+Conformance pass rates, issue triage, P0 resolution, labels, releases, policy files. No AI, no judgment, reproducible.
+
+For a known SDK (see `src/sdk-runner/known-sdks.ts`), one command does the whole
+thing — clone, build, and for **each** shipped revision start the server
+invocation that SDK's config declares for that revision, run both legs at that
+revision's wire, and merge:
 
 ```bash
-# Without conformance tests (fastest)
 gh auth login
-npm run --silent tier-check -- --repo modelcontextprotocol/typescript-sdk --skip-conformance
+npx @modelcontextprotocol/conformance tier-check --sdk go-sdk
+# or against a checkout you already have:
+npx @modelcontextprotocol/conformance tier-check --sdk-path ~/src/go-sdk
+```
 
-# With conformance tests (start the everything server first)
-npm run --silent tier-check -- \
+Per-revision resolution is the point, not a convenience. Some SDKs fix their
+wire era per server process (go-sdk only speaks 2026-07-28 when started
+stateless) or per endpoint (csharp-sdk serves it at `/stateless`), so no single
+server URL can be measured against two revisions. The per-SDK, per-revision
+invocations live in `known-sdks.ts` `specOverrides`; adding an SDK there is how
+it joins the matrix.
+
+For an SDK not in the config, drive it directly — but then the one endpoint you
+give must serve every claimed revision at its own wire, and the server must
+already be running:
+
+```bash
+npx @modelcontextprotocol/conformance tier-check \
   --repo modelcontextprotocol/typescript-sdk \
-  --conformance-server-url http://localhost:3000/mcp
+  --conformance-server-url http://localhost:3000/mcp \
+  --client-cmd '<command that runs the SDK conformance client>' \
+  --requirements 2025-11-25,2026-07-28
 ```
 
-For a full AI-assisted assessment with remediation guide, use Claude Code:
+Omit `--client-cmd` and the client leg is skipped and reported as a gap. Omit
+`--requirements` and scoring falls back to the suite as it stands today, which is
+not what you want for a tier claim; see [Conformance Requirements](#conformance-requirements).
+
+The exit code is a CI verdict on the machine-checkable half: nonzero when any
+scored conformance scenario fails or a leg could not be measured. Governance
+findings (triage, P0s, policy files) shape the tier but never the exit code.
+
+### 2. The skill, for the whole assessment
+
+The CLI cannot judge documentation coverage, dependency policy or roadmap quality, and those decide the tier as much as conformance does. The [`mcp-sdk-tier-audit`](.claude/skills/mcp-sdk-tier-audit/README.md) skill runs the CLI, adds those evaluations, and writes a full report with a remediation plan. In Claude Code, from a checkout of this repo:
 
 ```
-/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url>
+/mcp-sdk-tier-audit <local-sdk-path> <conformance-server-url> '<client-cmd>' --requirements 2025-11-25,2026-07-28
 ```
 
-See [`.claude/skills/mcp-sdk-tier-audit/README.md`](.claude/skills/mcp-sdk-tier-audit/README.md) for full documentation.
+The server must already be running and stay up for the whole audit. Expect a few minutes.
+
+### Reading the result
+
+```
+Scored against 2025-11-25 and 2026-07-28, each run at its own wire version.
+
+    Server   67/67 required scenarios (100%)
+    Client   50/50 required scenarios (100%)
+
+  Not scored (8 run, 4 failing, no effect on tier):
+    ✗ auth/dpop (extension)
+    ✗ json-schema-2020-12-preservation (added-after-release)
+
+Tier 1 Blockers:
+  • triage
+  • p0_resolution
+```
+
+- **Required scenarios** are the only ones that move the number. `67/67` spans every revision listed: a scenario belonging to both runs once per revision, on that revision's wire, and both have to pass.
+- **Not scored** ran and is reported so you can see it, but cannot fail the tier. `extension` means optional by definition; `added-after-release` means the scenario did not exist when that revision shipped. A failure here is information, not a blocker.
+- **Not measured** is different from either, and means the run could not happen at all, e.g. a requirement set naming a scenario this build no longer has. Treat it as a broken invocation, never as an SDK failure.
+- **Tier 1 blockers** lists every requirement short of Tier 1. Conformance absent from that list means the SDK met every requirement each listed revision imposes.
+
+The exit code follows the same rule: it reflects required scenarios only, so an implementation that meets a revision's requirements exits 0 even with failing extensions.
+
+In `--output json`, `passed` / `failed` / `total` describe the scored set and so always agree with `pass_rate`; anything run without being scored is counted separately under `not_scored`.
 
 ## Architecture
 
