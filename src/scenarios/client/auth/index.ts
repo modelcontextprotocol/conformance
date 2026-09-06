@@ -41,7 +41,8 @@ import {
   MetadataIssuerMismatchScenario
 } from './issuer-parameter';
 
-// Auth scenarios (required for tier 1)
+// Auth scenarios on the dated spec timeline (required for tier 1 at the
+// revisions they apply to; `--spec-version` narrows the set per revision).
 export const authScenariosList: Scenario[] = [
   ...metadataScenarios,
   new AuthBasicCIMDScenario(),
@@ -53,7 +54,19 @@ export const authScenariosList: Scenario[] = [
   new ClientSecretBasicAuthScenario(),
   new ClientSecretPostAuthScenario(),
   new PublicClientAuthScenario(),
-  new PreRegistrationScenario()
+  new PreRegistrationScenario(),
+  // Introduced in 2026-07-28
+  new ResourceMismatchScenario(),
+  new OfflineAccessScopeScenario(),
+  new OfflineAccessNotSupportedScenario(),
+  new AuthorizationServerMigrationScenario(),
+  new IssParameterSupportedScenario(),
+  new IssParameterNotAdvertisedScenario(),
+  new IssParameterSupportedMissingScenario(),
+  new IssParameterWrongIssuerScenario(),
+  new IssParameterUnexpectedScenario(),
+  new IssParameterNormalizedVariantScenario(),
+  new MetadataIssuerMismatchScenario()
 ];
 
 // Back-compat scenarios (optional - backward compatibility with older spec versions)
@@ -70,19 +83,4 @@ export const extensionScenariosList: Scenario[] = [
   new DPoPClientScenario(false), // auth/dpop — nonce-less baseline (common case)
   new DPoPClientScenario(true), // auth/dpop-nonce — server-required nonce (§8/§9)
   new WifJwtBearerScenario()
-];
-
-// Draft scenarios (informational - not scored for tier assessment)
-export const draftScenariosList: Scenario[] = [
-  new ResourceMismatchScenario(),
-  new OfflineAccessScopeScenario(),
-  new OfflineAccessNotSupportedScenario(),
-  new AuthorizationServerMigrationScenario(),
-  new IssParameterSupportedScenario(),
-  new IssParameterNotAdvertisedScenario(),
-  new IssParameterSupportedMissingScenario(),
-  new IssParameterWrongIssuerScenario(),
-  new IssParameterUnexpectedScenario(),
-  new IssParameterNormalizedVariantScenario(),
-  new MetadataIssuerMismatchScenario()
 ];

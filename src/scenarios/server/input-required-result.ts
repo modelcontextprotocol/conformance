@@ -6,12 +6,7 @@
  * clients retry with inputResponses and echoed requestState.
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION,
-  SpecVersion
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import type { RunContext } from '../../connection';
 import {
   sendRpc,
@@ -28,8 +23,7 @@ import { notTestable } from '../untestable';
 
 export class InputRequiredResultBasicElicitationScenario implements ClientScenario {
   name = 'input-required-result-basic-elicitation';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test basic ephemeral InputRequiredResult flow with a single elicitation input request (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -183,8 +177,7 @@ Implement a tool named \`test_input_required_result_elicitation\` (no arguments 
 
 export class InputRequiredResultBasicSamplingScenario implements ClientScenario {
   name = 'input-required-result-basic-sampling';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test basic ephemeral InputRequiredResult flow with a single sampling input request (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -325,8 +318,7 @@ Implement a tool named \`test_input_required_result_sampling\` (no arguments req
 
 export class InputRequiredResultBasicListRootsScenario implements ClientScenario {
   name = 'input-required-result-basic-list-roots';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test basic ephemeral InputRequiredResult flow with a single roots/list input request (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -461,8 +453,7 @@ Implement a tool named \`test_input_required_result_list_roots\` (no arguments r
 
 export class InputRequiredResultRequestStateScenario implements ClientScenario {
   name = 'input-required-result-request-state';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that requestState is correctly round-tripped in ephemeral InputRequiredResult flow (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -593,8 +584,7 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
 
 export class InputRequiredResultMultipleInputRequestsScenario implements ClientScenario {
   name = 'input-required-result-multiple-input-requests';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test multiple input requests in a single InputRequiredResult (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -768,8 +758,7 @@ Implement a tool named \`test_input_required_result_multiple_inputs\` (no argume
 
 export class InputRequiredResultMultiRoundScenario implements ClientScenario {
   name = 'input-required-result-multi-round';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test multi-round ephemeral InputRequiredResult flow with evolving requestState (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -953,8 +942,7 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
 
 export class InputRequiredResultMissingInputResponseScenario implements ClientScenario {
   name = 'input-required-result-missing-input-response';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test error handling when client sends wrong/missing inputResponses (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1027,8 +1015,7 @@ Use the same tool as A1: \`test_input_required_result_elicitation\`.
 
 export class InputRequiredResultNonToolRequestScenario implements ClientScenario {
   name = 'input-required-result-non-tool-request';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test InputRequiredResult on a non-tool request (prompts/get) to verify InputRequiredResult is universal (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1152,8 +1139,7 @@ Implement a prompt named \`test_input_required_result_prompt\` that requires eli
 
 export class InputRequiredResultResultTypeScenario implements ClientScenario {
   name = 'input-required-result-result-type';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server explicitly includes resultType field in InputRequiredResult responses (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1221,8 +1207,7 @@ This scenario verifies that the resultType field is explicitly present in the re
 
 export class InputRequiredResultUnsupportedMethodsScenario implements ClientScenario {
   name = 'input-required-result-unsupported-methods';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server does NOT return InputRequiredResult on unsupported methods (SEP-2322).
 
 Servers MUST NOT send InputRequiredResult responses on any client requests other than the supported ones (prompts/get, resources/read, tools/call, tasks/result).`;
@@ -1279,8 +1264,7 @@ Servers MUST NOT send InputRequiredResult responses on any client requests other
 
 export class InputRequiredResultTamperedStateScenario implements ClientScenario {
   name = 'input-required-result-tampered-state';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server rejects tampered requestState (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1394,8 +1378,7 @@ JSON-RPC error (code -32602 or similar) indicating integrity check failure.`;
 
 export class InputRequiredResultCapabilityCheckScenario implements ClientScenario {
   name = 'input-required-result-capability-check';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server only sends inputRequests for capabilities the client declared (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1492,8 +1475,7 @@ Only include inputRequests for methods the client supports. For example, if the 
 
 export class InputRequiredResultIgnoreExtraParamsScenario implements ClientScenario {
   name = 'input-required-result-ignore-extra-params';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server ignores unexpected extra parameters in InputResponses (SEP-2322).
 
 **Server Implementation Requirements:**
@@ -1566,8 +1548,7 @@ the extra keys and complete normally.`;
 
 export class InputRequiredResultValidateInputScenario implements ClientScenario {
   name = 'input-required-result-validate-input';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
-  specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test that server validates InputResponses and returns appropriate errors (SEP-2322).
 
 **Server Implementation Requirements:**

@@ -12,9 +12,13 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  protocolVersionFor
 } from '../../types.js';
-import { buildStandardHeaders, type RunContext } from '../../connection';
+import {
+  buildStandardHeaders,
+  isStateless,
+  type RunContext
+} from '../../connection';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -35,7 +39,7 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
     // scaffolding differs: the stateful lifecycle needs a session id from an
     // initialize handshake, the stateless lifecycle carries _meta + the
     // MCP-Protocol-Version header on each request instead.
-    const stateless = specVersion === DRAFT_PROTOCOL_VERSION;
+    const stateless = isStateless(ctx);
 
     let sessionId: string | undefined;
     let negotiatedProtocolVersion: string | undefined;
@@ -99,12 +103,14 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream, application/json',
             'mcp-session-id': sessionId!,
-            'mcp-protocol-version': negotiatedProtocolVersion ?? specVersion
+            'mcp-protocol-version':
+              negotiatedProtocolVersion ?? protocolVersionFor(specVersion)
           };
       const requestParams = stateless
         ? {
             _meta: {
-              'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+              'io.modelcontextprotocol/protocolVersion':
+                protocolVersionFor(specVersion),
               'io.modelcontextprotocol/clientInfo': {
                 name: 'conformance-test-client',
                 version: '1.0.0'

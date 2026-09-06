@@ -21,8 +21,8 @@
  *    flags any missing or altered keywords.
  *
  * SEP-2106 vocabulary checks are soft-gated via `sep2106KeywordCheckStatus`:
- * stripping is FAILURE only when the run targets the draft version
- * (`2026-07-28`); on earlier dated versions the check reports SKIPPED.
+ * stripping is FAILURE only when the run targets `2026-07-28` or later; on
+ * earlier dated versions the check reports SKIPPED.
  */
 
 import type { ScenarioContext, MockServer } from '../../mock-server';
@@ -31,7 +31,6 @@ import type {
   ListToolsResult
 } from '../../spec-types/2025-11-25';
 import {
-  DRAFT_PROTOCOL_VERSION,
   LATEST_SPEC_VERSION,
   type ConformanceCheck,
   type Scenario,
@@ -42,6 +41,7 @@ import {
   EXPECTED_SCHEMA_DIALECT,
   EXPECTED_TOOL_NAME,
   JSON_SCHEMA_2020_12_FIXTURE,
+  SEP_2106_SINCE,
   sep2106KeywordCheckStatus
 } from '../server/json-schema-2020-12';
 
@@ -77,7 +77,7 @@ export class JsonSchema2020_12PreservationScenario implements Scenario {
 
 The scenario compares the echoed schema against the original fixture and flags any keyword that was stripped or altered during the client's internal parsing.
 
-**Verification**: \`$schema\`, \`$defs\`, and \`additionalProperties\` must be preserved (SEP-1613). The SEP-2106 vocabulary (\`$anchor\` inside \`$defs\`, composition \`allOf\`/\`anyOf\`, conditional \`if\`/\`then\`/\`else\`) must also survive; for dated protocol versions these checks are SKIPPED rather than FAILURE since SEP-2106 applies from the draft version.`;
+**Verification**: \`$schema\`, \`$defs\`, and \`additionalProperties\` must be preserved (SEP-1613). The SEP-2106 vocabulary (\`$anchor\` inside \`$defs\`, composition \`allOf\`/\`anyOf\`, conditional \`if\`/\`then\`/\`else\`) must also survive; for protocol versions before 2026-07-28 these checks are SKIPPED rather than FAILURE since SEP-2106 applies from that revision.`;
 
   private srv: MockServer | null = null;
   private specVersion: SpecVersion | null = null;
@@ -309,7 +309,7 @@ The scenario compares the echoed schema against the original fixture and flags a
     });
 
     // SEP-2106 vocabulary — soft-gated via sep2106KeywordCheckStatus.
-    const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${DRAFT_PROTOCOL_VERSION})`;
+    const skippedSuffix = ` (run targets protocol version ${targetVersion}; SEP-2106 applies from ${SEP_2106_SINCE})`;
 
     // SEP-2106: composition (allOf/anyOf) preserved
     const allOf = echo['allOf'];

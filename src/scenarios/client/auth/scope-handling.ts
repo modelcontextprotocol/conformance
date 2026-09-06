@@ -6,7 +6,7 @@ import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
-import { DRAFT_PROTOCOL_VERSION, specVersionAtLeast } from '../../../types';
+import { specVersionAtLeast } from '../../../types';
 import type { Request, Response, NextFunction } from 'express';
 
 /**
@@ -295,17 +295,14 @@ export class ScopeStepUpAuthScenario implements Scenario {
   private authServer = new ServerLifecycle();
   private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  // SEP-2350's set-wise union requirement was introduced in 2026-07-28 (the
-  // current draft); it was not a requirement at 2025-11-25, where
-  // non-accumulating re-auth is conformant. Gate the union check accordingly.
+  // SEP-2350's set-wise union requirement was introduced in 2026-07-28; it
+  // was not a requirement at 2025-11-25, where non-accumulating re-auth is
+  // conformant. Gate the union check accordingly.
   private unionRequired = false;
 
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
-    this.unionRequired = specVersionAtLeast(
-      ctx.specVersion,
-      DRAFT_PROTOCOL_VERSION
-    );
+    this.unionRequired = specVersionAtLeast(ctx.specVersion, '2026-07-28');
 
     const initialScope = 'mcp:basic';
     // tools/call gates on mcp:write only (not the union) so the scenario can

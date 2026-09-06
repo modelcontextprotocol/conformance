@@ -28,8 +28,8 @@ import type {
 import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helpers/createWorkloadJwt.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
-import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
-import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
+import { LATEST_SPEC_VERSION } from '../../../src/types.js';
+import { STATELESS_PROTOCOL_VERSIONS } from '../../../src/connection/select.js';
 import {
   auth,
   extractWWWAuthenticateParams
@@ -94,13 +94,14 @@ const PROTOCOL_VERSION = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
 // in-repo client imports the stateless version set from src/ so it cannot
 // drift from the runner's mapping.
 const USE_STATELESS_LIFECYCLE = PROTOCOL_VERSION
-  ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(PROTOCOL_VERSION)
+  ? STATELESS_PROTOCOL_VERSIONS.includes(PROTOCOL_VERSION)
   : false;
 
 // Wire protocolVersion for stateless requests: the runner-resolved version
-// when available (so a dated stateless release is exercised under its own
-// identifier), the current draft otherwise.
-const STATELESS_PROTOCOL_VERSION = PROTOCOL_VERSION ?? DRAFT_PROTOCOL_VERSION;
+// when available (so each stateless revision is exercised under its own
+// identifier), the latest release otherwise.
+const STATELESS_PROTOCOL_VERSION: string =
+  PROTOCOL_VERSION ?? LATEST_SPEC_VERSION;
 
 const STATELESS_META_BASE = {
   'io.modelcontextprotocol/clientInfo': {
@@ -336,7 +337,7 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
       const clone = response.clone();
       try {
         const errorResult = await clone.json();
-        // UnsupportedProtocolVersionError is -32022 in the draft schema.
+        // UnsupportedProtocolVersionError is -32022 (2026-07-28 onward).
         if (errorResult.error?.code === -32022) {
           logger.debug(
             'Received UnsupportedProtocolVersionError, starting negotiation...'
@@ -344,7 +345,10 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
           const serverSupported: string[] =
             errorResult.error.data?.supported || [];
           const clientSupported = [
-            ...new Set([STATELESS_PROTOCOL_VERSION, DRAFT_PROTOCOL_VERSION])
+            ...new Set([
+              STATELESS_PROTOCOL_VERSION,
+              ...STATELESS_PROTOCOL_VERSIONS
+            ])
           ];
           const mutuallySupported = clientSupported.filter((v) =>
             serverSupported.includes(v)
@@ -459,7 +463,7 @@ registerScenarios(
     'auth/token-endpoint-auth-none',
     // Resource mismatch (client should error when PRM resource doesn't match)
     'auth/resource-mismatch',
-    // SEP-2207: Offline access / refresh token guidance (draft)
+    // SEP-2207: Offline access / refresh token guidance (2026-07-28)
     'auth/offline-access-scope',
     'auth/offline-access-not-supported',
     // SEP-2468: ISS parameter - positive scenarios (standard client is fine)

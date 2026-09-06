@@ -8,9 +8,13 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  protocolVersionFor
 } from '../../types';
-import { buildStandardHeaders, type RunContext } from '../../connection';
+import {
+  buildStandardHeaders,
+  isStateless,
+  type RunContext
+} from '../../connection';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -51,7 +55,10 @@ function getHostFromUrl(serverUrl: string): string {
  * accept without prior setup (initialize for the stateful lifecycle,
  * server/discover with _meta for the stateless lifecycle).
  */
-function probeBody(specVersion: string): {
+function probeBody(
+  stateless: boolean,
+  protocolVersion: string
+): {
   jsonrpc: '2.0';
   id: number;
   method: string;
@@ -61,14 +68,14 @@ function probeBody(specVersion: string): {
     name: 'conformance-dns-rebinding-test',
     version: '1.0.0'
   };
-  if (specVersion === DRAFT_PROTOCOL_VERSION) {
+  if (stateless) {
     return {
       jsonrpc: '2.0',
       id: 1,
       method: 'server/discover',
       params: {
         _meta: {
-          'io.modelcontextprotocol/protocolVersion': specVersion,
+          'io.modelcontextprotocol/protocolVersion': protocolVersion,
           'io.modelcontextprotocol/clientInfo': clientInfo,
           'io.modelcontextprotocol/clientCapabilities': {}
         }
@@ -80,7 +87,7 @@ function probeBody(specVersion: string): {
     id: 1,
     method: 'initialize',
     params: {
-      protocolVersion: specVersion,
+      protocolVersion,
       capabilities: {},
       clientInfo
     }
@@ -95,20 +102,21 @@ function probeBody(specVersion: string): {
 async function sendRequestWithHostAndOrigin(
   serverUrl: string,
   hostOrOrigin: string,
-  specVersion: string
+  stateless: boolean,
+  protocolVersion: string
 ): Promise<{ statusCode: number; body: unknown }> {
   // Build the SEP-2243 standard headers (Mcp-Method, Accept, ...) for the
   // probe's JSON-RPC method so a strictly-conformant server only rejects the
   // request for the Host/Origin values under test, then layer the
   // scenario-specific headers on top.
-  const probe = probeBody(specVersion);
+  const probe = probeBody(stateless, protocolVersion);
   const response = await request(serverUrl, {
     method: 'POST',
     headers: buildStandardHeaders(probe.method, probe.params, {
       headers: {
         Host: hostOrOrigin,
         Origin: `http://${hostOrOrigin}`,
-        'MCP-Protocol-Version': specVersion
+        'MCP-Protocol-Version': protocolVersion
       }
     }),
     body: JSON.stringify(probe)
@@ -154,7 +162,9 @@ website tricks a user's browser into making requests to the local server.
 See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
-    const { serverUrl, specVersion } = ctx;
+    const { serverUrl } = ctx;
+    const stateless = isStateless(ctx);
+    const protocolVersion = protocolVersionFor(ctx.specVersion);
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
@@ -206,7 +216,8 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       const response = await sendRequestWithHostAndOrigin(
         serverUrl,
         attackerHost,
-        specVersion
+        stateless,
+        protocolVersion
       );
       const isRejected =
         response.statusCode >= 400 && response.statusCode < 500;
@@ -249,7 +260,8 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       const response = await sendRequestWithHostAndOrigin(
         serverUrl,
         validHost,
-        specVersion
+        stateless,
+        protocolVersion
       );
       const isAccepted =
         response.statusCode >= 200 && response.statusCode < 300;

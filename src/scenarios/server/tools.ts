@@ -2,11 +2,7 @@
  * Tools test scenarios for MCP servers
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import type { RunContext } from '../../connection';
 import type {
   ListToolsResult,
@@ -463,7 +459,7 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
   name = 'tools-call-with-logging';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test tool that sends log messages during execution.
 
@@ -762,7 +758,7 @@ export class ToolsCallSamplingScenario implements ClientScenario {
   name = 'tools-call-sampling';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test tool that requests LLM sampling from client.
 
@@ -894,7 +890,7 @@ export class ToolsCallElicitationScenario implements ClientScenario {
   name = 'tools-call-elicitation';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test tool that requests user input (elicitation) from client.
 

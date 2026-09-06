@@ -7,7 +7,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Scenario, ConformanceCheck } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
+import { ScenarioUrls, protocolVersionFor } from '../../types';
 
 /**
  * Scenario: JSON Schema network $ref dereferencing (SEP-2106)
@@ -79,7 +79,7 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
 
 export class JsonSchemaRefDerefScenario implements Scenario {
   name = 'json-schema-ref-no-deref';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Tests that a client does not automatically dereference a network-URI \`$ref\` in a tool's inputSchema (SEP-2106).
 
 The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at a canary URL. The client should list tools (and may otherwise process the schema), but must not fetch the canary URL. Same-document refs (\`#/$defs/...\`) remain safe to resolve.`;
@@ -89,9 +89,10 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
   private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
   private toolsListed = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.canaryRequests = [];
     this.toolsListed = false;
+    const protocolVersion = protocolVersionFor(ctx.specVersion);
 
     const app = express();
     app.use(express.json());
@@ -126,7 +127,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
             resultType: 'complete',
             ttlMs: 0,
             cacheScope: 'private',
-            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            supportedVersions: [protocolVersion],
             capabilities: { tools: {} },
             serverInfo: {
               name: 'json-schema-ref-deref-server',
@@ -136,11 +137,11 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
         });
       }
       // Second half of the same workaround: the pinned SDK transport
-      // whitelists MCP-Protocol-Version headers and would reject the draft
+      // whitelists MCP-Protocol-Version headers and would reject the
       // version that the server/discover response above advertises with an
       // HTTP 400. Rewrite it to the newest version the SDK understands so a
       // client that honors the negotiated version can reach tools/list.
-      if (req.headers['mcp-protocol-version'] === DRAFT_PROTOCOL_VERSION) {
+      if (req.headers['mcp-protocol-version'] === protocolVersion) {
         req.headers['mcp-protocol-version'] = SDK_LATEST_PROTOCOL_VERSION;
         // The SDK's Node adapter rebuilds its web-standard Request from
         // rawHeaders, not the parsed headers object, so patch those too.
