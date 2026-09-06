@@ -122,5 +122,6 @@ Use the existing CLI runner (`npx @modelcontextprotocol/conformance client|serve
 - `npm run build` passes
 - `npm test` passes
 - For non-trivial scenario changes, run against at least one real SDK (typescript-sdk or python-sdk) to see actual output. For changes to shared infrastructure (runner, tier-check), test against go-sdk or csharp-sdk too.
+- If the change adds a check to an existing scenario, or changes the severity of an existing check, attach the cross-SDK table from the SDK matrix (README: "Running a Scenario Across All SDKs"; `gh workflow run sdk-matrix.yml ... -f pr=<n> -f pr_comment=true` posts it on the PR for you). Reviewers want to see which SDKs go red before it merges, not after.
 - Scenario is registered in the right suite in `src/scenarios/index.ts`
 - If you changed a `sep-*.yaml` or scenario check IDs, `src/seps/traceability.json` will drift; the traceability workflow refreshes it via PR (or regenerate locally with `--results` from a suite run)
