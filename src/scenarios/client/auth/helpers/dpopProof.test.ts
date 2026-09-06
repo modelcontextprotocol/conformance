@@ -162,7 +162,8 @@ describe('DPoP proof helper — invalid variants isolate exactly one defect (Lay
   });
 
   it('embedPrivateKey leaks the private scalar into the jwk header', async () => {
-    const kp = await generateDpopKeyPair();
+    // embedPrivateKey must export the private JWK, so opt into extractability.
+    const kp = await generateDpopKeyPair('ES256', { extractable: true });
     const jwt = await buildDpopProof({
       keyPair: kp,
       ...base,

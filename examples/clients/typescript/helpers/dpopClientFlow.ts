@@ -55,6 +55,9 @@ export async function runDpopClient(
   );
   const prm = await (await fetch(prmUrl.toString())).json();
   const authServerUrl: string = prm.authorization_servers[0];
+  // RFC 8707 resource indicator — sent in both the authorization request and
+  // the token request, per the MCP authorization spec.
+  const resource: string = prm.resource;
 
   // 2. Authorization server metadata.
   const asMeta = await (
@@ -96,7 +99,8 @@ export async function runDpopClient(
     state,
     redirect_uri: REDIRECT_URI,
     code_challenge: codeChallenge,
-    code_challenge_method: 'S256'
+    code_challenge_method: 'S256',
+    resource
   }).toString()}`;
   const authorizeResponse = await request(authorizeUrl, { method: 'GET' });
   await authorizeResponse.body.text().catch(() => undefined);
@@ -105,8 +109,20 @@ export async function runDpopClient(
   if (!locationStr) {
     throw new Error('Authorization endpoint did not redirect with a code');
   }
-  const code = new URL(locationStr).searchParams.get('code');
+  const callbackParams = new URL(locationStr).searchParams;
+  const code = callbackParams.get('code');
   if (!code) throw new Error('No authorization code in redirect');
+  // CSRF binding: the callback must echo our state (OAuth 2.1 §7.1).
+  if (callbackParams.get('state') !== state) {
+    throw new Error('Authorization response state does not match the request');
+  }
+  // RFC 9207: when the AS returns iss, it must equal the metadata issuer.
+  const callbackIss = callbackParams.get('iss');
+  if (callbackIss !== null && callbackIss !== asMeta.issuer) {
+    throw new Error(
+      `Authorization response iss "${callbackIss}" does not match the metadata issuer "${asMeta.issuer}"`
+    );
+  }
 
   // 5. Token request with a DPoP proof → DPoP-bound access token. The broken
   // `sendTokenRequestProof:false` variant omits the proof, so the AS issues an
@@ -116,7 +132,8 @@ export async function runDpopClient(
     code,
     redirect_uri: REDIRECT_URI,
     code_verifier: codeVerifier,
-    client_id: clientId
+    client_id: clientId,
+    resource
   }).toString();
   const requestToken = async (nonce?: string): Promise<Response> => {
     const headers: Record<string, string> = {
@@ -156,7 +173,17 @@ export async function runDpopClient(
     }
   }
   if (!tokenResponse.ok) {
-    throw new Error(`Token request failed: HTTP ${tokenResponse.status}`);
+    // Surface the OAuth error body — error_description carries the actionable
+    // detail (e.g. which DPoP proof claim the AS rejected).
+    const body = await tokenResponse
+      .json()
+      .catch(() => ({}) as { error?: string; error_description?: string });
+    const detail = [body.error, body.error_description]
+      .filter(Boolean)
+      .join(': ');
+    throw new Error(
+      `Token request failed: HTTP ${tokenResponse.status}${detail ? ` (${detail})` : ''}`
+    );
   }
   const tokenBody = await tokenResponse.json();
   const accessToken: string = tokenBody.access_token;

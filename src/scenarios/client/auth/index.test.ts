@@ -356,15 +356,25 @@ describe('WIF JWT-bearer negative tests', () => {
 describe('DPoP client negative tests (SEP-1932)', () => {
   test('auth/dpop: client presents the token with the Bearer scheme', async () => {
     const runner = new InlineClientRunner(dpopBearerClient);
+    // expectedSuccessSlugs pins single-defect isolation: expectedFailureSlugs
+    // alone only asserts a subset of the actual failures.
     await runClientAgainstScenario(runner, 'auth/dpop', {
-      expectedFailureSlugs: ['sep-1932-client-dpop-auth-scheme']
+      expectedFailureSlugs: ['sep-1932-client-dpop-auth-scheme'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-fresh-proof'
+      ]
     });
   });
 
   test('auth/dpop: client reuses a DPoP proof across requests', async () => {
     const runner = new InlineClientRunner(dpopReplayClient);
     await runClientAgainstScenario(runner, 'auth/dpop', {
-      expectedFailureSlugs: ['sep-1932-client-fresh-proof']
+      expectedFailureSlugs: ['sep-1932-client-fresh-proof'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-token-request-proof'
+      ]
     });
   });
 
@@ -377,7 +387,8 @@ describe('DPoP client negative tests (SEP-1932)', () => {
       expectedFailureSlugs: [
         'sep-1932-client-token-request-proof',
         'sep-1932-client-fresh-proof'
-      ]
+      ],
+      expectedSuccessSlugs: ['sep-1932-client-dpop-auth-scheme']
     });
   });
 

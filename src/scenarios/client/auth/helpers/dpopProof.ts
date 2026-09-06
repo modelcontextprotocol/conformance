@@ -11,8 +11,8 @@ import { createHash, randomBytes } from 'node:crypto';
  * deliberately-malformed variants (one defect at a time) for the negative checks.
  *
  * Correctness of this module is anchored to published RFC test vectors in
- * `proof.test.ts` (RFC 9449 §4 examples), not to the conformance servers that
- * consume it — see the validation strategy in the project notes.
+ * `dpopProof.test.ts` (RFC 9449 §4 examples), not to the conformance servers
+ * that consume it — so the builder and the validators cannot share a bug.
  */
 
 const DEFAULT_ALG = 'ES256';
@@ -29,12 +29,18 @@ export interface DpopKeyPair {
   thumbprint: string;
 }
 
-/** Generate an asymmetric key pair for DPoP proofs (default ES256 / P-256). */
+/**
+ * Generate an asymmetric key pair for DPoP proofs (default ES256 / P-256).
+ * The private key is non-extractable by default (RFC 9449 §11 guidance —
+ * production clients should do the same); pass `extractable: true` only for
+ * the negative variants that must export it (e.g. `embedPrivateKey`).
+ */
 export async function generateDpopKeyPair(
-  alg: string = DEFAULT_ALG
+  alg: string = DEFAULT_ALG,
+  { extractable = false }: { extractable?: boolean } = {}
 ): Promise<DpopKeyPair> {
   const { publicKey, privateKey } = await jose.generateKeyPair(alg, {
-    extractable: true
+    extractable
   });
   const publicJwk = await jose.exportJWK(publicKey);
   const thumbprint = await jose.calculateJwkThumbprint(publicJwk, 'sha256');
