@@ -5,10 +5,11 @@ Vendored copies of `schema/{version}/schema.ts` and
 [modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol)
 spec repository.
 
-The `.ts` files are the canonical TypeScript types for each protocol version.
+The `.ts` files are the canonical TypeScript types for each protocol version
+(`draft` tracks `schema/draft/`, the revision after the latest release).
 The conformance suite imports types from here rather than from
-`@modelcontextprotocol/sdk` so that it can test draft spec versions before any
-SDK has implemented them.
+`@modelcontextprotocol/sdk` so that it can test spec versions before any SDK
+has implemented them.
 
 The `.schema.json` files are the matching JSON Schemas; `src/validation`
 compiles them (per version) to validate every JSON-RPC message the harness
@@ -31,4 +32,4 @@ import type { ListToolsResult } from '../../spec-types/2025-06-18';
 ```
 
 `Connection` implementations import the version whose lifecycle they implement
-(stateful → `2025-11-25`, stateless → `draft`).
+(stateful → `2025-11-25`, stateless → `2026-07-28`).
