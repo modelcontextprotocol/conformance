@@ -135,6 +135,31 @@ describe('wireSchemaErrors', () => {
     ).toEqual([]);
   });
 
+  it('names an unrecognised resultType when the result then fails its typed definition', () => {
+    const errors = wireSchemaErrors(
+      DRAFT_PROTOCOL_VERSION,
+      { jsonrpc: '2.0', id: 3, result: { resultType: 'complet' } },
+      'tools/call'
+    );
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0]).toContain('CallToolResult');
+    expect(errors[0]).toContain("resultType 'complet' is not a core value");
+  });
+
+  it('accepts an unrecognised resultType whose result satisfies the typed definition (open discriminator)', () => {
+    expect(
+      wireSchemaErrors(
+        DRAFT_PROTOCOL_VERSION,
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          result: { resultType: 'x-acme/streamed', content: [] }
+        },
+        'tools/call'
+      )
+    ).toEqual([]);
+  });
+
   it('accepts a JSON-RPC batch under 2025-03-26 and reports per-element errors', () => {
     expect(
       wireSchemaErrors('2025-03-26', [
