@@ -168,6 +168,9 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       code_challenge: this.codeChallenge,
       code_challenge_method: 'S256'
     });
+    if (options.resource) {
+      params.set('resource', options.resource);
+    }
 
     return `${metadata.authorization_endpoint}?${params.toString()}`;
   }
@@ -260,6 +263,9 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
       redirect_uri: redirectUri,
       code_verifier: this.codeVerifier
     });
+    if (options.resource) {
+      params.set('resource', options.resource);
+    }
     const headers: Record<string, string> = {
       'content-type': 'application/x-www-form-urlencoded'
     };
