@@ -55,9 +55,7 @@ export function toFetchHandler(
     let status = 200;
     const headers = new Headers();
 
-    const captureHeaders = (
-      h?: Record<string, string | string[] | number>
-    ) => {
+    const captureHeaders = (h?: Record<string, string | string[] | number>) => {
       for (const [k, v] of Object.entries(h ?? {})) {
         headers.set(k, Array.isArray(v) ? v.join(', ') : String(v));
       }

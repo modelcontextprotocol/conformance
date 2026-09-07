@@ -28,7 +28,10 @@ function decodeAuthCode(code: string | undefined): AuthCodeState | undefined {
   if (!code?.startsWith(`${AUTH_CODE_PREFIX}.`)) return undefined;
   try {
     return JSON.parse(
-      Buffer.from(code.slice(AUTH_CODE_PREFIX.length + 1), 'base64url').toString()
+      Buffer.from(
+        code.slice(AUTH_CODE_PREFIX.length + 1),
+        'base64url'
+      ).toString()
     ) as AuthCodeState;
   } catch {
     return undefined;

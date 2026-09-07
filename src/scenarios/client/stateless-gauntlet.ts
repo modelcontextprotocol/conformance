@@ -59,9 +59,7 @@ function isDraftVersion(v: unknown): boolean {
 
 /** Versions compare equal across the draft/release-date alias. */
 function sameVersion(a: unknown, b: unknown): boolean {
-  return (
-    String(a) === String(b) || (isDraftVersion(a) && isDraftVersion(b))
-  );
+  return String(a) === String(b) || (isDraftVersion(a) && isDraftVersion(b));
 }
 
 const META_NS = 'io.modelcontextprotocol/';
@@ -133,7 +131,9 @@ function encodeMrtrState(): string {
 function decodeMrtrState(state: string): boolean {
   try {
     const parsed = JSON.parse(Buffer.from(state, 'base64url').toString());
-    return parsed.tool === MRTR_TOOL.name && parsed.nonce === 'gauntlet-mrtr-v1';
+    return (
+      parsed.tool === MRTR_TOOL.name && parsed.nonce === 'gauntlet-mrtr-v1'
+    );
   } catch {
     return false;
   }
@@ -418,7 +418,7 @@ const MRTR_NOTE =
   `${META_NS}clientCapabilities ({"elicitation": {}}) and handle ` +
   "resultType:'input_required' tool results — answer the inputRequests and " +
   'retry the call with requestState echoed back unchanged. Declaring the ' +
-  "capability makes this gauntlet list the mrtr_confirm tool so you can " +
+  'capability makes this gauntlet list the mrtr_confirm tool so you can ' +
   'exercise that flow.';
 
 /** Itemized draft gaps of one request, framed as an advisory report. */
@@ -471,17 +471,14 @@ function createLenientClassicServer(
   req: Request,
   body: { method?: string; params?: Record<string, unknown> }
 ): Server {
-  const server = new Server(
-    SERVER_INFO,
-    {
-      capabilities: { tools: {} },
-      instructions:
-        'Lenient conformance gauntlet. Call every listed tool with valid ' +
-        'arguments; call draft_readiness for an itemized report of what ' +
-        'this client must change for the stateless draft protocol.\n\n' +
-        readinessReport(req, body)
-    }
-  );
+  const server = new Server(SERVER_INFO, {
+    capabilities: { tools: {} },
+    instructions:
+      'Lenient conformance gauntlet. Call every listed tool with valid ' +
+      'arguments; call draft_readiness for an itemized report of what ' +
+      'this client must change for the stateless draft protocol.\n\n' +
+      readinessReport(req, body)
+  });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     // Classic requests carry no per-request capabilities, so MRTR can't be
@@ -503,9 +500,7 @@ function createLenientClassicServer(
     async (request): Promise<CallToolResult> => {
       if (request.params.name === DRAFT_READINESS_TOOL.name) {
         return {
-          content: [
-            { type: 'text' as const, text: readinessReport(req, body) }
-          ]
+          content: [{ type: 'text' as const, text: readinessReport(req, body) }]
         };
       }
       if (request.params.name === ELICITATION_MISSING_TOOL.name) {
@@ -607,10 +602,7 @@ export class StatelessGauntletScenario extends HandlerScenario {
         req.query as Record<string, string>
       ).toString();
       const continueUrl = `${issuer()}/authorize/continue?${query}`;
-      res
-        .status(200)
-        .type('html')
-        .send(`<!doctype html>
+      res.status(200).type('html').send(`<!doctype html>
 <html><head><title>Hold on — initialize?</title>
 <style>body{font-family:system-ui;max-width:42em;margin:4em auto;line-height:1.5;padding:0 1em}
 a.btn{display:inline-block;background:#2563eb;color:#fff;padding:.6em 1.2em;border-radius:6px;text-decoration:none}
@@ -634,7 +626,10 @@ stateless draft servers.</p>
     app.get('/oauth/authorize/continue', (req, res) => {
       const q = req.query as Record<string, string | undefined>;
       if (!q.redirect_uri) {
-        res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri required' });
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'redirect_uri required'
+        });
         return;
       }
       const redirect = new URL(q.redirect_uri);
@@ -704,9 +699,7 @@ stateless draft servers.</p>
       // judged as draft no matter what its header claims (the disagreement
       // is reported, not routed around).
       const meta = (body.params?._meta ?? {}) as Record<string, unknown>;
-      const hasDraftMeta = Object.keys(meta).some((k) =>
-        k.startsWith(META_NS)
-      );
+      const hasDraftMeta = Object.keys(meta).some((k) => k.startsWith(META_NS));
       const isClassicFallback =
         !hasDraftMeta &&
         ((body.method === 'initialize' && !isDraftVersion(headerVersion)) ||
@@ -716,8 +709,7 @@ stateless draft servers.</p>
       // A consent token (minted by the initialize interstitial) means a
       // human read "this client shouldn't do initialize" and chose to
       // continue — serve the classic flow leniently from here on.
-      const consented =
-        req.headers.authorization === `Bearer ${CONSENT_TOKEN}`;
+      const consented = req.headers.authorization === `Bearer ${CONSENT_TOKEN}`;
       if (isClassicFallback && consented) {
         const gaps = [...headerProblems(req), ...draftProblems(req, body)];
         check(
@@ -761,10 +753,7 @@ stateless draft servers.</p>
         );
         res
           .status(401)
-          .set(
-            'WWW-Authenticate',
-            `Bearer resource_metadata="${prmUrl()}"`
-          )
+          .set('WWW-Authenticate', `Bearer resource_metadata="${prmUrl()}"`)
           .json({
             error: 'consent_required',
             explanation,
@@ -828,9 +817,7 @@ stateless draft servers.</p>
           : {};
       const headerVersion = req.headers['mcp-protocol-version'];
       const meta = (body.params?._meta ?? {}) as Record<string, unknown>;
-      const hasDraftMeta = Object.keys(meta).some((k) =>
-        k.startsWith(META_NS)
-      );
+      const hasDraftMeta = Object.keys(meta).some((k) => k.startsWith(META_NS));
 
       const gaps = [...headerProblems(req), ...draftProblems(req, body)];
       check(
@@ -999,9 +986,7 @@ with advisory feedback. No other request requires auth. Prefer zero friction? Us
 
         if (params.name === DRAFT_READINESS_TOOL.name && lenient) {
           reply({
-            content: [
-              { type: 'text', text: readinessReport(req, body) }
-            ]
+            content: [{ type: 'text', text: readinessReport(req, body) }]
           });
           return;
         }
@@ -1058,7 +1043,10 @@ with advisory feedback. No other request requires auth. Prefer zero friction? Us
           );
           reply({
             content: [
-              { type: 'text', text: `CONFORMANCE FAIL [${params.name}]: ${detail}` }
+              {
+                type: 'text',
+                text: `CONFORMANCE FAIL [${params.name}]: ${detail}`
+              }
             ],
             isError: true
           });
@@ -1149,7 +1137,11 @@ with advisory feedback. No other request requires auth. Prefer zero friction? Us
         "inputResponses MUST be keyed by the inputRequests key ('confirm')"
       );
     } else {
-      if (confirm.action !== 'accept' && confirm.action !== 'decline' && confirm.action !== 'cancel') {
+      if (
+        confirm.action !== 'accept' &&
+        confirm.action !== 'decline' &&
+        confirm.action !== 'cancel'
+      ) {
         problems.push(
           `elicitation response action MUST be accept/decline/cancel; got ${JSON.stringify(confirm.action)}`
         );

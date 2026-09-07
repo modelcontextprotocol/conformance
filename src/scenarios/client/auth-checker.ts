@@ -56,7 +56,9 @@ function mintToken(claims: TokenClaims): string {
   return `ac.${Buffer.from(JSON.stringify(claims)).toString('base64url')}`;
 }
 
-function parseToken(authorization: string | undefined): TokenClaims | undefined {
+function parseToken(
+  authorization: string | undefined
+): TokenClaims | undefined {
   const m = /^Bearer ac\.([A-Za-z0-9_-]+)$/.exec(authorization ?? '');
   if (!m) return undefined;
   try {
@@ -128,7 +130,7 @@ const TOOLS = [
       'authorization_response_iss_parameter_supported: true but sends a ' +
       'WRONG iss in the authorization response. This tool can NEVER return ' +
       'success: a conformant client refuses to exchange the code (your own ' +
-      "client errors about the iss mismatch — that error IS the pass). A " +
+      'client errors about the iss mismatch — that error IS the pass). A ' +
       'client that exchanges the code anyway receives a poisoned token, and ' +
       'every request made with it fails with an explanation. Run this last; ' +
       'it ends the session either way.'
@@ -199,9 +201,12 @@ export class AuthCheckerScenario extends HandlerScenario {
     app.get('/.well-known/oauth-protected-resource/cfg/scoped', (_req, res) => {
       res.json(prmDoc('scoped'));
     });
-    app.get('/.well-known/oauth-protected-resource/cfg/isstrap', (_req, res) => {
-      res.json(prmDoc('isstrap'));
-    });
+    app.get(
+      '/.well-known/oauth-protected-resource/cfg/isstrap',
+      (_req, res) => {
+        res.json(prmDoc('isstrap'));
+      }
+    );
 
     // ---------------- the two ASs (path-based issuers, stateless) ---------
     const asMetadata = (cfg: Cfg) => (_req: Request, res: Response) => {
@@ -214,7 +219,9 @@ export class AuthCheckerScenario extends HandlerScenario {
         grant_types_supported: ['authorization_code'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['none'],
-        ...(cfg === 'scoped' ? { scopes_supported: [SCOPE_READ, SCOPE_WRITE] } : {}),
+        ...(cfg === 'scoped'
+          ? { scopes_supported: [SCOPE_READ, SCOPE_WRITE] }
+          : {}),
         // RFC 9207: the trap AS PROMISES iss in authorization responses —
         // which obliges the client to validate it. The redirect then carries
         // a wrong one.
@@ -224,7 +231,10 @@ export class AuthCheckerScenario extends HandlerScenario {
       });
     };
     for (const cfg of ['basic', 'scoped', 'isstrap'] as const) {
-      app.get(`/.well-known/oauth-authorization-server/as/${cfg}`, asMetadata(cfg));
+      app.get(
+        `/.well-known/oauth-authorization-server/as/${cfg}`,
+        asMetadata(cfg)
+      );
       app.get(`/.well-known/openid-configuration/as/${cfg}`, asMetadata(cfg));
 
       app.post(`/as/${cfg}/register`, (req, res) => {
@@ -248,7 +258,10 @@ export class AuthCheckerScenario extends HandlerScenario {
           if (q.state !== undefined) r.searchParams.set('state', q.state);
           res.redirect(r.toString());
         };
-        if (q.code_challenge === undefined || q.code_challenge_method !== 'S256') {
+        if (
+          q.code_challenge === undefined ||
+          q.code_challenge_method !== 'S256'
+        ) {
           fail('invalid_request', 'PKCE with S256 is required');
           return;
         }
@@ -274,7 +287,10 @@ export class AuthCheckerScenario extends HandlerScenario {
           { scope: q.scope }
         );
         if (!q.redirect_uri) {
-          res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri required' });
+          res.status(400).json({
+            error: 'invalid_request',
+            error_description: 'redirect_uri required'
+          });
           return;
         }
         const r = new URL(q.redirect_uri);
@@ -382,11 +398,7 @@ see what your client has proven.</p>
     // ---------------- the MCP endpoint, gated per rung -------------------
     // HTTP header values must be Latin-1; keep the rich text in the body.
     const headerSafe = (s: string) => s.replace(/[^\x20-\x7e]/g, '-');
-    const challenge401 = (
-      res: Response,
-      cfg: Cfg,
-      description: string
-    ) => {
+    const challenge401 = (res: Response, cfg: Cfg, description: string) => {
       res
         .status(401)
         .set(
@@ -431,7 +443,11 @@ see what your client has proven.</p>
       // exchanged the wrong-iss code: fall through to the SDK dispatch, which
       // returns the FAIL verdict as an in-band tool result.
       if (toolName === 'check_iss_validation' && !token.trap) {
-        record('auth-checker-iss-trap-armed', true, 'iss trap challenge issued');
+        record(
+          'auth-checker-iss-trap-armed',
+          true,
+          'iss trap challenge issued'
+        );
         challenge401(
           res,
           'isstrap',
@@ -440,7 +456,11 @@ see what your client has proven.</p>
         return;
       }
       if (toolName === 'advance_to_scoped' && token.cfg !== 'scoped') {
-        record('auth-checker-rung2-challenged', true, 'Rung 2 challenge issued');
+        record(
+          'auth-checker-rung2-challenged',
+          true,
+          'Rung 2 challenge issued'
+        );
         challenge401(
           res,
           'scoped',
