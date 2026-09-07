@@ -31,14 +31,25 @@ function esc(s: string): string {
   );
 }
 
-export function renderLanding(origin: string, scenarios: string[]): string {
+export function renderLanding(
+  origin: string,
+  scenarios: string[],
+  stepsFor: (name: string) => readonly unknown[] | undefined = () => undefined
+): string {
   const rows = scenarios
-    .map(
-      (n) =>
+    .map((n) => {
+      const steps = stepsFor(n);
+      const steer = steps
+        ? `<details><summary>steps (${steps.length})</summary>` +
+          `<pre>${esc(JSON.stringify(steps, null, 1))}</pre></details>`
+        : '<span style="color:#9ca3af">bespoke</span>';
+      return (
         `<tr><td><code>${esc(n)}</code></td>` +
         `<td><code>${esc(origin)}/s/${esc(n)}/&lt;run-id&gt;</code></td>` +
+        `<td>${steer}</td>` +
         `<td><a href="/s/${esc(n)}">mint</a></td></tr>`
-    )
+      );
+    })
     .join('');
   return `<!doctype html><meta charset=utf-8>
 <title>MCP Conformance — hosted</title><style>${css}</style>
@@ -54,8 +65,14 @@ returns <code>{mcpUrl, resultsUrl}</code>.</p>
 <p>This server is also an MCP server at <code>${esc(origin)}/mcp</code> with
 <code>list_scenarios</code> / <code>start_run</code> /
 <code>get_results</code> tools.</p>
+<p><b>Generic steering:</b> scenarios with a <code>steps</code> column need no
+scenario-specific client code — the mint response (and <code>/scenarios</code>)
+carries <code>context.steps</code>, a closed op list
+(<code>tools/list</code>, <code>tools/call</code>, <code>wait</code>,
+<code>disconnect</code>) that a dumb client can interpret. Pass the
+<code>context</code> object verbatim as <code>MCP_CONFORMANCE_CONTEXT</code>.</p>
 <h2>Scenarios (${scenarios.length})</h2>
-<table><tr><th>name</th><th>MCP URL pattern</th><th></th></tr>${rows}</table>
+<table><tr><th>name</th><th>MCP URL pattern</th><th>client</th><th></th></tr>${rows}</table>
 <h2>Example</h2>
 <pre>$ npx @modelcontextprotocol/inspector ${esc(origin)}/s/initialize/demo
 $ curl ${esc(origin)}/results/demo | jq .summary</pre>`;

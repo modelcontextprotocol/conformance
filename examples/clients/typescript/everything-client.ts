@@ -22,6 +22,12 @@ import {
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import {
+  StepsSchema,
+  resolveArguments,
+  type Captures,
+  type Step
+} from '../../../src/steps/index.js';
+import {
   auth,
   extractWWWAuthenticateParams
 } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -1123,6 +1129,68 @@ registerScenario('sep-2322-client-request-state', runMRTRClient);
 // Main entry point
 // ============================================================================
 
+// ============================================================================
+// Generic steering: fallback interpreter for scenarios that ship `steps`
+// ============================================================================
+//
+// A scenario with no bespoke handler here can still be driven if the runner
+// put `steps` in MCP_CONFORMANCE_CONTEXT (see src/steps). The op set is
+// closed; standing defaults: connect first, accept elicitation with schema
+// defaults, disconnect at the end.
+
+function stepsFromContext(): Step[] | undefined {
+  const raw = process.env.MCP_CONFORMANCE_CONTEXT;
+  if (!raw) return undefined;
+  try {
+    const parsed = StepsSchema.safeParse(JSON.parse(raw).steps);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function runSteps(serverUrl: string, steps: Step[]): Promise<void> {
+  const client = new Client(
+    { name: 'conformance-generic-client', version: '1.0.0' },
+    { capabilities: { elicitation: { applyDefaults: true } } }
+  );
+  // Standing default: if the server asks, accept with schema defaults.
+  client.setRequestHandler(ElicitRequestSchema, async () => ({
+    action: 'accept' as const,
+    content: {}
+  }));
+
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+  await client.connect(transport);
+  logger.debug(`steps: connected, running ${steps.length} step(s)`);
+
+  const captures: Captures = {};
+  let connected = true;
+  for (const step of steps) {
+    logger.debug('step:', JSON.stringify(step));
+    switch (step.op) {
+      case 'tools/list':
+        captures['tools/list'] = await client.listTools();
+        break;
+      case 'tools/call':
+        captures['tools/call'] = await client.callTool({
+          name: step.name,
+          arguments: resolveArguments(captures, step.arguments)
+        });
+        break;
+      case 'wait':
+        await new Promise((r) => setTimeout(r, step.ms));
+        break;
+      case 'disconnect':
+        await transport.close();
+        connected = false;
+        break;
+    }
+  }
+  if (connected) await transport.close();
+  logger.debug('steps: done');
+}
+
 async function main(): Promise<void> {
   const scenarioName = process.env.MCP_CONFORMANCE_SCENARIO;
   const serverUrl = process.argv[2];
@@ -1141,7 +1209,15 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const handler = scenarioHandlers[scenarioName];
+  // Named handlers win; steps are the fallback for names this client has
+  // never heard of. MCP_CONFORMANCE_FORCE_STEPS=1 inverts that so the
+  // generic path can be exercised against scenarios that also have handlers.
+  const steps = stepsFromContext();
+  const named = scenarioHandlers[scenarioName];
+  const handler =
+    steps && (!named || process.env.MCP_CONFORMANCE_FORCE_STEPS === '1')
+      ? (url: string) => runSteps(url, steps)
+      : named;
   if (!handler) {
     console.error(`Unknown scenario: ${scenarioName}`);
     console.error('\nAvailable scenarios:');

@@ -20,6 +20,9 @@ export class InitializeScenario extends HandlerScenario {
     return (req, res) => this.handleRequest(req, res);
   }
 
+  /** Plumbing only: connect (implicit) and make one ordinary request. */
+  readonly steps = [{ op: 'tools/list' }] as const;
+
   getChecks(): ConformanceCheck[] {
     return this.checks;
   }

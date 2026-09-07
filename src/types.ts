@@ -1,3 +1,5 @@
+import type { Step } from './steps';
+
 export type CheckStatus =
   | 'SUCCESS'
   | 'FAILURE'
@@ -138,6 +140,12 @@ export interface Scenario {
    * request on its own content, so it reads this view when present.
    */
   rawChecks?(): ConformanceCheck[];
+  /**
+   * Client-side choreography as data (see src/steps). When present the
+   * runner includes it in MCP_CONFORMANCE_CONTEXT as `steps`, so a client
+   * with no bespoke handler for this scenario can still drive it.
+   */
+  readonly steps?: readonly Step[];
 }
 
 /**

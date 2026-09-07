@@ -117,9 +117,15 @@ export async function runConformanceTest(
   console.error(`Starting scenario: ${scenarioName}`);
   const urls = await scenario.start();
 
+  // Steering steps ride in the same context blob as credentials etc.
+  const context: Record<string, unknown> | undefined =
+    scenario.steps || urls.context
+      ? { ...urls.context, ...(scenario.steps && { steps: scenario.steps }) }
+      : undefined;
+
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
-  if (urls.context) {
-    console.error(`With context: ${JSON.stringify(urls.context)}`);
+  if (context) {
+    console.error(`With context: ${JSON.stringify(context)}`);
   }
 
   try {
@@ -128,7 +134,7 @@ export async function runConformanceTest(
       scenarioName,
       urls.serverUrl,
       timeout,
-      urls.context,
+      context,
       specVersion
     );
 

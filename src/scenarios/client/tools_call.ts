@@ -125,6 +125,11 @@ export class ToolsCallScenario extends HandlerScenario {
     return createServerApp(this.checks);
   }
 
+  readonly steps = [
+    { op: 'tools/list' },
+    { op: 'tools/call', name: 'add_numbers', arguments: { a: 5, b: 3 } }
+  ] as const;
+
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = ['tool-add-numbers'];
     // add a failure if not in there already

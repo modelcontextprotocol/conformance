@@ -172,6 +172,9 @@ export class SessionManager {
       throw new NotHostableError(scenarioName);
     }
 
+    const steps = (scenario as Scenario).steps;
+    if (steps) context = { ...context, steps };
+
     const run: HostedRun = {
       id: runId,
       scenarioName,

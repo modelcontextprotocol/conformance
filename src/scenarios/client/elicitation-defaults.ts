@@ -494,6 +494,19 @@ export class ElicitationClientDefaultsScenario extends HandlerScenario {
     await super.stop();
   }
 
+  /**
+   * The tool call triggers elicitation/create; the interpreter's standing
+   * default (accept with schema defaults) is exactly the behaviour under test.
+   */
+  readonly steps = [
+    { op: 'tools/list' },
+    {
+      op: 'tools/call',
+      name: 'test_client_elicitation_defaults',
+      arguments: {}
+    }
+  ] as const;
+
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = [
       'client-elicitation-sep1034-string-default',

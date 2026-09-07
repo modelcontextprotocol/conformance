@@ -260,7 +260,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // ---------- discovery ----------
 
   app.get('/', (req, res) => {
-    res.type('html').send(renderLanding(origin(req), Array.from(hostable)));
+    res
+      .type('html')
+      .send(
+        renderLanding(
+          origin(req),
+          Array.from(hostable),
+          (name) => getScenario(name)?.steps
+        )
+      );
   });
 
   app.get('/scenarios', (_req, res) => {
@@ -271,7 +279,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           name,
           description: s.description,
           source: s.source,
-          mcpPath: s.mcpPath ?? ''
+          mcpPath: s.mcpPath ?? '',
+          ...(s.steps && { steps: s.steps })
         };
       })
     );

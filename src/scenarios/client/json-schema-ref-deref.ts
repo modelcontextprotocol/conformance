@@ -79,6 +79,8 @@ export class JsonSchemaRefDerefScenario extends HandlerScenario {
 
 The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at a canary URL. The client should list tools (and may otherwise process the schema), but must not fetch the canary URL. Same-document refs (\`#/$defs/...\`) remain safe to resolve.`;
   mcpPath = '/mcp';
+  /** List only — the point is what the client does NOT fetch afterwards. */
+  readonly steps = [{ op: 'tools/list' }] as const;
 
   /**
    * Raw event log. What the scenario observed is kept as INFO events here
