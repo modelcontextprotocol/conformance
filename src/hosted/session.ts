@@ -17,6 +17,7 @@ import {
   AuxOriginRole
 } from '../types';
 import { getScenario, scenarios } from '../scenarios';
+import type { RunStore } from './store';
 
 export interface HostedRun {
   id: string;
@@ -43,6 +44,55 @@ export interface SessionManagerOptions {
    * URL (no trailing slash); per-run AS issuer becomes `<origin>/r/<run-id>`.
    */
   auxOrigins?: Partial<Record<AuxOriginRole, string>>;
+  /**
+   * Optional persistence so runs survive being load-balanced across
+   * processes (serverless isolates). Omit for a single long-lived process.
+   */
+  store?: RunStore;
+}
+
+/** Results view: the scenario a run belongs to plus its judged checks. */
+export interface RunResults {
+  scenarioName: string;
+  checks: ConformanceCheck[];
+}
+
+/**
+ * The scenario's raw event log — what it actually observed — as opposed to
+ * getChecks(), which for most client scenarios also appends "expected X,
+ * never saw it" FAILUREs (and mutates). Persisting the raw log per process
+ * and judging the merged log once is what makes multi-process hosting work.
+ */
+export function rawChecksOf(scenario: Scenario): ConformanceCheck[] {
+  if (scenario.rawChecks) return scenario.rawChecks();
+  const bag = (scenario as unknown as { checks?: unknown }).checks;
+  if (Array.isArray(bag)) return bag as ConformanceCheck[];
+  return scenario.getChecks();
+}
+
+/**
+ * Judge a merged raw log with the scenario's own end-of-run logic by loading
+ * it into a fresh instance. Falls back to the raw log for scenarios that
+ * don't keep a plain `checks` array.
+ */
+export function finalizeChecks(
+  scenarioName: string,
+  merged: ConformanceCheck[]
+): ConformanceCheck[] {
+  const proto = getScenario(scenarioName);
+  if (!proto) return merged;
+  try {
+    const Ctor = proto.constructor as new () => Scenario;
+    const fresh = new Ctor() as unknown as {
+      checks?: unknown;
+      getChecks(): ConformanceCheck[];
+    };
+    if (!Array.isArray(fresh.checks)) return merged;
+    fresh.checks = merged.map((c) => ({ ...c }));
+    return fresh.getChecks();
+  } catch {
+    return merged;
+  }
 }
 
 export class SessionManager {
@@ -50,10 +100,15 @@ export class SessionManager {
   private readonly ttlMs: number;
   private readonly auxOrigins: Partial<Record<AuxOriginRole, string>>;
   private sweeper: ReturnType<typeof setInterval>;
+  readonly store: RunStore | undefined;
+  private pending = new Set<Promise<void>>();
+  /** Identifies this process's rows in the store. */
+  readonly writerId = randomBytes(4).toString('hex');
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
     this.auxOrigins = opts.auxOrigins ?? {};
+    this.store = opts.store;
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;
     this.sweeper = setInterval(() => this.sweep(), sweepIntervalMs);
     this.sweeper.unref?.();
@@ -129,6 +184,7 @@ export class SessionManager {
       context
     };
     this.runs.set(runId, run);
+    void this.store?.saveRun(runId, scenarioName).catch(logStoreError);
     return run;
   }
 
@@ -138,16 +194,94 @@ export class SessionManager {
     return r;
   }
 
-  results(id: string): ConformanceCheck[] | undefined {
-    return this.runs.get(id)?.scenario.getChecks();
+  /**
+   * Like get(), but if this process has never seen the run and a store is
+   * configured, rebuild it from persisted metadata. This is how an aux-origin
+   * request or a results page lands correctly on a cold process.
+   */
+  async ensure(
+    id: string,
+    baseUrlFor: (scenarioName: string, runId: string) => string
+  ): Promise<HostedRun | undefined> {
+    const local = this.get(id);
+    if (local || !this.store) return local;
+    let scenarioName: string | undefined;
+    try {
+      scenarioName = await this.store.loadRun(id);
+    } catch (e) {
+      logStoreError(e);
+    }
+    if (!scenarioName) return undefined;
+    return this.getOrCreate(scenarioName, id, (rid) =>
+      baseUrlFor(scenarioName, rid)
+    );
+  }
+
+  /** Write this process's view of a run's checks through to the store. */
+  persist(run: HostedRun): Promise<void> {
+    if (!this.store) return Promise.resolve();
+    const p = this.store
+      .saveChecks(
+        run.id,
+        this.writerId,
+        rawChecksOf(run.scenario).map((c) => ({ ...c }))
+      )
+      .catch(logStoreError)
+      .finally(() => this.pending.delete(p));
+    this.pending.add(p);
+    return p;
+  }
+
+  /**
+   * Resolve once every in-flight persist() has settled. Serverless entry
+   * points await this before handing back the response so the write isn't
+   * abandoned when the isolate is frozen after responding.
+   */
+  async flush(): Promise<void> {
+    while (this.pending.size) await Promise.all(Array.from(this.pending));
+  }
+
+  /**
+   * Judged checks for a run. Without a store this is the scenario's own
+   * getChecks(). With a store it is every process's raw log merged (this
+   * process's live log wins over its own persisted row) and re-judged once.
+   */
+  async results(id: string): Promise<RunResults | undefined> {
+    const run = this.runs.get(id);
+    if (!this.store) {
+      return run
+        ? { scenarioName: run.scenarioName, checks: run.scenario.getChecks() }
+        : undefined;
+    }
+    let byWriter = new Map<string, ConformanceCheck[]>();
+    try {
+      byWriter = await this.store.loadChecks(id);
+    } catch (e) {
+      logStoreError(e);
+    }
+    if (run) byWriter.set(this.writerId, rawChecksOf(run.scenario));
+    let scenarioName = run?.scenarioName;
+    if (!scenarioName) {
+      try {
+        scenarioName = await this.store.loadRun(id);
+      } catch (e) {
+        logStoreError(e);
+      }
+    }
+    if (!scenarioName) return undefined;
+    const merged = Array.from(byWriter.values())
+      .flat()
+      .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
+    return { scenarioName, checks: finalizeChecks(scenarioName, merged) };
   }
 
   list(): HostedRun[] {
     return Array.from(this.runs.values());
   }
 
-  async destroy(id: string): Promise<void> {
+  async destroy(id: string, fromStore = true): Promise<void> {
     const r = this.runs.get(id);
+    if (fromStore) void this.store?.deleteRun(id).catch(logStoreError);
     if (!r) return;
     this.runs.delete(id);
     // handler() never started a server, but some scenarios hold timers/streams
@@ -162,16 +296,21 @@ export class SessionManager {
   async close(): Promise<void> {
     clearInterval(this.sweeper);
     await Promise.all(
-      Array.from(this.runs.keys()).map((id) => this.destroy(id))
+      Array.from(this.runs.keys()).map((id) => this.destroy(id, false))
     );
   }
 
   private sweep(): void {
     const now = Date.now();
     for (const [id, r] of this.runs) {
-      if (now - r.lastSeenAt > this.ttlMs) void this.destroy(id);
+      // Local eviction only — the store has its own retention.
+      if (now - r.lastSeenAt > this.ttlMs) void this.destroy(id, false);
     }
   }
+}
+
+function logStoreError(e: unknown): void {
+  console.error('[hosted] run store:', e instanceof Error ? e.message : e);
 }
 
 export class UnknownScenarioError extends Error {

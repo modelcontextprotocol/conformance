@@ -188,6 +188,7 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
       r.json()
     );
     expect(r.context).toEqual({
+      name: 'auth/pre-registration',
       client_id: 'pre-registered-client',
       client_secret: 'pre-registered-secret'
     });

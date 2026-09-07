@@ -25,6 +25,8 @@ import { HandlerScenario, DRAFT_PROTOCOL_VERSION } from '../../types';
 
 const TOOL_NAME = 'lookup_user';
 const CANARY_PATH = '/canary/profile-schema.json';
+const TOOLS_LISTED_EVENT = '_state/tools-listed';
+const CANARY_EVENT = '_state/canary-fetched';
 const CHECK_ID = 'sep-2106-no-network-ref-deref';
 
 const SPEC_REFERENCES = [
@@ -78,12 +80,30 @@ export class JsonSchemaRefDerefScenario extends HandlerScenario {
 The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at a canary URL. The client should list tools (and may otherwise process the schema), but must not fetch the canary URL. Same-document refs (\`#/$defs/...\`) remain safe to resolve.`;
   mcpPath = '/mcp';
 
-  private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
-  private toolsListed = false;
+  /**
+   * Raw event log. What the scenario observed is kept as INFO events here
+   * (rather than in private fields) so a host that spreads one run over
+   * several processes can merge the logs and judge once — see rawChecks().
+   */
+  checks: ConformanceCheck[] = [];
+
+  private record(id: string, details?: Record<string, unknown>): void {
+    this.checks.push({
+      id,
+      name: id,
+      description: id,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details
+    });
+  }
+
+  rawChecks(): ConformanceCheck[] {
+    return this.checks;
+  }
 
   handler(getBaseUrl: () => string): RequestListener {
-    this.canaryRequests = [];
-    this.toolsListed = false;
+    this.checks = [];
 
     const app = express();
     app.use(express.json());
@@ -92,7 +112,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     // network $ref. Return a valid schema so a dereferencing client gets a
     // realistic response rather than an error it might silently swallow.
     app.all(CANARY_PATH, (req: Request, res: Response) => {
-      this.canaryRequests.push({
+      this.record(CANARY_EVENT, {
         method: req.method,
         userAgent: req.headers['user-agent']
       });
@@ -108,7 +128,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
         // Stateless: fresh server and transport per request
         const canaryUrl = `${getBaseUrl()}${CANARY_PATH}`;
         const server = createMcpServer(canaryUrl, () => {
-          this.toolsListed = true;
+          this.record(TOOLS_LISTED_EVENT);
         });
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined
@@ -136,9 +156,13 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     // Built fresh on every call so getChecks() is idempotent — the runner may
     // call it more than once and we must not accumulate duplicates.
     const timestamp = new Date().toISOString();
-    const fetched = this.canaryRequests.length > 0;
+    const canaryRequests = this.checks
+      .filter((c) => c.id === CANARY_EVENT)
+      .map((c) => c.details ?? {});
+    const toolsListed = this.checks.some((c) => c.id === TOOLS_LISTED_EVENT);
+    const fetched = canaryRequests.length > 0;
 
-    if (!this.toolsListed) {
+    if (!toolsListed) {
       return [
         {
           id: CHECK_ID,
@@ -165,13 +189,13 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
         status: fetched ? 'FAILURE' : 'SUCCESS',
         timestamp,
         errorMessage: fetched
-          ? `Canary URL ${CANARY_PATH} was fetched ${this.canaryRequests.length} time(s)`
+          ? `Canary URL ${CANARY_PATH} was fetched ${canaryRequests.length} time(s)`
           : undefined,
         specReferences: SPEC_REFERENCES,
         details: {
           toolsListed: true,
-          canaryRequestCount: this.canaryRequests.length,
-          canaryRequests: this.canaryRequests
+          canaryRequestCount: canaryRequests.length,
+          canaryRequests
         }
       }
     ];

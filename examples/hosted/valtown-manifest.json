@@ -23,6 +23,18 @@
       "entry": "examples/hosted/valtown-auth-checker.ts",
       "privacy": "public",
       "id": "53e9c5a5-9ad2-49d4-8b60-3a683d1de202"
+    },
+    "client-rs": {
+      "name": "mcp-client-conformance",
+      "entry": "examples/hosted/valtown.ts",
+      "privacy": "unlisted",
+      "id": "92c705de-6b43-49f6-bcb4-a55337aa0cb7"
+    },
+    "client-relay": {
+      "name": "mcp-client-conformance-as",
+      "entry": "examples/hosted/valtown-relay.ts",
+      "privacy": "unlisted",
+      "id": "81046d9c-cff3-4abf-bb0d-9e454f8f5316"
     }
   }
 }

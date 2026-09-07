@@ -84,14 +84,20 @@ async function runBasicClient(serverUrl: string): Promise<void> {
   await client.connect(transport);
   logger.debug('Successfully connected to MCP server');
 
-  await client.listTools();
+  const list = await client.listTools();
   logger.debug('Successfully listed tools');
+
+  const tool = list.tools[0];
+  if (tool) {
+    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+    logger.debug('Successfully called tool');
+  }
 
   await transport.close();
   logger.debug('Connection closed successfully');
 }
 
-registerScenarios(['initialize', 'tools-call'], runBasicClient);
+registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
 
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and
@@ -175,9 +181,7 @@ function answerInputRequests(
   return Object.fromEntries(
     Object.entries(inputRequests).map(([key, request]) => {
       if (request.method !== 'elicitation/create') {
-        throw new Error(
-          `unsupported input request method '${request.method}'`
-        );
+        throw new Error(`unsupported input request method '${request.method}'`);
       }
       return [key, { action: 'accept', content: { confirmed: true } }];
     })

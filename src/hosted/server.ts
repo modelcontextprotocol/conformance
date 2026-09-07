@@ -38,6 +38,7 @@ import {
   listHostableScenarios
 } from './session';
 import { renderLanding, renderResults } from './html';
+import type { RunStore } from './store';
 import { getScenario } from '../scenarios';
 import {
   ConformanceCheck,
@@ -62,6 +63,12 @@ export interface HostedServerOptions {
    * the same value in the relay's env.
    */
   relaySecret?: string;
+  /**
+   * Persist runs so a deployment that load-balances one run's requests
+   * across processes (serverless isolates) still serves complete results.
+   * See ./store.ts. Omit for a single long-lived process.
+   */
+  store?: RunStore;
 }
 
 /** Only allow run-ids that are safe in a single path segment. */
@@ -174,7 +181,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 } {
   const auxOrigins = opts.auxOrigins ?? {};
   const haveAux = AUX_ROLES.filter((r) => auxOrigins[r]);
-  const sessions = new SessionManager({ ttlMs: opts.ttlMs, auxOrigins });
+  const sessions = new SessionManager({
+    ttlMs: opts.ttlMs,
+    auxOrigins,
+    store: opts.store
+  });
   const app = express();
   const hostable = new Set(listHostableScenarios(haveAux));
 
@@ -231,6 +242,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       `<${origin(req)}/results/${run.id}>; rel="conformance-results"`
     );
     req.url = rewrittenUrl;
+    if (sessions.store) {
+      // Write this process's view through once the scenario has answered
+      // (hosted scenarios record their checks before calling end()).
+      // Serverless entry points should await sessions.flush() before
+      // returning the response so this write isn't abandoned.
+      const end = res.end;
+      res.end = function (this: Response, ...args: unknown[]) {
+        const out = (end as (...a: unknown[]) => Response).apply(this, args);
+        void sessions.persist(run);
+        return out;
+      } as Response['end'];
+    }
     listener(req, res);
   }
 
@@ -300,7 +323,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           mcpUrl: `${runBaseUrl(req, scenarioName, run.id)}${run.mcpPath}`,
           resultsUrl: `${origin(req)}/results/${run.id}`,
           resultsHtmlUrl: `${origin(req)}/results/${run.id}.html`,
-          context: run.context
+          context: contextFor(run)
         });
       } catch (e) {
         next(e);
@@ -567,8 +590,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       res.status(404).json({ error: 'no run for this resource path' });
       return;
     }
-    const run = sessions.get(resolved.runId);
-    if (!run) {
+    // getOrCreate, not get: on a multi-process host this may be the first
+    // request this process sees for the run.
+    let run;
+    try {
+      run = sessions.getOrCreate(resolved.scenarioName, resolved.runId, (id) =>
+        runBaseUrl(req, resolved.scenarioName, id)
+      );
+    } catch {
       res.status(404).json({ error: 'no run for this resource path' });
       return;
     }
@@ -663,7 +692,9 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         return;
       }
 
-      const run = sessions.get(runId);
+      const run = await sessions.ensure(runId, (s, id) =>
+        runBaseUrl(req, s, id)
+      );
       const listener = run?.auxListeners?.[role];
       if (!run || !listener) {
         res.status(404).json({ error: `no aux '${role}' handler for run` });
@@ -675,27 +706,27 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
   // ---------- results ----------
 
-  app.get('/results/:id.html', (req, res) => {
-    const run = sessions.get(req.params.id);
-    const checks = sessions.results(req.params.id);
-    if (!run || !checks) {
+  app.get('/results/:id.html', async (req, res) => {
+    const r = await sessions.results(req.params.id);
+    if (!r) {
       res
         .status(404)
         .type('html')
-        .send(`<p>No run <code>${req.params.id}</code></p>`);
+        .send(`<p>No run <code>${escapeId(req.params.id)}</code></p>`);
       return;
     }
-    res.type('html').send(renderResults(run.scenarioName, run.id, checks));
+    res
+      .type('html')
+      .send(renderResults(r.scenarioName, req.params.id, r.checks));
   });
 
-  app.get('/results/:id', (req, res) => {
-    const run = sessions.get(req.params.id);
-    const checks = sessions.results(req.params.id);
-    if (!run || !checks) {
+  app.get('/results/:id', async (req, res) => {
+    const r = await sessions.results(req.params.id);
+    if (!r) {
       res.status(404).json({ error: 'unknown run' });
       return;
     }
-    res.json(summarise(run.scenarioName, run.id, checks));
+    res.json(summarise(r.scenarioName, req.params.id, r.checks));
   });
 
   app.delete('/results/:id', async (req, res) => {
@@ -828,7 +859,7 @@ function createMetaMcpServer(
                   mcpUrl: `${runBaseUrl(run.scenarioName, run.id)}${run.mcpPath}`,
                   resultsUrl: `${publicOrigin}/results/${run.id}`,
                   resultsHtmlUrl: `${publicOrigin}/results/${run.id}.html`,
-                  context: run.context
+                  context: contextFor(run)
                 },
                 null,
                 2
@@ -846,11 +877,14 @@ function createMetaMcpServer(
         }
 
         case 'get_results': {
-          const run = sessions.get(args.run_id);
-          const checks = sessions.results(args.run_id);
-          if (!run || !checks) return errorText(`no run '${args.run_id}'`);
+          const r = await sessions.results(args.run_id);
+          if (!r) return errorText(`no run '${args.run_id}'`);
           return text(
-            JSON.stringify(summarise(run.scenarioName, run.id, checks), null, 2)
+            JSON.stringify(
+              summarise(r.scenarioName, args.run_id, r.checks),
+              null,
+              2
+            )
           );
         }
 
@@ -861,6 +895,19 @@ function createMetaMcpServer(
   );
 
   return server;
+}
+
+/**
+ * The context blob a client-under-test needs (pre-registered credentials
+ * etc.), tagged with the scenario name the way the CLI runner's
+ * MCP_CONFORMANCE_CONTEXT is, so it can be passed through verbatim.
+ */
+function contextFor(run: HostedRun): Record<string, unknown> | undefined {
+  return run.context ? { name: run.scenarioName, ...run.context } : undefined;
+}
+
+function escapeId(id: string): string {
+  return id.replace(/[^A-Za-z0-9_-]/g, '');
 }
 
 function text(t: string): CallToolResult {
