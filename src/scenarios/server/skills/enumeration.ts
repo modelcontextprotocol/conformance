@@ -290,24 +290,53 @@ export class SkillsEnumerationScenario implements ClientScenario {
       );
 
       // === skills-list-cache-attributes ===
-      // SEP-2549 attributes are required only on protocol 2026-07-28 and later.
-      // The harness does not gate on the negotiated version here, so an absent
-      // attribute is reported as a WARNING rather than a failure.
+      // SEP-2549 attributes exist only from 2026-07-28. Below that they are
+      // not merely optional, they are undefined by the negotiated schema, so
+      // a server that omits them is correct and a WARNING is a false
+      // positive. From 2026-07-28 they are required, so a missing one is a
+      // FAILURE rather than something to shrug at. Reported by Sam Bloomberg
+      // against the Go SDK, which was correct in both directions while this
+      // check graded it wrong in both.
       const first = pages[0]?.result ?? {};
       const hasTtl = first.ttlMs !== undefined;
       const hasScope = first.cacheScope !== undefined;
-      checks.push(
-        skillsCheck(
-          'sep-2640-skills-list-cache-attributes',
-          "In protocol versions 2026-07-28 and later, the skills/list result carries the base protocol's list-caching attributes ttlMs and cacheScope (SEP-2549).",
-          hasTtl && hasScope ? 'SUCCESS' : 'WARNING',
-          hasTtl && hasScope
-            ? { details: { ttlMs: first.ttlMs, cacheScope: first.cacheScope } }
-            : {
-                errorMessage: `skills/list result omits ${[!hasTtl && 'ttlMs', !hasScope && 'cacheScope'].filter(Boolean).join(' and ')}. Required only on protocol 2026-07-28 and later; on an earlier negotiated version this is expected.`
+      const cacheAttrsApply = ctx.specVersion >= '2026-07-28';
+
+      if (!cacheAttrsApply) {
+        checks.push(
+          skillsCheck(
+            'sep-2640-skills-list-cache-attributes',
+            "In protocol versions 2026-07-28 and later, the skills/list result carries the base protocol's list-caching attributes ttlMs and cacheScope (SEP-2549).",
+            'SKIPPED',
+            {
+              errorMessage: `not applicable on negotiated protocol ${ctx.specVersion}: ttlMs and cacheScope are defined from 2026-07-28`,
+              details: {
+                specVersion: ctx.specVersion,
+                ttlMs: first.ttlMs,
+                cacheScope: first.cacheScope
               }
-        )
-      );
+            }
+          )
+        );
+      } else {
+        const missing = [!hasTtl && 'ttlMs', !hasScope && 'cacheScope']
+          .filter(Boolean)
+          .join(' and ');
+        checks.push(
+          skillsCheck(
+            'sep-2640-skills-list-cache-attributes',
+            "In protocol versions 2026-07-28 and later, the skills/list result carries the base protocol's list-caching attributes ttlMs and cacheScope (SEP-2549).",
+            hasTtl && hasScope ? 'SUCCESS' : 'FAILURE',
+            hasTtl && hasScope
+              ? {
+                  details: { ttlMs: first.ttlMs, cacheScope: first.cacheScope }
+                }
+              : {
+                  errorMessage: `skills/list result omits ${missing} on protocol ${ctx.specVersion}, where SEP-2549 requires both.`
+                }
+          )
+        );
+      }
 
       if (entries.length === 0) {
         const reason =
