@@ -42,10 +42,8 @@ export class SSERetryScenario implements Scenario {
   private pendingToolCallId: number | string | null = null;
   private getResponseStream: http.ServerResponse | null = null;
 
-  // Tolerances for timing validation
+  // Tolerance for timing validation (early side only; lateness is not gated)
   private readonly EARLY_TOLERANCE = 50; // Allow 50ms early for scheduler variance
-  private readonly LATE_TOLERANCE = 200; // Allow 200ms late for network/event loop
-  private readonly VERY_LATE_MULTIPLIER = 2; // If >2x retry value, client is likely ignoring it
 
   async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     return new Promise((resolve, reject) => {
@@ -290,7 +288,8 @@ export class SSERetryScenario implements Scenario {
       jsonrpc: '2.0',
       id: request.id,
       result: {
-        protocolVersion: '2025-03-26',
+        // The retry MUST under test was introduced in 2025-11-25 (SEP-1699)
+        protocolVersion: '2025-11-25',
         serverInfo: {
           name: 'sse-retry-test-server',
           version: '1.0.0'
@@ -459,39 +458,22 @@ export class SSERetryScenario implements Scenario {
     ) {
       const actualDelay = this.getReconnectionTime - this.toolStreamCloseTime;
       const minExpected = this.retryValue - this.EARLY_TOLERANCE;
-      const maxExpected = this.retryValue + this.LATE_TOLERANCE;
 
+      // The retry MUST is a lower bound ("waiting the given number of
+      // milliseconds before attempting to reconnect"), so only an early
+      // reconnect fails; lateness is environment latency and is not gated.
       const tooEarly = actualDelay < minExpected;
-      const slightlyLate = actualDelay > maxExpected;
-      const veryLate =
-        actualDelay > this.retryValue * this.VERY_LATE_MULTIPLIER;
-      const withinTolerance = !tooEarly && !slightlyLate;
-
-      let status: 'SUCCESS' | 'FAILURE' | 'WARNING' = 'SUCCESS';
-      let errorMessage: string | undefined;
-
-      if (tooEarly) {
-        // Client reconnected too soon - MUST violation
-        status = 'FAILURE';
-        errorMessage = `Client reconnected too early (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client MUST respect the retry field and wait the specified time.`;
-      } else if (veryLate) {
-        // Client reconnected way too late - likely ignoring retry field entirely
-        status = 'FAILURE';
-        errorMessage = `Client reconnected very late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client appears to be ignoring the retry field and using its own backoff strategy.`;
-      } else if (slightlyLate) {
-        // Client reconnected slightly late - not a spec violation but suspicious
-        status = 'WARNING';
-        errorMessage = `Client reconnected slightly late (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). This is acceptable but may indicate network delays.`;
-      }
 
       this.checks.push({
         id: 'client-sse-retry-timing',
         name: 'ClientRespectsRetryField',
         description:
           'Client MUST respect the retry field, waiting the given number of milliseconds before attempting to reconnect',
-        status,
+        status: tooEarly ? 'FAILURE' : 'SUCCESS',
         timestamp: new Date().toISOString(),
-        errorMessage,
+        errorMessage: tooEarly
+          ? `Client reconnected too early (${actualDelay.toFixed(0)}ms instead of ${this.retryValue}ms). Client MUST respect the retry field and wait the specified time.`
+          : undefined,
         specReferences: [
           {
             id: 'SEP-1699',
@@ -502,14 +484,7 @@ export class SSERetryScenario implements Scenario {
           expectedRetryMs: this.retryValue,
           actualDelayMs: Math.round(actualDelay),
           minAcceptableMs: minExpected,
-          maxAcceptableMs: maxExpected,
-          veryLateThresholdMs: this.retryValue * this.VERY_LATE_MULTIPLIER,
           earlyToleranceMs: this.EARLY_TOLERANCE,
-          lateToleranceMs: this.LATE_TOLERANCE,
-          withinTolerance,
-          tooEarly,
-          slightlyLate,
-          veryLate,
           getConnectionCount: this.getConnectionCount
         }
       });
@@ -518,7 +493,7 @@ export class SSERetryScenario implements Scenario {
         id: 'client-sse-retry-timing',
         name: 'ClientRespectsRetryField',
         description: 'Client MUST respect the retry field timing',
-        status: 'WARNING',
+        status: 'INFO',
         timestamp: new Date().toISOString(),
         errorMessage:
           'Could not measure timing - tool stream close time or GET reconnection time not recorded',

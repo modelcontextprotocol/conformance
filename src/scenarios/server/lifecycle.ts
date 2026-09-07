@@ -15,6 +15,11 @@ import {
 
 const VISIBLE_ASCII_REGEX = /^[\x21-\x7E]+$/;
 
+// The session-id probe only needs the response header. Bound the request so a
+// server that accepts the connection and never answers fails this check
+// instead of hanging the scenario before teardown ever runs.
+const SESSION_ID_PROBE_TIMEOUT_MS = 5000;
+
 const SESSION_SPEC_REFERENCES = [
   {
     id: 'MCP-Session-Management',
@@ -115,11 +120,17 @@ and validates session ID format if one is assigned.`;
               version: '1.0.0'
             }
           }
-        })
+        }),
+        signal: AbortSignal.timeout(SESSION_ID_PROBE_TIMEOUT_MS)
       });
 
       const sessionId = response.headers.get('mcp-session-id');
       rawSessionId = sessionId;
+
+      // Only the header is needed. `Accept` includes `text/event-stream`, so a
+      // server answering with an open SSE stream would otherwise leave this
+      // body unconsumed and leak the connection for the rest of the run.
+      await response.body?.cancel();
 
       if (!sessionId) {
         checks.push({

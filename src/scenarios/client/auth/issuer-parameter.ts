@@ -6,12 +6,100 @@ import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
+import { untestableCheck } from '../../untestable.js';
 
 const specRefs = [SpecReferences.RFC_9207_ISS_PARAMETER];
 const metadataSpecRefs = [
   SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
   SpecReferences.MCP_AUTH_DISCOVERY
 ];
+
+/**
+ * Reason-bound verdict for the RFC 9207 `iss` rejection checks (issue #467).
+ *
+ * `authReached && !tokenRequestMade` is a verdict, not a reason. SEP-2468
+ * conditions every one of these requirements on the issuer the client recorded
+ * "from the selected authorization server validated metadata document", so a
+ * client that never retrieved that document cannot have performed the
+ * comparison under test — yet it satisfies the verdict, because not reaching
+ * the token endpoint is exactly what a client that fell over earlier also
+ * does. Absent the retrieval the requirement was never exercised, which is the
+ * untestable case (#248) rather than a pass or a violation.
+ *
+ * `auth/metadata-issuer-mismatch` in this same file already gates on the
+ * metadata fetch; the other checks did not. Keeping the policy in one function
+ * is deliberate: the duplication is what let five of six sites drift apart.
+ *
+ * Residual gap, deliberately not papered over: a client that receives the
+ * redirect and then aborts before the token request for an unrelated reason is
+ * still indistinguishable from one that rejected on `iss`. Closing that needs
+ * a signal from inside the client, which a black-box harness does not have.
+ * What this closes is the "never reached the requirement at all" class.
+ */
+function issRejectionCheck(opts: {
+  id: string;
+  name: string;
+  passDescription: string;
+  failDescription: string;
+  metadataRequested: boolean;
+  authReached: boolean;
+  tokenRequestMade: boolean;
+  observations: Record<string, unknown>;
+  timestamp: string;
+}): ConformanceCheck {
+  const {
+    id,
+    name,
+    passDescription,
+    failDescription,
+    metadataRequested,
+    authReached,
+    tokenRequestMade,
+    observations,
+    timestamp
+  } = opts;
+
+  const reached = metadataRequested && authReached;
+  const observed = {
+    ...observations,
+    metadataRequested,
+    authReached,
+    tokenRequestMade
+  };
+
+  if (!reached) {
+    const reason = !metadataRequested
+      ? 'client never retrieved the authorization server metadata document, so it never recorded the issuer this comparison is made against'
+      : 'client never reached the authorization endpoint, so it never received an authorization response to validate';
+    const check = untestableCheck(id, name, failDescription, reason, specRefs);
+    check.details = {
+      ...check.details,
+      ...observed,
+      propertyReached: false,
+      stopReason: !metadataRequested
+        ? 'as-metadata-not-requested'
+        : 'authorization-endpoint-not-reached'
+    };
+    return check;
+  }
+
+  const correctlyRejected = !tokenRequestMade;
+  return {
+    id,
+    name,
+    description: correctlyRejected ? passDescription : failDescription,
+    status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
+    timestamp,
+    specReferences: specRefs,
+    details: {
+      ...observed,
+      propertyReached: true,
+      stopReason: correctlyRejected
+        ? 'declined-before-token-request'
+        : 'transmitted-code-to-token-endpoint'
+    }
+  };
+}
 
 /**
  * Scenario: ISS Parameter Supported (positive)
@@ -217,23 +305,26 @@ export class IssParameterSupportedMissingScenario implements Scenario {
     if (
       !this.checks.some((c) => c.id === 'sep-2468-client-reject-missing-iss')
     ) {
-      const correctlyRejected = this.authReached && !this.tokenRequestMade;
-      this.checks.push({
-        id: 'sep-2468-client-reject-missing-iss',
-        name: 'Client rejects missing iss when required',
-        description: correctlyRejected
-          ? 'Client correctly rejected authorization response missing required iss parameter'
-          : 'Client MUST reject authorization response when server advertised iss support but iss is absent from redirect',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: specRefs,
-        details: {
-          serverAdvertisedSupport: true,
-          issSentInRedirect: false,
+      this.checks.push(
+        issRejectionCheck({
+          id: 'sep-2468-client-reject-missing-iss',
+          name: 'Client rejects missing iss when required',
+          passDescription:
+            'Client correctly rejected authorization response missing required iss parameter',
+          failDescription:
+            'Client MUST reject authorization response when server advertised iss support but iss is absent from redirect',
+          metadataRequested: this.checks.some(
+            (c) => c.id === 'authorization-server-metadata'
+          ),
           authReached: this.authReached,
-          tokenRequestMade: this.tokenRequestMade
-        }
-      });
+          tokenRequestMade: this.tokenRequestMade,
+          observations: {
+            serverAdvertisedSupport: true,
+            issSentInRedirect: false
+          },
+          timestamp
+        })
+      );
     }
 
     return this.checks;
@@ -304,23 +395,26 @@ export class IssParameterWrongIssuerScenario implements Scenario {
     if (
       !this.checks.some((c) => c.id === 'sep-2468-client-compare-iss-supported')
     ) {
-      const correctlyRejected = this.authReached && !this.tokenRequestMade;
-      this.checks.push({
-        id: 'sep-2468-client-compare-iss-supported',
-        name: 'Client rejects mismatched iss',
-        description: correctlyRejected
-          ? 'Client correctly rejected authorization response with mismatched iss parameter'
-          : 'Client MUST reject authorization response when iss does not match the authorization server issuer',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: specRefs,
-        details: {
-          serverAdvertisedSupport: true,
-          issSentInRedirect: 'https://evil.example.com',
+      this.checks.push(
+        issRejectionCheck({
+          id: 'sep-2468-client-compare-iss-supported',
+          name: 'Client rejects mismatched iss',
+          passDescription:
+            'Client correctly rejected authorization response with mismatched iss parameter',
+          failDescription:
+            'Client MUST reject authorization response when iss does not match the authorization server issuer',
+          metadataRequested: this.checks.some(
+            (c) => c.id === 'authorization-server-metadata'
+          ),
           authReached: this.authReached,
-          tokenRequestMade: this.tokenRequestMade
-        }
-      });
+          tokenRequestMade: this.tokenRequestMade,
+          observations: {
+            serverAdvertisedSupport: true,
+            issSentInRedirect: 'https://evil.example.com'
+          },
+          timestamp
+        })
+      );
     }
 
     return this.checks;
@@ -394,23 +488,26 @@ export class IssParameterUnexpectedScenario implements Scenario {
         (c) => c.id === 'sep-2468-client-compare-iss-unadvertised'
       )
     ) {
-      const correctlyRejected = this.authReached && !this.tokenRequestMade;
-      this.checks.push({
-        id: 'sep-2468-client-compare-iss-unadvertised',
-        name: 'Client compares unadvertised iss and rejects mismatch',
-        description: correctlyRejected
-          ? 'Client correctly compared unadvertised iss against recorded issuer and rejected the mismatch'
-          : 'Client MUST compare a present iss against the recorded issuer regardless of metadata advertisement, and reject on mismatch',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: specRefs,
-        details: {
-          serverAdvertisedSupport: false,
-          issSentInRedirect: 'https://evil.example.com',
+      this.checks.push(
+        issRejectionCheck({
+          id: 'sep-2468-client-compare-iss-unadvertised',
+          name: 'Client compares unadvertised iss and rejects mismatch',
+          passDescription:
+            'Client correctly compared unadvertised iss against recorded issuer and rejected the mismatch',
+          failDescription:
+            'Client MUST compare a present iss against the recorded issuer regardless of metadata advertisement, and reject on mismatch',
+          metadataRequested: this.checks.some(
+            (c) => c.id === 'authorization-server-metadata'
+          ),
           authReached: this.authReached,
-          tokenRequestMade: this.tokenRequestMade
-        }
-      });
+          tokenRequestMade: this.tokenRequestMade,
+          observations: {
+            serverAdvertisedSupport: false,
+            issSentInRedirect: 'https://evil.example.com'
+          },
+          timestamp
+        })
+      );
     }
 
     return this.checks;
@@ -483,23 +580,26 @@ export class IssParameterNormalizedVariantScenario implements Scenario {
     const timestamp = new Date().toISOString();
 
     if (!this.checks.some((c) => c.id === 'sep-2468-client-no-normalization')) {
-      const correctlyRejected = this.authReached && !this.tokenRequestMade;
-      this.checks.push({
-        id: 'sep-2468-client-no-normalization',
-        name: 'Client compares iss without URL normalization',
-        description: correctlyRejected
-          ? 'Client rejected an iss value that only matches the recorded issuer after URL normalization'
-          : 'Client MUST NOT apply scheme/host case folding, default-port elision, trailing-slash, or percent-encoding normalization to iss before comparison; a trailing-slash variant of the issuer must be treated as a mismatch',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: specRefs,
-        details: {
-          recordedIssuer: this.authServer.getUrl(),
-          issSentInRedirect: `${this.authServer.getUrl()}/`,
+      this.checks.push(
+        issRejectionCheck({
+          id: 'sep-2468-client-no-normalization',
+          name: 'Client compares iss without URL normalization',
+          passDescription:
+            'Client rejected an iss value that only matches the recorded issuer after URL normalization',
+          failDescription:
+            'Client MUST NOT apply scheme/host case folding, default-port elision, trailing-slash, or percent-encoding normalization to iss before comparison; a trailing-slash variant of the issuer must be treated as a mismatch',
+          metadataRequested: this.checks.some(
+            (c) => c.id === 'authorization-server-metadata'
+          ),
           authReached: this.authReached,
-          tokenRequestMade: this.tokenRequestMade
-        }
-      });
+          tokenRequestMade: this.tokenRequestMade,
+          observations: {
+            recordedIssuer: this.authServer.getUrl(),
+            issSentInRedirect: `${this.authServer.getUrl()}/`
+          },
+          timestamp
+        })
+      );
     }
 
     return this.checks;
@@ -589,26 +689,55 @@ export class MetadataIssuerMismatchScenario implements Scenario {
       const metadataRequested = this.checks.some(
         (c) => c.id === 'authorization-server-metadata'
       );
-      const correctlyRejected =
-        metadataRequested && !this.metadataEndpointsUsed;
-      this.checks.push({
-        id: 'sep-2468-client-validate-metadata-issuer',
-        name: 'Client validates metadata issuer against well-known URL',
-        description: correctlyRejected
-          ? 'Client rejected authorization server metadata whose issuer does not match the issuer identifier used to construct the well-known URL'
-          : metadataRequested
-            ? 'Client MUST NOT use authorization server metadata whose issuer differs from the issuer identifier used to construct the well-known URL; client used endpoints from the mismatched metadata'
-            : 'Client never retrieved the authorization server metadata document, so issuer validation could not be observed',
-        status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
-        timestamp,
-        specReferences: metadataSpecRefs,
-        details: {
-          expectedIssuer: this.authServer.getUrl(),
-          metadataIssuer: 'https://attacker.example.com',
-          metadataRequested,
-          metadataEndpointsUsed: this.metadataEndpointsUsed
-        }
-      });
+      const observations = {
+        expectedIssuer: this.authServer.getUrl(),
+        metadataIssuer: 'https://attacker.example.com',
+        metadataRequested,
+        metadataEndpointsUsed: this.metadataEndpointsUsed
+      };
+      const failDescription =
+        'Client MUST NOT use authorization server metadata whose issuer differs from the issuer identifier used to construct the well-known URL; client used endpoints from the mismatched metadata';
+
+      // This check already bound its verdict to the metadata fetch, but
+      // reported the unreached case as a plain violation. Per #248 a
+      // requirement that could not be exercised is untestable, so the report
+      // distinguishes "client used the poisoned metadata" from "client never
+      // fetched it" instead of collapsing both into FAILURE (#467).
+      if (!metadataRequested) {
+        const check = untestableCheck(
+          'sep-2468-client-validate-metadata-issuer',
+          'Client validates metadata issuer against well-known URL',
+          failDescription,
+          'client never retrieved the authorization server metadata document, so issuer validation could not be observed',
+          metadataSpecRefs
+        );
+        check.details = {
+          ...check.details,
+          ...observations,
+          propertyReached: false,
+          stopReason: 'as-metadata-not-requested'
+        };
+        this.checks.push(check);
+      } else {
+        const correctlyRejected = !this.metadataEndpointsUsed;
+        this.checks.push({
+          id: 'sep-2468-client-validate-metadata-issuer',
+          name: 'Client validates metadata issuer against well-known URL',
+          description: correctlyRejected
+            ? 'Client rejected authorization server metadata whose issuer does not match the issuer identifier used to construct the well-known URL'
+            : failDescription,
+          status: correctlyRejected ? 'SUCCESS' : 'FAILURE',
+          timestamp,
+          specReferences: metadataSpecRefs,
+          details: {
+            ...observations,
+            propertyReached: true,
+            stopReason: correctlyRejected
+              ? 'declined-poisoned-metadata'
+              : 'used-poisoned-metadata-endpoints'
+          }
+        });
+      }
     }
 
     return this.checks;

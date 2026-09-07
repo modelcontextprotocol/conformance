@@ -53,6 +53,52 @@ describe('runServerConformanceTest spec-version applicability', () => {
   }, 60000);
 });
 
+describe('runServerConformanceTest per-scenario timeout', () => {
+  // A server that completes the TCP handshake and then never writes a byte.
+  // Before the runner bounded `scenario.run`, this hung the whole suite: the
+  // scenario had no timeout of its own, so nothing downstream ever ran.
+  let server: http.Server;
+  let url: string;
+
+  beforeEach(async () => {
+    server = http.createServer(() => {
+      // Deliberately never respond, and never destroy the socket.
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const port = (server.address() as AddressInfo).port;
+    url = `http://127.0.0.1:${port}/mcp`;
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  test('fails the scenario instead of hanging when the server never responds', async () => {
+    const start = Date.now();
+    const result = await runServerConformanceTest(
+      url,
+      'server-initialize',
+      undefined,
+      undefined,
+      false,
+      1000
+    );
+    const elapsed = Date.now() - start;
+
+    const timeoutCheck = result.checks.find((c) => c.id === 'scenario-timeout');
+    expect(timeoutCheck).toBeDefined();
+    expect(timeoutCheck?.status).toBe('FAILURE');
+    expect(timeoutCheck?.errorMessage).toContain('1000ms');
+
+    // The bound is what makes this a failure rather than a stall; without it
+    // the call never returns and this assertion is never reached.
+    expect(elapsed).toBeLessThan(15000);
+  }, 30000);
+});
+
 describe('runServerConformanceTest wire selection for draft-only scenarios', () => {
   // Regression: the CLI used to silently emit the legacy initialize+session
   // wire when running a draft-only scenario, producing requests with no

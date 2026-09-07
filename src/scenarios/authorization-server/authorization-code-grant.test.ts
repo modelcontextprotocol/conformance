@@ -18,6 +18,8 @@ const SERVER_URL = 'https://example.com';
 const AUTHORIZATION_ENDPOINT = `${SERVER_URL}/auth`;
 const TOKEN_ENDPOINT = `${SERVER_URL}/token`;
 
+const RESOURCE = 'https://mcp.example.com/mcp';
+
 const OPTIONS = {
   url: SERVER_URL,
   clientId: 'client',
@@ -309,6 +311,103 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     expect(check.status).toBe('FAILURE');
     expect(check.errorMessage).toContain('Invalid Cache-Control');
+  });
+
+  it('sends the resource parameter in both requests when it is set', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    mockTokenResponse({
+      access_token: 'access-token',
+      token_type: 'Bearer'
+    });
+
+    const checks = await scenario.run(
+      { ...OPTIONS, resource: RESOURCE },
+      DETAILS
+    );
+
+    expect(checks[0].status).toBe('SUCCESS');
+
+    const authorizationRequest = new URL(
+      (checks[0].details as any).authorizationRequest
+    );
+    expect(authorizationRequest.searchParams.get('resource')).toBe(RESOURCE);
+
+    const tokenBody = new URLSearchParams(
+      mockedRequest.mock.calls[0][1]?.body as string
+    );
+    expect(tokenBody.get('resource')).toBe(RESOURCE);
+  });
+
+  it('omits the resource parameter when it is not set', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    mockTokenResponse({
+      access_token: 'access-token',
+      token_type: 'Bearer'
+    });
+
+    const checks = await scenario.run(OPTIONS, DETAILS);
+
+    expect(checks[0].status).toBe('SUCCESS');
+
+    const authorizationRequest = new URL(
+      (checks[0].details as any).authorizationRequest
+    );
+    expect(authorizationRequest.searchParams.has('resource')).toBe(false);
+
+    const tokenBody = new URLSearchParams(
+      mockedRequest.mock.calls[0][1]?.body as string
+    );
+    expect(tokenBody.has('resource')).toBe(false);
+  });
+
+  it('catches an authorization server that rejects the resource parameter', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    // An AS that 400s when `resource` is present. Before the runner sent the
+    // parameter this path could not be reached, so the fault was invisible.
+    mockedRequest.mockImplementation(async (_url, opts: any) => {
+      const rejected = new URLSearchParams(opts.body).has('resource');
+      return {
+        statusCode: rejected ? 400 : 200,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store'
+        },
+        body: {
+          json: async () =>
+            rejected
+              ? { error: 'invalid_target' }
+              : { access_token: 'access-token', token_type: 'Bearer' }
+        }
+      } as any;
+    });
+
+    const withResource = await scenario.run(
+      { ...OPTIONS, resource: RESOURCE },
+      DETAILS
+    );
+    expect(withResource[0].status).toBe('FAILURE');
+    expect(withResource[0].errorMessage).toContain('400');
+
+    const withoutResource = await scenario.run(OPTIONS, DETAILS);
+    expect(withoutResource[0].status).toBe('SUCCESS');
   });
 
   it('returns SKIPPED when client_secret_post and client_secret_basic are missing', async () => {

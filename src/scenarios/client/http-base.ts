@@ -20,6 +20,29 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../../types.js';
 
+/**
+ * Schema-valid empty results for the standard list-shaped methods, keyed by
+ * method. A Map, not an object literal, so a method name that collides with
+ * Object.prototype ("constructor", "toString", ...) misses instead of
+ * returning a function. Merged into the generic fallback so a list method a
+ * scenario does not route still carries its required list member — a bare
+ * `{}` fails schema validation and strict clients drop the connection before
+ * the scenario's real checks run (#474). `tasks/list` exists only at
+ * 2025-11-25 (the draft schema has no ListTasksResult); the empty member is
+ * harmless on the draft wire. Non-list results (tools/call, resources/read,
+ * prompts/get, ...) have no meaningful empty default and keep the bare
+ * stamped fallback, so a route a scenario forgot surfaces instead of being
+ * masked.
+ */
+const EMPTY_LIST_RESULTS: ReadonlyMap<string, object> = new Map([
+  ['tools/list', { tools: [] }],
+  ['resources/list', { resources: [] }],
+  ['resources/templates/list', { resourceTemplates: [] }],
+  ['prompts/list', { prompts: [] }],
+  ['roots/list', { roots: [] }],
+  ['tasks/list', { tasks: [] }]
+]);
+
 export abstract class BaseHttpScenario implements Scenario {
   abstract name: string;
   abstract description: string;
@@ -181,8 +204,12 @@ export abstract class BaseHttpScenario implements Scenario {
       jsonrpc: '2.0',
       id: request.id,
       // Method-aware so cacheable methods that fall through to the generic
-      // reply still carry the ttlMs/cacheScope the draft revision requires.
-      result: withRequiredDraftResultFields(request.method, {})
+      // reply still carry the ttlMs/cacheScope the draft revision requires,
+      // and unrouted standard list methods carry their required list member.
+      result: withRequiredDraftResultFields(
+        request.method,
+        EMPTY_LIST_RESULTS.get(request.method) ?? {}
+      )
     });
   }
 }

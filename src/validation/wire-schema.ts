@@ -61,6 +61,18 @@ const NON_CANONICAL_DEFS = new Set([
   'ServerMessage'
 ]);
 
+/** resultType values defined by the core schema (SEP-2322). */
+const CORE_RESULT_TYPES: ReadonlySet<string> = new Set([
+  'complete',
+  'input_required'
+]);
+/**
+ * resultType values defined by known protocol extensions whose result schema
+ * is not vendored here yet; validated against the generic result envelope.
+ * - 'task': io.modelcontextprotocol/tasks CreateTaskResult (SEP-2663).
+ */
+const EXTENSION_RESULT_TYPES: ReadonlySet<string> = new Set(['task']);
+
 interface CompiledSpec {
   defsKey: '$defs' | 'definitions';
   defs: Record<string, Record<string, unknown>>;
@@ -261,18 +273,37 @@ export function wireSchemaErrors(
 
   if (msg.result !== undefined) {
     // SEP-2322 (MRTR): any request may be answered with an InputRequiredResult
-    // instead of its method's result type; discriminate on resultType.
+    // instead of its method's result type; discriminate on resultType. Results
+    // introduced by a known extension (e.g. the tasks extension's
+    // CreateTaskResult, resultType "task") use the same open discriminator and
+    // are checked against the generic result envelope until their schema is
+    // vendored here. Any other resultType is validated as the method's own
+    // result (the discriminator is open, so it may be a private extension),
+    // and a failure names the unrecognised value so the cause is obvious.
+    const resultType = (msg.result as Record<string, unknown> | null)
+      ?.resultType;
     const inputRequired =
-      (msg.result as Record<string, unknown> | null)?.resultType ===
-        'input_required' && 'InputRequiredResult' in spec.defs;
-    const resultDefName = inputRequired
-      ? 'InputRequiredResult'
-      : requestMethod !== undefined
-        ? spec.resultDefs.get(requestMethod)
+      resultType === 'input_required' && 'InputRequiredResult' in spec.defs;
+    const extensionResult =
+      typeof resultType === 'string' && EXTENSION_RESULT_TYPES.has(resultType);
+    const unrecognisedResultType =
+      typeof resultType === 'string' &&
+      !CORE_RESULT_TYPES.has(resultType) &&
+      !extensionResult
+        ? resultType
         : undefined;
+    let resultDefName: string | undefined;
+    if (inputRequired) {
+      resultDefName = 'InputRequiredResult';
+    } else if (!extensionResult && requestMethod !== undefined) {
+      resultDefName = spec.resultDefs.get(requestMethod);
+    }
     if (resultDefName) {
+      const hint = unrecognisedResultType
+        ? `; resultType '${unrecognisedResultType}' is not a core value or a known extension result (${[...EXTENSION_RESULT_TYPES].map((t) => `'${t}'`).join(', ')}), so it was validated as ${resultDefName}`
+        : '';
       const typed = validateAgainst(resultDefName, msg.result).map(
-        (e) => `${e} (result of '${requestMethod}')`
+        (e) => `${e} (result of '${requestMethod}')${hint}`
       );
       if (typed.length > 0) return typed;
     }

@@ -26,6 +26,7 @@ import { runClient as noPkceClient } from '../../../../examples/clients/typescri
 import { runClient as reuseCredsClient } from '../../../../examples/clients/typescript/auth-test-reuse-credentials';
 import { runClient as noAppTypeClient } from '../../../../examples/clients/typescript/auth-test-no-application-type';
 import { runClient as noIssValidationClient } from '../../../../examples/clients/typescript/auth-test';
+import { runClient as inertClient } from '../../../../examples/clients/typescript/auth-test-inert';
 import { runClient as issNormalizeClient } from '../../../../examples/clients/typescript/auth-test-iss-normalize';
 import { runClient as echoScopeClient } from '../../../../examples/clients/typescript/auth-test-echo-scope';
 import { runClient as dpopBearerClient } from '../../../../examples/clients/typescript/auth-test-dpop-bearer';
@@ -35,9 +36,12 @@ import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/t
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
+import { runClient as resourceSlashClient } from '../../../../examples/clients/typescript/auth-test-resource-slash';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { testScenarioContext } from '../../../mock-server/testing';
+import { ClientConformanceContextSchema } from '../../../schemas/context';
 
 beforeAll(() => {
   setLogLevel('error');
@@ -64,6 +68,21 @@ const allowClientErrorScenarios = new Set<string>([
   'auth/metadata-issuer-mismatch'
 ]);
 
+/**
+ * Checks the everything-client is known to fail because of a bug in the SDK
+ * release it depends on. Each entry is asserted to still fail, so the entry
+ * must be removed as soon as the pinned SDK passes.
+ *
+ * - `resource-parameter-matches-prm` on the root-PRM scenario:
+ *   @modelcontextprotocol/sdk 1.x re-serializes a pathless PRM `resource`
+ *   through `URL.href`, adding a trailing slash (typescript-sdk#1968, fixed
+ *   on 2.x by #2581; 1.x backport #1972). Remove once the example's SDK
+ *   dependency includes the backport.
+ */
+const knownExampleClientFailures: Record<string, string[]> = {
+  'auth/metadata-var2': ['resource-parameter-matches-prm']
+};
+
 describe('Client Auth Scenarios', () => {
   // Generate individual test for each auth scenario
   for (const scenario of authScenariosList) {
@@ -78,7 +97,8 @@ describe('Client Auth Scenarios', () => {
       }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name, {
-        allowClientError: allowClientErrorScenarios.has(scenario.name)
+        allowClientError: allowClientErrorScenarios.has(scenario.name),
+        expectedFailureSlugs: knownExampleClientFailures[scenario.name]
       });
     });
   }
@@ -112,11 +132,51 @@ describe('Client Draft Scenarios', () => {
   }
 });
 
+describe('auth/pre-registration context', () => {
+  // Authorization Server Binding: the context issuer is only usable as a
+  // binding key if it equals the issuer the mock AS publishes in its metadata.
+  test('supplies the issuer the mock AS publishes in its metadata', async () => {
+    const scenario = authScenariosList.find(
+      (s) => s.name === 'auth/pre-registration'
+    );
+    if (!scenario) {
+      throw new Error('auth/pre-registration scenario not found');
+    }
+    const urls = await scenario.start(testScenarioContext());
+    try {
+      const context = ClientConformanceContextSchema.parse({
+        name: 'auth/pre-registration',
+        ...urls.context
+      });
+      if (context.name !== 'auth/pre-registration') {
+        throw new Error(`Unexpected context variant: ${context.name}`);
+      }
+      const res = await fetch(
+        `${context.issuer}/.well-known/oauth-authorization-server`
+      );
+      expect(res.ok).toBe(true);
+      const metadata = (await res.json()) as { issuer?: string };
+      expect(metadata.issuer).toBe(context.issuer);
+    } finally {
+      await scenario.stop();
+    }
+  });
+});
+
 describe('Negative tests', () => {
   test('bad client requests root PRM location', async () => {
     const runner = new InlineClientRunner(badPrmClient);
     await runClientAgainstScenario(runner, 'auth/metadata-default', {
       expectedFailureSlugs: ['prm-priority-order']
+    });
+  });
+
+  test('client appends a trailing slash to the PRM resource identifier', async () => {
+    // auth/metadata-var2 serves the PRM at the root, so its `resource` is a
+    // bare origin: exactly the value a URL parser rewrites with a "/".
+    const runner = new InlineClientRunner(resourceSlashClient);
+    await runClientAgainstScenario(runner, 'auth/metadata-var2', {
+      expectedFailureSlugs: ['resource-parameter-matches-prm']
     });
   });
 
@@ -441,5 +501,38 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
     expect(count('token-request')).toBe(1);
     expect(count('pkce-code-verifier-sent')).toBe(1);
     expect(count('pkce-verifier-matches-challenge')).toBe(1);
+  });
+});
+
+// Reason-bound negative checks (issue #467).
+//
+// A negative check that reads only the final verdict scores SUCCESS whenever
+// the client fails to reach the requirement at all: "did not proceed" and
+// "never got far enough to decide" are the same observation. These tests pin
+// that the harness distinguishes them, so a client that cannot have performed
+// the validation cannot bank a pass for it.
+describe('Reason-bound negative checks (#467)', () => {
+  test('auth/resource-mismatch: an inert client does not pass by doing nothing', async () => {
+    // The inert client throws before any discovery request, so it never reads
+    // the mismatched `resource` it is required to validate. Bound only to the
+    // verdict (`!authorizationRequestMade`) this scored SUCCESS.
+    const runner = new InlineClientRunner(inertClient);
+    const checks = await runClientAgainstScenario(
+      runner,
+      'auth/resource-mismatch',
+      {
+        allowClientError: true,
+        expectedFailureSlugs: ['resource-mismatch-rejected']
+      }
+    );
+
+    const check = checks.find((c) => c.id === 'resource-mismatch-rejected');
+    expect(check).toBeDefined();
+    // Reported as untestable (#248), not as a plain violation: the client did
+    // not break the requirement, it never exercised it.
+    expect(check?.details?.untestable).toBe(true);
+    expect(check?.details?.propertyReached).toBe(false);
+    expect(check?.details?.stopReason).toBe('prm-not-requested');
+    expect(check?.errorMessage).toMatch(/^Not testable: /);
   });
 });
