@@ -140,6 +140,19 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
     }
   }
 
+  /**
+   * Advertised on both lifecycles. `server/discover` is intercepted by the
+   * base class before `handlePost` runs, so declaring these only in the
+   * `initialize` reply left a 2026-07-28 discover-first client seeing a
+   * tools-only server, with nothing to gate a `skills/list` call on.
+   */
+  protected discoverCapabilities(): object {
+    return {
+      resources: { listChanged: false },
+      extensions: { [SKILLS_EXTENSION_ID]: {} }
+    };
+  }
+
   protected handlePost(
     _req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -147,10 +160,7 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
   ): void {
     switch (request.method) {
       case 'initialize':
-        this.sendInitialize(res, request, {
-          resources: { listChanged: false },
-          extensions: { [SKILLS_EXTENSION_ID]: {} }
-        });
+        this.sendInitialize(res, request);
         return;
 
       case 'skills/list': {
