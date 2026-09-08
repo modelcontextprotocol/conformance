@@ -8,7 +8,7 @@
  * Discovery is dynamic and brand-neutral: the scenario finds a `skill-md`
  * skill's `SKILL.md` resource from `resources/list` (preferred — it carries the
  * Resource `name`/`description` metadata) or falls back to the first `skill-md`
- * entry in `skill://index.json`, hardcoding no fixture skill. Undeclared
+ * entry in `skills/list`, hardcoding no fixture skill. Undeclared
  * extension SKIPs; a declared extension with no discoverable `SKILL.md` reports
  * the missing prerequisite via untestableCheck (issue #248), never a silent
  * green.
@@ -86,7 +86,7 @@ export class SkillsManifestScenario implements ClientScenario {
       }
 
       // === Dynamic discovery: resources/list first (carries Resource
-      // metadata), then skill://index.json. ===
+      // metadata), then skills/list. ===
       const resources = await listAllResources(conn);
       const manifestResource: SkillResource | undefined = resources.find((r) =>
         isManifestUri(r.uri)
@@ -104,7 +104,7 @@ export class SkillsManifestScenario implements ClientScenario {
 
       if (!manifestUri) {
         const reason =
-          'no skill://<skill-path>/SKILL.md resource found via resources/list or skill://index.json';
+          'no skill://<skill-path>/SKILL.md resource found via resources/list or skills/list';
         return [
           untestableCheck(
             MIMETYPE_ID,

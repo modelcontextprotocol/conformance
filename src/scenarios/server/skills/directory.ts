@@ -12,7 +12,7 @@
  * capability is a SKIP (not a failure); a declared-but-broken one fails.
  *
  * Discovery is dynamic and brand-neutral: the directory to exercise is derived
- * from `skill://index.json` or `resources/list`, hardcoding no fixture URI, so
+ * from `skills/list` or `resources/list`, hardcoding no fixture URI, so
  * the scenario passes against any conformant SEP-2640 server. When no directory
  * (or no subdirectory) can be discovered, that check reports the missing
  * prerequisite via untestableCheck (issue #248), never a silent green.
@@ -137,7 +137,7 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
 - \`sep-2640-directory-read-invalid-params\` — a non-directory URI returns \`-32602\` (MUST)
 - \`sep-2640-directory-read-pagination\` — \`nextCursor\` round-trips per resources/list (single-page is conformant)
 
-**Gating & discovery**: the checks SKIP when the skills extension or its \`directoryRead\` flag is undeclared. The directory to exercise is discovered dynamically from \`skill://index.json\` / \`resources/list\` — no fixture URI is hardcoded.`;
+**Gating & discovery**: the checks SKIP when the skills extension or its \`directoryRead\` flag is undeclared. The directory to exercise is discovered dynamically from \`skills/list\` / \`resources/list\` — no fixture URI is hardcoded.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
@@ -175,7 +175,7 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
       const target = await discoverDirectory(conn);
       if (!target) {
         const reason =
-          'no directory resource discoverable via skill://index.json or resources/list to exercise resources/directory/read';
+          'no directory resource discoverable via skills/list or resources/list to exercise resources/directory/read';
         const rest: Array<[string, string]> = [
           [
             METHOD_ID,
