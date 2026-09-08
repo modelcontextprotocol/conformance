@@ -34,7 +34,9 @@ import {
   JSONRPC_INVALID_PARAMS,
   type SkillEntry,
   type SkillResourceEntry,
-  skillsCapability,
+  declaredSkillsCapability,
+  describeValue,
+  isSettingsObject,
   skillsCheck,
   skillsListAll,
   skillsGet,
@@ -103,9 +105,11 @@ const ALL_CHECK_IDS = [
 
 /**
  * Agent Skills naming rules as the SEP defers to them: 1-64 characters,
- * lowercase alphanumeric and hyphens.
+ * lowercase alphanumeric and hyphens, with no leading, trailing or
+ * consecutive hyphens. The leading/trailing rule falls out of the anchored
+ * alphanumeric bookends; the consecutive one needs the `(?!.*--)` lookahead.
  */
-const SKILL_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/;
+const SKILL_NAME_PATTERN = /^(?!.*--)[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/;
 
 /** RFC 3986 reg-name: unreserved / pct-encoded / sub-delims, case-insensitive. */
 const REG_NAME_PATTERN = /^(?:[A-Za-z0-9\-._~!$&'()*+,;=]|%[0-9A-Fa-f]{2})*$/;
@@ -148,8 +152,8 @@ export class SkillsEnumerationScenario implements ClientScenario {
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
-      const skills = await skillsCapability(conn);
-      if (!skills) {
+      const declaration = await declaredSkillsCapability(conn);
+      if (!declaration.declared) {
         const reason =
           'Server did not declare the io.modelcontextprotocol/skills extension; enumeration checks not applicable.';
         return ALL_CHECK_IDS.map((id) =>
@@ -157,43 +161,71 @@ export class SkillsEnumerationScenario implements ClientScenario {
         );
       }
 
-      const checks: ConformanceCheck[] = [];
+      // Declared, but possibly with something that is not a settings object.
+      // The remaining checks read no settings from a malformed declaration, so
+      // they proceed against an empty one rather than aborting: `skills/list`
+      // and `skills/get` are still owed by anything that declared at all.
+      const declaredValue = declaration.value;
+      const wellFormed = isSettingsObject(declaredValue);
+      const skills: Record<string, unknown> = wellFormed ? declaredValue : {};
 
-      // === capability-declaration-inline ===
-      // SEP-2133 (Final) maps an extension identifier straight to its settings
-      // object. An envelope hides settings from any spec-following client.
-      const { inline, envelopeKeys } = settingsAreInline(skills);
-      checks.push(
-        skillsCheck(
-          'sep-2640-capability-declaration-inline',
-          'Extension settings are a map of extension identifiers to per-extension settings objects; the settings sit directly under the identifier.',
-          inline ? 'SUCCESS' : 'FAILURE',
-          inline
-            ? { details: { settingKeys: Object.keys(skills) } }
-            : {
-                errorMessage: `capabilities.extensions["${SKILLS_EXTENSION_ID}"] carries envelope key(s) ${envelopeKeys.join(', ')} instead of the settings object itself. SEP-2133 (Final) defines no envelope, and SEP-2640's capability block places directoryRead inline.`,
-                details: { envelopeKeys, observed: skills }
-              }
-        )
-      );
+      const checks: ConformanceCheck[] = [];
 
       // === capability-empty-object ===
       // "An empty object indicates support for the extension with no optional
-      // features." Observable as: the declared value is a JSON object, and an
-      // empty one is a valid declaration rather than a malformed capability.
+      // features." The observable half is the type: the declared value MUST be
+      // an object, and an empty one is a valid declaration rather than a
+      // malformed capability. A server declaring `true` fails here instead of
+      // silently skipping the suite.
       checks.push(
         skillsCheck(
           'sep-2640-capability-empty-object',
           'An empty object indicates support for the extension with no optional features.',
-          'SUCCESS',
-          {
-            details: {
-              declaredKeys: Object.keys(skills),
-              empty: Object.keys(skills).length === 0
-            }
-          }
+          wellFormed ? 'SUCCESS' : 'FAILURE',
+          wellFormed
+            ? {
+                details: {
+                  declaredKeys: Object.keys(skills),
+                  empty: Object.keys(skills).length === 0
+                }
+              }
+            : {
+                errorMessage: `capabilities.extensions["${SKILLS_EXTENSION_ID}"] is ${describeValue(declaredValue)}, not a settings object. An empty object is the way to declare support with no optional features.`,
+                details: { observed: declaredValue }
+              }
         )
       );
+
+      // === capability-declaration-inline ===
+      // SEP-2133 (Final) maps an extension identifier straight to its settings
+      // object. An envelope hides settings from any spec-following client.
+      if (wellFormed) {
+        const { inline, envelopeKeys } = settingsAreInline(skills);
+        checks.push(
+          skillsCheck(
+            'sep-2640-capability-declaration-inline',
+            'Extension settings are a map of extension identifiers to per-extension settings objects; the settings sit directly under the identifier.',
+            inline ? 'SUCCESS' : 'FAILURE',
+            inline
+              ? { details: { settingKeys: Object.keys(skills) } }
+              : {
+                  errorMessage: `capabilities.extensions["${SKILLS_EXTENSION_ID}"] carries envelope key(s) ${envelopeKeys.join(', ')} instead of the settings object itself. SEP-2133 (Final) defines no envelope, and SEP-2640's capability block places directoryRead inline.`,
+                  details: { envelopeKeys, observed: skills }
+                }
+          )
+        );
+      } else {
+        const reason =
+          'the declared value is not a settings object, so there are no settings to place inline or in an envelope; see sep-2640-capability-empty-object';
+        checks.push(
+          skillsCheck(
+            'sep-2640-capability-declaration-inline',
+            'Extension settings are a map of extension identifiers to per-extension settings objects; the settings sit directly under the identifier.',
+            'SKIPPED',
+            { errorMessage: reason }
+          )
+        );
+      }
 
       // === skills/list ===
       const listed = await skillsListAll(conn);
@@ -735,7 +767,7 @@ function entryChecks(entries: SkillEntry[]): ConformanceCheck[] {
   checks.push(
     skillsCheck(
       'sep-2640-name-naming-rules',
-      "The final <skill-path> segment, being the skill name, MUST satisfy the Agent Skills specification's naming rules (1-64 characters, lowercase alphanumeric and hyphens).",
+      "The final <skill-path> segment, being the skill name, MUST satisfy the Agent Skills specification's naming rules (1-64 characters, lowercase alphanumeric and hyphens, no leading, trailing or consecutive hyphens).",
       badNames.length === 0 ? 'SUCCESS' : 'FAILURE',
       badNames.length === 0
         ? { details: { entryCount: entries.length } }

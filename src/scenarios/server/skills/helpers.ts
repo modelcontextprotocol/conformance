@@ -125,22 +125,56 @@ export function skillsCheck(
   };
 }
 
+/** A JSON object, as opposed to an array, `null`, or a primitive. */
+export function isSettingsObject(
+  value: unknown
+): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** How to name an observed non-object value in an error message. */
+export function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
+/**
+ * Whether the server declared the skills extension at all, and the raw value it
+ * declared it with, before any shape coercion.
+ *
+ * `skillsCapability` folds a malformed declaration (`true`, a string, an array)
+ * into `undefined`, which downstream reads as "extension not declared" and
+ * SKIPs. That is a false SKIP: the server did declare the extension, it just
+ * declared it with the wrong type, and the suite should say so. Callers that
+ * need to tell "absent" from "malformed" apart use this instead.
+ *
+ * Reads the declared capability from `server/discover` (mirrors
+ * `tasks/capability.ts`), never inferred from a `-32601`.
+ */
+export async function declaredSkillsCapability(
+  conn: Connection
+): Promise<{ declared: boolean; value: unknown }> {
+  const discovered = await conn.discover();
+  const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
+  const extensions = caps.extensions as Record<string, unknown> | undefined;
+  if (!extensions || !(SKILLS_EXTENSION_ID in extensions)) {
+    return { declared: false, value: undefined };
+  }
+  return { declared: true, value: extensions[SKILLS_EXTENSION_ID] };
+}
+
 /**
  * The skills extension object declared under `capabilities.extensions`, or
- * `undefined` when the server did not declare it. Reads the declared capability
- * from `server/discover` (mirrors `tasks/capability.ts`) — an undeclared
- * optional extension is a SKIP, never inferred from a `-32601`.
+ * `undefined` when the server did not declare it — or declared it with
+ * something that is not a settings object, which the callers of this helper
+ * treat the same way. An undeclared optional extension is a SKIP.
  */
 export async function skillsCapability(
   conn: Connection
 ): Promise<Record<string, unknown> | undefined> {
-  const discovered = await conn.discover();
-  const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
-  const extensions = caps.extensions as Record<string, unknown> | undefined;
-  const skills = extensions?.[SKILLS_EXTENSION_ID];
-  return skills && typeof skills === 'object'
-    ? (skills as Record<string, unknown>)
-    : undefined;
+  const { value } = await declaredSkillsCapability(conn);
+  return isSettingsObject(value) ? value : undefined;
 }
 
 /**
