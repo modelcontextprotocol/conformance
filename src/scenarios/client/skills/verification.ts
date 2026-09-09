@@ -231,17 +231,27 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
       ];
     }
 
-    // `unlisted` is proven by the request never appearing. The other three
-    // are proven by the client stopping before the supporting file, which it
-    // would only reach by accepting the tampered SKILL.md.
+    // `unlisted` is proven by no read landing outside the entry's resources.
+    // Watching the one fixture URI we happen to serve would pass any client
+    // that probed a different unlisted path, so the permitted set is derived
+    // from the entry the client was actually given. The requirement is "reads
+    // resolve only to URIs listed in that entry's resources", and this is that
+    // sentence rather than a proxy for it.
+    //
+    // The other three modes are proven by the client stopping before the
+    // supporting file, which it would only reach by accepting the tampered
+    // SKILL.md.
+    const listed = new Set(this.entry().resources.map((r) => r.uri));
+    const strayReads = this.reads.filter((uri) => !listed.has(uri));
+
     const violated =
       this.mode === 'unlisted'
-        ? this.reads.includes(UNLISTED_URI)
+        ? strayReads.length > 0
         : this.reads.includes(SUPPORTING_URI);
 
     const evidence =
       this.mode === 'unlisted'
-        ? `client read ${UNLISTED_URI}, which the entry's resources do not list`
+        ? `client read ${strayReads.join(', ')}, which the entry's resources do not list`
         : `client continued to ${SUPPORTING_URI} after being served a SKILL.md that fails ${this.mode} verification, so it did not reject the content`;
 
     return [
@@ -249,7 +259,7 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
         ...base,
         status: violated ? 'FAILURE' : 'SUCCESS',
         errorMessage: violated ? evidence : undefined,
-        details: { mode: this.mode, reads: this.reads }
+        details: { mode: this.mode, reads: this.reads, strayReads }
       }
     ];
   }
