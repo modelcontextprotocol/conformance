@@ -42,7 +42,8 @@ export const CUSTOM_HEADERS_DECLARED_CHECK_IDS = [
   'sep-2243-client-mirrors-designated-params',
   'sep-2243-client-encode-values',
   'sep-2243-client-base64-unsafe',
-  'sep-2243-client-omit-null'
+  'sep-2243-client-omit-null',
+  'sep-2243-x-mcp-header-integer-safe-range'
 ] as const;
 
 /**
@@ -199,6 +200,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
           arguments: {
             region: 'us-west1',
             priority: 42,
+            unsafe_integer_val: 9007199254740992,
             verbose: false,
             debug: true,
             empty_val: '',
@@ -297,6 +299,12 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
                   type: 'integer',
                   description: 'Integer numeric value',
                   'x-mcp-header': 'Priority'
+                },
+                unsafe_integer_val: {
+                  type: 'integer',
+                  description:
+                    'Integer value outside IEEE754 safe range (-2^53+1 to 2^53-1) — MUST NOT be mirrored to an HTTP header',
+                  'x-mcp-header': 'UnsafeInteger'
                 },
                 verbose: {
                   type: 'boolean',
@@ -452,6 +460,37 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
 
       // Check Mcp-Param-Priority header (integer)
       this.checkParamHeader(req, 'Priority', args.priority, 'integer');
+
+      // Check Mcp-Param-UnsafeInteger header:
+      // SEP-2243: "Integer values MUST be within the safe range for integers
+      // represented using IEEE754 double-precision floating point numbers (-2^53+1 to 2^53-1)"
+      // An out-of-range integer argument MUST NOT be mirrored into an HTTP header.
+      if (
+        args.unsafe_integer_val !== undefined &&
+        args.unsafe_integer_val !== null
+      ) {
+        const unsafeIntegerHeader = req.headers['mcp-param-unsafeinteger'] as
+          | string
+          | undefined;
+        this.checks.push({
+          id: 'sep-2243-x-mcp-header-integer-safe-range',
+          name: 'ClientCustomHeaderSafeIntegerRange',
+          description:
+            'Integer values outside IEEE754 safe range (-2^53+1 to 2^53-1) MUST NOT be mirrored into Mcp-Param headers',
+          status: unsafeIntegerHeader === undefined ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            unsafeIntegerHeader !== undefined
+              ? `Client mirrored unsafe integer value '${unsafeIntegerHeader}' into Mcp-Param-UnsafeInteger header. Integer values MUST be within the safe range (-2^53+1 to 2^53-1).`
+              : undefined,
+          specReferences: [SPEC_REFERENCE_TOOL_DEF, SPEC_REFERENCE_CUSTOM],
+          details: {
+            headerName: 'Mcp-Param-UnsafeInteger',
+            rawHeaderValue: unsafeIntegerHeader,
+            bodyValue: args.unsafe_integer_val
+          }
+        });
+      }
 
       // Check Mcp-Param-Verbose header (boolean value)
       // checkParamHeader already FAILs on missing header, so this also covers

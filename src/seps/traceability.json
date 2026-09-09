@@ -213,6 +213,12 @@
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
         {
+          "check": "sep-2243-x-mcp-header-integer-safe-range",
+          "status": "tested",
+          "text": "Integer values MUST be within the safe range for integers represented using IEEE754 double-precision floating point numbers (−2^53+1 to 2^53−1).",
+          "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
+        },
+        {
           "check": "sep-2243-client-reject-invalid-tool",
           "status": "tested",
           "text": "Clients MUST reject tool definitions where any x-mcp-header value violates these constraints. Rejection means the client MUST exclude the invalid tool from the set of tools returned by tools/list.",
@@ -289,7 +295,7 @@
         "sep-2243-server-no-xmcp-tool"
       ],
       "summary": {
-        "tested": 18,
+        "tested": 19,
         "untested": 2,
         "excluded": 4,
         "untracked": 3,
