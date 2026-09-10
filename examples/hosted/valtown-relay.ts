@@ -66,6 +66,8 @@ export default async function handler(req: Request): Promise<Response> {
     if (v) headers.set(h, v);
   }
   headers.set('x-relay-secret', RELAY_SECRET);
+  // Don't invite the RS edge to compress: the bytes are re-framed below anyway.
+  headers.set('accept-encoding', 'identity');
   // The aux handler reconstructs absolute URLs (issuer, endpoints) from
   // getAuxBaseUrl() which the RS app already knows, so it doesn't strictly
   // need this — but it's useful for logging/debugging on the RS side.
@@ -83,12 +85,23 @@ export default async function handler(req: Request): Promise<Response> {
     redirect: 'manual'
   });
 
-  // Strip hop-by-hop / origin-identifying headers; pass everything else.
+  // fetch() transparently decompresses a gzip/br upstream body but leaves the
+  // upstream's content-length (the *compressed* size) in place. Forwarding
+  // that header with the decompressed bytes makes the client truncate the
+  // body ("Unterminated string in JSON at position N" on AS metadata). So:
+  // buffer the body, drop every framing/encoding header, and let the runtime
+  // derive content-length from the bytes we actually send.
+  const body = await upstream.arrayBuffer();
   const outHeaders = new Headers(upstream.headers);
-  for (const h of ['content-encoding', 'transfer-encoding', 'connection']) {
+  for (const h of [
+    'content-encoding',
+    'content-length',
+    'transfer-encoding',
+    'connection'
+  ]) {
     outHeaders.delete(h);
   }
-  return new Response(upstream.body, {
+  return new Response(body.byteLength ? body : null, {
     status: upstream.status,
     headers: outHeaders
   });
