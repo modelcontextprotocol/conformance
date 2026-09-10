@@ -36,6 +36,7 @@ import {
   type SkillResourceEntry,
   declaredSkillsCapability,
   describeValue,
+  resourcesCapabilityDeclared,
   isSettingsObject,
   skillsCheck,
   skillsListAll,
@@ -52,6 +53,7 @@ import {
 
 const CAPABILITY_IDS = [
   'sep-2640-capability-declaration-inline',
+  'sep-2640-capability-requires-resources',
   'sep-2640-capability-commits-to-methods',
   'sep-2640-capability-empty-object'
 ] as const;
@@ -84,6 +86,7 @@ const ENTRY_IDS = [
 const GET_IDS = [
   'sep-2640-skills-get-implemented',
   'sep-2640-skills-get-entry-shape',
+  'sep-2640-skills-get-cache-attributes',
   'sep-2640-skills-get-no-cursor',
   'sep-2640-skills-get-unknown-uri-invalid-params'
 ] as const;
@@ -226,6 +229,26 @@ export class SkillsEnumerationScenario implements ClientScenario {
           )
         );
       }
+
+      // === capability-requires-resources ===
+      // Stated on the stable page as a consequence of the base Resources
+      // spec rather than a new obligation: a server serving skill files
+      // through resources/read already has to declare `resources`. Checkable
+      // here because the declaration is on the wire either way.
+      const hasResources = await resourcesCapabilityDeclared(conn);
+      checks.push(
+        skillsCheck(
+          'sep-2640-capability-requires-resources',
+          'A server declaring this extension MUST also declare the resources capability, because skill files are served through resources/read.',
+          hasResources ? 'SUCCESS' : 'FAILURE',
+          hasResources
+            ? { details: { resources: true } }
+            : {
+                errorMessage:
+                  'the server declares the skills extension but not the base `resources` capability, so a spec-following client has no basis to call resources/read for skill files.'
+              }
+        )
+      );
 
       // === skills/list ===
       const listed = await skillsListAll(conn);
@@ -390,7 +413,7 @@ export class SkillsEnumerationScenario implements ClientScenario {
       }
 
       checks.push(...entryChecks(entries));
-      checks.push(...(await getChecks(conn, entries)));
+      checks.push(...(await getChecks(conn, entries, ctx.specVersion)));
       checks.push(...(await readbackChecks(conn, entries)));
 
       return checks;
@@ -985,7 +1008,8 @@ async function readbackChecks(
 /** Exercise `skills/get` against a real entry and against an unknown URI. */
 async function getChecks(
   conn: Parameters<typeof skillsGet>[0],
-  entries: SkillEntry[]
+  entries: SkillEntry[],
+  specVersion: string
 ): Promise<ConformanceCheck[]> {
   const checks: ConformanceCheck[] = [];
   const sample = entries.find((e) => typeof e.uri === 'string');
@@ -1095,6 +1119,58 @@ async function getChecks(
         : { details: { probedUri: sampleUri } }
     )
   );
+
+  // === skills-get-cache-attributes ===
+  // SEP-2640 left this open ("whether the result should also carry the base
+  // protocol's caching attributes ... is left open"); the stable page closed
+  // it in the affirmative on 2026-09-10 (ext-skills#139). Gated the same way
+  // as the skills/list check: below 2026-07-28 CacheableResult is undefined
+  // by the negotiated schema, so omission is correct rather than a defect.
+  const getResult = got.result as Record<string, unknown>;
+  const getTtl = getResult.ttlMs !== undefined;
+  const getScope = getResult.cacheScope !== undefined;
+  const getCacheApplies = specVersion >= '2026-07-28';
+  const getCacheText =
+    'GetSkillResult extends CacheableResult, so ttlMs and cacheScope are REQUIRED, as they are on resources/read.';
+
+  if (!getCacheApplies) {
+    checks.push(
+      skillsCheck(
+        'sep-2640-skills-get-cache-attributes',
+        getCacheText,
+        'SKIPPED',
+        {
+          errorMessage: `not applicable on negotiated protocol ${specVersion}: ttlMs and cacheScope are defined from 2026-07-28`,
+          details: {
+            specVersion,
+            ttlMs: getResult.ttlMs,
+            cacheScope: getResult.cacheScope
+          }
+        }
+      )
+    );
+  } else {
+    const missing = [!getTtl && 'ttlMs', !getScope && 'cacheScope']
+      .filter(Boolean)
+      .join(' and ');
+    checks.push(
+      skillsCheck(
+        'sep-2640-skills-get-cache-attributes',
+        getCacheText,
+        getTtl && getScope ? 'SUCCESS' : 'FAILURE',
+        getTtl && getScope
+          ? {
+              details: {
+                ttlMs: getResult.ttlMs,
+                cacheScope: getResult.cacheScope
+              }
+            }
+          : {
+              errorMessage: `skills/get result omits ${missing} on protocol ${specVersion}, where the stable spec page requires both.`
+            }
+      )
+    );
+  }
 
   // === skills-get-unknown-uri-invalid-params ===
   const unknown = await skillsGet(conn, UNKNOWN_SKILL_URI);

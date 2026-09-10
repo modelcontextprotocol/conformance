@@ -106,6 +106,8 @@ requirements:
     text: 'Declaring the extension itself commits the server to `skills/list` and `skills/get`.'
   - check: sep-2640-capability-empty-object
     text: 'An empty object indicates support for the extension with no optional features.'
+  - check: sep-2640-capability-requires-resources
+    text: "This extension depends only on the base protocol's Resources primitive. Skill files are served through `resources/read`, and the base Resources specification requires any server that supports resources to declare the `resources` capability. A server declaring this extension therefore **MUST** also declare the `resources` capability."
   - check: sep-2640-capability-directory-read-flag
     text: 'Clients MUST NOT call `resources/directory/read` against a server that has not declared `directoryRead: true`.'
 
@@ -178,6 +180,8 @@ requirements:
     text: 'If the URI does not identify a skill the server serves, the server MUST return error `-32602` (Invalid params) — the same code `resources/read` uses for unknown resources.'
   - check: sep-2640-skills-get-answers-unlisted
     text: 'A server MUST answer for every skill it serves, whether or not that skill appears in its `skills/list` result. A skill absent from a partial listing is still retrievable by URI.'
+  - check: sep-2640-skills-get-cache-attributes
+    text: "`GetSkillResult` extends `CacheableResult`, so `ttlMs` and `cacheScope` are **REQUIRED**, as they are on `resources/read`, and carry the same semantics. `ttlMs` is the server's hint for how long a host may treat the entry as current before re-calling `skills/get`. Neither field is an integrity property."
   - check: sep-2640-skills-get-no-cursor
     text: 'The result carries no pagination cursor: a single entry is not a list.'
 

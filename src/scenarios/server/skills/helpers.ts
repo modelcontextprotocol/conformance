@@ -203,6 +203,21 @@ export function settingsAreInline(skills: Record<string, unknown>): {
 }
 
 /**
+ * Whether the server declares the base `resources` capability.
+ *
+ * The stable spec page (ext-skills#139) states this as a consequence of the
+ * base Resources specification rather than a new obligation: a server that
+ * serves skill files through `resources/read` already has to declare it.
+ */
+export async function resourcesCapabilityDeclared(
+  conn: Connection
+): Promise<boolean> {
+  const discovered = await conn.discover();
+  const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
+  return isSettingsObject(caps.resources);
+}
+
+/**
  * Whether the skills extension declares `directoryRead: true`.
  *
  * Reads only the inline location the SEPs specify. A server that buries the

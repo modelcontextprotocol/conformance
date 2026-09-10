@@ -47,7 +47,7 @@ not declare it correctly skips all six directory checks.
 
 | Implementation           | Invocation                            | Result                          |
 | ------------------------ | ------------------------------------- | ------------------------------- |
-| mcpkit `ext/skills`      | default                               | 30 / 6 / 7 = **43**, 0 failures |
+| mcpkit `ext/skills`      | default                               | 32 / 6 / 7 = **45**, 0 failures |
 | go-sdk (PRs 1238 + 1240) | stateless handler, default flags      | 30 / 6 / 7 = **43**, 0 failures |
 | go-sdk (PRs 1238 + 1240) | stateful, `--spec-version 2025-11-25` | 29 / 6 / 7 = **42**, 0 failures |
 | csharp-sdk (PR 1856)     | `/stateless`, default flags           | 30 / 6 / 1 = **37**, 0 failures |
