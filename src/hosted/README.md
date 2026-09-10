@@ -12,16 +12,55 @@ npx @modelcontextprotocol/conformance hosted --port 3000 --public-origin https:/
 
 ## Routes
 
-| Route                                   | Purpose                                                                                           |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `GET /`                                 | Landing page with usage + scenario list                                                           |
-| `GET /scenarios`                        | JSON list of hostable scenarios                                                                   |
-| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id.          |
-| `GET /s/<scenario>`                     | Mints a fresh run-id and returns `{runId, mcpUrl, resultsUrl}`.                                   |
-| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                                |
-| `GET /results/<run-id>.html`            | Pretty HTML report                                                                                |
-| `DELETE /results/<run-id>`              | Tear down the run early                                                                           |
-| `POST /mcp`                             | The hosted server is itself an MCP server with `list_scenarios`, `start_run`, `get_results` tools |
+| Route                                   | Purpose                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET /`                                 | Landing page with usage + scenario list                                                              |
+| `GET /scenarios`                        | JSON list of hostable scenarios                                                                      |
+| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id.             |
+| `GET /s/<scenario>[?runId=<id>]`        | Mints a run-id (or uses `runId`) and returns `{runId, mcpUrl, resultsUrl, resultsHtmlUrl, context}`. |
+| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                                   |
+| `GET /results/<run-id>.html`            | Pretty HTML report                                                                                   |
+| `DELETE /results/<run-id>`              | Tear down the run early                                                                              |
+| `POST /mcp`                             | The hosted server is itself an MCP server with `list_scenarios`, `start_run`, `get_results` tools    |
+
+## Driving a client from the CLI: `conformance remote`
+
+`conformance remote` is `conformance client --command` pointed at a hosted
+server instead of an in-process scenario:
+
+```bash
+npx @modelcontextprotocol/conformance remote \
+  --url https://conformance.example.com \
+  --scenario auth/basic-cimd \
+  --command "npx tsx examples/clients/typescript/everything-client.ts" \
+  [--run-id ci-1234] [--timeout 60000] [-o result.json] [--verbose]
+```
+
+It `GET`s `<url>/s/<scenario>` to mint a run, spawns the client exactly the
+way `client --command` does (MCP URL appended as the last argument,
+`MCP_CONFORMANCE_SCENARIO` / `MCP_CONFORMANCE_PROTOCOL_VERSION` in env, and
+`MCP_CONFORMANCE_CONTEXT` set to the minted `context` when the scenario has
+one), then reads `<url>/results/<runId>` and prints it through the usual
+client reporter plus the `/results/<runId>.html` link. Exit code is 1 when
+`summary.failed > 0` or the client timed out; the client's own exit code is
+informational, since the hosted server owns the verdict. `-o` writes the
+JSON result (summary, checks, URLs) for CI aggregation.
+
+## CI
+
+- `.github/workflows/deploy-hosted.yml` pushes the `rs` and `relay` vals from
+  `examples/hosted/valtown-manifest.json` on every push to `main` that touches
+  `src/**`, `examples/hosted/**` or `package*.json`, then smoke-tests the
+  deployment with `conformance remote --scenario initialize`. Needs the
+  `hosted-conformance` GitHub environment with a `VAL_TOWN_TOKEN` secret.
+- `.github/workflows/hosted-conformance.yml` runs a matrix of scenarios
+  against the live deployment with the vendored TypeScript everything-client
+  (4x/day, after each deploy, and on PRs touching the hosted code). Each leg
+  retries once with a fresh run id; the step summary links every run's HTML
+  report. If the service is unreachable the run is skipped, not failed.
+- Both read the RS origin from the `HOSTED_RS_URL` repository variable
+  (falling back to the current val.town URL); `HOSTED_AS_URL` documents the
+  relay origin for humans.
 
 ## How it works
 

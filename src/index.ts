@@ -6,6 +6,8 @@ import { promises as fs } from 'fs';
 import {
   runConformanceTest,
   printClientResults,
+  runRemoteConformanceTest,
+  writeRemoteResult,
   runServerConformanceTest,
   printServerResults,
   printServerSummary,
@@ -968,6 +970,60 @@ program
       },
       relaySecret: options.relaySecret ?? process.env.CONFORMANCE_RELAY_SECRET
     });
+  });
+
+// Remote — run one client scenario against a hosted conformance server
+program
+  .command('remote')
+  .description(
+    'Run a client scenario against a hosted conformance server (see ' +
+      '`conformance hosted`): mints a run at <url>/s/<scenario>, spawns the ' +
+      'client with the MCP URL exactly like `client --command`, then reads ' +
+      'the checks back from <url>/results/<run-id>.'
+  )
+  .requiredOption('--url <url>', 'Origin of the hosted conformance server')
+  .requiredOption('--scenario <scenario>', 'Scenario to test')
+  .requiredOption('--command <command>', 'Command to run the client')
+  .option('--run-id <id>', 'Use this run id instead of a minted one')
+  .option('--timeout <ms>', 'Client timeout in milliseconds', '60000')
+  .option('-o, --output <path>', 'Write the JSON result to this file')
+  .option('--verbose', 'Show verbose output (checks as JSON)')
+  .action(async (options) => {
+    try {
+      const timeout = parseInt(options.timeout, 10);
+      if (!Number.isFinite(timeout) || timeout <= 0) {
+        console.error(`Invalid --timeout: ${options.timeout}`);
+        process.exit(1);
+      }
+      const result = await runRemoteConformanceTest({
+        url: options.url,
+        scenario: options.scenario,
+        command: options.command,
+        runId: options.runId,
+        timeout
+      });
+      // Same reporter as `client`. The hosted server owns the verdict, so a
+      // non-zero client exit is informational (allowClientError) and the
+      // exit code below comes from the server-side summary.
+      printClientResults(
+        result.checks,
+        options.verbose ?? false,
+        result.clientOutput,
+        true
+      );
+      console.error(`\nResults: ${result.resultsHtmlUrl}`);
+      if (options.output) {
+        await writeRemoteResult(result, options.output);
+        console.error(`Result JSON written to ${options.output}`);
+      }
+      process.exit(result.failed ? 1 : 0);
+    } catch (error) {
+      console.error(
+        'Remote test error:',
+        error instanceof Error ? error.message : error
+      );
+      process.exit(1);
+    }
   });
 
 // List scenarios command
