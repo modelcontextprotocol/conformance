@@ -16,6 +16,43 @@ export interface ResourceParameterObservation {
 }
 
 /**
+ * Recover a ResourceParameterObservation from the raw check log alone.
+ *
+ * Scenarios observe the `resource` parameter through createAuthServer /
+ * createServer callbacks into private fields. The hosted server re-judges a
+ * run's merged log in a *fresh* scenario instance (possibly in a different
+ * process/isolate from the one that served the OAuth flow), where those
+ * fields are empty. The request logger already records every authorize query
+ * and token body, and the PRM route records the identifier it served, so the
+ * same facts can be read back from the log.
+ */
+export function observeResourceParameters(
+  checks: ConformanceCheck[]
+): ResourceParameterObservation {
+  const observed: ResourceParameterObservation = {};
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' ? v : undefined;
+  for (const c of checks) {
+    const d = c.details as Record<string, unknown> | undefined;
+    if (!d) continue;
+    if (c.id === 'incoming-auth-request') {
+      const path = str(d.path) ?? '';
+      if (path.endsWith('/authorize')) {
+        const q = d.query as Record<string, unknown> | undefined;
+        observed.authorizationResource =
+          str(q?.resource) ?? observed.authorizationResource;
+      } else if (path.endsWith('/token')) {
+        const b = d.body as Record<string, unknown> | undefined;
+        observed.tokenResource = str(b?.resource) ?? observed.tokenResource;
+      }
+    } else if (c.id === 'prm-pathbased-requested') {
+      observed.prmResource = str(d.resource) ?? observed.prmResource;
+    }
+  }
+  return observed;
+}
+
+/**
  * RFC 8707 resource-parameter checks, shared by every client-auth scenario
  * whose mock servers observe the authorization and token requests. The check
  * IDs are stable across scenarios so one slug finds every emission.
