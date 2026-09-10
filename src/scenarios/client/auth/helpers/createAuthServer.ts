@@ -20,19 +20,23 @@ import {
  * (val.town) the two requests can land on different isolates, where closure
  * state from /authorize doesn't exist. The closure variables remain as a
  * fallback for flows that don't round-trip our code (e.g. hand-rolled tests).
+ *
+ * The code is a plain base64url JSON envelope — no secret, no signature, no
+ * verification: it is a state carrier for a test fixture, not a credential
+ * check, and the helper names say so (they perform no authorization).
  */
-interface AuthCodeState {
+interface FlowCodeState {
   challenge?: string;
   scopes?: string[];
 }
 
 const AUTH_CODE_PREFIX = 'test-auth-code';
 
-function encodeAuthCode(state: AuthCodeState): string {
+function packFlowCode(state: FlowCodeState): string {
   return `${AUTH_CODE_PREFIX}.${Buffer.from(JSON.stringify(state)).toString('base64url')}`;
 }
 
-function decodeAuthCode(code: string | undefined): AuthCodeState | undefined {
+function unpackFlowCode(code: string | undefined): FlowCodeState | undefined {
   if (!code?.startsWith(`${AUTH_CODE_PREFIX}.`)) return undefined;
   try {
     return JSON.parse(
@@ -40,7 +44,7 @@ function decodeAuthCode(code: string | undefined): AuthCodeState | undefined {
         code.slice(AUTH_CODE_PREFIX.length + 1),
         'base64url'
       ).toString()
-    ) as AuthCodeState;
+    ) as FlowCodeState;
   } catch {
     return undefined;
   }
@@ -506,7 +510,7 @@ export function createAuthServer(
     const redirectUrl = new URL(redirectUri);
     redirectUrl.searchParams.set(
       'code',
-      encodeAuthCode({
+      packFlowCode({
         challenge: codeChallenge,
         scopes: lastAuthorizationScopes
       })
@@ -540,8 +544,8 @@ export function createAuthServer(
 
     // Recover per-flow state from the code itself (survives process changes
     // on serverless hosts); fall back to closure state for codes we didn't
-    // mint via encodeAuthCode.
-    const codeState = decodeAuthCode(req.body.code as string | undefined);
+    // mint via packFlowCode.
+    const codeState = unpackFlowCode(req.body.code as string | undefined);
     const flowChallenge = codeState?.challenge ?? storedCodeChallenge;
     const flowScopes = codeState?.scopes ?? lastAuthorizationScopes;
 
