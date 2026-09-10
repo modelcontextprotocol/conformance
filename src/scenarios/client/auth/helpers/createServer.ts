@@ -108,6 +108,15 @@ export function createServer(
 
   if (prmPath !== null) {
     app.get(prmPath, (req: Request, res: Response) => {
+      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
+      // the resource identifier is the root.
+      // Can be overridden via prmResourceOverride for testing resource mismatch.
+      const resource =
+        prmResourceOverride ??
+        (prmPath === '/.well-known/oauth-protected-resource'
+          ? getBaseUrl()
+          : `${getBaseUrl()}/mcp`);
+
       checks.push({
         id: 'prm-pathbased-requested',
         name: 'PRMPathBasedRequested',
@@ -120,18 +129,12 @@ export function createServer(
         ],
         details: {
           url: req.url,
-          path: req.path
+          path: req.path,
+          // Recorded so the RFC 8707 checks can be re-derived from the log
+          // (see observeResourceParameters).
+          resource
         }
       });
-
-      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
-      // the resource identifier is the root.
-      // Can be overridden via prmResourceOverride for testing resource mismatch.
-      const resource =
-        prmResourceOverride ??
-        (prmPath === '/.well-known/oauth-protected-resource'
-          ? getBaseUrl()
-          : `${getBaseUrl()}/mcp`);
 
       onPrmRequest?.({ resource, timestamp: new Date().toISOString() });
 

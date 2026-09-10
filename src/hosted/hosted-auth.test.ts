@@ -11,7 +11,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
 import { createHostedApp } from './server';
-import { SessionManager, listHostableScenarios } from './session';
+import {
+  SessionManager,
+  listHostableScenarios,
+  finalizeChecks,
+  rawChecksOf
+} from './session';
 
 const RELAY_SECRET = 'test-relay-secret-do-not-use-in-prod';
 
@@ -189,6 +194,13 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     });
     expect(ok.status).toBe(200);
 
+    // Snapshot the raw log as a write-through store would persist it: no
+    // end-of-run verdicts yet (step 9 below re-judges this copy).
+    const raw = rawChecksOf(sessions.get(runId)!.scenario).map((c) => ({
+      ...c
+    }));
+    expect(raw.some((c) => c.id.startsWith('resource-parameter-'))).toBe(false);
+
     // 8. Results — checks from BOTH origins accumulated on the one run.
     const results = await fetch(`${rs}/results/${runId}`).then((r) => r.json());
     const ids = results.checks.map((c: { id: string }) => c.id);
@@ -197,6 +209,28 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(ids).toContain('client-registration');
     expect(ids).toContain('authorization-request');
     expect(ids).toContain('token-request');
+    const statusOf = (id: string) =>
+      results.checks.find((c: { id: string }) => c.id === id)?.status;
+    expect(statusOf('resource-parameter-in-authorization')).toBe('SUCCESS');
+    expect(statusOf('resource-parameter-in-token')).toBe('SUCCESS');
+    expect(statusOf('resource-parameter-matches-prm')).toBe('SUCCESS');
+
+    // 9. Multi-isolate: on serverless hosts the isolate serving GET /results
+    // is usually not the one that saw the OAuth flow. It re-judges the
+    // persisted raw log in a fresh scenario instance, which never observed
+    // the authorize/token requests directly — the RFC 8707 verdicts must be
+    // recoverable from the log itself. (`raw` was snapshotted before step 8,
+    // since getChecks() on the observing instance appends its verdicts.)
+    const rejudged = finalizeChecks('auth/metadata-default', raw);
+    const rejudgedStatus = (id: string) =>
+      rejudged.find((c) => c.id === id)?.status;
+    expect(rejudgedStatus('resource-parameter-in-authorization')).toBe(
+      'SUCCESS'
+    );
+    expect(rejudgedStatus('resource-parameter-in-token')).toBe('SUCCESS');
+    expect(rejudgedStatus('resource-parameter-consistency')).toBe('SUCCESS');
+    expect(rejudgedStatus('resource-parameter-matches-prm')).toBe('SUCCESS');
+    expect(rejudged.filter((c) => c.status === 'FAILURE')).toEqual([]);
   });
 
   it('exposes scenarioContext on the start_run response (pre-registration)', async () => {
