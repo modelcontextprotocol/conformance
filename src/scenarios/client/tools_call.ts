@@ -1,5 +1,6 @@
-import type { ScenarioContext, MockServer } from '../../mock-server';
-import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../types';
+import type { ScenarioContext, MockHandler } from '../../mock-server';
+import type { ConformanceCheck, RequestListener } from '../../types';
+import { HandlerScenario } from '../../types';
 import type { CallToolRequest } from '../../spec-types/2025-06-18';
 
 const SPEC_REF = {
@@ -7,14 +8,18 @@ const SPEC_REF = {
   url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
 };
 
-export class ToolsCallScenario implements Scenario {
+export class ToolsCallScenario extends HandlerScenario {
   name = 'tools_call';
   readonly source = { introducedIn: '2025-06-18' } as const;
   description = 'Tests calling tools with various parameter types';
-  private srv: MockServer | null = null;
+  mcpPath = '/mcp';
+  private mock: MockHandler | null = null;
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
-    this.srv = await ctx.createServer({
+  handler(_getBaseUrl: () => string, ctx: ScenarioContext): RequestListener {
+    // The version-aware mock supplies the lifecycle scaffold; unbound so the
+    // same body serves the CLI runner (via HandlerScenario.start) and the
+    // hosted runner's path-prefix mount.
+    this.mock = ctx.createHandler({
       'tools/list': () => ({
         tools: [
           {
@@ -44,18 +49,18 @@ export class ToolsCallScenario implements Scenario {
         };
       }
     });
-    return { serverUrl: this.srv.url };
+    return this.mock.listener;
   }
 
-  async stop() {
-    await this.srv?.close();
-    this.srv = null;
-  }
+  readonly steps = [
+    { op: 'tools/list' },
+    { op: 'tools/call', name: 'add_numbers', arguments: { a: 5, b: 3 } }
+  ] as const;
 
   getChecks(): ConformanceCheck[] {
     // Built fresh on every call so getChecks() is idempotent — the runner may
     // call it more than once and we must not accumulate duplicates.
-    const call = this.srv?.recorded.find((r) => r.method === 'tools/call');
+    const call = this.mock?.recorded.find((r) => r.method === 'tools/call');
     const args = (call?.params as CallToolRequest['params'] | undefined)
       ?.arguments as { a?: unknown; b?: unknown } | undefined;
     const ok =

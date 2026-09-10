@@ -6,12 +6,14 @@
  * generated from them.
  */
 
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls } from '../../../types';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { ServerLifecycle } from './helpers/serverLifecycle';
 import { addResourceParameterChecks } from './helpers/resourceParameterChecks';
 import { SpecReferences } from './spec-references';
 import { Request, Response } from 'express';
@@ -71,184 +73,195 @@ const SCENARIO_CONFIGS: MetadataScenarioConfig[] = [
 ];
 
 /**
- * Creates a metadata discovery scenario from configuration.
+ * Base for the table-driven discovery scenarios. Each subclass binds a row
+ * of SCENARIO_CONFIGS; we use real classes (not factory-returned literals)
+ * so the hosted runner can do `new Ctor()` for a fresh instance per run.
  */
-function createMetadataScenario(config: MetadataScenarioConfig): Scenario {
-  const authServer = new ServerLifecycle();
-  const server = new ServerLifecycle();
-  let checks: ConformanceCheck[] = [];
+abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
+  protected abstract readonly config: MetadataScenarioConfig;
+  readonly source = { introducedIn: '2025-11-25' } as const;
+  private checks: ConformanceCheck[] = [];
 
   // Track resource parameters for RFC 8707 validation. metadata-var2 serves
   // the PRM at the root, so its `resource` is a bare origin: the case a URL
   // parser rewrites with a trailing slash.
-  let authorizationResource: string | undefined;
-  let tokenResource: string | undefined;
-  let prmResource: string | undefined;
+  private authorizationResource: string | undefined;
+  private tokenResource: string | undefined;
+  private prmResource: string | undefined;
 
-  const routePrefix = config.authRoutePrefix || '';
-  const isOpenIdConfiguration = config.oauthMetadataLocation.includes(
-    'openid-configuration'
-  );
+  get name() {
+    return `auth/${this.config.name}`;
+  }
+  get description() {
+    return `Tests Basic OAuth metadata discovery flow.
 
-  // Determine if PRM is at path-based location
-  const isPathBasedPrm =
-    config.prmLocation === '/.well-known/oauth-protected-resource/mcp';
+**PRM:** ${this.config.prmLocation}${this.config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}
+**OAuth metadata:** ${this.config.oauthMetadataLocation}
+`;
+  }
 
-  return {
-    name: `auth/${config.name}`,
-    source: { introducedIn: '2025-11-25' },
-    description: `Tests Basic OAuth metadata discovery flow.
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
+    this.checks = [];
+    this.authorizationResource = undefined;
+    this.tokenResource = undefined;
+    this.prmResource = undefined;
+    const config = this.config;
+    const routePrefix = config.authRoutePrefix || '';
+    const isOpenIdConfiguration = config.oauthMetadataLocation.includes(
+      'openid-configuration'
+    );
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
-**PRM:** ${config.prmLocation}${config.inWwwAuth ? '' : ' (not in WWW-Authenticate)'}
-**OAuth metadata:** ${config.oauthMetadataLocation}
-`,
-
-    async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
-      checks = [];
-      authorizationResource = undefined;
-      tokenResource = undefined;
-      prmResource = undefined;
-
-      const authApp = createAuthServer(ctx, checks, authServer.getUrl, {
-        metadataPath: config.oauthMetadataLocation,
-        isOpenIdConfiguration,
-        ...(routePrefix && { routePrefix }),
-        onAuthorizationRequest: ({ resource }) => {
-          authorizationResource = resource;
-        },
-        onTokenRequest: ({ body }) => {
-          tokenResource = body.resource;
-          // Same token the auth server mints by default; these scenarios
-          // request no scopes.
-          return { token: `test-token-${Date.now()}`, scopes: [] };
-        }
-      });
-
-      // If path-based OAuth metadata, trap root requests
-      if (routePrefix) {
-        authApp.get('/.well-known/oauth-authorization-server', (req, res) => {
-          checks.push({
-            id: 'authorization-server-metadata-wrong-path',
-            name: 'AuthorizationServerMetadataWrongPath',
-            description:
-              'Client requested authorization server at the root path when the AS URL has a path-based location',
-            status: 'FAILURE',
-            timestamp: new Date().toISOString(),
-            specReferences: [
-              SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
-              SpecReferences.MCP_AUTH_DISCOVERY
-            ],
-            details: {
-              url: req.url
-            }
-          });
-          res.status(404).send('Not Found');
-        });
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
+      metadataPath: config.oauthMetadataLocation,
+      isOpenIdConfiguration,
+      ...(routePrefix && { routePrefix }),
+      onAuthorizationRequest: ({ resource }) => {
+        this.authorizationResource = resource;
+      },
+      onTokenRequest: ({ body }) => {
+        this.tokenResource = body.resource;
+        // Same token the auth server mints by default; these scenarios
+        // request no scopes.
+        return { token: `test-token-${Date.now()}`, scopes: [] };
       }
+    });
 
-      await authServer.start(authApp);
+    // If path-based OAuth metadata, trap root requests
+    if (routePrefix) {
+      authApp.get('/.well-known/oauth-authorization-server', (req, res) => {
+        this.checks.push({
+          id: 'authorization-server-metadata-wrong-path',
+          name: 'AuthorizationServerMetadataWrongPath',
+          description:
+            'Client requested authorization server at the root path when the AS URL has a path-based location',
+          status: 'FAILURE',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
+            SpecReferences.MCP_AUTH_DISCOVERY
+          ],
+          details: {
+            url: req.url
+          }
+        });
+        res.status(404).send('Not Found');
+      });
+    }
 
-      const getAuthServerUrl = routePrefix
-        ? () => `${authServer.getUrl()}${routePrefix}`
-        : authServer.getUrl;
+    const getAuthServerUrl = routePrefix
+      ? () => `${getAsUrl()}${routePrefix}`
+      : getAsUrl;
 
-      const app = createServer(ctx, checks, server.getUrl, getAuthServerUrl, {
+    const rsApp = createServer(
+      ctx,
+      this.checks,
+      ctx.getRsBaseUrl,
+      getAuthServerUrl,
+      {
         prmPath: config.prmLocation,
         includePrmInWwwAuth: config.inWwwAuth,
         onPrmRequest: ({ resource }) => {
-          prmResource = resource;
+          this.prmResource = resource;
         }
-      });
-
-      // Add trap for root PRM requests if configured
-      if (config.trapRootPrm) {
-        app.get(
-          '/.well-known/oauth-protected-resource',
-          (req: Request, res: Response) => {
-            checks.push({
-              id: 'prm-priority-order',
-              name: 'PRM Priority Order',
-              description:
-                'Client requested PRM metadata at root location on a server with path-based PRM',
-              status: 'FAILURE',
-              timestamp: new Date().toISOString(),
-              specReferences: [
-                SpecReferences.RFC_PRM_DISCOVERY,
-                SpecReferences.MCP_PRM_DISCOVERY
-              ],
-              details: {
-                url: req.url,
-                path: req.path
-              }
-            });
-
-            res.status(404).json({
-              error: 'not_found',
-              error_description: 'PRM metadata not available at root location'
-            });
-          }
-        );
       }
+    );
 
-      await server.start(app);
-
-      return { serverUrl: `${server.getUrl()}/mcp` };
-    },
-
-    async stop() {
-      await authServer.stop();
-      await server.stop();
-    },
-
-    getChecks(): ConformanceCheck[] {
-      const expectedSlugs = [
-        ...(isPathBasedPrm ? ['prm-pathbased-requested'] : []),
-        'authorization-server-metadata',
-        'client-registration',
-        'authorization-request',
-        'token-request'
-      ];
-
-      for (const slug of expectedSlugs) {
-        if (!checks.find((c) => c.id === slug)) {
-          checks.push({
-            id: slug,
-            name: `Expected Check Missing: ${slug}`,
-            description: `Expected Check Missing: ${slug}`,
+    // Add trap for root PRM requests if configured
+    if (config.trapRootPrm) {
+      rsApp.get(
+        '/.well-known/oauth-protected-resource',
+        (req: Request, res: Response) => {
+          this.checks.push({
+            id: 'prm-priority-order',
+            name: 'PRM Priority Order',
+            description:
+              'Client requested PRM metadata at root location on a server with path-based PRM',
             status: 'FAILURE',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            specReferences: [
+              SpecReferences.RFC_PRM_DISCOVERY,
+              SpecReferences.MCP_PRM_DISCOVERY
+            ],
+            details: {
+              url: req.url,
+              path: req.path
+            }
+          });
+
+          res.status(404).json({
+            error: 'not_found',
+            error_description: 'PRM metadata not available at root location'
           });
         }
-      }
-
-      // RFC 8707 Resource Parameter Validation Checks
-      addResourceParameterChecks(
-        checks,
-        { authorizationResource, tokenResource, prmResource },
-        new Date().toISOString()
       );
-
-      return checks;
     }
-  };
+
+    return { rs: rsApp, aux: { as: authApp } };
+  }
+
+  rawChecks(): ConformanceCheck[] {
+    return this.checks;
+  }
+
+  getChecks(): ConformanceCheck[] {
+    const isPathBasedPrm =
+      this.config.prmLocation === '/.well-known/oauth-protected-resource/mcp';
+    const expectedSlugs = [
+      ...(isPathBasedPrm ? ['prm-pathbased-requested'] : []),
+      'authorization-server-metadata',
+      'client-registration',
+      'authorization-request',
+      'token-request'
+    ];
+
+    for (const slug of expectedSlugs) {
+      if (!this.checks.find((c) => c.id === slug)) {
+        this.checks.push({
+          id: slug,
+          name: `Expected Check Missing: ${slug}`,
+          description: `Expected Check Missing: ${slug}`,
+          status: 'FAILURE',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    // RFC 8707 Resource Parameter Validation Checks
+    addResourceParameterChecks(
+      this.checks,
+      {
+        authorizationResource: this.authorizationResource,
+        tokenResource: this.tokenResource,
+        prmResource: this.prmResource
+      },
+      new Date().toISOString()
+    );
+
+    return this.checks;
+  }
 }
 
-// Generate scenario instances from configurations
-export const AuthMetadataDefaultScenario = createMetadataScenario(
-  SCENARIO_CONFIGS[0]
-);
-export const AuthMetadataVar1Scenario = createMetadataScenario(
-  SCENARIO_CONFIGS[1]
-);
-export const AuthMetadataVar2Scenario = createMetadataScenario(
-  SCENARIO_CONFIGS[2]
-);
-export const AuthMetadataVar3Scenario = createMetadataScenario(
-  SCENARIO_CONFIGS[3]
-);
+export class AuthMetadataDefaultScenario extends MetadataDiscoveryScenario {
+  protected readonly config = SCENARIO_CONFIGS[0];
+}
+export class AuthMetadataVar1Scenario extends MetadataDiscoveryScenario {
+  protected readonly config = SCENARIO_CONFIGS[1];
+}
+export class AuthMetadataVar2Scenario extends MetadataDiscoveryScenario {
+  protected readonly config = SCENARIO_CONFIGS[2];
+}
+export class AuthMetadataVar3Scenario extends MetadataDiscoveryScenario {
+  protected readonly config = SCENARIO_CONFIGS[3];
+}
 
 // Export all scenarios as an array for convenience
-export const metadataScenarios = SCENARIO_CONFIGS.map(createMetadataScenario);
+export const metadataScenarios = [
+  new AuthMetadataDefaultScenario(),
+  new AuthMetadataVar1Scenario(),
+  new AuthMetadataVar2Scenario(),
+  new AuthMetadataVar3Scenario()
+];
 
 // Export function to list metadata scenario names (for suite support)
 export function listMetadataScenarios(): string[] {

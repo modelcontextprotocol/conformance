@@ -5,5 +5,9 @@ dist/
 .vscode/
 .idea/
 .claude/settings.local.json
+.claude/worktrees
 .sdk-under-test/
 .sync-schema-tmp/
+.valtown-stage/
+.serve-*.ts
+.env

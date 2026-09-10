@@ -1,6 +1,7 @@
 import type { RunContext } from './connection';
 import type { ScenarioContext } from './mock-server';
 import type { AuthorizationServerOptions } from './schemas';
+import type { Step } from './steps';
 
 export type CheckStatus =
   | 'SUCCESS'
@@ -128,6 +129,12 @@ export interface ScenarioUrls {
   context?: Record<string, unknown>;
 }
 
+/** A Node-style request handler — what `http.createServer` accepts. */
+export type RequestListener = (
+  req: import('http').IncomingMessage,
+  res: import('http').ServerResponse
+) => void;
+
 export interface Scenario {
   name: string;
   description: string;
@@ -137,9 +144,209 @@ export interface Scenario {
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
    */
   allowClientError?: boolean;
+  /**
+   * Sub-path of the MCP endpoint relative to the handler root. The CLI runner
+   * appends this to the listen URL; the hosted runner appends it to the
+   * mounted prefix. Default: '' (handler root is the MCP endpoint).
+   */
+  mcpPath?: string;
+  /**
+   * Return the request handler without binding a port. The hosted runner
+   * mounts this directly under a path prefix so scenarios can run on
+   * serverless hosts that don't allow loopback listeners.
+   *
+   * `getBaseUrl` returns the public URL this handler is reachable at (no
+   * trailing slash) — use it for scenarios that embed self-referential
+   * absolute URLs in responses. Called lazily so `start()` can resolve it
+   * after the OS assigns a port.
+   *
+   * `ctx` is the same per-run context `start()` receives (resolved spec
+   * version + version-aware mock factory); use `ctx.createHandler()` rather
+   * than `ctx.createServer()` so the scenario stays port-free.
+   *
+   * Implementations should reset per-run state here, not in `start()`.
+   * If omitted, the scenario only runs via `start()`/`stop()` (e.g. auth
+   * scenarios that need a second origin).
+   */
+  handler?(getBaseUrl: () => string, ctx: ScenarioContext): RequestListener;
   start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
+  /**
+   * Checks recorded so far WITHOUT end-of-flow finalization. Some scenarios'
+   * `getChecks()` appends aggregate failures for flow steps never observed
+   * ("expected check missing"); those judgments are only meaningful when one
+   * instance saw the whole flow. Stateless mounting (`/x/...`) judges each
+   * request on its own content, so it reads this view when present.
+   */
+  rawChecks?(): ConformanceCheck[];
+  /**
+   * Client-side choreography as data (see src/steps). When present the
+   * runner includes it in MCP_CONFORMANCE_CONTEXT as `steps`, so a client
+   * with no bespoke handler for this scenario can still drive it.
+   */
+  readonly steps?: readonly Step[];
+}
+
+/**
+ * Convenience: implement `handler()` + `mcpPath` and get `start()`/`stop()`
+ * for free. Covers every scenario that just needs one HTTP origin.
+ */
+export abstract class HandlerScenario implements Scenario {
+  abstract name: string;
+  abstract description: string;
+  abstract readonly source: ScenarioSource;
+  allowClientError?: boolean;
+  mcpPath = '';
+
+  private _server: import('http').Server | null = null;
+  private _baseUrl = '';
+
+  abstract handler(
+    getBaseUrl: () => string,
+    ctx: ScenarioContext
+  ): RequestListener;
+  abstract getChecks(): ConformanceCheck[];
+
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+    const http = await import('http');
+    const listener = this.handler(() => this._baseUrl, ctx);
+    return new Promise((resolve, reject) => {
+      this._server = http.createServer(listener);
+      this._server.on('error', reject);
+      this._server.listen(0, () => {
+        const addr = this._server!.address();
+        if (!addr || typeof addr !== 'object') {
+          return reject(new Error('Failed to get server address'));
+        }
+        this._baseUrl = `http://localhost:${addr.port}`;
+        resolve({ serverUrl: `${this._baseUrl}${this.mcpPath}` });
+      });
+    });
+  }
+
+  async stop(): Promise<void> {
+    if (!this._server) return;
+    await new Promise<void>((resolve) => {
+      // closeAllConnections so hung SSE streams don't keep the process alive
+      this._server!.closeAllConnections?.();
+      this._server!.close(() => resolve());
+    });
+    this._server = null;
+  }
+}
+
+/**
+ * Named extra origins a multi-origin scenario needs beyond the resource
+ * server. `as` is the OAuth authorization server; `as2`/`idp` cover the
+ * three-origin scenarios (authorization-server-migration, EMA).
+ */
+export type AuxOriginRole = 'as' | 'as2' | 'idp';
+
+/**
+ * What `authHandlers()` receives: the per-run `ScenarioContext` (spec
+ * version, mock factories) plus the public URLs of each origin.
+ */
+export interface AuthHandlerContext extends ScenarioContext {
+  /** Public URL of the resource-server mount (no trailing slash). */
+  getRsBaseUrl: () => string;
+  /**
+   * Public URL of an aux origin for this run (no trailing slash). When
+   * hosted, this is `<relay-origin>/r/<run-id>` so the run-id is recoverable
+   * from any path the client constructs from it (RFC 8414 well-known
+   * insertion, endpoint paths, etc.).
+   */
+  getAuxBaseUrl: (role: AuxOriginRole) => string;
+}
+
+export interface AuthHandlers {
+  /** Resource-server handler — serves /mcp and PRM. */
+  rs: RequestListener;
+  /** Aux-origin handlers keyed by role. */
+  aux: Partial<Record<AuxOriginRole, RequestListener>>;
+}
+
+/**
+ * Convenience: implement `authHandlers()` and get `start()`/`stop()` for
+ * free. `start()` binds one ephemeral localhost port per origin, exactly as
+ * the auth scenarios did with `ServerLifecycle` before; the hosted runner
+ * mounts the same handlers behind path prefixes + an AS relay instead.
+ */
+export abstract class AuthHandlerScenario implements Scenario {
+  abstract name: string;
+  abstract description: string;
+  abstract readonly source: ScenarioSource;
+  allowClientError?: boolean;
+  mcpPath = '/mcp';
+
+  /** Aux origins this scenario needs. Override for 3-origin scenarios. */
+  readonly auxRoles: readonly AuxOriginRole[] = ['as'];
+
+  private _servers: import('http').Server[] = [];
+  private _urls: { rs: string; aux: Partial<Record<AuxOriginRole, string>> } = {
+    rs: '',
+    aux: {}
+  };
+
+  abstract authHandlers(ctx: AuthHandlerContext): AuthHandlers;
+  abstract getChecks(): ConformanceCheck[];
+
+  /** Optional context to pass to the client (credentials etc). */
+  protected scenarioContext?(): Record<string, unknown>;
+
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+    const http = await import('http');
+    const handlers = this.authHandlers({
+      ...ctx,
+      getRsBaseUrl: () => this._urls.rs,
+      getAuxBaseUrl: (role) => {
+        const u = this._urls.aux[role];
+        if (!u) throw new Error(`aux role '${role}' not started`);
+        return u;
+      }
+    });
+
+    const listen = (h: RequestListener): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const srv = http.createServer(h);
+        srv.on('error', reject);
+        srv.listen(0, () => {
+          const addr = srv.address();
+          if (!addr || typeof addr !== 'object') {
+            return reject(new Error('Failed to get server address'));
+          }
+          this._servers.push(srv);
+          resolve(`http://localhost:${addr.port}`);
+        });
+      });
+
+    // Aux origins must come up first — RS handlers reference their URLs.
+    for (const role of this.auxRoles) {
+      const h = handlers.aux[role];
+      if (!h) throw new Error(`authHandlers() missing aux role '${role}'`);
+      this._urls.aux[role] = await listen(h);
+    }
+    this._urls.rs = await listen(handlers.rs);
+
+    return {
+      serverUrl: `${this._urls.rs}${this.mcpPath}`,
+      ...(this.scenarioContext && { context: this.scenarioContext() })
+    };
+  }
+
+  async stop(): Promise<void> {
+    await Promise.all(
+      this._servers.map(
+        (s) =>
+          new Promise<void>((resolve) => {
+            s.closeAllConnections?.();
+            s.close(() => resolve());
+          })
+      )
+    );
+    this._servers = [];
+    this._urls = { rs: '', aux: {} };
+  }
 }
 
 export interface ClientScenario {
