@@ -1,0 +1,79 @@
+name: deploy-hosted
+
+# Deploys the hosted client-conformance server (src/hosted via
+# examples/hosted/valtown.ts) and its OAuth AS relay to val.town, then smoke
+# tests the live deployment. hosted-conformance.yml runs the scenario matrix
+# after this workflow completes.
+#
+# Needs: GitHub environment `hosted-conformance` with secret VAL_TOWN_TOKEN;
+# optional repo variable HOSTED_RS_URL (defaults to the current val URL).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'examples/hosted/**'
+      - 'package*.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-deploy
+  cancel-in-progress: false
+
+env:
+  RS: ${{ vars.HOSTED_RS_URL || 'https://mcp_conformance--e6dd13e2ad1311f1a6121607ee4eb77e.web.val.run' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: hosted-conformance
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Push rs + relay vals
+        env:
+          VAL_TOWN_TOKEN: ${{ secrets.VAL_TOWN_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VAL_TOWN_TOKEN:-}" ]; then
+            echo "::error::VAL_TOWN_TOKEN is not set on the hosted-conformance environment"
+            exit 1
+          fi
+          npx tsx examples/hosted/deploy-valtown.ts --push rs relay
+
+      - name: Smoke - scenario list
+        run: |
+          set -euo pipefail
+          count="$(curl -fsS --max-time 30 --retry 6 --retry-delay 10 --retry-all-errors "$RS/scenarios" | jq 'length')"
+          echo "$count hostable scenarios listed"
+          test "$count" -gt 0
+          {
+            echo "### deploy-hosted"
+            echo
+            echo "- RS: $RS"
+            echo "- $count hostable scenarios listed by \`/scenarios\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke - initialize via conformance remote
+        run: |
+          set -euo pipefail
+          npx tsx src/index.ts remote \
+            --url "$RS" \
+            --scenario initialize \
+            --command "npx tsx examples/clients/typescript/everything-client.ts" \
+            --timeout 90000 \
+            -o smoke-initialize.json
+          html="$(jq -r .resultsHtmlUrl smoke-initialize.json)"
+          echo "- smoke \`initialize\`: [report]($html)" >> "$GITHUB_STEP_SUMMARY"

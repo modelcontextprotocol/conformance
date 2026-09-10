@@ -1,0 +1,186 @@
+name: hosted-conformance
+
+# Runs a matrix of client scenarios against the LIVE hosted conformance
+# deployment (see src/hosted/README.md) with the vendored TypeScript
+# everything-client, via `conformance remote`. Four times a day, after every
+# deploy-hosted run, on demand, and on PRs that touch the hosted code.
+#
+# A service outage is reported as "skipped" (gate job), never as red.
+# Reads the RS origin from repo variable HOSTED_RS_URL when set.
+
+on:
+  schedule:
+    - cron: '23 1,7,13,19 * * *' # 4x/day, UTC
+  workflow_dispatch:
+  workflow_run:
+    workflows: [deploy-hosted]
+    types: [completed]
+  pull_request:
+    paths:
+      - '.github/workflows/hosted-conformance.yml'
+      - 'src/hosted/**'
+      - 'examples/hosted/**'
+      - 'examples/clients/typescript/**'
+      - 'src/steps/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-conformance-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RS: ${{ vars.HOSTED_RS_URL || 'https://mcp_conformance--e6dd13e2ad1311f1a6121607ee4eb77e.web.val.run' }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    # After a deploy, only test a deployment that actually went out.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 5
+    outputs:
+      reachable: ${{ steps.probe.outputs.reachable }}
+    steps:
+      - name: Probe the hosted service
+        id: probe
+        run: |
+          set -uo pipefail
+          if curl -fsS --max-time 20 --retry 3 --retry-delay 10 --retry-all-errors \
+               "$RS/scenarios" -o scenarios.json \
+             && jq -e 'type == "array" and length > 0' scenarios.json >/dev/null; then
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+            echo "Hosted service reachable: $(jq length scenarios.json) scenarios at $RS"
+          else
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::hosted conformance service unreachable at $RS/scenarios - skipping the matrix"
+            {
+              echo "### Hosted conformance: service unreachable - skipped"
+              echo
+              echo "\`GET $RS/scenarios\` did not answer. No scenarios were run; this is not a conformance failure."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  client:
+    needs: gate
+    if: needs.gate.outputs.reachable == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - initialize
+          - tools_call
+          - json-schema-ref-no-deref
+          - auth/metadata-default
+          - auth/metadata-var1
+          - auth/metadata-var3
+          - auth/basic-cimd
+          - auth/pre-registration
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Run ${{ matrix.scenario }} (retries once with a fresh run id)
+        id: run
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -uo pipefail
+          slug="${SCENARIO//\//-}"
+          mkdir -p results
+          out="results/$slug.json"
+          code=1
+          for attempt in 1 2; do
+            echo "::group::$SCENARIO attempt $attempt"
+            npx tsx src/index.ts remote \
+              --url "$RS" \
+              --scenario "$SCENARIO" \
+              --command "npx tsx examples/clients/typescript/everything-client.ts" \
+              --timeout 90000 \
+              -o "$out"
+            code=$?
+            echo "::endgroup::"
+            if [ "$code" -eq 0 ]; then break; fi
+            echo "$SCENARIO attempt $attempt failed (exit $code)"
+          done
+          # A crash before results were written (mint failed, etc.) still gets
+          # a row in the summary.
+          if [ ! -f "$out" ]; then
+            jq -n --arg s "$SCENARIO" \
+              '{scenario: $s, runId: null, resultsHtmlUrl: null, summary: null, error: "no result produced"}' > "$out"
+          fi
+          jq --argjson attempts "$attempt" --argjson exit "$code" \
+            '. + {attempts: $attempts, exitCode: $exit}' "$out" > "$out.tmp" && mv "$out.tmp" "$out"
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Leg summary
+        if: always()
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          SLUG: ${{ steps.run.outputs.slug }}
+        run: |
+          set -uo pipefail
+          f="results/${SLUG:-${SCENARIO//\//-}}.json"
+          if [ -f "$f" ]; then
+            jq -r --arg s "$SCENARIO" '
+              "### \($s)\n\n" +
+              (if .summary then
+                 "\(.summary.passed) passed, \(.summary.failed) failed, \(.summary.warnings) warnings (attempts: \(.attempts))" +
+                 (if .resultsHtmlUrl then " - [report](\(.resultsHtmlUrl))" else "" end)
+               else "no result: \(.error // "unknown error")" end)
+            ' "$f" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-result-${{ steps.run.outputs.slug || strategy.job-index }}
+          path: results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  summary:
+    needs: [gate, client]
+    if: always() && needs.gate.outputs.reachable == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hosted-result-*
+          path: results
+          merge-multiple: true
+
+      - name: Scenario table
+        run: |
+          set -euo pipefail
+          {
+            echo "## Hosted conformance - $RS"
+            echo
+            echo "| Scenario | Result | Passed | Failed | Warnings | Attempts | Report |"
+            echo "|---|---|---:|---:|---:|---:|---|"
+            for f in $(ls results/*.json 2>/dev/null | sort); do
+              jq -r '
+                (if .summary == null then "error"
+                 elif .exitCode == 0 then "pass"
+                 else "FAIL" end) as $r |
+                "| \(.scenario) | \($r) | \(.summary.passed // "-") | \(.summary.failed // "-") | \(.summary.warnings // "-") | \(.attempts // "-") | " +
+                (if .resultsHtmlUrl then "[\(.runId)](\(.resultsHtmlUrl))" else "-" end) + " |"
+              ' "$f"
+            done
+            echo
+            case "${{ needs.client.result }}" in
+              success) echo "All scenarios passed." ;;
+              *) echo "Matrix result: ${{ needs.client.result }}." ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Mirror the verdict in the job status so a red matrix is visible
+          # from the summary job too.
+          test "${{ needs.client.result }}" = "success"
