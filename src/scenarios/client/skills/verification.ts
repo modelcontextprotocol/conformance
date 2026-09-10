@@ -1,5 +1,5 @@
 /**
- * SEP-2640 client scenarios for the four read-time verification MUSTs.
+ * SEP-2640 client scenarios for the read-time verification MUSTs.
  *
  * Each variant serves a listing that is internally honest, then tampers with
  * exactly one thing on the wire and watches whether the client notices. The
@@ -10,14 +10,23 @@
  * `auth/resource-mismatch` detects rejection by the absence of an
  * authorization request.
  *
- * `unlisted` is the odd one out: nothing is tampered, the client is simply
- * asked for a URI the manifest does not contain. A conformant client refuses
- * locally and never puts the request on the wire at all.
+ * Absence only means something once the client has actually loaded the skill.
+ * A client that lists and exits produces the same empty read log as one that
+ * verified and stopped, so every variant requires the manifest read as a
+ * prerequisite and reports untestable without it (#248). Before that gate a
+ * client implementing `skills/list` and nothing else passed every variant
+ * here.
+ *
+ * A fourth variant, `unlisted`, was retired 2026-09-10. Nothing was tampered
+ * in it, so the only thing under test was whether the driver asked for a URI
+ * it should not have, which grades the driver rather than the client. The
+ * requirement is recorded as excluded in src/seps/sep-2640.yaml.
  */
 
 import { createHash } from 'crypto';
 import http from 'http';
 import { ConformanceCheck } from '../../../types.js';
+import { untestableCheck } from '../../untestable.js';
 import { BaseHttpScenario } from '../http-base.js';
 
 const SKILLS_EXTENSION_ID = 'io.modelcontextprotocol/skills';
@@ -29,7 +38,6 @@ const SPEC_REFERENCE = {
 
 const SKILL_URI = 'skill://pdf-processing/SKILL.md';
 const SUPPORTING_URI = 'skill://pdf-processing/references/FORMS.md';
-const UNLISTED_URI = 'skill://pdf-processing/scripts/extract.py';
 
 const SKILL_MD = `---
 name: pdf-processing
@@ -44,7 +52,7 @@ const SUPPORTING = 'Supporting content.\n';
 const sha256 = (s: string) =>
   'sha256:' + createHash('sha256').update(s, 'utf8').digest('hex');
 
-export type VerificationMode = 'digest' | 'size' | 'frontmatter' | 'unlisted';
+export type VerificationMode = 'digest' | 'size' | 'frontmatter';
 
 const MODES: Record<
   VerificationMode,
@@ -67,12 +75,6 @@ const MODES: Record<
     checkId: 'sep-2640-host-frontmatter-comparison',
     description:
       "After fetching a SKILL.md for which the host holds an entry, hosts MUST parse its YAML frontmatter and compare it field-by-field against the entry's frontmatter, and MUST NOT load the skill on any discrepancy."
-  },
-  unlisted: {
-    scenario: 'sep-2640-client-verify-unlisted',
-    checkId: 'sep-2640-host-unlisted-read-failure',
-    description:
-      "While acting on a skill, a host MUST resolve reads of the skill's files only to URIs listed in that entry's resources, and MUST treat a read of an unlisted file as a verification failure."
   }
 };
 
@@ -184,12 +186,7 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
       case 'resources/read': {
         const uri = request.params?.uri;
         if (typeof uri === 'string') this.reads.push(uri);
-        const text =
-          uri === SUPPORTING_URI
-            ? SUPPORTING
-            : uri === UNLISTED_URI
-              ? 'print("unlisted")\n'
-              : this.skillBody();
+        const text = uri === SUPPORTING_URI ? SUPPORTING : this.skillBody();
         this.sendJson(res, {
           jsonrpc: '2.0',
           id: request.id,
@@ -220,6 +217,8 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
       specReferences: [SPEC_REFERENCE]
     };
 
+    // An undeclared extension is genuinely not applicable, so this one stays
+    // a SKIP: the client was never offered a skill to hold an entry for.
     if (!this.listCalled) {
       return [
         {
@@ -231,35 +230,40 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
       ];
     }
 
-    // `unlisted` is proven by no read landing outside the entry's resources.
-    // Watching the one fixture URI we happen to serve would pass any client
-    // that probed a different unlisted path, so the permitted set is derived
-    // from the entry the client was actually given. The requirement is "reads
-    // resolve only to URIs listed in that entry's resources", and this is that
-    // sentence rather than a proxy for it.
+    // The prerequisite, and the reason this scenario is worth anything.
     //
-    // The other three modes are proven by the client stopping before the
-    // supporting file, which it would only reach by accepting the tampered
-    // SKILL.md.
-    const listed = new Set(this.entry().resources.map((r) => r.uri));
-    const strayReads = this.reads.filter((uri) => !listed.has(uri));
+    // Rejection is detected by the absence of the supporting-file read, and a
+    // client that never loaded the skill produces exactly the same empty read
+    // log as one that loaded it and correctly stopped. Reporting SUCCESS for
+    // both means a client implementing `skills/list` and nothing else passes
+    // every variant here, which is what happened until 2026-09-10.
+    //
+    // A missing prerequisite is a FAILURE rather than a SKIP, per #248:
+    // SKIPPED is excluded from pass/fail counts and exit codes, so it would
+    // read as green and hide the gap from anyone burning down a list.
+    if (!this.reads.includes(SKILL_URI)) {
+      return [
+        untestableCheck(
+          checkId,
+          base.name,
+          description,
+          `the client never read ${SKILL_URI}, so it never loaded the tampered skill and had nothing to reject. Absence of the supporting-file read proves nothing here.`,
+          [SPEC_REFERENCE]
+        )
+      ];
+    }
 
-    const violated =
-      this.mode === 'unlisted'
-        ? strayReads.length > 0
-        : this.reads.includes(SUPPORTING_URI);
-
-    const evidence =
-      this.mode === 'unlisted'
-        ? `client read ${strayReads.join(', ')}, which the entry's resources do not list`
-        : `client continued to ${SUPPORTING_URI} after being served a SKILL.md that fails ${this.mode} verification, so it did not reject the content`;
+    // Proven by the client stopping before the supporting file, which it
+    // would only reach by having accepted the tampered SKILL.md.
+    const violated = this.reads.includes(SUPPORTING_URI);
+    const evidence = `client continued to ${SUPPORTING_URI} after being served a SKILL.md that fails ${this.mode} verification, so it did not reject the content`;
 
     return [
       {
         ...base,
         status: violated ? 'FAILURE' : 'SUCCESS',
         errorMessage: violated ? evidence : undefined,
-        details: { mode: this.mode, reads: this.reads, strayReads }
+        details: { mode: this.mode, reads: this.reads }
       }
     ];
   }

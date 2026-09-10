@@ -46,8 +46,7 @@ const SCENARIOS: Array<
   ['no-prefetch', () => new SkillsNoPrefetchScenario()],
   ['verify-digest', () => new SkillsVerificationScenario('digest')],
   ['verify-size', () => new SkillsVerificationScenario('size')],
-  ['verify-frontmatter', () => new SkillsVerificationScenario('frontmatter')],
-  ['verify-unlisted', () => new SkillsVerificationScenario('unlisted')]
+  ['verify-frontmatter', () => new SkillsVerificationScenario('frontmatter')]
 ];
 
 describe('SEP-2640 client scenarios advertise skills on both lifecycles', () => {

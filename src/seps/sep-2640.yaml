@@ -190,8 +190,6 @@ requirements:
     text: "When a host retrieves a file listed in a skill's `resources`, it MUST verify the content against that entry's digest. Whatever the cause, hosts MUST NOT use the unverified content."
   - check: sep-2640-host-size-mismatch-failure
     text: "A read whose byte length differs from the entry's `size` is a verification failure equivalent to a digest mismatch, whether or not the host goes on to compute the digest."
-  - check: sep-2640-host-unlisted-read-failure
-    text: "While acting on a skill, a host MUST resolve reads of the skill's files only to URIs listed in that entry's `resources`, and MUST treat a read of an unlisted file within the skill as a verification failure equivalent to a digest mismatch."
   - check: sep-2640-host-no-prefetch
     text: "Hosts MUST NOT retrieve a skill's files ahead of need — not on connection, not on listing, and not at approval. A `SKILL.md` is fetched when the skill is loaded, and a supporting file when it is read."
   - check: sep-2640-host-frontmatter-comparison
@@ -294,6 +292,8 @@ requirements:
     url: https://modelcontextprotocol.io/seps/2640-skills-extension#security-implications
   - text: "A host is _acting on_ a skill from the moment it loads the skill's `SKILL.md` into the model's context until, at the earliest, that `SKILL.md` leaves context; hosts MAY hold the window open longer, never shorter."
     excluded: "The window is defined by what is in the model's context, which is host-internal state the harness cannot observe. It scopes several wire-observable rules but is not itself checkable."
+  - text: "While acting on a skill, a host MUST resolve reads of the skill's files only to URIs listed in that entry's `resources`, and MUST treat a read of an unlisted file within the skill as a verification failure equivalent to a digest mismatch."
+    excluded: 'Scoped by the acting-on window above, which the harness cannot observe. As built it was also the one rule where the harness had nothing adversarial to do: the listing it served was entirely honest, so the only thing under test was whether the driver asked for a URI it should not have, which grades the driver rather than the client. Retired 2026-09-10 after review. Excluded by construction, not in principle: a listing whose `SKILL.md` body links to a file absent from `resources` would make the harness adversarial again, since a host that follows the link fetches an unlisted file on its own initiative. If it returns, it returns under the same scenario name `sep-2640-client-verify-unlisted` and the same check id `sep-2640-host-unlisted-read-failure`, so reports and baselines line up across the gap.'
   - text: 'Hosts SHOULD instead cache what they do retrieve, and digests make that cache cheap to validate: a cached file whose digest matches the current entry can be served without fetching it again.'
     excluded: 'Cache hits are the absence of a request. A harness cannot distinguish a compliant cache from a host that simply did not need the file again.'
   - text: 'A host that declines a skill on this basis SHOULD tell the user why rather than fail silently on a later read.'

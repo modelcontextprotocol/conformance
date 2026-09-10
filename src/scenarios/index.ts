@@ -345,8 +345,7 @@ const scenariosList: Scenario[] = [
   new SkillsNoPrefetchScenario(),
   new SkillsVerificationScenario('digest'),
   new SkillsVerificationScenario('size'),
-  new SkillsVerificationScenario('frontmatter'),
-  new SkillsVerificationScenario('unlisted')
+  new SkillsVerificationScenario('frontmatter')
 ];
 
 // Core scenarios (tier 1 requirements)
