@@ -75,6 +75,17 @@ const CONSENT_TOKEN = 'this-client-led-with-initialize';
 /** What clients see in serverInfo — one val, one spec version. */
 const SERVER_INFO = { name: 'mcp-checker-2026-07-28', version: '1.0.0' };
 
+/** Escape a string for interpolation into HTML text or a quoted attribute. */
+function escapeHtml(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]!
+  );
+}
+
 // ---------------------------------------------------------------------------
 // MRTR (SEP-2322) — multi-round-trip tool, draft mode only.
 //
@@ -619,7 +630,7 @@ client's classic flow and report what it is missing (see the
 <code>draft_readiness</code> tool and the initialize result's instructions).
 But know that leading with <code>initialize</code> will not work against
 stateless draft servers.</p>
-<p><a class="btn" href="${continueUrl.replace(/&/g, '&amp;')}">I understand — continue with the test</a></p>
+<p><a class="btn" href="${escapeHtml(continueUrl)}">I understand — continue with the test</a></p>
 </body></html>`);
     });
 
@@ -877,8 +888,8 @@ poll: <strong>every request is judged on its own content</strong>. If your
 client gets something wrong, the request itself fails with an explanation of
 what and why. If you can list the tools and call each one successfully, your
 client is conformant for everything this server can observe.</p>
-<pre>POST ${base}            strict — stateless draft only
-POST ${base}/lenient    advisory — classic clients complete, gaps reported</pre>
+<pre>POST ${escapeHtml(base)}            strict — stateless draft only
+POST ${escapeHtml(base)}/lenient    advisory — classic clients complete, gaps reported</pre>
 
 <h2>What is checked</h2>
 <ul>
@@ -901,10 +912,10 @@ endpoint gates it behind an OAuth consent screen: your client's auth flow lands 
 page explaining the situation, with a continue button. Continuing mints the bearer token
 <code>${CONSENT_TOKEN}</code> — the token is the message — and the classic flow is then served
 with advisory feedback. No other request requires auth. Prefer zero friction? Use
-<code>${base}/lenient</code>.</p>
+<code>${escapeHtml(base)}/lenient</code>.</p>
 
 <h2>Try it</h2>
-<pre>curl -X POST ${base} \\
+<pre>curl -X POST ${escapeHtml(base)} \\
   -H 'content-type: application/json' \\
   -H 'accept: application/json, text/event-stream' \\
   -H 'mcp-protocol-version: 2026-07-28' \\

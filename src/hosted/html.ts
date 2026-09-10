@@ -24,12 +24,17 @@ const css = `
   a{color:#2563eb}
 `;
 
-function esc(s: string): string {
+/** Escape a string for interpolation into HTML text or a quoted attribute. */
+export function escapeHtml(s: string): string {
   return s.replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]!
   );
 }
+const esc = escapeHtml;
 
 export function renderLanding(
   origin: string,
@@ -111,7 +116,7 @@ export function renderResults(
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
   return `<!doctype html><meta charset=utf-8>
-<title>${esc(scenario)} — ${sessionId}</title><style>${css}</style>
+<title>${esc(scenario)} — ${esc(sessionId)}</title><style>${css}</style>
 <h1><code>${esc(scenario)}</code></h1>
 <p>session <code>${esc(sessionId)}</code> — ${passed} passed, ${failed} failed,
 ${checks.length} total</p>${items}`;

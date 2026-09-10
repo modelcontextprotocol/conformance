@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHostedApp } from './server';
+import { renderResults } from './html';
 import { SessionManager, listHostableScenarios } from './session';
 import type { Server } from 'http';
 
@@ -214,6 +215,32 @@ describe('hosted server', () => {
     expect(
       (await postMcp('/s/auth/basic-cimd/x', { jsonrpc: '2.0' })).status
     ).toBe(501);
+  });
+
+  it('HTML-escapes the run id in the results report', () => {
+    const html = renderResults('initialize', '"><script>x</script>', []);
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&quot;&gt;&lt;script&gt;x&lt;/script&gt;');
+  });
+
+  it('HTML-escapes request-derived values on the gauntlet consent page', async () => {
+    // The consent page embeds the mounted origin (from Host /
+    // X-Forwarded-Host) and the re-encoded query in a link; both must be
+    // escaped for HTML.
+    const res = await fetch(
+      `${base}/x/checker-2026-07-28/oauth/authorize?redirect_uri=http://c/cb&state=s1`,
+      {
+        headers: {
+          accept: 'text/html',
+          'x-forwarded-host': 'evil"><script>alert(1)</script>'
+        }
+      }
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('href="http://evil&quot;&gt;&lt;script&gt;');
+    expect(html).toContain('redirect_uri=http%3A%2F%2Fc%2Fcb&amp;state=s1');
   });
 
   it('exposes meta MCP tools', async () => {

@@ -84,6 +84,22 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(res.status).toBe(403);
   });
 
+  it('locates the /r/<run-id> segment pair in an /__aux path by segments', async () => {
+    const hdr = { headers: { 'x-relay-secret': RELAY_SECRET } };
+    // No valid /r/<id> pair anywhere (id has an illegal character).
+    let res = await fetch(`${rs}/__aux/as/tenant/r/bad!id/token`, hdr);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(/missing \/r\/<run-id>/);
+    // A well-formed pair for a run that does not exist resolves the id.
+    res = await fetch(`${rs}/__aux/as/tenant/r/no-such-run/token`, hdr);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(/for run/);
+    // Adversarial input that would make the old regex backtrack.
+    const evil = '/r/-'.repeat(2000) + '/r/x/token';
+    res = await fetch(`${rs}/__aux/as${evil}`, hdr);
+    expect(res.status).toBe(404);
+  });
+
   it('walks auth/metadata-default end-to-end through the relay', async () => {
     const runId = 'authflow';
     const mcpUrl = `${rs}/s/auth/metadata-default/${runId}/mcp`;

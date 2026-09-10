@@ -662,15 +662,27 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         return;
       }
 
-      // Find /r/<run-id> anywhere in the path and excise it.
-      const m = path.match(/^(.*?)\/r\/([A-Za-z0-9_-]{1,64})(\/.*)?$/);
-      if (!m) {
+      // Find the first /r/<run-id> segment pair anywhere in the path and
+      // excise it. Plain segment splitting: a regex over the whole path would
+      // backtrack polynomially on adversarial input.
+      const segments = path.split('/'); // path starts with '/', so [0] === ''
+      let rIdx = -1;
+      for (let i = 1; i < segments.length - 1; i++) {
+        if (segments[i] === 'r' && RUN_ID_RE.test(segments[i + 1])) {
+          rIdx = i;
+          break;
+        }
+      }
+      if (rIdx < 0) {
         res
           .status(404)
           .json({ error: 'aux request path missing /r/<run-id> segment' });
         return;
       }
-      const [, prefix, runId, suffix = ''] = m;
+      const prefix = segments.slice(0, rIdx).join('/');
+      const runId = segments[rIdx + 1];
+      const rest = segments.slice(rIdx + 2);
+      const suffix = rest.length ? '/' + rest.join('/') : '';
       const search = req.url.includes('?')
         ? req.url.slice(req.url.indexOf('?'))
         : '';
