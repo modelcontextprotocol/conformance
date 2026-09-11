@@ -18,8 +18,16 @@
  */
 
 import { createHostedApp } from '../../src/hosted/server';
+import { registerRequirementSources } from '../../src/requirements';
 import { toFetchHandler } from './fetch-bridge';
 import { SqliteRunStore } from './valtown-store';
+import { REQUIREMENT_SOURCES } from './requirements-bundle';
+
+// The deploy stages the TypeScript import closure only, so requirements/*.yaml
+// is not on the val. The matrix's columns come from the bundled copies
+// (regenerate with `npm run hosted:bundle-requirements`); this must run
+// before createHostedApp(), which builds the matrix at construction.
+registerRequirementSources(REQUIREMENT_SOURCES);
 
 /**
  * val.town spreads one run's requests over several isolates that share no
