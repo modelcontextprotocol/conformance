@@ -99,12 +99,15 @@ export interface HostedRun extends CellRef {
    */
   touched: boolean;
   /**
-   * Checks the hosted layer records about the cell (client identity), kept
-   * apart from the scenario's own log so they never enter its judgement.
+   * Checks the hosted layer records about the cell (client identity, wire
+   * rejections, revision discipline), kept apart from the scenario's own log
+   * so they never enter its judgement.
    */
   hostedChecks: ConformanceCheck[];
   /** Identity keys already recorded, so one client is one INFO check. */
   identities: Set<string>;
+  /** Keys of hosted checks already recorded, so each finding is one check. */
+  hostedKeys: Set<string>;
 }
 
 export interface SessionManagerOptions {
@@ -129,11 +132,17 @@ export interface SessionManagerOptions {
 export interface RunResults extends CellRef {
   checks: ConformanceCheck[];
   /**
-   * How many checks the scenario itself recorded (before judgement, which
-   * may add "expected but never seen" failures, and without the hosted
-   * layer's own INFO checks). Zero means nothing was exercised.
+   * How many checks were recorded from traffic: the scenario's own raw log
+   * (before judgement, which may add "expected but never seen" failures)
+   * plus the hosted layer's FAILUREs (a request the wire turned away is
+   * traffic too), but not its INFO checks. Zero means nothing was exercised.
    */
   recorded: number;
+}
+
+/** Hosted checks that count as exercise: what went wrong on the wire. */
+function hostedFailures(checks: ConformanceCheck[]): number {
+  return checks.filter((c) => c.status === 'FAILURE').length;
 }
 
 /**
@@ -271,10 +280,25 @@ export class SessionManager {
       saved: false,
       touched: false,
       hostedChecks: [],
-      identities: new Set()
+      identities: new Set(),
+      hostedKeys: new Set()
     };
     this.runs.set(id, run);
     return run;
+  }
+
+  /**
+   * Record a hosted-layer check about the cell once per `key` (what makes
+   * the finding distinct — e.g. the rejection's code and message).
+   */
+  recordHostedCheck(
+    run: HostedRun,
+    key: string,
+    check: ConformanceCheck
+  ): void {
+    if (run.hostedKeys.has(key)) return;
+    run.hostedKeys.add(key);
+    run.hostedChecks.push(check);
   }
 
   /** Record who is talking to the cell — once per distinct identity. */
@@ -364,7 +388,8 @@ export class SessionManager {
    * With a store it is every process's raw log merged (this process's live
    * log wins over its own persisted row) and re-judged once. The hosted
    * layer's own checks are appended after judgement, deduplicated across
-   * processes, so they never influence the scenario's verdicts.
+   * processes, so they never influence the scenario's verdicts — though a
+   * hosted FAILURE (wire rejection, wrong revision) does decide the cell's.
    */
   async results(id: string): Promise<RunResults | undefined> {
     const ref = parseCellId(id);
@@ -372,7 +397,8 @@ export class SessionManager {
     const run = this.runs.get(id);
     if (!this.store) {
       if (!run) return undefined;
-      const recorded = rawChecksOf(run.scenario).length;
+      const recorded =
+        rawChecksOf(run.scenario).length + hostedFailures(run.hostedChecks);
       return {
         ...ref,
         checks: [...run.scenario.getChecks(), ...run.hostedChecks],
@@ -414,7 +440,7 @@ export class SessionManager {
         ...finalizeChecks(ref.scenarioName, scenarioLog.sort(byTime)),
         ...hosted
       ],
-      recorded: scenarioLog.length
+      recorded: scenarioLog.length + hostedFailures(hosted)
     };
   }
 

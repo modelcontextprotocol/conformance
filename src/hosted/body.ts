@@ -96,3 +96,27 @@ export function onBody(req: IncomingMessage, cb: (body: Buffer) => void): void {
   if (tap.done) deliver(tap.body);
   else tap.waiters.push(deliver);
 }
+
+/**
+ * Like onBody(), but always settles: `cb` gets the body when it was captured
+ * and `undefined` as soon as it is known there will be none — the request is
+ * not a JSON POST, was never tapped, or ran over the cap. Callers that must
+ * judge every request (accepted or not) wait on this rather than on onBody().
+ */
+export function onBodySettled(
+  req: IncomingMessage,
+  cb: (body: Buffer | undefined) => void
+): void {
+  const r = req as Tapped;
+  if (r[BUFFERED_BODY] !== undefined) {
+    cb(isJsonPost(req) ? r[BUFFERED_BODY] : undefined);
+    return;
+  }
+  const tap = r[TAP];
+  if (!tap) {
+    cb(undefined);
+    return;
+  }
+  if (tap.done) cb(tap.body);
+  else tap.waiters.push(cb);
+}

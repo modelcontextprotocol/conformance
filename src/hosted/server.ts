@@ -48,8 +48,18 @@ import {
   renderReport,
   renderResults
 } from './html';
-import { onBody, tapJsonBody } from './body';
+import { onBodySettled, tapJsonBody } from './body';
 import { identityFrom } from './identity';
+import {
+  describeRequest,
+  tapResponse,
+  wireRejectedCheck,
+  wireRejection,
+  wrongRevision,
+  wrongRevisionCheck,
+  type CapturedResponse,
+  type RequestInfo
+} from './wire';
 import { buildReport } from './report';
 import type { RunStore } from './store';
 import { scenarios } from '../scenarios';
@@ -266,18 +276,30 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     }
   }
 
+  /** Whether `rewrittenUrl` (path, maybe a query) is the cell's MCP endpoint. */
+  function isMcpEndpoint(run: HostedRun, rewrittenUrl: string): boolean {
+    const q = rewrittenUrl.indexOf('?');
+    const path = q === -1 ? rewrittenUrl : rewrittenUrl.slice(0, q);
+    return path === (run.mcpPath || '/');
+  }
+
   /**
    * Dispatch (req, res) to `listener` after rewriting `req.url` so the
    * scenario sees the path it would have under start()/stop() — i.e. with
    * the cell prefix stripped and (for well-known dispatch) the well-known
    * prefix re-prepended.
+   *
+   * `mcp` says the request is to the cell's MCP endpoint (not a PRM,
+   * canary or aux path): only those are judged for wire rejections and
+   * revision discipline (see ./wire.ts).
    */
   function dispatch(
     run: HostedRun,
     listener: (req: Request, res: Response) => void,
     req: Request,
     res: Response,
-    rewrittenUrl: string
+    rewrittenUrl: string,
+    mcp = false
   ) {
     res.setHeader(
       'link',
@@ -285,22 +307,61 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     );
     req.url = rewrittenUrl;
     run.touched = true;
-    onBody(req, (body) => {
+
+    const headerVersion = req.header('mcp-protocol-version');
+    let request: RequestInfo | undefined;
+    let body: Buffer | undefined;
+    let response: CapturedResponse | undefined;
+    let judged = false;
+
+    // Write this process's view through once the scenario has answered
+    // (hosted scenarios record their checks before calling end()).
+    // Serverless entry points should await sessions.flush() before
+    // returning the response so this write isn't abandoned.
+    const persist = () => {
+      if (sessions.store) void sessions.persist(run);
+    };
+
+    /** Once the request is parsed and the response is out, judge both. */
+    const judge = (): boolean => {
+      if (judged || !request || !response) return false;
+      judged = true;
+      if (mcp) {
+        for (const method of request.methods) {
+          const reason = wrongRevision(run.revision, method, headerVersion);
+          if (!reason) continue;
+          sessions.recordHostedCheck(
+            run,
+            `revision:${method}:${headerVersion ?? ''}`,
+            wrongRevisionCheck(run.revision, method, headerVersion, reason)
+          );
+        }
+        const rejection = wireRejection(response);
+        if (rejection) {
+          sessions.recordHostedCheck(
+            run,
+            `rejected:${rejection.code}:${rejection.message}`,
+            wireRejectedCheck(rejection, request, headerVersion)
+          );
+        }
+      }
       const identity = identityFrom(req.headers, body);
       if (identity) sessions.recordIdentity(run, identity);
+      return true;
+    };
+
+    onBodySettled(req, (captured) => {
+      body = captured;
+      request = describeRequest(captured);
+      // The response is already out: what judge() recorded needs its own
+      // write-through.
+      if (judge() && response) persist();
     });
-    if (sessions.store) {
-      // Write this process's view through once the scenario has answered
-      // (hosted scenarios record their checks before calling end()).
-      // Serverless entry points should await sessions.flush() before
-      // returning the response so this write isn't abandoned.
-      const end = res.end;
-      res.end = function (this: Response, ...args: unknown[]) {
-        const out = (end as (...a: unknown[]) => Response).apply(this, args);
-        void sessions.persist(run);
-        return out;
-      } as Response['end'];
-    }
+    tapResponse(res, (captured) => {
+      response = captured;
+      judge();
+      persist();
+    });
     listener(req, res);
   }
 
@@ -493,7 +554,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     if (!run) return;
     // Rewrite to the path the scenario expects (it thinks it's at root).
     // The query string is preserved because we keep the express req object.
-    dispatch(run, run.listener, req, res, suffix || run.mcpPath || '/');
+    const rewritten = suffix || run.mcpPath || '/';
+    dispatch(
+      run,
+      run.listener,
+      req,
+      res,
+      rewritten,
+      isMcpEndpoint(run, rewritten)
+    );
   });
 
   // ---------- root well-known dispatch (RS side) ----------

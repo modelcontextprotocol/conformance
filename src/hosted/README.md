@@ -100,6 +100,24 @@ client and the protocol version it negotiated, read off the wire per request
 the stateless wire, the `initialize` params on the stateful one) and
 recorded as an INFO check `hosted-client-identity` on the cell.
 
+The hosted layer also records two FAILUREs of its own about requests to a
+cell's MCP endpoint, so a cell cannot read green when the wire turned every
+request away (`src/hosted/wire.ts`):
+
+- `hosted-wire-rejected` — a 4xx whose body is a lifecycle rejection
+  (JSON-RPC `-32020`/`-32022`, `-32602` naming `_meta`, or `-32000`
+  "Unsupported protocol version"); once per distinct (code, message).
+- `hosted-wrong-revision` — the client spoke a revision other than the
+  cell's: on the `2026-07-28` column any request whose `MCP-Protocol-Version`
+  is not the column's, or any `initialize`; on a dated column any
+  post-`initialize` request whose header names another revision
+  (`initialize` itself negotiates and is exempt); once per distinct
+  (method, header version).
+
+Both decide the verdict like any FAILURE. The `auth/*` resource server
+records the same rejection in the scenario's own log as
+`stateless-request-rejected`.
+
 ## How it works
 
 Each scenario implements `handler(): RequestListener` (see `HandlerScenario`

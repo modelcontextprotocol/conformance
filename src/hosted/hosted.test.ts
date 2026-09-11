@@ -646,6 +646,127 @@ describe('hosted server', () => {
     );
   });
 
+  it('fails a cell when the wire rejects the request or the client speaks another revision', async () => {
+    // Felix's live case: a 2025-11-25 initialize on a 2026-07-28 cell. The
+    // stateless mock turns it away (no _meta) and the scenario never sees a
+    // request it could judge — the cell must read fail, not green.
+    const url = `/s/rej/${REV_STATELESS}/tools_call/mcp`;
+    const legacyInit = {
+      ...initBody(),
+      params: { ...initBody().params, protocolVersion: REV_STATEFUL }
+    };
+    for (let i = 0; i < 2; i++) {
+      const r = await postMcp(url, legacyInit, {
+        'mcp-protocol-version': REV_STATEFUL
+      });
+      expect(r.status).toBe(400);
+      await r.text();
+    }
+    // …and one with no header at all (the -32020 rejection).
+    const bare = await postMcp(url, initBody());
+    expect(bare.status).toBe(400);
+    await bare.text();
+
+    const results = await fetch(
+      `${base}/results/rej/${REV_STATELESS}/tools_call`
+    ).then((r) => r.json());
+    type Check = {
+      id: string;
+      status: string;
+      errorMessage?: string;
+      details?: Record<string, unknown>;
+    };
+    const rejected = results.checks.filter(
+      (c: Check) => c.id === 'hosted-wire-rejected'
+    );
+    // Once per distinct (code, message): the repeated -32602 is one check.
+    expect(rejected.map((c: Check) => c.details?.code)).toEqual([
+      -32602, -32020
+    ]);
+    expect(rejected[0]).toMatchObject({
+      status: 'FAILURE',
+      details: {
+        status: 400,
+        method: 'initialize',
+        requestedVersion: REV_STATEFUL
+      }
+    });
+    expect(rejected[1].details).toMatchObject({
+      code: -32020,
+      requestedVersion: '2025-06-18' // no header: the body's version
+    });
+    const wrong = results.checks.filter(
+      (c: Check) => c.id === 'hosted-wrong-revision'
+    );
+    // Once per distinct (method, header version).
+    expect(wrong.map((c: Check) => c.errorMessage)).toEqual([
+      `cell is served on ${REV_STATELESS}; client sent initialize`,
+      `cell is served on ${REV_STATELESS}; client sent initialize`
+    ]);
+    expect(wrong.map((c: Check) => c.details?.headerVersion)).toEqual([
+      REV_STATEFUL,
+      null
+    ]);
+    const report = await fetch(`${base}/results/rej`).then((r) => r.json());
+    const cellOf = (rev: string, name: string) =>
+      report.columns
+        .find((c: { revision: string }) => c.revision === rev)
+        .cells.find((c: { scenario: string }) => c.scenario === name);
+    expect(cellOf(REV_STATELESS, 'tools_call').verdict).toBe('fail');
+
+    // On a dated revision initialize negotiates freely, but every later
+    // request must name the cell's revision in its header.
+    const stateful = `/s/rej/${REV_STATEFUL}/tools_call/mcp`;
+    await postMcp(stateful, initBody()).then((r) => r.text());
+    const call = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'add_numbers', arguments: { a: 1, b: 2 } }
+    };
+    await postMcp(stateful, call, {
+      'mcp-protocol-version': '2025-06-18'
+    }).then((r) => r.text());
+    const b = await fetch(
+      `${base}/results/rej/${REV_STATEFUL}/tools_call`
+    ).then((r) => r.json());
+    expect(
+      b.checks.find((c: Check) => c.id === 'tool-add-numbers').status
+    ).toBe('SUCCESS');
+    expect(
+      b.checks
+        .filter((c: Check) => c.id === 'hosted-wrong-revision')
+        .map((c: Check) => c.errorMessage)
+    ).toEqual([`cell is served on ${REV_STATEFUL}; client sent 2025-06-18`]);
+    expect(b.checks.some((c: Check) => c.id === 'hosted-wire-rejected')).toBe(
+      false
+    );
+    // The scenario passed; the hosted FAILURE still decides the verdict.
+    expect(cellOf(REV_STATEFUL, 'tools_call')).toBeDefined();
+    const report2 = await fetch(`${base}/results/rej`).then((r) => r.json());
+    expect(
+      report2.columns[0].cells.find(
+        (c: { scenario: string }) => c.scenario === 'tools_call'
+      ).verdict
+    ).toBe('fail');
+
+    // A client that speaks the cell's revision records neither check, and a
+    // non-MCP path under the cell (the canary) is never judged.
+    const ok = `/s/rej/${REV_STATELESS}/json-schema-ref-no-deref/mcp`;
+    await postMcp(ok, statelessBody('tools/list'), statelessHeaders).then((r) =>
+      r.text()
+    );
+    await fetch(
+      `${base}/s/rej/${REV_STATELESS}/json-schema-ref-no-deref/canary/profile-schema.json`
+    ).then((r) => r.text());
+    const clean = await fetch(
+      `${base}/results/rej/${REV_STATELESS}/json-schema-ref-no-deref`
+    ).then((r) => r.json());
+    expect(
+      clean.checks.filter((c: Check) => c.id.startsWith('hosted-w'))
+    ).toEqual([]);
+  });
+
   it('HTML-escapes the run id in the results report', () => {
     const html = renderResults(
       {
