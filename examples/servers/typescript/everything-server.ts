@@ -439,42 +439,75 @@ function createMcpServer() {
       inputSchema: {} // Empty schema so callback gets (args, extra) instead of just (extra)
     },
     async (_args, { sendNotification, _meta }) => {
-      const progressToken = _meta?.progressToken ?? 0;
-      console.log('???? Progress token:', progressToken);
-      await sendNotification({
-        method: 'notifications/progress',
-        params: {
-          progressToken,
-          progress: 0,
-          total: 100,
-          message: `Completed step ${0} of ${100}`
-        }
-      });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      const progressToken = _meta?.progressToken;
+      if (progressToken !== undefined) {
+        await sendNotification({
+          method: 'notifications/progress',
+          params: {
+            progressToken,
+            progress: 0,
+            total: 100,
+            message: `Completed step ${0} of ${100}`
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
 
-      await sendNotification({
-        method: 'notifications/progress',
-        params: {
-          progressToken,
-          progress: 50,
-          total: 100,
-          message: `Completed step ${50} of ${100}`
-        }
-      });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+        await sendNotification({
+          method: 'notifications/progress',
+          params: {
+            progressToken,
+            progress: 50,
+            total: 100,
+            message: `Completed step ${50} of ${100}`
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
 
-      await sendNotification({
-        method: 'notifications/progress',
-        params: {
-          progressToken,
-          progress: 100,
-          total: 100,
-          message: `Completed step ${100} of ${100}`
-        }
-      });
+        await sendNotification({
+          method: 'notifications/progress',
+          params: {
+            progressToken,
+            progress: 100,
+            total: 100,
+            message: `Completed step ${100} of ${100}`
+          }
+        });
+      }
 
       return {
-        content: [{ type: 'text', text: String(progressToken) }]
+        content: [{ type: 'text', text: String(progressToken ?? 'no-token') }]
+      };
+    }
+  );
+
+  // Slow tool for cancellation testing
+  mcpServer.registerTool(
+    'test_tool_slow',
+    {
+      description:
+        'Sleeps for the specified duration (durationMs, default 5000) before returning. Used for cancellation testing.',
+      inputSchema: {}
+    },
+    async (args) => {
+      const duration = (args as { durationMs?: number }).durationMs ?? 5000;
+      await new Promise((resolve) => setTimeout(resolve, duration));
+      return {
+        content: [{ type: 'text', text: `Slept for ${duration}ms` }]
+      };
+    }
+  );
+
+  // Fast tool for health-check after cancellation
+  mcpServer.registerTool(
+    'test_tool_fast',
+    {
+      description:
+        'Returns immediately. Used as a health check after cancellation tests.',
+      inputSchema: {}
+    },
+    async () => {
+      return {
+        content: [{ type: 'text', text: 'Fast response' }]
       };
     }
   );
