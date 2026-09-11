@@ -394,6 +394,52 @@ To add a new SDK to the matrix, add an entry to `KNOWN_SDKS`.
 
 Clones are cached under `.sdk-under-test/` and reused (fetched) on subsequent runs.
 
+## Running a Scenario Across All SDKs
+
+When a change adds a check, or changes the severity of a check on an existing scenario, the question reviewers ask is "what does this do to each SDK?". The SDK matrix answers that in one command: it runs one selection (a scenario list, a suite, or a requirement set) through `conformance sdk` for every entry in `KNOWN_SDKS` and renders an SDK x check table (`matrix.md`) plus the raw results (`matrix.json`, per-SDK logs and `checks.json` files). One SDK failing to build never stops the others; its column says why. The report leads with the question that matters for review: **Regressions**, meaning failing checks that the SDK's own expected-failures baseline does not already excuse (what would turn that SDK's CI red), plus baseline entries that now pass (stale) and SDKs that could not be run. Baselined failures are still shown, marked separately.
+
+There are three ways to run it, in order of preference.
+
+**1. GitHub Actions (no local toolchains needed).** The `sdk-matrix.yml` workflow fans out one job per SDK on hosted runners with the right toolchain, merges the results into the run summary, and can post the table as a sticky comment on a conformance PR. Any maintainer can trigger it:
+
+```bash
+# Post the cross-SDK table for a client check onto its PR (works before or after merge)
+gh workflow run sdk-matrix.yml -R modelcontextprotocol/conformance \
+  -f sdks=all -f mode=client \
+  -f scenario=auth/metadata-var2,auth/metadata-default \
+  -f pr=488 -f pr_comment=true
+
+# A server scenario against two SDKs at specific refs, testing a branch of this repo
+gh workflow run sdk-matrix.yml -R modelcontextprotocol/conformance \
+  -f sdks=go-sdk@v1.3.0,rust-sdk -f mode=server -f scenario=tools-list -f ref=my-branch
+
+# Then open the run summary
+gh run list -R modelcontextprotocol/conformance --workflow sdk-matrix.yml -L 1
+```
+
+Inputs: `sdks` (`all` or a comma-separated list, each optionally `name@ref`), `mode` (`client`, `server`, `both`), one of `scenario` / `suite` / `requirements`, `ref` (branch, tag or sha of this repo to test), `pr` (PR number: tests its merge ref, or its merge commit once merged) and `pr_comment`. It also runs weekly against `main` with each SDK's default suites. SDK code runs in jobs that hold no token; the job that comments never runs SDK code.
+
+**2. Docker (local, all toolchains in one image).** `scripts/sdk-matrix-docker.sh` builds `docker/sdk-matrix` on first use (Node, uv, Go, rustup, .NET, Ruby, JDK) and runs the matrix against your checkout, with SDK clones, builds and package caches kept in a named volume so reruns take seconds:
+
+```bash
+scripts/sdk-matrix-docker.sh --mode client --scenario auth/metadata-default
+scripts/sdk-matrix-docker.sh --sdks rust-sdk,csharp-sdk,ruby-sdk --mode server --scenario tools-list
+scripts/sdk-matrix-docker.sh --ref 488 --mode client --suite auth   # test a PR of this repo instead of the checkout
+```
+
+The image uses each ecosystem's public registry. If your environment requires a mirror, forward exactly the configuration you need, for example `--npmrc ~/.npmrc --cargo-config ~/.cargo/config.toml --env GOPROXY --env UV_INDEX_URL` (see the script header for the full list). The wrapper never mounts SSH keys, git credentials or tokens, and the container only has outbound network access.
+
+**3. Plain local script (uses whatever toolchains are on your PATH).**
+
+```bash
+npm run sdk-matrix -- --mode client --scenario auth/metadata-default            # all SDKs
+npm run sdk-matrix -- --sdks typescript-sdk,python-sdk --mode both --suite core  # a subset
+npm run sdk-matrix -- --merge dir1,dir2 -o combined                              # re-render saved results
+node scripts/sdk-matrix.mjs --help
+```
+
+SDKs whose toolchain is missing show up as `build failed: <reason>` rather than aborting the run. Results go to `sdk-matrix-results/` by default and the markdown table is printed to stdout, ready to paste into a PR.
+
 ## SDK Tier Assessment
 
 The `tier-check` subcommand evaluates an MCP SDK repository against [SEP-1730](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1730) (the SDK Tiering System). There are two ways to run it, and they answer different questions.
