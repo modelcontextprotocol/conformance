@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'vitest';
+import { createHash } from 'crypto';
 import { createServer, type IncomingMessage, type Server } from 'http';
 import type { AddressInfo } from 'net';
 import { testContext } from '../../../connection/testing';
@@ -74,7 +75,8 @@ async function readJsonBody(
  */
 function startServerDeclaring(
   declared: unknown,
-  skills: object[] = []
+  skills: object[] = [],
+  files: Record<string, string> = {}
 ): Promise<{ url: string; server: Server }> {
   const server = createServer(async (req, res) => {
     if (req.method !== 'POST') {
@@ -103,6 +105,15 @@ function startServerDeclaring(
       send({ skills });
       return;
     }
+    if (method === 'resources/read') {
+      const uri = (body.params as { uri?: string } | undefined)?.uri;
+      if (uri !== undefined && uri in files) {
+        send({
+          contents: [{ uri, mimeType: 'text/markdown', text: files[uri] }]
+        });
+        return;
+      }
+    }
     if (method === 'resources/list') {
       send({ resources: [] });
       return;
@@ -126,8 +137,12 @@ function startServerDeclaring(
   });
 }
 
-async function runAgainst(declared: unknown, skills: object[] = []) {
-  const { url, server } = await startServerDeclaring(declared, skills);
+async function runAgainst(
+  declared: unknown,
+  skills: object[] = [],
+  files: Record<string, string> = {}
+) {
+  const { url, server } = await startServerDeclaring(declared, skills, files);
   try {
     const scenario = new SkillsEnumerationScenario();
     const checks = await scenario.run(testContext(url, DRAFT_PROTOCOL_VERSION));
@@ -142,8 +157,12 @@ async function runAgainst(declared: unknown, skills: object[] = []) {
   }
 }
 
-async function checksFor(declared: unknown, skills: object[] = []) {
-  const { checks, violations } = await runAgainst(declared, skills);
+async function checksFor(
+  declared: unknown,
+  skills: object[] = [],
+  files: Record<string, string> = {}
+) {
+  const { checks, violations } = await runAgainst(declared, skills, files);
   expect(violations, 'unexpected wire-schema violations').toEqual([]);
   return checks;
 }
@@ -227,5 +246,56 @@ describe('SEP-2640 skill naming rules', () => {
   ])('rejects %s', async (_label, name) => {
     const checks = await checksFor({}, [entryFor(name)]);
     expect(checks.get(NAMING_ID)?.status).toBe('FAILURE');
+  });
+});
+
+/**
+ * `entry-frontmatter-identical` compares content, not serialisation. A server
+ * whose JSON encoder orders map keys differently from the YAML source (Go's
+ * encoding/json sorts them) is conformant and must pass.
+ */
+const IDENTICAL_ID = 'sep-2640-entry-frontmatter-identical';
+
+function skillWithFile(
+  yamlMetadata: string,
+  entryMetadata: Record<string, string>
+) {
+  const uri = 'skill://demo/SKILL.md';
+  const text = `---\nname: demo\ndescription: Demo skill\nmetadata:\n${yamlMetadata}---\n\nBody.\n`;
+  const entry = {
+    uri,
+    frontmatter: {
+      name: 'demo',
+      description: 'Demo skill',
+      metadata: entryMetadata
+    },
+    resources: [
+      {
+        uri,
+        digest: `sha256:${createHash('sha256').update(text).digest('hex')}`,
+        size: Buffer.byteLength(text)
+      }
+    ]
+  };
+  return { entry, files: { [uri]: text } };
+}
+
+describe('SEP-2640 frontmatter identity', () => {
+  test('nested keys serialised in a different order are identical', async () => {
+    const { entry, files } = skillWithFile('  version: "1.0"\n  author: me\n', {
+      author: 'me',
+      version: '1.0'
+    });
+    const checks = await checksFor({}, [entry], files);
+    expect(checks.get(IDENTICAL_ID)?.status).toBe('SUCCESS');
+  });
+
+  test('a differing nested value is a FAILURE', async () => {
+    const { entry, files } = skillWithFile('  version: "1.0"\n  author: me\n', {
+      author: 'someone-else',
+      version: '1.0'
+    });
+    const checks = await checksFor({}, [entry], files);
+    expect(checks.get(IDENTICAL_ID)?.status).toBe('FAILURE');
   });
 });

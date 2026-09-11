@@ -18,6 +18,7 @@
  * than fail against a server with an unenumerable catalog.
  */
 
+import { isDeepStrictEqual } from 'util';
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { RunContext } from '../../../connection';
 import {
@@ -984,10 +985,14 @@ async function readbackChecks(
 
   const diffs: string[] = [];
   const keys = new Set([...Object.keys(fm), ...Object.keys(declared)]);
+  // Content, not serialisation: an encoder that orders map keys differently
+  // from the YAML source (Go's encoding/json sorts them) still describes the
+  // same frontmatter.
   for (const k of keys) {
-    const a = JSON.stringify(fm[k] ?? null);
-    const b = JSON.stringify(declared[k] ?? null);
-    if (a !== b) diffs.push(`${k}: file=${a} entry=${b}`);
+    if (isDeepStrictEqual(fm[k] ?? null, declared[k] ?? null)) continue;
+    diffs.push(
+      `${k}: file=${JSON.stringify(fm[k] ?? null)} entry=${JSON.stringify(declared[k] ?? null)}`
+    );
   }
   checks.push(
     skillsCheck(
