@@ -10,6 +10,8 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { InitializeScenario } from './client/initialize';
+import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
+import { SkillsVerificationScenario } from './client/skills/verification';
 import { ToolsCallScenario } from './client/tools_call';
 import { StatelessGauntletScenario } from './client/stateless-gauntlet';
 import { AuthCheckerScenario } from './client/auth-checker';
@@ -59,6 +61,10 @@ import {
   ResourcesUnsubscribeScenario,
   ResourcesNotFoundErrorScenario
 } from './server/resources';
+
+import { SkillsDirectoryReadScenario } from './server/skills/directory';
+import { SkillsEnumerationScenario } from './server/skills/enumeration';
+import { SkillsManifestScenario } from './server/skills/manifest';
 
 import {
   PromptsListScenario,
@@ -153,7 +159,15 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksDispatchScenario(),
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario()
+  new TasksMrtrCompositionScenario(),
+
+  // SEP-2640 Skills extension. Pending because the everything-server does not
+  // implement io.modelcontextprotocol/skills; targeted runs point at a
+  // SEP-2640-conformant fixture via
+  // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
+  new SkillsDirectoryReadScenario(),
+  new SkillsEnumerationScenario(),
+  new SkillsManifestScenario()
 ];
 
 // All client scenarios
@@ -204,6 +218,12 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Resources error handling (SEP-2164)
   new ResourcesNotFoundErrorScenario(),
+
+  // Skills extension (SEP-2640). Fixture-dependent (needs a SEP-2640 server);
+  // each scenario SKIPs cleanly when the extension is not declared.
+  new SkillsDirectoryReadScenario(),
+  new SkillsEnumerationScenario(),
+  new SkillsManifestScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
@@ -325,7 +345,15 @@ const scenariosList: Scenario[] = [
   new StatelessGauntletScenario(),
 
   // Auth re-auth chain checker — token encodes progress through the rungs
-  new AuthCheckerScenario()
+  new AuthCheckerScenario(),
+
+  // SEP-2640 skills, client side. The harness is the server and grades what
+  // the client requests, which is how the retrieval-policy MUSTs become
+  // observable at all.
+  new SkillsNoPrefetchScenario(),
+  new SkillsVerificationScenario('digest'),
+  new SkillsVerificationScenario('size'),
+  new SkillsVerificationScenario('frontmatter')
 ];
 
 // Core scenarios (tier 1 requirements)

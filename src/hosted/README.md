@@ -46,6 +46,11 @@ Hostable = any scenario that implements `handler()` (single origin) or
 `authHandlers()` (multi-origin, see below). `listHostableScenarios()` derives
 the list at runtime, gated by which aux origins are configured.
 
+Each run gets its own scenario instance, built from the registry entry with a
+no-arg constructor. A scenario whose constructor takes parameters (one class
+registered under several names, e.g. `skills/verification-*`) implements
+`Scenario.fresh()` to carry them into the per-run copy.
+
 `sse-retry` implements `handler()` and works under `conformance hosted`, but
 its connection-close-timing checks won't be meaningful through a buffered
 fetch bridge — see below.

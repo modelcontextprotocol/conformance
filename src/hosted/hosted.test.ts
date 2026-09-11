@@ -258,10 +258,13 @@ describe('hosted server', () => {
 
   it('every hostable scenario can be instantiated without binding a port', () => {
     // Guard against regressions where a handler() implementation reaches for
-    // this._server / this.port etc.
+    // this._server / this.port etc., and against per-run instances that lose
+    // constructor parameters (one class registered under several names must
+    // implement fresh()).
     for (const name of listHostableScenarios()) {
       const run = sessions.getOrCreate(name, `probe-${name}`, () => 'http://x');
       expect(typeof run.listener).toBe('function');
+      expect(run.scenario.name).toBe(name);
     }
   });
 });

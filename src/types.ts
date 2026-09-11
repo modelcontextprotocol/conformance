@@ -103,7 +103,8 @@ export const EXTENSION_IDS = [
   'io.modelcontextprotocol/enterprise-managed-authorization',
   'io.modelcontextprotocol/auth/dpop',
   'io.modelcontextprotocol/auth/wif',
-  'io.modelcontextprotocol/tasks'
+  'io.modelcontextprotocol/tasks',
+  'io.modelcontextprotocol/skills'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
@@ -169,6 +170,15 @@ export interface Scenario {
    * scenarios that need a second origin).
    */
   handler?(getBaseUrl: () => string, ctx: ScenarioContext): RequestListener;
+  /**
+   * Return a new, unstarted instance configured like this one. The hosted
+   * runner creates one scenario instance per run (and one to re-judge a
+   * persisted log) from the registry entry; by default it calls the
+   * constructor with no arguments, so a scenario whose constructor takes
+   * parameters (e.g. one class registered under several names) must
+   * implement this to carry them over.
+   */
+  fresh?(): Scenario;
   start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];

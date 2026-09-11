@@ -100,6 +100,17 @@ export function rawChecksOf(scenario: Scenario): ConformanceCheck[] {
 }
 
 /**
+ * New, unstarted instance of a registered scenario. Prefers `Scenario.fresh()`
+ * so scenarios registered with constructor parameters keep them; falls back
+ * to the no-arg constructor.
+ */
+export function freshScenario(proto: Scenario): Scenario {
+  if (typeof proto.fresh === 'function') return proto.fresh();
+  const Ctor = proto.constructor as new () => Scenario;
+  return new Ctor();
+}
+
+/**
  * Judge a merged raw log with the scenario's own end-of-run logic by loading
  * it into a fresh instance. Falls back to the raw log for scenarios that
  * don't keep a plain `checks` array.
@@ -111,8 +122,7 @@ export function finalizeChecks(
   const proto = getScenario(scenarioName);
   if (!proto) return merged;
   try {
-    const Ctor = proto.constructor as new () => Scenario;
-    const fresh = new Ctor() as unknown as {
+    const fresh = freshScenario(proto) as unknown as {
       checks?: unknown;
       getChecks(): ConformanceCheck[];
     };
@@ -165,8 +175,7 @@ export class SessionManager {
     const proto = getScenario(scenarioName);
     if (!proto) throw new UnknownScenarioError(scenarioName);
 
-    const Ctor = proto.constructor as new () => Scenario;
-    const scenario = new Ctor();
+    const scenario = freshScenario(proto);
     const runId = id ?? randomBytes(6).toString('base64url');
 
     let listener: RequestListener;

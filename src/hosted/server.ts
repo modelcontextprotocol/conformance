@@ -36,7 +36,8 @@ import {
   UnknownScenarioError,
   NotHostableError,
   listHostableScenarios,
-  hostedScenarioContext
+  hostedScenarioContext,
+  freshScenario
 } from './session';
 import { renderLanding, renderResults } from './html';
 import type { RunStore } from './store';
@@ -390,8 +391,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   ): StatelessInstance {
     const proto = getScenario(scenarioName);
     if (!proto) throw new UnknownScenarioError(scenarioName);
-    const Ctor = proto.constructor as new () => Scenario;
-    const scenario = new Ctor();
+    const scenario = freshScenario(proto);
 
     if (scenario instanceof AuthHandlerScenario) {
       const missing = scenario.auxRoles.filter((r) => !auxOrigins[r]);
