@@ -14,7 +14,10 @@ import {
 } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { addResourceParameterChecks } from './helpers/resourceParameterChecks';
+import {
+  addResourceParameterChecks,
+  observeResourceParameters
+} from './helpers/resourceParameterChecks';
 import { SpecReferences } from './spec-references';
 import { Request, Response } from 'express';
 
@@ -227,13 +230,17 @@ abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
       }
     }
 
-    // RFC 8707 Resource Parameter Validation Checks
+    // RFC 8707 Resource Parameter Validation Checks. The private fields are
+    // empty when a fresh instance re-judges a persisted log (hosted server),
+    // so fall back to what the request logger recorded.
+    const observed = observeResourceParameters(this.checks);
     addResourceParameterChecks(
       this.checks,
       {
-        authorizationResource: this.authorizationResource,
-        tokenResource: this.tokenResource,
-        prmResource: this.prmResource
+        authorizationResource:
+          this.authorizationResource ?? observed.authorizationResource,
+        tokenResource: this.tokenResource ?? observed.tokenResource,
+        prmResource: this.prmResource ?? observed.prmResource
       },
       new Date().toISOString()
     );

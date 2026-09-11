@@ -8,6 +8,7 @@
  *                                           pick any <run-id> you like.
  *   GET  /s/<scenario>                      Convenience: mints a fresh run-id
  *                                           and returns {mcpUrl, resultsUrl}.
+ *                                           ?runId=<id> picks the id.
  *   GET  /results/<run-id>                  JSON {summary, checks}
  *   GET  /results/<run-id>.html             Pretty HTML report
  *   GET  /scenarios                         JSON list of hostable scenarios
@@ -325,8 +326,16 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         });
         return;
       }
+      // ?runId=<id> lets the caller pick the id (e.g. `conformance remote
+      // --run-id`); otherwise one is minted.
+      const wanted =
+        typeof req.query.runId === 'string' ? req.query.runId : undefined;
+      if (wanted !== undefined && !RUN_ID_RE.test(wanted)) {
+        res.status(400).json({ error: 'invalid run-id' });
+        return;
+      }
       try {
-        const run = sessions.getOrCreate(scenarioName, undefined, (id) =>
+        const run = sessions.getOrCreate(scenarioName, wanted, (id) =>
           runBaseUrl(req, scenarioName, id)
         );
         res.json({

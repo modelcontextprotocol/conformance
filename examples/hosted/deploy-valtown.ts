@@ -44,6 +44,10 @@ const REPO_ROOT = resolve(SCRIPT_DIR, '../..');
 const STAGE_ROOT = join(REPO_ROOT, '.valtown-stage');
 const MANIFEST_PATH = join(SCRIPT_DIR, 'valtown-manifest.json');
 const API = 'https://api.val.town/v2';
+/** val.town rejects a file body over this many characters (HTTP 400). */
+const MAX_FILE_CHARS = 80_000;
+/** Chunk budget for generated JSON part modules, leaving escaping headroom. */
+const CHUNK_TARGET_CHARS = 70_000;
 
 const NODE_BUILTINS = new Set([
   'assert',
@@ -127,7 +131,9 @@ function rewriteSpec(
     discovered.add(target);
     let rel = relative(dirname(fromFile), target).replace(/\\/g, '/');
     if (!rel.startsWith('.')) rel = `./${rel}`;
-    return rel;
+    // JSON modules are staged as generated TS (see stageJsonModule): no import
+    // attribute needed, and oversized schemas can be split across files.
+    return target.endsWith('.json') ? `${rel}.ts` : rel;
   }
   if (NODE_BUILTINS.has(spec.split('/')[0])) return `node:${spec}`;
   // npm package (possibly scoped, possibly with a subpath)
@@ -192,6 +198,88 @@ function rewriteFile(file: string, discovered: Set<string>): string {
   return out;
 }
 
+/**
+ * Keep a rewritten TS module under val.town's per-file size cap. The generated
+ * spec-type modules (src/spec-types/*.ts) are ~80% JSDoc, so dropping comments
+ * is enough; anything still over the cap is a hard error rather than a partial
+ * upload later.
+ */
+function fitTsModule(path: string, content: string): string {
+  if (content.length <= MAX_FILE_CHARS) return content;
+  const sourceFile = ts.createSourceFile(
+    path,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  );
+  const stripped = ts
+    .createPrinter({ removeComments: true })
+    .printFile(sourceFile);
+  if (stripped.length > MAX_FILE_CHARS) {
+    throw new Error(
+      `${path} is ${stripped.length} chars even without comments; val.town caps files at ${MAX_FILE_CHARS}`
+    );
+  }
+  console.log(
+    `  (stripped comments from ${path}: ${content.length} → ${stripped.length} chars)`
+  );
+  return stripped;
+}
+
+/**
+ * Stage a .json import as `<path>.json.ts`. Small documents become a literal
+ * default export; large ones (the spec JSON schemas are 90–180K) are split
+ * into `<path>.json.part<n>.ts` string chunks that the main module
+ * reassembles with JSON.parse.
+ */
+function stageJsonModule(
+  repoRelPath: string,
+  raw: string,
+  staged: Map<string, string>
+): void {
+  const minified = JSON.stringify(JSON.parse(raw));
+  const modulePath = `${repoRelPath}.ts`;
+  const literal = `export default ${minified};\n`;
+  if (literal.length <= MAX_FILE_CHARS) {
+    staged.set(modulePath, literal);
+    return;
+  }
+  const parts: string[] = [];
+  let start = 0;
+  while (start < minified.length) {
+    // Grow the chunk until its escaped form would exceed the budget.
+    let end = Math.min(minified.length, start + CHUNK_TARGET_CHARS);
+    while (
+      end > start + 1 &&
+      JSON.stringify(minified.slice(start, end)).length > CHUNK_TARGET_CHARS
+    ) {
+      end -= 1000;
+    }
+    parts.push(minified.slice(start, end));
+    start = end;
+  }
+  const base = repoRelPath.split('/').pop()!;
+  const imports: string[] = [];
+  const names: string[] = [];
+  parts.forEach((chunk, i) => {
+    const name = `p${i}`;
+    names.push(name);
+    imports.push(`import ${name} from './${base}.part${i}.ts';`);
+    staged.set(
+      `${repoRelPath}.part${i}.ts`,
+      `export default ${JSON.stringify(chunk)};\n`
+    );
+  });
+  staged.set(
+    modulePath,
+    `${imports.join('\n')}\nexport default JSON.parse(${names.join(' + ')});\n`
+  );
+  console.log(
+    `  (split ${repoRelPath}: ${minified.length} chars → ${parts.length} parts)`
+  );
+}
+
 /** Crawl the import closure of `entry`, rewriting as we go. */
 function stageVal(key: string, entry: string): Map<string, string> {
   const staged = new Map<string, string>(); // repo-relative path -> content
@@ -200,9 +288,14 @@ function stageVal(key: string, entry: string): Map<string, string> {
 
   while (queue.length > 0) {
     const file = queue.shift()!;
+    const repoRel = relative(REPO_ROOT, file).replace(/\\/g, '/');
+    if (file.endsWith('.json')) {
+      stageJsonModule(repoRel, readFileSync(file, 'utf8'), staged);
+      continue;
+    }
     const discovered = new Set<string>();
-    const content = rewriteFile(file, discovered);
-    staged.set(relative(REPO_ROOT, file).replace(/\\/g, '/'), content);
+    const content = fitTsModule(repoRel, rewriteFile(file, discovered));
+    staged.set(repoRel, content);
     for (const dep of discovered) {
       if (!seen.has(dep)) {
         seen.add(dep);
@@ -331,6 +424,21 @@ async function main() {
         `unknown val '${key}' (manifest has: ${Object.keys(manifest.vals).join(', ')})`
       );
     stagedByKey.set(key, stageVal(key, info.entry));
+  }
+
+  // Check every file of every val *before* the first upload: a mid-closure
+  // rejection would leave the live val half old, half new.
+  const oversized: string[] = [];
+  for (const [key, files] of stagedByKey) {
+    for (const [path, content] of files) {
+      if (content.length > MAX_FILE_CHARS)
+        oversized.push(`${key}:${path} (${content.length} chars)`);
+    }
+  }
+  if (oversized.length) {
+    throw new Error(
+      `staged files exceed val.town's ${MAX_FILE_CHARS}-char cap:\n  ${oversized.join('\n  ')}`
+    );
   }
 
   if (!push) {

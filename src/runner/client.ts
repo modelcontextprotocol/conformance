@@ -27,7 +27,7 @@ export interface ClientExecutionResult {
   timedOut: boolean;
 }
 
-async function executeClient(
+export async function executeClient(
   command: string,
   scenarioName: string,
   serverUrl: string,

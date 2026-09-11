@@ -53,6 +53,17 @@ describe('hosted server', () => {
     expect(names.some((n: string) => n.startsWith('auth/'))).toBe(false);
   });
 
+  it('GET /s/<name>?runId=<id> mints with the caller-chosen id', async () => {
+    const res = await fetch(`${base}/s/initialize?runId=chosen-1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.runId).toBe('chosen-1');
+    expect(body.mcpUrl.startsWith(`${base}/s/initialize/chosen-1`)).toBe(true);
+    expect(body.resultsHtmlUrl).toBe(`${base}/results/chosen-1.html`);
+    const bad = await fetch(`${base}/s/initialize?runId=not%20ok`);
+    expect(bad.status).toBe(400);
+  });
+
   it('mounts a raw-http scenario at /s/<name>/<id> and records checks', async () => {
     const res = await postMcp('/s/initialize/t1', {
       jsonrpc: '2.0',
