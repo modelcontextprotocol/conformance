@@ -6,17 +6,18 @@
  *   incomplete  the cell exists but nothing was recorded, or it was never hit
  *   n/a         the scenario does not apply to the revision
  *
- * Per column, "scored X of N" counts passes among the cells the revision's
- * requirement set scores AND this deployment can start; not_scored and
- * unlisted cells are reported next to the score, never inside it. Only
- * FAILURE decides a verdict — INFO checks such as the client identity the
- * hosted layer records never do.
+ * Per column, "scored X of N" counts passes among every cell the revision's
+ * requirement set scores — N is the yaml's count, whether or not this
+ * deployment can start the cell — and says separately how many of those N
+ * are startable here; not_scored and unlisted cells are reported next to the
+ * score, never inside it. Only FAILURE decides a verdict — INFO checks such
+ * as the client identity the hosted layer records never do.
  */
 
 import type { ConformanceCheck } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
-import { identitiesIn, type ClientIdentity } from './identity';
+import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
 
 export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
 
@@ -45,8 +46,12 @@ export interface CellReport {
 
 export interface ColumnReport {
   revision: string;
-  /** Passes among scored, startable cells / their number. */
-  scored: { passed: number; total: number };
+  /**
+   * Passes among the cells the requirement set scores, out of all of them
+   * (`total`, the yaml's count), with how many of those this deployment
+   * can start (`startable`).
+   */
+  scored: { passed: number; total: number; startable: number };
   cells: CellReport[];
   /** The not_scored / unlisted cells that were exercised, with verdicts. */
   notScored: CellReport[];
@@ -127,11 +132,8 @@ export async function buildReport(
           ? await sources.results(id)
           : undefined;
       const seen = results ? identitiesIn(results.checks) : [];
-      for (const i of seen) {
-        const key = JSON.stringify(i);
-        identities.set(key, i);
-        allIdentities.set(key, i);
-      }
+      mergeIdentities(identities, seen);
+      mergeIdentities(allIdentities, seen);
       cells.push({
         scenario: cell.scenario,
         revision: cell.revision,
@@ -147,14 +149,13 @@ export async function buildReport(
         ...(seen.length && { identities: seen })
       });
     }
-    const scoredCells = cells.filter(
-      (c) => c.scoring === 'scored' && c.startable
-    );
+    const scoredCells = cells.filter((c) => c.scoring === 'scored');
     columns.push({
       revision: rev,
       scored: {
         passed: scoredCells.filter((c) => c.verdict === 'pass').length,
-        total: scoredCells.length
+        total: scoredCells.length,
+        startable: scoredCells.filter((c) => c.startable).length
       },
       cells,
       notScored: cells.filter(

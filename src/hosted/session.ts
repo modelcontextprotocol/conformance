@@ -24,7 +24,15 @@ import {
 import { createHandlerFor, type ScenarioContext } from '../mock-server';
 import { getScenario, scenarios } from '../scenarios';
 import type { RunStore } from './store';
-import { identityCheck, identityKey, type ClientIdentity } from './identity';
+import {
+  addProtocolVersion,
+  identityCheck,
+  identityChecksIn,
+  identityKey,
+  identityOf,
+  IDENTITY_CHECK_ID,
+  type IdentityObservation
+} from './identity';
 
 /** Store writer suffix for the hosted layer's own checks (client identity). */
 const HOSTED_WRITER_SUFFIX = '/hosted';
@@ -104,8 +112,8 @@ export interface HostedRun extends CellRef {
    * so they never enter its judgement.
    */
   hostedChecks: ConformanceCheck[];
-  /** Identity keys already recorded, so one client is one INFO check. */
-  identities: Set<string>;
+  /** The identity check per client (name, version) already recorded. */
+  identities: Map<string, ConformanceCheck>;
   /** Keys of hosted checks already recorded, so each finding is one check. */
   hostedKeys: Set<string>;
   /**
@@ -288,7 +296,7 @@ export class SessionManager {
       saved: false,
       touched: false,
       hostedChecks: [],
-      identities: new Set(),
+      identities: new Map(),
       hostedKeys: new Set(),
       seeded: new Map()
     };
@@ -370,12 +378,20 @@ export class SessionManager {
     run.hostedChecks.push(check);
   }
 
-  /** Record who is talking to the cell — once per distinct identity. */
-  recordIdentity(run: HostedRun, identity: ClientIdentity): void {
-    const key = identityKey(identity);
-    if (run.identities.has(key)) return;
-    run.identities.add(key);
-    run.hostedChecks.push(identityCheck(identity));
+  /**
+   * Record who is talking to the cell — one INFO check per client (name,
+   * version), accumulating the protocol versions it negotiated.
+   */
+  recordIdentity(run: HostedRun, observed: IdentityObservation): void {
+    const key = identityKey(observed);
+    const existing = run.identities.get(key);
+    if (existing) {
+      addProtocolVersion(existing, observed.protocolVersion);
+      return;
+    }
+    const check = identityCheck(identityOf(observed));
+    run.identities.set(key, check);
+    run.hostedChecks.push(check);
   }
 
   get(id: string): HostedRun | undefined {
@@ -494,13 +510,20 @@ export class SessionManager {
         ...checks
       );
     }
+    // Identity checks collapse to one per client (their protocol versions
+    // pooled); every other hosted finding is one check per distinct details.
     const seen = new Set<string>();
-    const hosted = hostedLog.sort(byTime).filter((c) => {
-      const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    hostedLog.sort(byTime);
+    const hosted = [
+      ...identityChecksIn(hostedLog),
+      ...hostedLog.filter((c) => {
+        if (c.id === IDENTITY_CHECK_ID) return false;
+        const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+    ].sort(byTime);
     return {
       ...ref,
       checks: [

@@ -362,8 +362,10 @@ function identityLine(identities: ClientIdentity[]): string {
       const who = i.name
         ? `<b>${esc(i.name)}</b>${i.version ? ` ${esc(i.version)}` : ''}`
         : '<i>unnamed client</i>';
-      const proto = i.protocolVersion
-        ? ` · protocol <code>${esc(i.protocolVersion)}</code>`
+      const proto = i.protocolVersions.length
+        ? ` · protocol ${i.protocolVersions
+            .map((v) => `<code>${esc(v)}</code>`)
+            .join(', ')}`
         : '';
       const ua = i.userAgent
         ? ` <span class=muted title="${esc(i.userAgent)}">(${esc(
@@ -418,7 +420,7 @@ export function renderReport(
         (col) =>
           `<th><a href="/results/${esc(report.runId)}/${esc(col.revision)}">${esc(
             col.revision
-          )}</a><div class=muted>scored ${col.scored.passed} of ${col.scored.total}</div>` +
+          )}</a><div class=muted>${col.scored.passed} of ${col.scored.total} scored (${col.scored.startable} startable here)</div>` +
           `<div class=muted>${identityLine(col.identities)}</div></th>`
       )
       .join('') +
@@ -468,9 +470,10 @@ export function renderReport(
 <p class=crumbs>${crumbs.join(' › ')}</p>
 <p>Client: ${identityLine(report.identities)}</p>
 <p class=muted>A cell passes when checks were recorded and none is a FAILURE;
-<i>scored X of N</i> counts passes among the cells the revision's requirement
-set scores and this deployment can start. Not-scored and unlisted cells are
-listed below the table. <a href="${esc(origin)}/results/${esc(report.runId)}${
+<i>X of N scored</i> counts passes among every cell the revision's requirement
+set scores (N is the set's count; the cells this deployment can start are
+given alongside). Not-scored and unlisted cells are listed below the table.
+<a href="${esc(origin)}/results/${esc(report.runId)}${
       report.revision ? `/${esc(report.revision)}` : ''
     }?format=json">JSON</a>.</p>
 <table>${head}${rows}</table>

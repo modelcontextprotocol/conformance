@@ -42,7 +42,7 @@ describe('val.town fetch bridge', () => {
     ).toMatchObject({
       name: 'ft',
       version: '0',
-      protocolVersion: '2025-06-18'
+      protocolVersions: ['2025-06-18']
     });
   });
 

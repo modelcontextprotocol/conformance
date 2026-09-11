@@ -126,14 +126,17 @@ export function tapResponse(
   let overflow = false;
   let ended = false;
   const capture = (chunk: unknown, encoding?: unknown) => {
-    if (chunk === undefined || chunk === null || overflow) return;
-    if (typeof chunk === 'function') return; // end(cb)
-    const buf = Buffer.isBuffer(chunk)
-      ? chunk
-      : Buffer.from(
-          String(chunk),
-          typeof encoding === 'string' ? (encoding as BufferEncoding) : 'utf8'
-        );
+    if (overflow) return;
+    let buf: Buffer;
+    if (Buffer.isBuffer(chunk)) buf = chunk;
+    else if (chunk instanceof Uint8Array)
+      buf = Buffer.from(chunk); // hono/node-server
+    else if (typeof chunk === 'string')
+      buf = Buffer.from(
+        chunk,
+        typeof encoding === 'string' ? (encoding as BufferEncoding) : 'utf8'
+      );
+    else return; // end(cb), end()
     size += buf.length;
     if (size > RESPONSE_CAP) overflow = true;
     else chunks.push(buf);

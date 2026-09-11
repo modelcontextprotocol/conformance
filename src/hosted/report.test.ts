@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import { buildReport, verdictFor } from './report';
 import { cellId, type CellRef } from './session';
-import { identityCheck } from './identity';
+import { identityCheck, identityOf } from './identity';
 import type { ConformanceCheck } from '../types';
 
 const check = (status: ConformanceCheck['status']): ConformanceCheck => ({
@@ -34,15 +34,27 @@ describe('verdicts', () => {
     );
   });
 
-  it('scores a column over scored, startable cells and lists the rest apart', async () => {
+  it("scores a column over the requirement set's cells and lists the rest apart", async () => {
     const matrix = buildMatrix({ exclude: { 'sse-retry': 'x' } });
     const rev = '2025-11-25';
     const results = new Map<string, ConformanceCheck[]>([
       [
         `r/${rev}/tools_call`,
-        [check('SUCCESS'), identityCheck({ name: 'c1', protocolVersion: rev })]
+        [
+          check('SUCCESS'),
+          identityCheck(identityOf({ name: 'c1', protocolVersion: rev }))
+        ]
       ],
-      [`r/${rev}/initialize`, [check('FAILURE')]],
+      [
+        `r/${rev}/initialize`,
+        [
+          check('FAILURE'),
+          // Same client, another negotiated version: one identity.
+          identityCheck(
+            identityOf({ name: 'c1', protocolVersion: '2025-06-18' })
+          )
+        ]
+      ],
       [`r/2026-07-28/tools_call`, [check('SUCCESS')]],
       [`r/${rev}/json-schema-2020-12-preservation`, [check('SUCCESS')]], // not_scored; not startable but exercised
       [`r/${rev}/elicitation-sep1034-client-defaults`, []] // created, nothing recorded
@@ -66,17 +78,24 @@ describe('verdicts', () => {
 
     expect(report.columns.map((c) => c.revision)).toEqual([rev, '2026-07-28']);
     const col = report.columns[0];
-    const scoredStartable = matrix
+    // N is the yaml's count — every scored cell, startable here or not
+    // (auth/* cells are not, with no relay origin); the startable subset is
+    // reported alongside.
+    const scored = matrix
       .cells()
-      .filter(
-        (c) => c.revision === rev && c.scoring === 'scored' && c.startable
-      );
-    expect(col.scored).toEqual({ passed: 1, total: scoredStartable.length });
+      .filter((c) => c.revision === rev && c.scoring === 'scored');
+    const startable = scored.filter((c) => c.startable).length;
+    expect(startable).toBeLessThan(scored.length);
+    expect(col.scored).toEqual({
+      passed: 1,
+      total: scored.length,
+      startable
+    });
     const by = (name: string) => col.cells.find((c) => c.scenario === name)!;
     expect(by('tools_call')).toMatchObject({
       verdict: 'pass',
       summary: { passed: 1, info: 1, total: 2 },
-      identities: [{ name: 'c1', protocolVersion: rev }],
+      identities: [{ name: 'c1', protocolVersions: [rev] }],
       resultsUrl: `http://x/results/r/${rev}/tools_call`
     });
     expect(by('initialize').verdict).toBe('fail');
@@ -96,8 +115,14 @@ describe('verdicts', () => {
       'json-schema-2020-12-preservation'
     ]);
     expect(col.notScored[0].verdict).toBe('pass');
-    expect(col.identities).toEqual([{ name: 'c1', protocolVersion: rev }]);
-    expect(report.identities).toEqual([{ name: 'c1', protocolVersion: rev }]);
+    // One line per client across the column and the run, versions pooled
+    // in row order (the initialize row precedes tools_call).
+    expect(col.identities).toEqual([
+      { name: 'c1', protocolVersions: ['2025-06-18', rev] }
+    ]);
+    expect(report.identities).toEqual([
+      { name: 'c1', protocolVersions: ['2025-06-18', rev] }
+    ]);
 
     const column = await buildReport(matrix, 'r', '2026-07-28', {
       listCells: async () => [],

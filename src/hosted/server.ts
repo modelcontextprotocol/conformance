@@ -350,7 +350,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           );
         }
       }
-      const identity = identityFrom(req.headers, body);
+      // Who the client is, from accepted exchanges only.
+      const identity = identityFrom(req.headers, body, response);
       if (identity) sessions.recordIdentity(run, identity);
       return true;
     };

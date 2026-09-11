@@ -92,13 +92,18 @@ JSON string. The HTML pages have copy-to-clipboard buttons for the same data.
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
 (any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or
-`n/a`. Per column, `scored X of N` counts passes among the cells the
-revision scores _and_ this deployment can start; `not_scored`/`unlisted`
-results are listed next to the score, never inside it. The header names the
-client and the protocol version it negotiated, read off the wire per request
-(`MCP-Protocol-Version`; `_meta['io.modelcontextprotocol/clientInfo']` on
-the stateless wire, the `initialize` params on the stateful one) and
-recorded as an INFO check `hosted-client-identity` on the cell.
+`n/a`. Per column, `scored: { passed, total, startable }` counts passes
+among every cell the revision's requirement set scores — `total` is the
+yaml's count whether or not this deployment can start the cell, `startable`
+how many of those it can (the HTML says "3 of 32 scored (11 startable
+here)"); `not_scored`/`unlisted` results are listed next to the score, never
+inside it. The header names each client once — by `clientInfo` name and
+version — with every protocol version it negotiated, read off accepted
+exchanges only: on the stateful wire the `initialize` params and the
+`protocolVersion` the server answered with, on the stateless wire
+`_meta['io.modelcontextprotocol/clientInfo']` and the accepted request's
+`MCP-Protocol-Version` header. Recorded as an INFO check
+`hosted-client-identity` on the cell with `details.protocolVersions`.
 
 The hosted layer also records two FAILUREs of its own about requests to a
 cell's MCP endpoint, so a cell cannot read green when the wire turned every

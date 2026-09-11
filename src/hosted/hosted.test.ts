@@ -500,21 +500,32 @@ describe('hosted server', () => {
   });
 
   it('records the client identity on both wires without eating the body', async () => {
-    // Stateful: identity comes from the initialize params.
-    await postMcp(`/s/who/${REV_STATEFUL}/tools_call/mcp`, initBody('sdk-a'), {
+    // Stateful: name from the initialize params, version from what the
+    // server answered over SSE — the SDK echoes a supported requested
+    // version and falls back to its latest for one it does not know. A
+    // second initialize by the same client adds to the one identity; a
+    // later header-only request adds nothing.
+    const url = `/s/who/${REV_STATEFUL}/tools_call/mcp`;
+    await postMcp(url, initBody('sdk-a'), {
       'user-agent': 'vitest-agent/1'
     }).then((r) => r.text());
-    // A later request on the same wire only carries the header; same client,
-    // different protocolVersion → a second identity.
     await postMcp(
-      `/s/who/${REV_STATEFUL}/tools_call/mcp`,
+      url,
+      {
+        ...initBody('sdk-a'),
+        params: { ...initBody('sdk-a').params, protocolVersion: 'bogus' }
+      },
+      { 'user-agent': 'vitest-agent/1' }
+    ).then((r) => r.text());
+    await postMcp(
+      url,
       {
         jsonrpc: '2.0',
         id: 2,
         method: 'tools/call',
         params: { name: 'add_numbers', arguments: { a: 1, b: 1 } }
       },
-      { 'mcp-protocol-version': '2025-06-18', 'user-agent': 'vitest-agent/1' }
+      { 'mcp-protocol-version': REV_STATEFUL, 'user-agent': 'vitest-agent/1' }
     ).then((r) => r.text());
     const stateful = await fetch(
       `${base}/results/who/${REV_STATEFUL}/tools_call`
@@ -526,12 +537,14 @@ describe('hosted server', () => {
       {
         name: 'sdk-a',
         version: '0',
-        protocolVersion: '2025-06-18',
+        protocolVersions: ['2025-06-18', REV_STATEFUL],
         userAgent: 'vitest-agent/1'
-      },
-      { protocolVersion: '2025-06-18', userAgent: 'vitest-agent/1' }
+      }
     ]);
     expect(ids[0].status).toBe('INFO');
+    expect(ids[0].description).toContain(
+      `sdk-a 0 speaking protocol 2025-06-18, ${REV_STATEFUL}`
+    );
     // The scenario still saw and judged the body it was going to read.
     expect(stateful.summary.passed).toBeGreaterThanOrEqual(1);
     expect(
@@ -539,12 +552,32 @@ describe('hosted server', () => {
         ?.status
     ).toBe('SUCCESS');
 
-    // Stateless: identity comes from _meta on every request.
+    // Stateless: identity comes from _meta on every accepted request. One
+    // the mock turns away (header disagreeing with _meta) is no identity.
     await postMcp(
       `/s/who/${REV_STATELESS}/tools_call/mcp`,
       statelessBody('tools/list'),
       { ...statelessHeaders, 'user-agent': 'vitest-agent/2' }
     ).then((r) => r.text());
+    const rejected = await postMcp(
+      `/s/who/${REV_STATELESS}/tools_call/mcp`,
+      {
+        ...statelessBody('tools/list'),
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+            'io.modelcontextprotocol/clientInfo': {
+              name: 'nobody',
+              version: '1'
+            },
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      },
+      { 'mcp-protocol-version': REV_STATEFUL }
+    );
+    expect(rejected.status).toBe(400);
+    await rejected.text();
     const stateless = await fetch(
       `${base}/results/who/${REV_STATELESS}/tools_call`
     ).then((r) => r.json());
@@ -556,7 +589,7 @@ describe('hosted server', () => {
       {
         name: 'vitest',
         version: '0',
-        protocolVersion: REV_STATELESS,
+        protocolVersions: [REV_STATELESS],
         userAgent: 'vitest-agent/2'
       }
     ]);
@@ -599,34 +632,32 @@ describe('hosted server', () => {
       verdict: 'incomplete',
       startable: false
     });
-    const scoredStartable = (rev: string) =>
+    // N is the requirement set's count of scored cells (auth/* included,
+    // though not startable without a relay); the startable subset alongside.
+    const scoredCells = (rev: string) =>
       matrix
         .cells()
-        .filter(
-          (c) => c.revision === rev && c.scoring === 'scored' && c.startable
-        ).length;
-    expect(stateful.scored).toEqual({
-      passed: 1,
-      total: scoredStartable(REV_STATEFUL)
+        .filter((c) => c.revision === rev && c.scoring === 'scored');
+    const scoredOf = (rev: string, passed: number) => ({
+      passed,
+      total: scoredCells(rev).length,
+      startable: scoredCells(rev).filter((c) => c.startable).length
     });
-    expect(stateless.scored).toEqual({
-      passed: 0,
-      total: scoredStartable(REV_STATELESS)
-    });
-    // Header shows who talked to the run: the stateful client by name, and
-    // the header-only probe that hit request-metadata.
-    expect(report.identities).toContainEqual(
+    expect(stateful.scored).toEqual(scoredOf(REV_STATEFUL, 1));
+    expect(stateless.scored).toEqual(scoredOf(REV_STATELESS, 0));
+    expect(stateful.scored.startable).toBeLessThan(stateful.scored.total);
+    // Header shows who talked to the run: the stateful client by name; the
+    // probe request-metadata turned away is no identity.
+    expect(report.identities).toEqual([
       expect.objectContaining({
         name: 'rep-client',
-        protocolVersion: '2025-06-18'
+        protocolVersions: ['2025-06-18']
       })
-    );
+    ]);
     expect(stateful.identities).toEqual([
       expect.objectContaining({ name: 'rep-client' })
     ]);
-    expect(stateless.identities).toEqual([
-      expect.objectContaining({ protocolVersion: 'DRAFT-2026-v1' })
-    ]);
+    expect(stateless.identities).toEqual([]);
 
     // Column scope and HTML.
     const column = await fetch(`${base}/results/${run}/${REV_STATELESS}`).then(
@@ -639,7 +670,10 @@ describe('hosted server', () => {
     });
     expect(html.headers.get('content-type')).toContain('text/html');
     const text = await html.text();
-    expect(text).toContain(`scored 1 of ${scoredStartable(REV_STATEFUL)}`);
+    expect(text).toContain(
+      `1 of ${stateful.scored.total} scored (${stateful.scored.startable} startable here)`
+    );
+    expect(text).toContain('no client seen yet'); // the 2026-07-28 column
     expect(text).toContain('<b>rep-client</b>');
     expect(text).toContain('>fail</span>');
     expect(text).toContain(
