@@ -28,6 +28,11 @@ import http from 'http';
 import { ConformanceCheck } from '../../../types.js';
 import { untestableCheck } from '../../untestable.js';
 import { BaseHttpScenario } from '../http-base.js';
+import {
+  initializeResult,
+  readResult,
+  skillsListResult
+} from './mock-results.js';
 
 const SKILLS_EXTENSION_ID = 'io.modelcontextprotocol/skills';
 
@@ -162,7 +167,15 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
   ): void {
     switch (request.method) {
       case 'initialize':
-        this.sendInitialize(res, request);
+        this.sendJson(res, {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: initializeResult(
+            this.name,
+            request,
+            this.discoverCapabilities()
+          )
+        });
         return;
 
       case 'skills/list': {
@@ -178,7 +191,7 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
         this.sendJson(res, {
           jsonrpc: '2.0',
           id: request.id,
-          result: { resultType: 'complete', skills: [entry] }
+          result: skillsListResult([entry])
         });
         return;
       }
@@ -190,10 +203,7 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
         this.sendJson(res, {
           jsonrpc: '2.0',
           id: request.id,
-          result: {
-            resultType: 'complete',
-            contents: [{ uri, mimeType: 'text/markdown', text }]
-          }
+          result: readResult(uri, text)
         });
         return;
       }

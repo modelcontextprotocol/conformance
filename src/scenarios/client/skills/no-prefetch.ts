@@ -17,6 +17,11 @@
 import http from 'http';
 import { ConformanceCheck } from '../../../types.js';
 import { BaseHttpScenario } from '../http-base.js';
+import {
+  initializeResult,
+  readResult,
+  skillsListResult
+} from './mock-results.js';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2640-Lazy-Retrieval',
@@ -75,7 +80,15 @@ export class SkillsNoPrefetchScenario extends BaseHttpScenario {
   ): void {
     switch (request.method) {
       case 'initialize':
-        this.sendInitialize(res, request);
+        this.sendJson(res, {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: initializeResult(
+            this.name,
+            request,
+            this.discoverCapabilities()
+          )
+        });
         return;
 
       case 'skills/list':
@@ -83,30 +96,27 @@ export class SkillsNoPrefetchScenario extends BaseHttpScenario {
         this.sendJson(res, {
           jsonrpc: '2.0',
           id: request.id,
-          result: {
-            resultType: 'complete',
-            skills: [
-              {
-                uri: SKILL_URI,
-                frontmatter: {
-                  name: 'pdf-processing',
-                  description: 'Extract, fill, and assemble PDF documents'
+          result: skillsListResult([
+            {
+              uri: SKILL_URI,
+              frontmatter: {
+                name: 'pdf-processing',
+                description: 'Extract, fill, and assemble PDF documents'
+              },
+              resources: [
+                {
+                  uri: SKILL_URI,
+                  digest: digestOf(SKILL_MD),
+                  size: Buffer.byteLength(SKILL_MD)
                 },
-                resources: [
-                  {
-                    uri: SKILL_URI,
-                    digest: digestOf(SKILL_MD),
-                    size: Buffer.byteLength(SKILL_MD)
-                  },
-                  {
-                    uri: SUPPORTING_URI,
-                    digest: digestOf(SUPPORTING),
-                    size: Buffer.byteLength(SUPPORTING)
-                  }
-                ]
-              }
-            ]
-          }
+                {
+                  uri: SUPPORTING_URI,
+                  digest: digestOf(SUPPORTING),
+                  size: Buffer.byteLength(SUPPORTING)
+                }
+              ]
+            }
+          ])
         });
         return;
 
@@ -118,10 +128,7 @@ export class SkillsNoPrefetchScenario extends BaseHttpScenario {
         this.sendJson(res, {
           jsonrpc: '2.0',
           id: request.id,
-          result: {
-            resultType: 'complete',
-            contents: [{ uri, mimeType: 'text/markdown', text: body }]
-          }
+          result: readResult(uri, body)
         });
         return;
       }
