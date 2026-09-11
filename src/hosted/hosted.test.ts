@@ -830,6 +830,45 @@ describe('hosted server across processes (shared store)', () => {
     );
   });
 
+  it('passes tools_call when tools/list and tools/call land on different processes', async () => {
+    const path = `/s/split/${REV_STATELESS}/tools_call/mcp`;
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+      'io.modelcontextprotocol/clientCapabilities': {}
+    };
+    const send = (origin: string, body: object) =>
+      fetch(`${origin}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-protocol-version': REV_STATELESS
+        },
+        body: JSON.stringify(body)
+      }).then((r) => r.text());
+    await send(origins[0], {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: meta }
+    });
+    await apps[0].sessions.flush();
+    await send(origins[1], {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { _meta: meta, name: 'add_numbers', arguments: { a: 2, b: 3 } }
+    });
+    await apps[1].sessions.flush();
+    for (const origin of origins) {
+      const results = await fetch(
+        `${origin}/results/split/${REV_STATELESS}/tools_call`
+      ).then((r) => r.json());
+      expect(
+        results.checks.find((c: { id: string }) => c.id === 'tool-add-numbers')
+      ).toMatchObject({ status: 'SUCCESS', details: { result: 5 } });
+    }
+  });
+
   it("rejects request-metadata's first request once per run, not once per process", async () => {
     const path = `/s/split/${REV_STATELESS}/request-metadata/mcp`;
     const body = {
