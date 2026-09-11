@@ -42,7 +42,15 @@ import {
   mintRunId
 } from './session';
 import { buildMatrix, type HostedMatrix, type MatrixCell } from './matrix';
-import { renderLanding, renderConfig, renderResults } from './html';
+import {
+  renderLanding,
+  renderConfig,
+  renderReport,
+  renderResults
+} from './html';
+import { onBody, tapJsonBody } from './body';
+import { identityFrom } from './identity';
+import { buildReport } from './report';
 import type { RunStore } from './store';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
@@ -120,6 +128,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   const matrix = buildMatrix({ auxOrigins, exclude: opts.exclude });
   const revisions: readonly string[] = matrix.revisions;
   const app = express();
+  // Copy JSON POST bodies as they flow so the report can name the client
+  // (initialize params / per-request _meta) without consuming the stream
+  // the scenario is about to read.
+  app.use(tapJsonBody());
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;
@@ -260,6 +272,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       `<${resultsUrlFor(req, run.id)}>; rel="conformance-results"`
     );
     req.url = rewrittenUrl;
+    run.touched = true;
+    onBody(req, (body) => {
+      const identity = identityFrom(req.headers, body);
+      if (identity) sessions.recordIdentity(run, identity);
+    });
     if (sessions.store) {
       // Write this process's view through once the scenario has answered
       // (hosted scenarios record their checks before calling end()).
@@ -631,29 +648,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       return;
     }
 
-    // Run or column scope: one summary per exercised cell.
+    // Run or column scope: a verdict per cell of the matrix.
     const scope = segments.length === 2 ? (revision as SpecVersion) : undefined;
-    const cells = (await sessions.listCells(runId))
-      .filter((c) => scope === undefined || c.revision === scope)
-      .sort((a, b) => cellId(a).localeCompare(cellId(b)));
-    const results = await Promise.all(
-      cells.map(async (ref) => {
-        const r = await sessions.results(cellId(ref));
-        const s = summarise(ref, r?.checks ?? []);
-        return {
-          runId: s.runId,
-          revision: s.revision,
-          scenario: s.scenario,
-          summary: s.summary,
-          resultsUrl: resultsUrlFor(req, cellId(ref))
-        };
-      })
-    );
-    res.json({
-      runId,
-      ...(scope && { revision: scope }),
-      cells: results
+    const report = await buildReport(matrix, runId, scope, {
+      listCells: (id) => sessions.listCells(id),
+      results: (id) => sessions.results(id),
+      resultsUrl: (ref) => resultsUrlFor(req, cellId(ref))
     });
+    if (wantsHtml(req)) {
+      res.type('html').send(renderReport(origin(req), matrix, report));
+    } else {
+      res.json(report);
+    }
   });
 
   app.delete('/results/:runId', async (req, res) => {

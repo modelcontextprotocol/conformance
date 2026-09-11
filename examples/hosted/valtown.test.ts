@@ -34,6 +34,16 @@ describe('val.town fetch bridge', () => {
       new Request('http://test/results/ft1/2025-11-25/initialize')
     ).then((r) => r.json());
     expect(checks.summary.passed).toBeGreaterThanOrEqual(1);
+    // The bridge hands the buffered body to the identity capture.
+    expect(
+      checks.checks.find(
+        (c: { id: string }) => c.id === 'hosted-client-identity'
+      )?.details
+    ).toMatchObject({
+      name: 'ft',
+      version: '0',
+      protocolVersion: '2025-06-18'
+    });
   });
 
   it('serves an SDK-transport scenario (tools_call) statelessly', async () => {

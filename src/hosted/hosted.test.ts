@@ -205,12 +205,15 @@ describe('hosted server', () => {
       a.checks.find((c: { id: string }) => c.id === 'tool-add-numbers')?.status
     ).toBe('SUCCESS');
     const b = await fetch(`${base}/results/wire`).then((r) => r.json());
-    expect(
-      b.cells.map((c: { revision: string; scenario: string }) => [
-        c.revision,
-        c.scenario
-      ])
-    ).toEqual([
+    const exercised = (report: {
+      columns: {
+        cells: { revision: string; scenario: string; summary?: unknown }[];
+      }[];
+    }) =>
+      report.columns.flatMap((col) =>
+        col.cells.filter((c) => c.summary).map((c) => [c.revision, c.scenario])
+      );
+    expect(exercised(b)).toEqual([
       [REV_STATEFUL, 'tools_call'],
       [REV_STATELESS, 'tools_call']
     ]);
@@ -443,23 +446,178 @@ describe('hosted server', () => {
       statelessBody('tools/list'),
       statelessHeaders
     ).then((r) => r.text());
+    type Cell = {
+      scenario: string;
+      summary?: { total: number };
+      resultsUrl: string;
+    };
+    const exercised = (report: { columns: { cells: Cell[] }[] }) =>
+      report.columns.flatMap((col) => col.cells.filter((c) => c.summary));
     let run = await fetch(`${base}/results/del`).then((r) => r.json());
-    expect(run.cells).toHaveLength(2);
-    expect(run.cells[0]).toMatchObject({
-      runId: 'del',
+    expect(exercised(run)).toHaveLength(2);
+    expect(exercised(run)[0]).toMatchObject({
       revision: REV_STATEFUL,
       scenario: 'initialize',
+      verdict: 'pass',
       resultsUrl: `${base}/results/del/${REV_STATEFUL}/initialize`
     });
-    expect(run.cells[0].summary.total).toBeGreaterThan(0);
+    expect(exercised(run)[0].summary!.total).toBeGreaterThan(0);
 
     const del = await fetch(`${base}/results/del`, { method: 'DELETE' });
     expect(del.status).toBe(204);
     run = await fetch(`${base}/results/del`).then((r) => r.json());
-    expect(run.cells).toEqual([]);
+    expect(exercised(run)).toEqual([]);
     expect(
       (await fetch(`${base}/results/del/${REV_STATEFUL}/initialize`)).status
     ).toBe(404);
+  });
+
+  it('records the client identity on both wires without eating the body', async () => {
+    // Stateful: identity comes from the initialize params.
+    await postMcp(`/s/who/${REV_STATEFUL}/tools_call/mcp`, initBody('sdk-a'), {
+      'user-agent': 'vitest-agent/1'
+    }).then((r) => r.text());
+    // A later request on the same wire only carries the header; same client,
+    // different protocolVersion → a second identity.
+    await postMcp(
+      `/s/who/${REV_STATEFUL}/tools_call/mcp`,
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'add_numbers', arguments: { a: 1, b: 1 } }
+      },
+      { 'mcp-protocol-version': '2025-06-18', 'user-agent': 'vitest-agent/1' }
+    ).then((r) => r.text());
+    const stateful = await fetch(
+      `${base}/results/who/${REV_STATEFUL}/tools_call`
+    ).then((r) => r.json());
+    const ids = stateful.checks.filter(
+      (c: { id: string }) => c.id === 'hosted-client-identity'
+    );
+    expect(ids.map((c: { details: unknown }) => c.details)).toEqual([
+      {
+        name: 'sdk-a',
+        version: '0',
+        protocolVersion: '2025-06-18',
+        userAgent: 'vitest-agent/1'
+      },
+      { protocolVersion: '2025-06-18', userAgent: 'vitest-agent/1' }
+    ]);
+    expect(ids[0].status).toBe('INFO');
+    // The scenario still saw and judged the body it was going to read.
+    expect(stateful.summary.passed).toBeGreaterThanOrEqual(1);
+    expect(
+      stateful.checks.find((c: { id: string }) => c.id === 'tool-add-numbers')
+        ?.status
+    ).toBe('SUCCESS');
+
+    // Stateless: identity comes from _meta on every request.
+    await postMcp(
+      `/s/who/${REV_STATELESS}/tools_call/mcp`,
+      statelessBody('tools/list'),
+      { ...statelessHeaders, 'user-agent': 'vitest-agent/2' }
+    ).then((r) => r.text());
+    const stateless = await fetch(
+      `${base}/results/who/${REV_STATELESS}/tools_call`
+    ).then((r) => r.json());
+    expect(
+      stateless.checks
+        .filter((c: { id: string }) => c.id === 'hosted-client-identity')
+        .map((c: { details: unknown }) => c.details)
+    ).toEqual([
+      {
+        name: 'vitest',
+        version: '0',
+        protocolVersion: REV_STATELESS,
+        userAgent: 'vitest-agent/2'
+      }
+    ]);
+  });
+
+  it('reports a verdict per cell with scored X of N per column', async () => {
+    const run = 'rep';
+    // pass
+    await postMcp(
+      `/s/${run}/${REV_STATEFUL}/initialize`,
+      initBody('rep-client')
+    ).then((r) => r.text());
+    // fail: request-metadata's first request is rejected on purpose; stopping
+    // there leaves its declared checks unemitted → FAILURE on judgement.
+    await postMcp(
+      `/s/${run}/${REV_STATELESS}/request-metadata`,
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { 'mcp-protocol-version': 'DRAFT-2026-v1' }
+    ).then((r) => r.text());
+    // incomplete (created via config, never hit): every other startable cell.
+    await fetch(`${base}/s/${run}`).then((r) => r.json());
+
+    const report = await fetch(`${base}/results/${run}`).then((r) => r.json());
+    expect(report.runId).toBe(run);
+    expect(report.columns.map((c: { revision: string }) => c.revision)).toEqual(
+      [REV_STATEFUL, REV_STATELESS]
+    );
+    const [stateful, stateless] = report.columns;
+    const find = (col: { cells: { scenario: string }[] }, name: string) =>
+      col.cells.find((c) => c.scenario === name) as Record<string, unknown>;
+    expect(find(stateful, 'initialize')).toMatchObject({
+      verdict: 'pass',
+      scoring: 'scored',
+      resultsUrl: `${base}/results/${run}/${REV_STATEFUL}/initialize`
+    });
+    expect(find(stateless, 'request-metadata').verdict).toBe('fail');
+    expect(find(stateless, 'initialize').verdict).toBe('n/a');
+    expect(find(stateful, 'tools_call').verdict).toBe('incomplete'); // configured, never hit
+    expect(find(stateful, 'auth/basic-cimd')).toMatchObject({
+      verdict: 'incomplete',
+      startable: false
+    });
+    const scoredStartable = (rev: string) =>
+      matrix
+        .cells()
+        .filter(
+          (c) => c.revision === rev && c.scoring === 'scored' && c.startable
+        ).length;
+    expect(stateful.scored).toEqual({
+      passed: 1,
+      total: scoredStartable(REV_STATEFUL)
+    });
+    expect(stateless.scored).toEqual({
+      passed: 0,
+      total: scoredStartable(REV_STATELESS)
+    });
+    // Header shows who talked to the run: the stateful client by name, and
+    // the header-only probe that hit request-metadata.
+    expect(report.identities).toContainEqual(
+      expect.objectContaining({
+        name: 'rep-client',
+        protocolVersion: '2025-06-18'
+      })
+    );
+    expect(stateful.identities).toEqual([
+      expect.objectContaining({ name: 'rep-client' })
+    ]);
+    expect(stateless.identities).toEqual([
+      expect.objectContaining({ protocolVersion: 'DRAFT-2026-v1' })
+    ]);
+
+    // Column scope and HTML.
+    const column = await fetch(`${base}/results/${run}/${REV_STATELESS}`).then(
+      (r) => r.json()
+    );
+    expect(column.revision).toBe(REV_STATELESS);
+    expect(column.columns).toHaveLength(1);
+    const html = await fetch(`${base}/results/${run}`, {
+      headers: { accept: 'text/html' }
+    });
+    expect(html.headers.get('content-type')).toContain('text/html');
+    const text = await html.text();
+    expect(text).toContain(`scored 1 of ${scoredStartable(REV_STATEFUL)}`);
+    expect(text).toContain('<b>rep-client</b>');
+    expect(text).toContain('>fail</span>');
+    expect(text).toContain(
+      `href="${base}/results/${run}/${REV_STATEFUL}/initialize"`
+    );
   });
 
   it('HTML-escapes the run id in the results report', () => {

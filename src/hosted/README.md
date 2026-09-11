@@ -10,78 +10,148 @@ npx @modelcontextprotocol/conformance hosted --port 3000
 npx @modelcontextprotocol/conformance hosted --port 3000 --public-origin https://conformance.example.com
 ```
 
+## The matrix
+
+One run exercises the whole matrix: every registered client scenario (rows)
+at every specification revision that ships a requirement set in
+`requirements/` (columns — today `2025-11-25` and `2026-07-28`). A **cell**
+is one scenario at one revision; its id `<run-id>/<revision>/<scenario>` is
+the URL path the client is pointed at, the store key and the results path.
+
+Each cell carries two independent facts:
+
+- **scoring** — what the revision's `requirements/<rev>.yaml` makes of the
+  scenario: `scored` (in its `client:` list), `not_scored` (listed but never
+  counted, with the yaml's reason), `unlisted` (applies to the revision but
+  the frozen set predates it) or `n/a` (does not apply: introduced later,
+  removed earlier, or an extension the set does not carry). `n/a` cells are
+  never mounted.
+- **startable** — whether this deployment can mount it: the scenario has
+  been converted to `handler()` / `authHandlers()`, every relay origin it
+  needs is configured, and the deployment has not excluded it
+  (`HostedServerOptions.exclude`). A cell that cannot start answers 501 with
+  the reason.
+
+Each cell speaks its column's wire: the `2025-11-25` column serves the
+stateful mock (initialize handshake), the `2026-07-28` column the stateless
+one (per-request `_meta`, `MCP-Protocol-Version` on every request) — exactly
+what `conformance client --spec-version <rev>` would run.
+
 ## Routes
 
-| Route                                   | Purpose                                                                                  |
-| --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `GET /`                                 | Landing page with usage + scenario list                                                  |
-| `GET /scenarios`                        | JSON list of hostable scenarios                                                          |
-| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id. |
-| `GET /s/<scenario>`                     | Mints a fresh run-id and returns `{runId, mcpUrl, resultsUrl}`.                          |
-| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                       |
-| `GET /results/<run-id>.html`            | Pretty HTML report                                                                       |
-| `DELETE /results/<run-id>`              | Tear down the run early                                                                  |
+| Route                                         | Purpose                                                                                                           |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `GET /`                                       | Landing page: the static matrix (scoring, startability, steps)                                                    |
+| `GET /scenarios`                              | JSON rows with a cell per revision                                                                                |
+| `GET /s`                                      | Mints a run id, `303 → /s/<run-id>`                                                                               |
+| `GET /s/<run-id>`                             | Config for every startable cell of the run                                                                        |
+| `GET /s/<run-id>/<rev>`                       | Config for one column                                                                                             |
+| `GET /s/<run-id>/<rev>/<scenario>`            | Config for one cell (a page request, see below)                                                                   |
+| `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus the scenario's `mcpPath` (`/mcp` for `auth/*`, else ``). |
+| `GET /results/<run-id>`                       | Verdict per cell, `scored X of N` per column, client identity                                                     |
+| `GET /results/<run-id>/<rev>`                 | One column                                                                                                        |
+| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, summary, checks}`                                                          |
+| `DELETE /results/<run-id>`                    | Tear down every cell of the run                                                                                   |
+
+Run ids match `[A-Za-z0-9_-]{1,64}`; pick your own or take the minted one.
+Cells are created lazily on first request. Scenario names may contain `/`
+and sit at the end of the path, so they are resolved by longest registered
+name (`auth/metadata-var2/tenant1` → scenario `auth/metadata-var2`, suffix
+`/tenant1`).
+
+**Representation.** Config and results answer HTML when the request prefers
+`text/html` and JSON otherwise; `?format=html|json` overrides. At a cell URL
+a GET that accepts `text/html` (and not `text/event-stream`) or carries
+`?format=` is a page/config request; every other request — POST, an SSE GET,
+DELETE, well-known paths — is dispatched to the scenario. Dispatched
+responses carry `link: <…/results/<run-id>/<rev>/<scenario>>;
+rel="conformance-results"`.
+
+**Config JSON** (run, column or cell scope):
+
+```json
+{
+  "runId": "…", "revision": "2026-07-28", "scenario": "tools_call",
+  "resultsUrl": "…/results/<run-id>/2026-07-28/tools_call",
+  "mcpServers": { "2026-07-28/tools_call": { "type": "http", "url": "…/s/<run-id>/2026-07-28/tools_call/mcp" } },
+  "cells": [{
+    "scenario": "tools_call", "revision": "2026-07-28", "url": "…", "resultsUrl": "…",
+    "scoring": "scored", "steps": [{ "op": "tools/list" }, …],
+    "env": {
+      "MCP_CONFORMANCE_SCENARIO": "tools_call",
+      "MCP_CONFORMANCE_PROTOCOL_VERSION": "2026-07-28",
+      "MCP_CONFORMANCE_CONTEXT": "{\"name\":\"tools_call\",\"steps\":[…]}"
+    }
+  }]
+}
+```
+
+`env` is what the CLI runner would set for the client under test; `context`
+is the scenario's context (credentials, `steps`) tagged with `name`, as a
+JSON string. The HTML pages have copy-to-clipboard buttons for the same data.
+
+**Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
+(any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or
+`n/a`. Per column, `scored X of N` counts passes among the cells the
+revision scores _and_ this deployment can start; `not_scored`/`unlisted`
+results are listed next to the score, never inside it. The header names the
+client and the protocol version it negotiated, read off the wire per request
+(`MCP-Protocol-Version`; `_meta['io.modelcontextprotocol/clientInfo']` on
+the stateless wire, the `initialize` params on the stateful one) and
+recorded as an INFO check `hosted-client-identity` on the cell.
 
 ## How it works
 
 Each scenario implements `handler(): RequestListener` (see `HandlerScenario`
-in `src/types.ts`). The hosted server instantiates a fresh scenario per
-`(scenario, run-id)`, mounts its handler under `/s/<scenario>/<run-id>`, and
-rewrites `req.url` to strip the prefix — **no loopback port, no proxy**. The
-CLI runner's `start()`/`stop()` are now thin wrappers around the same
-`handler()`, so both modes exercise identical code.
+in `src/types.ts`). The hosted server instantiates a fresh scenario per cell
+with a `ScenarioContext` for the column's revision, mounts its handler under
+`/s/<run-id>/<rev>/<scenario>`, and rewrites `req.url` to strip the prefix —
+**no loopback port, no proxy**. The CLI runner's `start()`/`stop()` are thin
+wrappers around the same `handler()`, so both modes exercise identical code.
 
-### Stateless transport
+The run id lives in the **URL path**, not the `mcp-session-id` header, so
+correlation works for stateless-transport clients: a client that never
+echoes a session id still hits the same cell and its checks accumulate there.
 
-The run-id lives in the **URL path**, not the `mcp-session-id` header, so
-correlation works for stateless-transport clients (every draft-spec scenario
-that uses `sessionIdGenerator: undefined`). A client that never echoes a
-session id still hits the same `/s/<scenario>/<run-id>` and its checks
-accumulate on that run.
+Each cell gets its own scenario instance, built from the registry entry with
+a no-arg constructor. A scenario whose constructor takes parameters (one
+class registered under several names, e.g. `skills/verification-*`)
+implements `Scenario.fresh()` to carry them into the per-cell copy.
 
-### Coverage
-
-Hostable = any scenario that implements `handler()` (single origin) or
-`authHandlers()` (multi-origin, see below). `listHostableScenarios()` derives
-the list at runtime, gated by which aux origins are configured.
-
-Each run gets its own scenario instance, built from the registry entry with a
-no-arg constructor. A scenario whose constructor takes parameters (one class
-registered under several names, e.g. `skills/verification-*`) implements
-`Scenario.fresh()` to carry them into the per-run copy.
-
-`sse-retry` implements `handler()` and works under `conformance hosted`, but
-its connection-close-timing checks won't be meaningful through a buffered
-fetch bridge — see below.
+The hosted layer reads JSON request bodies without consuming them
+(`src/hosted/body.ts` intercepts the parser's `push()`), so the client
+identity can be recorded while the scenario still reads the stream itself.
 
 ## Auth scenarios — second-origin relay
 
 `auth/*` scenarios stand up two cross-referencing HTTP apps: a resource
 server (the MCP endpoint + PRM) and an OAuth authorization server. The
 `.well-known/*` discovery paths and RFC 8414 `issuer` validation are
-**origin-rooted**, so the AS can't live under `/s/<scenario>/<id>/` — it
-needs its own public origin.
+**origin-rooted**, so the AS can't live under the cell prefix — it needs its
+own public origin.
 
 ```
-client                    RS origin                      AS-relay origin
-  │  POST /s/auth/.../mcp     │                              │
-  │──────────────────────────▶│ 401 + WWW-Authenticate       │
-  │  GET /.well-known/oauth-protected-resource/s/auth/...    │
-  │──────────────────────────▶│ {authorization_servers:      │
-  │                           │  [<as>/r/<id>]}              │
-  │  GET /.well-known/oauth-authorization-server/r/<id>      │
-  │──────────────────────────────────────────────────────────▶│
-  │                           │◀── /__aux/as/.well-known/... │
-  │                           │    (x-relay-secret)          │
+client                    RS origin                             AS-relay origin
+  │  POST /s/<cell>/mcp        │                                     │
+  │───────────────────────────▶│ 401 + WWW-Authenticate              │
+  │  GET /.well-known/oauth-protected-resource/s/<cell>/mcp          │
+  │───────────────────────────▶│ {authorization_servers:             │
+  │                            │  [<as>/r/<cell>]}                   │
+  │  GET /.well-known/oauth-authorization-server/r/<cell>            │
+  │─────────────────────────────────────────────────────────────────▶│
+  │                            │◀── /__aux/as/.well-known/…/r/<cell> │
+  │                            │    (x-relay-secret)                 │
 ```
 
 The AS relay (`examples/hosted/valtown-relay.ts`) is **stateless** — it just
 forwards every request to `<rs-origin>/__aux/<role><path>` with a shared
 secret. All scenario state (closures, checks) stays on the RS process; the
-per-run AS issuer is `<as-origin>/r/<run-id>` so the run-id is recoverable
-from any path the client constructs from it. The RS app extracts that
-`/r/<id>` segment, strips it, and dispatches to the run's AS handler with the
-path `createAuthServer()` registered.
+per-cell AS issuer is `<as-origin>/r/<run-id>/<rev>/<scenario>` so the cell
+is recoverable from any path the client constructs from it. The RS app
+locates that `/r/<cell>` segment run, strips it, and dispatches to the cell's
+AS handler with the path `createAuthServer()` registered. A cell is rebuilt
+from its id alone when a process has never seen it, so an AS request that
+arrives before the RS was ever hit still lands.
 
 ```bash
 # CLI — also reads CONFORMANCE_RELAY_SECRET from env
@@ -95,53 +165,50 @@ Two extra routes appear when `--as-origin` is set:
 
 | Route                                               | Purpose                                                              |
 | --------------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /.well-known/oauth-protected-resource/s/<...>` | RFC 9728 root-level PRM dispatch — recovers run from the path suffix |
+| `GET /.well-known/oauth-protected-resource/s/<...>` | RFC 9728 root-level PRM dispatch — recovers the cell from the suffix |
 | `ALL /__aux/<role>/*`                               | Relay backchannel; 403 without `x-relay-secret`                      |
 
-The three-origin scenarios (`authorization-server-migration` needs `--as2-origin`,
-`enterprise-managed-authorization` needs `--idp-origin`) are mounted only
-when those flags are set; deploy one more relay per role with
-`CONFORMANCE_RELAY_ROLE=as2|idp`.
+Scenarios needing `as2`/`idp` origins become startable when `--as2-origin` /
+`--idp-origin` are set; deploy one more relay per role with
+`CONFORMANCE_RELAY_ROLE=as2|idp`. (No registered scenario has been converted
+to `authHandlers()` with those roles yet.)
 
-**Fidelity note:** the hosted AS issuer always carries a `/r/<id>` path
+**Fidelity note:** the hosted AS issuer always carries a `/r/<cell>` path
 component, so scenarios that locally test root-issuer discovery
 (`auth/metadata-default`, `auth/metadata-var1`) become path-issuer tests when
 hosted. The RFC 8414 mechanics are identical.
-`auth/2025-03-26-endpoint-fallback` (no-metadata fallback to `/authorize` at
-the MCP origin) is not hostable.
 
 ## Serverless / val.town
 
 `examples/hosted/valtown.ts` wraps `createHostedApp()` in a
 `(Request) => Promise<Response>` bridge so the **same scenarios** run on
 fetch-based runtimes (val.town, Deno Deploy, Bun, Workers with
-`nodejs_compat`):
+`nodejs_compat`). Deploy with `examples/hosted/deploy-valtown.ts`; the vals
+are listed in `examples/hosted/valtown-manifest.json`.
 
-```ts
-import handler from 'npm:@modelcontextprotocol/conformance/examples/hosted/valtown';
-export default handler;
-```
-
-The bridge buffers the response, so streaming-SSE scenarios (`sse-retry`) are
-returned as 501; everything else — including the SDK's
-`StreamableHTTPServerTransport` in stateless mode — works.
+val.town spreads one run's requests over several isolates that share no
+memory, so `valtown.ts` excludes the scenarios whose checks depend on one
+process seeing consecutive requests (`sse-retry`, `auth/metadata-var2`,
+`elicitation-sep1034-client-defaults`, `sep-2322-client-request-state`); the
+matrix shows them as not startable with that reason. Everything else
+persists its raw check log to the account's SQLite (`RunStore`,
+`examples/hosted/valtown-store.ts`) and `/results` re-judges the merged log.
 
 ### Two-val auth setup
 
-| Val              | File                               | Env                                                                                      |
-| ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| `conformance`    | `examples/hosted/valtown.ts`       | `CONFORMANCE_AS_ORIGIN=https://<you>-conformance-as.val.run`, `CONFORMANCE_RELAY_SECRET` |
-| `conformance-as` | `examples/hosted/valtown-relay.ts` | `CONFORMANCE_RS_ORIGIN=https://<you>-conformance.val.run`, `CONFORMANCE_RELAY_SECRET`    |
+| Val     | File                               | Env                                                                                                           |
+| ------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `rs`    | `examples/hosted/valtown.ts`       | `CONFORMANCE_AS_ORIGIN=https://<relay val>.web.val.run`, `CONFORMANCE_RELAY_SECRET`                           |
+| `relay` | `examples/hosted/valtown-relay.ts` | `CONFORMANCE_RS_ORIGIN=https://<rs val>.web.val.run`, `CONFORMANCE_RELAY_SECRET`, `CONFORMANCE_RELAY_ROLE=as` |
 
-Same `CONFORMANCE_RELAY_SECRET` on both. Run state lives in the RS val's
-process memory, so a run must complete within one warm isolate (~minutes on
-val.town — fine for a conformance flow).
+Same `CONFORMANCE_RELAY_SECRET` on both.
 
 ## Example
 
 ```bash
-# pick any run-id; results live at the matching path
-$ npx @modelcontextprotocol/inspector https://conformance.example.com/s/tools_call/demo/mcp
-$ curl https://conformance.example.com/results/demo | jq .summary
-{ "passed": 1, "failed": 0, "warnings": 0, "info": 4, "skipped": 0, "total": 5 }
+$ RUN=$(curl -sI https://conformance.example.com/s | sed -n 's#^location: /s/##Ip' | tr -d '\r')
+$ npx @modelcontextprotocol/inspector https://conformance.example.com/s/$RUN/2025-11-25/tools_call/mcp
+$ curl https://conformance.example.com/results/$RUN/2025-11-25/tools_call | jq .summary
+{ "passed": 1, "failed": 0, "warnings": 0, "info": 5, "skipped": 0, "total": 6 }
+$ curl https://conformance.example.com/results/$RUN | jq '.columns[] | {revision, scored}'
 ```

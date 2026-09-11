@@ -8,6 +8,15 @@ import { ConformanceCheck, CheckStatus } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import type { CellConfig, RunConfig } from './server';
 import type { CellRef } from './session';
+import type { CellReport, RunReport, Verdict } from './report';
+import type { ClientIdentity } from './identity';
+
+const VERDICT_STYLE: Record<Verdict, string> = {
+  pass: 'background:#d1fae5;color:#065f46',
+  fail: 'background:#fee2e2;color:#991b1b',
+  incomplete: 'background:#f3f4f6;color:#6b7280',
+  'n/a': 'background:#f3f4f6;color:#9ca3af'
+};
 
 const STATUS_STYLE: Record<CheckStatus, string> = {
   SUCCESS: 'background:#d1fae5;color:#065f46',
@@ -343,5 +352,128 @@ export function renderResults(
       ref.runId
     )}/${esc(ref.revision)}/${esc(ref.scenarioName)}">config</a></p>
 <p>${passed} passed, ${failed} failed, ${checks.length} total</p>${items}`
+  );
+}
+
+function identityLine(identities: ClientIdentity[]): string {
+  if (!identities.length) return '<span class=muted>no client seen yet</span>';
+  return identities
+    .map((i) => {
+      const who = i.name
+        ? `<b>${esc(i.name)}</b>${i.version ? ` ${esc(i.version)}` : ''}`
+        : '<i>unnamed client</i>';
+      const proto = i.protocolVersion
+        ? ` · protocol <code>${esc(i.protocolVersion)}</code>`
+        : '';
+      const ua = i.userAgent
+        ? ` <span class=muted title="${esc(i.userAgent)}">(${esc(
+            i.userAgent.length > 40
+              ? i.userAgent.slice(0, 40) + '…'
+              : i.userAgent
+          )})</span>`
+        : '';
+      return `${who}${proto}${ua}`;
+    })
+    .join('<br>');
+}
+
+function verdictCell(cell: CellReport): string {
+  if (cell.verdict === 'n/a') {
+    return `<td class="cell na">n/a <span class=muted>— ${esc(cell.reason ?? '')}</span></td>`;
+  }
+  const pill = `<span class=pill style="${VERDICT_STYLE[cell.verdict]}">${cell.verdict}</span>`;
+  let lines = `<div>${pill} ${scoringPillFor(cell)}</div>`;
+  if (cell.summary) {
+    const s = cell.summary;
+    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}">${s.passed} passed, ${s.failed} failed${
+      s.warnings ? `, ${s.warnings} warning${s.warnings === 1 ? '' : 's'}` : ''
+    }, ${s.total} total</a></div>`;
+  } else if (!cell.startable) {
+    lines += `<div class=muted>not startable: ${esc(cell.startReason ?? '')}</div>`;
+  } else {
+    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}">nothing recorded</a></div>`;
+  }
+  return `<td class=cell>${lines}</td>`;
+}
+
+function scoringPillFor(cell: CellReport): string {
+  return `<span class=pill style="${SCORING_STYLE[cell.scoring]}" title="${esc(
+    cell.reason ?? ''
+  )}">${SCORING_LABEL[cell.scoring]}</span>`;
+}
+
+/** Report page for a run or one of its columns. */
+export function renderReport(
+  origin: string,
+  matrix: HostedMatrix,
+  report: RunReport
+): string {
+  const title = report.revision
+    ? `results — run ${report.runId} @ ${report.revision}`
+    : `results — run ${report.runId}`;
+  const head =
+    `<tr><th>scenario</th>` +
+    report.columns
+      .map(
+        (col) =>
+          `<th><a href="/results/${esc(report.runId)}/${esc(col.revision)}">${esc(
+            col.revision
+          )}</a><div class=muted>scored ${col.scored.passed} of ${col.scored.total}</div>` +
+          `<div class=muted>${identityLine(col.identities)}</div></th>`
+      )
+      .join('') +
+    '</tr>';
+  const rows = matrix.rows
+    .map((row) => {
+      const cells = report.columns
+        .map((col) => col.cells.find((c) => c.scenario === row.scenario)!)
+        .map(verdictCell)
+        .join('');
+      return `<tr><td><code>${esc(row.scenario)}</code></td>${cells}</tr>`;
+    })
+    .join('');
+  const notScored = report.columns
+    .map((col) => {
+      if (!col.notScored.length) return '';
+      const items = col.notScored
+        .map(
+          (c) =>
+            `<li><code>${esc(c.scenario)}</code> <span class=pill style="${
+              VERDICT_STYLE[c.verdict]
+            }">${c.verdict}</span> <span class=muted>${esc(
+              SCORING_LABEL[c.scoring]
+            )}${c.reason ? ` — ${esc(c.reason)}` : ''}</span> · <a href="${esc(
+              c.resultsUrl
+            )}">checks</a></li>`
+        )
+        .join('');
+      return `<h3>${esc(col.revision)}: run but not scored</h3><ul>${items}</ul>`;
+    })
+    .join('');
+  const crumbs = [
+    `<a href="/">matrix</a>`,
+    `<a href="/results/${esc(report.runId)}">run <code>${esc(report.runId)}</code></a>`
+  ];
+  if (report.revision) crumbs.push(`<code>${esc(report.revision)}</code>`);
+  crumbs.push(
+    `<a href="/s/${esc(report.runId)}${
+      report.revision ? `/${esc(report.revision)}` : ''
+    }">config</a>`
+  );
+  return page(
+    title,
+    `<h1>results — run <code>${esc(report.runId)}</code>${
+      report.revision ? ` <small>@ ${esc(report.revision)}</small>` : ''
+    }</h1>
+<p class=crumbs>${crumbs.join(' › ')}</p>
+<p>Client: ${identityLine(report.identities)}</p>
+<p class=muted>A cell passes when checks were recorded and none is a FAILURE;
+<i>scored X of N</i> counts passes among the cells the revision's requirement
+set scores and this deployment can start. Not-scored and unlisted cells are
+listed below the table. <a href="${esc(origin)}/results/${esc(report.runId)}${
+      report.revision ? `/${esc(report.revision)}` : ''
+    }?format=json">JSON</a>.</p>
+<table>${head}${rows}</table>
+${notScored}`
   );
 }

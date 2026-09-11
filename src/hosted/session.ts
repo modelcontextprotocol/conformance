@@ -24,6 +24,10 @@ import {
 import { createHandlerFor, type ScenarioContext } from '../mock-server';
 import { getScenario, scenarios } from '../scenarios';
 import type { RunStore } from './store';
+import { identityCheck, identityKey, type ClientIdentity } from './identity';
+
+/** Store writer suffix for the hosted layer's own checks (client identity). */
+const HOSTED_WRITER_SUFFIX = '/hosted';
 
 /** Run ids are one path segment: safe in URLs and after the relay's /r/. */
 export const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -88,6 +92,19 @@ export interface HostedRun extends CellRef {
   context?: Record<string, unknown>;
   /** Whether the store has been told this cell exists. */
   saved: boolean;
+  /**
+   * Whether any request was dispatched to the cell. A cell created only to
+   * answer a config request has not been exercised and stays out of the
+   * results listing.
+   */
+  touched: boolean;
+  /**
+   * Checks the hosted layer records about the cell (client identity), kept
+   * apart from the scenario's own log so they never enter its judgement.
+   */
+  hostedChecks: ConformanceCheck[];
+  /** Identity keys already recorded, so one client is one INFO check. */
+  identities: Set<string>;
 }
 
 export interface SessionManagerOptions {
@@ -111,6 +128,12 @@ export interface SessionManagerOptions {
 /** Results view: the cell plus its judged checks. */
 export interface RunResults extends CellRef {
   checks: ConformanceCheck[];
+  /**
+   * How many checks the scenario itself recorded (before judgement, which
+   * may add "expected but never seen" failures, and without the hosted
+   * layer's own INFO checks). Zero means nothing was exercised.
+   */
+  recorded: number;
 }
 
 /**
@@ -245,10 +268,21 @@ export class SessionManager {
       createdAt: Date.now(),
       lastSeenAt: Date.now(),
       context,
-      saved: false
+      saved: false,
+      touched: false,
+      hostedChecks: [],
+      identities: new Set()
     };
     this.runs.set(id, run);
     return run;
+  }
+
+  /** Record who is talking to the cell — once per distinct identity. */
+  recordIdentity(run: HostedRun, identity: ClientIdentity): void {
+    const key = identityKey(identity);
+    if (run.identities.has(key)) return;
+    run.identities.add(key);
+    run.hostedChecks.push(identityCheck(identity));
   }
 
   get(id: string): HostedRun | undefined {
@@ -297,6 +331,13 @@ export class SessionManager {
         this.writerId,
         rawChecksOf(run.scenario).map((c) => ({ ...c }))
       );
+      if (run.hostedChecks.length) {
+        await store.saveChecks(
+          run.id,
+          this.writerId + HOSTED_WRITER_SUFFIX,
+          run.hostedChecks.map((c) => ({ ...c }))
+        );
+      }
     })()
       .catch(logStoreError)
       .finally(() => this.pending.delete(p));
@@ -317,14 +358,22 @@ export class SessionManager {
    * Judged checks for a cell, or undefined when neither this process nor the
    * store has seen it. Without a store this is the scenario's own getChecks().
    * With a store it is every process's raw log merged (this process's live
-   * log wins over its own persisted row) and re-judged once.
+   * log wins over its own persisted row) and re-judged once. The hosted
+   * layer's own checks are appended after judgement, deduplicated across
+   * processes, so they never influence the scenario's verdicts.
    */
   async results(id: string): Promise<RunResults | undefined> {
     const ref = parseCellId(id);
     if (!ref) return undefined;
     const run = this.runs.get(id);
     if (!this.store) {
-      return run ? { ...ref, checks: run.scenario.getChecks() } : undefined;
+      if (!run) return undefined;
+      const recorded = rawChecksOf(run.scenario).length;
+      return {
+        ...ref,
+        checks: [...run.scenario.getChecks(), ...run.hostedChecks],
+        recorded
+      };
     }
     let byWriter = new Map<string, ConformanceCheck[]>();
     let known = false;
@@ -334,18 +383,43 @@ export class SessionManager {
     } catch (e) {
       logStoreError(e);
     }
-    if (run) byWriter.set(this.writerId, rawChecksOf(run.scenario));
+    if (run) {
+      byWriter.set(this.writerId, rawChecksOf(run.scenario));
+      byWriter.set(this.writerId + HOSTED_WRITER_SUFFIX, run.hostedChecks);
+    }
     if (!run && !known && byWriter.size === 0) return undefined;
-    const merged = Array.from(byWriter.values())
-      .flat()
-      .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
-    return { ...ref, checks: finalizeChecks(ref.scenarioName, merged) };
+    const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
+      (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
+    const scenarioLog: ConformanceCheck[] = [];
+    const hostedLog: ConformanceCheck[] = [];
+    for (const [writer, checks] of byWriter) {
+      (writer.endsWith(HOSTED_WRITER_SUFFIX) ? hostedLog : scenarioLog).push(
+        ...checks
+      );
+    }
+    const seen = new Set<string>();
+    const hosted = hostedLog.sort(byTime).filter((c) => {
+      const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return {
+      ...ref,
+      checks: [
+        ...finalizeChecks(ref.scenarioName, scenarioLog.sort(byTime)),
+        ...hosted
+      ],
+      recorded: scenarioLog.length
+    };
   }
 
-  /** Cells of a run this process or the store knows about. */
+  /** Exercised cells of a run: hit in this process, or saved to the store. */
   async listCells(runId: string): Promise<CellRef[]> {
     const ids = new Set<string>();
-    for (const r of this.runs.values()) if (r.runId === runId) ids.add(r.id);
+    for (const r of this.runs.values()) {
+      if (r.runId === runId && r.touched) ids.add(r.id);
+    }
     if (this.store) {
       try {
         for (const { id } of await this.store.listRuns(`${runId}/`))

@@ -10,6 +10,13 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 
+/**
+ * The hosted layer reads request bodies without consuming them (see
+ * src/hosted/body.ts). A bridge has the whole body before the listener runs,
+ * so it publishes it under this symbol instead of being tapped.
+ */
+const BUFFERED_BODY = Symbol.for('mcp-conformance.hosted.bufferedBody');
+
 type NodeListener = (req: IncomingMessage, res: ServerResponse) => void;
 
 export function toFetchHandler(
@@ -48,6 +55,8 @@ export function toFetchHandler(
     });
     if (body?.length) nodeReq.push(body);
     nodeReq.push(null);
+    (nodeReq as unknown as Record<symbol, Buffer>)[BUFFERED_BODY] =
+      body ?? Buffer.alloc(0);
 
     // --- Node ServerResponse → web Response ---
     const nodeRes = new ServerResponse(nodeReq);
