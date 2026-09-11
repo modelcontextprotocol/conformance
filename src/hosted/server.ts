@@ -12,8 +12,6 @@
  *   GET  /results/<run-id>.html             Pretty HTML report
  *   GET  /scenarios                         JSON list of hostable scenarios
  *   GET  /                                  Landing page
- *   POST /mcp                               Meta-MCP: list_scenarios,
- *                                           start_run, get_results
  *
  * Scenarios are mounted via Scenario.handler() — the same RequestListener the
  * CLI runner wraps in http.createServer — so there is no loopback port and
@@ -21,34 +19,18 @@
  */
 
 import express, { Request, Response } from 'express';
-import { ServerResponse } from 'http';
 import { timingSafeEqual } from 'crypto';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  CallToolResult
-} from '@modelcontextprotocol/sdk/types.js';
 import {
   SessionManager,
   HostedRun,
   UnknownScenarioError,
   NotHostableError,
-  listHostableScenarios,
-  hostedScenarioContext,
-  freshScenario
+  listHostableScenarios
 } from './session';
 import { renderLanding, renderResults } from './html';
 import type { RunStore } from './store';
 import { getScenario } from '../scenarios';
-import {
-  ConformanceCheck,
-  AuxOriginRole,
-  AuthHandlerScenario,
-  RequestListener,
-  Scenario
-} from '../types';
+import { ConformanceCheck, AuxOriginRole } from '../types';
 
 export interface HostedServerOptions {
   publicOrigin?: string;
@@ -77,105 +59,6 @@ export interface HostedServerOptions {
 const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
-
-// ---------------------------------------------------------------------------
-// Stateless ("/x") mounting support.
-//
-// /x/<scenario> mounts a scenario with NO run-id and NO results polling: a
-// fresh scenario instance judges each request on its own content, and if the
-// request itself violates a conformance requirement the response is replaced
-// with a 400 explaining which checks failed. This only behaves sensibly for
-// scenarios whose checks are per-request (no cross-request memory) — which
-// is also exactly what serverless hosts with multiple isolates can support.
-// ---------------------------------------------------------------------------
-
-/** Scenarios whose checks need cross-request or timing state — excluded. */
-const NOT_STATELESS = new Set(['sse-retry']);
-
-/**
- * The aux relay correlates flows by a /r/<segment> in the path. In stateless
- * mode that segment encodes the scenario name instead of a run-id
- * ('auth/metadata-default' → 'x--auth--metadata-default'); run-ids can't
- * collide with it because '--' never appears in minted ids and the prefix is
- * reserved.
- */
-const STATELESS_SLUG_PREFIX = 'x--';
-function statelessSlug(scenarioName: string): string {
-  return STATELESS_SLUG_PREFIX + scenarioName.split('/').join('--');
-}
-function decodeStatelessSlug(segment: string): string | undefined {
-  if (!segment.startsWith(STATELESS_SLUG_PREFIX)) return undefined;
-  return segment.slice(STATELESS_SLUG_PREFIX.length).split('--').join('/');
-}
-
-interface CapturedResponse {
-  status: number;
-  headers: Record<string, string | string[]>;
-  body: Buffer;
-}
-
-/**
- * Run a scenario listener against a buffered response so the outcome can be
- * judged (and replaced) after the handler finishes. Same interception
- * surface the valtown bridge uses: writeHead/setHeader/write/end and the
- * statusCode property — everything express and the SDK transport touch.
- */
-function runCaptured(
-  listener: RequestListener,
-  req: Request,
-  rewrittenUrl: string
-): Promise<CapturedResponse> {
-  return new Promise<CapturedResponse>((resolve, reject) => {
-    const headers: Record<string, string | string[]> = {};
-    const chunks: Buffer[] = [];
-    let status = 200;
-
-    const fake = new ServerResponse(req) as ServerResponse;
-    const captureHeaders = (
-      h?: Record<string, string | string[] | number>
-    ): void => {
-      for (const [k, v] of Object.entries(h ?? {})) {
-        headers[k.toLowerCase()] = Array.isArray(v) ? v : String(v);
-      }
-    };
-    fake.setHeader = ((k: string, v: string | string[] | number) => {
-      headers[k.toLowerCase()] = Array.isArray(v) ? v : String(v);
-      return fake;
-    }) as ServerResponse['setHeader'];
-    fake.getHeader = (k: string) => headers[k.toLowerCase()];
-    fake.removeHeader = (k: string) => {
-      delete headers[k.toLowerCase()];
-    };
-    fake.writeHead = ((code: number, h?: Record<string, string>) => {
-      status = code;
-      captureHeaders(h);
-      return fake;
-    }) as ServerResponse['writeHead'];
-    fake.write = ((c: string | Buffer, enc?: BufferEncoding) => {
-      if (c) chunks.push(typeof c === 'string' ? Buffer.from(c, enc) : c);
-      return true;
-    }) as ServerResponse['write'];
-    fake.flushHeaders = () => {};
-    Object.defineProperty(fake, 'statusCode', {
-      get: () => status,
-      set: (v: number) => {
-        status = v;
-      }
-    });
-    fake.end = ((c?: string | Buffer, enc?: BufferEncoding) => {
-      if (c) chunks.push(typeof c === 'string' ? Buffer.from(c, enc) : c);
-      resolve({ status, headers, body: Buffer.concat(chunks) });
-      return fake;
-    }) as ServerResponse['end'];
-
-    req.url = rewrittenUrl;
-    try {
-      listener(req, fake);
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)));
-    }
-  });
-}
 
 export function createHostedApp(opts: HostedServerOptions = {}): {
   app: express.Application;
@@ -371,222 +254,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     );
   });
 
-  // ---------- stateless mounting (no run-id, fail-fast) ----------
-  //
-  // /x/<scenario>[/<suffix>] judges every request on its own content with a
-  // fresh scenario instance. A request that records a FAILURE check gets a
-  // 400 explaining what went wrong instead of the scenario's response — the
-  // client-under-test finds out immediately, no results polling, no mint.
-
-  interface StatelessInstance {
-    scenario: Scenario;
-    listener: RequestListener;
-    auxListeners?: Partial<Record<AuxOriginRole, RequestListener>>;
-    mcpPath: string;
-  }
-
-  function instantiateStateless(
-    scenarioName: string,
-    baseUrl: string
-  ): StatelessInstance {
-    const proto = getScenario(scenarioName);
-    if (!proto) throw new UnknownScenarioError(scenarioName);
-    const scenario = freshScenario(proto);
-
-    if (scenario instanceof AuthHandlerScenario) {
-      const missing = scenario.auxRoles.filter((r) => !auxOrigins[r]);
-      if (missing.length) {
-        throw new NotHostableError(
-          scenarioName,
-          `needs aux origin(s) [${missing.join(', ')}] — start with --as-origin`
-        );
-      }
-      const handlers = scenario.authHandlers({
-        ...hostedScenarioContext(scenario),
-        getRsBaseUrl: () => baseUrl,
-        getAuxBaseUrl: (role) =>
-          `${auxOrigins[role]}/r/${statelessSlug(scenarioName)}`
-      });
-      return {
-        scenario,
-        listener: handlers.rs,
-        auxListeners: handlers.aux,
-        mcpPath: scenario.mcpPath ?? ''
-      };
-    }
-    if (scenario.handler) {
-      return {
-        scenario,
-        listener: scenario.handler(
-          () => baseUrl,
-          hostedScenarioContext(scenario)
-        ),
-        mcpPath: scenario.mcpPath ?? ''
-      };
-    }
-    throw new NotHostableError(scenarioName);
-  }
-
-  /**
-   * Resolve "<scenario...>/<suffix...>" (no run-id segment) against the
-   * hostable set, longest scenario-name prefix first.
-   */
-  function resolveStateless(
-    rest: string
-  ): { scenarioName: string; suffix: string } | undefined {
-    const segments = rest.split('/');
-    for (let i = segments.length; i >= 1; i--) {
-      const candidate = segments.slice(0, i).join('/');
-      if (hostable.has(candidate) && !NOT_STATELESS.has(candidate)) {
-        return {
-          scenarioName: candidate,
-          suffix: '/' + segments.slice(i).join('/')
-        };
-      }
-    }
-    return undefined;
-  }
-
-  /** Emit the captured response, or replace it with a 400 on FAILUREs. */
-  function finishStateless(
-    res: Response,
-    scenario: Scenario,
-    captured: CapturedResponse,
-    scenarioName: string
-  ): void {
-    const checks = scenario.rawChecks?.() ?? scenario.getChecks();
-    const failures = checks.filter((c) => c.status === 'FAILURE');
-    if (failures.length > 0) {
-      res.status(400).json({
-        error: 'conformance failure',
-        scenario: scenarioName,
-        failures: failures.map(({ id, description, details }) => ({
-          id,
-          description,
-          details
-        }))
-      });
-      return;
-    }
-    for (const [k, v] of Object.entries(captured.headers)) {
-      res.setHeader(k, v);
-    }
-    res.setHeader(
-      'mcp-conformance',
-      `pass; checks=${checks.filter((c) => c.status === 'SUCCESS').length}`
-    );
-    res.status(captured.status);
-    res.end(captured.body.length ? captured.body : undefined);
-  }
-
-  app.all(/^\/x\/(.+)$/, async (req, res) => {
-    const rest = req.params[0];
-    const resolved = resolveStateless(rest);
-    if (!resolved) {
-      const segments = rest.split('/');
-      for (let i = 1; i <= segments.length; i++) {
-        const candidate = segments.slice(0, i).join('/');
-        if (NOT_STATELESS.has(candidate)) {
-          res.status(501).json({
-            error: `scenario '${candidate}' needs cross-request state and cannot run stateless — use /s/${candidate}/<run-id>`
-          });
-          return;
-        }
-        if (getScenario(candidate)) {
-          res.status(501).json({
-            error: `scenario '${candidate}' is not hostable here`
-          });
-          return;
-        }
-      }
-      res.status(404).json({ error: `unknown scenario '${segments[0]}'` });
-      return;
-    }
-    const { scenarioName, suffix } = resolved;
-
-    let inst: StatelessInstance;
-    try {
-      inst = instantiateStateless(
-        scenarioName,
-        `${origin(req)}/x/${scenarioName}`
-      );
-    } catch (e) {
-      if (e instanceof UnknownScenarioError || e instanceof NotHostableError) {
-        res.status(400).json({ error: e.message });
-        return;
-      }
-      throw e;
-    }
-
-    const search = req.url.includes('?')
-      ? req.url.slice(req.url.indexOf('?'))
-      : '';
-    const captured = await runCaptured(
-      inst.listener,
-      req,
-      (suffix === '/' ? inst.mcpPath || '/' : suffix) + search
-    );
-    finishStateless(res, inst.scenario, captured, scenarioName);
-  });
-
-  // RFC 8414 root well-known for stateless mounts that embed their own AS
-  // (path-based issuer <origin>/x/<scn>/<as-path>): metadata lives at
-  // <origin>/.well-known/<doc>/x/<scn>/<as-path>.
-  app.get(
-    /^\/\.well-known\/(oauth-authorization-server|openid-configuration)\/x\/(.+)$/,
-    async (req, res) => {
-      const doc = req.params[0];
-      const resolved = resolveStateless(req.params[1]);
-      if (!resolved) {
-        res.status(404).json({ error: 'no scenario for this issuer path' });
-        return;
-      }
-      let inst: StatelessInstance;
-      try {
-        inst = instantiateStateless(
-          resolved.scenarioName,
-          `${origin(req)}/x/${resolved.scenarioName}`
-        );
-      } catch {
-        res.status(404).json({ error: 'no scenario for this issuer path' });
-        return;
-      }
-      const rewritten =
-        `/.well-known/${doc}` +
-        (resolved.suffix === '/' ? '' : resolved.suffix);
-      const captured = await runCaptured(inst.listener, req, rewritten);
-      finishStateless(res, inst.scenario, captured, resolved.scenarioName);
-    }
-  );
-
-  // RFC 9728 root well-known for stateless mounts: PRM URL for MCP URL
-  // <origin>/x/<scn>/mcp is <origin>/.well-known/oauth-protected-resource/x/<scn>/mcp.
-  app.get(
-    /^\/\.well-known\/oauth-protected-resource\/x\/(.+)$/,
-    async (req, res) => {
-      const resolved = resolveStateless(req.params[0]);
-      if (!resolved) {
-        res.status(404).json({ error: 'no scenario for this resource path' });
-        return;
-      }
-      let inst: StatelessInstance;
-      try {
-        inst = instantiateStateless(
-          resolved.scenarioName,
-          `${origin(req)}/x/${resolved.scenarioName}`
-        );
-      } catch {
-        res.status(404).json({ error: 'no scenario for this resource path' });
-        return;
-      }
-      const rewritten =
-        '/.well-known/oauth-protected-resource' +
-        (resolved.suffix === '/' ? '' : resolved.suffix);
-      const captured = await runCaptured(inst.listener, req, rewritten);
-      finishStateless(res, inst.scenario, captured, resolved.scenarioName);
-    }
-  );
-
   // ---------- root well-known dispatch (RS side) ----------
   //
   // RFC 9728: a client given MCP URL <origin>/s/<scn>/<id>/mcp derives the PRM
@@ -687,37 +354,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         ? req.url.slice(req.url.indexOf('?'))
         : '';
 
-      // Stateless flows encode the scenario name (not a run-id) in the /r/
-      // segment; per-flow OAuth state rides inside the artifacts themselves
-      // (auth code, token), so a fresh instance per request is enough.
-      const slugScenario = decodeStatelessSlug(runId);
-      if (slugScenario !== undefined) {
-        let inst: StatelessInstance;
-        try {
-          inst = instantiateStateless(
-            slugScenario,
-            `${origin(req)}/x/${slugScenario}`
-          );
-        } catch {
-          res
-            .status(404)
-            .json({ error: `no stateless scenario '${slugScenario}'` });
-          return;
-        }
-        const listener = inst.auxListeners?.[role];
-        if (!listener) {
-          res.status(404).json({ error: `no aux '${role}' handler` });
-          return;
-        }
-        const captured = await runCaptured(
-          listener,
-          req,
-          (prefix + suffix || '/') + search
-        );
-        finishStateless(res, inst.scenario, captured, slugScenario);
-        return;
-      }
-
       const run = await sessions.ensure(runId, (s, id) =>
         runBaseUrl(req, s, id)
       );
@@ -760,23 +396,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     res.status(204).end();
   });
 
-  // ---------- meta MCP server ----------
-
-  app.post('/mcp', express.json(), async (req, res) => {
-    const server = createMetaMcpServer(sessions, origin(req), (s, id) =>
-      runBaseUrl(req, s, id)
-    );
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined
-    });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-    res.on('close', () => {
-      transport.close();
-      server.close();
-    });
-  });
-
   return { app, sessions };
 }
 
@@ -798,131 +417,6 @@ function summarise(scenario: string, id: string, checks: ConformanceCheck[]) {
   };
 }
 
-function createMetaMcpServer(
-  sessions: SessionManager,
-  publicOrigin: string,
-  runBaseUrl: (scenario: string, runId: string) => string
-): Server {
-  const server = new Server(
-    { name: 'mcp-conformance-hosted', version: '0.2.0' },
-    { capabilities: { tools: {} } }
-  );
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'list_scenarios',
-        description:
-          'List client-conformance scenarios this hosted instance can serve.',
-        inputSchema: { type: 'object', properties: {} }
-      },
-      {
-        name: 'start_run',
-        description:
-          'Create a fresh run for a scenario and return the MCP URL to point ' +
-          'the client-under-test at, plus the results URL. The run-id is ' +
-          'embedded in the path so this works with stateless transports.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            scenario: {
-              type: 'string',
-              description: 'Scenario name, e.g. "initialize" or "tools_call".'
-            },
-            run_id: {
-              type: 'string',
-              description:
-                'Optional. Supply your own [A-Za-z0-9_-]{1,64} id; ' +
-                'otherwise one is generated.'
-            }
-          },
-          required: ['scenario']
-        }
-      },
-      {
-        name: 'get_results',
-        description:
-          'Fetch the conformance checks recorded for a run. Same shape as ' +
-          'GET /results/<id>.',
-        inputSchema: {
-          type: 'object',
-          properties: { run_id: { type: 'string' } },
-          required: ['run_id']
-        }
-      }
-    ]
-  }));
-
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    async (request): Promise<CallToolResult> => {
-      const args = (request.params.arguments ?? {}) as Record<string, string>;
-      switch (request.params.name) {
-        case 'list_scenarios':
-          return text(
-            JSON.stringify(
-              listHostableScenarios().map((name) => ({
-                name,
-                description: getScenario(name)!.description
-              })),
-              null,
-              2
-            )
-          );
-
-        case 'start_run': {
-          if (args.run_id && !RUN_ID_RE.test(args.run_id)) {
-            return errorText(`invalid run_id (must match ${RUN_ID_RE})`);
-          }
-          try {
-            const run = sessions.getOrCreate(args.scenario, args.run_id, (id) =>
-              runBaseUrl(args.scenario, id)
-            );
-            return text(
-              JSON.stringify(
-                {
-                  runId: run.id,
-                  mcpUrl: `${runBaseUrl(run.scenarioName, run.id)}${run.mcpPath}`,
-                  resultsUrl: `${publicOrigin}/results/${run.id}`,
-                  resultsHtmlUrl: `${publicOrigin}/results/${run.id}.html`,
-                  context: contextFor(run)
-                },
-                null,
-                2
-              )
-            );
-          } catch (e) {
-            if (
-              e instanceof UnknownScenarioError ||
-              e instanceof NotHostableError
-            ) {
-              return errorText(e.message);
-            }
-            throw e;
-          }
-        }
-
-        case 'get_results': {
-          const r = await sessions.results(args.run_id);
-          if (!r) return errorText(`no run '${args.run_id}'`);
-          return text(
-            JSON.stringify(
-              summarise(r.scenarioName, args.run_id, r.checks),
-              null,
-              2
-            )
-          );
-        }
-
-        default:
-          return errorText(`unknown tool ${request.params.name}`);
-      }
-    }
-  );
-
-  return server;
-}
-
 /**
  * The context blob a client-under-test needs (pre-registered credentials
  * etc.), tagged with the scenario name the way the CLI runner's
@@ -934,12 +428,4 @@ function contextFor(run: HostedRun): Record<string, unknown> | undefined {
 
 function escapeId(id: string): string {
   return id.replace(/[^A-Za-z0-9_-]/g, '');
-}
-
-function text(t: string): CallToolResult {
-  return { content: [{ type: 'text', text: t }] };
-}
-
-function errorText(t: string): CallToolResult {
-  return { content: [{ type: 'text', text: t }], isError: true };
 }

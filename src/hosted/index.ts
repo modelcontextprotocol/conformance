@@ -50,7 +50,6 @@ export async function runHostedServer(opts: HostedCliOptions): Promise<void> {
         '  (auth/* scenarios disabled — pass --as-origin to enable)'
       );
     }
-    console.error(`  meta MCP server at ${origin}/mcp`);
   });
 
   const shutdown = async () => {

@@ -223,39 +223,6 @@ describe('hosted server', () => {
     expect(html).toContain('&quot;&gt;&lt;script&gt;x&lt;/script&gt;');
   });
 
-  it('HTML-escapes request-derived values on the gauntlet consent page', async () => {
-    // The consent page embeds the mounted origin (from Host /
-    // X-Forwarded-Host) and the re-encoded query in a link; both must be
-    // escaped for HTML.
-    const res = await fetch(
-      `${base}/x/checker-2026-07-28/oauth/authorize?redirect_uri=http://c/cb&state=s1`,
-      {
-        headers: {
-          accept: 'text/html',
-          'x-forwarded-host': 'evil"><script>alert(1)</script>'
-        }
-      }
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).not.toContain('<script>');
-    expect(html).toContain('href="http://evil&quot;&gt;&lt;script&gt;');
-    expect(html).toContain('redirect_uri=http%3A%2F%2Fc%2Fcb&amp;state=s1');
-  });
-
-  it('exposes meta MCP tools', async () => {
-    const res = await postMcp('/mcp', {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/list',
-      params: {}
-    });
-    const text = await res.text();
-    expect(text).toContain('list_scenarios');
-    expect(text).toContain('start_run');
-    expect(text).toContain('get_results');
-  });
-
   it('every hostable scenario can be instantiated without binding a port', () => {
     // Guard against regressions where a handler() implementation reaches for
     // this._server / this.port etc., and against per-run instances that lose

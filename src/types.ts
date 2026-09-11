@@ -186,8 +186,9 @@ export interface Scenario {
    * Checks recorded so far WITHOUT end-of-flow finalization. Some scenarios'
    * `getChecks()` appends aggregate failures for flow steps never observed
    * ("expected check missing"); those judgments are only meaningful when one
-   * instance saw the whole flow. Stateless mounting (`/x/...`) judges each
-   * request on its own content, so it reads this view when present.
+   * instance saw the whole flow. The hosted server persists this view per
+   * process and re-judges the merged log once (see src/hosted/session.ts),
+   * so it reads this view when present.
    */
   rawChecks?(): ConformanceCheck[];
   /**

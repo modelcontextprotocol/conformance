@@ -13,8 +13,6 @@ import { InitializeScenario } from './client/initialize';
 import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { SkillsVerificationScenario } from './client/skills/verification';
 import { ToolsCallScenario } from './client/tools_call';
-import { StatelessGauntletScenario } from './client/stateless-gauntlet';
-import { AuthCheckerScenario } from './client/auth-checker';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
@@ -340,12 +338,6 @@ const scenariosList: Scenario[] = [
 
   // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
   new JsonSchema2020_12PreservationScenario(),
-
-  // Stateless gauntlet — single server, validating tools, no run-id needed
-  new StatelessGauntletScenario(),
-
-  // Auth re-auth chain checker — token encodes progress through the rungs
-  new AuthCheckerScenario(),
 
   // SEP-2640 skills, client side. The harness is the server and grades what
   // the client requests, which is how the retrieval-policy MUSTs become

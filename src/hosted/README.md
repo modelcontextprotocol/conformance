@@ -12,16 +12,15 @@ npx @modelcontextprotocol/conformance hosted --port 3000 --public-origin https:/
 
 ## Routes
 
-| Route                                   | Purpose                                                                                           |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `GET /`                                 | Landing page with usage + scenario list                                                           |
-| `GET /scenarios`                        | JSON list of hostable scenarios                                                                   |
-| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id.          |
-| `GET /s/<scenario>`                     | Mints a fresh run-id and returns `{runId, mcpUrl, resultsUrl}`.                                   |
-| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                                |
-| `GET /results/<run-id>.html`            | Pretty HTML report                                                                                |
-| `DELETE /results/<run-id>`              | Tear down the run early                                                                           |
-| `POST /mcp`                             | The hosted server is itself an MCP server with `list_scenarios`, `start_run`, `get_results` tools |
+| Route                                   | Purpose                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET /`                                 | Landing page with usage + scenario list                                                  |
+| `GET /scenarios`                        | JSON list of hostable scenarios                                                          |
+| `ALL /s/<scenario>/<run-id>[/<suffix>]` | MCP endpoint. Run is created lazily on first hit; pick any `[A-Za-z0-9_-]{1,64}` run-id. |
+| `GET /s/<scenario>`                     | Mints a fresh run-id and returns `{runId, mcpUrl, resultsUrl}`.                          |
+| `GET /results/<run-id>`                 | JSON `{scenario, summary, checks}`                                                       |
+| `GET /results/<run-id>.html`            | Pretty HTML report                                                                       |
+| `DELETE /results/<run-id>`              | Tear down the run early                                                                  |
 
 ## How it works
 
@@ -146,6 +145,3 @@ $ npx @modelcontextprotocol/inspector https://conformance.example.com/s/tools_ca
 $ curl https://conformance.example.com/results/demo | jq .summary
 { "passed": 1, "failed": 0, "warnings": 0, "info": 4, "skipped": 0, "total": 5 }
 ```
-
-Or drive it over MCP: connect to `/mcp`, call `start_run` → run client →
-`get_results`.

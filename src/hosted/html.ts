@@ -67,9 +67,6 @@ created on first request, and because the id is in the path it works with
 report).</p>
 <p>Too lazy to pick an id? <code>GET /s/&lt;scenario&gt;</code> mints one and
 returns <code>{mcpUrl, resultsUrl}</code>.</p>
-<p>This server is also an MCP server at <code>${esc(origin)}/mcp</code> with
-<code>list_scenarios</code> / <code>start_run</code> /
-<code>get_results</code> tools.</p>
 <p><b>Generic steering:</b> scenarios with a <code>steps</code> column need no
 scenario-specific client code — the mint response (and <code>/scenarios</code>)
 carries <code>context.steps</code>, a closed op list
