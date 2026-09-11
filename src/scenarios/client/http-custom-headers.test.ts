@@ -86,6 +86,7 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
             arguments: {
               region: 'us-west1',
               priority: 42,
+              unsafe_integer_val: 9007199254740992,
               non_ascii_val: nonAscii,
               query: 'SELECT 1'
             }
@@ -188,6 +189,7 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
             arguments: {
               region: 'us-west1',
               priority: 42,
+              unsafe_integer_val: 9007199254740992,
               non_ascii_val: nonAscii,
               query: 'SELECT 1'
             }
@@ -236,6 +238,80 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
         expect(statuses.length, id).toBeGreaterThan(0);
         expect(statuses, id).not.toContain('FAILURE');
       }
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('FAILs safe-integer-range when a client mirrors an out-of-range integer header', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers',
+            arguments: {
+              region: 'us-west1',
+              priority: 42,
+              unsafe_integer_val: 9007199254740992,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers',
+          'Mcp-Param-Region': 'us-west1',
+          'Mcp-Param-Priority': '42',
+          'Mcp-Param-UnsafeInteger': '9007199254740992'
+        }
+      );
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-integer-safe-range')
+      ).toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('PASSes safe-integer-range when a client omits the out-of-range integer header', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers',
+            arguments: {
+              region: 'us-west1',
+              priority: 42,
+              unsafe_integer_val: 9007199254740992,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers',
+          'Mcp-Param-Region': 'us-west1',
+          'Mcp-Param-Priority': '42'
+          // Mcp-Param-UnsafeInteger is deliberately omitted
+        }
+      );
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-integer-safe-range')
+      ).toContain('SUCCESS');
     } finally {
       await scenario.stop();
     }
