@@ -151,7 +151,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
    * as an empty revision or scenario name and 404.
    */
   function segmentsOf(tail: string): string[] {
-    return tail.replace(/\/+$/, '').split('/');
+    // A loop, not /\/+$/: that regex backtracks polynomially on
+    // request-controlled input (CodeQL js/polynomial-redos).
+    while (tail.endsWith('/')) tail = tail.slice(0, -1);
+    return tail.split('/');
   }
 
   /**
