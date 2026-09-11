@@ -13,7 +13,8 @@
  *   ALL  /s/<run-id>/<rev>/<scenario>[/<suffix>]
  *                                            The cell's server. Its MCP
  *                                            endpoint is the cell URL plus
- *                                            the scenario's mcpPath.
+ *                                            /mcp, whatever the scenario's
+ *                                            own mcpPath (see MCP_PATH).
  *   GET  /results/<run-id>[/<rev>[/<scenario>]]
  *                                            Results, mirroring /s
  *   DELETE /results/<run-id>                 Tear down every cell of the run
@@ -35,13 +36,19 @@ import {
   SessionManager,
   HostedRun,
   CellRef,
+  RunResults,
   RUN_ID_RE,
   UnknownScenarioError,
   NotHostableError,
   cellId,
   mintRunId
 } from './session';
-import { buildMatrix, type HostedMatrix, type MatrixCell } from './matrix';
+import {
+  buildMatrix,
+  MCP_PATH,
+  type HostedMatrix,
+  type MatrixCell
+} from './matrix';
 import {
   renderLanding,
   renderConfig,
@@ -60,7 +67,7 @@ import {
   type CapturedResponse,
   type RequestInfo
 } from './wire';
-import { buildReport } from './report';
+import { buildReport, summarize, verdictFor, type Verdict } from './report';
 import type { RunStore } from './store';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
@@ -281,6 +288,16 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     }
   }
 
+  /**
+   * The path the scenario sees for a request at `<cell><suffix>`: the
+   * suffix, except that `/mcp` on a scenario serving MCP at its root is the
+   * root — every cell is reachable at `<cell>/mcp` (see MCP_PATH).
+   */
+  function scenarioPath(run: HostedRun, suffix: string): string {
+    if (suffix === MCP_PATH && !run.mcpPath) return '';
+    return suffix;
+  }
+
   /** Whether `rewrittenUrl` (path, maybe a query) is the cell's MCP endpoint. */
   function isMcpEndpoint(run: HostedRun, rewrittenUrl: string): boolean {
     const q = rewrittenUrl.indexOf('?');
@@ -341,7 +358,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
             wrongRevisionCheck(run.revision, method, headerVersion, reason)
           );
         }
-        const rejection = wireRejection(response);
+        const rejection = wireRejection(response, run.revision, headerVersion);
         if (rejection) {
           sessions.recordHostedCheck(
             run,
@@ -408,7 +425,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     return {
       scenario: run.scenarioName,
       revision: run.revision,
-      url: `${cellBaseUrl(req, run)}${run.mcpPath}`,
+      url: `${cellBaseUrl(req, run)}${run.mcpPath || MCP_PATH}`,
       resultsUrl: resultsUrlFor(req, run.id),
       scoring: cell.scoring,
       ...(cell.reason !== undefined && { reason: cell.reason }),
@@ -480,7 +497,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         name: row.scenario,
         description: row.description,
         source: row.source,
-        mcpPath: row.cells[0]?.mcpPath ?? '',
+        mcpPath: row.cells[0]?.mcpPath ?? MCP_PATH,
         ...(row.cells[0]?.steps && { steps: row.cells[0].steps }),
         cells: row.cells.map(
           ({ revision, scoring, reason, startable, startReason }) => ({
@@ -560,7 +577,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     if (!run) return;
     // Rewrite to the path the scenario expects (it thinks it's at root).
     // The query string is preserved because we keep the express req object.
-    const rewritten = suffix || run.mcpPath || '/';
+    const rewritten = scenarioPath(run, suffix) || run.mcpPath || '/';
     dispatch(
       run,
       run.listener,
@@ -590,12 +607,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       const run = await createRun(req, resolved.ref, res);
       if (!run) return;
       // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
+      // (or the bare well-known path when its MCP endpoint is its root).
       dispatch(
         run,
         run.listener,
         req,
         res,
-        '/.well-known/oauth-protected-resource' + resolved.suffix
+        '/.well-known/oauth-protected-resource' +
+          scenarioPath(run, resolved.suffix)
       );
     }
   );
@@ -726,15 +745,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         revision: revision as SpecVersion,
         scenarioName: resolved.scenarioName
       };
-      const r = await sessions.results(cellId(ref));
-      if (!r) {
-        res.status(404).json({ error: 'unknown run' });
-        return;
-      }
+      const cell = matrix.cell(resolved.scenarioName, ref.revision)!;
+      // A cell nobody has hit yet is a valid, incomplete cell — not an
+      // unknown run: the config page links here before any traffic.
+      const r =
+        cell.scoring === 'n/a'
+          ? undefined
+          : await sessions.results(cellId(ref));
+      const status = cellStatus(cell, r);
       if (wantsHtml(req)) {
-        res.type('html').send(renderResults(ref, r.checks));
+        res.type('html').send(renderResults(ref, r?.checks ?? [], status));
       } else {
-        res.json(summarise(ref, r.checks));
+        res.json({ ...summarise(ref, r?.checks ?? []), ...status });
       }
       return;
     }
@@ -766,20 +788,38 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 }
 
 export function summarise(ref: CellRef, checks: ConformanceCheck[]) {
-  const counts = { SUCCESS: 0, FAILURE: 0, WARNING: 0, SKIPPED: 0, INFO: 0 };
-  for (const c of checks) counts[c.status]++;
   return {
     runId: ref.runId,
     revision: ref.revision,
     scenario: ref.scenarioName,
-    summary: {
-      passed: counts.SUCCESS,
-      failed: counts.FAILURE,
-      warnings: counts.WARNING,
-      info: counts.INFO,
-      skipped: counts.SKIPPED,
-      total: checks.length
-    },
+    summary: summarize(checks),
     checks
+  };
+}
+
+/** What a cell's results say about the cell itself, next to its checks. */
+export interface CellStatus {
+  scoring: MatrixCell['scoring'];
+  verdict: Verdict;
+  /** For n/a (why the scenario does not apply) and not_scored/unlisted. */
+  reason?: string;
+  /** Present, false, when this deployment cannot start the cell. */
+  startable?: false;
+  startReason?: string;
+}
+
+export function cellStatus(
+  cell: MatrixCell,
+  results: Pick<RunResults, 'checks' | 'recorded'> | undefined
+): CellStatus {
+  return {
+    scoring: cell.scoring,
+    verdict: verdictFor(cell, results?.checks, results?.recorded),
+    ...(cell.reason !== undefined && { reason: cell.reason }),
+    ...(!cell.startable &&
+      cell.scoring !== 'n/a' && {
+        startable: false as const,
+        ...(cell.startReason !== undefined && { startReason: cell.startReason })
+      })
   };
 }

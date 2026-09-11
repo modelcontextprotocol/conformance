@@ -34,6 +34,19 @@ import type { Step } from '../steps';
 
 export type CellScoring = 'scored' | 'not_scored' | 'unlisted' | 'n/a';
 
+/**
+ * Every cell's MCP endpoint is the cell URL plus this. A scenario that
+ * serves MCP at its handler root (`mcpPath` '') is reached at `<cell>/mcp`
+ * too: the hosted server rewrites that suffix to `/` before dispatch, so
+ * clients see one URL shape across the matrix.
+ */
+export const MCP_PATH = '/mcp';
+
+/** The public MCP sub-path of a scenario's cells: its mcpPath, or /mcp. */
+export function publicMcpPath(scenario: Pick<Scenario, 'mcpPath'>): string {
+  return scenario.mcpPath || MCP_PATH;
+}
+
 export interface MatrixCell {
   scenario: string;
   revision: SpecVersion;
@@ -50,7 +63,7 @@ export interface MatrixCell {
   startReason?: string;
   /** The scenario's declarative client choreography, when it has one. */
   steps?: readonly Step[];
-  /** Sub-path of the MCP endpoint under the cell URL ('' = the cell root). */
+  /** Sub-path of the MCP endpoint under the cell URL; always ends in /mcp. */
   mcpPath: string;
 }
 
@@ -150,7 +163,7 @@ export function buildMatrix(opts: MatrixOptions = {}): HostedMatrix {
         startable: applicable && start.startable,
         ...(applicable && !start.startable && { startReason: start.reason }),
         ...(scenario.steps && { steps: scenario.steps }),
-        mcpPath: scenario.mcpPath ?? ''
+        mcpPath: publicMcpPath(scenario)
       };
     });
     return {

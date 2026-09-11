@@ -39,25 +39,38 @@ what `conformance client --spec-version <rev>` would run.
 
 ## Routes
 
-| Route                                         | Purpose                                                                                                           |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `GET /`                                       | Landing page: the static matrix (scoring, startability, steps)                                                    |
-| `GET /scenarios`                              | JSON rows with a cell per revision                                                                                |
-| `GET /s`                                      | Mints a run id, `303 → /s/<run-id>`                                                                               |
-| `GET /s/<run-id>`                             | Config for every startable cell of the run                                                                        |
-| `GET /s/<run-id>/<rev>`                       | Config for one column                                                                                             |
-| `GET /s/<run-id>/<rev>/<scenario>`            | Config for one cell (a page request, see below)                                                                   |
-| `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus the scenario's `mcpPath` (`/mcp` for `auth/*`, else ``). |
-| `GET /results/<run-id>`                       | Verdict per cell, `scored X of N` per column, client identity                                                     |
-| `GET /results/<run-id>/<rev>`                 | One column                                                                                                        |
-| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, summary, checks}`                                                          |
-| `DELETE /results/<run-id>`                    | Tear down every cell of the run                                                                                   |
+| Route                                         | Purpose                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `GET /`                                       | Landing page: the static matrix (scoring, startability, steps)                                   |
+| `GET /scenarios`                              | JSON rows with a cell per revision                                                               |
+| `GET /s`                                      | Mints a run id, `303 → /s/<run-id>`                                                              |
+| `GET /s/<run-id>`                             | Config for every startable cell of the run                                                       |
+| `GET /s/<run-id>/<rev>`                       | Config for one column                                                                            |
+| `GET /s/<run-id>/<rev>/<scenario>`            | Config for one cell (a page request, see below)                                                  |
+| `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus `/mcp`, for every scenario (see below). |
+| `GET /results/<run-id>`                       | Verdict per cell, `scored X of N` per column, client identity                                    |
+| `GET /results/<run-id>/<rev>`                 | One column                                                                                       |
+| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, scoring, verdict, summary, checks}` (see below)           |
+| `DELETE /results/<run-id>`                    | Tear down every cell of the run                                                                  |
 
 Run ids match `[A-Za-z0-9_-]{1,64}`; pick your own or take the minted one.
 Cells are created lazily on first request. Scenario names may contain `/`
 and sit at the end of the path, so they are resolved by longest registered
 name (`auth/metadata-var2/tenant1` → scenario `auth/metadata-var2`, suffix
 `/tenant1`).
+
+**Every cell's MCP URL ends in `/mcp`.** Scenarios that serve MCP at their
+handler root (`mcpPath` `''`) are reached at `<cell>/mcp` as well: the
+server rewrites that suffix to `/` before dispatch (and
+`/.well-known/oauth-protected-resource/s/<cell>/mcp` to the bare well-known
+path), so the config, the matrix pages and `/scenarios` show one URL shape.
+
+**Cell results** answer 200 for every cell of the matrix, exercised or not:
+`verdict` is `incomplete` with a zero `summary` and empty `checks` for a
+cell nobody has hit (plus `startable: false, startReason` for one this
+deployment cannot start) and `n/a` with the `reason` for a scenario that
+does not apply to the revision. Only an unknown revision or scenario is
+a 404.
 
 **Representation.** Config and results answer HTML when the request prefers
 `text/html` and JSON otherwise; `?format=html|json` overrides. At a cell URL
@@ -111,7 +124,10 @@ request away (`src/hosted/wire.ts`):
 
 - `hosted-wire-rejected` — a 4xx whose body is a lifecycle rejection
   (JSON-RPC `-32020`/`-32022`, `-32602` naming `_meta`, or `-32000`
-  "Unsupported protocol version"); once per distinct (code, message).
+  "Unsupported protocol version"); once per distinct (code, message). An
+  unsupported-version rejection of a request whose header already names
+  the cell's revision is a scenario's deliberate probe (`request-metadata`
+  rejects a run's first request once), not a wire rejection.
 - `hosted-wrong-revision` — the client spoke a revision other than the
   cell's: on the `2026-07-28` column any request whose `MCP-Protocol-Version`
   is not the column's, or any `initialize`; on a dated column any

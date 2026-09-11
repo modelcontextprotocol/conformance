@@ -163,9 +163,6 @@ export function tapResponse(
   } as ServerResponse['end'];
 }
 
-/** JSON-RPC error codes the lifecycle uses to turn a request away. */
-const REJECTION_CODES = new Set([-32020, -32022]);
-
 export interface WireRejection {
   status: number;
   code: number;
@@ -177,9 +174,16 @@ export interface WireRejection {
  * JSON-RPC error with code -32020 / -32022 (protocol-version header), -32602
  * naming `_meta`, or -32000 saying "Unsupported protocol version" (the SDK
  * transport's stateful negotiation failure).
+ *
+ * An unsupported-version rejection of a request whose header already names
+ * the cell's revision `served` is not the client's doing — it is a
+ * scenario's deliberate probe (request-metadata rejects a run's first
+ * request to exercise the client's retry) — and is not one.
  */
 export function wireRejection(
-  response: CapturedResponse
+  response: CapturedResponse,
+  served: SpecVersion,
+  headerVersion: string | undefined
 ): WireRejection | undefined {
   if (response.status < 400 || response.status >= 500) return undefined;
   for (const m of jsonRpcMessages(response.body, response.contentType)) {
@@ -187,10 +191,14 @@ export function wireRejection(
     if (!error || typeof error.code !== 'number') continue;
     const code = error.code;
     const message = str(error.message) ?? '';
+    const unsupportedVersion =
+      code === -32022 ||
+      (code === -32000 && message.includes('Unsupported protocol version'));
+    if (unsupportedVersion && headerVersion === served) continue;
     if (
-      REJECTION_CODES.has(code) ||
-      (code === -32602 && message.includes('_meta')) ||
-      (code === -32000 && message.includes('Unsupported protocol version'))
+      unsupportedVersion ||
+      code === -32020 ||
+      (code === -32602 && message.includes('_meta'))
     ) {
       return { status: response.status, code, message };
     }

@@ -494,8 +494,171 @@ describe('hosted server', () => {
     expect(del.status).toBe(204);
     run = await fetch(`${base}/results/del`).then((r) => r.json());
     expect(exercised(run)).toEqual([]);
+    // The cell is still a cell of the matrix — just nothing recorded now.
+    const gone = await fetch(`${base}/results/del/${REV_STATEFUL}/initialize`);
+    expect(gone.status).toBe(200);
+    expect(await gone.json()).toMatchObject({
+      verdict: 'incomplete',
+      summary: { total: 0 },
+      checks: []
+    });
+  });
+
+  it('serves every cell at <cell>/mcp, whatever the scenario mounts at its root', async () => {
+    // request-metadata and initialize serve MCP at their handler root; the
+    // config still says /mcp, and a request there is rewritten to the root.
+    const config = await fetch(
+      `${base}/s/mcp1/${REV_STATELESS}/request-metadata?format=json`
+    ).then((r) => r.json());
+    expect(config.cells[0].url).toBe(
+      `${base}/s/mcp1/${REV_STATELESS}/request-metadata/mcp`
+    );
+    const run = await fetch(`${base}/s/mcp1`).then((r) => r.json());
+    const urls = Object.values(run.mcpServers).map(
+      (s) => (s as { url: string }).url
+    );
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((u) => u.endsWith('/mcp'))).toBe(true);
+    const list = await fetch(`${base}/scenarios`).then((r) => r.json());
+    expect(list.every((s: { mcpPath: string }) => s.mcpPath === '/mcp')).toBe(
+      true
+    );
+
+    // Reaches the scenario: request-metadata answers its simulated
+    // rejection, initialize its handshake — not a 404.
+    const rm = await postMcp(
+      `/s/mcp1/${REV_STATELESS}/request-metadata/mcp`,
+      statelessBody('tools/list'),
+      statelessHeaders
+    );
+    expect(rm.status).toBe(400);
+    expect((await rm.json()).error.code).toBe(-32022);
+    const init = await postMcp(
+      `/s/mcp1/${REV_STATEFUL}/initialize/mcp`,
+      initBody()
+    );
+    expect(init.status).toBe(200);
+    expect((await init.json()).result.serverInfo.name).toBe('test-server');
+    // A scenario with its own /mcp is served as before, and the bare cell
+    // root of a root-mounted scenario still answers (the CLI's shape).
+    const own = await postMcp(
+      `/s/mcp1/${REV_STATEFUL}/tools_call/mcp`,
+      initBody()
+    );
+    expect(own.status).toBe(200);
+    await own.text();
+    const root = await postMcp(
+      `/s/mcp1/${REV_STATEFUL}/initialize`,
+      initBody()
+    );
+    expect(root.status).toBe(200);
+    await root.text();
+
+    // The -32022 request-metadata answered above was its own probe of a
+    // client that named the cell's revision — not a wire rejection.
+    const probed = await fetch(
+      `${base}/results/mcp1/${REV_STATELESS}/request-metadata`
+    ).then((r) => r.json());
     expect(
-      (await fetch(`${base}/results/del/${REV_STATEFUL}/initialize`)).status
+      probed.checks.some((c: { id: string }) => c.id === 'hosted-wire-rejected')
+    ).toBe(false);
+
+    // <cell>/mcp on a root-mounted scenario is its MCP endpoint for the
+    // hosted judgement too: a stateful initialize there is a wrong revision.
+    await postMcp(
+      `/s/mcp1/${REV_STATELESS}/request-metadata/mcp`,
+      initBody()
+    ).then((r) => r.text());
+    const judged = await fetch(
+      `${base}/results/mcp1/${REV_STATELESS}/request-metadata`
+    ).then((r) => r.json());
+    expect(
+      judged.checks.some(
+        (c: { id: string }) => c.id === 'hosted-wrong-revision'
+      )
+    ).toBe(true);
+  });
+
+  it('answers results for every cell of the matrix, exercised or not', async () => {
+    const zeros = {
+      passed: 0,
+      failed: 0,
+      warnings: 0,
+      info: 0,
+      skipped: 0,
+      total: 0
+    };
+    // Untouched, startable: a valid, incomplete cell — not an unknown run.
+    const fresh = await fetch(
+      `${base}/results/fresh/${REV_STATEFUL}/tools_call`
+    );
+    expect(fresh.status).toBe(200);
+    expect(await fresh.json()).toEqual({
+      runId: 'fresh',
+      revision: REV_STATEFUL,
+      scenario: 'tools_call',
+      scoring: 'scored',
+      verdict: 'incomplete',
+      summary: zeros,
+      checks: []
+    });
+    // n/a: the scenario does not apply to the revision.
+    const na = await fetch(`${base}/results/fresh/${REV_STATELESS}/initialize`);
+    expect(na.status).toBe(200);
+    expect(await na.json()).toMatchObject({
+      scoring: 'n/a',
+      verdict: 'n/a',
+      reason: 'introduced in 2025-06-18, removed in 2026-07-28',
+      summary: zeros,
+      checks: []
+    });
+    // Not startable here.
+    expect(
+      await fetch(`${base}/results/fresh/${REV_STATEFUL}/auth/basic-cimd`).then(
+        (r) => r.json()
+      )
+    ).toMatchObject({
+      scoring: 'scored',
+      verdict: 'incomplete',
+      startable: false,
+      startReason: 'needs relay origin(s) [as]'
+    });
+    expect(
+      await fetch(`${base}/results/fresh/${REV_STATEFUL}/sse-retry`).then((r) =>
+        r.json()
+      )
+    ).toMatchObject({ startable: false, startReason: 'excluded for the test' });
+    // An exercised cell says where it stands too.
+    await postMcp(`/s/fresh/${REV_STATEFUL}/initialize/mcp`, initBody()).then(
+      (r) => r.text()
+    );
+    expect(
+      await fetch(`${base}/results/fresh/${REV_STATEFUL}/initialize`).then(
+        (r) => r.json()
+      )
+    ).toMatchObject({ scoring: 'scored', verdict: 'pass' });
+
+    // HTML equivalents carry the reason text.
+    const page = (path: string) =>
+      fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
+        r.text()
+      );
+    expect(await page(`/results/fresh/${REV_STATEFUL}/tools_call`)).toContain(
+      'nothing recorded yet'
+    );
+    expect(await page(`/results/fresh/${REV_STATELESS}/initialize`)).toContain(
+      'does not apply to this revision: introduced in 2025-06-18, removed in 2026-07-28'
+    );
+    expect(
+      await page(`/results/fresh/${REV_STATEFUL}/auth/basic-cimd`)
+    ).toContain('not startable here: needs relay origin(s) [as]');
+
+    // Only an unknown revision or scenario is a 404.
+    expect(
+      (await fetch(`${base}/results/fresh/2024-01-01/tools_call`)).status
+    ).toBe(404);
+    expect(
+      (await fetch(`${base}/results/fresh/${REV_STATEFUL}/no-such`)).status
     ).toBe(404);
   });
 

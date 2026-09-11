@@ -6,7 +6,7 @@
 
 import { ConformanceCheck, CheckStatus } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
-import type { CellConfig, RunConfig } from './server';
+import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import type { CellReport, RunReport, Verdict } from './report';
 import type { ClientIdentity } from './identity';
@@ -310,9 +310,27 @@ ${renderMatrixTable(matrix, {
   return page(title, `${body}\n${embedded}\n${copyScript}`);
 }
 
+/** One line saying where the cell stands, for the cell results page. */
+function statusLine(status: CellStatus): string {
+  const pill = `<span class=pill style="${VERDICT_STYLE[status.verdict]}">${status.verdict}</span>`;
+  const scoring = `<span class=pill style="${SCORING_STYLE[status.scoring]}">${SCORING_LABEL[status.scoring]}</span>`;
+  let note = '';
+  if (status.verdict === 'n/a') {
+    note = `the scenario does not apply to this revision: ${esc(status.reason ?? '')}`;
+  } else if (status.startable === false) {
+    note = `not startable here: ${esc(status.startReason ?? '')}`;
+  } else if (status.verdict === 'incomplete') {
+    note = 'nothing recorded yet — point the client at the MCP endpoint';
+  } else if (status.reason) {
+    note = esc(status.reason);
+  }
+  return `<p>${pill} ${scoring}${note ? ` <span class=muted>— ${note}</span>` : ''}</p>`;
+}
+
 export function renderResults(
   ref: CellRef,
-  checks: ConformanceCheck[]
+  checks: ConformanceCheck[],
+  status?: CellStatus
 ): string {
   const items = checks
     .map((c) => {
@@ -351,7 +369,7 @@ export function renderResults(
     )}">${esc(ref.revision)}</a> › <code>${esc(ref.scenarioName)}</code> · <a href="/s/${esc(
       ref.runId
     )}/${esc(ref.revision)}/${esc(ref.scenarioName)}">config</a></p>
-<p>${passed} passed, ${failed} failed, ${checks.length} total</p>${items}`
+${status ? statusLine(status) : ''}<p>${passed} passed, ${failed} failed, ${checks.length} total</p>${items}`
   );
 }
 
