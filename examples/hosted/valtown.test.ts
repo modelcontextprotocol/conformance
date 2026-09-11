@@ -16,7 +16,7 @@ describe('val.town fetch bridge', () => {
   }
 
   it('serves a raw-http scenario and records checks', async () => {
-    const r = await post('/s/initialize/ft1', {
+    const r = await post('/s/ft1/2025-11-25/initialize', {
       jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
@@ -27,15 +27,17 @@ describe('val.town fetch bridge', () => {
       }
     });
     expect(r.status).toBe(200);
-    expect(r.headers.get('link')).toContain('/results/ft1');
-    const checks = await handler(new Request('http://test/results/ft1')).then(
-      (r) => r.json()
+    expect(r.headers.get('link')).toContain(
+      '/results/ft1/2025-11-25/initialize>'
     );
+    const checks = await handler(
+      new Request('http://test/results/ft1/2025-11-25/initialize')
+    ).then((r) => r.json());
     expect(checks.summary.passed).toBeGreaterThanOrEqual(1);
   });
 
   it('serves an SDK-transport scenario (tools_call) statelessly', async () => {
-    await post('/s/tools_call/ft2/mcp', {
+    await post('/s/ft2/2025-11-25/tools_call/mcp', {
       jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
@@ -45,7 +47,7 @@ describe('val.town fetch bridge', () => {
         capabilities: {}
       }
     }).then((r) => r.text());
-    const r = await post('/s/tools_call/ft2/mcp', {
+    const r = await post('/s/ft2/2025-11-25/tools_call/mcp', {
       jsonrpc: '2.0',
       id: 2,
       method: 'tools/call',
@@ -55,8 +57,20 @@ describe('val.town fetch bridge', () => {
     expect(await r.text()).toContain('The sum of 7 and 4 is 11');
   });
 
-  it('blocks sse-retry through the bridge', async () => {
-    const r = await handler(new Request('http://test/s/sse-retry/x'));
+  it('marks single-process scenarios as not startable on val.town', async () => {
+    const r = await post('/s/x/2025-11-25/sse-retry', { jsonrpc: '2.0' });
     expect(r.status).toBe(501);
+    expect((await r.json()).reason).toMatch(/single-process host/);
+    const list = await handler(new Request('http://test/scenarios')).then((r) =>
+      r.json()
+    );
+    const cell = list.find(
+      (s: { name: string }) => s.name === 'sep-2322-client-request-state'
+    ).cells[1];
+    expect(cell).toMatchObject({
+      revision: '2026-07-28',
+      startable: false,
+      startReason: expect.stringMatching(/single-process host/)
+    });
   });
 });

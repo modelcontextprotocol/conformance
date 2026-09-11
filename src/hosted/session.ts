@@ -1,11 +1,14 @@
 /**
  * Session management for the hosted conformance server.
  *
- * A "run" is one isolated exercise of a scenario. Each run owns a fresh
- * Scenario instance and the RequestListener it returns from handler() — no
- * loopback port, no proxy. Runs are keyed by a path-embedded id so
- * correlation works for stateless-transport clients that never echo
- * mcp-session-id.
+ * A "cell" is one scenario exercised at one specification revision inside a
+ * run. Its id, `<run-id>/<revision>/<scenario>`, is at once the URL path the
+ * client is pointed at, the store key and the results path. Each cell owns a
+ * fresh Scenario instance built for that revision's wire and the
+ * RequestListener it returns from handler() — no loopback port, no proxy.
+ * Cells are created lazily on first reference and can be rebuilt from their
+ * id alone, which is what lets a cold serverless isolate answer for a run it
+ * never saw (an aux-origin request arriving before the RS was ever hit, say).
  */
 
 import { randomBytes } from 'crypto';
@@ -15,27 +18,48 @@ import {
   RequestListener,
   AuthHandlerScenario,
   AuxOriginRole,
-  DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION
+  SpecVersion,
+  isSpecVersion
 } from '../types';
 import { createHandlerFor, type ScenarioContext } from '../mock-server';
 import { getScenario, scenarios } from '../scenarios';
 import type { RunStore } from './store';
 
+/** Run ids are one path segment: safe in URLs and after the relay's /r/. */
+export const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+export function mintRunId(): string {
+  return randomBytes(6).toString('base64url');
+}
+
+/** One scenario at one revision inside one run. */
+export interface CellRef {
+  runId: string;
+  revision: SpecVersion;
+  scenarioName: string;
+}
+
+/** `<run-id>/<revision>/<scenario>` — scenario names may contain '/'. */
+export function cellId(ref: CellRef): string {
+  return `${ref.runId}/${ref.revision}/${ref.scenarioName}`;
+}
+
+export function parseCellId(id: string): CellRef | undefined {
+  const [runId, revision, ...rest] = id.split('/');
+  if (!RUN_ID_RE.test(runId ?? '') || !isSpecVersion(revision) || !rest.length)
+    return undefined;
+  return { runId, revision, scenarioName: rest.join('/') };
+}
+
 /**
- * Per-run context for a hosted scenario. Mirrors the CLI runner's default
- * when --spec-version is omitted (resolveScenarioSpecVersion in
- * src/runner/client.ts): draft-only scenarios get the draft (stateless)
- * mock, everything else the latest released spec. `createServer()` would
- * bind a loopback port, which serverless hosts don't allow — hostable
- * scenarios use `createHandler()` instead.
+ * Per-cell context for a hosted scenario: the column's revision is the wire
+ * the mock speaks, exactly as `--spec-version` sets it for the CLI runner
+ * (src/runner/client.ts). `createServer()` would bind a loopback port, which
+ * serverless hosts don't allow — hosted scenarios use `createHandler()`.
  */
-export function hostedScenarioContext(scenario: Scenario): ScenarioContext {
-  const source = scenario.source;
-  const specVersion =
-    'introducedIn' in source && source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION;
+export function hostedScenarioContext(
+  specVersion: SpecVersion
+): ScenarioContext {
   return {
     specVersion,
     createServer: () =>
@@ -48,41 +72,44 @@ export function hostedScenarioContext(scenario: Scenario): ScenarioContext {
   };
 }
 
-export interface HostedRun {
+export interface HostedRun extends CellRef {
+  /** Cell id — see cellId(). */
   id: string;
-  scenarioName: string;
   scenario: Scenario;
   /** The mounted RS handler — invoke directly with (req, res). */
   listener: RequestListener;
   /** Aux-origin handlers (AS, IdP, …) for auth scenarios. */
   auxListeners?: Partial<Record<AuxOriginRole, RequestListener>>;
-  /** Sub-path under the run prefix where the MCP endpoint lives. */
+  /** Sub-path under the cell URL where the MCP endpoint lives. */
   mcpPath: string;
   createdAt: number;
   lastSeenAt: number;
+  /** Scenario-provided client context (credentials, steps, …). */
   context?: Record<string, unknown>;
+  /** Whether the store has been told this cell exists. */
+  saved: boolean;
 }
 
 export interface SessionManagerOptions {
-  /** Idle ms after which a run is reaped. Default 5 minutes. */
+  /** Idle ms after which a cell is evicted from memory. Default 5 minutes. */
   ttlMs?: number;
   sweepIntervalMs?: number;
   /**
    * Public origins of the relay deployments, keyed by role. Required for any
    * scenario that exposes `authHandlers()`. Each value is the relay's public
-   * URL (no trailing slash); per-run AS issuer becomes `<origin>/r/<run-id>`.
+   * URL (no trailing slash); the per-cell AS issuer becomes
+   * `<origin>/r/<run-id>/<revision>/<scenario>`.
    */
   auxOrigins?: Partial<Record<AuxOriginRole, string>>;
   /**
-   * Optional persistence so runs survive being load-balanced across
+   * Optional persistence so results survive being load-balanced across
    * processes (serverless isolates). Omit for a single long-lived process.
    */
   store?: RunStore;
 }
 
-/** Results view: the scenario a run belongs to plus its judged checks. */
-export interface RunResults {
-  scenarioName: string;
+/** Results view: the cell plus its judged checks. */
+export interface RunResults extends CellRef {
   checks: ConformanceCheck[];
 }
 
@@ -154,29 +181,23 @@ export class SessionManager {
   }
 
   /**
-   * Get the run for (scenario, id), creating it on first reference. The id is
-   * caller-chosen so URLs are predictable; pass undefined to mint one.
+   * Get the cell, creating it on first reference. `baseUrlFor` is the public
+   * URL of the cell (no trailing slash) — the scenario embeds it in
+   * self-referential responses (PRM `resource`, canary `$ref`s).
    */
-  getOrCreate(
-    scenarioName: string,
-    id: string | undefined,
-    baseUrlFor: (runId: string) => string
-  ): HostedRun {
-    if (id) {
-      const existing = this.runs.get(id);
-      if (existing && existing.scenarioName === scenarioName) {
-        existing.lastSeenAt = Date.now();
-        return existing;
-      }
-      // Same id reused for a different scenario → replace, don't merge checks.
-      if (existing) void this.destroy(id);
+  getOrCreate(ref: CellRef, baseUrlFor: (ref: CellRef) => string): HostedRun {
+    const id = cellId(ref);
+    const existing = this.runs.get(id);
+    if (existing) {
+      existing.lastSeenAt = Date.now();
+      return existing;
     }
 
-    const proto = getScenario(scenarioName);
-    if (!proto) throw new UnknownScenarioError(scenarioName);
+    const proto = getScenario(ref.scenarioName);
+    if (!proto) throw new UnknownScenarioError(ref.scenarioName);
 
     const scenario = freshScenario(proto);
-    const runId = id ?? randomBytes(6).toString('base64url');
+    const ctx = hostedScenarioContext(ref.revision);
 
     let listener: RequestListener;
     let auxListeners: HostedRun['auxListeners'];
@@ -184,19 +205,19 @@ export class SessionManager {
 
     if (scenario instanceof AuthHandlerScenario) {
       // Multi-origin scenario: build RS + aux handlers from authHandlers().
-      // Aux issuer is <relay-origin>/r/<runId> so the run-id is recoverable
+      // Aux issuer is <relay-origin>/r/<cell-id> so the cell is recoverable
       // from any RFC 8414 well-known path the client constructs from it.
       const missing = scenario.auxRoles.filter((r) => !this.auxOrigins[r]);
       if (missing.length) {
         throw new NotHostableError(
-          scenarioName,
-          `needs aux origin(s) [${missing.join(', ')}] — start with --as-origin`
+          ref.scenarioName,
+          `needs relay origin(s) [${missing.join(', ')}]`
         );
       }
       const handlers = scenario.authHandlers({
-        ...hostedScenarioContext(scenario),
-        getRsBaseUrl: () => baseUrlFor(runId),
-        getAuxBaseUrl: (role) => `${this.auxOrigins[role]}/r/${runId}`
+        ...ctx,
+        getRsBaseUrl: () => baseUrlFor(ref),
+        getAuxBaseUrl: (role) => `${this.auxOrigins[role]}/r/${id}`
       });
       listener = handlers.rs;
       auxListeners = handlers.aux;
@@ -206,30 +227,27 @@ export class SessionManager {
         }
       ).scenarioContext?.();
     } else if (scenario.handler) {
-      listener = scenario.handler(
-        () => baseUrlFor(runId),
-        hostedScenarioContext(scenario)
-      );
+      listener = scenario.handler(() => baseUrlFor(ref), ctx);
     } else {
-      throw new NotHostableError(scenarioName);
+      throw new NotHostableError(ref.scenarioName);
     }
 
     const steps = (scenario as Scenario).steps;
     if (steps) context = { ...context, steps };
 
     const run: HostedRun = {
-      id: runId,
-      scenarioName,
+      ...ref,
+      id,
       scenario,
       listener,
       auxListeners,
       mcpPath: scenario.mcpPath ?? '',
       createdAt: Date.now(),
       lastSeenAt: Date.now(),
-      context
+      context,
+      saved: false
     };
-    this.runs.set(runId, run);
-    void this.store?.saveRun(runId, scenarioName).catch(logStoreError);
+    this.runs.set(id, run);
     return run;
   }
 
@@ -240,37 +258,46 @@ export class SessionManager {
   }
 
   /**
-   * Like get(), but if this process has never seen the run and a store is
-   * configured, rebuild it from persisted metadata. This is how an aux-origin
-   * request or a results page lands correctly on a cold process.
+   * Like get(), but rebuilds the cell from its id when this process has never
+   * seen it — the id carries everything needed. Returns undefined for an id
+   * that does not parse or names a scenario this deployment cannot mount.
    */
-  async ensure(
+  ensure(
     id: string,
-    baseUrlFor: (scenarioName: string, runId: string) => string
-  ): Promise<HostedRun | undefined> {
+    baseUrlFor: (ref: CellRef) => string
+  ): HostedRun | undefined {
     const local = this.get(id);
-    if (local || !this.store) return local;
-    let scenarioName: string | undefined;
+    if (local) return local;
+    const ref = parseCellId(id);
+    if (!ref) return undefined;
     try {
-      scenarioName = await this.store.loadRun(id);
+      return this.getOrCreate(ref, baseUrlFor);
     } catch (e) {
-      logStoreError(e);
+      if (e instanceof UnknownScenarioError || e instanceof NotHostableError)
+        return undefined;
+      throw e;
     }
-    if (!scenarioName) return undefined;
-    return this.getOrCreate(scenarioName, id, (rid) =>
-      baseUrlFor(scenarioName, rid)
-    );
   }
 
-  /** Write this process's view of a run's checks through to the store. */
+  /**
+   * Write this process's view of a cell's checks through to the store; the
+   * first write also records that the cell exists, so a cell that was only
+   * configured (never hit) does not show up as exercised.
+   */
   persist(run: HostedRun): Promise<void> {
-    if (!this.store) return Promise.resolve();
-    const p = this.store
-      .saveChecks(
+    const store = this.store;
+    if (!store) return Promise.resolve();
+    const p = (async () => {
+      if (!run.saved) {
+        run.saved = true;
+        await store.saveRun(run.id, run.scenarioName);
+      }
+      await store.saveChecks(
         run.id,
         this.writerId,
         rawChecksOf(run.scenario).map((c) => ({ ...c }))
-      )
+      );
+    })()
       .catch(logStoreError)
       .finally(() => this.pending.delete(p));
     this.pending.add(p);
@@ -287,37 +314,49 @@ export class SessionManager {
   }
 
   /**
-   * Judged checks for a run. Without a store this is the scenario's own
-   * getChecks(). With a store it is every process's raw log merged (this
-   * process's live log wins over its own persisted row) and re-judged once.
+   * Judged checks for a cell, or undefined when neither this process nor the
+   * store has seen it. Without a store this is the scenario's own getChecks().
+   * With a store it is every process's raw log merged (this process's live
+   * log wins over its own persisted row) and re-judged once.
    */
   async results(id: string): Promise<RunResults | undefined> {
+    const ref = parseCellId(id);
+    if (!ref) return undefined;
     const run = this.runs.get(id);
     if (!this.store) {
-      return run
-        ? { scenarioName: run.scenarioName, checks: run.scenario.getChecks() }
-        : undefined;
+      return run ? { ...ref, checks: run.scenario.getChecks() } : undefined;
     }
     let byWriter = new Map<string, ConformanceCheck[]>();
+    let known = false;
     try {
       byWriter = await this.store.loadChecks(id);
+      known = (await this.store.loadRun(id)) !== undefined;
     } catch (e) {
       logStoreError(e);
     }
     if (run) byWriter.set(this.writerId, rawChecksOf(run.scenario));
-    let scenarioName = run?.scenarioName;
-    if (!scenarioName) {
+    if (!run && !known && byWriter.size === 0) return undefined;
+    const merged = Array.from(byWriter.values())
+      .flat()
+      .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
+    return { ...ref, checks: finalizeChecks(ref.scenarioName, merged) };
+  }
+
+  /** Cells of a run this process or the store knows about. */
+  async listCells(runId: string): Promise<CellRef[]> {
+    const ids = new Set<string>();
+    for (const r of this.runs.values()) if (r.runId === runId) ids.add(r.id);
+    if (this.store) {
       try {
-        scenarioName = await this.store.loadRun(id);
+        for (const { id } of await this.store.listRuns(`${runId}/`))
+          ids.add(id);
       } catch (e) {
         logStoreError(e);
       }
     }
-    if (!scenarioName) return undefined;
-    const merged = Array.from(byWriter.values())
-      .flat()
-      .sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
-    return { scenarioName, checks: finalizeChecks(scenarioName, merged) };
+    return Array.from(ids)
+      .map(parseCellId)
+      .filter((r): r is CellRef => r !== undefined);
   }
 
   list(): HostedRun[] {
@@ -336,6 +375,12 @@ export class SessionManager {
     } catch {
       // best-effort
     }
+  }
+
+  /** Tear down every cell of a run, here and in the store. */
+  async destroyRun(runId: string): Promise<void> {
+    const cells = await this.listCells(runId);
+    await Promise.all(cells.map((ref) => this.destroy(cellId(ref))));
   }
 
   async close(): Promise<void> {
@@ -370,25 +415,7 @@ export class NotHostableError extends Error {
   constructor(name: string, why?: string) {
     super(
       `Scenario '${name}' cannot run hosted` +
-        (why
-          ? `: ${why}`
-          : ` (no handler() or authHandlers() — typically backcompat scenarios that need root-of-origin endpoints).`)
+        (why ? `: ${why}` : ' (not converted for hosting yet)')
     );
   }
-}
-
-/** Scenarios that can run hosted, partitioned by what they need. */
-export function listHostableScenarios(
-  withAuxOrigins: readonly AuxOriginRole[] = []
-): string[] {
-  const have = new Set(withAuxOrigins);
-  return Array.from(scenarios.entries())
-    .filter(([, s]) => {
-      if (typeof s.handler === 'function') return true;
-      if (s instanceof AuthHandlerScenario) {
-        return s.auxRoles.every((r) => have.has(r));
-      }
-      return false;
-    })
-    .map(([name]) => name);
 }

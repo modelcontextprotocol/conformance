@@ -95,6 +95,23 @@ export class SqliteRunStore implements RunStore {
     return rows[0]?.[0] as string | undefined;
   }
 
+  async listRuns(
+    prefix: string
+  ): Promise<Array<{ id: string; scenarioName: string }>> {
+    await this.init();
+    // LIKE treats % and _ as wildcards; escape them (and the escape char) so
+    // the prefix matches literally.
+    const like = prefix.replace(/[\\%_]/g, (c) => `\\${c}`) + '%';
+    const rows = await this.exec(
+      `SELECT id, scenario FROM hosted_runs_v2 WHERE id LIKE ? ESCAPE '\\'`,
+      [like]
+    );
+    return rows.map(([id, scenario]) => ({
+      id: id as string,
+      scenarioName: scenario as string
+    }));
+  }
+
   async saveChecks(
     id: string,
     writer: string,

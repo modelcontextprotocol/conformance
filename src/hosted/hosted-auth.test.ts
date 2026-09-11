@@ -11,12 +11,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
 import { createHostedApp } from './server';
-import {
-  SessionManager,
-  listHostableScenarios,
-  finalizeChecks,
-  rawChecksOf
-} from './session';
+import { SessionManager, rawChecksOf, finalizeChecks } from './session';
+import { buildMatrix } from './matrix';
 
 const RELAY_SECRET = 'test-relay-secret-do-not-use-in-prod';
 
@@ -73,13 +69,22 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     );
   });
 
-  it('lists auth/* scenarios as hostable when as-origin is configured', () => {
-    const names = listHostableScenarios(['as']);
-    expect(names).toContain('auth/basic-cimd');
-    expect(names).toContain('auth/metadata-default');
-    expect(names).toContain('auth/pre-registration');
-    // 3-origin scenarios still excluded with only [as]
-    expect(names).not.toContain('auth/authorization-server-migration');
+  it('makes auth/* cells startable when as-origin is configured', () => {
+    const matrix = buildMatrix({ auxOrigins: { as: asOrigin } });
+    for (const name of [
+      'auth/basic-cimd',
+      'auth/metadata-default',
+      'auth/pre-registration'
+    ]) {
+      expect(matrix.cell(name, '2025-11-25')!.startable).toBe(true);
+    }
+    // Scenarios without authHandlers() stay unstartable regardless.
+    expect(
+      matrix.cell('auth/authorization-server-migration', '2026-07-28')
+    ).toMatchObject({
+      startable: false,
+      startReason: 'not converted for hosting yet'
+    });
   });
 
   it('rejects /__aux/* without the relay secret', async () => {
@@ -89,25 +94,51 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('locates the /r/<run-id> segment pair in an /__aux path by segments', async () => {
+  it('locates the /r/<run-id>/<rev>/<scenario> segments in an /__aux path', async () => {
     const hdr = { headers: { 'x-relay-secret': RELAY_SECRET } };
-    // No valid /r/<id> pair anywhere (id has an illegal character).
-    let res = await fetch(`${rs}/__aux/as/tenant/r/bad!id/token`, hdr);
+    const missing = /missing \/r\/<run-id>\/<revision>\/<scenario>/;
+    // Illegal run id.
+    let res = await fetch(
+      `${rs}/__aux/as/tenant/r/bad!id/2025-11-25/auth/basic-cimd/token`,
+      hdr
+    );
     expect(res.status).toBe(404);
-    expect((await res.json()).error).toMatch(/missing \/r\/<run-id>/);
-    // A well-formed pair for a run that does not exist resolves the id.
-    res = await fetch(`${rs}/__aux/as/tenant/r/no-such-run/token`, hdr);
+    expect((await res.json()).error).toMatch(missing);
+    // Unknown revision, unknown scenario.
+    res = await fetch(
+      `${rs}/__aux/as/r/run/2024-01-01/auth/basic-cimd/token`,
+      hdr
+    );
     expect(res.status).toBe(404);
-    expect((await res.json()).error).toMatch(/for run/);
-    // Adversarial input that would make the old regex backtrack.
+    expect((await res.json()).error).toMatch(missing);
+    res = await fetch(`${rs}/__aux/as/r/run/2025-11-25/no-such/token`, hdr);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toMatch(missing);
+    // A cell that does not apply to the revision is never mounted.
+    res = await fetch(`${rs}/__aux/as/r/run/2026-07-28/initialize/token`, hdr);
+    expect(res.status).toBe(404);
+    expect((await res.json()).scoring).toBe('n/a');
+    // Adversarial input that would make a regex backtrack.
     const evil = '/r/-'.repeat(2000) + '/r/x/token';
     res = await fetch(`${rs}/__aux/as${evil}`, hdr);
     expect(res.status).toBe(404);
   });
 
+  it('rebuilds a cell from its id when the aux origin is hit first', async () => {
+    // A client given the whole-run config may fetch AS metadata before it
+    // ever touches the RS; on a multi-process host that request can land on
+    // a process that never saw the run. The cell id carries everything.
+    const cell = 'cold/2026-07-28/auth/metadata-default';
+    const meta = await fetch(
+      `${asOrigin}/.well-known/oauth-authorization-server/r/${cell}`
+    ).then((r) => r.json());
+    expect(meta.issuer).toBe(`${asOrigin}/r/${cell}`);
+    expect(sessions.get(cell)?.revision).toBe('2026-07-28');
+  });
+
   it('walks auth/metadata-default end-to-end through the relay', async () => {
-    const runId = 'authflow';
-    const mcpUrl = `${rs}/s/auth/metadata-default/${runId}/mcp`;
+    const cell = 'authflow/2025-11-25/auth/metadata-default';
+    const mcpUrl = `${rs}/s/${cell}/mcp`;
 
     // 1. Unauthenticated MCP → 401 with WWW-Authenticate pointing at PRM
     const r401 = await fetch(mcpUrl, {
@@ -120,21 +151,21 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(www).toContain('resource_metadata=');
 
     // 2. PRM via root well-known dispatch (RFC 9728 path-suffix derivation)
-    const prmUrl = `${rs}/.well-known/oauth-protected-resource/s/auth/metadata-default/${runId}/mcp`;
+    const prmUrl = `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`;
     const prm = await fetch(prmUrl).then((r) => r.json());
     expect(prm.resource).toBe(mcpUrl);
-    expect(prm.authorization_servers).toEqual([`${asOrigin}/r/${runId}`]);
+    expect(prm.authorization_servers).toEqual([`${asOrigin}/r/${cell}`]);
 
     // 3. AS metadata — client derives well-known from issuer per RFC 8414 →
     //    hits the relay origin → forwarded to /__aux/as/… → run resolved.
     const asMeta = await fetch(
-      `${asOrigin}/.well-known/oauth-authorization-server/r/${runId}`
+      `${asOrigin}/.well-known/oauth-authorization-server/r/${cell}`
     ).then((r) => r.json());
-    expect(asMeta.issuer).toBe(`${asOrigin}/r/${runId}`);
+    expect(asMeta.issuer).toBe(`${asOrigin}/r/${cell}`);
     expect(asMeta.authorization_endpoint).toBe(
-      `${asOrigin}/r/${runId}/authorize`
+      `${asOrigin}/r/${cell}/authorize`
     );
-    expect(asMeta.token_endpoint).toBe(`${asOrigin}/r/${runId}/token`);
+    expect(asMeta.token_endpoint).toBe(`${asOrigin}/r/${cell}/token`);
 
     // 4. DCR
     const reg = await fetch(asMeta.registration_endpoint, {
@@ -164,8 +195,8 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     const loc = new URL(authz.headers.get('location')!);
     const code = loc.searchParams.get('code');
     expect(code).toBeTruthy();
-    // RFC 9207 iss parameter should be the per-run issuer
-    expect(loc.searchParams.get('iss')).toBe(`${asOrigin}/r/${runId}`);
+    // RFC 9207 iss parameter should be the per-cell issuer
+    expect(loc.searchParams.get('iss')).toBe(`${asOrigin}/r/${cell}`);
 
     // 6. /token
     const tok = await fetch(asMeta.token_endpoint, {
@@ -196,13 +227,13 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
 
     // Snapshot the raw log as a write-through store would persist it: no
     // end-of-run verdicts yet (step 9 below re-judges this copy).
-    const raw = rawChecksOf(sessions.get(runId)!.scenario).map((c) => ({
+    const raw = rawChecksOf(sessions.get(cell)!.scenario).map((c) => ({
       ...c
     }));
     expect(raw.some((c) => c.id.startsWith('resource-parameter-'))).toBe(false);
 
     // 8. Results — checks from BOTH origins accumulated on the one run.
-    const results = await fetch(`${rs}/results/${runId}`).then((r) => r.json());
+    const results = await fetch(`${rs}/results/${cell}`).then((r) => r.json());
     const ids = results.checks.map((c: { id: string }) => c.id);
     expect(ids).toContain('prm-pathbased-requested'); // RS-side
     expect(ids).toContain('authorization-server-metadata'); // AS-side via relay
@@ -233,37 +264,39 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(rejudged.filter((c) => c.status === 'FAILURE')).toEqual([]);
   });
 
-  it('exposes scenarioContext on the start_run response (pre-registration)', async () => {
-    const r = await fetch(`${rs}/s/auth/pre-registration`).then((r) =>
+  it('exposes scenarioContext in the cell config env (pre-registration)', async () => {
+    const cell = 'pre/2025-11-25/auth/pre-registration';
+    const config = await fetch(`${rs}/s/${cell}?format=json`).then((r) =>
       r.json()
     );
-    expect(r.context).toEqual({
+    expect(config.cells).toHaveLength(1);
+    expect(config.cells[0].url).toBe(`${rs}/s/${cell}/mcp`);
+    expect(JSON.parse(config.cells[0].env.MCP_CONFORMANCE_CONTEXT)).toEqual({
       name: 'auth/pre-registration',
       client_id: 'pre-registered-client',
       client_secret: 'pre-registered-secret',
-      // The AS issuer this run publishes: the relay origin + /r/<run-id>.
-      issuer: expect.stringMatching(
-        /^http:\/\/localhost:\d+\/r\/[A-Za-z0-9_-]+$/
-      )
+      // The AS issuer this cell publishes: the relay origin + /r/<cell-id>.
+      issuer: `${asOrigin}/r/${cell}`
     });
   });
 
   it('routes tenant-prefixed AS metadata (auth/metadata-var2) correctly', async () => {
-    const runId = 'tenant';
-    // Touch RS to lazily create the run so the aux handler exists.
-    await fetch(`${rs}/s/auth/metadata-var2/${runId}/mcp`, {
+    const cell = 'tenant/2025-11-25/auth/metadata-var2';
+    // Touch RS to lazily create the cell so the aux handler exists.
+    await fetch(`${rs}/s/${cell}/mcp`, {
       method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify(initBody())
     });
-    // Issuer is <as>/r/<id>/tenant1 → well-known at
-    // <as>/.well-known/oauth-authorization-server/r/<id>/tenant1
+    // Issuer is <as>/r/<cell>/tenant1 → well-known at
+    // <as>/.well-known/oauth-authorization-server/r/<cell>/tenant1; the
+    // scenario name is resolved by longest match, so `tenant1` is a suffix.
     const meta = await fetch(
-      `${asOrigin}/.well-known/oauth-authorization-server/r/${runId}/tenant1`
+      `${asOrigin}/.well-known/oauth-authorization-server/r/${cell}/tenant1`
     ).then((r) => r.json());
-    expect(meta.issuer).toBe(`${asOrigin}/r/${runId}/tenant1`);
+    expect(meta.issuer).toBe(`${asOrigin}/r/${cell}/tenant1`);
     expect(meta.authorization_endpoint).toBe(
-      `${asOrigin}/r/${runId}/tenant1/authorize`
+      `${asOrigin}/r/${cell}/tenant1/authorize`
     );
   });
 });

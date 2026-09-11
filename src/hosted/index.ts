@@ -1,9 +1,8 @@
 import { createHostedApp } from './server';
-import { listHostableScenarios } from './session';
 import { AuxOriginRole } from '../types';
 
 export { createHostedApp } from './server';
-export { listHostableScenarios } from './session';
+export { buildMatrix } from './matrix';
 
 export interface HostedCliOptions {
   port: number;
@@ -28,7 +27,7 @@ export async function runHostedServer(opts: HostedCliOptions): Promise<void> {
     process.exit(1);
   }
 
-  const { app, sessions } = createHostedApp({
+  const { app, sessions, matrix } = createHostedApp({
     publicOrigin: opts.publicOrigin,
     ttlMs: opts.ttlMs,
     auxOrigins,
@@ -37,17 +36,21 @@ export async function runHostedServer(opts: HostedCliOptions): Promise<void> {
 
   const server = app.listen(opts.port, () => {
     const origin = opts.publicOrigin ?? `http://localhost:${opts.port}`;
+    const startable = matrix.cells().filter((c) => c.startable).length;
     console.error(`MCP conformance hosted server listening on ${origin}`);
     console.error(
-      `  ${listHostableScenarios(haveAux).length} scenarios mounted under ${origin}/s/<name>`
+      `  ${matrix.rows.length} scenarios × ${matrix.revisions.length} revisions ` +
+        `(${matrix.revisions.join(', ')}); ${startable} startable cells under ` +
+        `${origin}/s/<run-id>/<revision>/<scenario>`
     );
+    console.error(`  GET ${origin}/s mints a run id`);
     if (haveAux.length) {
       for (const r of haveAux) {
         console.error(`  aux[${r}] relay origin: ${auxOrigins[r]}`);
       }
     } else {
       console.error(
-        '  (auth/* scenarios disabled — pass --as-origin to enable)'
+        '  (auth/* cells not startable — pass --as-origin to enable them)'
       );
     }
   });

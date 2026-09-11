@@ -7,8 +7,8 @@
  * often not the one that saw the MCP traffic. A RunStore lets each isolate
  * write through what it observed and lets any isolate serve a merged view:
  *
- *   - run metadata (id → scenario) so an isolate that never saw the run can
- *     still rebuild its handlers (aux-origin requests, results pages);
+ *   - run metadata (cell id → scenario) so the results page can list which
+ *     cells of a run were exercised, and tear them all down together;
  *   - checks, keyed by (run, writer): each isolate owns its own row and
  *     replaces it wholesale after every request, so concurrent writers never
  *     clobber each other and no append ordering is needed.
@@ -24,6 +24,13 @@ export interface RunStore {
   saveRun(id: string, scenarioName: string): Promise<void>;
   /** Scenario name for a run id, or undefined if no isolate ever saw it. */
   loadRun(id: string): Promise<string | undefined>;
+  /**
+   * Every saved run whose id starts with `prefix`. Cell ids are
+   * `<run-id>/<revision>/<scenario>`, so `<run-id>/` lists one run's cells.
+   */
+  listRuns(
+    prefix: string
+  ): Promise<Array<{ id: string; scenarioName: string }>>;
   saveChecks(
     id: string,
     writer: string,
@@ -44,6 +51,13 @@ export class MemoryRunStore implements RunStore {
   }
   async loadRun(id: string): Promise<string | undefined> {
     return this.runs.get(id);
+  }
+  async listRuns(
+    prefix: string
+  ): Promise<Array<{ id: string; scenarioName: string }>> {
+    return Array.from(this.runs.entries())
+      .filter(([id]) => id.startsWith(prefix))
+      .map(([id, scenarioName]) => ({ id, scenarioName }));
   }
   async saveChecks(
     id: string,

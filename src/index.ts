@@ -935,9 +935,10 @@ program
   .command('hosted')
   .description(
     'Run a long-lived HTTP server that exposes every client scenario at ' +
-      '/s/<name> and serves results at /results/<session-id>. With ' +
-      '--as-origin, auth/* scenarios are also mounted; deploy ' +
-      'examples/hosted/valtown-relay.ts at that origin.'
+      'every requirement-set revision under /s/<run-id>/<revision>/<scenario> ' +
+      'and serves results at /results/<run-id>. With --as-origin, auth/* ' +
+      'scenarios are also mounted; deploy examples/hosted/valtown-relay.ts ' +
+      'at that origin.'
   )
   .option('--port <port>', 'Port to listen on', '3000')
   .option(

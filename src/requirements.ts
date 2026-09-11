@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
 import { ALL_SPEC_VERSIONS } from './scenarios';
+import { SPEC_VERSION_TIMELINE, type SpecVersion } from './types';
 
 /**
  * A frozen requirement set for one specification revision: the scenarios an
@@ -61,13 +62,20 @@ function requirementsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'requirements');
 }
 
-export function listRequirementRevisions(): string[] {
+/**
+ * Revisions that ship a requirement set, in spec-timeline order. A yaml whose
+ * name is not a protocol version this build knows is ignored: it could not be
+ * loaded anyway (see loadRequirements).
+ */
+export function listRequirementRevisions(): SpecVersion[] {
   const dir = requirementsDir();
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.yaml'))
-    .map((f) => f.replace(/\.yaml$/, ''))
-    .sort();
+  const present = new Set(
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.yaml'))
+      .map((f) => f.replace(/\.yaml$/, ''))
+  );
+  return SPEC_VERSION_TIMELINE.filter((v) => present.has(v));
 }
 
 function asNameList(value: unknown, field: string, revision: string): string[] {
