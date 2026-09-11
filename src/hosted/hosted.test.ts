@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHostedApp } from './server';
 import { renderResults } from './html';
 import { SessionManager, cellId } from './session';
+import { MemoryRunStore } from './store';
 import type { HostedMatrix } from './matrix';
 import type { Server } from 'http';
 
@@ -797,6 +798,97 @@ describe('hosted server', () => {
       expect(typeof run.listener).toBe('function');
       expect(run.scenario.name).toBe(c.scenario);
       expect(run.id).toBe(cellId(ref));
+    }
+  });
+});
+
+describe('hosted server across processes (shared store)', () => {
+  // Two apps over one store stand in for two serverless isolates that
+  // load-balance a run's requests.
+  const store = new MemoryRunStore();
+  const apps = [createHostedApp({ store }), createHostedApp({ store })];
+  const servers: Server[] = [];
+  const origins: string[] = [];
+
+  beforeAll(async () => {
+    for (const { app } of apps) {
+      await new Promise<void>((resolve) => {
+        const s = app.listen(0, () => {
+          servers.push(s);
+          const addr = s.address() as { port: number };
+          origins.push(`http://localhost:${addr.port}`);
+          resolve();
+        });
+      });
+    }
+  });
+
+  afterAll(async () => {
+    for (const { sessions } of apps) await sessions.close();
+    await Promise.all(
+      servers.map((s) => new Promise<void>((r) => s.close(() => r())))
+    );
+  });
+
+  it("rejects request-metadata's first request once per run, not once per process", async () => {
+    const path = `/s/split/${REV_STATELESS}/request-metadata/mcp`;
+    const body = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'vitest',
+            version: '0'
+          },
+          'io.modelcontextprotocol/clientCapabilities': {}
+        }
+      }
+    };
+    const send = (origin: string) =>
+      fetch(`${origin}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-protocol-version': REV_STATELESS
+        },
+        body: JSON.stringify(body)
+      });
+
+    const first = await send(origins[0]);
+    expect(first.status).toBe(400);
+    expect((await first.json()).error.code).toBe(-32022);
+    await apps[0].sessions.flush();
+
+    // The retry lands on the other process, which has never seen the cell.
+    const second = await send(origins[1]);
+    expect(second.status).toBe(200);
+    await second.text();
+    await apps[1].sessions.flush();
+
+    for (const origin of origins) {
+      const results = await fetch(
+        `${origin}/results/split/${REV_STATELESS}/request-metadata`
+      ).then((r) => r.json());
+      const retries = results.checks.filter(
+        (c: { id: string }) =>
+          c.id === 'sep-2575-client-retry-supported-version'
+      );
+      expect(retries).toHaveLength(1);
+      expect(retries[0].status).toBe('SUCCESS');
+      expect(
+        results.checks.filter((c: { status: string }) => c.status === 'FAILURE')
+      ).toEqual([]);
+      const report = await fetch(`${origin}/results/split`).then((r) =>
+        r.json()
+      );
+      expect(
+        report.columns[1].cells.find(
+          (c: { scenario: string }) => c.scenario === 'request-metadata'
+        ).verdict
+      ).toBe('pass');
     }
   });
 });

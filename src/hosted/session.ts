@@ -108,6 +108,14 @@ export interface HostedRun extends CellRef {
   identities: Set<string>;
   /** Keys of hosted checks already recorded, so each finding is one check. */
   hostedKeys: Set<string>;
+  /**
+   * Checks seeded into the scenario from other processes' persisted rows
+   * (see hydrate()), each with its JSON as seeded. They are those writers'
+   * to persist, not ours — unless the scenario has changed one since.
+   */
+  seeded: Map<ConformanceCheck, string>;
+  /** Settled once the cell has been seeded from the store (or never will be). */
+  hydration?: Promise<void>;
 }
 
 export interface SessionManagerOptions {
@@ -281,10 +289,71 @@ export class SessionManager {
       touched: false,
       hostedChecks: [],
       identities: new Set(),
-      hostedKeys: new Set()
+      hostedKeys: new Set(),
+      seeded: new Map()
     };
     this.runs.set(id, run);
     return run;
+  }
+
+  /**
+   * getOrCreate() plus hydrate(): the cell, seeded with what other processes
+   * already recorded about it. What every request must go through before it
+   * is dispatched, so a scenario that keys its behaviour on its own log (the
+   * one-time rejection in request-metadata, say) sees the run's history and
+   * not just this process's.
+   */
+  async acquire(
+    ref: CellRef,
+    baseUrlFor: (ref: CellRef) => string
+  ): Promise<HostedRun> {
+    const run = this.getOrCreate(ref, baseUrlFor);
+    await this.hydrate(run);
+    return run;
+  }
+
+  /**
+   * Seed the cell's scenario with the merged raw log the store holds for it,
+   * once per cell per process. Only scenarios that keep a plain `checks`
+   * array can be seeded (the same ones finalizeChecks() can re-judge); the
+   * rest are left alone. Rows this process wrote itself (a cell evicted and
+   * rebuilt) are loaded as its own, so they are persisted again rather than
+   * dropped from its row. Without a store this settles at once.
+   */
+  hydrate(run: HostedRun): Promise<void> {
+    if (run.hydration) return run.hydration;
+    const store = this.store;
+    if (!store) return (run.hydration = Promise.resolve());
+    run.hydration = (async () => {
+      const bag = (run.scenario as unknown as { checks?: unknown }).checks;
+      if (!Array.isArray(bag) || run.scenario.rawChecks) return;
+      const byWriter = await store.loadChecks(run.id);
+      const merged: ConformanceCheck[] = [];
+      for (const [writer, checks] of byWriter) {
+        if (writer.endsWith(HOSTED_WRITER_SUFFIX)) continue;
+        for (const c of checks) {
+          const copy = { ...c };
+          if (writer !== this.writerId)
+            run.seeded.set(copy, JSON.stringify(copy));
+          merged.push(copy);
+        }
+      }
+      if (!merged.length) return;
+      merged.sort(byTime);
+      (bag as ConformanceCheck[]).unshift(...merged);
+    })().catch(logStoreError);
+    return run.hydration;
+  }
+
+  /**
+   * This process's contribution to the cell's raw log: everything the
+   * scenario recorded except seeded checks it has not touched. A seeded
+   * check the scenario replaced or rewrote in place is ours to persist.
+   */
+  ownChecks(run: HostedRun): ConformanceCheck[] {
+    const raw = rawChecksOf(run.scenario);
+    if (!run.seeded.size) return raw;
+    return raw.filter((c) => run.seeded.get(c) !== JSON.stringify(c));
   }
 
   /**
@@ -357,7 +426,7 @@ export class SessionManager {
       await store.saveChecks(
         run.id,
         this.writerId,
-        rawChecksOf(run.scenario).map((c) => ({ ...c }))
+        this.ownChecks(run).map((c) => ({ ...c }))
       );
       if (run.hostedChecks.length) {
         await store.saveChecks(
@@ -414,12 +483,10 @@ export class SessionManager {
       logStoreError(e);
     }
     if (run) {
-      byWriter.set(this.writerId, rawChecksOf(run.scenario));
+      byWriter.set(this.writerId, this.ownChecks(run));
       byWriter.set(this.writerId + HOSTED_WRITER_SUFFIX, run.hostedChecks);
     }
     if (!run && !known && byWriter.size === 0) return undefined;
-    const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
-      (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
     const scenarioLog: ConformanceCheck[] = [];
     const hostedLog: ConformanceCheck[] = [];
     for (const [writer, checks] of byWriter) {
@@ -502,6 +569,9 @@ export class SessionManager {
     }
   }
 }
+
+const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
+  (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
 
 function logStoreError(e: unknown): void {
   console.error('[hosted] run store:', e instanceof Error ? e.message : e);

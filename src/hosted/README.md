@@ -212,6 +212,14 @@ matrix shows them as not startable with that reason. Everything else
 persists its raw check log to the account's SQLite (`RunStore`,
 `examples/hosted/valtown-store.ts`) and `/results` re-judges the merged log.
 
+An isolate that has never seen a cell is **hydrated** before it dispatches
+its first request to it: the scenario's `checks` array is seeded with the
+merged log the store holds for the cell (`SessionManager.acquire`), so a
+scenario that keys its behaviour on its own log — `request-metadata` rejects
+the run's first request exactly once — sees the run's history rather than
+just this isolate's. Seeded checks are persisted by the isolate that wrote
+them; an isolate's row holds only what it recorded or rewrote itself.
+
 ### Two-val auth setup
 
 | Val     | File                               | Env                                                                                                           |

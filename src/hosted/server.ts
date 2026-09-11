@@ -256,13 +256,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     return true;
   }
 
-  function createRun(
+  /**
+   * The cell, hydrated from the store when this process has never seen it
+   * (see SessionManager.acquire) — a request must not be dispatched before
+   * the scenario knows the run's history.
+   */
+  async function createRun(
     req: Request,
     ref: CellRef,
     res: Response
-  ): HostedRun | undefined {
+  ): Promise<HostedRun | undefined> {
     try {
-      return sessions.getOrCreate(ref, (r) => cellBaseUrl(req, r));
+      return await sessions.acquire(ref, (r) => cellBaseUrl(req, r));
     } catch (e) {
       if (e instanceof UnknownScenarioError) {
         res.status(404).json({ error: e.message });
@@ -500,7 +505,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // the cell, rewrites req.url to strip the /s/<run-id>/<rev>/<scenario>
   // prefix, and hands off to the cell's listener — exactly what
   // app.use(prefix, fn) would do, but with a dynamic prefix.
-  app.all(/^\/s\/(.+)$/, (req, res) => {
+  app.all(/^\/s\/(.+)$/, async (req, res) => {
     const segments = segmentsOf(req.params[0]);
     const [runId, revision] = segments;
 
@@ -550,7 +555,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       return;
     }
 
-    const run = createRun(req, ref, res);
+    const run = await createRun(req, ref, res);
     if (!run) return;
     // Rewrite to the path the scenario expects (it thinks it's at root).
     // The query string is preserved because we keep the express req object.
@@ -576,20 +581,23 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // Requests that arrive *under* the cell prefix (because the WWW-Authenticate
   // header points there) already work via the /s/* mount above.
 
-  app.get(/^\/\.well-known\/oauth-protected-resource\/s\/(.+)$/, (req, res) => {
-    const resolved = resolveCell(req.params[0].split('/'), res);
-    if (!resolved) return;
-    const run = createRun(req, resolved.ref, res);
-    if (!run) return;
-    // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
-    dispatch(
-      run,
-      run.listener,
-      req,
-      res,
-      '/.well-known/oauth-protected-resource' + resolved.suffix
-    );
-  });
+  app.get(
+    /^\/\.well-known\/oauth-protected-resource\/s\/(.+)$/,
+    async (req, res) => {
+      const resolved = resolveCell(req.params[0].split('/'), res);
+      if (!resolved) return;
+      const run = await createRun(req, resolved.ref, res);
+      if (!run) return;
+      // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
+      dispatch(
+        run,
+        run.listener,
+        req,
+        res,
+        '/.well-known/oauth-protected-resource' + resolved.suffix
+      );
+    }
+  );
 
   // ---------- aux-origin backchannel (relay target) ----------
   //
@@ -653,7 +661,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       return undefined;
     }
 
-    app.all(/^\/__aux\/([a-z0-9]+)(\/.*)$/, (req, res) => {
+    app.all(/^\/__aux\/([a-z0-9]+)(\/.*)$/, async (req, res) => {
       if (!guard(req, res)) return;
       const role = req.params[0] as AuxOriginRole;
       const path = req.params[1];
@@ -685,6 +693,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         res.status(404).json({ error: `no aux '${role}' handler for cell` });
         return;
       }
+      await sessions.hydrate(run);
       dispatch(run, listener, req, res, (prefix + suffix || '/') + search);
     });
   }
