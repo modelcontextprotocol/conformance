@@ -29,6 +29,11 @@ import { JWT_BEARER_GRANT_TYPE } from '../../../src/scenarios/client/auth/helper
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ClientConformanceContextSchema } from '../../../src/schemas/context.js';
 import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
+import {
+  classifyHttpFallbackResponse,
+  MODERN_PROBE_ID,
+  modernProbeRequestInit
+} from '../../../src/version-compat.js';
 import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
 import {
   auth,
@@ -155,6 +160,31 @@ async function statelessRequest(
 // Basic scenarios (initialize, tools_call)
 // ============================================================================
 
+async function runLegacyBasicClient(serverUrl: string): Promise<void> {
+  const client = new Client(
+    { name: 'test-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
+  try {
+    await client.connect(transport);
+    logger.debug('Successfully connected to MCP server');
+
+    const list = await client.listTools();
+    logger.debug('Successfully listed tools');
+
+    const tool = list.tools[0];
+    if (tool) {
+      await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+      logger.debug('Successfully called tool');
+    }
+  } finally {
+    await transport.close();
+    logger.debug('Connection closed successfully');
+  }
+}
+
 async function runBasicClient(serverUrl: string): Promise<void> {
   if (USE_STATELESS_LIFECYCLE) {
     logger.debug('Stateless lifecycle: calling tools/list + tools/call');
@@ -171,30 +201,51 @@ async function runBasicClient(serverUrl: string): Promise<void> {
     return;
   }
 
-  const client = new Client(
-    { name: 'test-client', version: '1.0.0' },
-    { capabilities: {} }
-  );
+  await runLegacyBasicClient(serverUrl);
+}
 
-  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+const legacyOrigins = new Set<string>();
 
-  await client.connect(transport);
-  logger.debug('Successfully connected to MCP server');
+async function runVersionBackcompatClient(serverUrl: string): Promise<void> {
+  const origin = new URL(serverUrl).origin;
+  const usedCachedLegacyDecision = legacyOrigins.has(origin);
+  if (!usedCachedLegacyDecision) {
+    const response = await fetch(serverUrl, modernProbeRequestInit());
+    const classification = await classifyHttpFallbackResponse(
+      response,
+      MODERN_PROBE_ID
+    );
 
-  const list = await client.listTools();
-  logger.debug('Successfully listed tools');
-
-  const tool = list.tools[0];
-  if (tool) {
-    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
-    logger.debug('Successfully called tool');
+    if (classification.kind === 'modern') {
+      throw new Error(
+        `Modern probe returned recognized modern error code ${classification.errorCode}`
+      );
+    }
+    if (classification.kind === 'unavailable') {
+      throw new Error(`Modern probe failed: ${classification.error}`);
+    }
+    if (classification.kind !== 'legacy-fallback') {
+      throw new Error(
+        `Expected legacy endpoint to reject the modern probe with HTTP 400, got ${classification.status}`
+      );
+    }
+    legacyOrigins.add(origin);
   }
 
-  await transport.close();
-  logger.debug('Connection closed successfully');
+  try {
+    await runLegacyBasicClient(serverUrl);
+  } catch (error) {
+    legacyOrigins.delete(origin);
+    if (usedCachedLegacyDecision) {
+      await runVersionBackcompatClient(serverUrl);
+      return;
+    }
+    throw error;
+  }
 }
 
 registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
+registerScenario('version-backcompat', runVersionBackcompatClient);
 
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and

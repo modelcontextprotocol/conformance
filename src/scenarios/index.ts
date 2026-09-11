@@ -16,6 +16,7 @@ import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
+import { VersionBackcompatScenario } from './client/version-backcompat';
 import { MRTRClientScenario } from './client/mrtr-client';
 
 // Import all new server test scenarios
@@ -276,7 +277,10 @@ const draftClientScenariosList: ClientScenario[] =
   allClientScenariosList.filter(
     (scenario) =>
       'introducedIn' in scenario.source &&
-      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION &&
+      !pendingClientScenariosList.some(
+        (pending) => pending.name === scenario.name
+      )
   );
 
 // Active client scenarios (excludes pending and draft)
@@ -313,6 +317,10 @@ export const clientScenariosForAuthorizationServer = new Map<
   ])
 );
 
+const protocolBackcompatScenariosList: Scenario[] = [
+  new VersionBackcompatScenario()
+];
+
 // All client test scenarios (core + backcompat + extensions)
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
@@ -320,6 +328,7 @@ const scenariosList: Scenario[] = [
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
   new RequestMetadataScenario(),
+  ...protocolBackcompatScenariosList,
   ...authScenariosList,
   ...backcompatScenariosList,
   ...draftScenariosList,
@@ -409,7 +418,9 @@ export function listExtensionScenarios(): string[] {
 }
 
 export function listBackcompatScenarios(): string[] {
-  return backcompatScenariosList.map((scenario) => scenario.name);
+  return [...backcompatScenariosList, ...protocolBackcompatScenariosList].map(
+    (scenario) => scenario.name
+  );
 }
 
 export function listClientScenariosForAuthorizationServer(): string[] {
