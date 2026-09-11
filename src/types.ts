@@ -102,7 +102,8 @@ export const EXTENSION_IDS = [
   'io.modelcontextprotocol/enterprise-managed-authorization',
   'io.modelcontextprotocol/auth/dpop',
   'io.modelcontextprotocol/auth/wif',
-  'io.modelcontextprotocol/tasks'
+  'io.modelcontextprotocol/tasks',
+  'io.modelcontextprotocol/skills'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
