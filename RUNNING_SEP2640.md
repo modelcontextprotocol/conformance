@@ -4,24 +4,20 @@ Three server scenarios, brand-neutral: they discover everything dynamically and
 hardcode no fixture URIs, so pointing them at a new server is a URL change.
 
 ```bash
-git clone https://github.com/panyam/mcpconformance && cd mcpconformance
-git checkout chore/sep-2640-yaml
-npm install && npm run build
+npx @modelcontextprotocol/conformance server --url <SERVER_URL> \
+  --scenario sep-2640-skills-enumeration
 ```
 
-Then, per scenario:
-
-```bash
-node dist/index.js server --url <SERVER_URL> \
-  --scenario sep-2640-skills-enumeration --force
-```
+(or `npm start -- server ...` from a checkout of this repo).
 
 Repeat for `sep-2640-skills-manifest` and `sep-2640-skills-directory`.
 
 ## The two flags, and why both
 
-`--force` is always needed. Extension scenarios do not match `--spec-version`
-on their own, so without it they SKIP as "not applicable".
+`--force` is only needed together with `--spec-version`. Extension scenarios
+sit outside the spec timeline, so an explicit `--spec-version` does not select
+them and they SKIP as "not applicable" unless `--force` is passed as well.
+Without `--spec-version` they run on the draft wire and need no `--force`.
 
 `--spec-version` selects the **wire lifecycle**, not just a filter. The default
 is the stateless draft wire, which asserts `MCP-Protocol-Version: 2026-07-28`
@@ -31,7 +27,7 @@ with no handshake. Against a server that does not speak that version you get:
 -32022: protocol version "2026-07-28" is not supported by this server
 ```
 
-which reads like a missing method and is not. Add `--spec-version 2025-11-25`
+which reads like a missing method and is not. Add `--spec-version 2025-11-25 --force`
 to use the stateful wire instead. The scenarios are version-portable: only
 `ttlMs` / `cacheScope` are gated on 2026-07-28 and later, and that check
 reports SKIPPED below the floor rather than failing.
