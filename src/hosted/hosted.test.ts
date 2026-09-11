@@ -340,6 +340,32 @@ describe('hosted server', () => {
     ]);
   });
 
+  it('ignores a trailing slash on run, column and cell paths', async () => {
+    const run = await fetch(`${base}/s/slash/`).then((r) => r.json());
+    expect(run.runId).toBe('slash');
+    expect(run.revision).toBeUndefined();
+
+    const column = await fetch(`${base}/s/slash/${REV_STATEFUL}/`).then((r) =>
+      r.json()
+    );
+    expect(column.revision).toBe(REV_STATEFUL);
+
+    const cell = await fetch(
+      `${base}/s/slash/${REV_STATEFUL}/tools_call/?format=json`
+    ).then((r) => r.json());
+    expect(cell.scenario).toBe('tools_call');
+    expect(cell.cells).toHaveLength(1);
+
+    for (const path of [
+      `/results/slash/`,
+      `/results/slash/${REV_STATEFUL}/`,
+      `/results/slash/${REV_STATEFUL}/tools_call/`
+    ]) {
+      const res = await fetch(`${base}${path}`);
+      expect(res.status, path).toBe(200);
+    }
+  });
+
   it('negotiates HTML for browsers, JSON otherwise, ?format= overriding both', async () => {
     const html = await fetch(`${base}/s/neg`, {
       headers: { accept: 'text/html,application/xhtml+xml,*/*;q=0.8' }

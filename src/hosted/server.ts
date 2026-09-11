@@ -146,6 +146,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     `${origin(req)}/results/${parts.join('/')}`;
 
   /**
+   * Path segments of a captured route tail. A trailing slash (`/s/<run-id>/`,
+   * `/results/<run-id>/<rev>/`) is not a segment: without this it would read
+   * as an empty revision or scenario name and 404.
+   */
+  function segmentsOf(tail: string): string[] {
+    return tail.replace(/\/+$/, '').split('/');
+  }
+
+  /**
    * Longest registered scenario name that prefixes `segments` (names may
    * contain '/'), plus whatever follows it as a path suffix ('' if nothing).
    * Matches every registered client scenario, not only startable ones, so a
@@ -428,7 +437,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // prefix, and hands off to the cell's listener — exactly what
   // app.use(prefix, fn) would do, but with a dynamic prefix.
   app.all(/^\/s\/(.+)$/, (req, res) => {
-    const segments = req.params[0].split('/');
+    const segments = segmentsOf(req.params[0]);
     const [runId, revision] = segments;
 
     if (segments.length <= 2) {
@@ -611,7 +620,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // ---------- results ----------
 
   app.get(/^\/results\/(.+)$/, async (req, res) => {
-    const segments = req.params[0].split('/');
+    const segments = segmentsOf(req.params[0]);
     const [runId, revision, ...rest] = segments;
     if (!RUN_ID_RE.test(runId)) {
       res.status(400).json({ error: 'invalid run-id' });

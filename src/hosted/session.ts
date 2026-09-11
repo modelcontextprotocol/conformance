@@ -323,8 +323,12 @@ export class SessionManager {
     if (!store) return Promise.resolve();
     const p = (async () => {
       if (!run.saved) {
-        run.saved = true;
+        // Mark saved only once the write landed: a failed saveRun must be
+        // retried on the next persist, or the cell never appears in
+        // listRuns() and the report shows it as never exercised even though
+        // its checks are in the store.
         await store.saveRun(run.id, run.scenarioName);
+        run.saved = true;
       }
       await store.saveChecks(
         run.id,
