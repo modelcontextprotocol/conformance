@@ -1,8 +1,11 @@
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck, ScenarioUrls } from '../../../types';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
 
@@ -23,21 +26,22 @@ const PRE_REGISTERED_CLIENT_SECRET = 'pre-registered-secret';
  * This tests the pre-registration approach described in the MCP spec:
  * https://modelcontextprotocol.io/specification/draft/basic/authorization#preregistration
  */
-export class PreRegistrationScenario implements Scenario {
+export class PreRegistrationScenario extends AuthHandlerScenario {
   name = 'auth/pre-registration';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests OAuth flow with pre-registered client credentials. Server does not support DCR.';
 
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
+  private getAsUrl: (() => string) | null = null;
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
+    this.getAsUrl = getAsUrl;
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       disableDynamicRegistration: true,
       tokenEndpointAuthMethodsSupported: ['client_secret_basic'],
@@ -108,38 +112,24 @@ export class PreRegistrationScenario implements Scenario {
       }
     });
 
-    await this.authServer.start(authApp);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [],
+      tokenVerifier
+    });
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [],
-        tokenVerifier
-      }
-    );
-
-    await this.server.start(app);
-
-    return {
-      serverUrl: `${this.server.getUrl()}/mcp`,
-      context: {
-        client_id: PRE_REGISTERED_CLIENT_ID,
-        client_secret: PRE_REGISTERED_CLIENT_SECRET,
-        // The `issuer` the mock AS publishes in its metadata — the scenario
-        // sets neither `metadataIssuer` nor `routePrefix`, so createAuthServer
-        // resolves the published issuer to exactly this URL.
-        issuer: this.authServer.getUrl()
-      }
-    };
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+  protected scenarioContext() {
+    return {
+      client_id: PRE_REGISTERED_CLIENT_ID,
+      client_secret: PRE_REGISTERED_CLIENT_SECRET,
+      // The `issuer` the mock AS publishes in its metadata — the scenario
+      // sets neither `metadataIssuer` nor `routePrefix`, so createAuthServer
+      // resolves the published issuer to exactly the AS base URL.
+      issuer: this.getAsUrl?.()
+    };
   }
 
   getChecks(): ConformanceCheck[] {

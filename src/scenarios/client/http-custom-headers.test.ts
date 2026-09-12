@@ -6,6 +6,7 @@ import {
   CUSTOM_HEADERS_DECLARED_CHECK_IDS,
   INVALID_TOOL_DECLARED_CHECK_IDS
 } from './http-custom-headers';
+import { finalizeChecks, rawChecksOf } from '../../hosted/session';
 
 /**
  * Pins the SEP-2243 requirement-level check IDs emitted by the custom-header
@@ -239,6 +240,55 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
     } finally {
       await scenario.stop();
     }
+  });
+});
+
+describe('HttpInvalidToolHeadersScenario judged from its raw log', () => {
+  it('FAILs the constraint when the tool was called in another process', async () => {
+    // The hosted server judges a merged log in a fresh instance (see
+    // src/hosted/session.ts finalizeChecks): what the observing instance
+    // saw must be in its raw log, not in instance fields, or a tool the
+    // client did call reads as never called.
+    const observer = new HttpInvalidToolHeadersScenario();
+    const { serverUrl } = await observer.start(testScenarioContext());
+    try {
+      await post(serverUrl, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name: 'invalid_number_header', arguments: { score: 1.5 } }
+        },
+        { 'Mcp-Param-Score': '1.5' }
+      );
+    } finally {
+      await observer.stop();
+    }
+    const raw = rawChecksOf(observer);
+    expect(raw.map((c) => c.id)).toEqual([
+      'sep-2243-invalid-tool-tools-list-gate',
+      'sep-2243-invalid-tool-call'
+    ]);
+    expect(raw[1].details).toMatchObject({
+      tool: 'invalid_number_header',
+      mcpParamHeaders: { 'mcp-param-score': '1.5' }
+    });
+
+    const judged = finalizeChecks('http-invalid-tool-headers', raw);
+    expect(
+      statusesFor(judged, 'sep-2243-x-mcp-header-primitive-only')
+    ).toContain('FAILURE');
+    expect(statusesFor(judged, 'sep-2243-client-reject-invalid-tool')).toEqual([
+      'FAILURE'
+    ]); // valid_tool never called
+    expect(
+      statusesFor(judged, 'sep-2243-invalid-tool-tools-list-gate')
+    ).toEqual(['SUCCESS']);
+    // Idempotent: judging leaves the raw log alone.
+    expect(observer.getChecks()).toHaveLength(observer.getChecks().length);
+    expect(rawChecksOf(observer)).toHaveLength(2);
   });
 });
 

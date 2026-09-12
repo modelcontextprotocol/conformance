@@ -1,8 +1,7 @@
-import type { ScenarioContext } from '../../mock-server';
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
+  HandlerScenario,
+  RequestListener,
   ConformanceCheck,
   LATEST_SPEC_VERSION,
   NEGOTIABLE_PROTOCOL_VERSIONS,
@@ -10,7 +9,7 @@ import {
 } from '../../types';
 import { clientChecks } from '../../checks/index';
 
-export class InitializeScenario implements Scenario {
+export class InitializeScenario extends HandlerScenario {
   name = 'initialize';
   readonly source = {
     introducedIn: '2025-06-18',
@@ -18,48 +17,15 @@ export class InitializeScenario implements Scenario {
   } as const;
   description = 'Tests MCP client initialization handshake';
 
-  private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
-  private port: number = 0;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
-      this.server.on('error', reject);
-
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          this.port = address.port;
-          resolve({
-            serverUrl: `http://localhost:${this.port}`
-          });
-        } else {
-          reject(new Error('Failed to get server address'));
-        }
-      });
-    });
+  handler(_getBaseUrl: () => string): RequestListener {
+    this.checks = [];
+    return (req, res) => this.handleRequest(req, res);
   }
 
-  async stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.server) {
-        this.server.close((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            this.server = null;
-            resolve();
-          }
-        });
-      } else {
-        resolve();
-      }
-    });
-  }
+  /** Plumbing only: connect (implicit) and make one ordinary request. */
+  readonly steps = [{ op: 'tools/list' }] as const;
 
   getChecks(): ConformanceCheck[] {
     return this.checks;
@@ -89,13 +55,30 @@ export class InitializeScenario implements Scenario {
           // the server MUST return HTTP status code 202 Accepted with no body."
           res.writeHead(202);
           res.end();
-        } else {
+        } else if (request.method === 'ping' || request.id === undefined) {
+          // Empty result for ping; notifications and responses get none.
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
               jsonrpc: '2.0',
               id: request.id,
               result: {}
+            })
+          );
+        } else {
+          // A method this dated server does not have — notably the
+          // 2026-07-28 `server/discover` probe of a dual-era client, which
+          // must be turned away so the client falls back to `initialize`
+          // rather than read an empty result as a discovery.
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32601,
+                message: `Method not found: ${request.method}`
+              }
             })
           );
         }
