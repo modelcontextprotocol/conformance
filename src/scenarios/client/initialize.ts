@@ -55,13 +55,30 @@ export class InitializeScenario extends HandlerScenario {
           // the server MUST return HTTP status code 202 Accepted with no body."
           res.writeHead(202);
           res.end();
-        } else {
+        } else if (request.method === 'ping' || request.id === undefined) {
+          // Empty result for ping; notifications and responses get none.
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
               jsonrpc: '2.0',
               id: request.id,
               result: {}
+            })
+          );
+        } else {
+          // A method this dated server does not have — notably the
+          // 2026-07-28 `server/discover` probe of a dual-era client, which
+          // must be turned away so the client falls back to `initialize`
+          // rather than read an empty result as a discovery.
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32601,
+                message: `Method not found: ${request.method}`
+              }
             })
           );
         }

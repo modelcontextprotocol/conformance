@@ -264,6 +264,18 @@ describe('hosted server', () => {
     expect(text).toContain(
       `${base}/s/t4/${REV_STATELESS}/json-schema-ref-no-deref/canary/profile-schema.json`
     );
+    // The scenario rewrites the draft header to the SDK's before handing
+    // the request on; identity is read from the header the client sent.
+    const results = await fetch(
+      `${base}/results/t4/${REV_STATELESS}/json-schema-ref-no-deref`
+    ).then((r) => r.json());
+    const identity = results.checks.find(
+      (c: { id: string }) => c.id === 'hosted-client-identity'
+    );
+    expect(identity.details).toMatchObject({
+      name: 'vitest',
+      protocolVersions: [REV_STATELESS]
+    });
   });
 
   it('GET /s mints a run id and redirects to its config', async () => {

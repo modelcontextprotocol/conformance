@@ -331,6 +331,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     req.url = rewrittenUrl;
     run.touched = true;
 
+    // The headers as the client sent them: a scenario may rewrite them
+    // before handing the request on (json-schema-ref-deref maps the draft
+    // header to the SDK's), and identity is what the client said.
+    const headers = { ...req.headers };
     const headerVersion = req.header('mcp-protocol-version');
     let request: RequestInfo | undefined;
     let body: Buffer | undefined;
@@ -371,7 +375,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         }
       }
       // Who the client is, from accepted exchanges only.
-      const identity = identityFrom(req.headers, body, response);
+      const identity = identityFrom(headers, body, response);
       if (identity) sessions.recordIdentity(run, identity);
       return true;
     };
