@@ -133,7 +133,12 @@ request away (`src/hosted/wire.ts`):
   is not the column's, or any `initialize`; on a dated column any
   post-`initialize` request whose header names another revision
   (`initialize` itself negotiates and is exempt); once per distinct
-  (method, header version).
+  (method, header version). On a dated column a foreign-revision request
+  the wire turned away (a 4xx lifecycle rejection, or `-32601` for a
+  method the dated wire lacks) is version negotiation — a dual-era client
+  probes with `server/discover` at `2026-07-28`, then falls back to
+  `initialize` — and records neither check; one the wire accepted is
+  still a wrong revision.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as

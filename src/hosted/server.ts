@@ -59,6 +59,7 @@ import { onBodySettled, tapJsonBody } from './body';
 import { identityFrom } from './identity';
 import {
   describeRequest,
+  isNegotiation,
   tapResponse,
   wireRejectedCheck,
   wireRejection,
@@ -348,7 +349,9 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const judge = (): boolean => {
       if (judged || !request || !response) return false;
       judged = true;
-      if (mcp) {
+      // A foreign-revision request a dated cell turned away is the client
+      // negotiating (it falls back to `initialize`): neither judgement.
+      if (mcp && !isNegotiation(run.revision, headerVersion, response)) {
         for (const method of request.methods) {
           const reason = wrongRevision(run.revision, method, headerVersion);
           if (!reason) continue;

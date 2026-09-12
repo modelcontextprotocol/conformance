@@ -13,7 +13,9 @@
  *                          the stateless wire, a header naming another
  *                          revision).
  *
- * Both are FAILUREs, so they decide the cell's verdict (see report.ts).
+ * Both are FAILUREs, so they decide the cell's verdict (see report.ts). On a
+ * dated cell a request at a foreign revision that the wire turned away is
+ * version negotiation and records neither (see isNegotiation()).
  */
 
 import type { ServerResponse } from 'http';
@@ -207,11 +209,39 @@ export function wireRejection(
 }
 
 /**
+ * Whether a request to a dated cell was version negotiation rather than a
+ * client at the wrong revision: its header named a revision `served` does
+ * not serve and the wire turned it away for it — a 4xx whose body is a
+ * lifecycle rejection (see wireRejection()) or a -32601 method-not-found
+ * (the probe method does not exist on the dated wire). A dual-era client
+ * opens a dated cell that way — `server/discover` at 2026-07-28 is
+ * rejected, then it falls back to `initialize` — so neither judgement
+ * applies to the rejected request. A foreign-revision request the wire
+ * accepted is still the client carrying on at the wrong revision, and on
+ * the stateless wire nothing is negotiation.
+ */
+export function isNegotiation(
+  served: SpecVersion,
+  headerVersion: string | undefined,
+  response: CapturedResponse
+): boolean {
+  if (!isStatefulVersion(served)) return false;
+  if (headerVersion === undefined || headerVersion === served) return false;
+  if (response.status < 400 || response.status >= 500) return false;
+  if (wireRejection(response, served, headerVersion)) return true;
+  return jsonRpcMessages(response.body, response.contentType).some(
+    (m) => asRecord(m.error)?.code === -32601
+  );
+}
+
+/**
  * Why a request is not one the cell's revision `served` should receive, or
  * undefined when it is. On the stateless wire every request must carry the
  * cell's revision in the header and `initialize` does not exist; on a dated
  * (stateful) revision `initialize` negotiates and is exempt, and every later
- * request's header, when present, must name the cell's revision.
+ * request's header, when present, must name the cell's revision — unless
+ * the wire rejected it as negotiation (isNegotiation()), which the caller
+ * decides from the response.
  */
 export function wrongRevision(
   served: SpecVersion,
