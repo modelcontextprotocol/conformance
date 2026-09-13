@@ -154,11 +154,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // (initialize params / per-request _meta) without consuming the stream
   // the scenario is about to read.
   app.use(tapJsonBody());
-  // Cells are built with the deployment's key for auth tokens, which the
-  // store hands out asynchronously; hold every request until it is known.
-  app.use((_req, _res, next) => {
-    void sessions.ready().then(() => next());
-  });
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;

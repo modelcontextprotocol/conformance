@@ -34,9 +34,6 @@ import {
   type IdentityObservation
 } from './identity';
 
-/** Name of the deployment's auth token key in the store's shared secrets. */
-const TOKEN_MAC_KEY = 'token-mac-key';
-
 /** Store writer suffix for the hosted layer's own checks (client identity). */
 const HOSTED_WRITER_SUFFIX = '/hosted';
 
@@ -71,16 +68,12 @@ export function parseCellId(id: string): CellRef | undefined {
  * the mock speaks, exactly as `--spec-version` sets it for the CLI runner
  * (src/runner/client.ts). `createServer()` would bind a loopback port, which
  * serverless hosts don't allow — hosted scenarios use `createHandler()`.
- * `tokenMacKey` is the deployment's key for auth tokens (see
- * SessionManager.ready()).
  */
 export function hostedScenarioContext(
-  specVersion: SpecVersion,
-  tokenMacKey?: Buffer
+  specVersion: SpecVersion
 ): ScenarioContext {
   return {
     specVersion,
-    ...(tokenMacKey && { tokenMacKey }),
     createServer: () =>
       Promise.reject(
         new Error(
@@ -228,9 +221,6 @@ export class SessionManager {
   private pending = new Set<Promise<void>>();
   /** Identifies this process's rows in the store. */
   readonly writerId = randomBytes(4).toString('hex');
-  /** The deployment's key for auth tokens; unset without a shared one. */
-  private tokenMacKey: Buffer | undefined;
-  private readonly keyLoaded: Promise<void>;
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
@@ -239,53 +229,6 @@ export class SessionManager {
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;
     this.sweeper = setInterval(() => this.sweep(), sweepIntervalMs);
     this.sweeper.unref?.();
-    this.keyLoaded = this.loadTokenMacKey();
-  }
-
-  /**
-   * Settles once the deployment's key for auth tokens is known; never
-   * rejects. Cells must not be built before it (hosted apps hold every
-   * request until then): a cell built earlier would sign tokens with a key
-   * the other processes do not have.
-   */
-  ready(): Promise<void> {
-    return this.keyLoaded;
-  }
-
-  /** The context a cell at `revision` is built with. */
-  scenarioContext(revision: SpecVersion): ScenarioContext {
-    return hostedScenarioContext(revision, this.tokenMacKey);
-  }
-
-  /**
-   * Auth tokens carry their scopes under a MAC so that any process can check
-   * a token another one minted. The key is random, made once per deployment
-   * and shared through the store (first writer wins); it does not depend on
-   * the relay secret or anything else configured, since every token a
-   * client receives is a MAC it could try offline guesses against. Without a
-   * store there is one process, and the helpers' per-process key serves.
-   */
-  private async loadTokenMacKey(): Promise<void> {
-    const store = this.store;
-    if (!store) return;
-    try {
-      if (!store.sharedSecret) {
-        throw new Error('the store keeps no shared secrets');
-      }
-      const hex = await store.sharedSecret(TOKEN_MAC_KEY, () =>
-        randomBytes(32).toString('hex')
-      );
-      this.tokenMacKey = Buffer.from(hex, 'hex');
-    } catch (e) {
-      console.warn(
-        '[hosted] WARNING: the run store could not share a key for auth ' +
-          `tokens (${e instanceof Error ? e.message : String(e)}), so each ` +
-          'process signs them with its own: scope checks ' +
-          '(auth/scope-step-up and others) will fail whenever one run ' +
-          "reaches several processes, as on Val Town. Check the store's " +
-          'sharedSecret().'
-      );
-    }
   }
 
   /**
@@ -305,7 +248,7 @@ export class SessionManager {
     if (!proto) throw new UnknownScenarioError(ref.scenarioName);
 
     const scenario = freshScenario(proto);
-    const ctx = this.scenarioContext(ref.revision);
+    const ctx = hostedScenarioContext(ref.revision);
 
     let listener: RequestListener;
     let auxListeners: HostedRun['auxListeners'];
@@ -377,7 +320,6 @@ export class SessionManager {
     ref: CellRef,
     baseUrlFor: (ref: CellRef) => string
   ): Promise<HostedRun> {
-    await this.keyLoaded;
     const run = this.getOrCreate(ref, baseUrlFor);
     await this.hydrate(run);
     return run;

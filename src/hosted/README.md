@@ -270,10 +270,9 @@ them; an isolate's row holds only what it recorded or rewrote itself.
 
 Auth scenarios keep nothing only in memory between two requests. The PKCE
 challenge and requested scopes ride in the authorization code, the granted
-scopes ride in the access token (under a MAC keyed with a random key the
-deployment makes once and keeps in its run store, `RunStore.sharedSecret()`,
-so every isolate checks tokens the others minted; the key depends on nothing
-configured, the relay secret included), and a verdict that spans requests (which
+scopes ride in the access token (in plain text: test tokens are fixtures,
+not credentials, and an implementation that edits its own tokens only
+misleads its own report), and a verdict that spans requests (which
 authorization request came first, whether the client went on to the token
 endpoint) is read from the log when the log is judged, not counted as the
 requests arrive. Hydration happens once per cell per isolate, so an
@@ -298,10 +297,7 @@ hold the rest to this, and a client with no retry limit through both.
 | `rs`    | `examples/hosted/valtown.ts`       | `CONFORMANCE_AS_ORIGIN=https://<relay val>.web.val.run`, `CONFORMANCE_RELAY_SECRET`                           |
 | `relay` | `examples/hosted/valtown-relay.ts` | `CONFORMANCE_RS_ORIGIN=https://<rs val>.web.val.run`, `CONFORMANCE_RELAY_SECRET`, `CONFORMANCE_RELAY_ROLE=as` |
 
-Same `CONFORMANCE_RELAY_SECRET` on both. The key auth tokens are signed with
-needs no configuration: the `rs` val makes it on first use and keeps it in the
-account's SQLite (`hosted_secrets_v1`), where every isolate reads the same
-one. A store that cannot share it makes the server warn at startup.
+Same `CONFORMANCE_RELAY_SECRET` on both.
 
 ## Example
 
