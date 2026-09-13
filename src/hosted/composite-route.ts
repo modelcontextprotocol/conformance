@@ -32,11 +32,10 @@ import type { SpecVersion } from '../types';
 /** What the composite route borrows from the hosted server. */
 export interface CompositeDeps {
   matrix: HostedMatrix;
-  createRun(
-    req: Request,
-    ref: CellRef,
-    res: Response
-  ): Promise<HostedRun | undefined>;
+  /** The cell, not yet seeded; undefined (request answered) if unmountable. */
+  mountCell(req: Request, ref: CellRef, res: Response): HostedRun | undefined;
+  /** Seed the cells from the store unless the request needs no history. */
+  prepare(runs: HostedRun[], req: Request, mcp: boolean): Promise<void>;
   dispatch(
     run: HostedRun,
     listener: (req: Request, res: Response) => void,
@@ -252,14 +251,14 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
 
     const runs: HostedRun[] = [];
     for (const scenarioName of names) {
-      const run = await deps.createRun(
-        req,
-        { runId, revision, scenarioName },
-        res
-      );
+      const run = deps.mountCell(req, { runId, revision, scenarioName }, res);
       if (!run) return;
       runs.push(run);
     }
+    // All children at once: a discover (merged below from every child's
+    // answer) does not wait on the store, anything else waits one round
+    // trip rather than one per child.
+    await deps.prepare(runs, req, true);
     const pathOf = (run: HostedRun) => run.mcpPath || '/';
     const forward = (run: HostedRun) =>
       deps.dispatch(run, run.listener, req, res, pathOf(run), true);

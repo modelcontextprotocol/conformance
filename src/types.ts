@@ -200,6 +200,14 @@ export interface Scenario {
    */
   rawChecks?(): ConformanceCheck[];
   /**
+   * Whether the scenario's answer to `server/discover` depends on what it
+   * has already recorded in the run (request-metadata turns away the run's
+   * first request, a discover included). The hosted server answers a
+   * discover before it loads the run's history from its store (see
+   * src/hosted/session.ts) unless this is set.
+   */
+  readonly discoverReadsHistory?: boolean;
+  /**
    * Client-side choreography as data (see src/steps). When present the
    * runner includes it in MCP_CONFORMANCE_CONTEXT as `steps`, so a client
    * with no bespoke handler for this scenario can still drive it.

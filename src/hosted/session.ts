@@ -558,6 +558,9 @@ export class SessionManager {
       // judging the live instance would let a page view change the verdict.
       return judgedAtRevision(ref, raw, run.hostedChecks);
     }
+    // A cell built for a discover and not seeded since (see write()) holds
+    // less than this process's row: seeded, its log is the whole of it.
+    if (run) await this.hydrate(run);
     let byWriter = new Map<string, ConformanceCheck[]>();
     let known = false;
     try {
