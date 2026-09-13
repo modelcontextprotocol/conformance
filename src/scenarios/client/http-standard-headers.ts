@@ -25,15 +25,36 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
   description =
     'Tests that client includes Mcp-Method and Mcp-Name headers on HTTP POST requests (SEP-2243)';
 
-  // Track which header checks have been recorded
-  private methodHeaderChecks = new Map<string, boolean>();
-  // Track which Mcp-Name checks have been recorded
-  private nameHeaderChecks = new Map<string, boolean>();
+  /**
+   * Which methods have a recorded check is read off `this.checks` itself
+   * (one row per check name), never off instance state: the hosted server
+   * judges a merged log in a fresh instance, and a method only an instance
+   * field remembered would read as never sent — SUCCESS and SKIPPED for
+   * the same method.
+   */
+  private recorded(name: string): boolean {
+    return this.checks.some((c) => c.name === name);
+  }
+
+  private static methodCheckName(method: string): string {
+    return `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`;
+  }
+
+  private static nameCheckName(method: string): string {
+    return `ClientMcpNameHeader_${method.replace(/\//g, '_')}`;
+  }
 
   getChecks(): ConformanceCheck[] {
     // Build a fresh array each call so getChecks() is idempotent — the runner
-    // may call it more than once and we must not accumulate duplicates.
-    const result = [...this.checks];
+    // may call it more than once and we must not accumulate duplicates. One
+    // row per check name, the first recorded (a merged log can hold the same
+    // method from several processes); `this.checks` is left as the raw log.
+    const seen = new Set<string>();
+    const result = this.checks.filter((c) => {
+      if (seen.has(c.name)) return false;
+      seen.add(c.name);
+      return true;
+    });
 
     // SEP-2243 requires Mcp-Method on "all requests and notifications". A
     // client that never sent prompts/list isn't violating SEP-2243 — it just
@@ -51,10 +72,10 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     ];
 
     for (const method of expectedMethods) {
-      if (!this.methodHeaderChecks.has(method)) {
+      if (!seen.has(HttpStandardHeadersScenario.methodCheckName(method))) {
         result.push({
           id: 'sep-2243-client-includes-standard-headers',
-          name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
+          name: HttpStandardHeadersScenario.methodCheckName(method),
           description: `Client sends correct Mcp-Method header on ${method} request`,
           status: 'SKIPPED',
           timestamp: new Date().toISOString(),
@@ -66,10 +87,10 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
 
     const expectedNameMethods = ['tools/call', 'resources/read', 'prompts/get'];
     for (const method of expectedNameMethods) {
-      if (!this.nameHeaderChecks.has(method)) {
+      if (!seen.has(HttpStandardHeadersScenario.nameCheckName(method))) {
         result.push({
           id: 'sep-2243-client-includes-standard-headers',
-          name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
+          name: HttpStandardHeadersScenario.nameCheckName(method),
           description: `Client sends correct Mcp-Name header on ${method} request`,
           status: 'SKIPPED',
           timestamp: new Date().toISOString(),
@@ -121,7 +142,8 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     if (!method) return;
 
     // Already recorded a check for this method
-    if (this.methodHeaderChecks.has(method)) return;
+    const name = HttpStandardHeadersScenario.methodCheckName(method);
+    if (this.recorded(name)) return;
 
     // Header names are lowercased by Node.js http parser
     const mcpMethodHeader = req.headers['mcp-method'] as string | undefined;
@@ -138,11 +160,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
       );
     }
 
-    this.methodHeaderChecks.set(method, errors.length === 0);
-
     this.checks.push({
       id: 'sep-2243-client-includes-standard-headers',
-      name: `ClientMcpMethodHeader_${method.replace(/\//g, '_')}`,
+      name,
       description: `Client sends correct Mcp-Method header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
       timestamp: new Date().toISOString(),
@@ -165,7 +185,8 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     // Same de-dup guard as checkMcpMethodHeader: the harness advertises two
     // tools and two resources, so a client that calls both would otherwise
     // produce duplicate check rows for the same id.
-    if (this.nameHeaderChecks.has(method)) return;
+    const name = HttpStandardHeadersScenario.nameCheckName(method);
+    if (this.recorded(name)) return;
 
     const expectedValue =
       sourceField === 'params.uri' ? request.params?.uri : request.params?.name;
@@ -183,11 +204,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
       );
     }
 
-    this.nameHeaderChecks.set(method, errors.length === 0);
-
     this.checks.push({
       id: 'sep-2243-client-includes-standard-headers',
-      name: `ClientMcpNameHeader_${method.replace(/\//g, '_')}`,
+      name,
       description: `Client sends correct Mcp-Name header on ${method} request`,
       status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
       timestamp: new Date().toISOString(),

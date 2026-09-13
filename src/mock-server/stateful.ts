@@ -8,6 +8,7 @@
  */
 
 import express from 'express';
+import http from 'http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
@@ -15,7 +16,7 @@ import { z } from 'zod';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import { isSpecVersion, type SpecVersion } from '../types';
 import { validateWireMessage } from '../validation/wire-schema';
-import type { MockServer, RequestHandlers } from './index';
+import type { MockHandler, MockServer, RequestHandlers } from './index';
 
 const CAPABILITY_BY_PREFIX: Record<string, string> = {
   tools: 'tools',
@@ -41,10 +42,10 @@ export function capabilitiesFromHandlers(
   return out;
 }
 
-export async function createServerStateful(
+export function createHandlerStateful(
   handlers: RequestHandlers,
   specVersion: SpecVersion
-): Promise<MockServer> {
+): MockHandler {
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
 
@@ -152,24 +153,32 @@ export async function createServerStateful(
     }
   });
 
-  return listen(app, recorded);
+  return { listener: app, recorded };
 }
 
-function listen(
-  app: express.Application,
-  recorded: JSONRPCRequest[]
+export async function createServerStateful(
+  handlers: RequestHandlers,
+  specVersion: SpecVersion
 ): Promise<MockServer> {
+  return listenMockHandler(createHandlerStateful(handlers, specVersion));
+}
+
+/**
+ * Bind a `MockHandler` to an ephemeral localhost port — the CLI runner's
+ * path. Shared with the stateless impl.
+ */
+export function listenMockHandler(mock: MockHandler): Promise<MockServer> {
   return new Promise((resolve, reject) => {
-    const httpServer = app.listen(0);
+    const httpServer = http.createServer(mock.listener);
     httpServer.on('error', reject);
-    httpServer.on('listening', () => {
+    httpServer.listen(0, () => {
       const addr = httpServer.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       const baseUrl = `http://localhost:${port}`;
       resolve({
         url: `${baseUrl}/mcp`,
         baseUrl,
-        recorded,
+        recorded: mock.recorded,
         close: () =>
           new Promise<void>((res) => {
             httpServer.closeAllConnections?.();

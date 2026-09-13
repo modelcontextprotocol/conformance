@@ -1,0 +1,16 @@
+{
+  "vals": {
+    "rs": {
+      "name": "mcp-client-conformance",
+      "entry": "examples/hosted/valtown.ts",
+      "privacy": "public",
+      "id": "7dcb6042-d92f-40c5-9cc8-0f661f96e58b"
+    },
+    "relay": {
+      "name": "mcp-client-conformance-as",
+      "entry": "examples/hosted/valtown-relay.ts",
+      "privacy": "public",
+      "id": "ec6df808-1fce-4b69-884e-7fe2708988ac"
+    }
+  }
+}

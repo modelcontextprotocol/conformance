@@ -697,19 +697,35 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
 // HttpInvalidToolHeadersScenario - tests that clients reject invalid tools
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Raw event: the client sent tools/list (SUCCESS) — or never did (FAILURE). */
+const TOOLS_LIST_GATE_ID = 'sep-2243-invalid-tool-tools-list-gate';
+/** Raw event, one per tools/call: which tool, with the headers it carried. */
+const TOOL_CALL_EVENT_ID = 'sep-2243-invalid-tool-call';
+
 export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
   name = 'http-invalid-tool-headers';
   description =
     'Tests that client rejects tools with invalid x-mcp-header annotations (SEP-2243)';
   allowClientError = true;
 
-  private calledTools: Set<string> = new Set();
-  private toolsListSent = false;
-
+  /**
+   * Verdicts are derived from the raw events in `this.checks` (tools/list
+   * sent, each tools/call with its header observations), never from
+   * instance state: the hosted server judges a merged log in a fresh
+   * instance, and anything only an instance field knew would be lost — a
+   * tool the client did call would read as never called.
+   */
   getChecks(): ConformanceCheck[] {
-    if (!this.toolsListSent) {
-      this.checks.push({
-        id: 'sep-2243-invalid-tool-tools-list-gate',
+    const calledTools = new Set(
+      this.checks
+        .filter((c) => c.id === TOOL_CALL_EVENT_ID)
+        .map((c) => c.details?.tool)
+        .filter((t): t is string => typeof t === 'string')
+    );
+    const verdicts: ConformanceCheck[] = [];
+    if (!this.checks.some((c) => c.id === TOOLS_LIST_GATE_ID)) {
+      verdicts.push({
+        id: TOOLS_LIST_GATE_ID,
         name: 'ClientInvalidToolHeadersToolsList',
         description: 'Client requests tools/list',
         status: 'FAILURE',
@@ -720,8 +736,8 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     }
 
     // Check that valid_tool WAS called — proves client kept valid tools
-    const validToolCalled = this.calledTools.has('valid_tool');
-    this.checks.push({
+    const validToolCalled = calledTools.has('valid_tool');
+    verdicts.push({
       id: 'sep-2243-client-reject-invalid-tool',
       name: 'ClientKeepsValidTool',
       description: 'Client MUST keep valid tools while excluding invalid ones',
@@ -740,8 +756,8 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     for (const [toolName, constraintId] of Object.entries(
       INVALID_TOOL_CONSTRAINT_IDS
     )) {
-      const called = this.calledTools.has(toolName);
-      this.checks.push({
+      const called = calledTools.has(toolName);
+      verdicts.push({
         id: constraintId,
         name: `ClientRejectsInvalidTool_${toolName}`,
         description: `Client MUST NOT call tool '${toolName}' with invalid x-mcp-header`,
@@ -754,11 +770,13 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
       });
     }
 
-    return this.checks;
+    // Events first, verdicts after; `this.checks` itself is left as the raw
+    // log so this is idempotent and the hosted server can re-judge it.
+    return [...this.checks, ...verdicts];
   }
 
   protected handlePost(
-    _req: http.IncomingMessage,
+    req: http.IncomingMessage,
     res: http.ServerResponse,
     request: any
   ): void {
@@ -767,7 +785,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     } else if (request.method === 'tools/list') {
       this.handleToolsList(res, request);
     } else if (request.method === 'tools/call') {
-      this.handleToolsCall(res, request);
+      this.handleToolsCall(req, res, request);
     } else if (request.id === undefined) {
       this.sendNotificationAck(res);
     } else {
@@ -776,7 +794,16 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
   }
 
   private handleToolsList(res: http.ServerResponse, request: any): void {
-    this.toolsListSent = true;
+    if (!this.checks.some((c) => c.id === TOOLS_LIST_GATE_ID)) {
+      this.checks.push({
+        id: TOOLS_LIST_GATE_ID,
+        name: 'ClientInvalidToolHeadersToolsList',
+        description: 'Client requests tools/list',
+        status: 'SUCCESS',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REFERENCE_TOOL_DEF]
+      });
+    }
 
     this.sendJson(res, {
       jsonrpc: '2.0',
@@ -972,9 +999,32 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     });
   }
 
-  private handleToolsCall(res: http.ServerResponse, request: any): void {
+  private handleToolsCall(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    request: any
+  ): void {
     const toolName = request.params?.name;
-    if (toolName) this.calledTools.add(toolName);
+    if (typeof toolName === 'string') {
+      const mcpParamHeaders = Object.fromEntries(
+        Object.entries(req.headers).filter(([k]) =>
+          k.toLowerCase().startsWith('mcp-param-')
+        )
+      );
+      this.checks.push({
+        id: TOOL_CALL_EVENT_ID,
+        name: 'ClientCalledTool',
+        description: `Client called tool '${toolName}'`,
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        specReferences: [SPEC_REFERENCE_TOOL_DEF],
+        details: {
+          tool: toolName,
+          arguments: request.params?.arguments,
+          mcpParamHeaders
+        }
+      });
+    }
 
     this.sendJson(res, {
       jsonrpc: '2.0',

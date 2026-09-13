@@ -13,7 +13,8 @@ import {
   Scenario,
   ScenarioUrls,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  RequestListener
 } from '../../types.js';
 
 export class SSERetryScenario implements Scenario {
@@ -45,14 +46,24 @@ export class SSERetryScenario implements Scenario {
   // Tolerance for timing validation (early side only; lateness is not gated)
   private readonly EARLY_TOLERANCE = 50; // Allow 50ms early for scheduler variance
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  handler(_getBaseUrl: () => string): RequestListener {
+    this.checks = [];
+    this.toolStreamCloseTime = null;
+    this.getReconnectionTime = null;
+    this.getConnectionCount = 0;
+    this.lastEventIds = [];
+    this.eventIdCounter = 0;
+    this.sessionId = `session-${Date.now()}`;
+    this.pendingToolCallId = null;
+    this.getResponseStream = null;
+    return (req, res) => this.handleRequest(req, res);
+  }
+
+  async start(_ctx?: ScenarioContext): Promise<ScenarioUrls> {
+    const listener = this.handler(() => `http://localhost:${this.port}`);
     return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
+      this.server = http.createServer(listener);
       this.server.on('error', reject);
-
       this.server.listen(0, () => {
         const address = this.server!.address();
         if (address && typeof address === 'object') {

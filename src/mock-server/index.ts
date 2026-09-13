@@ -9,7 +9,7 @@
  * This is the client-conformance mirror of `Connection` in `../connection`.
  */
 
-import type { SpecVersion } from '../types';
+import type { RequestListener, SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 
 /**
@@ -42,6 +42,19 @@ export interface MockServer {
 }
 
 /**
+ * The same mock as `MockServer` but not bound to a port: a request listener
+ * the caller mounts itself — `http.createServer(listener)` in the CLI
+ * runner, a path-prefix mount in the hosted runner. `Scenario.handler()`
+ * implementations use this so one scenario body serves both.
+ */
+export interface MockHandler {
+  /** Serves `/mcp` — hand it to `http.createServer` or mount it. */
+  listener: RequestListener;
+  /** See `MockServer.recorded`. */
+  readonly recorded: JSONRPCRequest[];
+}
+
+/**
  * Per-run context handed to `Scenario.start()`. The runner constructs this
  * from the resolved `--spec-version`.
  */
@@ -53,13 +66,19 @@ export interface ScenarioContext {
    * `http.createServer`.
    */
   createServer(handlers: RequestHandlers): Promise<MockServer>;
+  /**
+   * Same mock, unbound. What `Scenario.handler()` implementations call so
+   * the scenario can be mounted without a loopback port (see src/hosted).
+   */
+  createHandler(handlers: RequestHandlers): MockHandler;
 }
 
-export { createServerStateful } from './stateful';
+export { createServerStateful, createHandlerStateful } from './stateful';
 export {
   createServerStateless,
+  createHandlerStateless,
   validateStatelessRequest,
   withRequiredDraftResultFields,
   CACHEABLE_RESULT_METHODS
 } from './stateless';
-export { createServerFor } from './select';
+export { createServerFor, createHandlerFor } from './select';

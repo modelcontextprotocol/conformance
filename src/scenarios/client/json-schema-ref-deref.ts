@@ -1,13 +1,12 @@
-import type { ScenarioContext } from '../../mock-server';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   ListToolsRequestSchema,
   LATEST_PROTOCOL_VERSION as SDK_LATEST_PROTOCOL_VERSION
 } from '@modelcontextprotocol/sdk/types.js';
-import type { Scenario, ConformanceCheck } from '../../types';
+import type { ConformanceCheck, RequestListener } from '../../types';
 import express, { Request, Response } from 'express';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
+import { HandlerScenario, DRAFT_PROTOCOL_VERSION } from '../../types';
 
 /**
  * Scenario: JSON Schema network $ref dereferencing (SEP-2106)
@@ -29,6 +28,8 @@ import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../types';
 
 const TOOL_NAME = 'lookup_user';
 const CANARY_PATH = '/canary/profile-schema.json';
+const TOOLS_LISTED_EVENT = '_state/tools-listed';
+const CANARY_EVENT = '_state/canary-fetched';
 const CHECK_ID = 'sep-2106-no-network-ref-deref';
 
 const SPEC_REFERENCES = [
@@ -77,21 +78,40 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
   return server;
 }
 
-export class JsonSchemaRefDerefScenario implements Scenario {
+export class JsonSchemaRefDerefScenario extends HandlerScenario {
   name = 'json-schema-ref-no-deref';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description = `Tests that a client does not automatically dereference a network-URI \`$ref\` in a tool's inputSchema (SEP-2106).
 
 The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at a canary URL. The client should list tools (and may otherwise process the schema), but must not fetch the canary URL. Same-document refs (\`#/$defs/...\`) remain safe to resolve.`;
+  mcpPath = '/mcp';
+  /** List only — the point is what the client does NOT fetch afterwards. */
+  readonly steps = [{ op: 'tools/list' }] as const;
 
-  private app: express.Application | null = null;
-  private httpServer: ReturnType<express.Application['listen']> | null = null;
-  private canaryRequests: Array<{ method: string; userAgent?: string }> = [];
-  private toolsListed = false;
+  /**
+   * Raw event log. What the scenario observed is kept as INFO events here
+   * (rather than in private fields) so a host that spreads one run over
+   * several processes can merge the logs and judge once — see rawChecks().
+   */
+  checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
-    this.canaryRequests = [];
-    this.toolsListed = false;
+  private record(id: string, details?: Record<string, unknown>): void {
+    this.checks.push({
+      id,
+      name: id,
+      description: id,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details
+    });
+  }
+
+  rawChecks(): ConformanceCheck[] {
+    return this.checks;
+  }
+
+  handler(getBaseUrl: () => string): RequestListener {
+    this.checks = [];
 
     const app = express();
     app.use(express.json());
@@ -100,7 +120,7 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     // network $ref. Return a valid schema so a dereferencing client gets a
     // realistic response rather than an error it might silently swallow.
     app.all(CANARY_PATH, (req: Request, res: Response) => {
-      this.canaryRequests.push({
+      this.record(CANARY_EVENT, {
         method: req.method,
         userAgent: req.headers['user-agent']
       });
@@ -150,10 +170,49 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
           }
         }
       }
+      // The bundled SDK server below predates the 2026-07-28 lifecycle and
+      // does not implement server/discover; answer it directly so a client
+      // that negotiates first can proceed to tools/list.
+      if (
+        (req.body as Record<string, unknown> | undefined)?.method ===
+        'server/discover'
+      ) {
+        return res.json({
+          jsonrpc: '2.0',
+          id: (req.body as Record<string, unknown>).id ?? null,
+          result: {
+            resultType: 'complete',
+            ttlMs: 0,
+            cacheScope: 'private',
+            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            capabilities: { tools: {} },
+            serverInfo: {
+              name: 'json-schema-ref-deref-server',
+              version: '1.0.0'
+            }
+          }
+        });
+      }
+      // Second half of the same workaround: the pinned SDK transport
+      // whitelists MCP-Protocol-Version headers and would reject the draft
+      // version that the server/discover response above advertises with an
+      // HTTP 400. Rewrite it to the newest version the SDK understands so a
+      // client that honors the negotiated version can reach tools/list.
+      if (req.headers['mcp-protocol-version'] === DRAFT_PROTOCOL_VERSION) {
+        req.headers['mcp-protocol-version'] = SDK_LATEST_PROTOCOL_VERSION;
+        // The SDK's Node adapter rebuilds its web-standard Request from
+        // rawHeaders, not the parsed headers object, so patch those too.
+        for (let i = 0; i < req.rawHeaders.length; i += 2) {
+          if (req.rawHeaders[i].toLowerCase() === 'mcp-protocol-version') {
+            req.rawHeaders[i + 1] = SDK_LATEST_PROTOCOL_VERSION;
+          }
+        }
+      }
       try {
         // Stateless: fresh server and transport per request
-        const server = createMcpServer(this.canaryUrl(), () => {
-          this.toolsListed = true;
+        const canaryUrl = `${getBaseUrl()}${CANARY_PATH}`;
+        const server = createMcpServer(canaryUrl, () => {
+          this.record(TOOLS_LISTED_EVENT);
         });
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined
@@ -174,38 +233,20 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
       }
     });
 
-    this.app = app;
-    this.httpServer = app.listen(0);
-    return { serverUrl: `${this.baseUrl()}/mcp` };
-  }
-
-  private baseUrl(): string {
-    const address = this.httpServer?.address();
-    if (!address || typeof address === 'string') {
-      throw new Error('Scenario server is not listening');
-    }
-    return `http://localhost:${address.port}`;
-  }
-
-  private canaryUrl(): string {
-    return `${this.baseUrl()}${CANARY_PATH}`;
-  }
-
-  async stop() {
-    if (this.httpServer) {
-      await new Promise((resolve) => this.httpServer!.close(resolve));
-      this.httpServer = null;
-    }
-    this.app = null;
+    return app;
   }
 
   getChecks(): ConformanceCheck[] {
     // Built fresh on every call so getChecks() is idempotent — the runner may
     // call it more than once and we must not accumulate duplicates.
     const timestamp = new Date().toISOString();
-    const fetched = this.canaryRequests.length > 0;
+    const canaryRequests = this.checks
+      .filter((c) => c.id === CANARY_EVENT)
+      .map((c) => c.details ?? {});
+    const toolsListed = this.checks.some((c) => c.id === TOOLS_LISTED_EVENT);
+    const fetched = canaryRequests.length > 0;
 
-    if (!this.toolsListed) {
+    if (!toolsListed) {
       return [
         {
           id: CHECK_ID,
@@ -232,13 +273,13 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
         status: fetched ? 'FAILURE' : 'SUCCESS',
         timestamp,
         errorMessage: fetched
-          ? `Canary URL ${CANARY_PATH} was fetched ${this.canaryRequests.length} time(s)`
+          ? `Canary URL ${CANARY_PATH} was fetched ${canaryRequests.length} time(s)`
           : undefined,
         specReferences: SPEC_REFERENCES,
         details: {
           toolsListed: true,
-          canaryRequestCount: this.canaryRequests.length,
-          canaryRequests: this.canaryRequests
+          canaryRequestCount: canaryRequests.length,
+          canaryRequests
         }
       }
     ];
