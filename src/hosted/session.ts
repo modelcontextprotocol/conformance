@@ -34,7 +34,11 @@ import {
   IDENTITY_CHECK_ID,
   type IdentityObservation
 } from './identity';
-import { REVISION_SPOKEN_CHECK_ID, revisionNotSpokenCheck } from './wire';
+import {
+  REVISION_REACHED_CHECK_ID,
+  REVISION_SPOKEN_CHECK_ID,
+  revisionNotSpokenCheck
+} from './wire';
 
 /**
  * Store writer suffix for the hosted layer's own checks (client identity,
@@ -741,9 +745,11 @@ const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
  * without a REVISION_SPOKEN_CHECK_ID marker (spokeRevision()) and with no
  * FAILURE, `recorded` is zero, so the verdict is incomplete, and the cell
  * says why (revisionNotSpokenCheck()). A scenario that expects the client
- * to stop before it reaches the MCP endpoint (`allowClientError`: it must
- * reject a bad issuer, say) is judged on its own checks as before. The
- * markers themselves are never shown.
+ * to stop before it is let in (`allowClientError`: it must reject a bad
+ * issuer, say) passes once the client sent the cell an MCP request at its
+ * revision, even one met with the sign-in challenge (reachedRevision());
+ * metadata fetches alone, as a client listing its servers makes, are not
+ * enough. The markers themselves are never shown.
  */
 function judgedAtRevision(
   ref: CellRef,
@@ -751,7 +757,15 @@ function judgedAtRevision(
   hostedLog: ConformanceCheck[]
 ): RunResults {
   const spoke = hostedLog.some((c) => c.id === REVISION_SPOKEN_CHECK_ID);
-  const hosted = hostedLog.filter((c) => c.id !== REVISION_SPOKEN_CHECK_ID);
+  const reached =
+    spoke || hostedLog.some((c) => c.id === REVISION_REACHED_CHECK_ID);
+  const tested = getScenario(ref.scenarioName)?.allowClientError
+    ? reached
+    : spoke;
+  const hosted = hostedLog.filter(
+    (c) =>
+      c.id !== REVISION_SPOKEN_CHECK_ID && c.id !== REVISION_REACHED_CHECK_ID
+  );
   const checks = [
     ...atCellRevision(
       finalizeChecks(ref.scenarioName, scenarioLog, ref.revision),
@@ -760,12 +774,7 @@ function judgedAtRevision(
     ...hosted
   ];
   let recorded = scenarioLog.length + hostedFailures(hosted);
-  if (
-    recorded > 0 &&
-    !spoke &&
-    !getScenario(ref.scenarioName)?.allowClientError &&
-    !checks.some((c) => c.status === 'FAILURE')
-  ) {
+  if (recorded > 0 && !tested && !checks.some((c) => c.status === 'FAILURE')) {
     const last = checks.reduce(
       (t, c) => ((c.timestamp ?? '') > t ? (c.timestamp ?? '') : t),
       ''

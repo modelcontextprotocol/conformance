@@ -41,7 +41,10 @@ import {
   handle401
 } from './helpers/withOAuthRetry.js';
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
-import { runClient as issValidationClient } from './auth-test-iss-validation.js';
+import {
+  runClient as issValidationClient,
+  withOAuthIssValidation
+} from './auth-test-iss-validation.js';
 import { runClient as dpopClient } from './auth-test-dpop.js';
 import { logger } from './helpers/logger.js';
 import {
@@ -773,6 +776,18 @@ async function runAuthMigrationClient(serverUrl: string): Promise<void> {
 
 registerScenario('auth/authorization-server-migration', runAuthMigrationClient);
 
+/**
+ * The iss-validating client, on the lifecycle the runner's revision uses: on
+ * the stateless one it opens with tools/list at that revision (the request
+ * the 401 challenges), as runAuthClient() does, rather than initialize.
+ */
+async function runIssValidationClient(serverUrl: string): Promise<void> {
+  if (!USE_STATELESS_LIFECYCLE) return issValidationClient(serverUrl);
+  const oauthFetch = withOAuthIssValidation(new URL(serverUrl))(fetch);
+  await statelessRequest(serverUrl, 'tools/list', {}, oauthFetch);
+  logger.debug('Successfully listed tools statelessly');
+}
+
 // SEP-2468: ISS parameter - rejection scenarios use iss-validating client
 registerScenarios(
   [
@@ -782,7 +797,7 @@ registerScenarios(
     'auth/iss-normalized',
     'auth/metadata-issuer-mismatch'
   ],
-  issValidationClient
+  runIssValidationClient
 );
 
 // ============================================================================

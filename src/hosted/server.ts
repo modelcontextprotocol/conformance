@@ -88,6 +88,8 @@ import {
   PARSE_ERROR_REPLY,
   pinInitializeVersion,
   refusalOf,
+  reachedRevision,
+  revisionReachedCheck,
   revisionSpokenCheck,
   spokeRevision,
   tapResponse,
@@ -564,6 +566,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           run,
           'spoken',
           revisionSpokenCheck(run.revision)
+        );
+      if (mcp && reachedRevision(run.revision, request, headerVersion))
+        sessions.recordHostedCheck(
+          run,
+          'reached',
+          revisionReachedCheck(run.revision)
         );
       // A GET the cell serves no stream for (the scenario's own 405, or
       // fallthrough()'s): noted so the client's author sees it.
