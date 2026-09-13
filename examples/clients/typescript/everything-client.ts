@@ -44,6 +44,14 @@ import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js'
 import { runClient as issValidationClient } from './auth-test-iss-validation.js';
 import { runClient as dpopClient } from './auth-test-dpop.js';
 import { logger } from './helpers/logger.js';
+import {
+  paramHeaders,
+  standardHeaders,
+  toolHeaderParams,
+  type HeaderParam
+} from './helpers/mcpHeaders.js';
+import { z } from 'zod';
+import { StepsSchema, resolveArguments } from '../../../src/steps/index.js';
 
 /**
  * Fixed client metadata URL for CIMD conformance tests.
@@ -115,6 +123,86 @@ const STATELESS_META_BASE = {
   }
 };
 
+// SEP-2243: the x-mcp-header annotations of every tool a tools/list returned,
+// by server URL and tool name, so a later tools/call can mirror its
+// arguments into Mcp-Param-* headers.
+const listedToolHeaders = new Map<string, Map<string, HeaderParam[]>>();
+
+/**
+ * A tools/list result without the tools whose x-mcp-header annotations are
+ * invalid (SEP-2243: the client MUST exclude them), remembering the
+ * annotations of the tools kept.
+ */
+function keepValidTools(serverUrl: string, result: any): any {
+  if (!Array.isArray(result?.tools)) return result;
+  let known = listedToolHeaders.get(serverUrl);
+  if (!known) listedToolHeaders.set(serverUrl, (known = new Map()));
+  const tools = result.tools.filter(
+    (tool: { name?: unknown; inputSchema?: unknown }) => {
+      const verdict = toolHeaderParams(tool?.inputSchema);
+      if (!verdict.ok) {
+        logger.error(
+          `Warning: rejecting tool '${String(tool?.name)}': ${verdict.reason}`
+        );
+        return false;
+      }
+      if (typeof tool.name === 'string') known.set(tool.name, verdict.params);
+      return true;
+    }
+  );
+  return { ...result, tools };
+}
+
+/**
+ * The SEP-2243 headers a 2026-07-28 POST carries: Mcp-Method, Mcp-Name where
+ * the method has one, and on a tools/call the Mcp-Param-* headers of the
+ * listed tool's annotations.
+ */
+function requestHeaders(
+  serverUrl: string,
+  message: { method: string; params?: Record<string, unknown> }
+): Record<string, string> {
+  const headers = standardHeaders(message);
+  if (message.method !== 'tools/call') return headers;
+  const annotations = listedToolHeaders
+    .get(serverUrl)
+    ?.get(String(message.params?.name));
+  return {
+    ...headers,
+    ...paramHeaders(
+      annotations ?? [],
+      message.params?.arguments as Record<string, unknown> | undefined
+    )
+  };
+}
+
+/**
+ * The JSON-RPC response to request `id` from a POST reply, which the server
+ * may send as JSON or, since the request accepts both, as an SSE stream.
+ */
+async function readReply(response: Response, id: number): Promise<any> {
+  if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+    return response.json();
+  }
+  for (const event of (await response.text()).split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+      .join('\n');
+    let message: any;
+    try {
+      message = JSON.parse(data);
+    } catch {
+      continue; // a priming or keep-alive event
+    }
+    if (message?.id === id && ('result' in message || 'error' in message)) {
+      return message;
+    }
+  }
+  throw new Error(`No response to request ${id} in the event stream`);
+}
+
 let _nextStatelessId = 1;
 async function statelessRequest(
   serverUrl: string,
@@ -127,6 +215,12 @@ async function statelessRequest(
     ...STATELESS_META_BASE,
     ...((params._meta as object | undefined) ?? {})
   };
+  const message = {
+    jsonrpc: '2.0',
+    id: _nextStatelessId++,
+    method,
+    params: { ...params, _meta }
+  };
   const response = await fetchFn(serverUrl, {
     method: 'POST',
     headers: {
@@ -134,22 +228,20 @@ async function statelessRequest(
       // Servers built on the SDK's StreamableHTTPServerTransport reject
       // requests that don't accept both JSON and SSE responses.
       Accept: 'application/json, text/event-stream',
-      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
+      'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION,
+      ...requestHeaders(serverUrl, message)
     },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: _nextStatelessId++,
-      method,
-      params: { ...params, _meta }
-    })
+    body: JSON.stringify(message)
   });
-  const body = await response.json();
+  const body = await readReply(response, message.id);
   if (body.error) {
     throw new Error(
       `${method} failed: ${body.error.code} ${body.error.message}`
     );
   }
-  return body.result;
+  return method === 'tools/list'
+    ? keepValidTools(serverUrl, body.result)
+    : body.result;
 }
 
 // ============================================================================
@@ -328,13 +420,15 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
     });
 
     const send = async (version: string) => {
+      const payload = getPayload(version);
       return fetch(serverUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'MCP-Protocol-Version': version
+          'MCP-Protocol-Version': version,
+          ...requestHeaders(serverUrl, payload)
         },
-        body: JSON.stringify(getPayload(version))
+        body: JSON.stringify(payload)
       });
     };
 
@@ -405,6 +499,117 @@ async function runRequestMetadataClient(serverUrl: string): Promise<void> {
 
 // Register the scenario handler
 registerScenario('request-metadata', runRequestMetadataClient);
+
+// ============================================================================
+// SEP-2243 header scenarios
+//
+// statelessRequest already sends Mcp-Method, Mcp-Name and Mcp-Param-* and
+// drops tools with invalid x-mcp-header annotations; these handlers only
+// choose the calls. The headers belong to the 2026-07-28 wire, the only
+// revision these scenarios exist in, so the handlers speak it whatever
+// lifecycle the runner's version would pick.
+// ============================================================================
+
+const ToolCallsSchema = z.array(
+  z.object({
+    name: z.string(),
+    arguments: z.record(z.string(), z.unknown()).optional()
+  })
+);
+
+/**
+ * The tool calls the scenario asks for: `toolCalls` from its context when
+ * present (http-custom-headers), otherwise its `tools/call` steps. The CLI
+ * runner and a hosted cell hand out the same context.
+ */
+function contextToolCalls(): z.infer<typeof ToolCallsSchema> {
+  const raw = process.env.MCP_CONFORMANCE_CONTEXT;
+  if (!raw) return [];
+  const ctx = JSON.parse(raw) as { toolCalls?: unknown; steps?: unknown };
+  const toolCalls = ToolCallsSchema.safeParse(ctx.toolCalls);
+  if (toolCalls.success) return toolCalls.data;
+  const steps = StepsSchema.safeParse(ctx.steps);
+  if (!steps.success) return [];
+  return steps.data.flatMap((step) => (step.op === 'tools/call' ? [step] : []));
+}
+
+/**
+ * http-custom-headers and http-invalid-tool-headers: list the tools, then
+ * make each call the context names, skipping a tool the list did not keep.
+ */
+async function runToolHeadersClient(serverUrl: string): Promise<void> {
+  const calls = contextToolCalls();
+  if (calls.length === 0) {
+    throw new Error(
+      'MCP_CONFORMANCE_CONTEXT names no tool calls (toolCalls or tools/call steps)'
+    );
+  }
+  const listed = await statelessRequest(serverUrl, 'tools/list');
+  const kept = new Set(
+    (listed?.tools ?? []).map((tool: { name: string }) => tool.name)
+  );
+  for (const call of calls) {
+    if (!kept.has(call.name)) {
+      logger.debug(`Not calling ${call.name}: tools/list did not keep it`);
+      continue;
+    }
+    await statelessRequest(serverUrl, 'tools/call', {
+      name: call.name,
+      arguments: resolveArguments({ 'tools/list': listed }, call.arguments)
+    });
+    logger.debug(`Called ${call.name}`);
+  }
+}
+
+registerScenarios(
+  ['http-custom-headers', 'http-invalid-tool-headers'],
+  runToolHeadersClient
+);
+
+/**
+ * The tool http-standard-headers serves. It hands the client no context, and
+ * in a composite the tool list holds every child's tools, so it is picked by
+ * name rather than position.
+ */
+const STANDARD_HEADERS_TOOL = 'test_headers';
+
+/**
+ * http-standard-headers: send each method the standard headers apply to
+ * (tools/list and tools/call, resources/list and resources/read, prompts/list
+ * and prompts/get) once.
+ */
+async function runStandardHeadersClient(serverUrl: string): Promise<void> {
+  const tools: { name: string }[] =
+    (await statelessRequest(serverUrl, 'tools/list'))?.tools ?? [];
+  const fallback =
+    tools.find((tool) => tool.name === STANDARD_HEADERS_TOOL) ?? tools[0];
+  const [call] = contextToolCalls();
+  const name = call?.name ?? fallback?.name;
+  if (name) {
+    await statelessRequest(serverUrl, 'tools/call', {
+      name,
+      arguments: call?.arguments ?? {}
+    });
+  }
+
+  const resources: { uri: string }[] =
+    (await statelessRequest(serverUrl, 'resources/list'))?.resources ?? [];
+  if (resources[0]) {
+    await statelessRequest(serverUrl, 'resources/read', {
+      uri: resources[0].uri
+    });
+  }
+
+  const prompts: { name: string }[] =
+    (await statelessRequest(serverUrl, 'prompts/list'))?.prompts ?? [];
+  if (prompts[0]) {
+    await statelessRequest(serverUrl, 'prompts/get', {
+      name: prompts[0].name
+    });
+  }
+}
+
+registerScenario('http-standard-headers', runStandardHeadersClient);
 
 // ============================================================================
 // Auth scenarios - well-behaved client
@@ -984,8 +1189,9 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
   }> {
     const id = nextId++;
     // MRTR exists only on 2026-07-28, so every request carries that
-    // revision's wire obligations: the protocol-version header and _meta.
-    const body: Record<string, unknown> = {
+    // revision's wire obligations: the protocol-version header, the SEP-2243
+    // headers and _meta.
+    const message = {
       jsonrpc: '2.0',
       id,
       method,
@@ -1003,17 +1209,22 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
+        'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION,
+        ...requestHeaders(serverUrl, message)
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(message)
     });
 
     if (resp.status === 204) return { id, result: {} };
-    return (await resp.json()) as {
+    const reply = (await readReply(resp, id)) as {
       id: number;
       result?: Record<string, unknown>;
       error?: { code: number; message: string };
     };
+    if (method === 'tools/list' && reply.result) {
+      reply.result = keepValidTools(serverUrl, reply.result);
+    }
+    return reply;
   }
 
   // List tools
