@@ -160,7 +160,8 @@ does leaves the cell `incomplete`, not green.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
-`stateless-request-rejected`.
+`stateless-request-rejected`, except a rejected `initialize`, which it notes
+as the INFO check `stateless-legacy-probe` for the same reason.
 
 ## How it works
 

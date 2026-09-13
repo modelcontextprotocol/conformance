@@ -215,12 +215,41 @@ export function createServer(
   function handleStateless(req: Request, res: Response) {
     const v = validateStatelessRequest(req, { tools: {} }, [ctx.specVersion]);
     if (v.kind === 'reject') {
-      // The client never reached the tools handlers: a stateful initialize,
-      // a missing header or _meta. Recorded here, in the scenario's own log,
-      // so a cell where every request was turned away cannot read green on
-      // the strength of its OAuth checks alone.
+      const body = req.body as
+        | { method?: unknown; params?: { protocolVersion?: unknown } }
+        | undefined;
       const error = (v.body as { error?: { code?: number; message?: string } })
         .error;
+      if (body?.method === 'initialize') {
+        // A dual-era client may fall back to the initialize handshake; the
+        // -32022 naming this revision is how it learns the server is modern
+        // (2026-07-28 basic/versioning, "Backward Compatibility with
+        // Initialization-Based Versions"). Era detection, not a failure:
+        // whether the client then carries on is judged by the scenario.
+        checks.push({
+          id: 'stateless-legacy-probe',
+          name: 'StatelessLegacyProbe',
+          description: `The client sent initialize, the legacy handshake; the ${ctx.specVersion} endpoint answered with the versions it supports`,
+          status: 'INFO',
+          timestamp: new Date().toISOString(),
+          specReferences: [
+            {
+              id: 'MCP-Versioning-Backward-Compatibility',
+              url: 'https://modelcontextprotocol.io/specification/draft/basic/versioning#backward-compatibility-with-initialization-based-versions'
+            }
+          ],
+          details: {
+            status: v.status,
+            code: error?.code,
+            requestedVersion: body.params?.protocolVersion ?? null
+          }
+        });
+        return res.status(v.status).json(v.body);
+      }
+      // The client never reached the tools handlers: a missing header or
+      // _meta, or a version it cannot use. Recorded here, in the scenario's
+      // own log, so a cell where every request was turned away cannot read
+      // green on the strength of its OAuth checks alone.
       checks.push({
         id: 'stateless-request-rejected',
         name: 'StatelessRequestRejected',
@@ -238,7 +267,7 @@ export function createServer(
         details: {
           status: v.status,
           code: error?.code,
-          method: (req.body as { method?: unknown } | undefined)?.method,
+          method: body?.method,
           headerVersion: req.headers['mcp-protocol-version'] ?? null
         }
       });
