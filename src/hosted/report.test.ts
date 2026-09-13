@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
-import { buildReport, verdictFor } from './report';
+import { buildReport, incompleteNote, verdictFor } from './report';
 import { cellId, type CellRef } from './session';
 import { identityCheck, identityOf } from './identity';
+import { legacyProbeCheck } from './wire';
 import type { ConformanceCheck } from '../types';
 
 const check = (status: ConformanceCheck['status']): ConformanceCheck => ({
@@ -11,6 +12,36 @@ const check = (status: ConformanceCheck['status']): ConformanceCheck => ({
   description: '',
   status,
   timestamp: new Date().toISOString()
+});
+
+describe('incomplete notes', () => {
+  it('says what an incomplete cell is still waiting for, never "nothing recorded" over checks', () => {
+    expect(incompleteNote([])).toBe(
+      'nothing recorded yet — point the client at the MCP endpoint'
+    );
+    expect(incompleteNote([check('INFO')])).toBe(
+      'the client has not yet done anything this scenario tests'
+    );
+    expect(incompleteNote([check('FAILURE'), check('INFO')])).toBe(
+      'the client has not yet done anything this scenario tests; the failure listed is what it is still waiting for'
+    );
+    const probe = legacyProbeCheck(
+      '2026-07-28',
+      '2025-11-25',
+      { status: 400, code: -32022, message: 'Unsupported protocol version' },
+      '2025-11-25'
+    );
+    expect(incompleteNote([probe, check('FAILURE'), check('FAILURE')])).toBe(
+      'the client spoke 2025-11-25 only (it opened with initialize) and did not retry at 2026-07-28; the 2 failures listed are what it is still waiting for'
+    );
+    // Once the client has spoken the cell's revision, the probe is history.
+    const retried = identityCheck(
+      identityOf({ name: 'c1', protocolVersion: '2026-07-28' })
+    );
+    expect(incompleteNote([probe, retried])).toBe(
+      'the client has not yet done anything this scenario tests'
+    );
+  });
 });
 
 describe('verdicts', () => {

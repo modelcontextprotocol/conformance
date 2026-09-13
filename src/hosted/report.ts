@@ -17,7 +17,13 @@
 import type { ConformanceCheck } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
-import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
+import {
+  IDENTITY_CHECK_ID,
+  identitiesIn,
+  mergeIdentities,
+  type ClientIdentity
+} from './identity';
+import { LEGACY_PROBE_CHECK_ID } from './wire';
 
 export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
 
@@ -38,6 +44,8 @@ export interface CellReport {
   startable: boolean;
   startReason?: string;
   verdict: Verdict;
+  /** On a startable incomplete cell: why, in plain words (incompleteNote()). */
+  note?: string;
   /** Absent when the cell was never exercised or does not apply. */
   summary?: CheckSummary;
   resultsUrl: string;
@@ -94,6 +102,44 @@ export function verdictFor(
   return checks.some((c) => c.status === 'FAILURE') ? 'fail' : 'pass';
 }
 
+/**
+ * Why a startable cell reads `incomplete`, in plain words. Every FAILURE on
+ * an incomplete cell is one of the scenario's expectations that nothing has
+ * met yet ("Tool was not called by client"; see verdictFor()), so the counts
+ * shown beside the verdict are what the scenario is still waiting for.
+ */
+export function incompleteNote(checks: readonly ConformanceCheck[]): string {
+  if (!checks.length) {
+    return 'nothing recorded yet — point the client at the MCP endpoint';
+  }
+  const waiting = checks.filter((c) => c.status === 'FAILURE').length;
+  const lead =
+    legacyOnly(checks) ??
+    'the client has not yet done anything this scenario tests';
+  if (!waiting) return lead;
+  return waiting === 1
+    ? `${lead}; the failure listed is what it is still waiting for`
+    : `${lead}; the ${waiting} failures listed are what it is still waiting for`;
+}
+
+/** Said when a legacy initialize is all the cell has seen of the client. */
+function legacyOnly(checks: readonly ConformanceCheck[]): string | undefined {
+  const probe = checks.find((c) => c.id === LEGACY_PROBE_CHECK_ID);
+  if (!probe) return undefined;
+  const served = String(probe.details?.served ?? '');
+  const retried = checks.some(
+    (c) =>
+      c.id === IDENTITY_CHECK_ID &&
+      Array.isArray(c.details?.protocolVersions) &&
+      c.details.protocolVersions.includes(served)
+  );
+  if (retried) return undefined;
+  const asked = probe.details?.requestedVersion;
+  return typeof asked === 'string'
+    ? `the client spoke ${asked} only (it opened with initialize) and did not retry at ${served}`
+    : `the client only sent initialize, the legacy handshake, and did not retry at ${served}`;
+}
+
 export interface ReportSources {
   /** Cells of the run that were exercised (in memory or in the store). */
   listCells(runId: string): Promise<CellRef[]>;
@@ -134,6 +180,7 @@ export async function buildReport(
       const seen = results ? identitiesIn(results.checks) : [];
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
+      const verdict = verdictFor(cell, results?.checks, results?.recorded);
       cells.push({
         scenario: cell.scenario,
         revision: cell.revision,
@@ -143,7 +190,9 @@ export async function buildReport(
         ...(cell.startReason !== undefined && {
           startReason: cell.startReason
         }),
-        verdict: verdictFor(cell, results?.checks, results?.recorded),
+        verdict,
+        ...(verdict === 'incomplete' &&
+          cell.startable && { note: incompleteNote(results?.checks ?? []) }),
         ...(results && { summary: summarize(results.checks) }),
         resultsUrl: sources.resultsUrl(ref),
         ...(seen.length && { identities: seen })

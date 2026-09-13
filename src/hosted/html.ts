@@ -8,7 +8,12 @@ import { ConformanceCheck, CheckStatus } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
-import type { CellReport, RunReport, Verdict } from './report';
+import {
+  incompleteNote,
+  type CellReport,
+  type RunReport,
+  type Verdict
+} from './report';
 import type { ClientIdentity } from './identity';
 import { describeStep, type Step } from '../steps';
 import {
@@ -404,11 +409,21 @@ function statusLine(status: CellStatus): string {
   } else if (status.startable === false) {
     note = `not startable here: ${esc(status.startReason ?? '')}`;
   } else if (status.verdict === 'incomplete') {
-    note = 'nothing recorded yet — point the client at the MCP endpoint';
+    note = esc(status.note ?? incompleteNote([]));
   } else if (status.reason) {
     note = esc(status.reason);
   }
   return `<p>${pill} ${scoring}${note ? ` <span class=muted>— ${note}</span>` : ''}</p>`;
+}
+
+/**
+ * What went wrong, in the check's words: its errorMessage, or the plain
+ * `details.message` that many scenarios put their reason in instead.
+ */
+function reasonOf(c: ConformanceCheck): string | undefined {
+  if (c.errorMessage) return c.errorMessage;
+  const message = c.details?.message;
+  return typeof message === 'string' && message ? message : undefined;
 }
 
 export function renderResults(
@@ -436,9 +451,20 @@ export function renderResults(
               )
             )}</pre></details>`
           : '';
-      return `<div class=check><h3>${pill} <code>${esc(c.id)}</code> — ${esc(
-        c.name
-      )}</h3><p>${esc(c.description)}</p><p>${refs}</p>${details}</div>`;
+      // A failure or warning leads with what went wrong; which check it is
+      // and what that check is about follow underneath.
+      const reason =
+        c.status === 'FAILURE' || c.status === 'WARNING'
+          ? reasonOf(c)
+          : undefined;
+      const head = reason
+        ? `<h3>${pill} ${esc(reason)}</h3><p><code>${esc(
+            c.id
+          )}</code> — ${esc(c.name)}: ${esc(c.description)}</p>`
+        : `<h3>${pill} <code>${esc(c.id)}</code> — ${esc(
+            c.name
+          )}</h3><p>${esc(c.description)}</p>`;
+      return `<div class=check>${head}<p>${refs}</p>${details}</div>`;
     })
     .join('');
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
@@ -487,7 +513,13 @@ function verdictCell(cell: CellReport): string {
   }
   const pill = `<span class=pill style="${VERDICT_STYLE[cell.verdict]}">${cell.verdict}</span>`;
   let lines = `<div>${pill} ${scoringPillFor(cell)}</div>`;
-  if (cell.summary) {
+  if (cell.summary && cell.verdict === 'incomplete') {
+    // Its failures are only what the scenario still expects (see
+    // incompleteNote()): counting them here would read as a verdict.
+    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}" title="${esc(
+      cell.note ?? ''
+    )}">reached, nothing tested yet</a></div>`;
+  } else if (cell.summary) {
     const s = cell.summary;
     lines += `<div class=muted><a href="${esc(cell.resultsUrl)}">${s.passed} passed, ${s.failed} failed${
       s.warnings ? `, ${s.warnings} warning${s.warnings === 1 ? '' : 's'}` : ''
@@ -572,6 +604,8 @@ export function renderReport(
 <p class=crumbs>${crumbs.join(' › ')}</p>
 <p>Client: ${identityLine(report.identities)}</p>
 <p class=muted>A cell passes when checks were recorded and none is a FAILURE;
+a cell stays <i>incomplete</i> until the client does something its scenario
+tests, even when it lists what it is still waiting for as failures.
 <i>X of N scored</i> counts passes among every cell the revision's requirement
 set scores (N is the set's count; the cells this deployment can start are
 given alongside). Not-scored and unlisted cells are listed below the table.

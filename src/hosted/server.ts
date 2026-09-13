@@ -72,7 +72,13 @@ import {
   type CapturedResponse,
   type RequestInfo
 } from './wire';
-import { buildReport, summarize, verdictFor, type Verdict } from './report';
+import {
+  buildReport,
+  incompleteNote,
+  summarize,
+  verdictFor,
+  type Verdict
+} from './report';
 import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import type { RunStore } from './store';
@@ -911,6 +917,11 @@ export function summarise(ref: CellRef, checks: ConformanceCheck[]) {
 export interface CellStatus {
   scoring: MatrixCell['scoring'];
   verdict: Verdict;
+  /**
+   * On a startable incomplete cell: why, in plain words — nothing recorded
+   * yet, or the checks listed are only what the scenario still expects.
+   */
+  note?: string;
   /** For n/a (why the scenario does not apply) and not_scored/unlisted. */
   reason?: string;
   /** Present, false, when this deployment cannot start the cell. */
@@ -922,9 +933,12 @@ export function cellStatus(
   cell: MatrixCell,
   results: Pick<RunResults, 'checks' | 'recorded'> | undefined
 ): CellStatus {
+  const verdict = verdictFor(cell, results?.checks, results?.recorded);
   return {
     scoring: cell.scoring,
-    verdict: verdictFor(cell, results?.checks, results?.recorded),
+    verdict,
+    ...(verdict === 'incomplete' &&
+      cell.startable && { note: incompleteNote(results?.checks ?? []) }),
     ...(cell.reason !== undefined && { reason: cell.reason }),
     ...(!cell.startable &&
       cell.scoring !== 'n/a' && {

@@ -110,7 +110,16 @@ show each step as a plain line a person can make a hand-driven client follow
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
 (any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or
-`n/a`. Per column, `scored: { passed, total, startable }` counts passes
+`n/a`. An `incomplete` cell may still list FAILUREs: they are the scenario's
+expectations that nothing has met yet ("Tool was not called by client"), not
+a verdict, and its `note` says so in plain words — "nothing recorded yet",
+"the client has not yet done anything this scenario tests; the 5 failures
+listed are what it is still waiting for", or, for a client that only ever
+sent the legacy handshake to a `2026-07-28` cell, "the client spoke
+2025-11-25 only (it opened with initialize) and did not retry at
+2026-07-28". The HTML leads each failed check with its reason (its
+`errorMessage`, or `details.message`), with the check's id, name and
+description underneath. Per column, `scored: { passed, total, startable }` counts passes
 among every cell the revision's requirement set scores — `total` is the
 yaml's count whether or not this deployment can start the cell, `startable`
 how many of those it can (the HTML says "3 of 32 scored (11 startable

@@ -650,6 +650,7 @@ describe('hosted server', () => {
       scenario: 'tools_call',
       scoring: 'scored',
       verdict: 'incomplete',
+      note: 'nothing recorded yet — point the client at the MCP endpoint',
       summary: zeros,
       checks: []
     });
@@ -1081,6 +1082,67 @@ describe('hosted server', () => {
     expect(results.verdict).toBe('pass');
   });
 
+  it('explains an incomplete cell that lists failures, leading each failure with its reason', async () => {
+    type Check = {
+      id: string;
+      status: string;
+      description: string;
+      details?: Record<string, unknown>;
+    };
+    const page = (path: string) =>
+      fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
+        r.text()
+      );
+    // initialize alone: tools_call has seen nothing it tests, and judging
+    // its empty log lists the tool call it still expects as a FAILURE.
+    await postMcp(`/s/inc/${REV_STATEFUL}/tools_call/mcp`, initBody()).then(
+      (r) => r.text()
+    );
+    const cell = `/results/inc/${REV_STATEFUL}/tools_call`;
+    const json = await fetch(`${base}${cell}`).then((r) => r.json());
+    expect(json.verdict).toBe('incomplete');
+    expect(json.summary.failed).toBe(1);
+    expect(json.note).toBe(
+      'the client has not yet done anything this scenario tests; the failure listed is what it is still waiting for'
+    );
+    // tools_call gives its reason in details.message, not errorMessage.
+    const failure = json.checks.find((c: Check) => c.status === 'FAILURE');
+    expect(failure.details.message).toBe('Tool was not called by client');
+
+    const html = await page(cell);
+    expect(html).not.toContain('nothing recorded yet');
+    expect(html).toContain(json.note);
+    // The headline is the reason; the check's own description stays below.
+    expect(html).toContain('FAILURE</span> Tool was not called by client</h3>');
+    expect(html).toContain(`${failure.description}</p>`);
+
+    // The run report says the same, and does not count those failures.
+    const report = await fetch(`${base}/results/inc`).then((r) => r.json());
+    const inReport = report.columns[0].cells.find(
+      (c: { scenario: string }) => c.scenario === 'tools_call'
+    );
+    expect(inReport).toMatchObject({ verdict: 'incomplete', note: json.note });
+    const reportHtml = await page('/results/inc');
+    expect(reportHtml).toContain('reached, nothing tested yet');
+
+    // A client that only ever sent the legacy handshake is told so.
+    await postMcp(
+      `/s/inc/${REV_STATELESS}/tools_call/mcp`,
+      {
+        ...initBody(),
+        params: { ...initBody().params, protocolVersion: REV_STATEFUL }
+      },
+      { 'mcp-protocol-version': REV_STATEFUL }
+    ).then((r) => r.text());
+    const legacy = await fetch(
+      `${base}/results/inc/${REV_STATELESS}/tools_call`
+    ).then((r) => r.json());
+    expect(legacy.verdict).toBe('incomplete');
+    expect(legacy.note).toMatch(
+      /^the client spoke 2025-11-25 only \(it opened with initialize\) and did not retry at 2026-07-28/
+    );
+  });
+
   it('never changes results by reading them', async () => {
     const page = (path: string) =>
       fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
@@ -1336,11 +1398,11 @@ describe('hosted server across processes (shared store)', () => {
     // The live server's case: the process that served the cell page holds a
     // scenario instance the other does not. Reads from either, at every
     // scope, must agree — nothing failed, nothing to judge yet.
-    const cellOf = (report: { columns: { cells: { scenario: string }[] }[] }) =>
-      report.columns[0].cells.find((c) => c.scenario === 'tools_call') as {
-        verdict: string;
-        summary?: unknown;
-      };
+    const cellOf = (report: {
+      columns: {
+        cells: { scenario: string; verdict: string; summary?: unknown }[];
+      }[];
+    }) => report.columns[0].cells.find((c) => c.scenario === 'tools_call')!;
     for (let round = 0; round < 3; round++) {
       for (const o of [a, b]) {
         expect(
