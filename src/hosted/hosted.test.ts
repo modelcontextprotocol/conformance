@@ -321,6 +321,46 @@ describe('hosted server', () => {
     expect(cell.steps[0]).toEqual({ op: 'tools/list' });
   });
 
+  it('hands the header scenarios their tool calls and steps, as the CLI runner does', async () => {
+    const cellOf = async (scenario: string) =>
+      (
+        await fetch(
+          `${base}/s/hdr/${REV_STATELESS}/${scenario}?format=json`
+        ).then((r) => r.json())
+      ).cells[0];
+
+    const custom = await cellOf('http-custom-headers');
+    const context = JSON.parse(custom.env.MCP_CONFORMANCE_CONTEXT);
+    expect(context.name).toBe('http-custom-headers');
+    expect(context.toolCalls.map((c: { name: string }) => c.name)).toEqual([
+      'test_custom_headers',
+      'test_custom_headers_null'
+    ]);
+    expect(context.toolCalls[0].arguments.crlf_val).toBe('line1\r\nline2');
+    expect(context.steps).toEqual(custom.steps);
+    expect(
+      custom.steps.map((s: { op: string; name?: string }) => s.name ?? s.op)
+    ).toEqual([
+      'tools/list',
+      'test_custom_headers',
+      'test_custom_headers_null'
+    ]);
+
+    const invalid = await cellOf('http-invalid-tool-headers');
+    expect(invalid.steps).toEqual([
+      { op: 'tools/list' },
+      {
+        op: 'tools/call',
+        name: 'valid_tool',
+        arguments: { region: 'us-west1' }
+      }
+    ]);
+    expect(JSON.parse(invalid.env.MCP_CONFORMANCE_CONTEXT)).toEqual({
+      name: 'http-invalid-tool-headers',
+      steps: invalid.steps
+    });
+  });
+
   it('scopes config to a column or a cell', async () => {
     const column = await fetch(`${base}/s/scope/${REV_STATELESS}`).then((r) =>
       r.json()

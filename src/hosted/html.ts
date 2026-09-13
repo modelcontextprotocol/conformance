@@ -10,6 +10,7 @@ import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import type { CellReport, RunReport, Verdict } from './report';
 import type { ClientIdentity } from './identity';
+import { describeStep, type Step } from '../steps';
 import {
   COMPOSITE_SEPARATOR,
   DEFAULT_COMPOSITES,
@@ -56,6 +57,8 @@ const css = `
     margin:.5rem 0}
   .check h3{margin:0 0 .25rem;font-size:14px}
   details>summary{cursor:pointer;color:#6b7280;font-size:12px}
+  ol.steps{margin:.4rem 0;padding-left:1.5rem}
+  ol.steps li{margin:.15rem 0}
   table{border-collapse:collapse;width:100%}
   td,th{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #eee;
     vertical-align:top}
@@ -101,11 +104,32 @@ function scoringPill(cell: MatrixCell): string {
   )}">${SCORING_LABEL[cell.scoring]}</span>`;
 }
 
+/** One plain line per step: what a person makes a hand-driven client do. */
+function stepLines(steps: readonly Step[]): string {
+  const items = steps.map((s) => `<li>${esc(describeStep(s))}</li>`);
+  return `<ol class=steps>${items.join('')}</ol>`;
+}
+
+/** The same steps as the JSON a generic client reads. */
+function stepsJson(steps: readonly Step[]): string {
+  return `<pre>${esc(JSON.stringify(steps, null, 1))}</pre>`;
+}
+
+/** Collapsed, for a matrix cell. */
 function stepsDetails(cell: Pick<MatrixCell, 'steps'>): string {
   if (!cell.steps) return '';
   return (
     `<details><summary>steps (${cell.steps.length})</summary>` +
-    `<pre>${esc(JSON.stringify(cell.steps, null, 1))}</pre></details>`
+    `${stepLines(cell.steps)}${stepsJson(cell.steps)}</details>`
+  );
+}
+
+/** Open, for a page about one scenario: the lines, the JSON folded below. */
+function stepsOpen(steps: readonly Step[]): string {
+  return (
+    stepLines(steps) +
+    `<details><summary>as JSON (<code>MCP_CONFORMANCE_CONTEXT.steps</code>)</summary>` +
+    `${stepsJson(steps)}</details>`
   );
 }
 
@@ -288,9 +312,9 @@ ${crumbs(config)}
 ${envPre(cell)}
 ${
   cell.steps
-    ? `<h2>Steps</h2><p class=muted>What a generic client should do here (also in <code>MCP_CONFORMANCE_CONTEXT.steps</code>).</p><pre>${esc(
-        JSON.stringify(cell.steps, null, 1)
-      )}</pre>`
+    ? `<h2>Steps</h2><p class=muted>What to make the client do here. A generic client reads the same steps from <code>MCP_CONFORMANCE_CONTEXT.steps</code>.</p>${stepsOpen(
+        cell.steps
+      )}`
     : ''
 }
 <p><a href="${esc(cell.resultsUrl)}">results for this cell</a></p>`;
@@ -351,7 +375,7 @@ export function renderComposite(view: CompositeView): string {
   const children = view.children
     .map(
       (c) => `<div class=check><h3><code>${esc(c.scenario)}</code></h3>
-<p>${esc(c.description)}</p>${stepsDetails(c as Pick<MatrixCell, 'steps'>)}
+<p>${esc(c.description)}</p>${c.steps ? stepsOpen(c.steps) : ''}
 <p><a href="${esc(c.resultsUrl)}">results for this scenario</a></p></div>`
     )
     .join('\n');

@@ -130,6 +130,48 @@ describe('json-schema-ref-no-deref (SEP-2106)', () => {
     );
   });
 
+  test('a client that calls lookup_user gets a text result and still passes', async () => {
+    let text: string | undefined;
+    await runClientAgainstScenario(
+      new InlineClientRunner(async (serverUrl) => {
+        const client = new Client(
+          { name: 'calling-client', version: '1.0.0' },
+          { capabilities: {} }
+        );
+        const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+        await client.connect(transport);
+        await client.listTools();
+        const result = await client.callTool({
+          name: 'lookup_user',
+          arguments: { id: 'alice' }
+        });
+        expect(result.isError).toBeFalsy();
+        text = (result.content as { type: string; text?: string }[])[0]?.text;
+        await transport.close();
+      }),
+      'json-schema-ref-no-deref'
+    );
+    expect(text).toBe('No profile on file for user alice.');
+  });
+
+  test('stateless draft client can call lookup_user on the negotiated version', async () => {
+    await runClientAgainstScenario(
+      new InlineClientRunner(async (serverUrl) => {
+        await sendStatelessRequest(serverUrl, 'tools/list');
+        const called = await sendStatelessRequest(serverUrl, 'tools/call', {
+          name: 'lookup_user',
+          arguments: { id: 'bob' }
+        });
+        expect(called.status).toBe(200);
+        expect(called.body?.result).toMatchObject({
+          resultType: 'complete',
+          content: [{ type: 'text', text: 'No profile on file for user bob.' }]
+        });
+      }),
+      'json-schema-ref-no-deref'
+    );
+  });
+
   test('client that never lists tools fails: requirement cannot be evaluated', async () => {
     const scenario = new JsonSchemaRefDerefScenario();
     await scenario.start(testScenarioContext());

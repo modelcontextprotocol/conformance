@@ -1,4 +1,5 @@
 import type { ScenarioContext } from '../../mock-server';
+import type { Step } from '../../steps';
 /**
  * HTTP Custom Headers conformance test scenario for MCP clients (SEP-2243)
  *
@@ -180,52 +181,68 @@ function compareNumericValues(
 // HttpCustomHeadersScenario - tests that clients mirror x-mcp-header params
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The tool calls whose argument values exercise the encoding edge cases.
+ * Handed to the client twice from this one list, so the two cannot drift: as
+ * `toolCalls` in its context (what a client with a handler for this scenario
+ * reads) and as `tools/call` steps (what a generic or hand-driven client
+ * follows).
+ */
+const TOOL_CALLS = [
+  {
+    name: 'test_custom_headers',
+    arguments: {
+      region: 'us-west1',
+      priority: 42,
+      verbose: false,
+      debug: true,
+      empty_val: '',
+      method_val: 'test-method',
+      float_val: 3.14159,
+      non_ascii_val: 'Hello, 世界',
+      whitespace_val: ' padded ',
+      leading_space_val: ' us-west1',
+      trailing_space_val: 'us-west1 ',
+      internal_space_val: 'us west 1',
+      control_char_val: 'line1\nline2',
+      crlf_val: 'line1\r\nline2',
+      tab_val: '\tindented',
+      query: 'SELECT * FROM users'
+    }
+  },
+  {
+    name: 'test_custom_headers_null',
+    arguments: {
+      region: 'us-east1',
+      priority: 1,
+      verbose: null,
+      query: 'SELECT 1'
+    }
+  }
+];
+
 export class HttpCustomHeadersScenario extends BaseHttpScenario {
   name = 'http-custom-headers';
   description =
     'Tests that client mirrors x-mcp-header tool parameters into Mcp-Param headers with correct encoding (SEP-2243)';
 
+  /** List first: the x-mcp-header annotations are in the tool schemas. */
+  readonly steps: readonly Step[] = [
+    { op: 'tools/list' },
+    ...TOOL_CALLS.map((call) => ({ op: 'tools/call' as const, ...call }))
+  ];
+
   private toolCallReceived: boolean = false;
   private nullToolCallReceived: boolean = false;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
-    const urls = await super.start(_ctx);
-    // Pass test values via context for encoding edge cases.
-    // The conformance client should use these values when calling test_custom_headers.
-    urls.context = {
-      toolCalls: [
-        {
-          name: 'test_custom_headers',
-          arguments: {
-            region: 'us-west1',
-            priority: 42,
-            verbose: false,
-            debug: true,
-            empty_val: '',
-            method_val: 'test-method',
-            float_val: 3.14159,
-            non_ascii_val: 'Hello, 世界',
-            whitespace_val: ' padded ',
-            leading_space_val: ' us-west1',
-            trailing_space_val: 'us-west1 ',
-            internal_space_val: 'us west 1',
-            control_char_val: 'line1\nline2',
-            crlf_val: 'line1\r\nline2',
-            tab_val: '\tindented',
-            query: 'SELECT * FROM users'
-          }
-        },
-        {
-          name: 'test_custom_headers_null',
-          arguments: {
-            region: 'us-east1',
-            priority: 1,
-            verbose: null,
-            query: 'SELECT 1'
-          }
-        }
-      ]
-    };
+  /** Read by start() for the CLI runner and by the hosted server per cell. */
+  protected scenarioContext(): Record<string, unknown> {
+    return { toolCalls: TOOL_CALLS };
+  }
+
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+    const urls = await super.start(ctx);
+    urls.context = this.scenarioContext();
     return urls;
   }
 
@@ -707,6 +724,14 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
   description =
     'Tests that client rejects tools with invalid x-mcp-header annotations (SEP-2243)';
   allowClientError = true;
+  /**
+   * List, then call the one valid tool: proof the client kept it. The
+   * invalid tools are never named here — calling one is the failure.
+   */
+  readonly steps = [
+    { op: 'tools/list' },
+    { op: 'tools/call', name: 'valid_tool', arguments: { region: 'us-west1' } }
+  ] as const;
 
   /**
    * Verdicts are derived from the raw events in `this.checks` (tools/list

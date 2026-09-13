@@ -1,7 +1,10 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
+  CallToolRequestSchema,
+  ErrorCode,
   ListToolsRequestSchema,
+  McpError,
   LATEST_PROTOCOL_VERSION as SDK_LATEST_PROTOCOL_VERSION
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ConformanceCheck, RequestListener } from '../../types';
@@ -75,6 +78,28 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
     };
   });
 
+  // A client that lists the tool may well call it (a person driving a chat
+  // app will). Answer from nothing, never fetching the canary: the check is
+  // only about whether the client fetches it.
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name !== TOOL_NAME) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unknown tool: ${request.params.name}`
+      );
+    }
+    const id = request.params.arguments?.id;
+    return {
+      resultType: 'complete',
+      content: [
+        {
+          type: 'text',
+          text: `No profile on file for user ${typeof id === 'string' ? id : '(no id given)'}.`
+        }
+      ]
+    };
+  });
+
   return server;
 }
 
@@ -132,44 +157,6 @@ The scenario advertises a tool whose inputSchema contains a \`$ref\` pointing at
     });
 
     app.post('/mcp', async (req: Request, res: Response) => {
-      // The bundled SDK server below predates the 2026-07-28 lifecycle and
-      // does not implement server/discover; answer it directly so a client
-      // that negotiates first can proceed to tools/list.
-      if (
-        (req.body as Record<string, unknown> | undefined)?.method ===
-        'server/discover'
-      ) {
-        return res.json({
-          jsonrpc: '2.0',
-          id: (req.body as Record<string, unknown>).id ?? null,
-          result: {
-            resultType: 'complete',
-            ttlMs: 0,
-            cacheScope: 'private',
-            supportedVersions: [DRAFT_PROTOCOL_VERSION],
-            capabilities: { tools: {} },
-            serverInfo: {
-              name: 'json-schema-ref-deref-server',
-              version: '1.0.0'
-            }
-          }
-        });
-      }
-      // Second half of the same workaround: the pinned SDK transport
-      // whitelists MCP-Protocol-Version headers and would reject the draft
-      // version that the server/discover response above advertises with an
-      // HTTP 400. Rewrite it to the newest version the SDK understands so a
-      // client that honors the negotiated version can reach tools/list.
-      if (req.headers['mcp-protocol-version'] === DRAFT_PROTOCOL_VERSION) {
-        req.headers['mcp-protocol-version'] = SDK_LATEST_PROTOCOL_VERSION;
-        // The SDK's Node adapter rebuilds its web-standard Request from
-        // rawHeaders, not the parsed headers object, so patch those too.
-        for (let i = 0; i < req.rawHeaders.length; i += 2) {
-          if (req.rawHeaders[i].toLowerCase() === 'mcp-protocol-version') {
-            req.rawHeaders[i + 1] = SDK_LATEST_PROTOCOL_VERSION;
-          }
-        }
-      }
       // The bundled SDK server below predates the 2026-07-28 lifecycle and
       // does not implement server/discover; answer it directly so a client
       // that negotiates first can proceed to tools/list.

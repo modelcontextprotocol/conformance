@@ -100,8 +100,11 @@ rel="conformance-results"`.
 ```
 
 `env` is what the CLI runner would set for the client under test; `context`
-is the scenario's context (credentials, `steps`) tagged with `name`, as a
-JSON string. The HTML pages have copy-to-clipboard buttons for the same data.
+is the scenario's context (credentials, tool arguments such as
+`http-custom-headers`' `toolCalls`, `steps`) tagged with `name`, as a JSON
+string. The HTML pages have copy-to-clipboard buttons for the same data, and
+show each step as a plain line a person can make a hand-driven client follow
+("call add_numbers with a=5 and b=3"), with the JSON beside it.
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
 (any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or
