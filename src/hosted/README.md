@@ -41,7 +41,7 @@ what `conformance client --spec-version <rev>` would run.
 
 | Route                                         | Purpose                                                                                          |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /`                                       | Landing page: the static matrix (scoring, startability, steps)                                   |
+| `GET /`                                       | Landing page for a newcomer (see below), then the static matrix (scoring, startability, steps)   |
 | `GET /scenarios`                              | JSON rows with a cell per revision                                                               |
 | `GET /s`                                      | Mints a run id, `303 → /s/<run-id>`                                                              |
 | `GET /s/<run-id>`                             | Config for every startable cell of the run                                                       |
@@ -63,6 +63,42 @@ Cells are created lazily on first request. Scenario names may contain `/`
 and sit at the end of the path, so they are resolved by longest registered
 name (`auth/metadata-var2/tenant1` → scenario `auth/metadata-var2`, suffix
 `/tenant1`).
+
+**The landing page** is written for someone who has never seen the server.
+Before the matrix it says, in plain sentences: what this is (a server that
+tests a client you point at it by hand; a cell is one scenario at one
+revision with its own MCP URL); how to test a client in five minutes (a new
+run at `/s`, the run page's composite URLs and per-client config blocks,
+the cell steps, the report and its frozen, Markdown and plain-text copies);
+what the score means (the frozen requirement set's scored cells per
+revision, "X of N scored (M startable here)", one line per state, and that a
+cell passes only once the client has spoken its revision); that results are
+self-reported and are not an SDK tier measurement (tiers come from
+`tier-check` and the CLI runner; see [SDK Tier Assessment](../../README.md#sdk-tier-assessment));
+how long results last; and where the repository, the specification and the
+issue tracker are. The run page's two sections it names carry anchors,
+`#composites` and `#client-config`.
+
+**How long results last.** The landing page states these from the values
+the deployment runs with, not from the defaults, so it cannot disagree with
+them:
+
+- A cell with no request for 5 minutes leaves the process's memory
+  (`HostedServerOptions.ttlMs`, the CLI's `--ttl`, default
+  `DEFAULT_CELL_TTL_MS`). A single process without a store loses that
+  cell's traffic then; its frozen copies stay in memory until it restarts.
+- With a store the cell is rebuilt from its stored log on its next
+  request, so eviction loses nothing. The val.town store
+  (`examples/hosted/valtown-store.ts`) deletes a cell's log 6 hours after
+  the cell's first request (`CONFORMANCE_RUN_RETENTION_MS`, default
+  `DEFAULT_RUN_RETENTION_MS`) and a frozen copy 30 days after it was taken
+  (`CONFORMANCE_SNAPSHOT_RETENTION_MS`, default
+  `DEFAULT_SNAPSHOT_RETENTION_MS`). It sweeps when a new cell or snapshot
+  is written, at most every five minutes per isolate, so a deletion can
+  come somewhat later. A store tells the page its lifetimes through
+  `RunStore.retention`; one that does not gets no numbers on the page.
+- Anyone with a run id can read the run. `DELETE /results/<run-id>`
+  removes the run and its frozen copies at once.
 
 **Every cell's MCP URL ends in `/mcp`.** Scenarios that serve MCP at their
 handler root (`mcpPath` `''`) are reached at `<cell>/mcp` as well: the
@@ -209,10 +245,8 @@ link to" button) stores the whole run's report as it stands, in the run
 store, and answers with its permalink `/results/<run-id>/snapshot/<id>`.
 The copy never changes as more traffic arrives, so it can be cited in an
 issue; its cell links open the live results. A snapshot is plain JSON in
-the store with no protection beyond the run id, like the rest of a run. On
-val.town snapshots are kept for 30 days
-(`CONFORMANCE_SNAPSHOT_RETENTION_MS`); a single process without a store
-keeps them in memory.
+the store with no protection beyond the run id, like the rest of a run. For
+how long one is kept, see "How long results last" above.
 
 The hosted layer also records two FAILUREs of its own about requests to a
 cell's MCP endpoint, so a cell cannot read green when the wire turned every
