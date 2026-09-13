@@ -12,6 +12,7 @@ import type { Server } from 'http';
 import { createHostedApp } from './server';
 import { MemoryRunStore, type RunStore } from './store';
 import { IDENTITY_CHECK_ID } from './identity';
+import { MODERN_PROBE_CHECK_ID } from './wire';
 import { toFetchHandler } from '../../examples/hosted/fetch-bridge';
 import type { ConformanceCheck } from '../types';
 
@@ -340,16 +341,104 @@ describe('server/discover answered before seeding, across processes', () => {
     const url = `http://host/s/${id}/mcp`;
     await a(addNumbers(url, 1, 2));
     const writer = hosted[0].sessions.writerId;
-    const before = (await store.inner.loadChecks(id)).get(writer);
+    const rows = await store.inner.loadChecks(id);
+    const before = rows.get(writer);
     expect(before?.length).toBeGreaterThan(0);
+    const hostedBefore = [...rows].filter(([w]) => w.endsWith('/hosted'));
+    expect(hostedBefore).toHaveLength(1);
 
     // Evicted from A's memory only; the discover rebuilds it from its id.
     await hosted[0].sessions.destroy(id, false);
     expect((await a(discoverRequest(url))).status).toBe(200);
-    expect((await store.inner.loadChecks(id)).get(writer)).toEqual(before);
+    const after = await store.inner.loadChecks(id);
+    expect(after.get(writer)).toEqual(before);
+    // The rebuilt cell's hosted checks go to a row of their own.
+    for (const [w, checks] of hostedBefore)
+      expect(after.get(w)).toEqual(checks);
     for (const entry of [a, b])
       expect((await judged(entry, id)).checks).toContain(
         'tool-add-numbers:SUCCESS'
       );
+  });
+});
+
+describe("an evicted cell's hosted checks", () => {
+  /** A legacy handshake from `name`, as a 2025-11-25 client sends it. */
+  const initialize = (url: string, name: string) =>
+    new Request(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: STATEFUL,
+          clientInfo: { name, version: '1.0.0' },
+          capabilities: {}
+        }
+      })
+    });
+
+  /** The clients and probe notes a cell's results show. */
+  async function shown(entry: Entry, id: string) {
+    const res = await entry(new Request(`http://host/results/${id}`));
+    const { checks } = (await res.json()) as { checks: ConformanceCheck[] };
+    return {
+      clients: checks
+        .filter((c) => c.id === IDENTITY_CHECK_ID)
+        .map((c) => (c.details as { name: string }).name)
+        .sort(),
+      probes: checks.filter((c) => c.id === MODERN_PROBE_CHECK_ID).length
+    };
+  }
+
+  /**
+   * On a dated cell, a 2026-07-28 client's discover (a probe note) and its
+   * fallback handshake (its identity), then the cell evicted from the
+   * process's memory.
+   */
+  async function recordThenEvict(hosted: Hosted, id: string) {
+    const entry = flushingEntry(hosted);
+    const url = `http://host/s/${id}/mcp`;
+    await (await entry(discoverRequest(url))).text();
+    await (await entry(initialize(url, 'first-client'))).text();
+    expect(await shown(entry, id)).toEqual({
+      clients: ['first-client'],
+      probes: 1
+    });
+    await hosted.sessions.destroy(id, false);
+  }
+
+  it('keeps what the process recorded before the cell was evicted', async () => {
+    const hosted = hostedOn(new MemoryRunStore());
+    const a = flushingEntry(hosted);
+    const id = `ev1/${STATEFUL}/tools_call`;
+    await recordThenEvict(hosted, id);
+
+    // Rebuilt from its id; the next write must not drop the earlier ones.
+    await (await a(initialize(`http://host/s/${id}/mcp`, 'second'))).text();
+    expect(await shown(a, id)).toEqual({
+      clients: ['first-client', 'second'],
+      probes: 1
+    });
+  });
+
+  it('shows the same from another process', async () => {
+    const store = new MemoryRunStore();
+    const hosted = [hostedOn(store), hostedOn(store)];
+    const [a, b] = hosted.map(flushingEntry);
+    const id = `ev2/${STATEFUL}/tools_call`;
+    const url = `http://host/s/${id}/mcp`;
+    await recordThenEvict(hosted[0], id);
+
+    await (await a(discoverRequest(url))).text();
+    await (await b(initialize(url, 'on-b'))).text();
+    const want = { clients: ['first-client', 'on-b'], probes: 1 };
+    expect(await shown(a, id)).toEqual(want);
+    expect(await shown(b, id)).toEqual(want);
   });
 });
