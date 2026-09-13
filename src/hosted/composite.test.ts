@@ -189,6 +189,20 @@ describe('composite cells on the hosted server', () => {
     );
     expect(JSON.stringify(called.result)).toContain('8');
 
+    // The ref-deref child answers its tool too, rather than -32601.
+    const looked = await answer(
+      await statelessPost(
+        url,
+        4,
+        'tools/call',
+        { name: 'lookup_user', arguments: { id: 'alice' } },
+        'lookup_user'
+      )
+    );
+    expect(looked.result).toMatchObject({
+      content: [{ type: 'text', text: 'No profile on file for user alice.' }]
+    });
+
     // Each child scored in its own cell, as if the client had used its URL.
     expect(await verdict('comp1', STATELESS, 'tools_call')).toBe('pass');
     expect(await verdict('comp1', STATELESS, 'json-schema-ref-no-deref')).toBe(

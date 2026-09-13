@@ -1,7 +1,10 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
+  CallToolRequestSchema,
+  ErrorCode,
   ListToolsRequestSchema,
+  McpError,
   LATEST_PROTOCOL_VERSION as SDK_LATEST_PROTOCOL_VERSION
 } from '@modelcontextprotocol/sdk/types.js';
 import type { ConformanceCheck, RequestListener } from '../../types';
@@ -70,6 +73,28 @@ function createMcpServer(canaryUrl: string, onToolsListed: () => void): Server {
             },
             required: ['id']
           }
+        }
+      ]
+    };
+  });
+
+  // A client that lists the tool may well call it (a person driving a chat
+  // app will). Answer from nothing, never fetching the canary: the check is
+  // only about whether the client fetches it.
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    if (request.params.name !== TOOL_NAME) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unknown tool: ${request.params.name}`
+      );
+    }
+    const id = request.params.arguments?.id;
+    return {
+      resultType: 'complete',
+      content: [
+        {
+          type: 'text',
+          text: `No profile on file for user ${typeof id === 'string' ? id : '(no id given)'}.`
         }
       ]
     };
