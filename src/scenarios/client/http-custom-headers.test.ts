@@ -69,71 +69,106 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
     }
   });
 
-  it('maps each parameter kind to its requirement ID on a conforming tool call', async () => {
-    const scenario = new HttpCustomHeadersScenario();
-    const { serverUrl } = await scenario.start(testScenarioContext());
-    try {
-      const nonAscii = 'Hello, 世界';
-      const nonAsciiB64 = Buffer.from(nonAscii, 'utf-8').toString('base64');
-      await post(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/call',
-          params: {
-            name: 'test_custom_headers',
-            arguments: {
-              region: 'us-west1',
-              priority: 42,
-              non_ascii_val: nonAscii,
-              query: 'SELECT 1'
+  it.each([false, true])(
+    'isolates range probe rejection (rejected: %s) from ordinary header checks',
+    async (rejectProbe) => {
+      const scenario = new HttpCustomHeadersScenario();
+      const { serverUrl } = await scenario.start(testScenarioContext());
+      try {
+        const nonAscii = 'Hello, 世界';
+        const nonAsciiB64 = Buffer.from(nonAscii, 'utf-8').toString('base64');
+        await post(
+          serverUrl,
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: {
+              name: 'test_custom_headers',
+              arguments: {
+                region: 'us-west1',
+                priority: 42,
+                non_ascii_val: nonAscii,
+                query: 'SELECT 1'
+              }
             }
+          },
+          {
+            'Mcp-Method': 'tools/call',
+            'Mcp-Name': 'test_custom_headers',
+            'Mcp-Param-Region': 'us-west1',
+            'Mcp-Param-Priority': '42',
+            'Mcp-Param-NonAscii': `=?base64?${nonAsciiB64}?=`
           }
-        },
-        {
-          'Mcp-Method': 'tools/call',
-          'Mcp-Name': 'test_custom_headers',
-          'Mcp-Param-Region': 'us-west1',
-          'Mcp-Param-Priority': '42',
-          'Mcp-Param-NonAscii': `=?base64?${nonAsciiB64}?=`
-        }
-      );
-      await post(
-        serverUrl,
-        {
-          jsonrpc: '2.0',
-          id: 2,
-          method: 'tools/call',
-          params: {
-            name: 'test_custom_headers_null',
-            arguments: {
-              region: 'us-east1',
-              priority: 1,
-              verbose: null,
-              query: 'SELECT 1'
+        );
+        await post(
+          serverUrl,
+          {
+            jsonrpc: '2.0',
+            id: 2,
+            method: 'tools/call',
+            params: {
+              name: 'test_custom_headers_null',
+              arguments: {
+                region: 'us-east1',
+                priority: 1,
+                verbose: null,
+                query: 'SELECT 1'
+              }
             }
+          },
+          {
+            'Mcp-Method': 'tools/call',
+            'Mcp-Name': 'test_custom_headers_null',
+            'Mcp-Param-Region': 'us-east1',
+            'Mcp-Param-Priority': '1'
+            // Mcp-Param-Verbose deliberately omitted: value is null
           }
-        },
-        {
-          'Mcp-Method': 'tools/call',
-          'Mcp-Name': 'test_custom_headers_null',
-          'Mcp-Param-Region': 'us-east1',
-          'Mcp-Param-Priority': '1'
-          // Mcp-Param-Verbose deliberately omitted: value is null
-        }
-      );
+        );
 
-      const checks = scenario.getChecks();
-      for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
-        const statuses = statusesFor(checks, id);
-        expect(statuses.length, id).toBeGreaterThan(0);
-        expect(statuses, id).not.toContain('FAILURE');
+        if (!rejectProbe) {
+          await post(serverUrl, {
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'tools/call',
+            params: {
+              name: 'test_custom_headers_unsafe_integer',
+              arguments: { unsafe_integer_val: 9007199254740992 }
+            }
+          });
+        }
+
+        const checks = scenario.getChecks();
+        expect(idsOf(checks)).toEqual(
+          new Set(CUSTOM_HEADERS_DECLARED_CHECK_IDS)
+        );
+        for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
+          const statuses = statusesFor(checks, id);
+          if (
+            rejectProbe &&
+            id === 'sep-2243-x-mcp-header-integer-safe-range'
+          ) {
+            expect(statuses).toEqual(['FAILURE']);
+            const check = checks.find((c) => c.id === id)!;
+            expect(check.details?.untestable).toBe(true);
+            expect(check.errorMessage).toContain(
+              'test_custom_headers_unsafe_integer'
+            );
+            expect(check.errorMessage).toContain(
+              'rejected the argument locally'
+            );
+            continue;
+          }
+          expect(statuses.length, id).toBeGreaterThan(0);
+          expect(statuses, id).not.toContain('FAILURE');
+        }
+        const checkCount = checks.length;
+        expect(scenario.getChecks()).toHaveLength(checkCount);
+      } finally {
+        await scenario.stop();
       }
-    } finally {
-      await scenario.stop();
     }
-  });
+  );
 
   it('FAILs client-mirrors-designated-params when an annotated header is missing', async () => {
     const scenario = new HttpCustomHeadersScenario();
@@ -229,6 +264,16 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
           : {}
       );
 
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: {
+          name: 'test_custom_headers_unsafe_integer',
+          arguments: { unsafe_integer_val: 9007199254740992 }
+        }
+      });
+
       expect(toolsList.body.result.ttlMs).toBeGreaterThan(0);
       const checks = scenario.getChecks();
       for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
@@ -240,6 +285,138 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
       await scenario.stop();
     }
   });
+
+  it('FAILs safe-integer-range when a client mirrors an out-of-range integer header', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_unsafe_integer',
+            arguments: { unsafe_integer_val: 9007199254740992 }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers_unsafe_integer',
+          'Mcp-Param-UnsafeInteger': '9007199254740992'
+        }
+      );
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-integer-safe-range')
+      ).toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('PASSes safe-integer-range when a client omits the out-of-range integer header', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_unsafe_integer',
+            arguments: { unsafe_integer_val: 9007199254740992 }
+          }
+        },
+        {
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'test_custom_headers_unsafe_integer'
+          // Mcp-Param-UnsafeInteger is deliberately omitted
+        }
+      );
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-integer-safe-range')
+      ).toContain('SUCCESS');
+    } finally {
+      await scenario.stop();
+    }
+  });
+});
+
+describe('HttpCustomHeadersScenario range probe', () => {
+  it('advertises a dedicated integer tool and schedules it after the ordinary calls', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl, context } = await scenario.start(testScenarioContext());
+    try {
+      const toolCalls = context!.toolCalls as Array<{
+        name: string;
+        arguments: Record<string, unknown>;
+      }>;
+      expect(toolCalls.map((call) => call.name)).toEqual([
+        'test_custom_headers',
+        'test_custom_headers_null',
+        'test_custom_headers_unsafe_integer'
+      ]);
+      expect(toolCalls[0].arguments).not.toHaveProperty('unsafe_integer_val');
+      expect(toolCalls[2].arguments).toEqual({
+        unsafe_integer_val: 9007199254740992
+      });
+      const listed = await postJson(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list'
+      });
+      const tools = listed.result.tools;
+      expect(tools[0].inputSchema.properties).not.toHaveProperty(
+        'unsafe_integer_val'
+      );
+      expect(tools[2]).toMatchObject({
+        name: 'test_custom_headers_unsafe_integer',
+        inputSchema: {
+          properties: {
+            unsafe_integer_val: {
+              type: 'integer',
+              'x-mcp-header': 'UnsafeInteger'
+            }
+          },
+          required: ['unsafe_integer_val']
+        }
+      });
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it.each([undefined, null, 42, '9007199254740992'])(
+    'does not pass when the client changes or omits the probe argument (%s)',
+    async (value) => {
+      const scenario = new HttpCustomHeadersScenario();
+      const { serverUrl } = await scenario.start(testScenarioContext());
+      try {
+        await post(serverUrl, {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_unsafe_integer',
+            arguments: { unsafe_integer_val: value }
+          }
+        });
+        const checks = scenario
+          .getChecks()
+          .filter((c) => c.id === 'sep-2243-x-mcp-header-integer-safe-range');
+        expect(checks).toHaveLength(1);
+        expect(checks[0].status).toBe('FAILURE');
+        expect(checks[0].details?.untestable).toBe(true);
+      } finally {
+        await scenario.stop();
+      }
+    }
+  );
 });
 
 describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
