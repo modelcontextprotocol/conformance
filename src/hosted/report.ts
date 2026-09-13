@@ -302,8 +302,9 @@ export async function buildReport(
       mergeIdentities(allIdentities, seen);
       const { verdict, state, note, shown } = viewCell(cell, results);
       const stop = results ? legacyStop(results.checks) : undefined;
-      // An in-progress cell's findings are only what it waits for: listed
-      // on its row, never grouped as causes.
+      // An in-progress cell's findings, and a waiting cell's not-seen ones,
+      // are only what it waits for: listed on its row, never grouped as
+      // causes (nothing went wrong yet).
       const findings = results
         ? findingsOf(
             cell.scenario,
@@ -311,6 +312,10 @@ export async function buildReport(
             results.checks,
             stop,
             state !== 'in-progress'
+          ).map((f) =>
+            state === 'waiting' && f.by === 'scenario'
+              ? { ...f, cause: undefined }
+              : f
           )
         : undefined;
       const stoppedBy =

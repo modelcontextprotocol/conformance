@@ -218,6 +218,12 @@ describe('verdicts', () => {
       summary: { failed: 0, notSeen: 1 }
     });
     expect(by('initialize')).toMatchObject({ verdict: 'fail', state: 'fail' });
+    // What a waiting cell waits for is on its row, not a cause: only the
+    // client's own failure (and what initialize still expects) are causes.
+    expect(report.causes.flatMap((c) => c.cells)).not.toContain(
+      `${rev}/tools_call`
+    );
+    expect(report.causes.some((c) => c.by === 'client')).toBe(true);
     // The score is the verdict's: neither cell passes.
     expect(col.scored.passed).toBe(0);
     // Every cell is counted in exactly one state, n/a cells left out; the
