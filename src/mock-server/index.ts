@@ -71,13 +71,6 @@ export interface ScenarioContext {
    * the scenario can be mounted without a loopback port (see src/hosted).
    */
   createHandler(handlers: RequestHandlers): MockHandler;
-  /**
-   * Key for the MAC on the scopes auth test tokens carry. The hosted server
-   * sets one per deployment, shared through its run store, so a token one
-   * process minted verifies in another. Unset, a random key for this
-   * process is used, which is enough wherever one process does both.
-   */
-  tokenMacKey?: Buffer;
 }
 
 export { createServerStateful, createHandlerStateful } from './stateful';

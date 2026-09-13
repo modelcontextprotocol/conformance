@@ -18,16 +18,6 @@ describe('MemoryRunStore', () => {
     });
     expect(await store.listRuns('nope/')).toEqual([]);
   });
-
-  it('keeps the first shared secret stored under a name', async () => {
-    const store = new MemoryRunStore();
-    const [first, second] = await Promise.all([
-      store.sharedSecret('k', () => 'one'),
-      store.sharedSecret('k', () => 'two')
-    ]);
-    expect([first, second]).toEqual(['one', 'one']);
-    expect(await store.sharedSecret('other', () => 'three')).toBe('three');
-  });
 });
 
 describe('SqliteRunStore', () => {
@@ -56,28 +46,5 @@ describe('SqliteRunStore', () => {
     )!;
     expect(select.sql).toContain("WHERE id LIKE ? ESCAPE '\\'");
     expect(select.args).toEqual(['r\\_1\\%/%']);
-  });
-
-  it('stores a shared secret only if absent and returns what is stored', async () => {
-    const statements: { sql: string; args: unknown[] }[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (_url: string, init: { body: string }) => {
-        const { statement } = JSON.parse(init.body);
-        statements.push(statement);
-        // Another isolate stored its value first.
-        const rows = statement.sql.includes('SELECT value')
-          ? [['stored-first']]
-          : [];
-        return new Response(JSON.stringify({ rows }), { status: 200 });
-      })
-    );
-    const store = new SqliteRunStore({ token: 't' });
-    expect(await store.sharedSecret('k', () => 'mine')).toBe('stored-first');
-    const insert = statements.find((s) =>
-      s.sql.includes('INSERT INTO hosted_secrets_v1')
-    )!;
-    expect(insert.sql).toContain('ON CONFLICT(name) DO NOTHING');
-    expect(insert.args).toEqual(['k', 'mine']);
   });
 });
