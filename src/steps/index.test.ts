@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { StepsSchema, resolveFrom, resolveArguments } from './index';
+import {
+  StepsSchema,
+  describeStep,
+  resolveFrom,
+  resolveArguments
+} from './index';
 import { getScenario } from '../scenarios';
 
 describe('steps', () => {
@@ -46,12 +51,51 @@ describe('steps', () => {
     ).toEqual({ lit: 1, schema: { type: 'object', title: 'B' } });
   });
 
+  it('describes each step as one plain line', () => {
+    expect(describeStep({ op: 'tools/list' })).toBe('list the tools');
+    expect(
+      describeStep({
+        op: 'tools/call',
+        name: 'add_numbers',
+        arguments: { a: 5, b: 3 }
+      })
+    ).toBe('call add_numbers with a=5 and b=3');
+    // Strings are JSON, so edge whitespace and control characters show.
+    expect(
+      describeStep({
+        op: 'tools/call',
+        name: 'x',
+        arguments: { s: '\tin', crlf: 'a\r\nb', n: null, t: true, u: '世界' }
+      })
+    ).toBe(
+      'call x with s="\\tin", crlf="a\\r\\nb", n=null, t=true and u="世界"'
+    );
+    expect(describeStep({ op: 'tools/call', name: 'x' })).toBe(
+      'call x with no arguments'
+    );
+    expect(
+      describeStep({
+        op: 'tools/call',
+        name: 'b',
+        arguments: {
+          schema: { $from: 'tools/list', path: 'tools[name=a].inputSchema' }
+        }
+      })
+    ).toBe(
+      'call b with schema=(tools[name=a].inputSchema from the last tools/list result)'
+    );
+    expect(describeStep({ op: 'wait', ms: 500 })).toBe('wait 500 ms');
+    expect(describeStep({ op: 'disconnect' })).toBe('disconnect');
+  });
+
   it('every scenario that declares steps declares valid ones', () => {
     for (const name of [
       'initialize',
       'tools_call',
       'json-schema-ref-no-deref',
-      'elicitation-sep1034-client-defaults'
+      'elicitation-sep1034-client-defaults',
+      'http-custom-headers',
+      'http-invalid-tool-headers'
     ]) {
       const s = getScenario(name);
       expect(s?.steps, name).toBeDefined();

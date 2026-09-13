@@ -90,6 +90,42 @@ export function resolveFrom(captures: Captures, ref: FromRef): unknown {
   return cur;
 }
 
+/**
+ * One plain line per step, something a person could act on or paste into a
+ * chat: "call add_numbers with a=5 and b=3". Values are JSON, so a string's
+ * edge whitespace and control characters stay visible (`"\tindented"`);
+ * `$from` captures are named, not resolved.
+ */
+export function describeStep(step: Step): string {
+  switch (step.op) {
+    case 'tools/list':
+      return 'list the tools';
+    case 'tools/call': {
+      const args = Object.entries(step.arguments ?? {}).map(
+        ([k, v]) => `${k}=${describeValue(v)}`
+      );
+      return args.length
+        ? `call ${step.name} with ${joinWithAnd(args)}`
+        : `call ${step.name} with no arguments`;
+    }
+    case 'wait':
+      return `wait ${step.ms} ms`;
+    case 'disconnect':
+      return 'disconnect';
+  }
+}
+
+function describeValue(v: unknown): string {
+  if (isFromRef(v)) return `(${v.path} from the last ${v.$from} result)`;
+  return JSON.stringify(v) ?? String(v);
+}
+
+/** "a", "a and b", "a, b and c". */
+function joinWithAnd(items: string[]): string {
+  if (items.length < 2) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
 /** Resolve every `$from` capture in a tools/call arguments object (shallow). */
 export function resolveArguments(
   captures: Captures,

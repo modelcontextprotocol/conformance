@@ -172,6 +172,6 @@ export interface CompositeView {
     scenario: string;
     description: string;
     resultsUrl: string;
-    steps?: readonly unknown[];
+    steps?: readonly import('../steps').Step[];
   }[];
 }

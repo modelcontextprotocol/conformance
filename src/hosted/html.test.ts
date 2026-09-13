@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import {
   jsonForScript,
+  renderComposite,
   renderConfig,
   renderLanding,
   renderMatrixTable
@@ -113,6 +114,58 @@ describe('hosted HTML', () => {
     expect(html).toContain(
       'href="http://x/results/run3/2026-07-28/tools_call"'
     );
+  });
+
+  it('shows each step as a plain line next to the JSON', () => {
+    const landing = renderLanding('http://x', matrix);
+    expect(landing).toContain(
+      '<ol class=steps><li>list the tools</li><li>call add_numbers with a=5 and b=3</li></ol>'
+    );
+
+    const html = renderConfig(
+      'http://x',
+      matrix,
+      configFor('run5', {
+        revision: '2026-07-28',
+        scenario: 'http-custom-headers'
+      })
+    );
+    expect(html).toContain(
+      '<li>call test_custom_headers with region=&quot;us-west1&quot;, priority=42, verbose=false'
+    );
+    // Control characters stay visible, as JSON escapes.
+    expect(html).toContain('crlf_val=&quot;line1\\r\\nline2&quot;');
+    expect(html).toContain('verbose=null and query=&quot;SELECT 1&quot;</li>');
+    // The JSON is still there.
+    expect(html).toContain('&quot;op&quot;: &quot;tools/call&quot;');
+  });
+
+  it('composite page shows each child scenario with its steps as lines', () => {
+    const html = renderComposite({
+      runId: 'r',
+      revision: '2026-07-28',
+      url: 'http://x/s/r/2026-07-28/tools_call+json-schema-ref-no-deref/mcp',
+      resultsUrl: 'http://x/results/r/2026-07-28',
+      children: [
+        {
+          scenario: 'tools_call',
+          description: 'd',
+          resultsUrl: 'http://x/results/r/2026-07-28/tools_call',
+          steps: [
+            { op: 'tools/list' },
+            { op: 'tools/call', name: 'add_numbers', arguments: { a: 5, b: 3 } }
+          ]
+        },
+        {
+          scenario: 'no-steps',
+          description: 'd',
+          resultsUrl: 'http://x/results/r/2026-07-28/no-steps'
+        }
+      ]
+    });
+    expect(html).toContain('<li>call add_numbers with a=5 and b=3</li>');
+    expect(html).toContain('&quot;op&quot;: &quot;tools/list&quot;');
+    expect(html.match(/<ol class=steps>/g)).toHaveLength(1);
   });
 
   it('escapes request-derived values', () => {
