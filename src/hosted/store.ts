@@ -30,7 +30,17 @@ export interface SnapshotInfo {
   createdAt: number;
 }
 
+/** How long a store keeps what it holds, as the landing page states it. */
+export interface StoreRetention {
+  /** A cell's recorded traffic, counted from the cell's first request. */
+  runMs: number;
+  /** A frozen report, counted from when it was frozen. */
+  snapshotMs: number;
+}
+
 export interface RunStore {
+  /** Set by a store that deletes old runs and snapshots by itself. */
+  readonly retention?: StoreRetention;
   saveRun(id: string, scenarioName: string): Promise<void>;
   /** Scenario name for a run id, or undefined if no isolate ever saw it. */
   loadRun(id: string): Promise<string | undefined>;

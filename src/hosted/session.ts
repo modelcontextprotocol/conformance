@@ -233,9 +233,13 @@ export function finalizeChecks(
   }
 }
 
+/** Default SessionManagerOptions.ttlMs (and the CLI's `--ttl`). */
+export const DEFAULT_CELL_TTL_MS = 5 * 60_000;
+
 export class SessionManager {
   private runs = new Map<string, HostedRun>();
-  private readonly ttlMs: number;
+  /** How long a cell with no request stays in this process's memory. */
+  readonly ttlMs: number;
   private readonly auxOrigins: Partial<Record<AuxOriginRole, string>>;
   private sweeper: ReturnType<typeof setInterval>;
   readonly store: RunStore | undefined;
@@ -244,7 +248,7 @@ export class SessionManager {
   readonly writerId = randomBytes(4).toString('hex');
 
   constructor(opts: SessionManagerOptions = {}) {
-    this.ttlMs = opts.ttlMs ?? 5 * 60_000;
+    this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
     this.auxOrigins = opts.auxOrigins ?? {};
     this.store = opts.store;
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;

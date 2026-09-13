@@ -10,17 +10,32 @@
  */
 
 import type { ConformanceCheck } from '../../src/types';
-import type { RunStore, SnapshotInfo } from '../../src/hosted/store';
+import type {
+  RunStore,
+  SnapshotInfo,
+  StoreRetention
+} from '../../src/hosted/store';
 
 const API = 'https://api.val.town/v1/sqlite/execute';
 
+/** Default run retention (`CONFORMANCE_RUN_RETENTION_MS`): 6 hours. */
+export const DEFAULT_RUN_RETENTION_MS = 6 * 3600_000;
+/**
+ * Default snapshot retention (`CONFORMANCE_SNAPSHOT_RETENTION_MS`): 30 days,
+ * long enough for a permalink pasted into an issue to stay useful.
+ */
+export const DEFAULT_SNAPSHOT_RETENTION_MS = 30 * 24 * 3600_000;
+
 export interface SqliteRunStoreOptions {
   token?: string;
-  /** Runs older than this are swept. Default 6h. */
+  /**
+   * A cell's rows are swept this long after its first request. Default
+   * DEFAULT_RUN_RETENTION_MS.
+   */
   retentionMs?: number;
   /**
-   * Snapshots older than this are swept. Default 30 days: long enough for a
-   * permalink pasted into an issue to stay useful.
+   * Snapshots older than this are swept. Default
+   * DEFAULT_SNAPSHOT_RETENTION_MS.
    */
   snapshotRetentionMs?: number;
   /** Cap on checks persisted per (run, writer). Default 1000. */
@@ -46,13 +61,21 @@ export class SqliteRunStore implements RunStore {
     this.token = token;
     this.retentionMs =
       opts.retentionMs ??
-      Number(process.env.CONFORMANCE_RUN_RETENTION_MS ?? 6 * 3600_000);
+      Number(
+        process.env.CONFORMANCE_RUN_RETENTION_MS ?? DEFAULT_RUN_RETENTION_MS
+      );
     this.snapshotRetentionMs =
       opts.snapshotRetentionMs ??
       Number(
-        process.env.CONFORMANCE_SNAPSHOT_RETENTION_MS ?? 30 * 24 * 3600_000
+        process.env.CONFORMANCE_SNAPSHOT_RETENTION_MS ??
+          DEFAULT_SNAPSHOT_RETENTION_MS
       );
     this.maxChecks = opts.maxChecks ?? 1000;
+  }
+
+  /** What the landing page tells people, from the values in force. */
+  get retention(): StoreRetention {
+    return { runMs: this.retentionMs, snapshotMs: this.snapshotRetentionMs };
   }
 
   private async exec(sql: string, args: unknown[] = []): Promise<Row[]> {
