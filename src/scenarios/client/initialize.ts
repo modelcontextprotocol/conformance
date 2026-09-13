@@ -35,6 +35,15 @@ export class InitializeScenario extends HandlerScenario {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
+    // This server offers no SSE stream: a GET (a client opening one, or
+    // falling back to the old HTTP+SSE transport) or a DELETE has no body to
+    // parse, and is told so.
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end('Method Not Allowed');
+      return;
+    }
+
     let body = '';
 
     req.on('data', (chunk) => {
