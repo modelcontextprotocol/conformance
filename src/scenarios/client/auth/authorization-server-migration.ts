@@ -95,9 +95,8 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
           data.body.client_id ?? basicAuthClientId(data.authorizationHeader);
         observeAtAs2('token', cid, data.timestamp);
         const scopes = data.scope ? data.scope.split(' ') : ['mcp:basic'];
-        const token = `test-token-as2-${Date.now()}`;
-        tokenVerifier.registerToken(token, scopes);
-        return { token, scopes };
+        // createAuthServer registers the token it hands out, with its scopes.
+        return { token: `test-token-as2-${Date.now()}`, scopes };
       }
     });
 
