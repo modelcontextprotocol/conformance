@@ -2107,6 +2107,39 @@ describe('hosted server', () => {
     }
   });
 
+  it("says in initialize's check whether the client asked for the cell's revision", async () => {
+    type Check = {
+      id: string;
+      status: string;
+      details?: Record<string, unknown>;
+    };
+    const checkOf = async (run: string, version: string) => {
+      await postMcp(
+        `/s/${run}/${REV_STATEFUL}/initialize/mcp`,
+        initBody('vm', version)
+      ).then((r) => r.text());
+      const results = await fetch(
+        `${base}/results/${run}/${REV_STATEFUL}/initialize`
+      ).then((r) => r.json());
+      return results.checks.find(
+        (c: Check) => c.id === 'mcp-client-initialization'
+      ) as Check;
+    };
+    const older = await checkOf('vm1', '2025-06-18');
+    expect(older.status).toBe('SUCCESS');
+    expect(older.details).toMatchObject({
+      protocolVersionSent: '2025-06-18',
+      expectedSpecVersion: REV_STATEFUL,
+      versionMatch: false
+    });
+    const exact = await checkOf('vm2', REV_STATEFUL);
+    expect(exact.details).toMatchObject({
+      protocolVersionSent: REV_STATEFUL,
+      expectedSpecVersion: REV_STATEFUL,
+      versionMatch: true
+    });
+  });
+
   it('HTML-escapes the run id in the results report', () => {
     const html = renderResults(
       {

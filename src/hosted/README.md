@@ -302,7 +302,9 @@ scenario's own answer), and when the client asked for another version
 records the INFO check `hosted-version-offered` with
 `details.requestedVersion` and `details.answeredVersion`, so a client that
 declines or goes quiet is explained. One that carries on at the version it
-asked for is a wrong revision.
+asked for is a wrong revision. The initialize scenario's
+`mcp-client-initialization` check says the same: on a hosted cell its
+`details.versionMatch` is whether the client asked for the cell's revision.
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
 `stateless-request-rejected`, except a rejected `initialize`, which it notes

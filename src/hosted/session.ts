@@ -26,6 +26,7 @@ import { getScenario, scenarios } from '../scenarios';
 import type { RunStore } from './store';
 import {
   addProtocolVersion,
+  atCellRevision,
   identityCheck,
   identityChecksIn,
   identityKey,
@@ -510,14 +511,7 @@ export class SessionManager {
       // Judged on a copy, as with a store: many scenarios' getChecks()
       // appends its "expected but never seen" FAILUREs to the live log, so
       // judging the live instance would let a page view change the verdict.
-      return {
-        ...ref,
-        checks: [
-          ...finalizeChecks(ref.scenarioName, raw, ref.revision),
-          ...run.hostedChecks
-        ],
-        recorded: raw.length + hostedFailures(run.hostedChecks)
-      };
+      return judgedAtRevision(ref, raw, run.hostedChecks);
     }
     let byWriter = new Map<string, ConformanceCheck[]>();
     let known = false;
@@ -553,18 +547,7 @@ export class SessionManager {
         return true;
       })
     ].sort(byTime);
-    return {
-      ...ref,
-      checks: [
-        ...finalizeChecks(
-          ref.scenarioName,
-          scenarioLog.sort(byTime),
-          ref.revision
-        ),
-        ...hosted
-      ],
-      recorded: scenarioLog.length + hostedFailures(hosted)
-    };
+    return judgedAtRevision(ref, scenarioLog.sort(byTime), hosted);
   }
 
   /** Exercised cells of a run: hit in this process, or saved to the store. */
@@ -628,6 +611,29 @@ export class SessionManager {
 
 const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
   (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
+
+/**
+ * A cell's results from its scenario's raw log (merged across processes)
+ * and the hosted layer's checks: the scenario's judgement, as a cell served
+ * on its revision reads it (atCellRevision()), then the hosted checks.
+ */
+function judgedAtRevision(
+  ref: CellRef,
+  scenarioLog: ConformanceCheck[],
+  hosted: ConformanceCheck[]
+): RunResults {
+  return {
+    ...ref,
+    checks: [
+      ...atCellRevision(
+        finalizeChecks(ref.scenarioName, scenarioLog, ref.revision),
+        ref.revision
+      ),
+      ...hosted
+    ],
+    recorded: scenarioLog.length + hostedFailures(hosted)
+  };
+}
 
 function logStoreError(e: unknown): void {
   console.error('[hosted] run store:', e instanceof Error ? e.message : e);
