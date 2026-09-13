@@ -1,0 +1,136 @@
+import { describe, it, expect } from 'vitest';
+import { mdCode, mdText, reportMarkdown, utcMinute } from './markdown';
+import type { CellReport, RunReport } from './report';
+
+const cell = (over: Partial<CellReport>): CellReport => ({
+  scenario: 'tools_call',
+  revision: '2025-11-25',
+  scoring: 'scored',
+  startable: true,
+  verdict: 'pass',
+  state: 'pass',
+  resultsUrl: 'http://x/results/r/2025-11-25/tools_call',
+  ...over
+});
+
+const report = (cells: CellReport[], over: Partial<RunReport> = {}) =>
+  ({
+    runId: 'r',
+    generatedAt: '2026-09-13T21:47:05.123Z',
+    columns: [
+      {
+        revision: '2025-11-25',
+        scored: { passed: 1, total: 18, startable: 15 },
+        cells,
+        notScored: [],
+        counts: { pass: 1, fail: 1, 'not-tried': 12 },
+        identities: []
+      }
+    ],
+    identities: [
+      { name: 'VS Code', version: '1.137', protocolVersions: ['2025-11-25'] }
+    ],
+    causes: [],
+    ...over
+  }) as RunReport;
+
+describe('markdown escaping', () => {
+  it('keeps traffic-derived text from opening markup or a table cell', () => {
+    expect(mdText('a <script>x</script> [l](u) *b* `c` d|e\\f\n g')).toBe(
+      'a \\<script\\>x\\</script\\> \\[l\\](u) \\*b\\* \\`c\\` d\\|e\\\\f g'
+    );
+    expect(mdCode('id`x|y')).toBe('`id x\\|y`');
+    expect(utcMinute('2026-09-13T21:47:05.123Z')).toBe('2026-09-13 21:47 UTC');
+  });
+});
+
+describe('reportMarkdown', () => {
+  it('lists only reached cells, with each failure marked as whose it is', () => {
+    const md = reportMarkdown(
+      report(
+        [
+          cell({
+            summary: {
+              passed: 17,
+              failed: 0,
+              warnings: 0,
+              info: 1,
+              skipped: 0,
+              total: 18
+            }
+          }),
+          cell({
+            scenario: 'auth/token-endpoint-auth-basic',
+            verdict: 'fail',
+            state: 'fail',
+            summary: {
+              passed: 16,
+              failed: 1,
+              warnings: 0,
+              info: 0,
+              skipped: 0,
+              total: 17
+            },
+            findings: [
+              {
+                status: 'FAILURE',
+                check: 'token-endpoint-auth-method',
+                reason: 'Client used client_secret_post | <b>',
+                by: 'client',
+                cause: 'k'
+              }
+            ]
+          }),
+          cell({
+            scenario: 'initialize',
+            verdict: 'incomplete',
+            state: 'not-tried'
+          })
+        ],
+        {
+          causes: [
+            {
+              key: 'k',
+              by: 'client',
+              check: 'token-endpoint-auth-method',
+              text: 'Client used client_secret_post | <b>',
+              cells: ['2025-11-25/auth/token-endpoint-auth-basic']
+            }
+          ]
+        }
+      ),
+      { live: 'http://x/results/r' }
+    );
+    expect(md).toBe(
+      [
+        '**MCP conformance: run `r`**',
+        'As of 2026-09-13 21:47 UTC: http://x/results/r',
+        'Client: VS Code 1.137 (protocol 2025-11-25)',
+        '2025-11-25: 1 of 18 scored cells pass. Reached: 1 pass, 1 fail; 12 not tried.',
+        '',
+        '**What went wrong, by cause**',
+        '1. Client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> (2025-11-25/auth/token-endpoint-auth-basic)',
+        '',
+        '| Cell | Result | Pass / fail / warn | What happened |',
+        '| --- | --- | --- | --- |',
+        '| [2025-11-25 tools_call](http://x/results/r/2025-11-25/tools_call) | pass | 17 / 0 / 0 |  |',
+        '| [2025-11-25 auth/token-endpoint-auth-basic](http://x/results/r/2025-11-25/tools_call) | fail | 16 / 1 / 0 | ' +
+          'client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> |',
+        '',
+        '"client" failures were seen in the client’s traffic; "not seen" ones are the scenario’s own expectations that nothing has met yet.',
+        ''
+      ].join('\n')
+    );
+  });
+
+  it('points a frozen copy at itself and at the live report', () => {
+    const md = reportMarkdown(
+      report([], { snapshotId: 's1', frozenAt: '2026-09-13T22:00:00.000Z' }),
+      { live: 'http://x/results/r', snapshot: 'http://x/results/r/snapshot/s1' }
+    );
+    expect(md).toContain(
+      'Frozen 2026-09-13 22:00 UTC: http://x/results/r/snapshot/s1 (live report: http://x/results/r)'
+    );
+    expect(md).toContain('No cell has been reached yet.');
+  });
+});

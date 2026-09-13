@@ -16,8 +16,13 @@
  *                                            /mcp, whatever the scenario's
  *                                            own mcpPath (see MCP_PATH).
  *   GET  /results/<run-id>[/<rev>[/<scenario>]]
- *                                            Results, mirroring /s
- *   DELETE /results/<run-id>                 Tear down every cell of the run
+ *                                            Results, mirroring /s; a run or
+ *                                            column also as `?format=md`
+ *   POST /results/<run-id>/freeze            Freeze the run's report → its
+ *                                            snapshot (303 for a browser)
+ *   GET  /results/<run-id>/snapshot/<id>     A frozen report (html/json/md)
+ *   DELETE /results/<run-id>                 Tear down every cell of the run,
+ *                                            and its snapshots
  *
  * Config and results answer HTML when the request prefers text/html and JSON
  * otherwise; `?format=html|json` overrides. At a cell URL a GET that accepts
@@ -41,6 +46,7 @@ import {
   UnknownScenarioError,
   NotHostableError,
   cellId,
+  mintId,
   mintRunId
 } from './session';
 import {
@@ -81,11 +87,14 @@ import {
   summarize,
   verdictFor,
   type CellState,
+  type ReportSources,
+  type RunReport,
   type Verdict
 } from './report';
 import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
-import type { RunStore } from './store';
+import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
+import { reportMarkdown } from './markdown';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
@@ -120,6 +129,9 @@ export interface HostedServerOptions {
 }
 
 const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
+
+/** Snapshot ids are minted like run ids (see mintId()), shorter. */
+const SNAPSHOT_ID_RE = /^[0-9a-z]{1,32}$/;
 
 /** Cell config as served under /s/<run-id>[/<rev>[/<scenario>]]. */
 export interface CellConfig {
@@ -160,6 +172,9 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     store: opts.store
   });
   const matrix = buildMatrix({ auxOrigins, exclude: opts.exclude });
+  // Frozen reports live in the run store, so any isolate can serve a
+  // permalink; a single process without one keeps them in memory.
+  const snapshots: RunStore = opts.store ?? new MemoryRunStore();
   const revisions: readonly string[] = matrix.revisions;
   const app = express();
   // Copy JSON POST bodies as they flow so the report can name the client
@@ -891,6 +906,34 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       res.status(400).json({ error: 'invalid run-id' });
       return;
     }
+    // A frozen report: /results/<run-id>/snapshot/<snapshot-id>.
+    if (revision === 'snapshot') {
+      const [snapshotId] = rest;
+      let body: string | undefined;
+      if (segments.length === 3 && SNAPSHOT_ID_RE.test(snapshotId)) {
+        try {
+          body = await snapshots.loadSnapshot(runId, snapshotId);
+        } catch (e) {
+          console.error(
+            '[hosted] snapshot:',
+            e instanceof Error ? e.message : e
+          );
+          res
+            .status(503)
+            .json({ error: 'could not read the snapshot; try again' });
+          return;
+        }
+      }
+      if (body === undefined) {
+        res.status(404).json({
+          error: `no snapshot '${rest.join('/')}' for run '${runId}'`
+        });
+        return;
+      }
+      sendReport(req, res, relink(req, JSON.parse(body) as RunReport));
+      return;
+    }
+
     if (segments.length >= 2 && !revisions.includes(revision)) {
       res
         .status(404)
@@ -927,16 +970,58 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
     // Run or column scope: a verdict per cell of the matrix.
     const scope = segments.length === 2 ? (revision as SpecVersion) : undefined;
-    const report = await buildReport(matrix, runId, scope, {
-      listCells: (id) => sessions.listCells(id),
-      results: (id) => sessions.results(id),
-      resultsUrl: (ref) => resultsUrlFor(req, cellId(ref))
-    });
-    if (wantsHtml(req)) {
-      res.type('html').send(renderReport(origin(req), matrix, report));
-    } else {
-      res.json(report);
+    const report = await buildReport(matrix, runId, scope, reportSources(req));
+    // The live page lists the run's frozen copies; nothing else needs them.
+    const frozen =
+      reportFormat(req) === 'html'
+        ? await snapshots.listSnapshots(runId).catch(() => [])
+        : undefined;
+    sendReport(req, res, report, frozen);
+  });
+
+  // Freeze the run's report as it stands now: a permalink later traffic
+  // cannot change, for an issue or a chat. The whole run, whichever page
+  // asked. No protection beyond the run id itself, like the rest of a run.
+  app.post('/results/:runId/freeze', async (req, res) => {
+    const { runId } = req.params;
+    if (!RUN_ID_RE.test(runId)) {
+      res.status(400).json({ error: 'invalid run-id' });
+      return;
     }
+    const report = await buildReport(
+      matrix,
+      runId,
+      undefined,
+      reportSources(req)
+    );
+    const snapshotId = mintId(8);
+    const frozen: RunReport = {
+      ...report,
+      snapshotId,
+      frozenAt: report.generatedAt
+    };
+    try {
+      await snapshots.saveSnapshot(runId, snapshotId, JSON.stringify(frozen));
+    } catch (e) {
+      console.error('[hosted] snapshot:', e instanceof Error ? e.message : e);
+      res.status(503).json({ error: 'could not save the snapshot; try again' });
+      return;
+    }
+    const url = resultsUrlFor(req, runId, 'snapshot', snapshotId);
+    if (wantsHtml(req)) {
+      res.redirect(303, `/results/${runId}/snapshot/${snapshotId}`);
+      return;
+    }
+    res
+      .status(201)
+      .location(url)
+      .json({
+        runId,
+        snapshotId,
+        frozenAt: frozen.frozenAt,
+        url,
+        markdownUrl: `${url}?format=md`
+      });
   });
 
   app.delete('/results/:runId', async (req, res) => {
@@ -945,8 +1030,77 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       return;
     }
     await sessions.destroyRun(req.params.runId);
+    await snapshots.deleteSnapshots(req.params.runId).catch((e) => {
+      console.error('[hosted] snapshot:', e instanceof Error ? e.message : e);
+    });
     res.status(204).end();
   });
+
+  function reportSources(req: Request): ReportSources {
+    return {
+      listCells: (id) => sessions.listCells(id),
+      results: (id) => sessions.results(id),
+      resultsUrl: (ref) => resultsUrlFor(req, cellId(ref))
+    };
+  }
+
+  /** `?format=md` (or `markdown`) is the report as Markdown. */
+  function reportFormat(req: Request): 'html' | 'json' | 'md' {
+    const format = req.query.format;
+    if (format === 'md' || format === 'markdown') return 'md';
+    return wantsHtml(req) ? 'html' : 'json';
+  }
+
+  /**
+   * A stored report's cell links, rebuilt for this request: a snapshot
+   * keeps what the run said, not the host name it was frozen through.
+   */
+  function relink(req: Request, report: RunReport): RunReport {
+    for (const col of report.columns) {
+      for (const c of [...col.cells, ...col.notScored]) {
+        c.resultsUrl = resultsUrlFor(req, report.runId, c.revision, c.scenario);
+      }
+    }
+    return report;
+  }
+
+  function sendReport(
+    req: Request,
+    res: Response,
+    report: RunReport,
+    frozen?: SnapshotInfo[]
+  ): void {
+    const live = report.snapshotId
+      ? resultsUrlFor(req, report.runId)
+      : resultsUrlFor(
+          req,
+          report.runId,
+          ...(report.revision ? [report.revision] : [])
+        );
+    const snapshot = report.snapshotId
+      ? resultsUrlFor(req, report.runId, 'snapshot', report.snapshotId)
+      : undefined;
+    const markdown = reportMarkdown(report, {
+      live,
+      ...(snapshot && { snapshot })
+    });
+    switch (reportFormat(req)) {
+      case 'md':
+        res.set('content-type', 'text/markdown; charset=utf-8').send(markdown);
+        return;
+      case 'html':
+        res.type('html').send(
+          renderReport(matrix, report, {
+            markdown,
+            liveUrl: live,
+            ...(frozen && { snapshots: frozen })
+          })
+        );
+        return;
+      default:
+        res.json(report);
+    }
+  }
 
   return { app, sessions, matrix };
 }

@@ -6,9 +6,13 @@ import {
   renderComposite,
   renderConfig,
   renderLanding,
-  renderMatrixTable
+  renderMatrixTable,
+  renderReport
 } from './html';
 import type { RunConfig } from './server';
+import { buildReport } from './report';
+import { cellId } from './session';
+import { identityCheck, identityOf } from './identity';
 
 const matrix = buildMatrix({ exclude: { 'sse-retry': 'excluded <here>' } });
 
@@ -265,5 +269,43 @@ describe('hosted HTML', () => {
     expect(jsonForScript({ a: '</script><b>' })).toBe(
       '{"a":"\\u003c/script>\\u003cb>"}'
     );
+  });
+
+  it('escapes traffic-derived values on the run report', async () => {
+    // A client name and a failure message are whatever the client sent.
+    const evil = '"><img src=x onerror=alert(1)>';
+    const id = 'r/2025-11-25/tools_call';
+    const report = await buildReport(matrix, 'r', undefined, {
+      listCells: async () => [
+        { runId: 'r', revision: '2025-11-25', scenarioName: 'tools_call' }
+      ],
+      results: async (cell) =>
+        cell === id
+          ? {
+              checks: [
+                {
+                  id: 'c',
+                  name: 'c',
+                  description: '',
+                  status: 'FAILURE',
+                  timestamp: '',
+                  errorMessage: evil
+                },
+                identityCheck(
+                  identityOf({ name: evil, protocolVersion: '2025-11-25' })
+                )
+              ],
+              recorded: 1
+            }
+          : undefined,
+      resultsUrl: (ref) => `http://x/results/${cellId(ref)}`
+    });
+    expect(report.causes[0].text).toBe(evil); // on the row and as a cause
+    const html = renderReport(matrix, report, {
+      markdown: evil,
+      liveUrl: 'http://x/results/r'
+    });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
   });
 });

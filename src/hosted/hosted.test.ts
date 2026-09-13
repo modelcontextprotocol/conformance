@@ -1146,6 +1146,205 @@ describe('hosted server', () => {
     );
   });
 
+  it('reports a run with inline failures, causes, states, a frozen permalink and Markdown', async () => {
+    const run = 'report1';
+    const html = (path: string) =>
+      fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
+        r.text()
+      );
+    type Finding = { check: string; reason: string; by: string };
+    type Cell = {
+      scenario: string;
+      verdict: string;
+      state: string;
+      findings?: Finding[];
+      cause?: string;
+    };
+    type Report = {
+      snapshotId?: string;
+      frozenAt?: string;
+      columns: { revision: string; cells: Cell[] }[];
+      causes: { key: string; text: string; cells: string[] }[];
+    };
+    const cellOf = (report: Report, rev: string, name: string) =>
+      report.columns
+        .find((c) => c.revision === rev)!
+        .cells.find((c) => c.scenario === name)!;
+    const XSS = '<img src=x onerror=alert(1)>';
+
+    // pass, from a client whose name is markup
+    await postMcp(`/s/${run}/${REV_STATEFUL}/initialize/mcp`, {
+      ...initBody(),
+      params: { ...initBody().params, clientInfo: { name: XSS, version: '1' } }
+    }).then((r) => r.text());
+    // in progress: reached, the tool never called
+    await postMcp(`/s/${run}/${REV_STATEFUL}/tools_call/mcp`, initBody()).then(
+      (r) => r.text()
+    );
+    // fail, seen in the client's traffic: no _meta
+    await postMcp(
+      `/s/${run}/${REV_STATELESS}/request-metadata/mcp`,
+      { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+      statelessHeaders
+    ).then((r) => r.text());
+    // fail, with markup in the header the failure quotes
+    await postMcp(
+      `/s/${run}/${REV_STATELESS}/json-schema-ref-no-deref/mcp`,
+      statelessBody('tools/list'),
+      { 'mcp-protocol-version': XSS }
+    ).then((r) => r.text());
+    // incomplete: a legacy initialize alone, on two cells
+    const legacy = {
+      ...initBody(),
+      params: { ...initBody().params, protocolVersion: REV_STATEFUL }
+    };
+    for (const s of ['tools_call', 'http-standard-headers']) {
+      await postMcp(`/s/${run}/${REV_STATELESS}/${s}/mcp`, legacy, {
+        'mcp-protocol-version': REV_STATEFUL
+      }).then((r) => r.text());
+    }
+
+    const report: Report = await fetch(`${base}/results/${run}`).then((r) =>
+      r.json()
+    );
+    expect(cellOf(report, REV_STATEFUL, 'initialize').state).toBe('pass');
+    expect(cellOf(report, REV_STATEFUL, 'tools_call')).toMatchObject({
+      verdict: 'incomplete',
+      state: 'in-progress',
+      findings: [
+        {
+          check: 'tool-add-numbers',
+          reason: 'Tool was not called by client',
+          by: 'scenario'
+        }
+      ]
+    });
+    const metadata = cellOf(report, REV_STATELESS, 'request-metadata');
+    expect(metadata.state).toBe('fail');
+    expect(metadata.findings!.some((f) => f.by === 'client')).toBe(true);
+    for (const s of ['tools_call', 'http-standard-headers']) {
+      expect(cellOf(report, REV_STATELESS, s)).toMatchObject({
+        verdict: 'incomplete',
+        state: 'incomplete'
+      });
+    }
+    expect(report.columns[1].cells.some((c) => c.state === 'not-tried')).toBe(
+      true
+    );
+    // The legacy handshake is one cause over both cells it stopped.
+    const legacyCause = report.causes.find((c) =>
+      c.cells.includes(`${REV_STATELESS}/tools_call`)
+    )!;
+    expect(legacyCause.cells).toEqual(
+      expect.arrayContaining([
+        `${REV_STATELESS}/tools_call`,
+        `${REV_STATELESS}/http-standard-headers`
+      ])
+    );
+    expect(legacyCause.text).toMatch(/^The client spoke 2025-11-25 only/);
+    expect(cellOf(report, REV_STATELESS, 'tools_call').cause).toBe(
+      legacyCause.key
+    );
+
+    // The page: failures inline with their reasons, causes once, states.
+    const page = await html(`/results/${run}`);
+    expect(page).toContain('What went wrong, by cause');
+    expect(page).toContain('Cells the client reached');
+    expect(page).toContain('<div>Tool was not called by client</div>');
+    expect(page).toContain(
+      metadata.findings![0].reason.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    );
+    for (const state of [
+      'pass',
+      'fail',
+      'in progress',
+      'incomplete',
+      'not tried'
+    ]) {
+      expect(page).toContain(`>${state}</span>`);
+    }
+    expect(page).toContain('freeze a copy to link to');
+    // Traffic-derived markup is text, never markup.
+    expect(page).not.toContain('<img src=x');
+    expect(page).toContain('&lt;img src=x onerror=alert(1)&gt;');
+
+    // Markdown: only the cells the client reached, whose failure is whose.
+    const mdRes = await fetch(`${base}/results/${run}?format=md`);
+    expect(mdRes.headers.get('content-type')).toMatch(/^text\/markdown/);
+    const md = await mdRes.text();
+    expect(md).toContain(
+      '| Cell | Result | Pass / fail / warn | What happened |'
+    );
+    expect(md).toContain(`[${REV_STATEFUL} tools_call](`);
+    expect(md).toContain('waiting for: Tool was not called by client');
+    expect(md).toContain('client: `');
+    expect(md).toMatch(/1\. Client: The client spoke 2025-11-25 only/);
+    expect(md).not.toContain(`${REV_STATEFUL} elicitation`); // not tried
+    // Escaped: `\<img` renders as text, never as a tag.
+    expect(md).not.toMatch(/(^|[^\\])<img/m);
+    expect(md).toContain('\\<img src=x onerror=alert(1)\\>');
+
+    // Freeze: a permalink later traffic cannot change.
+    const freeze = await fetch(`${base}/results/${run}/freeze`, {
+      method: 'POST'
+    });
+    expect(freeze.status).toBe(201);
+    const { snapshotId, url, frozenAt } = await freeze.json();
+    expect(snapshotId).toMatch(/^[0-9a-hjkmnp-tv-z]{8}$/);
+    expect(url).toBe(`${base}/results/${run}/snapshot/${snapshotId}`);
+    expect(freeze.headers.get('location')).toBe(url);
+    const before: Report = await fetch(url).then((r) => r.json());
+    expect(before).toMatchObject({ snapshotId, frozenAt });
+
+    await postMcp(
+      `/s/${run}/${REV_STATEFUL}/initialize/mcp`,
+      initBody('second-client')
+    ).then((r) => r.text());
+    await postMcp(`/s/${run}/${REV_STATELESS}/request-metadata/mcp`, legacy, {
+      'mcp-protocol-version': REV_STATEFUL
+    }).then((r) => r.text());
+    const later = 'elicitation-sep1034-client-defaults';
+    await postMcp(`/s/${run}/${REV_STATEFUL}/${later}/mcp`, initBody()).then(
+      (r) => r.text()
+    );
+    const live: Report = await fetch(`${base}/results/${run}`).then((r) =>
+      r.json()
+    );
+    expect(cellOf(live, REV_STATEFUL, later).state).not.toBe('not-tried');
+    expect(await fetch(url).then((r) => r.json())).toEqual(before);
+    expect(cellOf(before, REV_STATEFUL, later).state).toBe('not-tried');
+
+    const frozenPage = await html(`/results/${run}/snapshot/${snapshotId}`);
+    expect(frozenPage).toContain('A frozen copy, taken');
+    expect(frozenPage).not.toContain('freeze a copy to link to');
+    expect(frozenPage).not.toContain('<img src=x');
+    const frozenMd = await fetch(`${url}?format=md`).then((r) => r.text());
+    expect(frozenMd).toContain(`Frozen ${frozenAt.slice(0, 10)}`);
+    expect(frozenMd).toContain(url);
+    // The live page lists its frozen copies.
+    expect(await html(`/results/${run}`)).toContain(
+      `/results/${run}/snapshot/${snapshotId}`
+    );
+    // A browser's form post lands on the frozen copy.
+    const viaForm = await fetch(`${base}/results/${run}/freeze`, {
+      method: 'POST',
+      headers: { accept: 'text/html' },
+      redirect: 'manual'
+    });
+    expect(viaForm.status).toBe(303);
+    expect(viaForm.headers.get('location')).toMatch(
+      new RegExp(`^/results/${run}/snapshot/[0-9a-z]{8}$`)
+    );
+
+    expect(
+      (await fetch(`${base}/results/${run}/snapshot/nope0000`)).status
+    ).toBe(404);
+    expect((await fetch(`${base}/results/${run}/snapshot`)).status).toBe(404);
+    // Deleting the run deletes its snapshots too.
+    await fetch(`${base}/results/${run}`, { method: 'DELETE' });
+    expect((await fetch(url)).status).toBe(404);
+  });
+
   it('never changes results by reading them', async () => {
     const page = (path: string) =>
       fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
@@ -1435,6 +1634,46 @@ describe('hosted server across processes (shared store)', () => {
     await Promise.all(
       servers.map((s) => new Promise<void>((r) => s.close(() => r())))
     );
+  });
+
+  it('serves a frozen report from any process', async () => {
+    const [a, b] = origins;
+    await fetch(`${a}/s/frz/${REV_STATEFUL}/initialize/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          clientInfo: { name: 'frz', version: '0' },
+          capabilities: {}
+        }
+      })
+    }).then((r) => r.text());
+    await apps[0].sessions.flush();
+    const frozen = await fetch(`${a}/results/frz/freeze`, {
+      method: 'POST'
+    }).then((r) => r.json());
+    const onB = await fetch(`${b}/results/frz/snapshot/${frozen.snapshotId}`);
+    expect(onB.status).toBe(200);
+    const report = await onB.json();
+    expect(report).toMatchObject({
+      runId: 'frz',
+      snapshotId: frozen.snapshotId,
+      frozenAt: frozen.frozenAt
+    });
+    const cell = report.columns[0].cells.find(
+      (c: { scenario: string }) => c.scenario === 'initialize'
+    );
+    expect(cell.state).toBe('pass');
+    // Cell links are the serving process's, not the one it was frozen on.
+    expect(cell.resultsUrl).toBe(`${b}/results/frz/${REV_STATEFUL}/initialize`);
+    expect(await store.listSnapshots('frz')).toHaveLength(1);
   });
 
   it('writes nothing to the store when results are read', async () => {

@@ -11,10 +11,21 @@ import type { CellRef } from './session';
 import {
   incompleteNote,
   type CellReport,
-  type RunReport,
-  type Verdict
+  type CellState,
+  type RunReport
 } from './report';
 import type { ClientIdentity } from './identity';
+import type { Cause } from './findings';
+import type { SnapshotInfo } from './store';
+import {
+  BY_LABEL,
+  REACHED,
+  STATE_LABEL,
+  causeNumbers,
+  countsText,
+  onlyWaiting,
+  utcMinute
+} from './markdown';
 import { describeStep, type Step } from '../steps';
 import {
   COMPOSITE_SEPARATOR,
@@ -22,10 +33,13 @@ import {
   type CompositeView
 } from './composite';
 
-const VERDICT_STYLE: Record<Verdict, string> = {
+const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
   fail: 'background:#fee2e2;color:#991b1b',
-  incomplete: 'background:#f3f4f6;color:#6b7280',
+  'in-progress': 'background:#dbeafe;color:#1e40af',
+  incomplete: 'background:#fef3c7;color:#92400e',
+  'not-tried': 'background:#f3f4f6;color:#6b7280',
+  'not-startable': 'background:#f3f4f6;color:#9ca3af',
   'n/a': 'background:#f3f4f6;color:#9ca3af'
 };
 
@@ -80,6 +94,11 @@ const css = `
   h1 code,h2 code{font-size:inherit}
   .note{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;
     padding:.5rem .75rem}
+  form.inline{display:inline}
+  ol.causes li{margin:.5rem 0}
+  tr.group td{background:#f9fafb;font-weight:600;color:#374151}
+  td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.what div{margin:.1rem 0}
 `;
 
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
@@ -495,7 +514,7 @@ ${copyScript}`
 
 /** One line saying where the cell stands, for the cell results page. */
 function statusLine(status: CellStatus): string {
-  const pill = `<span class=pill style="${VERDICT_STYLE[status.verdict]}">${status.verdict}</span>`;
+  const pill = statePill(status.state);
   const scoring = `<span class=pill style="${SCORING_STYLE[status.scoring]}">${SCORING_LABEL[status.scoring]}</span>`;
   let note = '';
   if (status.verdict === 'n/a') {
@@ -601,29 +620,146 @@ function identityLine(identities: ClientIdentity[]): string {
     .join('<br>');
 }
 
+function statePill(state: CellState): string {
+  return `<span class=pill style="${STATE_STYLE[state]}">${STATE_LABEL[state]}</span>`;
+}
+
 function verdictCell(cell: CellReport): string {
   if (cell.verdict === 'n/a') {
     return `<td class="cell na">n/a <span class=muted>— ${esc(cell.reason ?? '')}</span></td>`;
   }
-  const pill = `<span class=pill style="${VERDICT_STYLE[cell.verdict]}">${cell.verdict}</span>`;
-  let lines = `<div>${pill} ${scoringPillFor(cell)}</div>`;
-  if (cell.summary && cell.verdict === 'incomplete') {
+  let lines = `<div>${statePill(cell.state)} ${scoringPillFor(cell)}</div>`;
+  const link = (text: string, title = '') =>
+    `<div class=muted><a href="${esc(cell.resultsUrl)}"${
+      title ? ` title="${esc(title)}"` : ''
+    }>${text}</a></div>`;
+  if (cell.state === 'in-progress') {
     // Its failures are only what the scenario still expects (see
     // incompleteNote()): counting them here would read as a verdict.
-    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}" title="${esc(
-      cell.note ?? ''
-    )}">reached, nothing tested yet</a></div>`;
+    lines += link('reached, nothing tested yet', cell.note);
+  } else if (cell.state === 'incomplete') {
+    lines += link('reached, stopped short', cell.note);
   } else if (cell.summary) {
     const s = cell.summary;
-    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}">${s.passed} passed, ${s.failed} failed${
-      s.warnings ? `, ${s.warnings} warning${s.warnings === 1 ? '' : 's'}` : ''
-    }, ${s.total} total</a></div>`;
+    lines += link(
+      `${s.passed} passed, ${s.failed} failed${
+        s.warnings
+          ? `, ${s.warnings} warning${s.warnings === 1 ? '' : 's'}`
+          : ''
+      }, ${s.total} total`
+    );
   } else if (!cell.startable) {
     lines += `<div class=muted>not startable: ${esc(cell.startReason ?? '')}</div>`;
   } else {
-    lines += `<div class=muted><a href="${esc(cell.resultsUrl)}">nothing recorded</a></div>`;
+    lines += link('not tried');
   }
   return `<td class=cell>${lines}</td>`;
+}
+
+/** "(cause 2)" when a finding's or a cell's cause covers other cells too. */
+function causeLink(
+  key: string | undefined,
+  causes: ReadonlyMap<string, Cause>,
+  numbers: ReadonlyMap<string, number>
+): string {
+  const cause = key ? causes.get(key) : undefined;
+  if (!cause || cause.cells.length < 2) return '';
+  const n = numbers.get(cause.key)!;
+  return ` <a href="#cause-${n}" class=muted>cause ${n}</a>`;
+}
+
+/** A reached cell's "what happened": its findings, or why it stopped. */
+function happenedHtml(
+  cell: CellReport,
+  causes: ReadonlyMap<string, Cause>,
+  numbers: ReadonlyMap<string, number>
+): string {
+  const findings = cell.findings ?? [];
+  if (cell.state === 'in-progress') {
+    return findings.length
+      ? `<div class=muted>waiting for:</div>${findings
+          .map((f) => `<div>${esc(f.reason)}</div>`)
+          .join('')}`
+      : `<div class=muted>${esc(cell.note ?? '')}</div>`;
+  }
+  if (cell.state === 'incomplete') {
+    return `<div>${esc(cell.note ?? '')}${causeLink(cell.cause, causes, numbers)}</div>`;
+  }
+  if (!findings.length)
+    return '<span class=muted>no failures or warnings</span>';
+  const lines = findings.map(
+    (f) =>
+      `<div><span class=pill style="${STATUS_STYLE[f.status]}" title="${
+        f.by === 'client'
+          ? 'seen in the client’s traffic'
+          : 'the scenario’s own expectation, not seen yet'
+      }">${BY_LABEL[f.by]}</span> <code>${esc(f.check)}</code> ${esc(
+        f.reason
+      )}${causeLink(f.cause, causes, numbers)}</div>`
+  );
+  if (onlyWaiting(cell)) {
+    lines.push(
+      '<div class=muted>every failure is something the scenario has not seen yet; the flow may not have finished</div>'
+    );
+  }
+  return lines.join('');
+}
+
+/** One row per cell the client reached, grouped by revision. */
+function reachedTable(report: RunReport): string {
+  const causes = new Map(report.causes.map((c) => [c.key, c]));
+  const numbers = causeNumbers(report.causes);
+  const groups = report.columns.flatMap((col) => {
+    const cells = col.cells.filter((c) => REACHED.includes(c.state));
+    if (!cells.length) return [];
+    const rows = cells.map((cell) => {
+      const s = cell.summary;
+      const counts =
+        s && (cell.state === 'pass' || cell.state === 'fail')
+          ? `${s.passed} / ${s.failed} / ${s.warnings}`
+          : '–';
+      return (
+        `<tr><td><a href="${esc(cell.resultsUrl)}"><code>${esc(cell.scenario)}</code></a></td>` +
+        `<td>${statePill(cell.state)}</td><td class=num>${counts}</td>` +
+        `<td class=what>${happenedHtml(cell, causes, numbers)}</td></tr>`
+      );
+    });
+    return [
+      `<tr class=group><td colspan=4>${esc(col.revision)}</td></tr>${rows.join('')}`
+    ];
+  });
+  if (!groups.length) {
+    return '<p class=muted>No cell has been reached yet: point the client at a cell’s MCP URL.</p>';
+  }
+  return (
+    `<table class=reached><tr><th>cell</th><th>result</th><th>pass / fail / warn</th><th>what happened</th></tr>` +
+    `${groups.join('')}</table>`
+  );
+}
+
+/** Each cause once, with the cells it covers. */
+function causesList(report: RunReport): string {
+  if (!report.causes.length) return '';
+  const items = report.causes.map((c, i) => {
+    const cells = c.cells
+      .map(
+        (key) =>
+          `<a href="/results/${esc(report.runId)}/${esc(key)}">${esc(key)}</a>`
+      )
+      .join(', ');
+    return (
+      `<li id="cause-${i + 1}"><span class=pill style="${
+        c.by === 'client' ? STATUS_STYLE.FAILURE : STATUS_STYLE.SKIPPED
+      }">${BY_LABEL[c.by]}</span> ${c.check ? `<code>${esc(c.check)}</code> ` : ''}${esc(c.text)}` +
+      `<div class=muted>${c.cells.length} cell${c.cells.length === 1 ? '' : 's'}: ${cells}</div></li>`
+    );
+  });
+  return (
+    `<h2>What went wrong, by cause</h2><p class=muted>Each cause once, with the cells it covers. ` +
+    `<i>client</i>: seen in the client’s traffic. <i>not seen</i>: the scenario’s own ` +
+    `expectation that nothing has met yet (the client may not have got that far).</p>` +
+    `<ol class=causes>${items.join('')}</ol>`
+  );
 }
 
 function scoringPillFor(cell: CellReport): string {
@@ -632,15 +768,62 @@ function scoringPillFor(cell: CellReport): string {
   )}">${SCORING_LABEL[cell.scoring]}</span>`;
 }
 
-/** Report page for a run or one of its columns. */
+export interface ReportPageOptions {
+  /** The report as Markdown (see ./markdown.ts), for the copy button. */
+  markdown: string;
+  /** The live report, which a frozen copy links back to. */
+  liveUrl: string;
+  /** The run's frozen copies, listed on the live report. */
+  snapshots?: readonly SnapshotInfo[];
+}
+
+/** The line under the heading: copy, other formats, freeze or "frozen". */
+function reportActions(report: RunReport, opts: ReportPageOptions): string {
+  const run = esc(report.runId);
+  const here = report.snapshotId
+    ? `/results/${run}/snapshot/${esc(report.snapshotId)}`
+    : `/results/${run}${report.revision ? `/${esc(report.revision)}` : ''}`;
+  const formats =
+    `<button class=copy data-copy-text="${esc(opts.markdown)}">copy as Markdown</button> ` +
+    `<a href="${here}?format=md">Markdown</a> · <a href="${here}?format=json">JSON</a>`;
+  if (report.frozenAt) {
+    return (
+      `<p class=note>A frozen copy, taken ${esc(utcMinute(report.frozenAt))}: it does not change ` +
+      `as more traffic arrives, so it is safe to link from an issue or a chat. ` +
+      `<a href="${esc(opts.liveUrl)}">The live report</a> has anything since; ` +
+      `the cell links open the live results.</p><div class=actions>${formats}</div>`
+    );
+  }
+  const earlier = opts.snapshots?.length
+    ? `<p class=muted>Frozen copies of this run: ${opts.snapshots
+        .map(
+          (s) =>
+            `<a href="/results/${run}/snapshot/${esc(s.id)}">${esc(
+              utcMinute(new Date(s.createdAt).toISOString())
+            )}</a>`
+        )
+        .join(' · ')}</p>`
+    : '';
+  return (
+    `<div class=actions>${formats} · ` +
+    `<form method=post action="/results/${run}/freeze" class=inline>` +
+    `<button class=copy type=submit>freeze a copy to link to</button></form> ` +
+    `<span class=muted>— a permalink to the whole run as it stands now; later traffic will not change it</span></div>` +
+    earlier
+  );
+}
+
+/** Report page for a run or one of its columns, live or frozen. */
 export function renderReport(
-  origin: string,
   matrix: HostedMatrix,
-  report: RunReport
+  report: RunReport,
+  opts: ReportPageOptions
 ): string {
-  const title = report.revision
-    ? `results — run ${report.runId} @ ${report.revision}`
-    : `results — run ${report.runId}`;
+  const title = report.frozenAt
+    ? `results — run ${report.runId}, frozen ${utcMinute(report.frozenAt)}`
+    : report.revision
+      ? `results — run ${report.runId} @ ${report.revision}`
+      : `results — run ${report.runId}`;
   const head =
     `<tr><th>scenario</th>` +
     report.columns
@@ -668,9 +851,9 @@ export function renderReport(
       const items = col.notScored
         .map(
           (c) =>
-            `<li><code>${esc(c.scenario)}</code> <span class=pill style="${
-              VERDICT_STYLE[c.verdict]
-            }">${c.verdict}</span> <span class=muted>${esc(
+            `<li><code>${esc(c.scenario)}</code> ${statePill(
+              c.state
+            )} <span class=muted>${esc(
               SCORING_LABEL[c.scoring]
             )}${c.reason ? ` — ${esc(c.reason)}` : ''}</span> · <a href="${esc(
               c.resultsUrl
@@ -680,33 +863,58 @@ export function renderReport(
       return `<h3>${esc(col.revision)}: run but not scored</h3><ul>${items}</ul>`;
     })
     .join('');
+  const run = esc(report.runId);
   const crumbs = [
     `<a href="/">matrix</a>`,
-    `<a href="/results/${esc(report.runId)}">run <code>${esc(report.runId)}</code></a>`
+    `<a href="/results/${run}">run <code>${run}</code></a>`
   ];
   if (report.revision) crumbs.push(`<code>${esc(report.revision)}</code>`);
+  if (report.frozenAt) {
+    crumbs.push(`frozen ${esc(utcMinute(report.frozenAt))}`);
+  }
   crumbs.push(
-    `<a href="/s/${esc(report.runId)}${
+    `<a href="/s/${run}${
       report.revision ? `/${esc(report.revision)}` : ''
     }">config</a>`
   );
+  const summary = report.columns
+    .map((col) => {
+      const counts = countsText(col.counts, [...REACHED, 'not-tried']);
+      return (
+        `<li><a href="/results/${run}/${esc(col.revision)}">${esc(col.revision)}</a>: ` +
+        `<b>${col.scored.passed} of ${col.scored.total}</b> scored cells pass ` +
+        `<span class=muted>(${col.scored.startable} startable here)</span>` +
+        `${counts ? ` · ${esc(counts)}` : ''}</li>`
+      );
+    })
+    .join('');
   return page(
     title,
-    `<h1>results — run <code>${esc(report.runId)}</code>${
+    `<h1>results — run <code>${run}</code>${
       report.revision ? ` <small>@ ${esc(report.revision)}</small>` : ''
-    }</h1>
+    }${report.frozenAt ? ' <small>(frozen)</small>' : ''}</h1>
 <p class=crumbs>${crumbs.join(' › ')}</p>
 <p>Client: ${identityLine(report.identities)}</p>
-<p class=muted>A cell passes when checks were recorded and none is a FAILURE;
-a cell stays <i>incomplete</i> until the client does something its scenario
-tests, even when it lists what it is still waiting for as failures.
+${reportActions(report, opts)}
+<h2>Summary</h2>
+<ul>${summary}</ul>
+${causesList(report)}
+<h2>Cells the client reached</h2>
+${reachedTable(report)}
+<details><summary>as Markdown, to paste into an issue or a chat</summary><pre>${esc(
+      opts.markdown
+    )}</pre></details>
+<h2>Every cell</h2>
+<p class=muted>A cell passes when checks were recorded and none is a FAILURE.
+A cell the client never reached reads <i>not tried</i>; one it reached where
+nothing its scenario tests has happened yet reads <i>in progress</i> and lists
+what it is waiting for; one where the client stopped short (it spoke only an
+older revision and did not retry) reads <i>incomplete</i>.
 <i>X of N scored</i> counts passes among every cell the revision's requirement
 set scores (N is the set's count; the cells this deployment can start are
-given alongside). Not-scored and unlisted cells are listed below the table.
-<a href="${esc(origin)}/results/${esc(report.runId)}${
-      report.revision ? `/${esc(report.revision)}` : ''
-    }?format=json">JSON</a>.</p>
+given alongside). Not-scored and unlisted cells are listed below the table.</p>
 <table>${head}${rows}</table>
-${notScored}`
+${notScored}
+${copyScript}`
   );
 }
