@@ -48,26 +48,74 @@ export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
  *                  only an older revision and did not retry
  *   not-startable  this deployment cannot start the cell
  *
- * `pass`, `fail` and `n/a` are the verdict's.
+ * and `fail` is split by whose failures they are:
+ *
+ *   waiting        every FAILURE is "not seen" — the scenario's own
+ *                  expectation that nothing has met yet (see ./shown.ts),
+ *                  none from the client's traffic: an auth flow sitting on a
+ *                  consent screen, an elicitation form still to answer.
+ *
+ * `pass`, `fail` and `n/a` are the verdict's. The verdict and the score are
+ * never changed by the state.
  */
 export type CellState =
   | 'pass'
   | 'fail'
+  | 'waiting'
   | 'in-progress'
   | 'incomplete'
   | 'not-tried'
   | 'not-startable'
   | 'n/a';
 
+/** What a `waiting` cell's note says. */
+export const WAITING_NOTE =
+  'waiting for the client or the person to finish the flow';
+
+/** `checks` as shown (./shown.ts), so a "not seen" row can be told apart. */
 export function stateOf(
   cell: Pick<MatrixCell, 'scoring' | 'startable'>,
   verdict: Verdict,
-  checks: readonly ConformanceCheck[] | undefined
+  checks: readonly ShownCheck[] | undefined
 ): CellState {
+  if (verdict === 'fail' && checks && onlyNotSeen(checks)) return 'waiting';
   if (verdict !== 'incomplete') return verdict;
   if (!cell.startable) return 'not-startable';
   if (!checks) return 'not-tried';
   return legacyStop(checks) ? 'incomplete' : 'in-progress';
+}
+
+function onlyNotSeen(checks: readonly ShownCheck[]): boolean {
+  const failures = checks.filter((c) => c.status === 'FAILURE');
+  return failures.length > 0 && failures.every((c) => c.notSeen);
+}
+
+/** A cell's results as every page shows them: rows, verdict, state, note. */
+export interface CellView {
+  verdict: Verdict;
+  state: CellState;
+  /** On a startable incomplete cell or a waiting one: why, in plain words. */
+  note?: string;
+  /** The rows (./shown.ts); absent when the cell was never exercised. */
+  shown?: ShownCheck[];
+}
+
+export function viewCell(
+  cell: Pick<MatrixCell, 'scenario' | 'revision' | 'scoring' | 'startable'>,
+  results: Pick<RunResults, 'checks' | 'recorded'> | undefined
+): CellView {
+  const shown = results
+    ? shownChecks(cell.scenario, cell.revision, results.checks)
+    : undefined;
+  const verdict = verdictFor(cell, results?.checks, results?.recorded);
+  const state = stateOf(cell, verdict, shown);
+  const note =
+    state === 'waiting'
+      ? WAITING_NOTE
+      : verdict === 'incomplete' && cell.startable
+        ? incompleteNote(shown ?? [])
+        : undefined;
+  return { verdict, state, ...(note && { note }), ...(shown && { shown }) };
 }
 
 export interface CheckSummary {
@@ -95,7 +143,10 @@ export interface CellReport {
   verdict: Verdict;
   /** Where the cell stands, finer than the verdict (see CellState). */
   state: CellState;
-  /** On a startable incomplete cell: why, in plain words (incompleteNote()). */
+  /**
+   * On a startable incomplete cell: why, in plain words (incompleteNote()).
+   * On a waiting cell: WAITING_NOTE.
+   */
   note?: string;
   /** Absent when the cell was never exercised or does not apply. */
   summary?: CheckSummary;
@@ -249,8 +300,7 @@ export async function buildReport(
       const seen = results ? identitiesIn(results.checks) : [];
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
-      const verdict = verdictFor(cell, results?.checks, results?.recorded);
-      const state = stateOf(cell, verdict, results?.checks);
+      const { verdict, state, note, shown } = viewCell(cell, results);
       const stop = results ? legacyStop(results.checks) : undefined;
       // An in-progress cell's findings are only what it waits for: listed
       // on its row, never grouped as causes.
@@ -284,13 +334,8 @@ export async function buildReport(
         }),
         verdict,
         state,
-        ...(verdict === 'incomplete' &&
-          cell.startable && { note: incompleteNote(results?.checks ?? []) }),
-        ...(results && {
-          summary: summarize(
-            shownChecks(cell.scenario, cell.revision, results.checks)
-          )
-        }),
+        ...(note && { note }),
+        ...(shown && { summary: summarize(shown) }),
         ...(findings?.length && { findings }),
         ...(stoppedBy && { cause: stoppedBy }),
         resultsUrl: sources.resultsUrl(ref),

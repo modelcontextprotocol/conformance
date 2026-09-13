@@ -1086,6 +1086,69 @@ describe('hosted server', () => {
     expect(results.verdict).toBe('pass');
   });
 
+  it('reads a cell whose flow is waiting on a person as waiting, not failed', async () => {
+    // MRTR right after the client connected: its tools listed, none called
+    // yet. In progress, saying what it waits for, on the cell page too.
+    const mcp = `/s/wait/${REV_STATELESS}/sep-2322-client-request-state/mcp`;
+    const res = await postMcp(mcp, statelessBody('tools/list'), {
+      ...statelessHeaders,
+      'mcp-method': 'tools/list'
+    });
+    expect(res.status).toBe(200);
+    await res.text();
+    const cell = `/results/wait/${REV_STATELESS}/sep-2322-client-request-state`;
+    const listed = await fetch(`${base}${cell}`).then((r) => r.json());
+    expect(listed).toMatchObject({ state: 'in-progress' });
+    expect(listed.note).toMatch(/the 5 failures listed are what it is still/);
+    // The client called the tool and its elicitation form is open: the
+    // server has answered with input_required and waits for the answer.
+    const call = await postMcp(
+      mcp,
+      statelessBody('tools/call', { name: 'test_mrtr_echo_state' }),
+      {
+        ...statelessHeaders,
+        'mcp-method': 'tools/call',
+        'mcp-name': 'test_mrtr_echo_state'
+      }
+    );
+    expect(call.status).toBe(200);
+    expect(await call.text()).toContain('input_required');
+    const json = await fetch(`${base}${cell}`).then((r) => r.json());
+    expect(json).toMatchObject({
+      verdict: 'fail',
+      state: 'waiting',
+      note: 'waiting for the client or the person to finish the flow',
+      summary: { failed: 0, notSeen: 5 }
+    });
+    const page = await fetch(`${base}${cell}`, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(page).toContain('>waiting</span>');
+    expect(page).toContain(
+      'waiting for the client or the person to finish the flow'
+    );
+
+    // The run report says the same, in HTML, JSON and Markdown; the score
+    // and verdict are unchanged.
+    const report = await fetch(`${base}/results/wait`).then((r) => r.json());
+    const row = report.columns[1].cells.find(
+      (c: { scenario: string }) =>
+        c.scenario === 'sep-2322-client-request-state'
+    );
+    expect(row).toMatchObject({ verdict: 'fail', state: 'waiting' });
+    expect(report.columns[1].counts.waiting).toBe(1);
+    const md = await fetch(`${base}/results/wait?format=md`).then((r) =>
+      r.text()
+    );
+    expect(md).toMatch(
+      /\| waiting \| 0 \/ 0 \/ 0 \| waiting for the client or the person to finish the flow/
+    );
+    const reportPage = await fetch(`${base}/results/wait`, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(reportPage).toContain('1 waiting');
+  });
+
   it('says why each skipped check was skipped, and keeps them out of the counts', async () => {
     const res = await postMcp(
       `/s/skip/${REV_STATELESS}/http-standard-headers/mcp`,

@@ -138,7 +138,19 @@ sent the legacy handshake to a `2026-07-28` cell, "the client spoke
 2025-11-25 only (it opened with initialize) and did not retry at
 2026-07-28". The HTML leads each failed check with its reason (its
 `errorMessage`, or `details.message`), with the check's id, name and
-description underneath. Per column, `scored: { passed, total, startable }` counts passes
+description underneath.
+
+A cell's results (page, JSON and the counts in the run report) show one row
+per check: a check recorded again with the same id, description and
+`details.method` — the protected-resource metadata fetched on every retry —
+is one row with `repeats`, kept by the expected-failures collapse rule (the
+worst, ties to the latest). A FAILURE the scenario reports before it has
+seen anything, such as a step of the auth flow the client never reached, is
+marked `notSeen` with the reason "the flow did not reach this step" (or the
+scenario's own words, "Tool was not called by client") and counted in
+`summary.notSeen`, apart from the client's `failed`. Every FAILURE, WARNING
+and SKIPPED row carries a one-line `reason`, and no row carries `details:
+null`. None of this changes a check's status or a verdict. Per column, `scored: { passed, total, startable }` counts passes
 among every cell the revision's requirement set scores — `total` is the
 yaml's count whether or not this deployment can start the cell, `startable`
 how many of those it can (the HTML says "3 of 32 scored (11 startable
@@ -157,8 +169,12 @@ person can see how a client did without opening each cell. Every cell has a
 `not-tried` (no request reached it), `in-progress` (the client reached it
 but nothing its scenario tests has happened yet) and `incomplete` (the
 client reached it and stopped short: it opened with a legacy `initialize`
-and never retried at the cell's revision); the others are `pass`, `fail`,
-`not-startable` and `n/a`. Each column counts its cells per state. A cell
+and never retried at the cell's revision), and splits `fail` off as
+`waiting` when every failure is not seen — nothing the client did is wrong,
+the flow has not finished (a consent screen, an elicitation form still to
+answer); its note says "waiting for the client or the person to finish the
+flow", and its verdict stays `fail` until the steps happen. The others are
+`pass`, `fail`, `not-startable` and `n/a`. Each column counts its cells per state. A cell
 the client reached lists its FAILUREs and WARNINGs as `findings`, one line
 each (`errorMessage`, else `details.message`, else the check's description,
 plus any `expectedX`/`actualX` pair or `stopReason` in its details), marked

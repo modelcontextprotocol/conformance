@@ -26,10 +26,12 @@ import {
   causeNumbers,
   countsLine,
   countsText,
-  onlyWaiting,
+  NO_FINDINGS,
+  showsCounts,
   stopNote,
   utcMinute,
-  waitingFor
+  waitingFor,
+  type Unmet
 } from './markdown';
 import { describeStep, type Step } from '../steps';
 import {
@@ -41,6 +43,7 @@ import {
 const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
   fail: 'background:#fee2e2;color:#991b1b',
+  waiting: 'background:#e0e7ff;color:#3730a3',
   'in-progress': 'background:#dbeafe;color:#1e40af',
   incomplete: 'background:#fef3c7;color:#92400e',
   'not-tried': 'background:#f3f4f6;color:#6b7280',
@@ -528,6 +531,8 @@ function statusLine(status: CellStatus): string {
     note = `not startable here: ${esc(status.startReason ?? '')}`;
   } else if (status.verdict === 'incomplete') {
     note = esc(status.note ?? incompleteNote([]));
+  } else if (status.state === 'waiting') {
+    note = esc(status.note ?? '');
   } else if (status.reason) {
     note = esc(status.reason);
   }
@@ -659,14 +664,7 @@ function verdictCell(cell: CellReport): string {
   } else if (cell.state === 'incomplete') {
     lines += link('reached, stopped short', cell.note);
   } else if (cell.summary) {
-    const s = cell.summary;
-    lines += link(
-      `${s.passed} passed, ${s.failed} failed${
-        s.warnings
-          ? `, ${s.warnings} warning${s.warnings === 1 ? '' : 's'}`
-          : ''
-      }, ${s.total} total`
-    );
+    lines += link(countsLine(cell.summary), cell.note);
   } else if (!cell.startable) {
     lines += `<div class=muted>not startable: ${esc(cell.startReason ?? '')}</div>`;
   } else {
@@ -687,6 +685,13 @@ function causeLink(
   return ` <a href="#cause-${n}" class=muted>cause ${n}</a>`;
 }
 
+/** "the flow has not reached <code>a</code>, …", or the reason. */
+function unmetHtml(u: Unmet): string {
+  return u.checks
+    ? `the flow has not reached ${u.checks.map((c) => `<code>${esc(c)}</code>`).join(', ')}`
+    : esc(u.reason);
+}
+
 /** A reached cell's "what happened": its findings, or why it stopped. */
 function happenedHtml(
   cell: CellReport,
@@ -697,31 +702,39 @@ function happenedHtml(
   if (cell.state === 'in-progress') {
     return findings.length
       ? `<div class=muted>waiting for:</div>${waitingFor(cell)
-          .map((reason) => `<div>${esc(reason)}</div>`)
+          .map((u) => `<div>${unmetHtml(u)}</div>`)
           .join('')}`
       : `<div class=muted>${esc(cell.note ?? '')}</div>`;
   }
   if (cell.state === 'incomplete') {
     return `<div>${esc(stopNote(cell))}${causeLink(cell.cause, causes, numbers)}</div>`;
   }
-  if (!findings.length)
-    return '<span class=muted>no failures or warnings</span>';
-  const lines = findings.map(
-    (f) =>
-      `<div><span class=pill style="${STATUS_STYLE[f.status]}" title="${
-        f.by === 'client'
-          ? 'seen in the client’s traffic'
-          : 'the scenario’s own expectation, not seen yet'
-      }">${BY_LABEL[f.by]}</span> <code>${esc(f.check)}</code> ${esc(
-        f.reason
-      )}${causeLink(f.cause, causes, numbers)}</div>`
-  );
-  if (onlyWaiting(cell)) {
-    lines.push(
-      '<div class=muted>every failure is something the scenario has not seen yet; the flow may not have finished</div>'
+  // A waiting cell's own expectations are what it waits for; anything the
+  // client did (a warning) is listed as on any other row.
+  const waiting = cell.state === 'waiting';
+  const lines = findings
+    .filter((f) => !waiting || f.by === 'client')
+    .map(
+      (f) =>
+        `<div><span class=pill style="${STATUS_STYLE[f.status]}" title="${
+          f.by === 'client'
+            ? 'seen in the client’s traffic'
+            : 'the scenario’s own expectation, not seen yet'
+        }">${BY_LABEL[f.by]}</span> <code>${esc(f.check)}</code> ${esc(
+          f.reason
+        )}${causeLink(f.cause, causes, numbers)}</div>`
+    );
+  if (waiting) {
+    lines.unshift(
+      `<div class=muted>${esc(cell.note ?? '')}; not seen yet:</div>` +
+        waitingFor(cell)
+          .map((u) => `<div>${unmetHtml(u)}</div>`)
+          .join('')
     );
   }
-  return lines.join('');
+  return lines.length
+    ? lines.join('')
+    : `<span class=muted>${NO_FINDINGS}</span>`;
 }
 
 /** One row per cell the client reached, grouped by revision. */
@@ -734,7 +747,7 @@ function reachedTable(report: RunReport): string {
     const rows = cells.map((cell) => {
       const s = cell.summary;
       const counts =
-        s && (cell.state === 'pass' || cell.state === 'fail')
+        s && showsCounts(cell)
           ? `${s.passed} / ${s.failed} / ${s.warnings}`
           : '–';
       return (
@@ -927,7 +940,9 @@ ${reachedTable(report)}
 <p class=muted>A cell passes when checks were recorded and none is a FAILURE.
 A cell the client never reached reads <i>not tried</i>; one it reached where
 nothing its scenario tests has happened yet reads <i>in progress</i> and lists
-what it is waiting for; one where the client stopped short (it spoke only an
+what it is waiting for; one whose only failures are steps it has not seen yet
+(a sign-in or a form still to finish) reads <i>waiting</i>, though its verdict
+is still a fail until they happen; one where the client stopped short (it spoke only an
 older revision and did not retry) reads <i>incomplete</i>.
 <i>X of N scored</i> counts passes among every cell the revision's requirement
 set scores (N is the set's count; the cells this deployment can start are

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import { buildReport, incompleteNote, verdictFor } from './report';
-import { cellId, type CellRef } from './session';
+import { cellId, finalizeChecks, type CellRef } from './session';
 import { identityCheck, identityOf } from './identity';
 import { legacyProbeCheck } from './wire';
 import type { ConformanceCheck } from '../types';
@@ -183,6 +183,60 @@ describe('verdicts', () => {
     expect(
       column.columns[0].cells.find((c) => c.scenario === 'initialize')!.verdict
     ).toBe('n/a');
+  });
+
+  it('reads a failed cell whose failures are all not seen as waiting, and accounts for every cell', async () => {
+    const matrix = buildMatrix({});
+    const rev = '2025-11-25';
+    // tools_call: the client initialized, the tool is not called yet.
+    const connected = finalizeChecks('tools_call', [check('SUCCESS')], rev);
+    // initialize: the same, plus a failure of the client's own.
+    const broken = [...connected, check('FAILURE')];
+    const logs = new Map([
+      ['tools_call', connected],
+      ['initialize', broken]
+    ]);
+    const report = await buildReport(matrix, 'r', rev, {
+      listCells: async () =>
+        [...logs.keys()].map((scenarioName) => ({
+          runId: 'r',
+          revision: rev,
+          scenarioName
+        })),
+      results: async (id) => {
+        const checks = logs.get(id.split('/').slice(2).join('/'))!;
+        return { checks, recorded: checks.length };
+      },
+      resultsUrl: () => ''
+    });
+    const col = report.columns[0];
+    const by = (name: string) => col.cells.find((c) => c.scenario === name)!;
+    expect(by('tools_call')).toMatchObject({
+      verdict: 'fail',
+      state: 'waiting',
+      note: 'waiting for the client or the person to finish the flow',
+      summary: { failed: 0, notSeen: 1 }
+    });
+    expect(by('initialize')).toMatchObject({ verdict: 'fail', state: 'fail' });
+    // The score is the verdict's: neither cell passes.
+    expect(col.scored.passed).toBe(0);
+    // Every cell is counted in exactly one state, n/a cells left out; the
+    // startable ones are the reached and the not tried.
+    const applicable = col.cells.filter((c) => c.state !== 'n/a');
+    const counted = Object.values(col.counts).reduce((a, b) => a + b, 0);
+    expect(counted).toBe(applicable.length);
+    const startable = applicable.filter((c) => c.startable).length;
+    const reachedOrNot = [
+      'pass',
+      'fail',
+      'waiting',
+      'in-progress',
+      'incomplete',
+      'not-tried'
+    ] as const;
+    expect(reachedOrNot.reduce((sum, s) => sum + (col.counts[s] ?? 0), 0)).toBe(
+      startable
+    );
   });
 
   it('counts a check recorded again once', async () => {

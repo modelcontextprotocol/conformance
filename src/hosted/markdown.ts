@@ -8,12 +8,13 @@
  */
 
 import type { CellReport, CellState, CheckSummary, RunReport } from './report';
-import type { Cause, Finding } from './findings';
+import { NOT_REACHED, type Cause, type Finding } from './findings';
 import type { ClientIdentity } from './identity';
 
 export const STATE_LABEL: Record<CellState, string> = {
   pass: 'pass',
   fail: 'fail',
+  waiting: 'waiting',
   'in-progress': 'in progress',
   incomplete: 'incomplete',
   'not-tried': 'not tried',
@@ -25,6 +26,7 @@ export const STATE_LABEL: Record<CellState, string> = {
 export const REACHED: readonly CellState[] = [
   'pass',
   'fail',
+  'waiting',
   'in-progress',
   'incomplete'
 ];
@@ -114,10 +116,48 @@ function causeRef(
   return ` (cause ${numbers.get(key)})`;
 }
 
-/** An in-progress cell's distinct reasons, what it is still waiting for. */
-export function waitingFor(cell: CellReport): string[] {
-  return [...new Set((cell.findings ?? []).map((f) => f.reason))];
+/** One thing a waiting or in-progress cell has not seen yet. */
+export interface Unmet {
+  reason: string;
+  /** The steps it covers, when the reason is only NOT_REACHED. */
+  checks?: string[];
 }
+
+/**
+ * What a waiting or in-progress cell has not seen yet: each distinct reason
+ * once, and "the flow did not reach this step" as the steps it covers.
+ */
+export function waitingFor(cell: CellReport): Unmet[] {
+  const unmet = (cell.findings ?? []).filter(
+    (f) => cell.state === 'in-progress' || f.by === 'scenario'
+  );
+  const out: Unmet[] = [];
+  for (const f of unmet) {
+    if (f.reason === NOT_REACHED) {
+      const steps = out.find((u) => u.checks);
+      if (steps) steps.checks!.push(f.check);
+      else out.push({ reason: f.reason, checks: [f.check] });
+    } else if (!out.some((u) => u.reason === f.reason)) {
+      out.push({ reason: f.reason });
+    }
+  }
+  return out;
+}
+
+/** Whether a cell's row shows its pass / fail / warn counts. */
+export function showsCounts(cell: CellReport): boolean {
+  return ['pass', 'fail', 'waiting'].includes(cell.state);
+}
+
+/** "the flow has not reached `a`, `b`", or the reason as plain text. */
+function unmetText(u: Unmet): string {
+  return u.checks
+    ? `the flow has not reached ${u.checks.map(mdCode).join(', ')}`
+    : mdText(u.reason);
+}
+
+/** What a passing cell's row says. */
+export const NO_FINDINGS = 'no failures or warnings';
 
 /**
  * Why an incomplete cell stopped: its note without the tail about the
@@ -125,16 +165,6 @@ export function waitingFor(cell: CellReport): string[] {
  */
 export function stopNote(cell: CellReport): string {
   return (cell.note ?? '').split('; ')[0];
-}
-
-/** Whether every failure on a failed cell is only the scenario still waiting. */
-export function onlyWaiting(cell: CellReport): boolean {
-  const failures = (cell.findings ?? []).filter((f) => f.status === 'FAILURE');
-  return (
-    cell.state === 'fail' &&
-    failures.length > 0 &&
-    failures.every((f) => f.by === 'scenario')
-  );
 }
 
 function happened(
@@ -145,23 +175,31 @@ function happened(
   const findings = cell.findings ?? [];
   if (cell.state === 'in-progress') {
     return findings.length
-      ? `waiting for: ${waitingFor(cell).map(mdText).join('; ')}`
+      ? `waiting for: ${waitingFor(cell).map(unmetText).join('; ')}`
       : mdText(cell.note ?? '');
   }
   if (cell.state === 'incomplete') {
     return mdText(stopNote(cell)) + causeRef(cell.cause, causes, numbers);
   }
-  const lines = findings.map(
+  // A waiting cell's own expectations are what it waits for; anything the
+  // client did (a warning) is listed as on any other row.
+  const listed =
+    cell.state === 'waiting'
+      ? findings.filter((f) => f.by === 'client')
+      : findings;
+  const lines = listed.map(
     (f) =>
       `${f.status === 'WARNING' ? 'warning, ' : ''}${BY_LABEL[f.by]}: ` +
       `${mdCode(f.check)} ${mdText(f.reason)}${causeRef(f.cause, causes, numbers)}`
   );
-  if (onlyWaiting(cell)) {
-    lines.push(
-      'every failure is something the scenario has not seen yet; the flow may not have finished'
+  if (cell.state === 'waiting') {
+    lines.unshift(
+      `${mdText(cell.note ?? '')}; not seen yet: ${waitingFor(cell)
+        .map(unmetText)
+        .join('; ')}`
     );
   }
-  return lines.join('<br>');
+  return lines.length ? lines.join('<br>') : NO_FINDINGS;
 }
 
 export interface MarkdownLinks {
@@ -190,7 +228,8 @@ export function reportMarkdown(
     const reached = countsText(col.counts, REACHED);
     const notTried = col.counts['not-tried'] ?? 0;
     out.push(
-      `- ${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass. ` +
+      `- ${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass ` +
+        `(${col.scored.startable} startable here). ` +
         `Reached: ${reached || 'none'}` +
         (notTried ? `; ${notTried} not tried.` : '.')
     );
@@ -224,7 +263,7 @@ export function reportMarkdown(
     for (const cell of rows) {
       const s = cell.summary;
       const counts =
-        s && (cell.state === 'pass' || cell.state === 'fail')
+        s && showsCounts(cell)
           ? `${s.passed} / ${s.failed} / ${s.warnings}`
           : '–';
       out.push(

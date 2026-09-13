@@ -339,6 +339,14 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(page).toContain('1 passed, 0 failed, 6 not seen');
     expect(page).toContain('>not seen</span> the flow did not reach this step');
     expect(page).not.toContain('Expected Check Missing');
+    // Nothing the client did is wrong: the cell waits, its verdict stays.
+    expect(results).toMatchObject({ verdict: 'fail', state: 'waiting' });
+    const md = await fetch(`${rs}/results/stuck?format=md`).then((r) =>
+      r.text()
+    );
+    expect(md).toContain(
+      'not seen yet: the flow has not reached `authorization-server-metadata`, `client-registration`'
+    );
   });
 
   it('notes a dual-era client probing a dated auth cell, and does not fail it', async () => {

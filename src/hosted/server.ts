@@ -89,10 +89,8 @@ import {
 } from './wire';
 import {
   buildReport,
-  incompleteNote,
-  stateOf,
   summarize,
-  verdictFor,
+  viewCell,
   type CellState,
   type ReportSources,
   type RunReport,
@@ -102,7 +100,7 @@ import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
 import { reportMarkdown } from './markdown';
-import { shownChecks, type ShownCheck } from './shown';
+import type { ShownCheck } from './shown';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
@@ -1081,13 +1079,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         cell.scoring === 'n/a'
           ? undefined
           : await sessions.results(cellId(ref));
-      const status = cellStatus(cell, r);
       // One row per check, as the page and the report count them.
-      const shown = shownChecks(
-        ref.scenarioName,
-        ref.revision,
-        r?.checks ?? []
-      );
+      const { shown, ...status } = cellStatus(cell, r);
       if (wantsHtml(req)) {
         res.type('html').send(renderResults(ref, shown, status));
       } else {
@@ -1251,7 +1244,8 @@ export interface CellStatus {
   state: CellState;
   /**
    * On a startable incomplete cell: why, in plain words — nothing recorded
-   * yet, or the checks listed are only what the scenario still expects.
+   * yet, or the checks listed are only what the scenario still expects. On
+   * a waiting cell: that it waits for the flow to finish.
    */
   note?: string;
   /** For n/a (why the scenario does not apply) and not_scored/unlisted. */
@@ -1264,19 +1258,19 @@ export interface CellStatus {
 export function cellStatus(
   cell: MatrixCell,
   results: Pick<RunResults, 'checks' | 'recorded'> | undefined
-): CellStatus {
-  const verdict = verdictFor(cell, results?.checks, results?.recorded);
+): CellStatus & { shown: ShownCheck[] } {
+  const { verdict, state, note, shown } = viewCell(cell, results);
   return {
     scoring: cell.scoring,
     verdict,
-    state: stateOf(cell, verdict, results?.checks),
-    ...(verdict === 'incomplete' &&
-      cell.startable && { note: incompleteNote(results?.checks ?? []) }),
+    state,
+    ...(note && { note }),
     ...(cell.reason !== undefined && { reason: cell.reason }),
     ...(!cell.startable &&
       cell.scoring !== 'n/a' && {
         startable: false as const,
         ...(cell.startReason !== undefined && { startReason: cell.startReason })
-      })
+      }),
+    shown: shown ?? []
   };
 }
