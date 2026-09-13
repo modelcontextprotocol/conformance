@@ -784,6 +784,12 @@ export async function runPreRegistration(serverUrl: string): Promise<void> {
     handle401
   )(fetch);
 
+  if (USE_STATELESS_LIFECYCLE) {
+    await statelessRequest(serverUrl, 'tools/list', {}, oauthFetch);
+    logger.debug('Successfully listed tools with pre-registered credentials');
+    return;
+  }
+
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
     fetch: oauthFetch
   });
