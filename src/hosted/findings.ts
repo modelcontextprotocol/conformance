@@ -233,6 +233,10 @@ export function notSeenIn(
   const expected = expectedKeys(scenario, revision);
   return (c) => {
     if (c.status !== 'FAILURE' && c.status !== 'WARNING') return false;
+    // A requirement the flow never reached, which the scenario marks
+    // untestable ("Not testable: client never reached the authorization
+    // endpoint"), is not something the client did.
+    if (c.details?.untestable === true) return true;
     const key = findingKey({
       status: c.status,
       check: c.id,

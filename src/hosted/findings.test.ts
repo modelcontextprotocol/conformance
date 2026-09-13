@@ -5,9 +5,11 @@ import {
   legacyCauseKey,
   legacyCauseText,
   legacyStop,
+  notSeenIn,
   oneLineReason
 } from './findings';
 import { finalizeChecks } from './session';
+import { untestableCheck } from '../scenarios/untestable';
 import { identityCheck, identityOf } from './identity';
 import { getOnMcpCheck, legacyProbeCheck, wrongRevisionCheck } from './wire';
 import type { ConformanceCheck } from '../types';
@@ -329,6 +331,34 @@ describe('groupCauses', () => {
         check: waitingFinding.check,
         text: waitingFinding.reason,
         cells: ['2025-11-25/tools_call']
+      }
+    ]);
+  });
+});
+
+describe('not seen', () => {
+  it('counts a requirement the flow never reached as not seen, not the client’s', () => {
+    // What the iss scenarios record when a client only fetched metadata.
+    const unreached = untestableCheck(
+      'sep-2468-client-rejects-missing-iss',
+      'Name',
+      'Client MUST reject an authorization response without iss',
+      'client never reached the authorization endpoint, so it never received an authorization response to validate',
+      []
+    );
+    const scenario = 'auth/iss-supported-missing';
+    const notSeen = notSeenIn(scenario, '2026-07-28', [unreached]);
+    expect(notSeen(unreached)).toBe(true);
+    // A failure seen in the traffic stays the client's.
+    expect(notSeen(check({ id: 'sep-2468-client-rejects-missing-iss' }))).toBe(
+      false
+    );
+    expect(
+      findingsOf(scenario, '2026-07-28', [unreached], undefined, true)
+    ).toMatchObject([
+      {
+        by: 'scenario',
+        reason: expect.stringContaining('Not testable: client never reached')
       }
     ]);
   });
