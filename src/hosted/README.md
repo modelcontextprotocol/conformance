@@ -119,12 +119,19 @@ is the scenario's context (credentials, tool arguments such as
 `http-custom-headers`' `toolCalls`, `steps`) tagged with `name`, as a JSON
 string. The HTML pages have copy-to-clipboard buttons for the same data, and
 show each step as a plain line a person can make a hand-driven client follow
-("call add_numbers with a=5 and b=3"), with the JSON beside it. Every cell
-and composite also has a button that copies the bare MCP URL. An `auth/*`
-cell, which has no generic-client steps, shows plain ones for a hand-driven
-client (connect, approve the sign-in, list the tools) and any `client_id` /
-`client_secret` the scenario gives the client as copyable fields;
-`request-metadata` and `http-standard-headers` say what a person should
+("call add*numbers with a=5 and b=3"), with the JSON beside it. Every cell
+and composite also has a button that copies the bare MCP URL, and ready-to-paste
+config for VS Code (`servers` in `.vscode/mcp.json`), Codex
+(`[mcp_servers.<name>]` with `url` in `~/.codex/config.toml`), Goose (an
+`extensions:` entry of `type: streamable_http` with `uri` in
+`~/.config/goose/config.yaml`) and the `mcpServers` JSON other clients read,
+each with its own copy button. Names are `c9e-<revision>-<scenario>` with
+anything but letters, digits, `*`and`-`made`-`
+(`c9e-2025-11-25-auth-metadata-default`); the run page's ready-made
+composites are `c9e-<revision>-composite`. The run page's blocks cover the
+ready-made composites and every auth cell, one paste per client
+(`src/hosted/client-config.ts`). An `auth/\*`cell, which has no generic-client steps, shows plain ones for a hand-driven
+client (connect, approve the sign-in, list the tools) and any`client_id`/`client_secret`the scenario gives the client as copyable fields;`request-metadata`and`http-standard-headers` say what a person should
 expect. The little markdown in scenario descriptions is rendered.
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`

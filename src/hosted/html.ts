@@ -39,6 +39,13 @@ import {
   DEFAULT_COMPOSITES,
   type CompositeView
 } from './composite';
+import {
+  CLIENTS,
+  clientConfig,
+  compositeName,
+  serverName,
+  type ServerEntry
+} from './client-config';
 
 const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
@@ -107,6 +114,7 @@ const css = `
   tr.group td{background:#f9fafb;font-weight:600;color:#374151}
   td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
   td.what div{margin:.1rem 0}
+  .client{margin:.6rem 0}
 `;
 
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
@@ -397,6 +405,34 @@ function envPre(cell: CellConfig): string {
   return `<pre>${esc(lines.join('\n'))}</pre>`;
 }
 
+/**
+ * Ready-to-paste config per client (see ./client-config.ts), each with a
+ * copy button. Shown open on a page about one URL; folded on the run page,
+ * where the blocks are long.
+ */
+function clientBlocks(
+  entries: readonly ServerEntry[],
+  intro: string,
+  folded = false
+): string {
+  if (!entries.length) return '';
+  const blocks = CLIENTS.map((client) => {
+    const text = clientConfig(client.kind, entries);
+    const pre = `<pre>${esc(text)}</pre>`;
+    return (
+      `<div class=client><b>${esc(client.label)}</b> <span class=muted>${esc(client.where)}</span> ` +
+      `<button class=copy data-copy-text="${esc(text)}">copy</button>` +
+      (folded ? `<details><summary>show</summary>${pre}</details>` : pre) +
+      `</div>`
+    );
+  });
+  return (
+    `<h2>Paste into your client</h2><p class=muted>${intro} If the file ` +
+    `already has the top-level key (<code>servers</code>, <code>extensions</code>, ` +
+    `<code>mcpServers</code>), paste only the entries under it.</p>${blocks.join('')}`
+  );
+}
+
 /** Config page for a run, a column or a cell. */
 export function renderConfig(
   origin: string,
@@ -429,6 +465,10 @@ ${handNote(config.scenario)}
 <div class=actions><button class=copy data-copy-text="${esc(cell.url)}">copy URL</button>
 <button class=copy data-copy="${esc(key)}">copy config</button>
 <span class=muted>— the URL alone, or an <code>mcpServers</code> entry plus the env the CLI runner would set</span></div>
+${clientBlocks(
+  [{ name: serverName(cell.revision, cell.scenario), url: cell.url }],
+  'This cell as each client’s config file wants it.'
+)}
 ${credentials(cell)}
 ${
   cell.steps
@@ -453,6 +493,11 @@ Point your client at a cell's MCP URL (open it for the env the CLI runner
 would set), then read the <a href="${esc(config.resultsUrl)}">results</a>.
 <button class=copy data-copy="all">copy mcpServers for all ${config.cells.length}</button></p>
 ${compositeLinks(origin, matrix, config)}
+${clientBlocks(
+  runEntries(origin, matrix, config),
+  'The ready-made composites and every auth cell (which cannot share a URL), in one paste per client.',
+  true
+)}
 ${renderMatrixTable(matrix, {
   origin,
   runId: config.runId,
@@ -460,6 +505,40 @@ ${renderMatrixTable(matrix, {
 })}`;
   }
   return page(title, `${body}\n${embedded}\n${copyScript}`);
+}
+
+/** The run page's ready-made composites, per revision in scope. */
+function readyComposites(
+  origin: string,
+  matrix: HostedMatrix,
+  config: RunConfig
+): { revision: string; children: string[]; cell: string; url: string }[] {
+  const revisions = config.revision ? [config.revision] : matrix.revisions;
+  return revisions.flatMap((revision) => {
+    const children = (DEFAULT_COMPOSITES[revision] ?? []).filter(
+      (name) => matrix.cell(name, revision)?.startable
+    );
+    if (children.length < 2) return [];
+    const cell = `${origin}/s/${config.runId}/${revision}/${children.join(COMPOSITE_SEPARATOR)}`;
+    return [{ revision, children, cell, url: `${cell}${MCP_PATH}` }];
+  });
+}
+
+/** What the run page's client blocks cover: the composites, the auth cells. */
+function runEntries(
+  origin: string,
+  matrix: HostedMatrix,
+  config: RunConfig
+): ServerEntry[] {
+  return [
+    ...readyComposites(origin, matrix, config).map((c) => ({
+      name: compositeName(c.revision, c.children),
+      url: c.url
+    })),
+    ...config.cells
+      .filter((c) => c.scenario.startsWith('auth/'))
+      .map((c) => ({ name: serverName(c.revision, c.scenario), url: c.url }))
+  ];
 }
 
 /**
@@ -471,19 +550,11 @@ function compositeLinks(
   matrix: HostedMatrix,
   config: RunConfig
 ): string {
-  const revisions = config.revision ? [config.revision] : matrix.revisions;
-  const items = revisions.flatMap((rev) => {
-    const children = (DEFAULT_COMPOSITES[rev] ?? []).filter(
-      (name) => matrix.cell(name, rev)?.startable
-    );
-    if (children.length < 2) return [];
-    const cell = `${origin}/s/${config.runId}/${rev}/${children.join(COMPOSITE_SEPARATOR)}`;
-    const url = `${cell}${MCP_PATH}`;
-    return [
-      `<li><code>${esc(rev)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(url)}</code> ` +
-        `<button class=copy data-copy-text="${esc(url)}">copy URL</button></li>`
-    ];
-  });
+  const items = readyComposites(origin, matrix, config).map(
+    ({ revision, children, cell, url }) =>
+      `<li><code>${esc(revision)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(url)}</code> ` +
+      `<button class=copy data-copy-text="${esc(url)}">copy URL</button></li>`
+  );
   if (!items.length) return '';
   return `<h2>One URL for several scenarios</h2>
 <p>For a client you configure by hand, give it one of these instead of a URL
@@ -513,6 +584,18 @@ been pointed at it directly.</p>
 <h2>MCP endpoint</h2>
 <pre>${esc(view.url)}</pre>
 <div class=actions><button class=copy data-copy-text="${esc(view.url)}">copy URL</button></div>
+${clientBlocks(
+  [
+    {
+      name: compositeName(
+        view.revision,
+        view.children.map((c) => c.scenario)
+      ),
+      url: view.url
+    }
+  ],
+  'This composite as each client’s config file wants it.'
+)}
 <h2>Scenarios behind it</h2>
 ${children}
 <p><a href="${esc(view.resultsUrl)}">results for the whole run at ${esc(view.revision)}</a></p>

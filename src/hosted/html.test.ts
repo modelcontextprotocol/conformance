@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import {
+  escapeHtml as esc,
   jsonForScript,
   prose,
   renderComposite,
@@ -201,6 +202,83 @@ describe('hosted HTML', () => {
     );
     // The copy script handles literal text, and runs on the composite page.
     expect(composite).toContain("b.getAttribute('data-copy-text')");
+  });
+
+  it('offers ready-to-paste config for VS Code, Codex and Goose on cell and composite pages', () => {
+    const cell = renderConfig(
+      'http://x',
+      matrix,
+      configFor('run8', { revision: '2026-07-28', scenario: 'tools_call' })
+    );
+    const url = 'http://x/s/run8/2026-07-28/tools_call/mcp';
+    expect(cell).toContain('Paste into your client');
+    // Each block is shown and has its own copy button with the same text.
+    expect(cell).toContain(
+      `data-copy-text="${esc(`{\n  "servers": {\n    "c9e-2026-07-28-tools_call": {\n      "type": "http",\n      "url": "${url}"\n    }\n  }\n}`)}"`
+    );
+    expect(cell).toContain(
+      esc(`[mcp_servers.c9e-2026-07-28-tools_call]\nurl = "${url}"`)
+    );
+    expect(cell).toContain(
+      esc(
+        `  c9e-2026-07-28-tools_call:\n    enabled: true\n    type: streamable_http`
+      )
+    );
+    // The existing mcpServers-plus-env button stays.
+    expect(cell).toContain('data-copy="2026-07-28/tools_call">copy config');
+
+    const composite = renderComposite({
+      runId: 'r',
+      revision: '2026-07-28',
+      url: 'http://x/s/r/2026-07-28/tools_call+http-standard-headers/mcp',
+      resultsUrl: 'http://x/results/r/2026-07-28',
+      children: [
+        { scenario: 'tools_call', description: 'd', resultsUrl: 'u' },
+        { scenario: 'http-standard-headers', description: 'd', resultsUrl: 'u' }
+      ]
+    });
+    expect(composite).toContain(
+      esc(
+        `[mcp_servers.c9e-2026-07-28-tools_call-http-standard-headers]\nurl = "http://x/s/r/2026-07-28/tools_call+http-standard-headers/mcp"`
+      )
+    );
+  });
+
+  it('offers one block per client on the run page: the ready-made composites and every auth cell', () => {
+    const withAuth = buildMatrix({ auxOrigins: { as: 'http://as' } });
+    const cells = withAuth
+      .cells()
+      .filter((c) => c.startable)
+      .map((c) => ({
+        scenario: c.scenario,
+        revision: c.revision,
+        url: `http://x/s/run9/${c.revision}/${c.scenario}/mcp`,
+        resultsUrl: '',
+        scoring: c.scoring,
+        env: {
+          MCP_CONFORMANCE_SCENARIO: c.scenario,
+          MCP_CONFORMANCE_PROTOCOL_VERSION: c.revision
+        }
+      }));
+    const run = renderConfig('http://x', withAuth, {
+      runId: 'run9',
+      resultsUrl: 'http://x/results/run9',
+      mcpServers: {},
+      cells
+    });
+    const goose = run.match(/data-copy-text="(extensions:[^"]*)"/)![1];
+    const auth = cells.filter((c) => c.scenario.startsWith('auth/'));
+    expect(auth.length).toBeGreaterThan(10);
+    for (const name of [
+      'c9e-2025-11-25-composite',
+      'c9e-2026-07-28-composite',
+      ...auth.map((c) => `c9e-${c.revision}-${c.scenario.replace('/', '-')}`)
+    ]) {
+      expect(goose).toContain(`  ${name}:\n`);
+    }
+    // Only those: a cell a composite covers is not listed again.
+    expect(goose).not.toContain('c9e-2026-07-28-tools_call:');
+    expect(run).toContain('data-copy-text="{\n  &quot;servers&quot;');
   });
 
   it('renders the markdown in scenario descriptions instead of showing it raw', () => {
