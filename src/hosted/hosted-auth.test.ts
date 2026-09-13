@@ -12,7 +12,7 @@ import express from 'express';
 import type { Server } from 'http';
 import { createHostedApp } from './server';
 import { SessionManager, rawChecksOf, finalizeChecks } from './session';
-import { buildMatrix } from './matrix';
+import { buildMatrix, startability } from './matrix';
 import { MemoryRunStore } from './store';
 import { getScenario } from '../scenarios';
 import type { AuxOriginRole, ConformanceCheck, SpecVersion } from '../types';
@@ -83,13 +83,23 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     ]) {
       expect(matrix.cell(name, '2025-11-25')!.startable).toBe(true);
     }
-    // Scenarios without authHandlers() stay unstartable regardless.
+    // A scenario that needs another aux origin waits for its relay.
     expect(
       matrix.cell('auth/authorization-server-migration', '2026-07-28')
     ).toMatchObject({
       startable: false,
-      startReason: 'not converted for hosting yet'
+      startReason: 'needs relay origin(s) [as2]'
     });
+    expect(
+      buildMatrix({ auxOrigins: { as: asOrigin, as2: asOrigin } }).cell(
+        'auth/authorization-server-migration',
+        '2026-07-28'
+      )!.startable
+    ).toBe(true);
+    // Scenarios without authHandlers() stay unstartable regardless.
+    expect(
+      startability(getScenario('auth/dpop')!, { auxOrigins: { as: asOrigin } })
+    ).toEqual({ startable: false, reason: 'not converted for hosting yet' });
   });
 
   it('rejects /__aux/* without the relay secret', async () => {
@@ -346,11 +356,19 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/metadata-issuer-mismatch',
   'auth/resource-mismatch',
   'auth/offline-access-scope',
-  'auth/offline-access-not-supported'
+  'auth/offline-access-not-supported',
+  'auth/authorization-server-migration'
 ];
 
-/** Scenarios that need one process's memory across requests. */
-const SINGLE_PROCESS_ONLY = new Set<string>([]);
+/**
+ * Scenarios that need one process's memory across requests. The migration
+ * scenario's PRM switches authorization servers once a token has been
+ * accepted; a process whose replayed log predates that acceptance keeps
+ * sending the client to the first one (val.town excludes it too).
+ */
+const SINGLE_PROCESS_ONLY = new Set<string>([
+  'auth/authorization-server-migration'
+]);
 
 const AUX_ROLES: AuxOriginRole[] = ['as', 'as2'];
 

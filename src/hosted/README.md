@@ -229,8 +229,8 @@ Two extra routes appear when `--as-origin` is set:
 
 Scenarios needing `as2`/`idp` origins become startable when `--as2-origin` /
 `--idp-origin` are set; deploy one more relay per role with
-`CONFORMANCE_RELAY_ROLE=as2|idp`. (No registered scenario has been converted
-to `authHandlers()` with those roles yet.)
+`CONFORMANCE_RELAY_ROLE=as2|idp`. `auth/authorization-server-migration` is
+the one converted scenario that needs `as2`; none needs `idp` yet.
 
 **Fidelity note:** the hosted AS issuer always carries a `/r/<cell>` path
 component, so scenarios that locally test root-issuer discovery
@@ -248,8 +248,9 @@ are listed in `examples/hosted/valtown-manifest.json`.
 val.town spreads one run's requests over several isolates that share no
 memory, so `valtown.ts` excludes the scenarios whose checks depend on one
 process seeing consecutive requests (`sse-retry`, `auth/metadata-var2`,
-`elicitation-sep1034-client-defaults`, `sep-2322-client-request-state`); the
-matrix shows them as not startable with that reason. Everything else
+`auth/authorization-server-migration`, `elicitation-sep1034-client-defaults`,
+`sep-2322-client-request-state`); the matrix shows them as not startable with
+that reason. Everything else
 persists its raw check log to the account's SQLite (`RunStore`,
 `examples/hosted/valtown-store.ts`) and `/results` re-judges the merged log.
 
@@ -260,6 +261,20 @@ scenario that keys its behaviour on its own log — `request-metadata` rejects
 the run's first request exactly once — sees the run's history rather than
 just this isolate's. Seeded checks are persisted by the isolate that wrote
 them; an isolate's row holds only what it recorded or rewrote itself.
+
+Auth scenarios keep nothing only in memory between two requests. The PKCE
+challenge and requested scopes ride in the authorization code, the granted
+scopes ride in the access token, and a verdict that spans requests (which
+authorization request came first, whether the client went on to the token
+endpoint) is read from the log when the log is judged, not counted as the
+requests arrive. Hydration happens once per cell per isolate, so an
+isolate's copy of the log can lag behind the run: a scenario that must
+consult the latest log to decide how to answer a request cannot be hosted
+here. `auth/authorization-server-migration` is one — its PRM switches
+authorization servers once a token has been accepted, and an isolate whose
+copy predates that keeps sending the client to the first server.
+`src/hosted/hosted-auth.test.ts` drives every hostable auth scenario through
+two processes sharing a store to hold the rest to this.
 
 ### Two-val auth setup
 
