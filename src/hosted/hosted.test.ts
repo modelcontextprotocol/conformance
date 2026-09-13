@@ -1086,6 +1086,32 @@ describe('hosted server', () => {
     expect(results.verdict).toBe('pass');
   });
 
+  it('says why each skipped check was skipped, and keeps them out of the counts', async () => {
+    const res = await postMcp(
+      `/s/skip/${REV_STATELESS}/http-standard-headers/mcp`,
+      statelessBody('tools/list'),
+      { ...statelessHeaders, 'mcp-method': 'tools/list' }
+    );
+    expect(res.status).toBe(200);
+    await res.text();
+    const cell = `/results/skip/${REV_STATELESS}/http-standard-headers`;
+    type Row = { status: string; reason?: string; details?: unknown };
+    const json = await fetch(`${base}${cell}`).then((r) => r.json());
+    const skipped = json.checks.filter((c: Row) => c.status === 'SKIPPED');
+    expect(skipped.length).toBeGreaterThan(0);
+    for (const c of skipped) {
+      expect(c.reason).toMatch(/^Client did not send a /);
+      expect(c.details).not.toBeNull();
+    }
+    const page = await fetch(`${base}${cell}`, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(page).toContain(
+      `<p>1 passed, 0 failed <span class=muted>· ${skipped.length} skipped: the client did nothing they check</span></p>`
+    );
+    expect(page).toContain('SKIPPED</span> Client did not send a tools/call');
+  });
+
   it('explains an incomplete cell that lists failures, leading each failure with its reason', async () => {
     type Check = {
       id: string;

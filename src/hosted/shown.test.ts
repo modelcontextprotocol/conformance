@@ -88,6 +88,31 @@ describe('shownChecks: one row per check', () => {
   });
 });
 
+describe('shownChecks: skipped rows', () => {
+  it('always say why they were skipped', () => {
+    const [said, unsaid] = shownChecks('http-standard-headers', '2026-07-28', [
+      check({
+        id: 'a',
+        status: 'SKIPPED',
+        errorMessage: 'Client did not send a prompts/list request',
+        details: null as unknown as undefined
+      }),
+      check({
+        id: 'b',
+        status: 'SKIPPED',
+        details: null as unknown as undefined
+      })
+    ]);
+    expect(said).toMatchObject({
+      reason: 'Client did not send a prompts/list request'
+    });
+    expect(unsaid.reason).toBe(
+      'skipped: the client did nothing this check covers'
+    );
+    expect('details' in unsaid).toBe(false);
+  });
+});
+
 describe('shownChecks: steps the flow never reached', () => {
   const AUTH = 'auth/metadata-default';
   // What a client that fetched the metadata and stopped leaves behind.

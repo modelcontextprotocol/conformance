@@ -16,12 +16,13 @@
  * Each FAILURE and WARNING row says in `reason` what went wrong, in one
  * line, and one the scenario reports before it has seen anything — a step
  * the flow never reached — is marked `notSeen` (see ./findings.ts
- * notSeenIn()). A row never carries `details: null`.
+ * notSeenIn()). Each SKIPPED row says why it was skipped. A row never
+ * carries `details: null`.
  */
 
 import type { ConformanceCheck, SpecVersion } from '../types';
 import { collapseDuplicateChecks } from '../checks/collapse';
-import { notSeenIn, notSeenReason, oneLineReason } from './findings';
+import { notSeenIn, notSeenReason, oneLine, oneLineReason } from './findings';
 
 export interface ShownCheck extends ConformanceCheck {
   /** How many times the check was recorded, when more than once. */
@@ -31,9 +32,16 @@ export interface ShownCheck extends ConformanceCheck {
    * seen in the client's traffic: the flow may not have got that far.
    */
   notSeen?: true;
-  /** On a FAILURE or WARNING row: what went wrong, in one line. */
+  /**
+   * On a FAILURE or WARNING row: what went wrong, in one line. On a SKIPPED
+   * row: why nothing was checked.
+   */
   reason?: string;
 }
+
+/** Why a SKIPPED check was skipped, when it does not say. */
+export const SKIPPED_REASON =
+  'skipped: the client did nothing this check covers';
 
 /** Same check: same id, same description, judged on the same method. */
 const rowKey = (c: ConformanceCheck) => {
@@ -70,6 +78,12 @@ export function shownChecks(
       const unmet = notSeen(c);
       if (unmet) shown.notSeen = true;
       shown.reason = unmet ? notSeenReason(c) : oneLineReason(c);
+    } else if (c.status === 'SKIPPED') {
+      const message = c.errorMessage || c.details?.message;
+      shown.reason =
+        typeof message === 'string' && message
+          ? oneLine(message)
+          : SKIPPED_REASON;
     }
     return shown;
   });

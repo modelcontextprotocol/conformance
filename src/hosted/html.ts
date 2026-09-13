@@ -594,6 +594,9 @@ export function renderResults(
       return `<div class=check>${head}${refs ? `<p>${refs}</p>` : ''}${details}</div>`;
     })
     .join('');
+  // Skipped checks are said apart: nothing was checked, so they are
+  // neither a pass nor a failure.
+  const counts = summarize(checks);
   return page(
     `${ref.scenarioName} @ ${ref.revision} — ${ref.runId}`,
     `<h1><code>${esc(ref.scenarioName)}</code> <small>@ ${esc(ref.revision)}</small></h1>
@@ -604,7 +607,11 @@ export function renderResults(
     )}">${esc(ref.revision)}</a> › <code>${esc(ref.scenarioName)}</code> · <a href="/s/${esc(
       ref.runId
     )}/${esc(ref.revision)}/${esc(ref.scenarioName)}">config</a></p>
-${status ? statusLine(status) : ''}<p>${esc(countsLine(summarize(checks)))}</p>${items}`
+${status ? statusLine(status) : ''}<p>${esc(countsLine(counts))}${
+      counts.skipped
+        ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
+        : ''
+    }</p>${items}`
   );
 }
 
