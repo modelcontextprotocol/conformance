@@ -7,7 +7,7 @@
  * tag, a code span or a new table cell when the Markdown is rendered.
  */
 
-import type { CellReport, CellState, RunReport } from './report';
+import type { CellReport, CellState, CheckSummary, RunReport } from './report';
 import type { Cause, Finding } from './findings';
 import type { ClientIdentity } from './identity';
 
@@ -79,6 +79,19 @@ export function countsText(
     .filter((s) => counts[s])
     .map((s) => `${counts[s]} ${STATE_LABEL[s]}`)
     .join(', ');
+}
+
+/**
+ * A cell's counts as its page leads with them: "1 passed, 0 failed, 6 not
+ * seen". Only SUCCESS rows are passes; INFO rows (request logs) never count.
+ */
+export function countsLine(s: CheckSummary): string {
+  const parts = [`${s.passed} passed`, `${s.failed} failed`];
+  if (s.notSeen) parts.push(`${s.notSeen} not seen`);
+  if (s.warnings) {
+    parts.push(`${s.warnings} warning${s.warnings === 1 ? '' : 's'}`);
+  }
+  return parts.join(', ');
 }
 
 /** 1-based number of each cause, for "(cause 2)" references. */

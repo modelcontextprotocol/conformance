@@ -72,7 +72,13 @@ export function stateOf(
 
 export interface CheckSummary {
   passed: number;
+  /** FAILUREs seen in the client's traffic. */
   failed: number;
+  /**
+   * FAILUREs that are the scenario's own expectations nothing has met yet
+   * (the flow did not reach the step): a FAILURE row, but not the client's.
+   */
+  notSeen: number;
   warnings: number;
   info: number;
   skipped: number;
@@ -142,10 +148,15 @@ export interface RunReport {
 /** Counts over a cell's rows as shown (see ./shown.ts): a repeat is one. */
 export function summarize(checks: readonly ShownCheck[]): CheckSummary {
   const counts = { SUCCESS: 0, FAILURE: 0, WARNING: 0, SKIPPED: 0, INFO: 0 };
-  for (const c of checks) counts[c.status]++;
+  let notSeen = 0;
+  for (const c of checks) {
+    if (c.status === 'FAILURE' && c.notSeen) notSeen++;
+    else counts[c.status]++;
+  }
   return {
     passed: counts.SUCCESS,
     failed: counts.FAILURE,
+    notSeen,
     warnings: counts.WARNING,
     info: counts.INFO,
     skipped: counts.SKIPPED,
@@ -275,7 +286,11 @@ export async function buildReport(
         state,
         ...(verdict === 'incomplete' &&
           cell.startable && { note: incompleteNote(results?.checks ?? []) }),
-        ...(results && { summary: summarize(shownChecks(results.checks)) }),
+        ...(results && {
+          summary: summarize(
+            shownChecks(cell.scenario, cell.revision, results.checks)
+          )
+        }),
         ...(findings?.length && { findings }),
         ...(stoppedBy && { cause: stoppedBy }),
         resultsUrl: sources.resultsUrl(ref),

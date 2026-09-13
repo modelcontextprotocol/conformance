@@ -636,6 +636,7 @@ describe('hosted server', () => {
     const zeros = {
       passed: 0,
       failed: 0,
+      notSeen: 0,
       warnings: 0,
       info: 0,
       skipped: 0,
@@ -1104,7 +1105,8 @@ describe('hosted server', () => {
     const cell = `/results/inc/${REV_STATEFUL}/tools_call`;
     const json = await fetch(`${base}${cell}`).then((r) => r.json());
     expect(json.verdict).toBe('incomplete');
-    expect(json.summary.failed).toBe(1);
+    // A FAILURE row, but the scenario's own expectation: not the client's.
+    expect(json.summary).toMatchObject({ failed: 0, notSeen: 1 });
     expect(json.note).toBe(
       'the client has not yet done anything this scenario tests; the failure listed is what it is still waiting for'
     );
@@ -1116,7 +1118,9 @@ describe('hosted server', () => {
     expect(html).not.toContain('nothing recorded yet');
     expect(html).toContain(json.note);
     // The headline is the reason; the check's own description stays below.
-    expect(html).toContain('FAILURE</span> Tool was not called by client</h3>');
+    expect(html).toContain(
+      'not seen</span> Tool was not called by client</h3>'
+    );
     expect(html).toContain(`${failure.description}</p>`);
 
     // The run report says the same, and does not count those failures.

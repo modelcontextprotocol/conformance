@@ -323,10 +323,22 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
       expect.objectContaining({ status: 'SUCCESS', repeats: 3 })
     ]);
     expect(results.summary.passed).toBe(1);
+    // The steps it never reached are not seen, not the client's failures.
+    expect(results.summary).toMatchObject({ failed: 0, notSeen: 6 });
+    expect(
+      results.checks.find((c: Row) => c.id === 'authorization-server-metadata')
+    ).toMatchObject({
+      status: 'FAILURE',
+      notSeen: true,
+      reason: 'the flow did not reach this step'
+    });
     const page = await fetch(`${rs}/results/${cell}`, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
     expect(page).toContain('recorded 3 times');
+    expect(page).toContain('1 passed, 0 failed, 6 not seen');
+    expect(page).toContain('>not seen</span> the flow did not reach this step');
+    expect(page).not.toContain('Expected Check Missing');
   });
 
   it('notes a dual-era client probing a dated auth cell, and does not fail it', async () => {

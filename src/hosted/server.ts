@@ -1083,7 +1083,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           : await sessions.results(cellId(ref));
       const status = cellStatus(cell, r);
       // One row per check, as the page and the report count them.
-      const shown = shownChecks(r?.checks ?? []);
+      const shown = shownChecks(
+        ref.scenarioName,
+        ref.revision,
+        r?.checks ?? []
+      );
       if (wantsHtml(req)) {
         res.type('html').send(renderResults(ref, shown, status));
       } else {

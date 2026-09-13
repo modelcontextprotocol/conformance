@@ -10,6 +10,7 @@ import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import {
   incompleteNote,
+  summarize,
   type CellReport,
   type CellState,
   type RunReport
@@ -23,6 +24,7 @@ import {
   REACHED,
   STATE_LABEL,
   causeNumbers,
+  countsLine,
   countsText,
   onlyWaiting,
   stopNote,
@@ -532,14 +534,20 @@ function statusLine(status: CellStatus): string {
   return `<p>${pill} ${scoring}${note ? ` <span class=muted>— ${note}</span>` : ''}</p>`;
 }
 
+/** Style of a "not seen" pill: the scenario's expectation, not a failure. */
+const NOT_SEEN_STYLE = STATUS_STYLE.SKIPPED;
+
 /**
- * What went wrong, in the check's words: its errorMessage, or the plain
- * `details.message` that many scenarios put their reason in instead.
+ * What a check is about, under its reason: its name and description, each
+ * said once, and not the "Expected Check Missing" placeholder some auth
+ * scenarios give an expectation nothing met.
  */
-function reasonOf(c: ConformanceCheck): string | undefined {
-  if (c.errorMessage) return c.errorMessage;
-  const message = c.details?.message;
-  return typeof message === 'string' && message ? message : undefined;
+function about(c: ConformanceCheck): string {
+  const parts = [c.name, c.description].filter(
+    (p, i, all) =>
+      p && !p.startsWith('Expected Check Missing') && all.indexOf(p) === i
+  );
+  return parts.map((p) => esc(p)).join(': ');
 }
 
 export function renderResults(
@@ -549,9 +557,13 @@ export function renderResults(
 ): string {
   const items = checks
     .map((c) => {
-      const pill = `<span class=pill style="${STATUS_STYLE[c.status]}">${c.status}</span>${
-        c.repeats ? ` <span class=muted>recorded ${c.repeats} times</span>` : ''
-      }`;
+      const pill =
+        (c.notSeen
+          ? `<span class=pill style="${NOT_SEEN_STYLE}" title="the scenario’s own expectation, not seen in the client’s traffic">not seen</span>`
+          : `<span class=pill style="${STATUS_STYLE[c.status]}">${c.status}</span>`) +
+        (c.repeats
+          ? ` <span class=muted>recorded ${c.repeats} times</span>`
+          : '');
       const refs = (c.specReferences ?? [])
         .map((r) =>
           r.url
@@ -569,24 +581,19 @@ export function renderResults(
               )
             )}</pre></details>`
           : '';
-      // A failure or warning leads with what went wrong; which check it is
-      // and what that check is about follow underneath.
-      const reason =
-        c.status === 'FAILURE' || c.status === 'WARNING'
-          ? reasonOf(c)
-          : undefined;
-      const head = reason
-        ? `<h3>${pill} ${esc(reason)}</h3><p><code>${esc(
-            c.id
-          )}</code> — ${esc(c.name)}: ${esc(c.description)}</p>`
+      // A failure or warning leads with what went wrong (see ./shown.ts);
+      // which check it is and what that check is about follow underneath.
+      const said = about(c);
+      const head = c.reason
+        ? `<h3>${pill} ${esc(c.reason)}</h3><p><code>${esc(c.id)}</code>${
+            said ? ` — ${said}` : ''
+          }</p>`
         : `<h3>${pill} <code>${esc(c.id)}</code> — ${esc(
             c.name
           )}</h3><p>${esc(c.description)}</p>`;
-      return `<div class=check>${head}<p>${refs}</p>${details}</div>`;
+      return `<div class=check>${head}${refs ? `<p>${refs}</p>` : ''}${details}</div>`;
     })
     .join('');
-  const passed = checks.filter((c) => c.status === 'SUCCESS').length;
-  const failed = checks.filter((c) => c.status === 'FAILURE').length;
   return page(
     `${ref.scenarioName} @ ${ref.revision} — ${ref.runId}`,
     `<h1><code>${esc(ref.scenarioName)}</code> <small>@ ${esc(ref.revision)}</small></h1>
@@ -597,7 +604,7 @@ export function renderResults(
     )}">${esc(ref.revision)}</a> › <code>${esc(ref.scenarioName)}</code> · <a href="/s/${esc(
       ref.runId
     )}/${esc(ref.revision)}/${esc(ref.scenarioName)}">config</a></p>
-${status ? statusLine(status) : ''}<p>${passed} passed, ${failed} failed, ${checks.length} total</p>${items}`
+${status ? statusLine(status) : ''}<p>${esc(countsLine(summarize(checks)))}</p>${items}`
   );
 }
 

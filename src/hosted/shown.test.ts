@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { shownChecks } from './shown';
+import { finalizeChecks } from './session';
 import type { ConformanceCheck } from '../types';
+
+const S = 'tools_call';
+const R = '2025-11-25';
 
 let clock = 0;
 const check = (over: Partial<ConformanceCheck>): ConformanceCheck => ({
@@ -27,7 +31,7 @@ describe('shownChecks: one row per check', () => {
       prm(2),
       prm(3)
     ];
-    const shown = shownChecks(log);
+    const shown = shownChecks(S, R, log);
     const rows = shown.filter((c) => c.id === 'prm-pathbased-requested');
     // The latest of equal rows stands for all of them.
     expect(rows).toEqual([
@@ -37,10 +41,17 @@ describe('shownChecks: one row per check', () => {
     expect(shown.filter((c) => c.status === 'INFO')).toHaveLength(2);
   });
 
+  it('does not count one record persisted twice as a repeat', () => {
+    const once = check({ id: 'valid-bearer-token', description: 'Bearer' });
+    const shown = shownChecks(S, R, [once, { ...once }, { ...once }]);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].repeats).toBeUndefined();
+  });
+
   it('keeps the worst of a repeated check, so a failure is never hidden', () => {
     const token = (status: ConformanceCheck['status']) =>
       check({ id: 'token-request', description: 'Token request', status });
-    const shown = shownChecks([
+    const shown = shownChecks(S, R, [
       token('SUCCESS'),
       token('FAILURE'),
       token('SUCCESS')
@@ -57,7 +68,7 @@ describe('shownChecks: one row per check', () => {
         description: `Client sends correct Mcp-Method header on ${method} request`,
         status
       });
-    const shown = shownChecks([
+    const shown = shownChecks(S, R, [
       header('tools/list', 'SUCCESS'),
       header('tools/call', 'SUCCESS'),
       header('prompts/list', 'SKIPPED')
@@ -72,7 +83,73 @@ describe('shownChecks: one row per check', () => {
         details: { method }
       });
     expect(
-      shownChecks([wrong('tools/list'), wrong('tools/call')])
+      shownChecks(S, R, [wrong('tools/list'), wrong('tools/call')])
     ).toHaveLength(2);
+  });
+});
+
+describe('shownChecks: steps the flow never reached', () => {
+  const AUTH = 'auth/metadata-default';
+  // What a client that fetched the metadata and stopped leaves behind.
+  const stuck = (extra: ConformanceCheck[] = []) =>
+    finalizeChecks(
+      AUTH,
+      [
+        check({
+          id: 'prm-pathbased-requested',
+          description: 'Client requested PRM metadata at path-based location',
+          details: { path: '/.well-known/oauth-protected-resource/mcp' }
+        }),
+        ...extra
+      ],
+      R
+    ).map((c) => ({ ...c, details: c.details ?? null }) as ConformanceCheck);
+
+  it('marks them not seen, says so in words and never shows null details', () => {
+    const shown = shownChecks(AUTH, R, stuck());
+    const failures = shown.filter((c) => c.status === 'FAILURE');
+    expect(failures.map((c) => c.id)).toEqual([
+      'authorization-server-metadata',
+      'client-registration',
+      'authorization-request',
+      'token-request',
+      'resource-parameter-in-authorization',
+      'resource-parameter-in-token'
+    ]);
+    for (const c of failures) {
+      expect(c).toMatchObject({
+        notSeen: true,
+        reason: 'the flow did not reach this step'
+      });
+    }
+    expect(shown.some((c) => 'details' in c && c.details == null)).toBe(false);
+    expect(JSON.stringify(shown)).not.toContain('null');
+  });
+
+  it("keeps the scenario's own words when it gives some", () => {
+    const [tool] = shownChecks(S, R, finalizeChecks(S, [], R));
+    expect(tool).toMatchObject({
+      notSeen: true,
+      reason: 'Tool was not called by client'
+    });
+  });
+
+  it("calls a missing resource parameter the client's once the step was reached", () => {
+    const authorize = check({
+      id: 'incoming-auth-request',
+      status: 'INFO',
+      details: { path: '/authorize', query: {} }
+    });
+    const shown = shownChecks(AUTH, R, stuck([authorize]));
+    const resource = shown.find(
+      (c) => c.id === 'resource-parameter-in-authorization'
+    )!;
+    expect(resource.status).toBe('FAILURE');
+    expect(resource.notSeen).toBeUndefined();
+    expect(resource.reason).toMatch(/resource parameter/);
+    // The token step was still never reached.
+    expect(
+      shown.find((c) => c.id === 'resource-parameter-in-token')!.notSeen
+    ).toBe(true);
   });
 });

@@ -175,12 +175,79 @@ function expectedKeys(scenario: string, revision: SpecVersion): Set<string> {
 export const legacyCauseKey = (stop: LegacyStop) =>
   `legacy ${stop.asked ?? ''} ${stop.served}`;
 
+/** What a "not seen" finding says when the scenario's own words don't. */
+export const NOT_REACHED = 'the flow did not reach this step';
+
+/**
+ * Expectations that read the same whether the flow never got to a step or
+ * the client got the step wrong ("resource: not provided"). They are "not
+ * seen" only until the step itself was: the auth server logs each request
+ * by path, and the step's own check records it.
+ */
+const STEPS: Record<string, { path: string; check: string }> = {
+  'resource-parameter-in-authorization': {
+    path: '/authorize',
+    check: 'authorization-request'
+  },
+  'resource-parameter-in-token': { path: '/token', check: 'token-request' }
+};
+
+function reachedStep(
+  checks: readonly ConformanceCheck[],
+  step: { path: string; check: string }
+): boolean {
+  return checks.some((c) => {
+    if (c.id === step.check) return c.status === 'SUCCESS';
+    const path = c.details?.path;
+    return (
+      c.id === 'incoming-auth-request' &&
+      typeof path === 'string' &&
+      path.endsWith(step.path)
+    );
+  });
+}
+
+/**
+ * Which of a cell's checks are "not seen": a FAILURE or WARNING the
+ * scenario reports when it has seen nothing at all (its own expectation
+ * that nothing has met yet), rather than something in the client's traffic.
+ */
+export function notSeenIn(
+  scenario: string,
+  revision: SpecVersion,
+  checks: readonly ConformanceCheck[]
+): (c: ConformanceCheck) => boolean {
+  const expected = expectedKeys(scenario, revision);
+  return (c) => {
+    if (c.status !== 'FAILURE' && c.status !== 'WARNING') return false;
+    const key = findingKey({
+      status: c.status,
+      check: c.id,
+      reason: oneLineReason(c)
+    });
+    if (!expected.has(key)) return false;
+    const step = STEPS[c.id];
+    return !step || !reachedStep(checks, step);
+  };
+}
+
+/**
+ * A "not seen" check in one line: the scenario's own message when it gives
+ * one ("Tool was not called by client"), else NOT_REACHED — its description
+ * is a requirement ("Client MUST include resource parameter …") or
+ * "Expected Check Missing: …", neither of which says what happened.
+ */
+export function notSeenReason(c: ConformanceCheck): string {
+  const message = c.errorMessage || str(c.details?.message);
+  return message ? oneLine(message) : NOT_REACHED;
+}
+
 /**
  * A cell's failures and warnings, one per distinct (check, reason), each
- * marked client or scenario. With `stop`, the ones the legacy handshake
- * explains are keyed to that cause; `grouped` false leaves every finding
- * ungrouped (a cell still in progress: its findings are only what it waits
- * for).
+ * marked client or scenario (see notSeenIn()). With `stop`, the ones the
+ * legacy handshake explains are keyed to that cause; `grouped` false leaves
+ * every finding ungrouped (a cell still in progress: its findings are only
+ * what it waits for).
  */
 export function findingsOf(
   scenario: string,
@@ -189,19 +256,19 @@ export function findingsOf(
   stop: LegacyStop | undefined,
   grouped: boolean
 ): Finding[] {
-  const expected = expectedKeys(scenario, revision);
+  const notSeen = notSeenIn(scenario, revision, checks);
   const out = new Map<string, Finding>();
   for (const c of checks) {
     if (c.status !== 'FAILURE' && c.status !== 'WARNING') continue;
+    const unmet = notSeen(c);
     const finding: Finding = {
       status: c.status,
       check: c.id,
-      reason: oneLineReason(c),
-      by: 'client'
+      reason: unmet ? notSeenReason(c) : oneLineReason(c),
+      by: unmet ? 'scenario' : 'client'
     };
     const key = findingKey(finding);
     if (out.has(key)) continue;
-    if (expected.has(key)) finding.by = 'scenario';
     if (grouped) {
       finding.cause =
         stop && (finding.by === 'scenario' || ERA_CHECKS.has(c.id))

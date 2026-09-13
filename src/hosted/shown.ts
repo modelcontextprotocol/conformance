@@ -12,14 +12,27 @@
  * share an id but check different things (a description or a
  * `details.method` per method) stay apart.
  * INFO rows (request logs, the client's identity) are kept as they are.
+ *
+ * Each FAILURE and WARNING row says in `reason` what went wrong, in one
+ * line, and one the scenario reports before it has seen anything — a step
+ * the flow never reached — is marked `notSeen` (see ./findings.ts
+ * notSeenIn()). A row never carries `details: null`.
  */
 
-import type { ConformanceCheck } from '../types';
+import type { ConformanceCheck, SpecVersion } from '../types';
 import { collapseDuplicateChecks } from '../checks/collapse';
+import { notSeenIn, notSeenReason, oneLineReason } from './findings';
 
 export interface ShownCheck extends ConformanceCheck {
   /** How many times the check was recorded, when more than once. */
   repeats?: number;
+  /**
+   * The scenario's own expectation that nothing has met yet, not something
+   * seen in the client's traffic: the flow may not have got that far.
+   */
+  notSeen?: true;
+  /** On a FAILURE or WARNING row: what went wrong, in one line. */
+  reason?: string;
 }
 
 /** Same check: same id, same description, judged on the same method. */
@@ -28,14 +41,36 @@ const rowKey = (c: ConformanceCheck) => {
   return `${c.id}\n${c.description}\n${typeof method === 'string' ? method : ''}`;
 };
 
-export function shownChecks(checks: readonly ConformanceCheck[]): ShownCheck[] {
+export function shownChecks(
+  scenario: string,
+  revision: SpecVersion,
+  checks: readonly ConformanceCheck[]
+): ShownCheck[] {
+  const notSeen = notSeenIn(scenario, revision, checks);
+  // The same record twice (the same timestamp and all) is one record that
+  // two processes both persisted, not the client doing it again.
+  const records = new Set<string>();
+  const unique = checks.filter((c) => {
+    const record = JSON.stringify(c);
+    if (records.has(record)) return false;
+    records.add(record);
+    return true;
+  });
   const times = new Map<string, number>();
-  for (const c of checks) {
+  for (const c of unique) {
     if (c.status === 'INFO') continue;
     times.set(rowKey(c), (times.get(rowKey(c)) ?? 0) + 1);
   }
-  return collapseDuplicateChecks(checks, rowKey).map((c) => {
+  return collapseDuplicateChecks(unique, rowKey).map((c) => {
+    const { details, ...row }: ShownCheck = c;
+    const shown: ShownCheck = details == null ? row : { ...row, details };
     const n = c.status === 'INFO' ? 1 : (times.get(rowKey(c)) ?? 1);
-    return n > 1 ? { ...c, repeats: n } : c;
+    if (n > 1) shown.repeats = n;
+    if (c.status === 'FAILURE' || c.status === 'WARNING') {
+      const unmet = notSeen(c);
+      if (unmet) shown.notSeen = true;
+      shown.reason = unmet ? notSeenReason(c) : oneLineReason(c);
+    }
+    return shown;
   });
 }

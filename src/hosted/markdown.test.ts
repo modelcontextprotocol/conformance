@@ -53,6 +53,7 @@ describe('reportMarkdown', () => {
             summary: {
               passed: 17,
               failed: 0,
+              notSeen: 0,
               warnings: 0,
               info: 1,
               skipped: 0,
@@ -66,6 +67,7 @@ describe('reportMarkdown', () => {
             summary: {
               passed: 16,
               failed: 1,
+              notSeen: 0,
               warnings: 0,
               info: 0,
               skipped: 0,

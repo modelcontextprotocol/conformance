@@ -170,6 +170,38 @@ describe('findingsOf', () => {
     ]);
   });
 
+  it('says a step the flow never reached in words, and a skipped parameter is the client’s once it was', () => {
+    const scenario = 'auth/metadata-default';
+    const unreached = finalizeChecks(scenario, [], '2025-11-25');
+    const findings = findingsOf(
+      scenario,
+      '2025-11-25',
+      unreached,
+      undefined,
+      false
+    );
+    expect(findings.every((f) => f.by === 'scenario')).toBe(true);
+    expect(new Set(findings.map((f) => f.reason))).toEqual(
+      new Set(['the flow did not reach this step'])
+    );
+    // The client reached /authorize and left the resource parameter out.
+    const authorize = check({
+      id: 'incoming-auth-request',
+      status: 'INFO',
+      details: { path: '/authorize', query: {} }
+    });
+    const reached = findingsOf(
+      scenario,
+      '2025-11-25',
+      finalizeChecks(scenario, [authorize], '2025-11-25'),
+      undefined,
+      false
+    );
+    expect(
+      reached.find((f) => f.check === 'resource-parameter-in-authorization')
+    ).toMatchObject({ by: 'client' });
+  });
+
   it('keys what the legacy handshake explains to that one cause', () => {
     const stop = legacyStop([probe()])!;
     const own = check({ id: 'sep-2468-client-compare-iss', errorMessage: 'x' });
