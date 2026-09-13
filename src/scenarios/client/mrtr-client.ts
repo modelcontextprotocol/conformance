@@ -24,7 +24,7 @@ import { createHash, randomUUID } from 'crypto';
 const MRTR_SPEC_REFERENCES = [
   {
     id: 'SEP-2322-MRTR',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/utilities/mrtr'
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr#client-requirements-basic-workflow'
   }
 ];
 

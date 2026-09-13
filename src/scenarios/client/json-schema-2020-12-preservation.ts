@@ -55,6 +55,13 @@ const SEP_2106_REF = {
   id: 'SEP-2106',
   url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2106'
 };
+// The spec does not require preservation in so many words; it requires
+// support for JSON Schema 2020-12, which a client that strips the dialect's
+// keywords does not have.
+const JSON_SCHEMA_2026_07_28_REF = {
+  id: 'MCP-2026-07-28-JSON-Schema-implementation-requirements',
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic#implementation-requirements'
+};
 
 export class JsonSchema2020_12PreservationScenario implements Scenario {
   name = 'json-schema-2020-12-preservation';
@@ -155,7 +162,7 @@ The scenario compares the echoed schema against the original fixture and flags a
       description: `Client called tools/list and the mock server advertised '${EXPECTED_TOOL_NAME}'`,
       status: this.toolsListed ? 'SUCCESS' : 'FAILURE',
       timestamp,
-      specReferences: [SEP_1613_REF],
+      specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: this.toolsListed
         ? undefined
         : 'Client never called tools/list; the scenario cannot observe schema preservation',
@@ -168,7 +175,7 @@ The scenario compares the echoed schema against the original fixture and flags a
       description: `Client called tools/call '${ECHO_TOOL_NAME}' with a 'schema' object argument`,
       status: echo !== null ? 'SUCCESS' : 'FAILURE',
       timestamp,
-      specReferences: [SEP_1613_REF],
+      specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage:
         echo !== null
           ? undefined
@@ -190,7 +197,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved the $schema field of the focal tool inputSchema',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_1613_REF],
+          specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         },
         {
@@ -200,7 +207,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved the $defs field of the focal tool inputSchema',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_1613_REF],
+          specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         },
         {
@@ -210,7 +217,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved the additionalProperties field of the focal tool inputSchema',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_1613_REF],
+          specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         },
         {
@@ -220,7 +227,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved composition keywords (allOf/anyOf) on the focal tool inputSchema',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_2106_REF],
+          specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         },
         {
@@ -230,7 +237,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved conditional keywords (if/then/else) on the focal tool inputSchema',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_2106_REF],
+          specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         },
         {
@@ -240,7 +247,7 @@ The scenario compares the echoed schema against the original fixture and flags a
             'Client preserved the $anchor keyword inside $defs.address',
           status: 'SKIPPED',
           timestamp,
-          specReferences: [SEP_2106_REF],
+          specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
           errorMessage: skipReason
         }
       );
@@ -256,7 +263,7 @@ The scenario compares the echoed schema against the original fixture and flags a
       description: `Client preserved $schema = '${EXPECTED_SCHEMA_DIALECT}'`,
       status: hasSchema && schemaCorrect ? 'SUCCESS' : 'FAILURE',
       timestamp,
-      specReferences: [SEP_1613_REF],
+      specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: !hasSchema
         ? '$schema missing from echoed inputSchema — client likely stripped it during parsing'
         : !schemaCorrect
@@ -276,7 +283,7 @@ The scenario compares the echoed schema against the original fixture and flags a
         'Client preserved $defs with the expected nested definitions',
       status: hasDefs && defsHasAddress ? 'SUCCESS' : 'FAILURE',
       timestamp,
-      specReferences: [SEP_1613_REF],
+      specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: !hasDefs
         ? '$defs missing from echoed inputSchema — client likely stripped it during parsing'
         : !defsHasAddress
@@ -299,7 +306,7 @@ The scenario compares the echoed schema against the original fixture and flags a
       status:
         hasAdditionalProps && additionalPropsCorrect ? 'SUCCESS' : 'FAILURE',
       timestamp,
-      specReferences: [SEP_1613_REF],
+      specReferences: [SEP_1613_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: !hasAdditionalProps
         ? 'additionalProperties missing from echoed inputSchema — client likely stripped it during parsing'
         : !additionalPropsCorrect
@@ -334,7 +341,7 @@ The scenario compares the echoed schema against the original fixture and flags a
         'Client preserved composition keywords (allOf/anyOf) on the focal inputSchema',
       status: compositionStatus,
       timestamp,
-      specReferences: [SEP_2106_REF],
+      specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: compositionPreserved
         ? undefined
         : (!hasAllOf
@@ -364,7 +371,7 @@ The scenario compares the echoed schema against the original fixture and flags a
         'Client preserved conditional keywords (if/then/else) on the focal inputSchema',
       status: conditionalStatus,
       timestamp,
-      specReferences: [SEP_2106_REF],
+      specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: conditionalPreserved
         ? undefined
         : `Conditional keywords missing (if=${hasIf}, then=${hasThen}, else=${hasElse}) — likely stripped` +
@@ -387,7 +394,7 @@ The scenario compares the echoed schema against the original fixture and flags a
       description: 'Client preserved $anchor inside $defs.address',
       status: anchorStatus,
       timestamp,
-      specReferences: [SEP_2106_REF],
+      specReferences: [SEP_2106_REF, JSON_SCHEMA_2026_07_28_REF],
       errorMessage: hasAnchor
         ? undefined
         : '$anchor missing from echoed $defs.address — reference keyword was likely stripped' +

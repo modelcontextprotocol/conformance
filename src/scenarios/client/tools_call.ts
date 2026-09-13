@@ -7,6 +7,10 @@ const SPEC_REF = {
   id: 'MCP-Tools',
   url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools#calling-tools'
 };
+const SPEC_REF_2026_07_28 = {
+  id: 'MCP-2026-07-28-Tools',
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/server/tools#calling-tools'
+};
 
 /** Raw events, one per request the mock routed to the scenario. */
 const TOOLS_LIST_EVENT_ID = 'tools-list-requested';
@@ -39,7 +43,7 @@ export class ToolsCallScenario extends HandlerScenario {
           description: 'Client requested tools/list',
           status: 'INFO',
           timestamp: new Date().toISOString(),
-          specReferences: [SPEC_REF]
+          specReferences: [SPEC_REF, SPEC_REF_2026_07_28]
         });
         return {
           tools: [
@@ -66,7 +70,7 @@ export class ToolsCallScenario extends HandlerScenario {
           description: `Client called tool '${p.name}'`,
           status: 'INFO',
           timestamp: new Date().toISOString(),
-          specReferences: [SPEC_REF],
+          specReferences: [SPEC_REF, SPEC_REF_2026_07_28],
           details: { name: p.name, arguments: p.arguments }
         });
         if (p.name !== 'add_numbers') {
@@ -108,7 +112,7 @@ export class ToolsCallScenario extends HandlerScenario {
         description: 'Validates that the add_numbers tool works correctly',
         status: ok ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SPEC_REF],
+        specReferences: [SPEC_REF, SPEC_REF_2026_07_28],
         details: ok
           ? {
               a: args!.a,

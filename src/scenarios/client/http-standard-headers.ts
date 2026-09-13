@@ -17,7 +17,7 @@ import { BaseHttpScenario } from './http-base.js';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2243-Standard-Headers',
-  url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#standard-mcp-request-headers'
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#standard-request-headers'
 };
 
 export class HttpStandardHeadersScenario extends BaseHttpScenario {
