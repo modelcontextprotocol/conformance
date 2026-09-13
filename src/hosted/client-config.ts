@@ -9,8 +9,8 @@
  *   Codex    ~/.codex/config.toml: [mcp_servers.<name>] with url = "…"
  *   Goose    ~/.config/goose/config.yaml: an `extensions:` entry of
  *            type streamable_http, its endpoint under `uri`
- *   mcpServers  the JSON most other clients read (Claude Code's .mcp.json,
- *            Cursor): { "mcpServers": { "<name>": { "type": "http", … } } }
+ *   mcpServers  the JSON many other clients read (a project .mcp.json):
+ *            { "mcpServers": { "<name>": { "type": "http", … } } }
  *
  * Names are `c9e-<revision>-<scenario>`, lower case, with anything but
  * letters, digits, `_` and `-` made `-`: a bare TOML key for Codex, and the
@@ -45,7 +45,7 @@ export const CLIENTS: readonly ClientInfo[] = [
   {
     kind: 'mcpServers',
     label: 'mcpServers JSON',
-    where: 'Claude Code’s .mcp.json, Cursor and other mcpServers files'
+    where: 'a project .mcp.json, or any client that reads mcpServers'
   }
 ];
 
