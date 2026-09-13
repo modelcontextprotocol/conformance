@@ -378,7 +378,8 @@ export function createAuthServer(
       timestamp: new Date().toISOString(),
       specReferences: [
         SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
-        SpecReferences.MCP_AUTH_DISCOVERY
+        SpecReferences.MCP_AUTH_DISCOVERY,
+        SpecReferences.MCP_AUTH_DISCOVERY_2026_07_28
       ],
       details: {
         url: req.url,
@@ -482,7 +483,10 @@ export function createAuthServer(
           : 'Client MUST send code_challenge in authorization request',
         status: codeChallenge ? 'SUCCESS' : 'FAILURE',
         timestamp,
-        specReferences: [SpecReferences.MCP_PKCE]
+        specReferences: [
+          SpecReferences.MCP_PKCE,
+          SpecReferences.MCP_PKCE_2026_07_28
+        ]
       });
 
       // PKCE: Check S256 method is used
@@ -495,7 +499,10 @@ export function createAuthServer(
             : 'Client MUST use S256 code challenge method when technically capable',
         status: codeChallengeMethod === 'S256' ? 'SUCCESS' : 'FAILURE',
         timestamp,
-        specReferences: [SpecReferences.MCP_PKCE],
+        specReferences: [
+          SpecReferences.MCP_PKCE,
+          SpecReferences.MCP_PKCE_2026_07_28
+        ],
         details: {
           method: codeChallengeMethod || 'not specified'
         }
@@ -583,7 +590,10 @@ export function createAuthServer(
           : 'Client MUST send code_verifier in token request',
         status: codeVerifier ? 'SUCCESS' : 'FAILURE',
         timestamp,
-        specReferences: [SpecReferences.MCP_PKCE]
+        specReferences: [
+          SpecReferences.MCP_PKCE,
+          SpecReferences.MCP_PKCE_2026_07_28
+        ]
       });
 
       // PKCE: Validate code_verifier matches code_challenge (S256)
@@ -617,7 +627,10 @@ export function createAuthServer(
         description,
         status: matches ? 'SUCCESS' : 'FAILURE',
         timestamp,
-        specReferences: [SpecReferences.MCP_PKCE],
+        specReferences: [
+          SpecReferences.MCP_PKCE,
+          SpecReferences.MCP_PKCE_2026_07_28
+        ],
         details: {
           matches,
           storedChallenge: flowChallenge || 'not sent',
@@ -806,7 +819,10 @@ export function createAuthServer(
       description: 'Client registered with authorization server',
       status: 'SUCCESS',
       timestamp: new Date().toISOString(),
-      specReferences: [SpecReferences.MCP_DCR],
+      specReferences: [
+        SpecReferences.MCP_DCR,
+        SpecReferences.MCP_DCR_2026_07_28
+      ],
       details: {
         endpoint: '/register',
         clientName: req.body.client_name,
@@ -834,7 +850,10 @@ export function createAuthServer(
             : `Client MUST specify an appropriate application_type during Dynamic Client Registration (SEP-837); got "${appType}", expected "native" or "web"`,
         status: validAppType ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_DCR],
+        specReferences: [
+          SpecReferences.MCP_DCR,
+          SpecReferences.MCP_DCR_2026_07_28
+        ],
         details: { application_type: appType ?? '(omitted)' }
       });
     }

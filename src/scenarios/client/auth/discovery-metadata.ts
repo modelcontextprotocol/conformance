@@ -142,7 +142,8 @@ abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
           timestamp: new Date().toISOString(),
           specReferences: [
             SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
-            SpecReferences.MCP_AUTH_DISCOVERY
+            SpecReferences.MCP_AUTH_DISCOVERY,
+            SpecReferences.MCP_AUTH_DISCOVERY_2026_07_28
           ],
           details: {
             url: req.url
@@ -184,7 +185,8 @@ abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
             timestamp: new Date().toISOString(),
             specReferences: [
               SpecReferences.RFC_PRM_DISCOVERY,
-              SpecReferences.MCP_PRM_DISCOVERY
+              SpecReferences.MCP_PRM_DISCOVERY,
+              SpecReferences.MCP_PRM_DISCOVERY_2026_07_28
             ],
             details: {
               url: req.url,

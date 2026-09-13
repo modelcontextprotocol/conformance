@@ -63,6 +63,7 @@ export class AuthBasicCIMDScenario extends AuthHandlerScenario {
           timestamp: data.timestamp,
           specReferences: [
             SpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS,
+            SpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS_2026_07_28,
             SpecReferences.IETF_CIMD
           ],
           details: {
@@ -93,6 +94,7 @@ export class AuthBasicCIMDScenario extends AuthHandlerScenario {
         timestamp: new Date().toISOString(),
         specReferences: [
           SpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS,
+          SpecReferences.MCP_CLIENT_ID_METADATA_DOCUMENTS_2026_07_28,
           SpecReferences.IETF_CIMD
         ]
       });
