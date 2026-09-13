@@ -48,6 +48,15 @@ export function schemaDirFor(specVersion: SpecVersion): string {
   return specVersion === DRAFT_PROTOCOL_VERSION ? 'draft' : specVersion;
 }
 
+/**
+ * Spec-repo schema directory a check cites for a version: a dated version's
+ * own directory. 2026-07-28 is released, and schema/draft on main moves on
+ * past it; only an undated draft marker still cites schema/draft.
+ */
+export function schemaCitationDirFor(specVersion: SpecVersion): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(specVersion) ? specVersion : 'draft';
+}
+
 /** Union definitions that alias a single concrete type (and so carry a
  * `method` const) but are not the canonical definition for that method. */
 const NON_CANONICAL_DEFS = new Set([
@@ -407,7 +416,7 @@ export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
   const specReferences = [
     {
       id: 'MCP-Schema',
-      url: `https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/${schemaDirFor(specVersion)}/schema.json`
+      url: `https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/${schemaCitationDirFor(specVersion)}/schema.json`
     }
   ];
   const checks: ConformanceCheck[] = [];
