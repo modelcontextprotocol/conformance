@@ -283,7 +283,8 @@ describe('hosted server', () => {
     const res = await fetch(`${base}/s`, { redirect: 'manual' });
     expect(res.status).toBe(303);
     const location = res.headers.get('location')!;
-    expect(location).toMatch(/^\/s\/[A-Za-z0-9_-]+$/);
+    // Crockford base32, lower case: no i, l, o or u to misread.
+    expect(location).toMatch(/^\/s\/[0-9a-hjkmnp-tv-z]{10}$/);
     const runId = location.slice('/s/'.length);
 
     const config = await fetch(`${base}${location}`).then((r) => r.json());

@@ -37,11 +37,28 @@ import {
 /** Store writer suffix for the hosted layer's own checks (client identity). */
 const HOSTED_WRITER_SUFFIX = '/hosted';
 
-/** Run ids are one path segment: safe in URLs and after the relay's /r/. */
+/**
+ * Run ids are one path segment: safe in URLs and after the relay's /r/.
+ * Any such id is accepted (pick your own, or keep an older minted one);
+ * mintRunId() only draws from the unambiguous alphabet below.
+ */
 export const RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * Crockford's base32 alphabet in lower case: no i, l, o or u, so an id read
+ * off a monospace breadcrumb or a screenshot can't be misread (O vs 0).
+ */
+const ID_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
+
+/** A random id of `length` characters from ID_ALPHABET (5 bits each). */
+export function mintId(length: number): string {
+  let id = '';
+  for (const byte of randomBytes(length)) id += ID_ALPHABET[byte & 31];
+  return id;
+}
+
 export function mintRunId(): string {
-  return randomBytes(6).toString('base64url');
+  return mintId(10);
 }
 
 /** One scenario at one revision inside one run. */
