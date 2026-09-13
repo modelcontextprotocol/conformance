@@ -10,6 +10,11 @@ import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import type { CellReport, RunReport, Verdict } from './report';
 import type { ClientIdentity } from './identity';
+import {
+  COMPOSITE_SEPARATOR,
+  DEFAULT_COMPOSITES,
+  type CompositeView
+} from './composite';
 
 const VERDICT_STYLE: Record<Verdict, string> = {
   pass: 'background:#d1fae5;color:#065f46',
@@ -301,6 +306,7 @@ ${crumbs(config)}
 Point your client at a cell's MCP URL (open it for the env the CLI runner
 would set), then read the <a href="${esc(config.resultsUrl)}">results</a>.
 <button class=copy data-copy="all">copy mcpServers for all ${config.cells.length}</button></p>
+${compositeLinks(origin, matrix, config)}
 ${renderMatrixTable(matrix, {
   origin,
   runId: config.runId,
@@ -308,6 +314,60 @@ ${renderMatrixTable(matrix, {
 })}`;
   }
   return page(title, `${body}\n${embedded}\n${copyScript}`);
+}
+
+/**
+ * The run page's ready-made composites: per revision, one MCP URL carrying
+ * several scenarios, for a client that is configured by hand.
+ */
+function compositeLinks(
+  origin: string,
+  matrix: HostedMatrix,
+  config: RunConfig
+): string {
+  const revisions = config.revision ? [config.revision] : matrix.revisions;
+  const items = revisions.flatMap((rev) => {
+    const children = (DEFAULT_COMPOSITES[rev] ?? []).filter(
+      (name) => matrix.cell(name, rev)?.startable
+    );
+    if (children.length < 2) return [];
+    const cell = `${origin}/s/${config.runId}/${rev}/${children.join(COMPOSITE_SEPARATOR)}`;
+    return [
+      `<li><code>${esc(rev)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(cell)}/mcp</code></li>`
+    ];
+  });
+  if (!items.length) return '';
+  return `<h2>One URL for several scenarios</h2>
+<p>For a client you configure by hand, give it one of these instead of a URL
+per scenario. Each scenario still records and scores in its own cell below.</p>
+<ul>${items.join('')}</ul>`;
+}
+
+/**
+ * A composite's page: the one URL to give the client, then what to make the
+ * client do for each scenario behind it, and where each result lands.
+ */
+export function renderComposite(view: CompositeView): string {
+  const children = view.children
+    .map(
+      (c) => `<div class=check><h3><code>${esc(c.scenario)}</code></h3>
+<p>${esc(c.description)}</p>${stepsDetails(c as Pick<MatrixCell, 'steps'>)}
+<p><a href="${esc(c.resultsUrl)}">results for this scenario</a></p></div>`
+    )
+    .join('\n');
+  return page(
+    `composite @ ${view.revision} — run ${view.runId}`,
+    `<h1>${view.children.length} scenarios, one URL <small>@ ${esc(view.revision)}</small></h1>
+<p class=crumbs><a href="/s/${esc(view.runId)}">run ${esc(view.runId)}</a></p>
+<p>Give the client under test this MCP URL. Each scenario below still records
+and scores on its own, so its results page reads exactly as if the client had
+been pointed at it directly.</p>
+<h2>MCP endpoint</h2>
+<pre>${esc(view.url)}</pre>
+<h2>Scenarios behind it</h2>
+${children}
+<p><a href="${esc(view.resultsUrl)}">results for the whole run at ${esc(view.revision)}</a></p>`
+  );
 }
 
 /** One line saying where the cell stands, for the cell results page. */

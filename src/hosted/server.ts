@@ -69,6 +69,8 @@ import {
   type RequestInfo
 } from './wire';
 import { buildReport, summarize, verdictFor, type Verdict } from './report';
+import { parseComposite } from './composite';
+import { createCompositeRoute } from './composite-route';
 import type { RunStore } from './store';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
@@ -540,9 +542,47 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // the cell, rewrites req.url to strip the /s/<run-id>/<rev>/<scenario>
   // prefix, and hands off to the cell's listener — exactly what
   // app.use(prefix, fn) would do, but with a dynamic prefix.
+  const composite = createCompositeRoute({
+    matrix,
+    createRun,
+    dispatch,
+    cellBaseUrl,
+    resultsUrlFor,
+    isPageRequest,
+    wantsHtml
+  });
+
   app.all(/^\/s\/(.+)$/, async (req, res) => {
     const segments = segmentsOf(req.params[0]);
     const [runId, revision] = segments;
+
+    // Several scenarios' cells behind one URL, `<a>+<b>` (see ./composite.ts).
+    const tail = segments.slice(2).join('/');
+    const spec = tail.endsWith(MCP_PATH)
+      ? tail.slice(0, -MCP_PATH.length)
+      : tail;
+    const children = segments.length > 2 ? parseComposite(spec) : undefined;
+    if (children) {
+      if (!RUN_ID_RE.test(runId)) {
+        res.status(400).json({ error: 'invalid run-id' });
+        return;
+      }
+      if (!revisions.includes(revision)) {
+        res
+          .status(404)
+          .json({ error: `unknown revision '${revision}'`, revisions });
+        return;
+      }
+      await composite(
+        req,
+        res,
+        runId,
+        revision as SpecVersion,
+        children,
+        spec === tail ? '' : MCP_PATH
+      );
+      return;
+    }
 
     if (segments.length <= 2) {
       // Run or column scope: config only.
