@@ -11,10 +11,13 @@ import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
 import { untestableCheck } from '../../untestable.js';
 
-const specRefs = [SpecReferences.RFC_9207_ISS_PARAMETER];
+const specRefs = [
+  SpecReferences.RFC_9207_ISS_PARAMETER,
+  SpecReferences.MCP_AUTH_RESPONSE_VALIDATION_2026_07_28
+];
 const metadataSpecRefs = [
   SpecReferences.RFC_AUTH_SERVER_METADATA_REQUEST,
-  SpecReferences.MCP_AUTH_DISCOVERY
+  SpecReferences.MCP_AUTH_DISCOVERY_2026_07_28
 ];
 
 /**

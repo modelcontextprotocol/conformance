@@ -97,7 +97,10 @@ export class ScopeFromWwwAuthenticateScenario extends AuthHandlerScenario {
             : 'Client SHOULD use the scope parameter from the WWW-Authenticate header when provided',
           status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
           timestamp: data.timestamp,
-          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          specReferences: [
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+          ],
           details: {
             expectedScope,
             requestedScope: data.scope || 'none'
@@ -130,7 +133,10 @@ export class ScopeFromWwwAuthenticateScenario extends AuthHandlerScenario {
           'Client did not complete authorization flow - scope check could not be performed',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ]
       });
     }
     return checks;
@@ -173,7 +179,10 @@ export class ScopeFromScopesSupportedScenario extends AuthHandlerScenario {
             : 'Client SHOULD use all scopes from scopes_supported when scope not available in WWW-Authenticate header',
           status: hasAllScopes ? 'SUCCESS' : 'WARNING',
           timestamp: data.timestamp,
-          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          specReferences: [
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+          ],
           details: {
             scopesSupported: scopesSupported.join(' '),
             requestedScope: data.scope || 'none',
@@ -214,7 +223,10 @@ export class ScopeFromScopesSupportedScenario extends AuthHandlerScenario {
           'Client did not complete authorization flow - scope check could not be performed',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ]
       });
     }
     return checks;
@@ -253,7 +265,10 @@ export class ScopeOmittedWhenUndefinedScenario extends AuthHandlerScenario {
             : 'Client SHOULD omit scope parameter when scopes_supported is undefined and scope not in WWW-Authenticate',
           status: scopeOmitted ? 'SUCCESS' : 'WARNING',
           timestamp: data.timestamp,
-          specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+          specReferences: [
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+            SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+          ],
           details: {
             scopeParameter: scopeOmitted ? 'omitted' : data.scope
           }
@@ -286,7 +301,10 @@ export class ScopeOmittedWhenUndefinedScenario extends AuthHandlerScenario {
           'Client did not complete authorization flow - scope check could not be performed',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ]
       });
     }
     return checks;
@@ -445,7 +463,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
           : 'Client SHOULD use the scope parameter from the WWW-Authenticate header',
         status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
         timestamp: initial.timestamp,
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ],
         details: {
           expectedScope: initialScope,
           requestedScope: scope || 'none'
@@ -470,7 +491,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
           : 'Client SHOULD request additional scopes when receiving 403 with new scope requirements',
         status: includesChallenged ? 'SUCCESS' : 'WARNING',
         timestamp: escalation.timestamp,
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ],
         details: {
           challengedScope: stepUpScope,
           requestedScope: scope || 'none'
@@ -487,7 +511,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
             : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
           status: retainedPrior ? 'SUCCESS' : 'WARNING',
           timestamp: escalation.timestamp,
-          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+          specReferences: [
+            SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+            SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+          ],
           details: {
             previouslyGranted: initialScope,
             challengedScope: stepUpScope,
@@ -505,7 +532,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
         description: 'Client did not make an initial authorization request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ]
       });
     }
 
@@ -517,7 +547,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
           'Client did not make a second authorization request for scope escalation',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY,
+          SpecReferences.MCP_SCOPE_SELECTION_STRATEGY_2026_07_28
+        ]
       });
       if (unionRequired) {
         checks.push({
@@ -527,7 +560,10 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
             'Client did not make a second authorization request - scope union check could not be performed',
           status: 'FAILURE',
           timestamp: new Date().toISOString(),
-          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
+          specReferences: [
+            SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+            SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+          ]
         });
       }
     }
@@ -654,7 +690,10 @@ export class ScopeRetryLimitScenario extends AuthHandlerScenario {
         description: `Client made authorization request attempt ${attemptNumber}`,
         status: 'INFO',
         timestamp: authorization.timestamp,
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        specReferences: [
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+        ],
         details: {
           attemptNumber,
           requestedScope: requestedScope(authorization) || 'none'
@@ -670,7 +709,10 @@ export class ScopeRetryLimitScenario extends AuthHandlerScenario {
         description: 'Client did not make any authorization requests',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
+        specReferences: [
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+        ]
       });
     } else if (authAttempts <= 3) {
       checks.push({
@@ -679,7 +721,10 @@ export class ScopeRetryLimitScenario extends AuthHandlerScenario {
         description: `Client correctly limited retry attempts to ${authAttempts} (3 or fewer)`,
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        specReferences: [
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+        ],
         details: {
           authorizationAttempts: authAttempts,
           maxAllowed: 3
@@ -692,7 +737,10 @@ export class ScopeRetryLimitScenario extends AuthHandlerScenario {
         description: `Client made ${authAttempts} authorization attempts (more than 3). Clients SHOULD implement retry limits to avoid infinite loops.`,
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        specReferences: [
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING,
+          SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28
+        ],
         details: {
           authorizationAttempts: authAttempts,
           maxAllowed: 3

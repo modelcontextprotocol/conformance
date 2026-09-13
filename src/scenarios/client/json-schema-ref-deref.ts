@@ -39,6 +39,10 @@ const SPEC_REFERENCES = [
   {
     id: 'SEP-2106',
     url: 'https://modelcontextprotocol.io/seps/2106-json-schema-2020-12#security-implications'
+  },
+  {
+    id: 'MCP-2026-07-28-ref-resolution',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic#$ref-resolution'
   }
 ];
 

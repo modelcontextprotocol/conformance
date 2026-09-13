@@ -5,7 +5,8 @@ import {
   RequestListener,
   ConformanceCheck,
   CheckStatus,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  SpecReference
 } from '../../types';
 
 /**
@@ -47,6 +48,25 @@ export const DECLARED_CHECK_IDS = [
  */
 const RETRY_CHECK_ID = 'sep-2575-client-retry-supported-version';
 
+/** Where 2026-07-28 defines each optional client capability. */
+const CAPABILITY_REFERENCES: Record<
+  'roots' | 'sampling' | 'elicitation',
+  SpecReference
+> = {
+  roots: {
+    id: 'SEP-2575',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/client/roots#capabilities'
+  },
+  sampling: {
+    id: 'SEP-2575',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/client/sampling#capabilities'
+  },
+  elicitation: {
+    id: 'SEP-2575',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#capabilities'
+  }
+};
+
 export class RequestMetadataScenario extends HandlerScenario {
   name = 'request-metadata';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
@@ -86,7 +106,7 @@ export class RequestMetadataScenario extends HandlerScenario {
           specReferences: [
             {
               id: 'SEP-2575',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+              url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic#_meta'
             }
           ],
           details: { observed: false, requestsObserved: this.requestsObserved }
@@ -220,7 +240,7 @@ export class RequestMetadataScenario extends HandlerScenario {
         specReferences: [
           {
             id: 'SEP-2575',
-            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+            url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#protocol-version-header'
           }
         ],
         details: { method: request.method, headerVersion }
@@ -246,7 +266,7 @@ export class RequestMetadataScenario extends HandlerScenario {
         specReferences: [
           {
             id: 'SEP-2575',
-            url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+            url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic#_meta'
           }
         ],
         details: { method: request.method, meta }
@@ -264,7 +284,7 @@ export class RequestMetadataScenario extends HandlerScenario {
         specReferences: [
           {
             id: 'SEP-2575',
-            url: 'https://modelcontextprotocol.io/specification/draft/basic/index#meta'
+            url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic#_meta'
           }
         ],
         details: { method: request.method, meta }
@@ -290,7 +310,7 @@ export class RequestMetadataScenario extends HandlerScenario {
         specReferences: [
           {
             id: 'SEP-2575',
-            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+            url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#protocol-version-header'
           }
         ],
         details: { headerVersion, metaVersion }
@@ -299,7 +319,7 @@ export class RequestMetadataScenario extends HandlerScenario {
       // 4. Optional client capabilities conditional verification
       const capabilities = meta?.['io.modelcontextprotocol/clientCapabilities'];
       const checkOptionalCapability = (
-        capabilityName: string,
+        capabilityName: keyof typeof CAPABILITY_REFERENCES,
         checkId: string,
         checkName: string
       ) => {
@@ -316,12 +336,7 @@ export class RequestMetadataScenario extends HandlerScenario {
           description: `Client declares valid ${capabilityName} capability if present`,
           status,
           timestamp: new Date().toISOString(),
-          specReferences: [
-            {
-              id: 'SEP-2575',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/index#capabilities'
-            }
-          ],
+          specReferences: [CAPABILITY_REFERENCES[capabilityName]],
           details: { capabilityValue: capabilities?.[capabilityName] }
         });
       };
@@ -356,7 +371,7 @@ export class RequestMetadataScenario extends HandlerScenario {
           specReferences: [
             {
               id: 'SEP-2575',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+              url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning#protocol-version-negotiation'
             }
           ],
           details: { headerVersion }

@@ -74,7 +74,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
             : 'Client SHOULD include refresh_token in grant_types client metadata (SEP-2207)',
           status: hasRefreshToken ? 'SUCCESS' : 'WARNING',
           timestamp: new Date().toISOString(),
-          specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+          specReferences: [
+            SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+            SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+          ],
           details: {
             registrationMethod: 'DCR',
             grantTypes: grantTypes.length > 0 ? grantTypes.join(' ') : 'none'
@@ -100,7 +103,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
             : 'Client MAY include offline_access in scope when AS metadata lists it in scopes_supported (SEP-2207). Client chose not to request it.',
           status: hasOfflineAccess ? 'SUCCESS' : 'INFO',
           timestamp: data.timestamp,
-          specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+          specReferences: [
+            SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+            SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+          ],
           details: {
             asScopesSupported: 'mcp:basic offline_access',
             requestedScope: data.scope || 'none'
@@ -150,7 +156,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
             : 'Client SHOULD include refresh_token in grant_types client metadata (SEP-2207)',
           status: hasRefreshToken ? 'SUCCESS' : 'WARNING',
           timestamp: new Date().toISOString(),
-          specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+          specReferences: [
+            SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+            SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+          ],
           details: {
             registrationMethod: 'CIMD',
             cimdUrl,
@@ -167,7 +176,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
           'Client used CIMD but metadata URL could not be fetched to verify grant_types',
         status: 'INFO',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+        specReferences: [
+          SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+          SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+        ],
         details: {
           registrationMethod: 'CIMD',
           cimdUrl,
@@ -192,7 +204,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
           'Client did not use DCR or fetchable CIMD — grant_types could not be inspected',
         status: 'INFO',
         timestamp,
-        specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+        specReferences: [
+          SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+          SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+        ],
         details: {
           registrationMethod: 'unknown'
         }
@@ -210,7 +225,10 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
           'Client did not complete authorization flow — offline_access scope check could not be performed',
         status: 'FAILURE',
         timestamp,
-        specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE]
+        specReferences: [
+          SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+          SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+        ]
       });
     }
 
@@ -263,7 +281,10 @@ export class OfflineAccessNotSupportedScenario extends AuthHandlerScenario {
             : 'Client correctly did not request offline_access when AS does not list it in scopes_supported',
           status: hasOfflineAccess ? 'FAILURE' : 'SUCCESS',
           timestamp: data.timestamp,
-          specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+          specReferences: [
+            SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+            SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+          ],
           details: {
             asScopesSupported: 'mcp:basic mcp:read',
             requestedScope: data.scope || 'none'
@@ -294,7 +315,10 @@ export class OfflineAccessNotSupportedScenario extends AuthHandlerScenario {
           'Client did not complete authorization flow — offline_access scope check could not be performed',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE]
+        specReferences: [
+          SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE,
+          SpecReferences.MCP_REFRESH_TOKENS_2026_07_28
+        ]
       });
     }
 

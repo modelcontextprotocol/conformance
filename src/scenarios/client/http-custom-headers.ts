@@ -18,17 +18,17 @@ import { BaseHttpScenario } from './http-base.js';
 
 const SPEC_REFERENCE_CUSTOM = {
   id: 'SEP-2243-Custom-Headers',
-  url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#custom-headers-from-tool-parameters'
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#custom-headers-from-tool-parameters'
 };
 
 const SPEC_REFERENCE_ENCODING = {
   id: 'SEP-2243-Value-Encoding',
-  url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#value-encoding'
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#value-encoding'
 };
 
 const SPEC_REFERENCE_TOOL_DEF = {
   id: 'SEP-2243-x-mcp-header',
-  url: 'https://modelcontextprotocol.io/specification/draft/server/tools#x-mcp-header'
+  url: 'https://modelcontextprotocol.io/specification/2026-07-28/server/tools#x-mcp-header'
 };
 
 /**

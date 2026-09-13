@@ -27,7 +27,7 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   MCP_DCR: {
     id: 'MCP-Dynamic-client-registration',
-    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/client#dynamic-client-registration'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#dynamic-client-registration'
   },
   OAUTH_2_1_AUTHORIZATION_ENDPOINT: {
     id: 'OAUTH-2.1-authorization-endpoint',
@@ -79,11 +79,11 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   MCP_RESOURCE_PARAMETER: {
     id: 'MCP-Resource-Parameter-Implementation',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#resource-parameter-implementation'
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#resource-parameter-implementation'
   },
   MCP_CANONICAL_SERVER_URI: {
     id: 'MCP-Canonical-Server-URI',
-    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#canonical-server-uri'
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#canonical-server-uri'
   },
   RFC_9728_RESOURCE_IDENTITY: {
     id: 'RFC-9728-resource-identity',
@@ -97,7 +97,64 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'MCP-PKCE-requirement',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-code-protection'
   },
-  // TODO: Update to MCP spec URL once SEP-2468 (modelcontextprotocol/modelcontextprotocol#2468) is merged
+  // The 2026-07-28 release states these requirements on its own pages: it
+  // splits authorization into discovery, client registration and security
+  // considerations. Checks that also run at earlier revisions cite the dated
+  // reference above and its counterpart here; checks that only run at
+  // 2026-07-28 cite the counterpart alone.
+  MCP_PRM_DISCOVERY_2026_07_28: {
+    id: 'MCP-2026-07-28-PRM-discovery',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery#protected-resource-metadata-discovery-requirements'
+  },
+  MCP_AUTH_DISCOVERY_2026_07_28: {
+    id: 'MCP-2026-07-28-Authorization-metadata-discovery',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery#authorization-server-metadata-discovery'
+  },
+  MCP_AS_LOCATION_2026_07_28: {
+    id: 'MCP-2026-07-28-Authorization-server-location',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery#authorization-server-location'
+  },
+  MCP_CLIENT_ID_METADATA_DOCUMENTS_2026_07_28: {
+    id: 'MCP-2026-07-28-Client-ID-Metadata-Documents',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#client-id-metadata-documents'
+  },
+  MCP_PREREGISTRATION_2026_07_28: {
+    id: 'MCP-2026-07-28-Preregistration',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#pre-registration'
+  },
+  MCP_DCR_2026_07_28: {
+    id: 'MCP-2026-07-28-Dynamic-client-registration',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#dynamic-client-registration'
+  },
+  MCP_AS_BINDING_2026_07_28: {
+    id: 'MCP-2026-07-28-Authorization-server-binding',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#authorization-server-binding'
+  },
+  MCP_SCOPE_SELECTION_STRATEGY_2026_07_28: {
+    id: 'MCP-2026-07-28-Scope-selection-strategy',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#scope-selection-strategy'
+  },
+  MCP_AUTH_RESPONSE_VALIDATION_2026_07_28: {
+    id: 'MCP-2026-07-28-Authorization-response-validation',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#authorization-response-validation'
+  },
+  MCP_ACCESS_TOKEN_USAGE_2026_07_28: {
+    id: 'MCP-2026-07-28-Access-token-usage',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#access-token-usage'
+  },
+  MCP_REFRESH_TOKENS_2026_07_28: {
+    id: 'MCP-2026-07-28-Refresh-tokens',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#refresh-tokens'
+  },
+  MCP_SCOPE_CHALLENGE_HANDLING_2026_07_28: {
+    id: 'MCP-2026-07-28-Scope-challenge-handling',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization#scope-challenge-handling'
+  },
+  MCP_PKCE_2026_07_28: {
+    id: 'MCP-2026-07-28-PKCE-requirement',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/security-considerations#authorization-code-protection'
+  },
+  // MCP_AUTH_RESPONSE_VALIDATION_2026_07_28 carries the MCP requirement (SEP-2468).
   RFC_9207_ISS_PARAMETER: {
     id: 'RFC-9207-iss-parameter',
     url: 'https://www.rfc-editor.org/rfc/rfc9207.html#section-2'

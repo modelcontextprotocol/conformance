@@ -24,7 +24,8 @@ const PRE_REGISTERED_CLIENT_SECRET = 'pre-registered-secret';
  * https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#authorization-server-binding
  *
  * This tests the pre-registration approach described in the MCP spec:
- * https://modelcontextprotocol.io/specification/draft/basic/authorization#preregistration
+ * https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#preregistration
+ * https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#pre-registration
  */
 export class PreRegistrationScenario extends AuthHandlerScenario {
   name = 'auth/pre-registration';
@@ -55,7 +56,10 @@ export class PreRegistrationScenario extends AuthHandlerScenario {
               'Client did not use Basic authentication with pre-registered credentials',
             status: 'FAILURE',
             timestamp,
-            specReferences: [SpecReferences.MCP_PREREGISTRATION]
+            specReferences: [
+              SpecReferences.MCP_PREREGISTRATION,
+              SpecReferences.MCP_PREREGISTRATION_2026_07_28
+            ]
           });
           return {
             error: 'invalid_client',
@@ -80,7 +84,10 @@ export class PreRegistrationScenario extends AuthHandlerScenario {
             description: `Client used incorrect pre-registered credentials. Expected client_id '${PRE_REGISTERED_CLIENT_ID}', got '${clientId}'`,
             status: 'FAILURE',
             timestamp,
-            specReferences: [SpecReferences.MCP_PREREGISTRATION],
+            specReferences: [
+              SpecReferences.MCP_PREREGISTRATION,
+              SpecReferences.MCP_PREREGISTRATION_2026_07_28
+            ],
             details: {
               expectedClientId: PRE_REGISTERED_CLIENT_ID,
               actualClientId: clientId
@@ -101,7 +108,10 @@ export class PreRegistrationScenario extends AuthHandlerScenario {
             'Client correctly used pre-registered credentials when server does not support DCR',
           status: 'SUCCESS',
           timestamp,
-          specReferences: [SpecReferences.MCP_PREREGISTRATION],
+          specReferences: [
+            SpecReferences.MCP_PREREGISTRATION,
+            SpecReferences.MCP_PREREGISTRATION_2026_07_28
+          ],
           details: { clientId }
         });
 
@@ -144,7 +154,10 @@ export class PreRegistrationScenario extends AuthHandlerScenario {
         description: 'Client did not make a token request',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_PREREGISTRATION]
+        specReferences: [
+          SpecReferences.MCP_PREREGISTRATION,
+          SpecReferences.MCP_PREREGISTRATION_2026_07_28
+        ]
       });
     }
 

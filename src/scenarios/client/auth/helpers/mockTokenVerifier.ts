@@ -55,7 +55,10 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
         description: 'Client provided valid bearer token',
         status: 'SUCCESS',
         timestamp: new Date().toISOString(),
-        specReferences: [SpecReferences.MCP_ACCESS_TOKEN_USAGE],
+        specReferences: [
+          SpecReferences.MCP_ACCESS_TOKEN_USAGE,
+          SpecReferences.MCP_ACCESS_TOKEN_USAGE_2026_07_28
+        ],
         details: {
           token: token.substring(0, 15) + '...',
           scopes
@@ -75,7 +78,10 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
       description: 'Client provided invalid bearer token',
       status: 'FAILURE',
       timestamp: new Date().toISOString(),
-      specReferences: [SpecReferences.MCP_ACCESS_TOKEN_USAGE],
+      specReferences: [
+        SpecReferences.MCP_ACCESS_TOKEN_USAGE,
+        SpecReferences.MCP_ACCESS_TOKEN_USAGE_2026_07_28
+      ],
       details: {
         message: 'Token verification failed',
         token: token ? token.substring(0, 10) + '...' : 'missing'

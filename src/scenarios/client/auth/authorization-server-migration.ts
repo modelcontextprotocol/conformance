@@ -66,7 +66,7 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
         description: `Client sent a ${endpoint} request to the new authorization server`,
         status: 'INFO',
         timestamp,
-        specReferences: [SpecReferences.MCP_DCR],
+        specReferences: [SpecReferences.MCP_AS_BINDING_2026_07_28],
         details: { endpoint, ...(clientId !== undefined && { clientId }) }
       });
     };
@@ -199,7 +199,7 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
         : 'Client MUST re-register with the new authorization server when PRM authorization_servers changes (SEP-2352); no registration request was observed at the new AS',
       status: as2SawRegister ? 'SUCCESS' : 'FAILURE',
       timestamp: ts,
-      specReferences: [SpecReferences.MCP_DCR]
+      specReferences: [SpecReferences.MCP_AS_BINDING_2026_07_28]
     });
     checks.push({
       id: 'sep-2352-no-reuse-on-as-change',
@@ -209,7 +209,7 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
         : 'Client did not present the previous AS client_id at the new authorization server',
       status: reusedAtAS2 ? 'FAILURE' : 'SUCCESS',
       timestamp: ts,
-      specReferences: [SpecReferences.MCP_DCR],
+      specReferences: [SpecReferences.MCP_AS_BINDING_2026_07_28],
       details: {
         previousClientId: AS1_CLIENT_ID,
         seenAtAuthorize: as2SawAs1ClientId,
@@ -227,7 +227,7 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
         : 'Client treated credentials as bound to the issuing authorization server',
       status: reusedAtAS2 ? 'FAILURE' : 'SUCCESS',
       timestamp: ts,
-      specReferences: [SpecReferences.MCP_DCR]
+      specReferences: [SpecReferences.MCP_AS_LOCATION_2026_07_28]
     });
     return checks;
   }

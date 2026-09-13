@@ -72,9 +72,13 @@ export class ResourceMismatchScenario extends AuthHandlerScenario {
   getChecks(): ConformanceCheck[] {
     const checks = [...this.checks];
     const timestamp = new Date().toISOString();
+    // The MCP text requires the resource parameter to name this server; the
+    // rule that a client must not use PRM whose `resource` differs from the
+    // URL it fetched it for is RFC 9728 section 3.3.
     const specRefs = [
       SpecReferences.RFC_8707_RESOURCE_INDICATORS,
-      SpecReferences.MCP_RESOURCE_PARAMETER
+      SpecReferences.MCP_RESOURCE_PARAMETER,
+      SpecReferences.RFC_9728_RESOURCE_IDENTITY
     ];
 
     // Reason-bound verdict (#467). "Did not proceed with authorization" is not

@@ -131,7 +131,8 @@ export function createServer(
         timestamp: new Date().toISOString(),
         specReferences: [
           SpecReferences.RFC_PRM_DISCOVERY,
-          SpecReferences.MCP_PRM_DISCOVERY
+          SpecReferences.MCP_PRM_DISCOVERY,
+          SpecReferences.MCP_PRM_DISCOVERY_2026_07_28
         ],
         details: {
           url: req.url,
@@ -240,7 +241,7 @@ export function createServer(
           specReferences: [
             {
               id: 'MCP-Versioning-Backward-Compatibility',
-              url: 'https://modelcontextprotocol.io/specification/draft/basic/versioning#backward-compatibility-with-initialization-based-versions'
+              url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning#backward-compatibility-with-initialization-based-versions'
             }
           ],
           details: {
@@ -266,7 +267,7 @@ export function createServer(
         specReferences: [
           {
             id: 'SEP-2575',
-            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+            url: 'https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#protocol-version-header'
           }
         ],
         details: {

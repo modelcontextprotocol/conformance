@@ -5,6 +5,7 @@ import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { sendStatelessRequest } from '../connection/stateless';
 import {
   resetWireValidation,
+  schemaCitationDirFor,
   specDispatchMaps,
   takeWireViolations,
   validateWireMessage,
@@ -577,5 +578,12 @@ describe('schema errata', () => {
       numberSchema(rawSchema2025_06_18, 'definitions').minimum.type,
       'the re-vendored 2025-06-18 schema no longer needs the erratum — delete its applySchemaErrata branch'
     ).toBe('integer');
+  });
+});
+
+describe('schemaCitationDirFor', () => {
+  test('cites each released revision by its own schema directory', () => {
+    expect(schemaCitationDirFor('2025-11-25')).toBe('2025-11-25');
+    expect(schemaCitationDirFor('2026-07-28')).toBe('2026-07-28');
   });
 });
