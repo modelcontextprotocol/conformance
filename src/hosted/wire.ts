@@ -15,10 +15,12 @@
  *
  * Both are FAILUREs, so they decide the cell's verdict (see report.ts). A
  * request that is both is one mistake and records only the wrong revision,
- * with the rejection folded in. On a dated cell a request at a foreign
- * revision that the wire turned away is version negotiation and records
- * neither (see isNegotiation()); on the stateless wire an `initialize` is a
- * legacy probe, noted as INFO and never failed (see isLegacyProbe()).
+ * with the rejection folded in. Probing for a revision is negotiation, not
+ * a mistake, and is noted as INFO in both directions: on a dated cell a
+ * request at another revision (a `server/discover` at 2026-07-28, say) that
+ * the cell turned away before it had given its answer is a modern probe
+ * (see isModernProbe()); on the stateless wire
+ * an `initialize` is a legacy probe (see isLegacyProbe()).
  */
 
 import type { ServerResponse } from 'http';
@@ -211,30 +213,231 @@ export function wireRejection(
   return undefined;
 }
 
+export const MODERN_PROBE_CHECK_ID = 'hosted-modern-probe';
+
+/** How a cell turned a request away: its status, and any JSON-RPC error. */
+export interface Refusal {
+  status: number;
+  code?: number;
+  message?: string;
+}
+
 /**
- * Whether a request to a dated cell was version negotiation rather than a
- * client at the wrong revision: its header named a revision `served` does
- * not serve and the wire turned it away for it — a 4xx whose body is a
- * lifecycle rejection (see wireRejection()) or a -32601 method-not-found
- * (the probe method does not exist on the dated wire). A dual-era client
- * opens a dated cell that way — `server/discover` at 2026-07-28 is
- * rejected, then it falls back to `initialize` — so neither judgement
- * applies to the rejected request. A foreign-revision request the wire
- * accepted is still the client carrying on at the wrong revision, and on
- * the stateless wire nothing is negotiation.
+ * Whether a request to a dated cell is a modern probe — version negotiation
+ * rather than a client at the wrong revision: its header names a revision
+ * `served` does not serve, it is not `initialize` (which negotiates on this
+ * wire and is never judged), the cell did not accept it (any 4xx: the
+ * transport's unsupported-version 400, a -32601 for a method the dated wire
+ * lacks, or the 401 an auth cell answers before it looks at the protocol),
+ * and the cell had not yet given the client its answer (`answered`; see
+ * versionAnswer()). A dual-era client opens a dated cell that way —
+ * `server/discover` at 2026-07-28 is turned away, then it falls back to
+ * `initialize` at `served` — so it is noted (modernProbeCheck()), never
+ * failed. A foreign-revision request the cell accepted, or one sent after
+ * the cell's answer, is the client carrying on at the wrong revision; on
+ * the stateless wire nothing is a modern probe (see isLegacyProbe() for
+ * the mirror case there).
  */
-export function isNegotiation(
+export function isModernProbe(
+  served: SpecVersion,
+  request: RequestInfo,
+  headerVersion: string | undefined,
+  response: CapturedResponse,
+  answered: boolean
+): boolean {
+  if (!isStatefulVersion(served) || answered) return false;
+  if (headerVersion === undefined || headerVersion === served) return false;
+  if (request.methods.includes('initialize')) return false;
+  return response.status >= 400 && response.status < 500;
+}
+
+/**
+ * The cell's answer to a request at a revision it does not serve, or
+ * undefined when the response is not one: a 4xx lifecycle rejection (see
+ * wireRejection()) or -32601 method-not-found. Either tells a probing
+ * client to fall back; a 401 does not (it says to sign in first, and the
+ * probe is repeated with a token).
+ */
+export function versionAnswer(
   served: SpecVersion,
   headerVersion: string | undefined,
   response: CapturedResponse
+): Refusal | undefined {
+  const rejection = wireRejection(response, served, headerVersion);
+  if (rejection) return rejection;
+  if (response.status < 400 || response.status >= 500) return undefined;
+  for (const m of jsonRpcMessages(response.body, response.contentType)) {
+    const error = asRecord(m.error);
+    if (error?.code === -32601)
+      return {
+        status: response.status,
+        code: -32601,
+        message: str(error.message) ?? ''
+      };
+  }
+  return undefined;
+}
+
+/**
+ * How `response` turned a request away, for a modern probe's details: its
+ * status and the JSON-RPC error it carried, if any (a 401's OAuth body
+ * carries none).
+ */
+export function refusalOf(response: CapturedResponse): Refusal {
+  for (const m of jsonRpcMessages(response.body, response.contentType)) {
+    const error = asRecord(m.error);
+    if (error && typeof error.code === 'number')
+      return {
+        status: response.status,
+        code: error.code,
+        message: str(error.message) ?? ''
+      };
+  }
+  return { status: response.status };
+}
+
+/**
+ * Whether the exchange was an accepted `initialize`: the cell negotiated a
+ * revision with the client, so every later request's header has had its
+ * answer.
+ */
+export function isAcceptedInitialize(
+  request: RequestInfo,
+  response: CapturedResponse
 ): boolean {
-  if (!isStatefulVersion(served)) return false;
-  if (headerVersion === undefined || headerVersion === served) return false;
-  if (response.status < 400 || response.status >= 500) return false;
-  if (wireRejection(response, served, headerVersion)) return true;
+  if (!request.methods.includes('initialize')) return false;
+  if (response.status < 200 || response.status >= 300) return false;
   return jsonRpcMessages(response.body, response.contentType).some(
-    (m) => asRecord(m.error)?.code === -32601
+    (m) => asRecord(m.result) !== undefined
   );
+}
+
+export const VERSION_OFFERED_CHECK_ID = 'hosted-version-offered';
+
+/** The `protocolVersion` field of a JSON-RPC result, as it is on the wire. */
+const PROTOCOL_VERSION_FIELD = /("protocolVersion"\s*:\s*")([^"\\]*)(")/;
+
+/**
+ * Make the `initialize` result a dated cell sends state the cell's revision
+ * `served`, whatever the scenario negotiated. A cell tests exactly its
+ * column's revision, but the bundled servers echo any version they support
+ * (the SDK's, 2025-06-18 among them; the raw `initialize` scenario's), and a
+ * client that then speaks the version it was given would be failed for it.
+ * Told `served`, a client that cannot speak it declines, as the lifecycle
+ * says it should. Wraps `res.write`/`res.end` and rewrites the first
+ * `"protocolVersion":"…"` of a 2xx response once `isInitialize()` says the
+ * request was one (the scenario has read the body by the time it answers).
+ * Bytes are rewritten in place (latin1 keeps them 1:1), and a declared
+ * Content-Length not yet sent is kept right. Hosted only: the CLI runner
+ * still sees what the scenario answers.
+ */
+export function pinInitializeVersion(
+  res: ServerResponse,
+  served: SpecVersion,
+  isInitialize: () => boolean
+): void {
+  let pinned = false;
+  const rewrite = (chunk: unknown): unknown => {
+    if (pinned || res.statusCode < 200 || res.statusCode >= 300) return chunk;
+    const bytes = Buffer.isBuffer(chunk) || chunk instanceof Uint8Array;
+    if (!bytes && typeof chunk !== 'string') return chunk;
+    if (!isInitialize()) return chunk;
+    const text = bytes ? Buffer.from(chunk).toString('latin1') : chunk;
+    const match = PROTOCOL_VERSION_FIELD.exec(text);
+    if (!match) return chunk;
+    pinned = true;
+    if (match[2] === served) return chunk;
+    const out =
+      text.slice(0, match.index) +
+      match[1] +
+      served +
+      match[3] +
+      text.slice(match.index + match[0].length);
+    const delta = served.length - match[2].length;
+    const declared = res.getHeader('content-length');
+    if (delta !== 0 && !res.headersSent && declared !== undefined)
+      res.setHeader('content-length', String(Number(declared) + delta));
+    return bytes ? Buffer.from(out, 'latin1') : out;
+  };
+  const write = res.write;
+  const end = res.end;
+  res.write = function (this: ServerResponse, ...args: unknown[]) {
+    args[0] = rewrite(args[0]);
+    return (write as (...a: unknown[]) => boolean).apply(this, args);
+  } as ServerResponse['write'];
+  res.end = function (this: ServerResponse, ...args: unknown[]) {
+    if (typeof args[0] !== 'function') args[0] = rewrite(args[0]);
+    return (end as (...a: unknown[]) => ServerResponse).apply(this, args);
+  } as ServerResponse['end'];
+}
+
+/** The `protocolVersion` an accepted `initialize` answered with, if any. */
+export function answeredVersion(
+  response: CapturedResponse
+): string | undefined {
+  if (response.status < 200 || response.status >= 300) return undefined;
+  for (const m of jsonRpcMessages(response.body, response.contentType)) {
+    const version = str(asRecord(m.result)?.protocolVersion);
+    if (version) return version;
+  }
+  return undefined;
+}
+
+/**
+ * The client's `initialize` asked a dated cell for a revision other than the
+ * one it serves, and was told the cell's (see pinInitializeVersion()). Noted
+ * so the results page can explain a client that then declined or went quiet;
+ * one that carries on at the version it asked for is at the wrong revision.
+ */
+export function versionOfferedCheck(
+  served: SpecVersion,
+  requestedVersion: string,
+  answered: string | undefined
+): ConformanceCheck {
+  return {
+    id: VERSION_OFFERED_CHECK_ID,
+    name: 'VersionOffered',
+    description:
+      `The client asked for ${requestedVersion} in initialize; this cell tests ${served} only, ` +
+      `so it answered ${answered ?? served}. A client that cannot speak ${served} may disconnect; ` +
+      `one that carries on at ${requestedVersion} is at the wrong revision`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: {
+      served,
+      requestedVersion,
+      ...(answered && { answeredVersion: answered })
+    }
+  };
+}
+
+export function modernProbeCheck(
+  served: SpecVersion,
+  method: string | undefined,
+  headerVersion: string,
+  refusal: Refusal
+): ConformanceCheck {
+  return {
+    id: MODERN_PROBE_CHECK_ID,
+    name: 'ModernProbe',
+    description:
+      `The client asked for ${headerVersion}${method ? ` with ${method}` : ''} on a cell served on ${served}, ` +
+      `and the cell answered ${refusalText(refusal)}. ` +
+      `That is version negotiation, not a failure: the client is judged on what it sends next, at ${served}`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: {
+      served,
+      ...(method && { method }),
+      headerVersion,
+      rejected: { ...refusal }
+    }
+  };
+}
+
+function refusalText(r: Refusal): string {
+  if (r.code === undefined) return `HTTP ${r.status}`;
+  return `HTTP ${r.status}, JSON-RPC error ${r.code}${r.message ? `: ${r.message}` : ''}`;
 }
 
 /**
@@ -243,8 +446,8 @@ export function isNegotiation(
  * cell's revision in the header and `initialize` does not exist; on a dated
  * (stateful) revision `initialize` negotiates and is exempt, and every later
  * request's header, when present, must name the cell's revision — unless
- * the wire rejected it as negotiation (isNegotiation()), which the caller
- * decides from the response.
+ * it was a modern probe (isModernProbe()), which the caller decides from
+ * the response and what the cell had already answered.
  */
 export function wrongRevision(
   served: SpecVersion,

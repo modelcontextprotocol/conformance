@@ -297,6 +297,161 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(rejudged.filter((c) => c.status === 'FAILURE')).toEqual([]);
   });
 
+  it('notes a dual-era client probing a dated auth cell, and does not fail it', async () => {
+    // A dual-era client's live sequence on 2025-11-25/auth/metadata-default:
+    // server/discover at 2026-07-28 draws the 401, the client signs in,
+    // repeats the discover with its token and is turned away for the
+    // version, then falls back to initialize at 2025-11-25.
+    const cell = 'dual/2025-11-25/auth/metadata-default';
+    const mcpUrl = `${rs}/s/${cell}/mcp`;
+    const modern = { 'mcp-protocol-version': '2026-07-28' };
+    const discover = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'server/discover',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientInfo': {
+            name: 'dual-era',
+            version: '0'
+          },
+          'io.modelcontextprotocol/clientCapabilities': {}
+        }
+      }
+    };
+    const post = (body: object, headers: Record<string, string> = {}) =>
+      fetch(mcpUrl, {
+        method: 'POST',
+        headers: { ...jsonHeaders(), ...headers },
+        body: JSON.stringify(body)
+      });
+
+    const first = await post(discover, modern);
+    expect(first.status).toBe(401);
+    await first.text();
+    const bearer = { authorization: `Bearer ${await signIn(cell, mcpUrl)}` };
+    const again = await post(discover, { ...modern, ...bearer });
+    expect(again.status).toBe(400);
+    expect((await again.json()).error.message).toContain(
+      'Unsupported protocol version: 2026-07-28'
+    );
+    const init = await post(
+      {
+        ...initBody(),
+        params: { ...initBody().params, protocolVersion: '2025-11-25' }
+      },
+      bearer
+    );
+    expect(init.status).toBe(200);
+    await init.text();
+    const dated = { ...bearer, 'mcp-protocol-version': '2025-11-25' };
+    const initialized = await post(
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      dated
+    );
+    expect(initialized.status).toBe(202);
+    await initialized.text();
+    const listed = await post(
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      dated
+    );
+    expect(listed.status).toBe(200);
+    await listed.text();
+
+    const results = await fetch(`${rs}/results/${cell}`).then((r) => r.json());
+    type Check = {
+      id: string;
+      status: string;
+      details?: Record<string, unknown>;
+    };
+    const hosted = results.checks.filter((c: Check) =>
+      c.id.startsWith('hosted-')
+    );
+    expect(hosted.filter((c: Check) => c.status === 'FAILURE')).toEqual([]);
+    // One note per header version, reporting the version answer rather than
+    // the 401 that came first.
+    expect(hosted.filter((c: Check) => c.id === 'hosted-modern-probe')).toEqual(
+      [
+        expect.objectContaining({
+          status: 'INFO',
+          details: expect.objectContaining({
+            method: 'server/discover',
+            headerVersion: '2026-07-28',
+            rejected: expect.objectContaining({ status: 400, code: -32000 })
+          })
+        })
+      ]
+    );
+    expect(results.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(results.verdict).toBe('pass');
+
+    // A client that keeps sending 2026-07-28 after that answer is carrying
+    // on at the wrong revision.
+    const stubborn = await post(
+      { jsonrpc: '2.0', id: 3, method: 'tools/list' },
+      { ...bearer, ...modern }
+    );
+    expect(stubborn.status).toBe(400);
+    await stubborn.text();
+    const after = await fetch(`${rs}/results/${cell}`).then((r) => r.json());
+    expect(
+      after.checks
+        .filter((c: Check) => c.status === 'FAILURE')
+        .map((c: Check) => [c.id, c.details?.method])
+    ).toEqual(
+      expect.arrayContaining([['hosted-wrong-revision', 'tools/list']])
+    );
+    expect(after.verdict).toBe('fail');
+  });
+
+  /** Walk the cell's OAuth flow by hand and return an access token. */
+  async function signIn(cell: string, mcpUrl: string): Promise<string> {
+    await fetch(
+      `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`
+    ).then((r) => r.json());
+    const asMeta = await fetch(
+      `${asOrigin}/.well-known/oauth-authorization-server/r/${cell}`
+    ).then((r) => r.json());
+    const redirect = 'http://localhost:0/cb';
+    const reg = await fetch(asMeta.registration_endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ client_name: 'vitest', redirect_uris: [redirect] })
+    }).then((r) => r.json());
+    const authz = await fetch(
+      `${asMeta.authorization_endpoint}?` +
+        new URLSearchParams({
+          response_type: 'code',
+          client_id: reg.client_id,
+          redirect_uri: redirect,
+          code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+          code_challenge_method: 'S256',
+          resource: mcpUrl
+        }),
+      { redirect: 'manual' }
+    );
+    const code = new URL(authz.headers.get('location')!).searchParams.get(
+      'code'
+    )!;
+    const tok = await fetch(asMeta.token_endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirect,
+        client_id: reg.client_id,
+        code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+        resource: mcpUrl
+      })
+    }).then((r) => r.json());
+    expect(tok.access_token).toBeTruthy();
+    return tok.access_token as string;
+  }
+
   it('exposes scenarioContext in the cell config env (pre-registration)', async () => {
     const cell = 'pre/2025-11-25/auth/pre-registration';
     const config = await fetch(`${rs}/s/${cell}?format=json`).then((r) =>

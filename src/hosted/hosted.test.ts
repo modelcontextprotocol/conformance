@@ -719,10 +719,10 @@ describe('hosted server', () => {
 
   it('records the client identity on both wires without eating the body', async () => {
     // Stateful: name from the initialize params, version from what the
-    // server answered over SSE — the SDK echoes a supported requested
-    // version and falls back to its latest for one it does not know. A
-    // second initialize by the same client adds to the one identity; a
-    // later header-only request adds nothing.
+    // server answered over SSE — on a hosted dated cell always the cell's
+    // revision, whatever the client asked for (a supported older version,
+    // or one nobody knows). A second initialize by the same client adds to
+    // the one identity; a later header-only request adds nothing.
     const url = `/s/who/${REV_STATEFUL}/tools_call/mcp`;
     await postMcp(url, initBody('sdk-a'), {
       'user-agent': 'vitest-agent/1'
@@ -755,13 +755,13 @@ describe('hosted server', () => {
       {
         name: 'sdk-a',
         version: '0',
-        protocolVersions: ['2025-06-18', REV_STATEFUL],
+        protocolVersions: [REV_STATEFUL],
         userAgent: 'vitest-agent/1'
       }
     ]);
     expect(ids[0].status).toBe('INFO');
     expect(ids[0].description).toContain(
-      `sdk-a 0 speaking protocol 2025-06-18, ${REV_STATEFUL}`
+      `sdk-a 0 speaking protocol ${REV_STATEFUL}`
     );
     // The scenario still saw and judged the body it was going to read.
     expect(stateful.summary.passed).toBeGreaterThanOrEqual(1);
@@ -869,7 +869,7 @@ describe('hosted server', () => {
     expect(report.identities).toEqual([
       expect.objectContaining({
         name: 'rep-client',
-        protocolVersions: ['2025-06-18']
+        protocolVersions: [REV_STATEFUL]
       })
     ]);
     expect(stateful.identities).toEqual([
@@ -1453,10 +1453,103 @@ describe('hosted server', () => {
     );
   });
 
+  it("answers an older initialize on a dated cell with the cell's revision", async () => {
+    // A live case: initialize asking 2025-06-18 on a 2025-11-25 cell.
+    // The bundled servers would echo 2025-06-18 and the cell would then fail
+    // the client for speaking it; the cell tests 2025-11-25, so it says so.
+    type Check = {
+      id: string;
+      status: string;
+      details?: Record<string, unknown>;
+    };
+    const olderInit = initBody(); // asks 2025-06-18
+    const call = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'add_numbers', arguments: { a: 5, b: 3 } }
+    };
+    const dated = { 'mcp-protocol-version': REV_STATEFUL };
+    const older = { 'mcp-protocol-version': '2025-06-18' };
+    const resultsOf = (run: string, name: string) =>
+      fetch(`${base}/results/${run}/${REV_STATEFUL}/${name}`).then((r) =>
+        r.json()
+      );
+
+    // The SDK's server (SSE), and the raw initialize scenario (plain JSON,
+    // Content-Length intact).
+    for (const [run, name] of [
+      ['pin', 'tools_call'],
+      ['pin', 'initialize']
+    ]) {
+      const r = await postMcp(
+        `/s/${run}/${REV_STATEFUL}/${name}/mcp`,
+        olderInit
+      );
+      expect(r.status, name).toBe(200);
+      const text = await r.text();
+      expect(text, name).toContain(`"protocolVersion":"${REV_STATEFUL}"`);
+      expect(text, name).not.toContain('2025-06-18');
+      const results = await resultsOf(run, name);
+      expect(
+        results.checks.filter((c: Check) => c.id === 'hosted-version-offered'),
+        name
+      ).toEqual([
+        expect.objectContaining({
+          status: 'INFO',
+          details: {
+            served: REV_STATEFUL,
+            requestedVersion: '2025-06-18',
+            answeredVersion: REV_STATEFUL
+          }
+        })
+      ]);
+    }
+
+    // A client that then speaks 2025-11-25 passes cleanly…
+    const url = `/s/pin/${REV_STATEFUL}/tools_call/mcp`;
+    await postMcp(url, call, dated).then((r) => r.text());
+    const clean = await resultsOf('pin', 'tools_call');
+    expect(clean.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(clean.verdict).toBe('pass');
+
+    // …one that keeps its own 2025-06-18 is at the wrong revision.
+    const stubborn = `/s/pin2/${REV_STATEFUL}/tools_call/mcp`;
+    await postMcp(stubborn, olderInit).then((r) => r.text());
+    await postMcp(stubborn, call, older).then((r) => r.text());
+    const kept = await resultsOf('pin2', 'tools_call');
+    expect(
+      kept.checks
+        .filter((c: Check) => c.status === 'FAILURE')
+        .map((c: Check) => [c.id, c.details?.headerVersion])
+    ).toEqual([['hosted-wrong-revision', '2025-06-18']]);
+    expect(kept.verdict).toBe('fail');
+
+    // A client that asks for the cell's revision gets no note.
+    const exact = `/s/pin3/${REV_STATEFUL}/tools_call/mcp`;
+    await postMcp(exact, {
+      ...olderInit,
+      params: { ...olderInit.params, protocolVersion: REV_STATEFUL }
+    }).then((r) => r.text());
+    const quiet = await resultsOf('pin3', 'tools_call');
+    expect(
+      quiet.checks.some((c: Check) => c.id === 'hosted-version-offered')
+    ).toBe(false);
+  });
+
   it('treats a rejected foreign-revision probe on a dated cell as negotiation', async () => {
-    type Check = { id: string; status: string; errorMessage?: string };
+    type Check = {
+      id: string;
+      status: string;
+      errorMessage?: string;
+      details?: Record<string, unknown>;
+    };
     const hostedChecks = (checks: Check[]) =>
       checks.filter((c) => c.id.startsWith('hosted-w'));
+    const probesIn = (checks: Check[]) =>
+      checks.filter((c) => c.id === 'hosted-modern-probe');
     const resultsOf = (run: string, rev: string, name: string) =>
       fetch(`${base}/results/${run}/${rev}/${name}`).then((r) => r.json());
     const verdictOf = async (run: string, rev: string, name: string) => {
@@ -1478,10 +1571,12 @@ describe('hosted server', () => {
       params: { name: 'add_numbers', arguments: { a: 1, b: 2 } }
     };
 
-    // Felix's live case: Claude Code opens a dated cell with server/discover
-    // at 2026-07-28, the SDK transport turns the header away, and the client
-    // falls back to initialize at 2025-11-25 and carries on there. The
-    // rejected probe is negotiation: neither hosted check, verdict pass.
+    // Felix's live case, since seen from a second client: a client opens a
+    // dated cell with server/discover at 2026-07-28, the SDK transport turns
+    // the header away, and the client falls back to initialize at 2025-11-25 and
+    // carries on there. The rejected probe is negotiation: noted once as an
+    // INFO modern probe with the answer it drew, neither FAILURE, verdict
+    // pass.
     const url = `/s/neg/${REV_STATEFUL}/tools_call/mcp`;
     const probe = await postMcp(
       url,
@@ -1496,6 +1591,13 @@ describe('hosted server', () => {
     expect(init.status).toBe(200);
     expect(await init.text()).toContain(`"protocolVersion":"${REV_STATEFUL}"`);
     const dated = { 'mcp-protocol-version': REV_STATEFUL };
+    const initialized = await postMcp(
+      url,
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      dated
+    );
+    expect(initialized.status).toBe(202);
+    await initialized.text();
     await postMcp(
       url,
       { jsonrpc: '2.0', id: 3, method: 'tools/list' },
@@ -1505,9 +1607,51 @@ describe('hosted server', () => {
     const negotiated = await resultsOf('neg', REV_STATEFUL, 'tools_call');
     expect(hostedChecks(negotiated.checks)).toEqual([]);
     expect(
+      negotiated.checks.filter(
+        (c: Check) => c.id.startsWith('hosted-') && c.status === 'FAILURE'
+      )
+    ).toEqual([]);
+    expect(probesIn(negotiated.checks)).toEqual([
+      expect.objectContaining({
+        status: 'INFO',
+        details: {
+          served: REV_STATEFUL,
+          method: 'server/discover',
+          headerVersion: REV_STATELESS,
+          rejected: {
+            status: 400,
+            code: -32000,
+            message: expect.stringContaining(
+              `Unsupported protocol version: ${REV_STATELESS}`
+            )
+          }
+        }
+      })
+    ]);
+    expect(
       negotiated.checks.find((c: Check) => c.id === 'tool-add-numbers').status
     ).toBe('SUCCESS');
     expect(await verdictOf('neg', REV_STATEFUL, 'tools_call')).toBe('pass');
+
+    // A cell whose scenario answers the probe with -32601 (initialize's
+    // raw server has no server/discover) is probed the same way.
+    const rawCell = `/s/neg3/${REV_STATEFUL}/initialize/mcp`;
+    const rawProbe = await postMcp(
+      rawCell,
+      statelessBody('server/discover'),
+      statelessHeaders
+    );
+    expect(rawProbe.status).toBe(404);
+    await rawProbe.text();
+    await postMcp(rawCell, negotiatedInit).then((r) => r.text());
+    const raw = await resultsOf('neg3', REV_STATEFUL, 'initialize');
+    expect(hostedChecks(raw.checks)).toEqual([]);
+    expect(
+      probesIn(raw.checks).map(
+        (c) => (c.details?.rejected as { code?: number }).code
+      )
+    ).toEqual([-32601]);
+    expect(await verdictOf('neg3', REV_STATEFUL, 'initialize')).toBe('pass');
 
     // A client that negotiated and then carried on at 2026-07-28: the wire
     // accepted the request, so it is a wrong revision, not negotiation.
@@ -1526,8 +1670,10 @@ describe('hosted server', () => {
     ]);
     expect(await verdictOf('neg', REV_STATEFUL, 'initialize')).toBe('fail');
 
-    // …and one whose 2026-07-28 tools/call the wire rejected after
-    // negotiation records no hosted check, but never called the tool.
+    // …and one that negotiated, then kept sending 2026-07-28 after the cell
+    // had answered: the wire rejects its tools/call, and that is the client
+    // carrying on at the wrong revision, with the rejection folded in. The
+    // opening probe is still only noted.
     const other = `/s/neg2/${REV_STATEFUL}/tools_call/mcp`;
     await postMcp(
       other,
@@ -1548,11 +1694,43 @@ describe('hosted server', () => {
     expect(rejectedCall.status).toBe(400);
     await rejectedCall.text();
     const never = await resultsOf('neg2', REV_STATEFUL, 'tools_call');
-    expect(hostedChecks(never.checks)).toEqual([]);
+    expect(
+      hostedChecks(never.checks).map((c) => [
+        c.id,
+        c.details?.method,
+        (c.details?.rejected as { status?: number } | undefined)?.status
+      ])
+    ).toEqual([['hosted-wrong-revision', 'tools/call', 400]]);
+    expect(probesIn(never.checks)).toHaveLength(1);
     expect(
       never.checks.find((c: Check) => c.id === 'tool-add-numbers').status
     ).toBe('FAILURE');
     expect(await verdictOf('neg2', REV_STATEFUL, 'tools_call')).toBe('fail');
+
+    // The same without initialize: once the cell has answered the probe,
+    // another request at 2026-07-28 is carrying on, not probing — even a
+    // second server/discover.
+    const stubborn = `/s/neg4/${REV_STATEFUL}/tools_call/mcp`;
+    for (const method of ['server/discover', 'tools/list', 'server/discover']) {
+      const r = await postMcp(
+        stubborn,
+        statelessBody(method),
+        statelessHeaders
+      );
+      expect(r.status, method).toBe(400);
+      await r.text();
+    }
+    const kept = await resultsOf('neg4', REV_STATEFUL, 'tools_call');
+    expect(probesIn(kept.checks)).toHaveLength(1);
+    expect(
+      hostedChecks(kept.checks).map((c) => [c.id, c.details?.method])
+    ).toEqual([
+      ['hosted-wrong-revision', 'tools/list'],
+      ['hosted-wrong-revision', 'server/discover']
+    ]);
+    expect(
+      kept.checks.some((c: Check) => c.id === 'hosted-wire-rejected')
+    ).toBe(false);
 
     // On the 2026-07-28 cell nothing is negotiation: a 2025-11-25 header the
     // scenario accepted is a wrong revision, as before.
