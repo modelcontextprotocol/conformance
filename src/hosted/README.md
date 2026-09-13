@@ -161,11 +161,9 @@ request away (`src/hosted/wire.ts`):
   is not the column's; on a dated column any post-`initialize` request whose
   header names another revision (`initialize` itself negotiates and is
   exempt); once per distinct (method, header version). On a dated column a
-  foreign-revision request the wire turned away (a 4xx lifecycle rejection,
-  or `-32601` for a method the dated wire lacks) is version negotiation — a
-  dual-era client probes with `server/discover` at `2026-07-28`, then falls
-  back to `initialize` — and records neither check; one the wire accepted is
-  still a wrong revision.
+  foreign-revision request the cell turned away before it had given the
+  client its answer is a modern probe, not a wrong revision (see below); one
+  the cell accepted, or one sent after its answer, is.
 
 A request that is both — the wrong revision, and turned away for it — is one
 mistake and records one check: `hosted-wrong-revision`, with the rejection in
@@ -191,6 +189,34 @@ sign-in. The hosted layer records the probe as the INFO check
 decides the verdict: a client that probes and then speaks `2026-07-28` is
 judged on what it sent next, and one that never does leaves the cell
 `incomplete`, not green.
+
+The mirror case on a dated column is a modern probe: a dual-era client opens
+with `server/discover` (or any request) at `2026-07-28`, the cell turns it
+away, and the client falls back to `initialize` at the cell's revision. Any
+4xx counts as turning it away — the SDK transport's 400 "Unsupported protocol
+version", a `-32601` from a scenario that has no such method, or the 401 an
+`auth/*` cell answers before it looks at the protocol — as long as the cell
+had not yet given the client its answer: a version rejection of that same
+header version, or an accepted `initialize`. The hosted layer records it as
+the INFO check `hosted-modern-probe`, once per header version, with the
+method in `details.method` and the answer in `details.rejected`; a probe
+first met with 401 and repeated after sign-in reports the version answer it
+drew then. A request at that version sent after the answer is the client
+carrying on at the wrong revision (`hosted-wrong-revision`, the rejection
+folded in). Which answer a request saw is tracked per process, so on a
+multi-process host a request that lands where the answer was not seen is
+noted as a probe rather than failed.
+
+A dated cell tests exactly its column's revision, so its `initialize` answer
+always states it: the bundled servers would echo an older version they
+support (`2025-06-18`) and the cell would then fail the client for speaking
+it. The hosted layer rewrites the `protocolVersion` of an accepted
+`initialize` result to the cell's revision (the CLI runner still sees the
+scenario's own answer), and when the client asked for another version
+records the INFO check `hosted-version-offered` with
+`details.requestedVersion` and `details.answeredVersion`, so a client that
+declines or goes quiet is explained. One that carries on at the version it
+asked for is a wrong revision.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as

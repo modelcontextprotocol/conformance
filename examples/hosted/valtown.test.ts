@@ -30,6 +30,8 @@ describe('val.town fetch bridge', () => {
     expect(r.headers.get('link')).toContain(
       '/results/ft1/2025-11-25/initialize>'
     );
+    // A dated cell answers with its own revision, whatever was asked.
+    expect((await r.json()).result.protocolVersion).toBe('2025-11-25');
     const checks = await handler(
       new Request('http://test/results/ft1/2025-11-25/initialize')
     ).then((r) => r.json());
@@ -42,7 +44,7 @@ describe('val.town fetch bridge', () => {
     ).toMatchObject({
       name: 'ft',
       version: '0',
-      protocolVersions: ['2025-06-18']
+      protocolVersions: ['2025-11-25']
     });
   });
 

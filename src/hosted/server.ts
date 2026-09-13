@@ -59,14 +59,21 @@ import { bodyFitsBuffer, onBodySettled, tapJsonBody } from './body';
 import { identityFrom } from './identity';
 import { isStatefulVersion } from '../connection/select';
 import {
+  answeredVersion,
   describeRequest,
   getOnMcpCheck,
   GET_ON_MCP_REPLY,
+  isAcceptedInitialize,
   isLegacyProbe,
-  isNegotiation,
+  isModernProbe,
   legacyInitializeReply,
   legacyProbeCheck,
+  modernProbeCheck,
+  pinInitializeVersion,
+  refusalOf,
   tapResponse,
+  versionAnswer,
+  versionOfferedCheck,
   wireRejectedCheck,
   wireRejection,
   wrongRevision,
@@ -321,6 +328,68 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   }
 
   /**
+   * What a dated cell has told its client about revisions, in arrival order:
+   * `arrivals` numbers requests as they reach dispatch(), and an answer is
+   * stamped with the number of the last request that had arrived when it went
+   * out, so a request numbered above it was sent after the client had it
+   * (parallel requests sent before the answer are still probes). Kept per
+   * process: on a multi-process host a request that lands where the answer
+   * was not seen is judged as a probe — noted, never failed.
+   */
+  interface RevisionAnswers {
+    /** An `initialize` was accepted: every revision has had its answer. */
+    initialized?: number;
+    /** The cell's first version answer to each foreign revision. */
+    refused: Map<string, number>;
+    /** The modern probe recorded per foreign revision. */
+    probes: Map<string, { check: ConformanceCheck; answered: boolean }>;
+  }
+  let arrivals = 0;
+  const revisionAnswers = new WeakMap<HostedRun, RevisionAnswers>();
+  function answersOf(run: HostedRun): RevisionAnswers {
+    let told = revisionAnswers.get(run);
+    if (!told) {
+      told = { refused: new Map(), probes: new Map() };
+      revisionAnswers.set(run, told);
+    }
+    return told;
+  }
+
+  /**
+   * Note a modern probe (isModernProbe()) once per header version. A probe
+   * an auth cell met with 401 is repeated after sign-in and then draws the
+   * cell's version answer, which is what the note should report: the first
+   * note is updated in place when that answer arrives.
+   */
+  function noteModernProbe(
+    run: HostedRun,
+    told: RevisionAnswers,
+    method: string | undefined,
+    headerVersion: string,
+    response: CapturedResponse,
+    respondedAt: number
+  ): void {
+    const answer = versionAnswer(run.revision, headerVersion, response);
+    if (answer && !told.refused.has(headerVersion))
+      told.refused.set(headerVersion, respondedAt);
+    const check = modernProbeCheck(
+      run.revision,
+      method,
+      headerVersion,
+      answer ?? refusalOf(response)
+    );
+    const seen = told.probes.get(headerVersion);
+    if (!seen) {
+      told.probes.set(headerVersion, { check, answered: !!answer });
+      sessions.recordHostedCheck(run, `modern-probe:${headerVersion}`, check);
+    } else if (answer && !seen.answered) {
+      seen.check.description = check.description;
+      seen.check.details = check.details;
+      seen.answered = true;
+    }
+  }
+
+  /**
    * Dispatch (req, res) to `listener` after rewriting `req.url` so the
    * scenario sees the path it would have under start()/stop() — i.e. with
    * the cell prefix stripped and (for well-known dispatch) the well-known
@@ -350,6 +419,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     // header to the SDK's), and identity is what the client said.
     const headers = { ...req.headers };
     const headerVersion = req.header('mcp-protocol-version');
+    const arrival = ++arrivals;
+    let respondedAt = arrival;
     let request: RequestInfo | undefined;
     let body: Buffer | undefined;
     let response: CapturedResponse | undefined;
@@ -367,9 +438,39 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const judge = (): boolean => {
       if (judged || !request || !response) return false;
       judged = true;
-      // A foreign-revision request a dated cell turned away is the client
-      // negotiating (it falls back to `initialize`): neither judgement.
-      if (mcp && !isNegotiation(run.revision, headerVersion, response)) {
+      const told = mcp ? answersOf(run) : undefined;
+      // Whether the cell had already answered this request's header before
+      // the client sent it (an accepted initialize, or a version answer to
+      // the same foreign revision).
+      const answeredAt = Math.min(
+        told?.initialized ?? Infinity,
+        (headerVersion === undefined
+          ? undefined
+          : told?.refused.get(headerVersion)) ?? Infinity
+      );
+      // A foreign-revision request a dated cell turned away before it had
+      // answered is the client negotiating (it falls back to `initialize`):
+      // noted, and neither judgement.
+      if (
+        told &&
+        headerVersion !== undefined &&
+        isModernProbe(
+          run.revision,
+          request,
+          headerVersion,
+          response,
+          arrival > answeredAt
+        )
+      ) {
+        noteModernProbe(
+          run,
+          told,
+          request.methods[0],
+          headerVersion,
+          response,
+          respondedAt
+        );
+      } else if (mcp) {
         const rejection = wireRejection(response, run.revision, headerVersion);
         // One mistake, one check: a wrong-revision request the wire also
         // turned away records the revision, with the rejection folded in.
@@ -417,6 +518,17 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           );
         }
       }
+      if (told && isAcceptedInitialize(request, response)) {
+        told.initialized ??= respondedAt;
+        // Asked for another revision, told the cell's (pinInitializeVersion()).
+        const asked = request.bodyVersion;
+        if (isStatefulVersion(run.revision) && asked && asked !== run.revision)
+          sessions.recordHostedCheck(
+            run,
+            `offered:${asked}`,
+            versionOfferedCheck(run.revision, asked, answeredVersion(response))
+          );
+      }
       // Who the client is, from accepted exchanges only.
       const identity = identityFrom(headers, body, response);
       if (identity) sessions.recordIdentity(run, identity);
@@ -432,9 +544,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     });
     tapResponse(res, (captured) => {
       response = captured;
+      respondedAt = arrivals;
       judge();
       persist();
     });
+    // Outside the tap, so what is judged is what the client was told.
+    if (mcp && req.method === 'POST' && isStatefulVersion(run.revision)) {
+      pinInitializeVersion(
+        res,
+        run.revision,
+        () => request?.methods.includes('initialize') ?? false
+      );
+    }
 
     // Every cell on the stateless wire answers a legacy initialize the same
     // way, before the scenario sees it (see legacyInitializeReply()). Not an
