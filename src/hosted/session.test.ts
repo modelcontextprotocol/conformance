@@ -8,7 +8,7 @@ import {
   type HostedRun
 } from './session';
 import { MemoryRunStore } from './store';
-import type { RequestListener } from '../types';
+import type { ConformanceCheck, RequestListener } from '../types';
 
 const ref: CellRef = {
   runId: 'r1',
@@ -173,6 +173,45 @@ describe('SessionManager hydration', () => {
       expect(run.hydration).toBeDefined();
     } finally {
       await plain.close();
+    }
+  });
+
+  it('keeps the hosted checks of an evicted build when the rebuilt one writes', async () => {
+    const store = new MemoryRunStore();
+    const a = new SessionManager({ store });
+    const note = (key: string): ConformanceCheck => ({
+      id: 'hosted-note',
+      name: 'hosted-note',
+      description: key,
+      status: 'INFO',
+      timestamp: new Date().toISOString(),
+      details: { key }
+    });
+    try {
+      const run = a.getOrCreate(cold, () => 'http://x');
+      run.touched = true;
+      a.recordIdentity(run, { name: 'early', version: '1' });
+      a.recordHostedCheck(run, 'n1', note('n1'));
+      await a.persist(run);
+
+      // Rebuilt without being seeded (a discover answered first), it records
+      // something else: the earlier build's row is left as it was.
+      await a.destroy(cellId(cold), false);
+      const again = a.getOrCreate(cold, () => 'http://x');
+      again.touched = true;
+      expect(again.hostedWriter).not.toBe(run.hostedWriter);
+      a.recordHostedCheck(again, 'n2', note('n2'));
+      await a.persist(again);
+      const rows = await store.loadChecks(cellId(cold));
+      expect(rows.get(run.hostedWriter)).toHaveLength(2);
+
+      const results = (await a.results(cellId(cold)))!;
+      const hosted = results.checks.filter((c) => c.id.startsWith('hosted-'));
+      expect(hosted.map((c) => c.description)).toEqual(
+        expect.arrayContaining(['n1', 'n2', expect.stringContaining('early')])
+      );
+    } finally {
+      await a.close();
     }
   });
 });

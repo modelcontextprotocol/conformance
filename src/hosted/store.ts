@@ -11,7 +11,10 @@
  *     cells of a run were exercised, and tear them all down together;
  *   - checks, keyed by (run, writer): each isolate owns its own row and
  *     replaces it wholesale after every request, so concurrent writers never
- *     clobber each other and no append ordering is needed.
+ *     clobber each other and no append ordering is needed. The hosted
+ *     layer's own checks (client identity, probe notes) go to a row per
+ *     build of the cell in the isolate, so a cell evicted from memory and
+ *     rebuilt does not write over what it recorded before.
  *
  * The merged log is re-judged at results time by a fresh scenario instance
  * (see SessionManager.results), which is what turns "isolate B never saw a

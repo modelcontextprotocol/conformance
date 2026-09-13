@@ -36,7 +36,11 @@ import {
 } from './identity';
 import { REVISION_SPOKEN_CHECK_ID, revisionNotSpokenCheck } from './wire';
 
-/** Store writer suffix for the hosted layer's own checks (client identity). */
+/**
+ * Store writer suffix for the hosted layer's own checks (client identity,
+ * probe notes, …). Their row belongs to one build of a cell in one process
+ * (HostedRun.hostedWriter), not to the process.
+ */
 const HOSTED_WRITER_SUFFIX = '/hosted';
 
 /**
@@ -131,6 +135,14 @@ export interface HostedRun extends CellRef {
    * so they never enter its judgement.
    */
   hostedChecks: ConformanceCheck[];
+  /**
+   * The store row `hostedChecks` is written to. Each build of the cell gets
+   * its own, so a cell evicted and rebuilt starts a new row instead of
+   * writing over what the process recorded before, and never has to read
+   * the old one first; results() merges the rows as it does other
+   * processes'.
+   */
+  hostedWriter: string;
   /** The identity check per client (name, version) already recorded. */
   identities: Map<string, ConformanceCheck>;
   /** Keys of hosted checks already recorded, so each finding is one check. */
@@ -252,6 +264,8 @@ export class SessionManager {
   private pending = new Set<Promise<void>>();
   /** Identifies this process's rows in the store. */
   readonly writerId = randomBytes(4).toString('hex');
+  /** Cells built so far, numbering each build's hosted row. */
+  private builds = 0;
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
@@ -332,6 +346,7 @@ export class SessionManager {
       saved: false,
       touched: false,
       hostedChecks: [],
+      hostedWriter: `${this.writerId}.${++this.builds}${HOSTED_WRITER_SUFFIX}`,
       identities: new Map(),
       hostedKeys: new Set(),
       seeded: new Map(),
@@ -363,7 +378,9 @@ export class SessionManager {
    * array can be seeded (the same ones finalizeChecks() can re-judge); the
    * rest are left alone. Rows this process wrote itself (a cell evicted and
    * rebuilt) are loaded as its own, so they are persisted again rather than
-   * dropped from its row. Without a store this settles at once.
+   * dropped from its row. The hosted layer's rows are not seeded: each build
+   * of a cell writes its own (HostedRun.hostedWriter). Without a store this
+   * settles at once.
    */
   hydrate(run: HostedRun): Promise<void> {
     if (run.hydration) return run.hydration;
@@ -493,14 +510,14 @@ export class SessionManager {
     // drop what the writer recorded before the cell was evicted. So it is
     // seeded first; but when it has recorded nothing (a request answered
     // before seeding), its row is left alone and the write waits on nothing
-    // but itself.
+    // but itself. The hosted row needs neither: it is this build's own.
     const ownRow =
       run.hydration !== undefined || rawChecksOf(run.scenario).length > 0;
     if (ownRow) await this.hydrate(run);
     const rows: Array<[string, ConformanceCheck[]]> = [];
     if (ownRow) rows.push([this.writerId, this.ownChecks(run)]);
     if (run.hostedChecks.length)
-      rows.push([this.writerId + HOSTED_WRITER_SUFFIX, run.hostedChecks]);
+      rows.push([run.hostedWriter, run.hostedChecks]);
     const writes: Promise<void>[] = [];
     for (const [writer, checks] of rows) {
       const json = JSON.stringify(checks);
@@ -575,7 +592,7 @@ export class SessionManager {
     }
     if (run) {
       byWriter.set(this.writerId, this.ownChecks(run));
-      byWriter.set(this.writerId + HOSTED_WRITER_SUFFIX, run.hostedChecks);
+      byWriter.set(run.hostedWriter, run.hostedChecks);
     }
     if (!run && !known && byWriter.size === 0) return undefined;
     const scenarioLog: ConformanceCheck[] = [];
