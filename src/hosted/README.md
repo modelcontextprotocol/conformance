@@ -50,10 +50,15 @@ what `conformance client --spec-version <rev>` would run.
 | `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus `/mcp`, for every scenario (see below). |
 | `GET /results/<run-id>`                       | Verdict per cell, `scored X of N` per column, client identity                                    |
 | `GET /results/<run-id>/<rev>`                 | One column                                                                                       |
-| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, scoring, verdict, summary, checks}` (see below)           |
-| `DELETE /results/<run-id>`                    | Tear down every cell of the run                                                                  |
+| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, scoring, verdict, state, summary, checks}` (see below)    |
+| `GET /results/<run-id>[/<rev>]?format=md`     | The run report as Markdown, for an issue or a chat                                               |
+| `POST /results/<run-id>/freeze`               | Freeze the run's report: `201 {snapshotId, url, markdownUrl}`, or `303` to it for a browser      |
+| `GET /results/<run-id>/snapshot/<id>`         | A frozen report (HTML, JSON or `?format=md`); later traffic never changes it                     |
+| `DELETE /results/<run-id>`                    | Tear down every cell of the run, and its snapshots                                               |
 
 Run ids match `[A-Za-z0-9_-]{1,64}`; pick your own or take the minted one.
+Minted ids are ten characters of lower-case Crockford base32 (no `i`, `l`,
+`o` or `u`), so one read off a screenshot cannot be misread.
 Cells are created lazily on first request. Scenario names may contain `/`
 and sit at the end of the path, so they are resolved by longest registered
 name (`auth/metadata-var2/tenant1` → scenario `auth/metadata-var2`, suffix
@@ -145,6 +150,43 @@ exchanges only: on the stateful wire the `initialize` params and the
 `_meta['io.modelcontextprotocol/clientInfo']` and the accepted request's
 `MCP-Protocol-Version` header. Recorded as an INFO check
 `hosted-client-identity` on the cell with `details.protocolVersions`.
+
+**Run report.** The run and column reports are meant to be linked, so a
+person can see how a client did without opening each cell. Every cell has a
+`state` next to its verdict, which splits `incomplete` three ways:
+`not-tried` (no request reached it), `in-progress` (the client reached it
+but nothing its scenario tests has happened yet) and `incomplete` (the
+client reached it and stopped short: it opened with a legacy `initialize`
+and never retried at the cell's revision); the others are `pass`, `fail`,
+`not-startable` and `n/a`. Each column counts its cells per state. A cell
+the client reached lists its FAILUREs and WARNINGs as `findings`, one line
+each (`errorMessage`, else `details.message`, else the check's description,
+plus any `expectedX`/`actualX` pair or `stopReason` in its details), marked
+`by: "client"` when it was seen in the client's traffic, or `by:
+"scenario"` when it is what the scenario reports having seen nothing at
+all: an expectation not yet met, such as "Tool was not called by client".
+The report's `causes` say each finding once with the cells it covers. A
+client that speaks only an older revision, and so is stopped by every
+`2026-07-28` cell it reaches, is one cause, with the era errors it drew
+there folded in. The HTML page shows the causes, then a row per reached
+cell with its failures inline, then the full matrix. None of this changes a
+check, a verdict or a score (`src/hosted/findings.ts`).
+
+`?format=md` gives the same report as Markdown: the client, the score, the
+causes and a table of only the cells the client reached, each failure
+marked `client` or `not seen`. The page has a button that copies it.
+Anything taken from traffic is escaped so it cannot open a link, a tag or a
+new table cell.
+
+**Snapshots.** `POST /results/<run-id>/freeze` (the page's "freeze a copy to
+link to" button) stores the whole run's report as it stands, in the run
+store, and answers with its permalink `/results/<run-id>/snapshot/<id>`.
+The copy never changes as more traffic arrives, so it can be cited in an
+issue; its cell links open the live results. A snapshot is plain JSON in
+the store with no protection beyond the run id, like the rest of a run. On
+val.town snapshots are kept for 30 days
+(`CONFORMANCE_SNAPSHOT_RETENTION_MS`); a single process without a store
+keeps them in memory.
 
 The hosted layer also records two FAILUREs of its own about requests to a
 cell's MCP endpoint, so a cell cannot read green when the wire turned every
