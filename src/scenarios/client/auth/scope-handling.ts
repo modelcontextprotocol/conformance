@@ -1,13 +1,46 @@
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls } from '../../../types';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION,
+  SpecVersion,
+  isSpecVersion,
+  specVersionAtLeast
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
-import { DRAFT_PROTOCOL_VERSION, specVersionAtLeast } from '../../../types';
 import type { Request, Response, NextFunction } from 'express';
+
+/**
+ * The authorization requests in a scenario's log, in the order they arrived.
+ * Scenarios that judge the Nth authorization request read them here, at
+ * judgement time, rather than counting requests as they arrive: on a
+ * serverless host consecutive requests can reach processes whose replayed
+ * logs each lack the other's, but the log being judged holds them all.
+ */
+function authorizationRequests(checks: ConformanceCheck[]): ConformanceCheck[] {
+  return checks.filter((c) => c.id === 'authorization-request');
+}
+
+/** The `scope` parameter of a logged authorization request, if any. */
+function requestedScope(authorization: ConformanceCheck): string | undefined {
+  const query = authorization.details?.query as
+    | Record<string, unknown>
+    | undefined;
+  return typeof query?.scope === 'string' ? query.scope : undefined;
+}
+
+/** The revision createAuthServer recorded on a logged authorization request. */
+function specVersionIn(checks: ConformanceCheck[]): SpecVersion | undefined {
+  for (const c of authorizationRequests(checks)) {
+    const v = c.details?.specVersion;
+    if (isSpecVersion(v)) return v;
+  }
+  return undefined;
+}
 
 /**
  * Scenario 1: Client uses scope from WWW-Authenticate header
@@ -15,22 +48,21 @@ import type { Request, Response, NextFunction } from 'express';
  * Tests that clients SHOULD follow the scope parameter from the initial
  * WWW-Authenticate header in the 401 response, per the scope selection strategy.
  */
-export class ScopeFromWwwAuthenticateScenario implements Scenario {
+export class ScopeFromWwwAuthenticateScenario extends AuthHandlerScenario {
   name = 'auth/scope-from-www-authenticate';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client uses scope parameter from WWW-Authenticate header when provided';
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const expectedScope = 'mcp:basic';
     const tokenVerifier = new MockTokenVerifier(this.checks, [expectedScope]);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client used the scope from WWW-Authenticate header
@@ -52,37 +84,25 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
         });
       }
     });
-    await this.authServer.start(authApp);
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [expectedScope],
-        includeScopeInWwwAuth: true,
-        tokenVerifier
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [expectedScope],
+      includeScopeInWwwAuth: true,
+      tokenVerifier
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     // Emit failure check if expected scope check didn't run
-    const hasScopeCheck = this.checks.some(
+    const hasScopeCheck = checks.some(
       (c) => c.id === 'scope-from-www-authenticate'
     );
     if (!hasScopeCheck) {
-      this.checks.push({
+      checks.push({
         id: 'scope-from-www-authenticate',
         name: 'Client scope selection from WWW-Authenticate header',
         description:
@@ -92,7 +112,7 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
     }
-    return this.checks;
+    return checks;
   }
 }
 
@@ -102,22 +122,21 @@ export class ScopeFromWwwAuthenticateScenario implements Scenario {
  * Tests that clients SHOULD use all scopes from scopes_supported in the PRM
  * when the scope parameter is not available in the WWW-Authenticate header.
  */
-export class ScopeFromScopesSupportedScenario implements Scenario {
+export class ScopeFromScopesSupportedScenario extends AuthHandlerScenario {
   name = 'auth/scope-from-scopes-supported';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client uses all scopes from scopes_supported when scope not in WWW-Authenticate header';
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const scopesSupported = ['mcp:basic', 'mcp:read', 'mcp:write'];
     const tokenVerifier = new MockTokenVerifier(this.checks, scopesSupported);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client requested all scopes from scopes_supported
@@ -148,38 +167,26 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
         });
       }
     });
-    await this.authServer.start(authApp);
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: scopesSupported,
-        scopesSupported: scopesSupported,
-        includeScopeInWwwAuth: false,
-        tokenVerifier
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: scopesSupported,
+      scopesSupported: scopesSupported,
+      includeScopeInWwwAuth: false,
+      tokenVerifier
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     // Emit failure check if expected scope check didn't run
-    const hasScopeCheck = this.checks.some(
+    const hasScopeCheck = checks.some(
       (c) => c.id === 'scope-from-scopes-supported'
     );
     if (!hasScopeCheck) {
-      this.checks.push({
+      checks.push({
         id: 'scope-from-scopes-supported',
         name: 'Client scope selection from scopes_supported',
         description:
@@ -189,7 +196,7 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
     }
-    return this.checks;
+    return checks;
   }
 }
 
@@ -199,21 +206,20 @@ export class ScopeFromScopesSupportedScenario implements Scenario {
  * Tests that clients SHOULD omit the scope parameter when scopes_supported
  * is not available in the PRM and scope is not in WWW-Authenticate header.
  */
-export class ScopeOmittedWhenUndefinedScenario implements Scenario {
+export class ScopeOmittedWhenUndefinedScenario extends AuthHandlerScenario {
   name = 'auth/scope-omitted-when-undefined';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client omits scope parameter when scopes_supported is undefined';
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       onAuthorizationRequest: (data) => {
         // Check if client omitted scope parameter
@@ -233,38 +239,26 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
         });
       }
     });
-    await this.authServer.start(authApp);
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [],
-        scopesSupported: undefined,
-        includeScopeInWwwAuth: false,
-        tokenVerifier
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [],
+      scopesSupported: undefined,
+      includeScopeInWwwAuth: false,
+      tokenVerifier
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     // Emit failure check if expected scope check didn't run
-    const hasScopeCheck = this.checks.some(
+    const hasScopeCheck = checks.some(
       (c) => c.id === 'scope-omitted-when-undefined'
     );
     if (!hasScopeCheck) {
-      this.checks.push({
+      checks.push({
         id: 'scope-omitted-when-undefined',
         name: 'Client scope omission when scopes_supported undefined',
         description:
@@ -274,7 +268,7 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
     }
-    return this.checks;
+    return checks;
   }
 }
 
@@ -287,106 +281,41 @@ export class ScopeOmittedWhenUndefinedScenario implements Scenario {
  * - tools/call requires mcp:basic + mcp:write scopes (403 if insufficient)
  * Client must handle both 401 and 403 responses with different scope requirements
  */
-export class ScopeStepUpAuthScenario implements Scenario {
+export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
   name = 'auth/scope-step-up';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client handles step-up authentication with different scope requirements per operation';
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
   // SEP-2350's set-wise union requirement was introduced in 2026-07-28 (the
   // current draft); it was not a requirement at 2025-11-25, where
   // non-accumulating re-auth is conformant. Gate the union check accordingly.
-  private unionRequired = false;
+  // Unset on an instance that only judges a log; see getChecks().
+  private specVersion: SpecVersion | undefined;
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  private static readonly initialScope = 'mcp:basic';
+  // tools/call gates on mcp:write only (not the union) so the scenario can
+  // complete even for clients that don't accumulate; the SEP-2350 check then
+  // observes whether the previously-granted mcp:basic was retained.
+  private static readonly stepUpScope = 'mcp:write';
+
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
-    this.unionRequired = specVersionAtLeast(
-      ctx.specVersion,
-      DRAFT_PROTOCOL_VERSION
-    );
+    this.specVersion = ctx.specVersion;
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
-    const initialScope = 'mcp:basic';
-    // tools/call gates on mcp:write only (not the union) so the scenario can
-    // complete even for clients that don't accumulate; the SEP-2350 check then
-    // observes whether the previously-granted mcp:basic was retained.
-    const stepUpScope = 'mcp:write';
+    const { initialScope, stepUpScope } = ScopeStepUpAuthScenario;
     const escalatedScopes = [initialScope, stepUpScope];
     const tokenVerifier = new MockTokenVerifier(this.checks, escalatedScopes);
-    let authRequestCount = 0;
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
-      tokenVerifier,
-      onAuthorizationRequest: (data) => {
-        authRequestCount++;
-        const requestedScopes = data.scope ? data.scope.split(' ') : [];
-
-        if (authRequestCount === 1) {
-          // First auth request - should request mcp:basic from WWW-Authenticate
-          const usedCorrectScope = requestedScopes.includes(initialScope);
-          this.checks.push({
-            id: 'scope-step-up-initial',
-            name: 'Client initial scope selection for step-up auth',
-            description: usedCorrectScope
-              ? 'Client correctly used scope from WWW-Authenticate header for initial auth'
-              : 'Client SHOULD use the scope parameter from the WWW-Authenticate header',
-            status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
-            timestamp: data.timestamp,
-            specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-            details: {
-              expectedScope: initialScope,
-              requestedScope: data.scope || 'none'
-            }
-          });
-        } else if (authRequestCount === 2) {
-          // Second auth request after a 403 challenge that listed only the
-          // *missing* scope (mcp:write). Two distinct assertions:
-          // - escalation: client included the challenged scope at all
-          // - SEP-2350 union: client *also* kept the previously-granted scope
-          //   that was NOT in the challenge (i.e., computed prior ∪ challenge)
-          const includesChallenged = requestedScopes.includes(stepUpScope);
-          this.checks.push({
-            id: 'scope-step-up-escalation',
-            name: 'Client scope escalation for step-up auth',
-            description: includesChallenged
-              ? 'Client correctly requested the challenged scope for step-up authentication'
-              : 'Client SHOULD request additional scopes when receiving 403 with new scope requirements',
-            status: includesChallenged ? 'SUCCESS' : 'WARNING',
-            timestamp: data.timestamp,
-            specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
-            details: {
-              challengedScope: stepUpScope,
-              requestedScope: data.scope || 'none'
-            }
-          });
-
-          if (this.unionRequired) {
-            const retainedPrior = requestedScopes.includes(initialScope);
-            this.checks.push({
-              id: 'sep-2350-scope-union-on-reauth',
-              name: 'Client accumulates previously-granted scopes on re-authorization',
-              description: retainedPrior
-                ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
-                : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
-              status: retainedPrior ? 'SUCCESS' : 'WARNING',
-              timestamp: data.timestamp,
-              specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
-              details: {
-                previouslyGranted: initialScope,
-                challengedScope: stepUpScope,
-                requestedScope: data.scope || 'none'
-              }
-            });
-          }
-        }
-      }
+    // The authorization requests are judged in getChecks(), in order.
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
+      tokenVerifier
     });
-    await this.authServer.start(authApp);
 
     // Inline step-up auth middleware
     const resourceMetadataUrl = () =>
-      `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`;
+      `${ctx.getRsBaseUrl()}/.well-known/oauth-protected-resource/mcp`;
 
     const stepUpMiddleware = async (
       req: Request,
@@ -451,47 +380,99 @@ export class ScopeStepUpAuthScenario implements Scenario {
       next();
     };
 
-    const baseApp = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: escalatedScopes,
-        // Deliberately disjoint from initialScope/stepUpScope so the SEP-2350
-        // union check can't be satisfied by a client that unions
-        // scopes_supported ∪ challenge instead of prior-grant ∪ challenge.
-        // The spec allows this: clients MUST NOT assume any set relationship
-        // between challenged scopes and scopes_supported.
-        scopesSupported: ['mcp:profile'],
-        includeScopeInWwwAuth: true,
-        authMiddleware: stepUpMiddleware,
-        tokenVerifier
-      }
-    );
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: escalatedScopes,
+      // Deliberately disjoint from initialScope/stepUpScope so the SEP-2350
+      // union check can't be satisfied by a client that unions
+      // scopes_supported ∪ challenge instead of prior-grant ∪ challenge.
+      // The spec allows this: clients MUST NOT assume any set relationship
+      // between challenged scopes and scopes_supported.
+      scopesSupported: ['mcp:profile'],
+      includeScopeInWwwAuth: true,
+      authMiddleware: stepUpMiddleware,
+      tokenVerifier
+    });
 
-    await this.server.start(baseApp);
-
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
-    // Emit failure checks if expected auth requests didn't happen
-    const hasInitialCheck = this.checks.some(
-      (c) => c.id === 'scope-step-up-initial'
-    );
-    const hasEscalationCheck = this.checks.some(
-      (c) => c.id === 'scope-step-up-escalation'
-    );
+    const checks = [...this.checks];
+    const { initialScope, stepUpScope } = ScopeStepUpAuthScenario;
+    const specVersion = this.specVersion ?? specVersionIn(this.checks);
+    const unionRequired =
+      specVersion !== undefined &&
+      specVersionAtLeast(specVersion, DRAFT_PROTOCOL_VERSION);
+    const [initial, escalation] = authorizationRequests(this.checks);
 
-    if (!hasInitialCheck) {
-      this.checks.push({
+    if (initial) {
+      // First auth request - should request mcp:basic from WWW-Authenticate
+      const scope = requestedScope(initial);
+      const usedCorrectScope = (scope?.split(' ') ?? []).includes(initialScope);
+      checks.push({
+        id: 'scope-step-up-initial',
+        name: 'Client initial scope selection for step-up auth',
+        description: usedCorrectScope
+          ? 'Client correctly used scope from WWW-Authenticate header for initial auth'
+          : 'Client SHOULD use the scope parameter from the WWW-Authenticate header',
+        status: usedCorrectScope ? 'SUCCESS' : 'WARNING',
+        timestamp: initial.timestamp,
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+        details: {
+          expectedScope: initialScope,
+          requestedScope: scope || 'none'
+        }
+      });
+    }
+
+    if (escalation) {
+      // Second auth request after a 403 challenge that listed only the
+      // *missing* scope (mcp:write). Two distinct assertions:
+      // - escalation: client included the challenged scope at all
+      // - SEP-2350 union: client *also* kept the previously-granted scope
+      //   that was NOT in the challenge (i.e., computed prior ∪ challenge)
+      const scope = requestedScope(escalation);
+      const requestedScopes = scope?.split(' ') ?? [];
+      const includesChallenged = requestedScopes.includes(stepUpScope);
+      checks.push({
+        id: 'scope-step-up-escalation',
+        name: 'Client scope escalation for step-up auth',
+        description: includesChallenged
+          ? 'Client correctly requested the challenged scope for step-up authentication'
+          : 'Client SHOULD request additional scopes when receiving 403 with new scope requirements',
+        status: includesChallenged ? 'SUCCESS' : 'WARNING',
+        timestamp: escalation.timestamp,
+        specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY],
+        details: {
+          challengedScope: stepUpScope,
+          requestedScope: scope || 'none'
+        }
+      });
+
+      if (unionRequired) {
+        const retainedPrior = requestedScopes.includes(initialScope);
+        checks.push({
+          id: 'sep-2350-scope-union-on-reauth',
+          name: 'Client accumulates previously-granted scopes on re-authorization',
+          description: retainedPrior
+            ? 'Client included previously-granted scopes alongside the newly challenged scope when re-authorizing'
+            : 'Client SHOULD compute the union of previously requested scopes and newly challenged scopes when initiating re-authorization (SEP-2350); previously-granted scope was dropped',
+          status: retainedPrior ? 'SUCCESS' : 'WARNING',
+          timestamp: escalation.timestamp,
+          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+          details: {
+            previouslyGranted: initialScope,
+            challengedScope: stepUpScope,
+            requestedScope: scope || 'none'
+          }
+        });
+      }
+    }
+
+    // Emit failure checks if expected auth requests didn't happen
+    if (!initial) {
+      checks.push({
         id: 'scope-step-up-initial',
         name: 'Client initial scope selection for step-up auth',
         description: 'Client did not make an initial authorization request',
@@ -501,8 +482,8 @@ export class ScopeStepUpAuthScenario implements Scenario {
       });
     }
 
-    if (!hasEscalationCheck) {
-      this.checks.push({
+    if (!escalation) {
+      checks.push({
         id: 'scope-step-up-escalation',
         name: 'Client scope escalation for step-up auth',
         description:
@@ -511,8 +492,8 @@ export class ScopeStepUpAuthScenario implements Scenario {
         timestamp: new Date().toISOString(),
         specReferences: [SpecReferences.MCP_SCOPE_SELECTION_STRATEGY]
       });
-      if (this.unionRequired) {
-        this.checks.push({
+      if (unionRequired) {
+        checks.push({
           id: 'sep-2350-scope-union-on-reauth',
           name: 'Client accumulates previously-granted scopes on re-authorization',
           description:
@@ -524,7 +505,7 @@ export class ScopeStepUpAuthScenario implements Scenario {
       }
     }
 
-    return this.checks;
+    return checks;
   }
 }
 
@@ -536,48 +517,41 @@ export class ScopeStepUpAuthScenario implements Scenario {
  * The server always returns 403 with the same scope requirement, and clients
  * should stop retrying after a reasonable number of attempts (3 or fewer).
  */
-export class ScopeRetryLimitScenario implements Scenario {
+export class ScopeRetryLimitScenario extends AuthHandlerScenario {
   name = 'auth/scope-retry-limit';
   readonly source = { introducedIn: '2025-11-25' } as const;
   description =
     'Tests that client implements retry limits to prevent infinite authorization loops on repeated 403 responses';
   allowClientError = true;
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const requiredScope = 'mcp:admin';
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
-    let authRequestCount = 0;
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
-      tokenVerifier,
-      onAuthorizationRequest: (data) => {
-        authRequestCount++;
-        this.checks.push({
-          id: 'scope-retry-auth-attempt',
-          name: `Authorization attempt ${authRequestCount}`,
-          description: `Client made authorization request attempt ${authRequestCount}`,
-          status: 'INFO',
-          timestamp: data.timestamp,
-          specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
-          details: {
-            attemptNumber: authRequestCount,
-            requestedScope: data.scope || 'none'
-          }
-        });
-      }
+    // Each authorization request is an attempt, counted in getChecks().
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
+      tokenVerifier
     });
-    await this.authServer.start(authApp);
 
     const resourceMetadataUrl = () =>
-      `${this.server.getUrl()}/.well-known/oauth-protected-resource/mcp`;
+      `${ctx.getRsBaseUrl()}/.well-known/oauth-protected-resource/mcp`;
 
     const maxAttempts = 3;
-    let mcpRequestWithTokenCount = 0;
+    // Token-bearing MCP requests answered so far. Every one of them is
+    // answered 403 or 410 by the middleware below, and the request logger
+    // records each answer, so the count is read from the log (replayed into
+    // each process on a serverless host) rather than kept in memory.
+    const answeredWithToken = () =>
+      this.checks.filter(
+        (c) =>
+          c.id === 'outgoing-response' &&
+          c.details?.path === '/mcp' &&
+          (c.details?.statusCode === 403 || c.details?.statusCode === 410)
+      ).length;
 
     const alwaysDeny403Middleware = async (
       req: Request,
@@ -608,7 +582,7 @@ export class ScopeRetryLimitScenario implements Scenario {
           });
       }
 
-      mcpRequestWithTokenCount++;
+      const mcpRequestWithTokenCount = answeredWithToken() + 1;
 
       if (mcpRequestWithTokenCount > maxAttempts) {
         return res.status(410).json({
@@ -630,38 +604,40 @@ export class ScopeRetryLimitScenario implements Scenario {
         });
     };
 
-    const baseApp = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [requiredScope],
-        scopesSupported: [requiredScope],
-        includeScopeInWwwAuth: true,
-        authMiddleware: alwaysDeny403Middleware,
-        tokenVerifier
-      }
-    );
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [requiredScope],
+      scopesSupported: [requiredScope],
+      includeScopeInWwwAuth: true,
+      authMiddleware: alwaysDeny403Middleware,
+      tokenVerifier
+    });
 
-    await this.server.start(baseApp);
-
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
-    const authAttempts = this.checks.filter(
-      (c) => c.id === 'scope-retry-auth-attempt'
-    ).length;
+    const checks = [...this.checks];
+    const attempts = authorizationRequests(this.checks);
+    attempts.forEach((authorization, i) => {
+      const attemptNumber = i + 1;
+      checks.push({
+        id: 'scope-retry-auth-attempt',
+        name: `Authorization attempt ${attemptNumber}`,
+        description: `Client made authorization request attempt ${attemptNumber}`,
+        status: 'INFO',
+        timestamp: authorization.timestamp,
+        specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING],
+        details: {
+          attemptNumber,
+          requestedScope: requestedScope(authorization) || 'none'
+        }
+      });
+    });
+    const authAttempts = attempts.length;
 
     if (authAttempts === 0) {
-      this.checks.push({
+      checks.push({
         id: 'scope-retry-limit',
         name: 'Client retry limit for scope escalation',
         description: 'Client did not make any authorization requests',
@@ -670,7 +646,7 @@ export class ScopeRetryLimitScenario implements Scenario {
         specReferences: [SpecReferences.MCP_SCOPE_CHALLENGE_HANDLING]
       });
     } else if (authAttempts <= 3) {
-      this.checks.push({
+      checks.push({
         id: 'scope-retry-limit',
         name: 'Client retry limit for scope escalation',
         description: `Client correctly limited retry attempts to ${authAttempts} (3 or fewer)`,
@@ -683,7 +659,7 @@ export class ScopeRetryLimitScenario implements Scenario {
         }
       });
     } else {
-      this.checks.push({
+      checks.push({
         id: 'scope-retry-limit',
         name: 'Client retry limit for scope escalation',
         description: `Client made ${authAttempts} authorization attempts (more than 3). Clients SHOULD implement retry limits to avoid infinite loops.`,
@@ -697,6 +673,6 @@ export class ScopeRetryLimitScenario implements Scenario {
       });
     }
 
-    return this.checks;
+    return checks;
   }
 }

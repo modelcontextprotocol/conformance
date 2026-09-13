@@ -328,7 +328,12 @@ const HOSTED_AUTH_SCENARIOS = [
   // resource-parameter-matches-prm check (see index.test.ts), and val.town
   // excludes it as single-process only.
   'auth/metadata-var3',
-  'auth/pre-registration'
+  'auth/pre-registration',
+  'auth/scope-from-www-authenticate',
+  'auth/scope-from-scopes-supported',
+  'auth/scope-omitted-when-undefined',
+  'auth/scope-step-up',
+  'auth/scope-retry-limit'
 ];
 
 /** Scenarios that need one process's memory across requests. */
