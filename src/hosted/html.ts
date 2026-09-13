@@ -5,7 +5,7 @@
  */
 
 import { ConformanceCheck, CheckStatus } from '../types';
-import type { HostedMatrix, MatrixCell } from './matrix';
+import { MCP_PATH, type HostedMatrix, type MatrixCell } from './matrix';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import {
@@ -78,6 +78,8 @@ const css = `
   button.copy:hover{background:#f3f4f6}
   a{color:#2563eb}
   h1 code,h2 code{font-size:inherit}
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:6px;
+    padding:.5rem .75rem}
 `;
 
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
@@ -95,6 +97,87 @@ const esc = escapeHtml;
 /** JSON safe inside a <script> element: `<` can't start `</script>`. */
 export function jsonForScript(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+/**
+ * A scenario description as HTML: escaped, with the little markdown the
+ * descriptions use (**bold**, `code`) rendered, and line breaks kept when
+ * `breaks` is set (on a page about one scenario, not in the matrix).
+ */
+export function prose(text: string, breaks = false): string {
+  const html = esc(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  return breaks ? html.replace(/\n/g, '<br>') : html;
+}
+
+/** What a person driving a client by hand should know before starting. */
+const HAND_NOTES: Record<string, string> = {
+  'request-metadata':
+    'Your client’s first request is refused once on purpose, with an ' +
+    '“Unsupported protocol version” error naming 2026-07-28, to check that ' +
+    'the client retries. A correct client retries at once; if yours shows an ' +
+    'error instead, retry or reconnect.',
+  'http-standard-headers':
+    'Each kind of request your client sends is checked for the headers it ' +
+    'must carry; a kind it never sends is skipped, not failed. To cover more, ' +
+    'list the tools and call one, list and read the resources, and list the ' +
+    'prompts and get one.'
+};
+
+function handNote(scenario: string): string {
+  const note = HAND_NOTES[scenario];
+  return note ? `<p class=note>${esc(note)}</p>` : '';
+}
+
+/** Auth scenarios whose client gets its token without a sign-in page. */
+const NO_SIGN_IN = /^auth\/(client-credentials-|wif-|enterprise-managed-)/;
+
+/**
+ * Plain steps for an auth cell, which has no generic-client steps: what a
+ * person does with a client they drive by hand.
+ */
+function authSteps(scenario: string): string {
+  if (!scenario.startsWith('auth/')) return '';
+  const lines = [
+    'add the MCP URL to your client and connect',
+    NO_SIGN_IN.test(scenario)
+      ? 'there is no sign-in page: your client gets its token itself, with the credentials this scenario gives it'
+      : 'approve the sign-in when your client opens it — the test authorization server approves at once, with no account',
+    'once connected, list the tools'
+  ];
+  return (
+    `<h2>Steps</h2><p class=muted>What to do with a client you drive by hand.</p>` +
+    `<ol class=steps>${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ol>`
+  );
+}
+
+const CREDENTIAL_KEYS = ['client_id', 'client_secret'] as const;
+
+/** Credentials the scenario gives the client, as fields a person can copy. */
+function credentials(cell: CellConfig): string {
+  const raw = cell.env.MCP_CONFORMANCE_CONTEXT;
+  if (!raw) return '';
+  let context: Record<string, unknown>;
+  try {
+    context = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return '';
+  }
+  const rows = CREDENTIAL_KEYS.flatMap((key) => {
+    const value = context[key];
+    if (typeof value !== 'string' || !value) return [];
+    return [
+      `<tr><th><code>${key}</code></th><td><code>${esc(value)}</code> ` +
+        `<button class=copy data-copy-text="${esc(value)}">copy</button></td></tr>`
+    ];
+  });
+  if (!rows.length) return '';
+  return (
+    `<h2>Credentials</h2><p class=muted>Enter these in your client. ` +
+    `A scripted client reads them from <code>MCP_CONFORMANCE_CONTEXT</code>.</p>` +
+    `<table>${rows.join('')}</table>`
+  );
 }
 
 function page(title: string, body: string): string {
@@ -181,7 +264,7 @@ export function renderMatrixTable(
         .join('');
       return (
         `<tr><td><code>${esc(row.scenario)}</code>` +
-        `<div class=muted>${esc(row.description)}</div></td>${cells}</tr>`
+        `<div class=muted>${prose(row.description)}</div></td>${cells}</tr>`
       );
     })
     .join('');
@@ -201,9 +284,11 @@ function renderMatrixCell(cell: MatrixCell, opts: TableOptions): string {
     lines += `<div class=muted>not startable: ${esc(cell.startReason ?? '')}</div>`;
   } else if (opts.runId) {
     const base = `/s/${esc(opts.runId)}/${esc(key)}`;
+    const url = `${opts.origin}/s/${opts.runId}/${key}${MCP_PATH}`;
     lines +=
       `<div class=actions><a href="${base}">open</a> · ` +
       `<a href="/results/${esc(opts.runId)}/${esc(key)}">results</a> · ` +
+      `<button class=copy data-copy-text="${esc(url)}">copy URL</button> ` +
       `<button class=copy data-copy="${esc(key)}">copy config</button></div>`;
   }
   lines += stepsDetails(cell);
@@ -251,14 +336,16 @@ function crumbs(config: RunConfig): string {
 /**
  * The copy-to-clipboard script. The config is embedded as JSON in a
  * <script type="application/json"> element; buttons name what to copy:
- * `all` (the mcpServers map for this scope), or `<rev>/<scenario>` (that
- * cell's server entry plus its env).
+ * `data-copy="all"` (the mcpServers map for this scope), `data-copy=
+ * "<rev>/<scenario>"` (that cell's server entry plus its env), or
+ * `data-copy-text` (that literal text, such as a bare MCP URL).
  */
 const copyScript = `<script>
 (function(){
-  var el=document.getElementById('cfg');if(!el)return;
-  var cfg=JSON.parse(el.textContent);
+  var el=document.getElementById('cfg');
+  var cfg=el?JSON.parse(el.textContent):null;
   function text(what){
+    if(!cfg)return '';
     if(what==='all')return JSON.stringify({mcpServers:cfg.mcpServers},null,2);
     var cell=cfg.cells.find(function(c){return c.revision+'/'+c.scenario===what});
     if(!cell)return '';
@@ -266,8 +353,8 @@ const copyScript = `<script>
     return JSON.stringify({mcpServers:servers,env:cell.env},null,2);
   }
   document.addEventListener('click',function(e){
-    var b=e.target.closest('button[data-copy]');if(!b)return;
-    var t=text(b.getAttribute('data-copy'));
+    var b=e.target.closest('button[data-copy],button[data-copy-text]');if(!b)return;
+    var t=b.hasAttribute('data-copy-text')?b.getAttribute('data-copy-text'):text(b.getAttribute('data-copy'));
     navigator.clipboard.writeText(t).then(function(){
       var was=b.textContent;b.textContent='copied';
       setTimeout(function(){b.textContent=was},1200);
@@ -305,23 +392,26 @@ export function renderConfig(
       config.revision
     )}</small></h1>
 ${crumbs(config)}
-<p>${esc(row?.description ?? '')}</p>
+<p>${prose(row?.description ?? '', true)}</p>
+${handNote(config.scenario)}
 <p>${scoringPill(matrix.cell(config.scenario, config.revision)!)}${
       cell.reason ? ` <span class=muted>${esc(cell.reason)}</span>` : ''
     }</p>
 <h2>MCP endpoint</h2>
 <pre>${esc(cell.url)}</pre>
-<div class=actions><button class=copy data-copy="${esc(key)}">copy config</button>
-<span class=muted>— an <code>mcpServers</code> entry plus the env the CLI runner would set</span></div>
-<h2>Environment</h2>
-${envPre(cell)}
+<div class=actions><button class=copy data-copy-text="${esc(cell.url)}">copy URL</button>
+<button class=copy data-copy="${esc(key)}">copy config</button>
+<span class=muted>— the URL alone, or an <code>mcpServers</code> entry plus the env the CLI runner would set</span></div>
+${credentials(cell)}
 ${
   cell.steps
     ? `<h2>Steps</h2><p class=muted>What to make the client do here. A generic client reads the same steps from <code>MCP_CONFORMANCE_CONTEXT.steps</code>.</p>${stepsOpen(
         cell.steps
       )}`
-    : ''
+    : authSteps(config.scenario)
 }
+<h2>Environment</h2>
+${envPre(cell)}
 <p><a href="${esc(cell.resultsUrl)}">results for this cell</a></p>`;
   } else {
     const scope = config.revision
@@ -361,8 +451,10 @@ function compositeLinks(
     );
     if (children.length < 2) return [];
     const cell = `${origin}/s/${config.runId}/${rev}/${children.join(COMPOSITE_SEPARATOR)}`;
+    const url = `${cell}${MCP_PATH}`;
     return [
-      `<li><code>${esc(rev)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(cell)}/mcp</code></li>`
+      `<li><code>${esc(rev)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(url)}</code> ` +
+        `<button class=copy data-copy-text="${esc(url)}">copy URL</button></li>`
     ];
   });
   if (!items.length) return '';
@@ -380,7 +472,7 @@ export function renderComposite(view: CompositeView): string {
   const children = view.children
     .map(
       (c) => `<div class=check><h3><code>${esc(c.scenario)}</code></h3>
-<p>${esc(c.description)}</p>${c.steps ? stepsOpen(c.steps) : ''}
+<p>${prose(c.description, true)}</p>${handNote(c.scenario)}${c.steps ? stepsOpen(c.steps) : ''}
 <p><a href="${esc(c.resultsUrl)}">results for this scenario</a></p></div>`
     )
     .join('\n');
@@ -393,9 +485,11 @@ and scores on its own, so its results page reads exactly as if the client had
 been pointed at it directly.</p>
 <h2>MCP endpoint</h2>
 <pre>${esc(view.url)}</pre>
+<div class=actions><button class=copy data-copy-text="${esc(view.url)}">copy URL</button></div>
 <h2>Scenarios behind it</h2>
 ${children}
-<p><a href="${esc(view.resultsUrl)}">results for the whole run at ${esc(view.revision)}</a></p>`
+<p><a href="${esc(view.resultsUrl)}">results for the whole run at ${esc(view.revision)}</a></p>
+${copyScript}`
   );
 }
 

@@ -114,7 +114,13 @@ is the scenario's context (credentials, tool arguments such as
 `http-custom-headers`' `toolCalls`, `steps`) tagged with `name`, as a JSON
 string. The HTML pages have copy-to-clipboard buttons for the same data, and
 show each step as a plain line a person can make a hand-driven client follow
-("call add_numbers with a=5 and b=3"), with the JSON beside it.
+("call add_numbers with a=5 and b=3"), with the JSON beside it. Every cell
+and composite also has a button that copies the bare MCP URL. An `auth/*`
+cell, which has no generic-client steps, shows plain ones for a hand-driven
+client (connect, approve the sign-in, list the tools) and any `client_id` /
+`client_secret` the scenario gives the client as copyable fields;
+`request-metadata` and `http-standard-headers` say what a person should
+expect. The little markdown in scenario descriptions is rendered.
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
 (any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or

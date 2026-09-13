@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import {
   jsonForScript,
+  prose,
   renderComposite,
   renderConfig,
   renderLanding,
@@ -166,6 +167,91 @@ describe('hosted HTML', () => {
     expect(html).toContain('<li>call add_numbers with a=5 and b=3</li>');
     expect(html).toContain('&quot;op&quot;: &quot;tools/list&quot;');
     expect(html.match(/<ol class=steps>/g)).toHaveLength(1);
+  });
+
+  it('offers the bare MCP URL to copy on every cell, cell page and composite', () => {
+    const run = renderConfig('http://x', matrix, configFor('run6'));
+    expect(run).toContain(
+      '<button class=copy data-copy-text="http://x/s/run6/2026-07-28/tools_call/mcp">copy URL</button>'
+    );
+    expect(run).toMatch(
+      /data-copy-text="http:\/\/x\/s\/run6\/2026-07-28\/tools_call\+[^"]*\/mcp">copy URL/
+    );
+    const cell = renderConfig(
+      'http://x',
+      matrix,
+      configFor('run6', { revision: '2026-07-28', scenario: 'tools_call' })
+    );
+    expect(cell).toContain(
+      'data-copy-text="http://x/s/run6/2026-07-28/tools_call/mcp">copy URL'
+    );
+    const composite = renderComposite({
+      runId: 'r',
+      revision: '2026-07-28',
+      url: 'http://x/s/r/2026-07-28/a+b/mcp',
+      resultsUrl: 'http://x/results/r/2026-07-28',
+      children: []
+    });
+    expect(composite).toContain(
+      'data-copy-text="http://x/s/r/2026-07-28/a+b/mcp">copy URL'
+    );
+    // The copy script handles literal text, and runs on the composite page.
+    expect(composite).toContain("b.getAttribute('data-copy-text')");
+  });
+
+  it('renders the markdown in scenario descriptions instead of showing it raw', () => {
+    expect(prose('**PRM:** `/.well-known/x` <b>\nnext', true)).toBe(
+      '<b>PRM:</b> <code>/.well-known/x</code> &lt;b&gt;<br>next'
+    );
+    const landing = renderLanding('http://x', matrix);
+    expect(landing).toContain('<b>PRM:</b>');
+    expect(landing).not.toContain('**PRM:**');
+  });
+
+  it('tells a person driving a client by hand what to expect', () => {
+    const cellPage = (scenario: string, context?: Record<string, unknown>) => {
+      const config = configFor('run7', {
+        revision: '2026-07-28',
+        scenario: 'tools_call'
+      });
+      const cell = {
+        ...config.cells[0],
+        scenario,
+        steps: undefined,
+        env: {
+          ...config.cells[0].env,
+          MCP_CONFORMANCE_SCENARIO: scenario,
+          MCP_CONFORMANCE_CONTEXT: JSON.stringify({
+            name: scenario,
+            ...context
+          })
+        }
+      };
+      return renderConfig('http://x', matrix, {
+        ...config,
+        scenario,
+        cells: [cell]
+      });
+    };
+    expect(cellPage('request-metadata')).toContain(
+      'first request is refused once on purpose'
+    );
+    expect(cellPage('http-standard-headers')).toContain(
+      'a kind it never sends is skipped, not failed'
+    );
+    const preReg = cellPage('auth/pre-registration', {
+      client_id: 'pre-registered-client',
+      client_secret: 'pre-registered-secret'
+    });
+    expect(preReg).toContain('<h2>Credentials</h2>');
+    expect(preReg).toContain(
+      '<code>pre-registered-secret</code> <button class=copy data-copy-text="pre-registered-secret">copy</button>'
+    );
+    expect(preReg).toContain('approves at once, with no account');
+    expect(cellPage('auth/client-credentials-basic')).toContain(
+      'there is no sign-in page'
+    );
+    expect(cellPage('tools_call')).not.toContain('<h2>Credentials</h2>');
   });
 
   it('escapes request-derived values', () => {
