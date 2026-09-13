@@ -65,3 +65,24 @@ describe('runConformanceTest spec-version applicability', () => {
     expect(result.clientOutput?.stdout).toContain(LATEST_SPEC_VERSION);
   }, 30000);
 });
+
+describe('runConformanceTest context', () => {
+  test('hands http-custom-headers its tool calls, with the steps beside them', async () => {
+    const result = await runConformanceTest(
+      'node -e "console.log(process.env.MCP_CONFORMANCE_CONTEXT)"',
+      'http-custom-headers',
+      10000
+    );
+    const context = JSON.parse(result.clientOutput!.stdout);
+    expect(context.name).toBe('http-custom-headers');
+    expect(context.toolCalls.map((c: { name: string }) => c.name)).toEqual([
+      'test_custom_headers',
+      'test_custom_headers_null'
+    ]);
+    expect(context.toolCalls[0].arguments.tab_val).toBe('\tindented');
+    expect(context.steps[0]).toEqual({ op: 'tools/list' });
+    expect(context.steps.slice(1)).toEqual(
+      context.toolCalls.map((c: object) => ({ op: 'tools/call', ...c }))
+    );
+  }, 30000);
+});

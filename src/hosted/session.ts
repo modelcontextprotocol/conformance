@@ -269,17 +269,19 @@ export class SessionManager {
       });
       listener = handlers.rs;
       auxListeners = handlers.aux;
-      context = (
-        scenario as unknown as {
-          scenarioContext?: () => Record<string, unknown>;
-        }
-      ).scenarioContext?.();
     } else if (scenario.handler) {
       listener = scenario.handler(() => baseUrlFor(ref), ctx);
     } else {
       throw new NotHostableError(ref.scenarioName);
     }
 
+    // What start() would hand the CLI runner's client (credentials, tool
+    // arguments, …): a hosted cell never runs start(), so ask directly.
+    context = (
+      scenario as unknown as {
+        scenarioContext?: () => Record<string, unknown>;
+      }
+    ).scenarioContext?.();
     const steps = (scenario as Scenario).steps;
     if (steps) context = { ...context, steps };
 

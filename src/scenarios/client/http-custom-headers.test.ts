@@ -7,6 +7,7 @@ import {
   INVALID_TOOL_DECLARED_CHECK_IDS
 } from './http-custom-headers';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
+import type { Step } from '../../steps';
 
 /**
  * Pins the SEP-2243 requirement-level check IDs emitted by the custom-header
@@ -372,6 +373,133 @@ describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
       expect(
         statusesFor(checks, 'sep-2243-x-mcp-header-not-empty')
       ).not.toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+});
+
+/** An Mcp-Param value per SEP-2243: plain when safe, else =?base64?…?=. */
+function encodeParam(value: string | number | boolean): string {
+  const s = String(value);
+  const unsafe = /[^\x20-\x7e]/.test(s) || s !== s.trim();
+  return unsafe
+    ? `=?base64?${Buffer.from(s, 'utf-8').toString('base64')}?=`
+    : s;
+}
+
+/**
+ * A client with no handler for the scenario: it only follows the steps,
+ * mirroring each x-mcp-header parameter from the schemas it listed.
+ */
+async function followSteps(
+  serverUrl: string,
+  steps: readonly Step[]
+): Promise<void> {
+  type Listed = {
+    name: string;
+    inputSchema: { properties?: Record<string, Record<string, unknown>> };
+  };
+  let tools: Listed[] = [];
+  let id = 0;
+  for (const step of steps) {
+    if (step.op === 'tools/list') {
+      const listed = await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: ++id,
+        method: 'tools/list'
+      });
+      tools = listed.body.result.tools;
+    } else if (step.op === 'tools/call') {
+      const props =
+        tools.find((t) => t.name === step.name)?.inputSchema.properties ?? {};
+      const headers: Record<string, string> = {
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': step.name
+      };
+      for (const [key, value] of Object.entries(step.arguments ?? {})) {
+        const header = props[key]?.['x-mcp-header'];
+        if (typeof header !== 'string' || value === null) continue;
+        headers[`Mcp-Param-${header}`] = encodeParam(
+          value as string | number | boolean
+        );
+      }
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: ++id,
+          method: 'tools/call',
+          params: { name: step.name, arguments: step.arguments }
+        },
+        headers
+      );
+    }
+  }
+}
+
+describe('custom-header scenarios steer a client with no handler for them', () => {
+  it('http-custom-headers hands out one list of tool calls as toolCalls and as steps', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const urls = await scenario.start(testScenarioContext());
+    try {
+      const toolCalls = urls.context?.toolCalls as {
+        name: string;
+        arguments: Record<string, unknown>;
+      }[];
+      expect(toolCalls.map((c) => c.name)).toEqual([
+        'test_custom_headers',
+        'test_custom_headers_null'
+      ]);
+      expect(toolCalls[0].arguments).toMatchObject({
+        non_ascii_val: 'Hello, 世界',
+        crlf_val: 'line1\r\nline2',
+        tab_val: '\tindented',
+        leading_space_val: ' us-west1'
+      });
+      expect(toolCalls[1].arguments.verbose).toBeNull();
+      expect(scenario.steps).toEqual([
+        { op: 'tools/list' },
+        ...toolCalls.map((c) => ({ op: 'tools/call', ...c }))
+      ]);
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('http-custom-headers: following the steps passes every declared check', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await followSteps(serverUrl, scenario.steps);
+      const checks = scenario.getChecks();
+      expect(checks.filter((c) => c.status === 'FAILURE')).toEqual([]);
+      for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
+        expect(statusesFor(checks, id), id).toContain('SUCCESS');
+      }
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('http-invalid-tool-headers: following the steps calls valid_tool and passes', async () => {
+    const scenario = new HttpInvalidToolHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      expect(scenario.steps).toEqual([
+        { op: 'tools/list' },
+        {
+          op: 'tools/call',
+          name: 'valid_tool',
+          arguments: { region: 'us-west1' }
+        }
+      ]);
+      await followSteps(serverUrl, scenario.steps);
+      const checks = scenario.getChecks();
+      expect(checks.filter((c) => c.status === 'FAILURE')).toEqual([]);
+      expect(
+        statusesFor(checks, 'sep-2243-client-reject-invalid-tool')
+      ).toEqual(['SUCCESS']);
     } finally {
       await scenario.stop();
     }
