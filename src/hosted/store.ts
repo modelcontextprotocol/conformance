@@ -11,7 +11,9 @@
  *     cells of a run were exercised, and tear them all down together;
  *   - checks, keyed by (run, writer): each isolate owns its own row and
  *     replaces it wholesale after every request, so concurrent writers never
- *     clobber each other and no append ordering is needed.
+ *     clobber each other and no append ordering is needed;
+ *   - deployment-wide secrets (the key auth tokens are signed with), so a
+ *     token one isolate minted verifies in another.
  *
  * The merged log is re-judged at results time by a fresh scenario instance
  * (see SessionManager.results), which is what turns "isolate B never saw a
@@ -39,6 +41,14 @@ export interface RunStore {
   /** All writers' check lists for a run, keyed by writer id. */
   loadChecks(id: string): Promise<Map<string, ConformanceCheck[]>>;
   deleteRun(id: string): Promise<void>;
+  /**
+   * The deployment-wide value stored under `name`, storing `create()` first
+   * if there is none. Every process on the store gets the same value: the
+   * first one stored wins, even when several processes race to store one.
+   * Holds the key auth tokens are signed with (see SessionManager.ready).
+   * A store without it cannot share that key, and the server says so.
+   */
+  sharedSecret?(name: string, create: () => string): Promise<string>;
 }
 
 /** In-process store — used by tests to exercise the merge path. */
@@ -77,5 +87,10 @@ export class MemoryRunStore implements RunStore {
   async deleteRun(id: string): Promise<void> {
     this.runs.delete(id);
     this.checks.delete(id);
+  }
+  private secrets = new Map<string, string>();
+  async sharedSecret(name: string, create: () => string): Promise<string> {
+    if (!this.secrets.has(name)) this.secrets.set(name, create());
+    return this.secrets.get(name)!;
   }
 }

@@ -308,6 +308,7 @@ export function createAuthServer(
     onAuthorizationRequest,
     onRegistrationRequest
   } = options;
+  tokenVerifier?.useMacKey(ctx.tokenMacKey);
 
   // Track scopes from the most recent authorization request
   let lastAuthorizationScopes: string[] = [];
@@ -707,7 +708,8 @@ export function createAuthServer(
           // Misbehaviour: ignore the binding and issue a plain Bearer token.
           const bearer = tokenWithScopes(
             `test-token-${Date.now()}`,
-            grantedScopes
+            grantedScopes,
+            ctx.tokenMacKey
           );
           if (tokenVerifier) tokenVerifier.registerToken(bearer, grantedScopes);
           res.json({
@@ -773,7 +775,7 @@ export function createAuthServer(
     }
 
     // The resource server may verify this token in another process.
-    token = tokenWithScopes(token, scopes);
+    token = tokenWithScopes(token, scopes, ctx.tokenMacKey);
 
     // Register token with verifier if provided
     if (tokenVerifier) {

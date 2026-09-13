@@ -69,6 +69,10 @@ export class SqliteRunStore implements RunStore {
            run_id TEXT NOT NULL, writer TEXT NOT NULL, checks TEXT NOT NULL,
            updated_at INTEGER NOT NULL, PRIMARY KEY (run_id, writer))`
       );
+      await this.exec(
+        `CREATE TABLE IF NOT EXISTS hosted_secrets_v1 (
+           name TEXT PRIMARY KEY, value TEXT NOT NULL)`
+      );
     })().catch((e) => {
       this.ready = undefined;
       throw e;
@@ -148,6 +152,26 @@ export class SqliteRunStore implements RunStore {
     await this.init();
     await this.exec(`DELETE FROM hosted_checks_v2 WHERE run_id = ?`, [id]);
     await this.exec(`DELETE FROM hosted_runs_v2 WHERE id = ?`, [id]);
+  }
+
+  async sharedSecret(name: string, create: () => string): Promise<string> {
+    await this.init();
+    // Store only if absent, then read back: isolates racing to store one
+    // all end up with whichever value landed first.
+    await this.exec(
+      `INSERT INTO hosted_secrets_v1 (name, value) VALUES (?, ?)
+       ON CONFLICT(name) DO NOTHING`,
+      [name, create()]
+    );
+    const rows = await this.exec(
+      `SELECT value FROM hosted_secrets_v1 WHERE name = ?`,
+      [name]
+    );
+    const value = rows[0]?.[0];
+    if (typeof value !== 'string') {
+      throw new Error(`sqlite: no '${name}' row after storing one`);
+    }
+    return value;
   }
 
   private async sweep(): Promise<void> {

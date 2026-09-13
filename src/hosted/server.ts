@@ -75,7 +75,6 @@ import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import type { RunStore } from './store';
 import { scenarios } from '../scenarios';
-import { MIN_SHARED_SECRET_LENGTH } from '../scenarios/client/auth/helpers/mockTokenVerifier';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
 export interface HostedServerOptions {
@@ -143,25 +142,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 } {
   const auxOrigins = opts.auxOrigins ?? {};
   const haveAux = AUX_ROLES.filter((r) => auxOrigins[r]);
-  // Auth tokens carry their scopes under a MAC keyed from the relay secret
-  // so every process can check them; a short secret is not used for that
-  // (it would help guess the secret), and scope checks then fail whenever a
-  // run's requests reach different processes. Say so once, loudly, without
-  // the secret or its length.
-  const relaySecret = opts.relaySecret ?? process.env.CONFORMANCE_RELAY_SECRET;
-  if (
-    haveAux.length &&
-    relaySecret &&
-    relaySecret.length < MIN_SHARED_SECRET_LENGTH
-  ) {
-    console.warn(
-      `[hosted] WARNING: the relay secret is shorter than ${MIN_SHARED_SECRET_LENGTH} characters, ` +
-        'so auth tokens are not signed with it and scope checks ' +
-        '(auth/scope-step-up and others) will fail whenever one run reaches ' +
-        'several processes, as on Val Town. Set a longer secret on the ' +
-        'server and every relay, e.g. `openssl rand -hex 32`.'
-    );
-  }
   const sessions = new SessionManager({
     ttlMs: opts.ttlMs,
     auxOrigins,
@@ -174,6 +154,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // (initialize params / per-request _meta) without consuming the stream
   // the scenario is about to read.
   app.use(tapJsonBody());
+  // Cells are built with the deployment's key for auth tokens, which the
+  // store hands out asynchronously; hold every request until it is known.
+  app.use((_req, _res, next) => {
+    void sessions.ready().then(() => next());
+  });
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;

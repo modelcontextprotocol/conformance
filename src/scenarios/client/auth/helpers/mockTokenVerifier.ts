@@ -10,32 +10,19 @@ const SCOPES_SEPARATOR = '.scopes.';
 let processKey: Buffer | undefined;
 
 /**
- * Shorter relay secrets are never used, so tokens can't help guess them.
- * The hosted server warns at startup when its relay secret is shorter.
+ * The key for a token's scopes MAC: the one given — the hosted server's
+ * per-deployment key, shared through its run store (ScenarioContext
+ * .tokenMacKey) — or else a random key for this process, which is enough
+ * wherever the process that mints a token also verifies it. It is never
+ * derived from the relay secret or anything else configured: every token a
+ * client receives is a MAC it could try offline guesses against.
  */
-export const MIN_SHARED_SECRET_LENGTH = 32;
-
-/**
- * Key for the scopes MAC. Every process of a hosted deployment must share
- * it, so it is derived from the relay secret they already share — never
- * the secret itself: each token a client receives is a MAC it could try
- * offline guesses against, and the relay secret guards the /__aux
- * backchannel. A short or missing relay secret is not used at all; a random
- * key for this process takes its place (enough when one process both mints
- * and verifies, as outside a multi-process host).
- */
-function macKey(): Buffer {
-  const secret = process.env.CONFORMANCE_RELAY_SECRET;
-  if (secret && secret.length >= MIN_SHARED_SECRET_LENGTH) {
-    return createHmac('sha256', secret)
-      .update('mcp-conformance/token-scopes')
-      .digest();
-  }
-  return (processKey ??= randomBytes(32));
+function keyOr(key: Buffer | undefined): Buffer {
+  return key ?? (processKey ??= randomBytes(32));
 }
 
-function mac(payload: string): string {
-  return createHmac('sha256', macKey()).update(payload).digest('base64url');
+function mac(payload: string, key: Buffer | undefined): string {
+  return createHmac('sha256', keyOr(key)).update(payload).digest('base64url');
 }
 
 /**
@@ -47,13 +34,20 @@ function mac(payload: string): string {
  * client sees, so a client cannot grant itself scopes by editing a token;
  * beyond that the token is a test fixture, not a credential.
  */
-export function tokenWithScopes(token: string, scopes: string[]): string {
+export function tokenWithScopes(
+  token: string,
+  scopes: string[],
+  key?: Buffer
+): string {
   const payload = `${token}${SCOPES_SEPARATOR}${Buffer.from(scopes.join(' ')).toString('base64url')}`;
-  return `${payload}.${mac(payload)}`;
+  return `${payload}.${mac(payload, key)}`;
 }
 
-/** The scopes a token carries, if its MAC checks out. */
-function scopesFromToken(token: string): string[] | undefined {
+/** The scopes a token carries, if its MAC checks out under `key`. */
+function scopesFromToken(
+  token: string,
+  key: Buffer | undefined
+): string[] | undefined {
   const at = token.lastIndexOf(SCOPES_SEPARATOR);
   if (at < 0) return undefined;
   const rest = token.slice(at + SCOPES_SEPARATOR.length);
@@ -61,7 +55,7 @@ function scopesFromToken(token: string): string[] | undefined {
   if (dot < 0) return undefined;
   const given = Buffer.from(rest.slice(dot + 1));
   const expected = Buffer.from(
-    mac(token.slice(0, at + SCOPES_SEPARATOR.length + dot))
+    mac(token.slice(0, at + SCOPES_SEPARATOR.length + dot), key)
   );
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     return undefined;
@@ -75,8 +69,14 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
 
   constructor(
     private checks: ConformanceCheck[],
-    private expectedScopes: string[] = []
+    private expectedScopes: string[] = [],
+    private macKey?: Buffer
   ) {}
+
+  /** Check carried scopes under `key` (the run's), when there is one. */
+  useMacKey(key: Buffer | undefined) {
+    if (key) this.macKey = key;
+  }
 
   registerToken(token: string, scopes: string[]) {
     this.tokenScopes.set(token, scopes);
@@ -88,7 +88,9 @@ export class MockTokenVerifier implements OAuthTokenVerifier {
       // Scopes registered in this process, else those the token carries
       // (minted by another process), else none.
       const scopes =
-        this.tokenScopes.get(token) ?? scopesFromToken(token) ?? [];
+        this.tokenScopes.get(token) ??
+        scopesFromToken(token, this.macKey) ??
+        [];
 
       this.checks.push({
         id: 'valid-bearer-token',
