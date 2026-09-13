@@ -25,6 +25,27 @@ function authorizationRequests(checks: ConformanceCheck[]): ConformanceCheck[] {
   return checks.filter((c) => c.id === 'authorization-request');
 }
 
+/**
+ * The authorization request that answers the insufficient_scope challenge:
+ * the first one logged after the first 403 from the MCP endpoint. A client
+ * may start an authorization and abandon it before then (the C# SDK does
+ * when its server/discover probe times out mid-flow and it falls back to
+ * initialize), so the second authorization request is not reliably the
+ * escalation. With no 403 in the log, it is the second request, as before.
+ */
+function escalationRequest(
+  checks: ConformanceCheck[]
+): ConformanceCheck | undefined {
+  const challenge = checks.findIndex(
+    (c) =>
+      c.id === 'outgoing-response' &&
+      c.details?.path === '/mcp' &&
+      c.details?.statusCode === 403
+  );
+  if (challenge < 0) return authorizationRequests(checks)[1];
+  return authorizationRequests(checks.slice(challenge + 1))[0];
+}
+
 /** The `scope` parameter of a logged authorization request, if any. */
 function requestedScope(authorization: ConformanceCheck): string | undefined {
   const query = authorization.details?.query as
@@ -409,7 +430,8 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
     const unionRequired =
       specVersion !== undefined &&
       specVersionAtLeast(specVersion, DRAFT_PROTOCOL_VERSION);
-    const [initial, escalation] = authorizationRequests(this.checks);
+    const [initial] = authorizationRequests(this.checks);
+    const escalation = escalationRequest(this.checks);
 
     if (initial) {
       // First auth request - should request mcp:basic from WWW-Authenticate
