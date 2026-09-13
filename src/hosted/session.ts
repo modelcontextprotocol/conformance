@@ -475,6 +475,8 @@ export class SessionManager {
    * layer's own checks are appended after judgement, deduplicated across
    * processes, so they never influence the scenario's verdicts — though a
    * hosted FAILURE (wire rejection, wrong revision) does decide the cell's.
+   * Nothing is judged until something was recorded, so a cell a page view
+   * merely instantiated here reads the same as in a process that never saw it.
    */
   async results(id: string): Promise<RunResults | undefined> {
     const ref = parseCellId(id);
@@ -486,7 +488,10 @@ export class SessionManager {
         rawChecksOf(run.scenario).length + hostedFailures(run.hostedChecks);
       return {
         ...ref,
-        checks: [...run.scenario.getChecks(), ...run.hostedChecks],
+        checks: [
+          ...(recorded ? run.scenario.getChecks() : []),
+          ...run.hostedChecks
+        ],
         recorded
       };
     }
@@ -524,13 +529,16 @@ export class SessionManager {
         return true;
       })
     ].sort(byTime);
+    const recorded = scenarioLog.length + hostedFailures(hosted);
     return {
       ...ref,
       checks: [
-        ...finalizeChecks(ref.scenarioName, scenarioLog.sort(byTime)),
+        ...(recorded
+          ? finalizeChecks(ref.scenarioName, scenarioLog.sort(byTime))
+          : []),
         ...hosted
       ],
-      recorded: scenarioLog.length + hostedFailures(hosted)
+      recorded
     };
   }
 

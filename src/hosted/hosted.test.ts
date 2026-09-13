@@ -1199,6 +1199,63 @@ describe('hosted server across processes (shared store)', () => {
     }
   });
 
+  it('judges a cell only once something was recorded, wherever it is asked', async () => {
+    // Viewing a cell's config page instantiates its scenario in that process
+    // without recording anything. Results asked there must not turn the
+    // empty log into "never seen" failures the other process cannot see.
+    const path = `/s/viewed/${REV_STATELESS}/tools_call`;
+    const page = await fetch(`${origins[0]}${path}?format=json`);
+    expect(page.status).toBe(200);
+    await page.json();
+    await apps[0].sessions.flush();
+
+    const results = () =>
+      Promise.all(
+        origins.map((origin) =>
+          fetch(`${origin}/results/viewed/${REV_STATELESS}/tools_call`).then(
+            (r) => r.json()
+          )
+        )
+      );
+    for (const r of await results()) {
+      expect(r.verdict).toBe('incomplete');
+      expect(r.checks).toEqual([]);
+      expect(r.summary.failed).toBe(0);
+    }
+
+    // Traffic on the other process is judged as before, by both.
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+      'io.modelcontextprotocol/clientCapabilities': {}
+    };
+    for (const [id, method, params] of [
+      [1, 'tools/list', {}],
+      [2, 'tools/call', { name: 'add_numbers', arguments: { a: 2, b: 3 } }]
+    ] as const) {
+      await fetch(`${origins[1]}${path}/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-protocol-version': REV_STATELESS
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          method,
+          params: { _meta: meta, ...params }
+        })
+      }).then((r) => r.text());
+    }
+    await apps[1].sessions.flush();
+    for (const r of await results()) {
+      expect(r.verdict).toBe('pass');
+      expect(r.summary.failed).toBe(0);
+      expect(
+        r.checks.find((c: { id: string }) => c.id === 'tool-add-numbers')
+      ).toMatchObject({ status: 'SUCCESS', details: { result: 5 } });
+    }
+  });
+
   it("rejects request-metadata's first request once per run, not once per process", async () => {
     const path = `/s/split/${REV_STATELESS}/request-metadata/mcp`;
     const body = {
