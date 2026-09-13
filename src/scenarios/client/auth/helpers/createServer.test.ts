@@ -21,15 +21,15 @@ describe('auth helper createServer — stateless /mcp', () => {
     await new Promise<void>((r) => server.listen(0, r));
     const port = (server.address() as { port: number }).port;
     try {
-      // A stateful initialize on the stateless wire: no header, no _meta.
+      // A 2026-07-28 request that leaves out the protocol-version header.
       const res = await fetch(`http://localhost:${port}/mcp`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: 1,
-          method: 'initialize',
-          params: { protocolVersion: '2025-11-25', capabilities: {} }
+          method: 'tools/list',
+          params: {}
         })
       });
       expect(res.status).toBe(400);
@@ -44,7 +44,7 @@ describe('auth helper createServer — stateless /mcp', () => {
         details: {
           status: 400,
           code: -32020,
-          method: 'initialize',
+          method: 'tools/list',
           headerVersion: null
         }
       });

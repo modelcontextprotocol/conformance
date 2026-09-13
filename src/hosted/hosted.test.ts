@@ -179,13 +179,17 @@ describe('hosted server', () => {
     expect(stateless.status).toBe(200);
     expect(await stateless.text()).toContain('The sum of 4 and 6 is 10');
 
-    // A stateful-style initialize (no header, no _meta) is rejected there…
+    // A stateful-style initialize (no header, no _meta) is turned away there,
+    // with the unsupported-version error naming the version it does serve…
     const rejected = await postMcp(
       `/s/wire/${REV_STATELESS}/tools_call/mcp`,
       initBody()
     );
     expect(rejected.status).toBe(400);
-    expect((await rejected.json()).error.code).toBe(-32020);
+    expect((await rejected.json()).error).toMatchObject({
+      code: -32022,
+      data: { supported: [REV_STATELESS] }
+    });
 
     // …and accepted by the 2025-11-25 cell of the same run.
     const stateful = await postMcp(
@@ -224,23 +228,20 @@ describe('hosted server', () => {
     // request-metadata simulates a version rejection on the *first* request to
     // exercise client retry, then accepts. Send twice — both with no
     // mcp-session-id (stateless) — and confirm checks accumulate via path id.
-    const init = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: 'DRAFT-2026-v1',
-        clientInfo: { name: 'vitest', version: '0' },
-        capabilities: {}
-      }
-    };
-    const headers = { 'mcp-protocol-version': 'DRAFT-2026-v1' };
     const url = `/s/t3/${REV_STATELESS}/request-metadata`;
-    const r1 = await postMcp(url, init, headers);
+    const r1 = await postMcp(
+      url,
+      statelessBody('tools/list'),
+      statelessHeaders
+    );
     expect(r1.status).toBe(400);
     // SEP-2575: unsupported-version rejection is -32022 (with supported/requested data).
     expect((await r1.json()).error.code).toBe(-32022);
-    const r2 = await postMcp(url, init, headers);
+    const r2 = await postMcp(
+      url,
+      statelessBody('tools/list'),
+      statelessHeaders
+    );
     expect(r2.status).toBe(200);
     await r2.text();
 
@@ -815,12 +816,12 @@ describe('hosted server', () => {
       `/s/${run}/${REV_STATEFUL}/initialize`,
       initBody('rep-client')
     ).then((r) => r.text());
-    // fail: request-metadata's first request is rejected on purpose; stopping
-    // there leaves its declared checks unemitted → FAILURE on judgement.
+    // fail: request-metadata judges the _meta of every 2026-07-28 request,
+    // and this one carries none → FAILURE on judgement.
     await postMcp(
       `/s/${run}/${REV_STATELESS}/request-metadata`,
-      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
-      { 'mcp-protocol-version': 'DRAFT-2026-v1' }
+      { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+      statelessHeaders
     ).then((r) => r.text());
     // incomplete (created via config, never hit): every other startable cell.
     await fetch(`${base}/s/${run}`).then((r) => r.json());
@@ -896,11 +897,11 @@ describe('hosted server', () => {
 
   it('notes a legacy initialize on the stateless wire, and fails other wrong revisions', async () => {
     // Felix's live case: a 2025-11-25 initialize on a 2026-07-28 cell. The
-    // stateless mock turns it away (no _meta). A dual-era client may open
-    // that way to learn the server's era (2026-07-28 basic/versioning,
-    // "Backward Compatibility"), so it is noted, not failed; and as the
-    // scenario never saw a request it could judge, the cell reads
-    // incomplete, never green.
+    // stateless mock answers it the way a modern-only server should, with
+    // -32022 naming the version it supports. A dual-era client may open that
+    // way to learn the server's era (2026-07-28 basic/versioning, "Backward
+    // Compatibility"), so it is noted, not failed; and as the scenario never
+    // saw a request it could judge, the cell reads incomplete, never green.
     const url = `/s/rej/${REV_STATELESS}/tools_call/mcp`;
     const legacyInit = {
       ...initBody(),
@@ -911,12 +912,16 @@ describe('hosted server', () => {
         'mcp-protocol-version': REV_STATEFUL
       });
       expect(r.status).toBe(400);
-      await r.text();
+      expect((await r.json()).error).toMatchObject({
+        code: -32022,
+        data: { supported: [REV_STATELESS], requested: REV_STATEFUL }
+      });
     }
-    // …and one with no header at all (the -32020 rejection).
+    // …and one with no header at all: still the same answer, since an
+    // initialize is answered before its header is looked at.
     const bare = await postMcp(url, initBody());
     expect(bare.status).toBe(400);
-    await bare.text();
+    expect((await bare.json()).error.code).toBe(-32022);
 
     const results = await fetch(
       `${base}/results/rej/${REV_STATELESS}/tools_call`
@@ -945,8 +950,8 @@ describe('hosted server', () => {
         (c.details?.rejected as { code?: number } | undefined)?.code
       ])
     ).toEqual([
-      ['INFO', REV_STATEFUL, -32602],
-      ['INFO', null, -32020]
+      ['INFO', REV_STATEFUL, -32022],
+      ['INFO', null, -32022]
     ]);
     const report = await fetch(`${base}/results/rej`).then((r) => r.json());
     const cellOf = (rev: string, name: string) =>

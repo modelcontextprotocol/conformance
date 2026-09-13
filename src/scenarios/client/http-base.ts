@@ -95,6 +95,10 @@ export abstract class BaseHttpScenario extends HandlerScenario {
           this.sendDiscover(res, request);
           return;
         }
+        if (request.method === 'initialize' && this.isModernOnly()) {
+          this.rejectLegacyInitialize(res, request);
+          return;
+        }
         this.handlePost(req, res, request);
       } catch (error) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -123,9 +127,8 @@ export abstract class BaseHttpScenario extends HandlerScenario {
   }
 
   /**
-   * Capabilities advertised to a 2026-07-28 client via `server/discover` (and
-   * defaulted in the legacy `initialize` reply). Subclasses override to match
-   * the methods they actually serve.
+   * Capabilities advertised to a 2026-07-28 client via `server/discover`.
+   * Subclasses override to match the methods they actually serve.
    */
   protected discoverCapabilities(): object {
     return { tools: {} };
@@ -143,21 +146,44 @@ export abstract class BaseHttpScenario extends HandlerScenario {
     });
   }
 
-  protected sendInitialize(
+  /**
+   * Whether this scenario exists only at 2026-07-28 (the scaffold's default
+   * source). Extension scenarios built on it, such as the skills ones, run at
+   * the dated revisions too and answer initialize themselves.
+   */
+  protected isModernOnly(): boolean {
+    const source = this.source as { introducedIn?: string };
+    return source.introducedIn === DRAFT_PROTOCOL_VERSION;
+  }
+
+  /**
+   * For a 2026-07-28-only scenario, initialize is the dated revisions'
+   * handshake, not one of its own requests. A server that supports only modern
+   * versions SHOULD name them in any error it returns to an initialize
+   * (2026-07-28 basic/versioning, "Backward Compatibility with
+   * Initialization-Based Versions"), so a dual-era client that opens this way
+   * learns to retry with 2026-07-28. Replying with a 2026-07-28 initialize
+   * result instead would be a version the client did not ask for.
+   */
+  protected rejectLegacyInitialize(
     res: http.ServerResponse,
-    request: any,
-    capabilities: object = this.discoverCapabilities()
+    request: any
   ): void {
-    this.sendJson(res, {
-      jsonrpc: '2.0',
-      id: request.id,
-      result: {
-        resultType: 'complete',
-        protocolVersion: DRAFT_PROTOCOL_VERSION,
-        serverInfo: { name: this.name + '-server', version: '1.0.0' },
-        capabilities
-      }
-    });
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: request.id ?? null,
+        error: {
+          code: -32022,
+          message: 'Unsupported protocol version',
+          data: {
+            supported: [DRAFT_PROTOCOL_VERSION],
+            requested: String(request.params?.protocolVersion ?? '')
+          }
+        }
+      })
+    );
   }
 
   protected sendNotificationAck(res: http.ServerResponse): void {
