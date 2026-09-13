@@ -1117,12 +1117,22 @@ describe('hosted server', () => {
     expect(call.status).toBe(200);
     expect(await call.text()).toContain('input_required');
     const json = await fetch(`${base}${cell}`).then((r) => r.json());
+    // Nothing the client did failed: the verdict is incomplete, not fail,
+    // and each row says it is not seen.
     expect(json).toMatchObject({
-      verdict: 'fail',
+      verdict: 'incomplete',
       state: 'waiting',
       note: 'waiting for the client or the person to finish the flow',
       summary: { failed: 0, notSeen: 5 }
     });
+    expect(
+      json.checks.filter((c: { status: string }) => c.status === 'FAILURE')
+    ).toHaveLength(5);
+    expect(
+      json.checks
+        .filter((c: { status: string }) => c.status === 'FAILURE')
+        .every((c: { notSeen?: boolean }) => c.notSeen === true)
+    ).toBe(true);
     const page = await fetch(`${base}${cell}`, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
@@ -1138,7 +1148,7 @@ describe('hosted server', () => {
       (c: { scenario: string }) =>
         c.scenario === 'sep-2322-client-request-state'
     );
-    expect(row).toMatchObject({ verdict: 'fail', state: 'waiting' });
+    expect(row).toMatchObject({ verdict: 'incomplete', state: 'waiting' });
     expect(report.columns[1].counts.waiting).toBe(1);
     const md = await fetch(`${base}/results/wait?format=md`).then((r) =>
       r.text()
@@ -1787,7 +1797,8 @@ describe('hosted server', () => {
     // …and one that negotiated, then sent a 2026-07-28 request again: the
     // wire turns it away, and a request in the 2026-07-28 shape is the
     // client probing again (it may, whenever it reconnects), so it is only
-    // noted; the tool was never called at 2025-11-25, so the cell fails.
+    // noted; the tool was never called at 2025-11-25, so the cell is not
+    // done: its one failure is the call it has not seen.
     const other = `/s/neg2/${REV_STATEFUL}/tools_call/mcp`;
     await postMcp(
       other,
@@ -1813,7 +1824,9 @@ describe('hosted server', () => {
     expect(
       never.checks.find((c: Check) => c.id === 'tool-add-numbers').status
     ).toBe('FAILURE');
-    expect(await verdictOf('neg2', REV_STATEFUL, 'tools_call')).toBe('fail');
+    expect(await verdictOf('neg2', REV_STATEFUL, 'tools_call')).toBe(
+      'incomplete'
+    );
 
     // A request in the dated shape (no per-request _meta) whose header names
     // 2026-07-28 is carrying on at the wrong revision, not probing.

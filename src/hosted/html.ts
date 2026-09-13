@@ -44,6 +44,7 @@ import {
   clientConfig,
   compositeName,
   serverName,
+  type ClientInfo,
   type ServerEntry
 } from './client-config';
 
@@ -572,30 +573,38 @@ function envPre(cell: CellConfig): string {
 
 /**
  * Ready-to-paste config per client (see ./client-config.ts), each with a
- * copy button. Shown open on a page about one URL; folded on the run page,
- * where the blocks are long.
+ * copy button and a line on adding it to a file that already has servers.
+ * With `starter` (the run page, whose full list is long): the starter block
+ * open, the full one folded.
  */
 function clientBlocks(
   entries: readonly ServerEntry[],
   intro: string,
-  folded = false
+  starter?: readonly ServerEntry[]
 ): string {
   if (!entries.length) return '';
+  const block = (
+    client: ClientInfo,
+    list: readonly ServerEntry[],
+    label: string
+  ) => {
+    const text = clientConfig(client.kind, list);
+    return `<button class=copy data-copy-text="${esc(text)}">${esc(label)}</button><pre>${esc(text)}</pre>`;
+  };
   const blocks = CLIENTS.map((client) => {
-    const text = clientConfig(client.kind, entries);
-    const pre = `<pre>${esc(text)}</pre>`;
+    const head =
+      `<div class=client><b>${esc(client.label)}</b> <span class=muted>${esc(client.where)}</span>` +
+      `<p class=muted>${esc(client.merge)}</p>`;
+    if (!starter) return `${head}${block(client, entries, 'copy')}</div>`;
+    const all = `all ${entries.length} entries${
+      client.switchesOff ? ', auth cells switched off' : ''
+    }`;
     return (
-      `<div class=client><b>${esc(client.label)}</b> <span class=muted>${esc(client.where)}</span> ` +
-      `<button class=copy data-copy-text="${esc(text)}">copy</button>` +
-      (folded ? `<details><summary>show</summary>${pre}</details>` : pre) +
-      `</div>`
+      `${head}${block(client, starter, 'copy starter')}` +
+      `<details><summary>${esc(all)}</summary>${block(client, entries, 'copy all')}</details></div>`
     );
   });
-  return (
-    `<h2 id=client-config>Paste into your client</h2><p class=muted>${intro} If the file ` +
-    `already has the top-level key (<code>servers</code>, <code>extensions</code>, ` +
-    `<code>mcpServers</code>), paste only the entries under it.</p>${blocks.join('')}`
-  );
+  return `<h2 id=client-config>Paste into your client</h2><p class=muted>${intro}</p>${blocks.join('')}`;
 }
 
 /** Config page for a run, a column or a cell. */
@@ -658,11 +667,7 @@ Point your client at a cell's MCP URL (open it for the env the CLI runner
 would set), then read the <a href="${esc(config.resultsUrl)}">results</a>.
 <button class=copy data-copy="all">copy mcpServers for all ${config.cells.length}</button></p>
 ${compositeLinks(origin, matrix, config)}
-${clientBlocks(
-  runEntries(origin, matrix, config),
-  'The ready-made composites and every auth cell (which cannot share a URL), in one paste per client.',
-  true
-)}
+${runClientBlocks(origin, matrix, config)}
 ${renderMatrixTable(matrix, {
   origin,
   runId: config.runId,
@@ -689,21 +694,45 @@ function readyComposites(
   });
 }
 
-/** What the run page's client blocks cover: the composites, the auth cells. */
-function runEntries(
+/** The auth cell the run page's starter block carries, per revision. */
+const STARTER_AUTH = 'auth/metadata-default';
+
+/**
+ * The run page's client blocks. The full one: the ready-made composites and
+ * every auth cell, which cannot share a URL, switched off where the client
+ * can say so, since each starts a sign-in when the client connects (and
+ * `codex mcp list` fetches the metadata of every one that is on). The
+ * starter: the composites and one auth cell per revision, on.
+ */
+function runClientBlocks(
   origin: string,
   matrix: HostedMatrix,
   config: RunConfig
-): ServerEntry[] {
-  return [
-    ...readyComposites(origin, matrix, config).map((c) => ({
-      name: compositeName(c.revision, c.children),
-      url: c.url
-    })),
-    ...config.cells
-      .filter((c) => c.scenario.startsWith('auth/'))
-      .map((c) => ({ name: serverName(c.revision, c.scenario), url: c.url }))
+): string {
+  const composites = readyComposites(origin, matrix, config).map((c) => ({
+    name: compositeName(c.revision, c.children),
+    url: c.url
+  }));
+  const auth = config.cells.filter((c) => c.scenario.startsWith('auth/'));
+  const entry = (c: (typeof auth)[number]) => ({
+    name: serverName(c.revision, c.scenario),
+    url: c.url
+  });
+  const starter = [
+    ...composites,
+    ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
   ];
+  const all = [
+    ...composites,
+    ...auth.map((c) => ({ ...entry(c), enabled: false }))
+  ];
+  return clientBlocks(
+    all,
+    `The starter block is the ready-made composites and <code>${STARTER_AUTH}</code> at each revision. ` +
+      'The full block adds every auth cell (they cannot share a URL), switched off where the client can say so: ' +
+      'switch on the ones you want to test.',
+    starter
+  );
 }
 
 /**

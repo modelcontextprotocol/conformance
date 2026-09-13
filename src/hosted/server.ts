@@ -45,6 +45,7 @@ import {
   RUN_ID_RE,
   UnknownScenarioError,
   NotHostableError,
+  StoreUnavailableError,
   cellId,
   mintId,
   mintRunId
@@ -87,6 +88,8 @@ import {
   PARSE_ERROR_REPLY,
   pinInitializeVersion,
   refusalOf,
+  reachedRevision,
+  revisionReachedCheck,
   revisionSpokenCheck,
   spokeRevision,
   tapResponse,
@@ -563,6 +566,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           run,
           'spoken',
           revisionSpokenCheck(run.revision)
+        );
+      if (mcp && reachedRevision(run.revision, request, headerVersion))
+        sessions.recordHostedCheck(
+          run,
+          'reached',
+          revisionReachedCheck(run.revision)
         );
       // A GET the cell serves no stream for (the scenario's own 405, or
       // fallthrough()'s): noted so the client's author sees it.
@@ -1287,6 +1296,21 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         res.json(report);
     }
   }
+
+  // A store that could not be read, even after retrying: say so and ask for
+  // a retry, rather than show a report as if nothing had been recorded.
+  app.use(
+    (
+      err: unknown,
+      _req: Request,
+      res: Response,
+      next: (err?: unknown) => void
+    ) => {
+      if (!(err instanceof StoreUnavailableError)) return next(err);
+      if (res.headersSent) return;
+      res.status(503).json({ error: err.message });
+    }
+  );
 
   return { app, sessions, matrix };
 }

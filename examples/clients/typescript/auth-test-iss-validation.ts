@@ -188,7 +188,7 @@ async function oauthFlowWithIssValidation(
 /**
  * Creates a fetch wrapper that uses OAuth with iss parameter validation.
  */
-function withOAuthIssValidation(baseUrl: string | URL): Middleware {
+export function withOAuthIssValidation(baseUrl: string | URL): Middleware {
   let tokens: OAuthTokens | undefined;
 
   return (next: FetchLike) => {

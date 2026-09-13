@@ -211,8 +211,9 @@ describe('verdicts', () => {
     });
     const col = report.columns[0];
     const by = (name: string) => col.cells.find((c) => c.scenario === name)!;
+    // Nothing the client did failed: incomplete, not fail.
     expect(by('tools_call')).toMatchObject({
-      verdict: 'fail',
+      verdict: 'incomplete',
       state: 'waiting',
       note: 'waiting for the client or the person to finish the flow',
       summary: { failed: 0, notSeen: 1 }

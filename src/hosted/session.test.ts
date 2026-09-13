@@ -18,7 +18,7 @@ const ref: CellRef = {
 
 describe('SessionManager.persist', () => {
   it('retries saveRun after a failed write so the cell reaches listRuns', async () => {
-    let failures = 1;
+    let failures = 0;
     let saveRunCalls = 0;
     class FlakyStore extends MemoryRunStore {
       override async saveRun(id: string, scenarioName: string) {
@@ -30,6 +30,19 @@ describe('SessionManager.persist', () => {
     const store = new FlakyStore();
     const sessions = new SessionManager({ store });
     try {
+      // One refusal is made good within the same write.
+      failures = 1;
+      const once = sessions.getOrCreate(
+        { ...ref, runId: 'r0' },
+        () => 'http://rs.test/s/x'
+      );
+      await sessions.persist(once);
+      expect(once.saved).toBe(true);
+      expect(saveRunCalls).toBe(2);
+
+      // A write whose every attempt is refused leaves the cell for the next.
+      failures = 3;
+      saveRunCalls = 0;
       const run = sessions.getOrCreate(ref, () => 'http://rs.test/s/x');
       await sessions.persist(run); // saveRun rejects; the error is logged
       expect(run.saved).toBe(false);
@@ -42,7 +55,7 @@ describe('SessionManager.persist', () => {
       ]);
 
       await sessions.persist(run);
-      expect(saveRunCalls).toBe(2);
+      expect(saveRunCalls).toBe(4);
     } finally {
       await sessions.close();
     }

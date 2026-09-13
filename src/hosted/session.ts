@@ -34,7 +34,11 @@ import {
   IDENTITY_CHECK_ID,
   type IdentityObservation
 } from './identity';
-import { REVISION_SPOKEN_CHECK_ID, revisionNotSpokenCheck } from './wire';
+import {
+  REVISION_REACHED_CHECK_ID,
+  REVISION_SPOKEN_CHECK_ID,
+  revisionNotSpokenCheck
+} from './wire';
 
 /**
  * Store writer suffix for the hosted layer's own checks (client identity,
@@ -153,8 +157,14 @@ export interface HostedRun extends CellRef {
    * to persist, not ours — unless the scenario has changed one since.
    */
   seeded: Map<ConformanceCheck, string>;
-  /** Settled once the cell has been seeded from the store (or never will be). */
+  /**
+   * Settled once an attempt to seed the cell from the store has finished;
+   * cleared again when the store could not be read, so the next request
+   * tries again.
+   */
   hydration?: Promise<void>;
+  /** The cell holds the run's history: seeded, or there is none to seed. */
+  hydrated?: true;
   /** The last write queued for the cell; writes land one after another. */
   lastWrite?: Promise<void>;
   /** A write queued but not started yet: a persist() meanwhile joins it. */
@@ -266,6 +276,11 @@ export class SessionManager {
   readonly writerId = randomBytes(4).toString('hex');
   /** Cells built so far, numbering each build's hosted row. */
   private builds = 0;
+  /**
+   * Cells whose scenario row this process has written, whichever build of
+   * the cell wrote it: only such a row can be written over with less.
+   */
+  private ownRows = new Set<string>();
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
@@ -380,16 +395,25 @@ export class SessionManager {
    * rebuilt) are loaded as its own, so they are persisted again rather than
    * dropped from its row. The hosted layer's rows are not seeded: each build
    * of a cell writes its own (HostedRun.hostedWriter). Without a store this
-   * settles at once.
+   * settles at once. It never rejects: when the store cannot be read, the
+   * cell is served as it stands, `hydrated` stays unset and the next call
+   * tries again.
    */
   hydrate(run: HostedRun): Promise<void> {
     if (run.hydration) return run.hydration;
     const store = this.store;
-    if (!store) return (run.hydration = Promise.resolve());
-    run.hydration = (async () => {
+    if (!store) {
+      run.hydrated = true;
+      return (run.hydration = Promise.resolve());
+    }
+    const attempt: Promise<void> = (async () => {
       const bag = (run.scenario as unknown as { checks?: unknown }).checks;
-      if (!Array.isArray(bag) || run.scenario.rawChecks) return;
-      const byWriter = await store.loadChecks(run.id);
+      if (!Array.isArray(bag) || run.scenario.rawChecks) {
+        run.hydrated = true;
+        return;
+      }
+      const byWriter = await retrying(() => store.loadChecks(run.id));
+      run.hydrated = true;
       const merged: ConformanceCheck[] = [];
       for (const [writer, checks] of byWriter) {
         if (writer.endsWith(HOSTED_WRITER_SUFFIX)) continue;
@@ -403,8 +427,12 @@ export class SessionManager {
       if (!merged.length) return;
       merged.sort(byTime);
       (bag as ConformanceCheck[]).unshift(...merged);
-    })().catch(logStoreError);
-    return run.hydration;
+    })().catch((e: unknown) => {
+      logStoreError(e);
+      if (run.hydration === attempt) run.hydration = undefined;
+    });
+    run.hydration = attempt;
+    return attempt;
   }
 
   /**
@@ -502,7 +530,10 @@ export class SessionManager {
   /**
    * One write of the cell's rows, sent together: a flush waits one store
    * round trip, not one per row. A row that has not changed since this
-   * process last wrote it is not sent again.
+   * process last wrote it is not sent again. A store call that fails is
+   * made again before the write gives up (see retrying()): on a serverless
+   * host the isolate may never see the cell again, so a write left for the
+   * next request is often a write lost.
    */
   private async write(run: HostedRun, store: RunStore): Promise<void> {
     // A cell not yet seeded from the store holds only what this process saw
@@ -514,8 +545,12 @@ export class SessionManager {
     const ownRow =
       run.hydration !== undefined || rawChecksOf(run.scenario).length > 0;
     if (ownRow) await this.hydrate(run);
+    // Unseeded because the store could not be read, the cell is still
+    // written if this process has no row for it yet: there is nothing to
+    // write over. Otherwise its row waits for a write that can seed first.
+    const deferred = ownRow && !run.hydrated && this.ownRows.has(run.id);
     const rows: Array<[string, ConformanceCheck[]]> = [];
-    if (ownRow) rows.push([this.writerId, this.ownChecks(run)]);
+    if (ownRow && !deferred) rows.push([this.writerId, this.ownChecks(run)]);
     if (run.hostedChecks.length)
       rows.push([run.hostedWriter, run.hostedChecks]);
     const writes: Promise<void>[] = [];
@@ -523,9 +558,16 @@ export class SessionManager {
       const json = JSON.stringify(checks);
       if (run.written.get(writer) === json) continue;
       writes.push(
-        store
-          .saveChecks(run.id, writer, JSON.parse(json) as ConformanceCheck[])
-          .then(() => void run.written.set(writer, json))
+        retrying(() =>
+          store.saveChecks(
+            run.id,
+            writer,
+            JSON.parse(json) as ConformanceCheck[]
+          )
+        ).then(() => {
+          run.written.set(writer, json);
+          if (writer === this.writerId) this.ownRows.add(run.id);
+        })
       );
     }
     if (!run.saved) {
@@ -534,7 +576,7 @@ export class SessionManager {
       // listRuns() and the report shows it as never exercised even though
       // its checks are in the store.
       writes.push(
-        store.saveRun(run.id, run.scenarioName).then(() => {
+        retrying(() => store.saveRun(run.id, run.scenarioName)).then(() => {
           run.saved = true;
         })
       );
@@ -545,6 +587,11 @@ export class SessionManager {
       (r): r is PromiseRejectedResult => r.status === 'rejected'
     );
     if (failed) throw failed.reason;
+    if (deferred) {
+      throw new Error(
+        `${run.id}: the store could not be read, so this process's row waits for the next write`
+      );
+    }
   }
 
   /**
@@ -582,13 +629,18 @@ export class SessionManager {
     // A cell built for a discover and not seeded since (see write()) holds
     // less than this process's row: seeded, its log is the whole of it.
     if (run) await this.hydrate(run);
-    let byWriter = new Map<string, ConformanceCheck[]>();
-    let known = false;
+    // A store that cannot be read is said so (StoreUnavailableError), not
+    // read as a cell nobody recorded anything for: a report built on that
+    // shows every cell empty, and can be frozen that way.
+    const store = this.store;
+    let byWriter: Map<string, ConformanceCheck[]>;
+    let known: boolean;
     try {
-      byWriter = await this.store.loadChecks(id);
-      known = (await this.store.loadRun(id)) !== undefined;
+      byWriter = await retrying(() => store.loadChecks(id));
+      known = (await retrying(() => store.loadRun(id))) !== undefined;
     } catch (e) {
       logStoreError(e);
+      throw new StoreUnavailableError(e);
     }
     if (run) {
       byWriter.set(this.writerId, this.ownChecks(run));
@@ -625,12 +677,14 @@ export class SessionManager {
     for (const r of this.runs.values()) {
       if (r.runId === runId && r.touched) ids.add(r.id);
     }
-    if (this.store) {
+    const store = this.store;
+    if (store) {
       try {
-        for (const { id } of await this.store.listRuns(`${runId}/`))
-          ids.add(id);
+        const saved = await retrying(() => store.listRuns(`${runId}/`));
+        for (const { id } of saved) ids.add(id);
       } catch (e) {
         logStoreError(e);
+        throw new StoreUnavailableError(e);
       }
     }
     return Array.from(ids)
@@ -691,9 +745,11 @@ const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
  * without a REVISION_SPOKEN_CHECK_ID marker (spokeRevision()) and with no
  * FAILURE, `recorded` is zero, so the verdict is incomplete, and the cell
  * says why (revisionNotSpokenCheck()). A scenario that expects the client
- * to stop before it reaches the MCP endpoint (`allowClientError`: it must
- * reject a bad issuer, say) is judged on its own checks as before. The
- * markers themselves are never shown.
+ * to stop before it is let in (`allowClientError`: it must reject a bad
+ * issuer, say) passes once the client sent the cell an MCP request at its
+ * revision, even one met with the sign-in challenge (reachedRevision());
+ * metadata fetches alone, as a client listing its servers makes, are not
+ * enough. The markers themselves are never shown.
  */
 function judgedAtRevision(
   ref: CellRef,
@@ -701,7 +757,15 @@ function judgedAtRevision(
   hostedLog: ConformanceCheck[]
 ): RunResults {
   const spoke = hostedLog.some((c) => c.id === REVISION_SPOKEN_CHECK_ID);
-  const hosted = hostedLog.filter((c) => c.id !== REVISION_SPOKEN_CHECK_ID);
+  const reached =
+    spoke || hostedLog.some((c) => c.id === REVISION_REACHED_CHECK_ID);
+  const tested = getScenario(ref.scenarioName)?.allowClientError
+    ? reached
+    : spoke;
+  const hosted = hostedLog.filter(
+    (c) =>
+      c.id !== REVISION_SPOKEN_CHECK_ID && c.id !== REVISION_REACHED_CHECK_ID
+  );
   const checks = [
     ...atCellRevision(
       finalizeChecks(ref.scenarioName, scenarioLog, ref.revision),
@@ -710,12 +774,7 @@ function judgedAtRevision(
     ...hosted
   ];
   let recorded = scenarioLog.length + hostedFailures(hosted);
-  if (
-    recorded > 0 &&
-    !spoke &&
-    !getScenario(ref.scenarioName)?.allowClientError &&
-    !checks.some((c) => c.status === 'FAILURE')
-  ) {
+  if (recorded > 0 && !tested && !checks.some((c) => c.status === 'FAILURE')) {
     const last = checks.reduce(
       (t, c) => ((c.timestamp ?? '') > t ? (c.timestamp ?? '') : t),
       ''
@@ -730,6 +789,34 @@ function judgedAtRevision(
 
 function logStoreError(e: unknown): void {
   console.error('[hosted] run store:', e instanceof Error ? e.message : e);
+}
+
+/** Waits before each repeat of a store call that failed (see retrying()). */
+const STORE_RETRY_DELAYS_MS = [50, 250];
+
+/**
+ * A store call, made again after a short wait when it fails: a hosted
+ * SQLite API can refuse a statement now and then, and a write not made
+ * again before the response may never be made.
+ */
+async function retrying<T>(call: () => Promise<T>): Promise<T> {
+  for (const wait of STORE_RETRY_DELAYS_MS) {
+    try {
+      return await call();
+    } catch {
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  return call();
+}
+
+/** The run store could not be read, so a cell's results cannot be told. */
+export class StoreUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `the results store did not answer (${cause instanceof Error ? cause.message : String(cause)}); try again`
+    );
+  }
 }
 
 export class UnknownScenarioError extends Error {

@@ -158,21 +158,27 @@ show each step as a plain line a person can make a hand-driven client follow
 ("call add*numbers with a=5 and b=3"), with the JSON beside it. Every cell
 and composite also has a button that copies the bare MCP URL, and ready-to-paste
 config for VS Code (`servers` in `.vscode/mcp.json`), Codex
-(`[mcp_servers.<name>]` with `url` in `~/.codex/config.toml`), Goose (an
-`extensions:` entry of `type: streamable_http` with `uri` in
-`~/.config/goose/config.yaml`) and the `mcpServers` JSON other clients read,
-each with its own copy button. Names are `c9e-<revision>-<scenario>` with
+(`[mcp_servers.<name>]` with `url` in `~/.codex/config.toml`), Goose (entries
+of `type: streamable_http` with `uri`, indented to paste under the existing
+`extensions:` key of `~/.config/goose/config.yaml`; a second top-level
+`extensions:` is ignored), Copilot CLI (`mcpServers` entries with `tools` in
+`~/.copilot/mcp-config.json`) and the `mcpServers` JSON other clients read,
+each with its own copy button and a line on adding it to a file that already
+has servers. Names are `c9e-<revision>-<scenario>` with
 anything but letters, digits, `*`and`-`made`-`
 (`c9e-2025-11-25-auth-metadata-default`); the run page's ready-made
-composites are `c9e-<revision>-composite`. The run page's blocks cover the
-ready-made composites and every auth cell, one paste per client
+composites are `c9e-<revision>-composite`. The run page gives each client a
+starter block (the ready-made composites and `auth/metadata-default` per
+revision) and, folded, the full one with every auth cell, switched off where
+the format can say so (`enabled: false`for Goose,`enabled = false` for
+Codex), since each auth cell starts a sign-in when the client connects
 (`src/hosted/client-config.ts`). An `auth/\*`cell, which has no generic-client steps, shows plain ones for a hand-driven
 client (connect, approve the sign-in, list the tools) and any`client_id`/`client_secret`the scenario gives the client as copyable fields;`request-metadata`and`http-standard-headers` say what a person should
 expect. The little markdown in scenario descriptions is rendered.
 
 **Report.** A cell's verdict is `pass` (checks recorded, no FAILURE), `fail`
-(any FAILURE), `incomplete` (never hit, or hit but nothing recorded) or
-`n/a`. An `incomplete` cell may still list FAILUREs: they are the scenario's
+(a FAILURE seen in the client's traffic), `incomplete` (never hit, hit but
+nothing recorded, or every FAILURE is one not seen yet) or `n/a`. An `incomplete` cell may still list FAILUREs: they are the scenario's
 expectations that nothing has met yet ("Tool was not called by client"), not
 a verdict, and its `note` says so in plain words — "nothing recorded yet",
 "the client has not yet done anything this scenario tests; the 5 failures
@@ -212,11 +218,13 @@ person can see how a client did without opening each cell. Every cell has a
 `not-tried` (no request reached it), `in-progress` (the client reached it
 but nothing its scenario tests has happened yet) and `incomplete` (the
 client reached it and stopped short: it opened with a legacy `initialize`
-and never retried at the cell's revision), and splits `fail` off as
-`waiting` when every failure is not seen — nothing the client did is wrong,
-the flow has not finished (a consent screen, an elicitation form still to
-answer); its note says "waiting for the client or the person to finish the
-flow", and its verdict stays `fail` until the steps happen. The others are
+and never retried at the cell's revision), plus `waiting` when every failure
+is not seen — nothing the client did is wrong, the flow has not finished (a
+consent screen, an elicitation form still to answer); its note says "waiting
+for the client or the person to finish the flow", and its verdict is
+`incomplete` until the steps happen. A check the scenario marks untestable
+because the flow never reached it (`details.untestable`, "Not testable:
+client never reached the authorization endpoint") is not seen too. The others are
 `pass`, `fail`, `not-startable` and `n/a`. Each column counts its cells per state. A cell
 the client reached lists its FAILUREs and WARNINGs as `findings`, one line
 each (`errorMessage`, else `details.message`, else the check's description,
@@ -346,8 +354,10 @@ request at it (an `initialize` asking for it, or a request whose
 without one — an OAuth flow completed by a client that then spoke only an
 older revision, say — is `incomplete`, with the INFO check
 `hosted-revision-not-spoken` saying why. A scenario that expects the client to
-stop before it reaches the MCP endpoint (it must reject a bad issuer, say) is
-judged on its own checks as before.
+stop before it is let in (it must reject a bad issuer, say) passes once the
+client sent the cell an MCP request at its revision, however it was answered
+(a 401 sign-in challenge counts); metadata fetches alone, as a client makes
+when it only lists its servers, leave it `incomplete` the same way.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
@@ -472,6 +482,14 @@ its rows for a cell together (`SessionManager.persist`), skipping rows that
 have not changed, so `valtown.ts` — which flushes before it answers, so that
 no write is left to an isolate that may be stopped — waits one store round
 trip for a discover, rather than one per row after seeding.
+
+A store call that fails is made again twice, after a short wait, before it is
+given up: an isolate may never see the cell again, so a write left for its
+next request can be a write lost (a pass that showed on one isolate's page
+and nowhere else). A cell whose seeding failed is seeded again on its next
+request, and does not write over a row its isolate already wrote. A read the
+store still cannot answer is a 503 asking to try again, never a report whose
+cells all look empty (which could be frozen that way).
 
 Auth scenarios keep nothing only in memory between two requests. The PKCE
 challenge and requested scopes ride in the authorization code, the granted

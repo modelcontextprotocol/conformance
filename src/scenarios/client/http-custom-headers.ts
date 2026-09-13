@@ -234,6 +234,8 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
 
   private toolCallReceived: boolean = false;
   private nullToolCallReceived: boolean = false;
+  /** The tools/call being judged carried an x-mcp-header argument. */
+  private annotatedArgumentSent = false;
 
   /** Read by start() for the CLI runner and by the hosted server per cell. */
   protected scenarioContext(): Record<string, unknown> {
@@ -445,11 +447,16 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
       // SEP-2243 "MCP clients MUST support this feature": observable as the
       // client calling the annotated tool with at least one mirrored
       // Mcp-Param-* header. The per-parameter checks below then validate each
-      // mirrored value individually.
+      // mirrored value individually. A call that carries none of the
+      // annotated arguments has nothing to mirror and shows nothing either
+      // way, so this is judged only on a call that sent one of them (see
+      // checkParamHeader()); a later call can still show it.
       const hasAnyParamHeader = Object.keys(req.headers).some((h) =>
         h.startsWith('mcp-param-')
       );
-      this.checks.push({
+      const supportsAt = this.checks.length;
+      this.annotatedArgumentSent = false;
+      const supports: ConformanceCheck = {
         id: 'sep-2243-client-supports-custom-headers',
         name: 'ClientSupportsCustomHeaders',
         description:
@@ -460,7 +467,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
           ? undefined
           : 'Client called test_custom_headers but sent no Mcp-Param-* headers.',
         specReferences: [SPEC_REFERENCE_CUSTOM]
-      });
+      };
 
       // Check Mcp-Param-Region header (plain ASCII string)
       this.checkParamHeader(req, 'Region', args.region, 'string');
@@ -599,6 +606,9 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
             : undefined,
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
+      // In the log where it was judged, ahead of the per-parameter checks.
+      if (this.annotatedArgumentSent || hasAnyParamHeader)
+        this.checks.splice(supportsAt, 0, supports);
     } else if (toolName === 'test_custom_headers_null') {
       this.nullToolCallReceived = true;
 
@@ -641,6 +651,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     const rawHeaderValue = req.headers[headerKey] as string | undefined;
 
     if (bodyValue === undefined || bodyValue === null) return;
+    this.annotatedArgumentSent = true;
 
     const errors: string[] = [];
 

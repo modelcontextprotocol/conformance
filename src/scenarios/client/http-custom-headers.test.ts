@@ -166,6 +166,73 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
     }
   });
 
+  it('judges support for custom headers only on a call that carries an annotated argument', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    const call = (args: object, headers: Record<string, string> = {}) =>
+      post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'test_custom_headers', arguments: args }
+        },
+        headers
+      );
+    try {
+      // No arguments: nothing to mirror, so nothing about support either way.
+      await call({});
+      expect(
+        statusesFor(
+          rawChecksOf(scenario),
+          'sep-2243-client-supports-custom-headers'
+        )
+      ).toEqual([]);
+      // A later call with them, mirrored, shows it.
+      await call(
+        { region: 'us-west1', priority: 42 },
+        { 'Mcp-Param-Region': 'us-west1', 'Mcp-Param-Priority': '42' }
+      );
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-client-supports-custom-headers')
+      ).toEqual(['SUCCESS']);
+      expect(
+        statusesFor(checks, 'sep-2243-client-mirrors-designated-params')
+      ).not.toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('still FAILs a call whose annotated arguments arrive without headers', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'test_custom_headers',
+          arguments: { region: 'us-west1' }
+        }
+      });
+      const checks = rawChecksOf(scenario);
+      expect(
+        statusesFor(checks, 'sep-2243-client-supports-custom-headers')
+      ).toEqual(['FAILURE']);
+      expect(
+        statusesFor(checks, 'sep-2243-client-mirrors-designated-params')
+      ).toContain('FAILURE');
+      // Where it was judged: ahead of the per-parameter checks.
+      expect(checks[0].id).toBe('sep-2243-client-supports-custom-headers');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
   it('serves a fresh tools/list TTL before requiring schema-derived custom headers', async () => {
     const scenario = new HttpCustomHeadersScenario();
     const { serverUrl } = await scenario.start(testScenarioContext());

@@ -339,8 +339,11 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(page).toContain('1 passed, 0 failed, 6 not seen');
     expect(page).toContain('>not seen</span> the flow did not reach this step');
     expect(page).not.toContain('Expected Check Missing');
-    // Nothing the client did is wrong: the cell waits, its verdict stays.
-    expect(results).toMatchObject({ verdict: 'fail', state: 'waiting' });
+    // Nothing the client did is wrong: the cell waits, and is not done.
+    expect(results).toMatchObject({
+      verdict: 'incomplete',
+      state: 'waiting'
+    });
     const md = await fetch(`${rs}/results/stuck?format=md`).then((r) =>
       r.text()
     );
@@ -610,6 +613,80 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
       []
     );
     expect(passed.verdict).toBe('pass');
+  });
+
+  it('passes a negative auth cell only once the client sent it a request at its revision', async () => {
+    // Opens with `first`, is challenged, fetches the resource and
+    // authorization server metadata, and stops: what `codex mcp list` does
+    // to show "Not logged in", and what a client refusing bad metadata does.
+    const stopsAfterMetadata = async (
+      cell: string,
+      first: { headers: Record<string, string>; body: object }
+    ) => {
+      const r = await fetch(`${rs}/s/${cell}/mcp`, {
+        method: 'POST',
+        headers: { ...jsonHeaders(), ...first.headers },
+        body: JSON.stringify(first.body)
+      });
+      expect(r.status).toBe(401);
+      await r.text();
+      const prm = await fetch(
+        `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`
+      ).then((res) => res.json());
+      const as = new URL(prm.authorization_servers[0]);
+      await fetch(
+        `${as.origin}/.well-known/oauth-authorization-server${as.pathname}`
+      ).then((res) => res.text());
+      return fetch(`${rs}/results/${cell}`).then((res) => res.json());
+    };
+    const legacy = {
+      headers: {},
+      body: {
+        ...initBody(),
+        params: { ...initBody().params, protocolVersion: '2025-11-25' }
+      }
+    };
+    const modern = {
+      headers: {
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'tools/list'
+      },
+      body: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'm', version: '0' },
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      }
+    };
+    for (const scenario of [
+      'auth/resource-mismatch',
+      'auth/metadata-issuer-mismatch'
+    ]) {
+      // A client that spoke only the legacy handshake never tested 2026-07-28.
+      const listed = await stopsAfterMetadata(
+        `listed/2026-07-28/${scenario}`,
+        legacy
+      );
+      expect(listed.verdict, scenario).toBe('incomplete');
+      expect(
+        listed.checks.some(
+          (c: { id: string }) => c.id === 'hosted-revision-not-spoken'
+        ),
+        scenario
+      ).toBe(true);
+      // One that asked at 2026-07-28, was challenged, then refused: passes.
+      const refused = await stopsAfterMetadata(
+        `refused/2026-07-28/${scenario}`,
+        modern
+      );
+      expect(refused.verdict, scenario).toBe('pass');
+    }
   });
 
   /** Walk the cell's OAuth flow by hand and return an access token. */

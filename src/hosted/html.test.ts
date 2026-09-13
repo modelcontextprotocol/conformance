@@ -420,7 +420,37 @@ describe('hosted HTML', () => {
       mcpServers: {},
       cells
     });
-    const goose = run.match(/data-copy-text="(extensions:[^"]*)"/)![1];
+    // Per client a starter block and the full one; the full one is longer.
+    const blocksWith = (marker: string) =>
+      [...run.matchAll(/data-copy-text="([^"]*)"/g)]
+        .map((m) => m[1])
+        .filter((t) => t.includes(marker))
+        .sort((a, b) => a.length - b.length);
+    const [gooseStarter, goose] = blocksWith('type: streamable_http');
+    const [codexStarter, codex] = blocksWith('[mcp_servers.');
+    // Pasted under the file's own `extensions:` key: no key of its own.
+    expect(goose).not.toMatch(/^extensions:/m);
+    expect(run).toContain(
+      'Paste under extensions: in ~/.config/goose/config.yaml.'
+    );
+    // Auth cells arrive switched off, the composites on.
+    expect(goose).toContain(
+      '  c9e-2026-07-28-auth-resource-mismatch:\n    enabled: false'
+    );
+    expect(goose).toContain('  c9e-2026-07-28-composite:\n    enabled: true');
+    expect(codex).toContain(
+      '[mcp_servers.c9e-2026-07-28-auth-resource-mismatch]\nurl = &quot;http://x/s/run9/2026-07-28/auth/resource-mismatch/mcp&quot;\nenabled = false'
+    );
+    // The starter: the composites and metadata-default per revision, on.
+    for (const starter of [gooseStarter, codexStarter]) {
+      expect(starter).toContain('c9e-2025-11-25-composite');
+      expect(starter).toContain('c9e-2026-07-28-auth-metadata-default');
+      expect(starter).not.toContain('auth-resource-mismatch');
+      expect(starter).not.toContain('enabled: false');
+      expect(starter).not.toContain('enabled = false');
+    }
+    // Copilot CLI has its own block (its entries need `tools`).
+    expect(run).toContain('<b>Copilot CLI</b>');
     const auth = cells.filter((c) => c.scenario.startsWith('auth/'));
     expect(auth.length).toBeGreaterThan(10);
     for (const name of [

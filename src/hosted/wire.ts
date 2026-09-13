@@ -411,6 +411,40 @@ export function revisionSpokenCheck(served: SpecVersion): ConformanceCheck {
   };
 }
 
+export const REVISION_REACHED_CHECK_ID = 'hosted-revision-reached';
+
+/**
+ * Whether the client sent the cell an MCP request at its revision `served`,
+ * however the cell answered it — a 401 sign-in challenge counts. What a
+ * scenario that expects the client to stop before it is let in (it must
+ * refuse mismatched metadata, say) needs to have seen before it can pass:
+ * fetching metadata alone, as a client listing its servers does, tests
+ * nothing. At `served` as spokeRevision() reads it.
+ */
+export function reachedRevision(
+  served: SpecVersion,
+  request: RequestInfo,
+  headerVersion: string | undefined
+): boolean {
+  if (!request.methods.length) return false;
+  if (request.methods.includes('initialize')) {
+    return isStatefulVersion(served) && request.bodyVersion === served;
+  }
+  return headerVersion === served;
+}
+
+/** The marker reachedRevision() leaves on a cell; never shown. */
+export function revisionReachedCheck(served: SpecVersion): ConformanceCheck {
+  return {
+    id: REVISION_REACHED_CHECK_ID,
+    name: 'RevisionReached',
+    description: `The client sent an MCP request at ${served}`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { served }
+  };
+}
+
 export const REVISION_NOT_SPOKEN_CHECK_ID = 'hosted-revision-not-spoken';
 
 /**
