@@ -17,6 +17,20 @@ export const CIMD_CLIENT_METADATA_URL =
   'https://conformance-test.local/client-metadata.json';
 
 /**
+ * Whether `clientId` is a URL-based client ID: an https URL. A real client
+ * publishes its own metadata document (e.g. at its product's domain), so any
+ * https URL counts, not only CIMD_CLIENT_METADATA_URL.
+ */
+export function isUrlClientId(clientId: string | undefined): boolean {
+  if (!clientId) return false;
+  try {
+    return new URL(clientId).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Scenario: Client ID Metadata Documents (SEP-991/URL-based client IDs)
  *
  * Tests that when a server advertises client_id_metadata_document_supported=true,
@@ -38,7 +52,7 @@ export class AuthBasicCIMDScenario extends AuthHandlerScenario {
       clientIdMetadataDocumentSupported: true,
       onAuthorizationRequest: (data) => {
         // Check if client used URL-based client ID
-        const usedUrlClientId = data.clientId === CIMD_CLIENT_METADATA_URL;
+        const usedUrlClientId = isUrlClientId(data.clientId);
         this.checks.push({
           id: 'cimd-client-id-used',
           name: 'Client ID Metadata Document Usage',
@@ -52,7 +66,7 @@ export class AuthBasicCIMDScenario extends AuthHandlerScenario {
             SpecReferences.IETF_CIMD
           ],
           details: {
-            expectedClientId: CIMD_CLIENT_METADATA_URL,
+            expectedClientId: `an https URL, such as ${CIMD_CLIENT_METADATA_URL}`,
             actualClientId: data.clientId || 'none'
           }
         });
