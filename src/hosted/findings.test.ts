@@ -3,6 +3,7 @@ import {
   findingsOf,
   groupCauses,
   legacyCauseKey,
+  legacyCauseText,
   legacyStop,
   oneLineReason
 } from './findings';
@@ -106,6 +107,7 @@ describe('legacyStop', () => {
       asked: '2025-11-25',
       served: '2026-07-28',
       code: -32022,
+      status: 400,
       fellBack: false
     });
     expect(legacyStop([probe(), getOnMcpCheck('2026-07-28')])).toMatchObject({
@@ -116,6 +118,31 @@ describe('legacyStop', () => {
     );
     expect(legacyStop([probe(), retried])).toBeUndefined();
     expect(legacyStop([check({})])).toBeUndefined();
+  });
+
+  it('says what the cell answered, preferring its version answer', () => {
+    // An auth cell answers 401 before it looks at the protocol.
+    const challenged = legacyProbeCheck(
+      '2026-07-28',
+      undefined,
+      { status: 401 },
+      '2025-11-25'
+    );
+    expect(challenged.description).toContain(
+      'the cell answered HTTP 401, asking the client to sign in first'
+    );
+    const stop = legacyStop([challenged]);
+    expect(stop).toMatchObject({ status: 401 });
+    expect(stop?.code).toBeUndefined();
+    expect(legacyCauseText([stop!])).toContain(
+      'the cell asked it to sign in first (HTTP 401)'
+    );
+    expect(legacyCauseText([stop!])).not.toContain('accepted');
+    // Two processes' notes: the one that drew the -32022 wins.
+    expect(legacyStop([challenged, probe()])).toMatchObject({
+      code: -32022,
+      status: 400
+    });
   });
 });
 

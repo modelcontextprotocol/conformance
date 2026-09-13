@@ -113,6 +113,19 @@ export function bodyFitsBuffer(req: IncomingMessage): boolean {
 }
 
 /**
+ * Whether the request says it has no body: a buffered empty body, or no
+ * Content-Length (or a zero one) and no Transfer-Encoding — whatever its
+ * Content-Type, so it is known without waiting for a body that never comes.
+ */
+export function declaresNoBody(req: IncomingMessage): boolean {
+  const buffered = (req as Tapped)[BUFFERED_BODY];
+  if (buffered !== undefined) return buffered.length === 0;
+  if (req.headers['transfer-encoding'] !== undefined) return false;
+  const length = req.headers['content-length'];
+  return length === undefined || Number(length) === 0;
+}
+
+/**
  * Like onBody(), but always settles: `cb` gets the body when it was captured
  * and `undefined` as soon as it is known there will be none — the request is
  * not a JSON POST, was never tapped, or ran over the cap. Callers that must

@@ -5,6 +5,7 @@ import { SessionManager, cellId, rawChecksOf } from './session';
 import { MemoryRunStore } from './store';
 import type { HostedMatrix } from './matrix';
 import type { Server } from 'http';
+import { takeWireViolations } from '../validation/wire-schema';
 
 const REV_STATEFUL = '2025-11-25';
 const REV_STATELESS = '2026-07-28';
@@ -52,12 +53,12 @@ describe('hosted server', () => {
     });
   }
 
-  const initBody = (clientName = 'vitest') => ({
+  const initBody = (clientName = 'vitest', protocolVersion = '2025-06-18') => ({
     jsonrpc: '2.0',
     id: 1,
     method: 'initialize',
     params: {
-      protocolVersion: '2025-06-18',
+      protocolVersion,
       clientInfo: { name: clientName, version: '0' },
       capabilities: {}
     }
@@ -520,9 +521,10 @@ describe('hosted server', () => {
   });
 
   it('DELETE /results/<run-id> tears down every cell of the run', async () => {
-    await postMcp(`/s/del/${REV_STATEFUL}/initialize`, initBody()).then((r) =>
-      r.text()
-    );
+    await postMcp(
+      `/s/del/${REV_STATEFUL}/initialize`,
+      initBody('vitest', REV_STATEFUL)
+    ).then((r) => r.text());
     await postMcp(
       `/s/del/${REV_STATELESS}/tools_call/mcp`,
       statelessBody('tools/list'),
@@ -685,9 +687,10 @@ describe('hosted server', () => {
       )
     ).toMatchObject({ startable: false, startReason: 'excluded for the test' });
     // An exercised cell says where it stands too.
-    await postMcp(`/s/fresh/${REV_STATEFUL}/initialize/mcp`, initBody()).then(
-      (r) => r.text()
-    );
+    await postMcp(
+      `/s/fresh/${REV_STATEFUL}/initialize/mcp`,
+      initBody('vitest', REV_STATEFUL)
+    ).then((r) => r.text());
     expect(
       await fetch(`${base}/results/fresh/${REV_STATEFUL}/initialize`).then(
         (r) => r.json()
@@ -819,7 +822,7 @@ describe('hosted server', () => {
     // pass
     await postMcp(
       `/s/${run}/${REV_STATEFUL}/initialize`,
-      initBody('rep-client')
+      initBody('rep-client', REV_STATEFUL)
     ).then((r) => r.text());
     // fail: request-metadata judges the _meta of every 2026-07-28 request,
     // and this one carries none → FAILURE on judgement.
@@ -1275,7 +1278,10 @@ describe('hosted server', () => {
     // pass, from a client whose name is markup
     await postMcp(`/s/${run}/${REV_STATEFUL}/initialize/mcp`, {
       ...initBody(),
-      params: { ...initBody().params, clientInfo: { name: XSS, version: '1' } }
+      params: {
+        ...initBody('vitest', REV_STATEFUL).params,
+        clientInfo: { name: XSS, version: '1' }
+      }
     }).then((r) => r.text());
     // in progress: reached, the tool never called
     await postMcp(`/s/${run}/${REV_STATEFUL}/tools_call/mcp`, initBody()).then(
@@ -1733,16 +1739,24 @@ describe('hosted server', () => {
     ).toBe('SUCCESS');
     expect(await verdictOf('neg', REV_STATEFUL, 'tools_call')).toBe('pass');
 
-    // A cell whose scenario answers the probe with -32601 (initialize's
-    // raw server has no server/discover) is probed the same way.
+    // Every dated cell answers it alike, before the scenario sees it: the
+    // raw initialize scenario answered 404 -32601 here, which on HTTP is a
+    // modern server saying it lacks the method.
     const rawCell = `/s/neg3/${REV_STATEFUL}/initialize/mcp`;
     const rawProbe = await postMcp(
       rawCell,
       statelessBody('server/discover'),
       statelessHeaders
     );
-    expect(rawProbe.status).toBe(404);
-    await rawProbe.text();
+    expect(rawProbe.status).toBe(400);
+    expect(await rawProbe.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      error: {
+        code: -32000,
+        message: `Bad Request: Unsupported protocol version: ${REV_STATELESS} (supported versions: ${REV_STATEFUL})`
+      }
+    });
     await postMcp(rawCell, negotiatedInit).then((r) => r.text());
     const raw = await resultsOf('neg3', REV_STATEFUL, 'initialize');
     expect(hostedChecks(raw.checks)).toEqual([]);
@@ -1750,7 +1764,7 @@ describe('hosted server', () => {
       probesIn(raw.checks).map(
         (c) => (c.details?.rejected as { code?: number }).code
       )
-    ).toEqual([-32601]);
+    ).toEqual([-32000]);
     expect(await verdictOf('neg3', REV_STATEFUL, 'initialize')).toBe('pass');
 
     // A client that negotiated and then carried on at 2026-07-28: the wire
@@ -1770,10 +1784,10 @@ describe('hosted server', () => {
     ]);
     expect(await verdictOf('neg', REV_STATEFUL, 'initialize')).toBe('fail');
 
-    // …and one that negotiated, then kept sending 2026-07-28 after the cell
-    // had answered: the wire rejects its tools/call, and that is the client
-    // carrying on at the wrong revision, with the rejection folded in. The
-    // opening probe is still only noted.
+    // …and one that negotiated, then sent a 2026-07-28 request again: the
+    // wire turns it away, and a request in the 2026-07-28 shape is the
+    // client probing again (it may, whenever it reconnects), so it is only
+    // noted; the tool was never called at 2025-11-25, so the cell fails.
     const other = `/s/neg2/${REV_STATEFUL}/tools_call/mcp`;
     await postMcp(
       other,
@@ -1794,22 +1808,32 @@ describe('hosted server', () => {
     expect(rejectedCall.status).toBe(400);
     await rejectedCall.text();
     const never = await resultsOf('neg2', REV_STATEFUL, 'tools_call');
-    expect(
-      hostedChecks(never.checks).map((c) => [
-        c.id,
-        c.details?.method,
-        (c.details?.rejected as { status?: number } | undefined)?.status
-      ])
-    ).toEqual([['hosted-wrong-revision', 'tools/call', 400]]);
+    expect(hostedChecks(never.checks)).toEqual([]);
     expect(probesIn(never.checks)).toHaveLength(1);
     expect(
       never.checks.find((c: Check) => c.id === 'tool-add-numbers').status
     ).toBe('FAILURE');
     expect(await verdictOf('neg2', REV_STATEFUL, 'tools_call')).toBe('fail');
 
-    // The same without initialize: once the cell has answered the probe,
-    // another request at 2026-07-28 is carrying on, not probing — even a
-    // second server/discover.
+    // A request in the dated shape (no per-request _meta) whose header names
+    // 2026-07-28 is carrying on at the wrong revision, not probing.
+    const legacyShaped = await postMcp(
+      other,
+      { jsonrpc: '2.0', id: 4, method: 'tools/list', params: {} },
+      statelessHeaders
+    );
+    expect(legacyShaped.status).toBe(400);
+    await legacyShaped.text();
+    // Deliberately not a 2026-07-28 request, though its header says so.
+    expect(takeWireViolations().violations).toHaveLength(1);
+    expect(
+      hostedChecks(
+        (await resultsOf('neg2', REV_STATEFUL, 'tools_call')).checks
+      ).map((c) => [c.id, c.details?.method])
+    ).toEqual([['hosted-wrong-revision', 'tools/list']]);
+
+    // Probing alone, however often: noted once per version, never failed —
+    // and never passed either, since the client never spoke 2025-11-25.
     const stubborn = `/s/neg4/${REV_STATEFUL}/tools_call/mcp`;
     for (const method of ['server/discover', 'tools/list', 'server/discover']) {
       const r = await postMcp(
@@ -1822,15 +1846,13 @@ describe('hosted server', () => {
     }
     const kept = await resultsOf('neg4', REV_STATEFUL, 'tools_call');
     expect(probesIn(kept.checks)).toHaveLength(1);
-    expect(
-      hostedChecks(kept.checks).map((c) => [c.id, c.details?.method])
-    ).toEqual([
-      ['hosted-wrong-revision', 'tools/list'],
-      ['hosted-wrong-revision', 'server/discover']
-    ]);
+    expect(hostedChecks(kept.checks)).toEqual([]);
     expect(
       kept.checks.some((c: Check) => c.id === 'hosted-wire-rejected')
     ).toBe(false);
+    expect(await verdictOf('neg4', REV_STATEFUL, 'tools_call')).toBe(
+      'incomplete'
+    );
 
     // On the 2026-07-28 cell nothing is negotiation: a 2025-11-25 header the
     // scenario accepted is a wrong revision, as before.
@@ -1850,6 +1872,239 @@ describe('hosted server', () => {
     expect(hostedChecks(wrong.checks).map((c) => c.errorMessage)).toEqual([
       `cell is served on ${REV_STATELESS}; client sent ${REV_STATEFUL}`
     ]);
+  });
+
+  it('keeps a dual-era client that probes on every connect passing', async () => {
+    // A dual-era client, as run live: on every connect (start-up,
+    // /mcp, a relaunch) it sends server/discover at 2026-07-28, is turned
+    // away, asks for 2025-06-18 in initialize, is told 2025-11-25 and
+    // carries on at 2025-11-25. A GET with a 2024-11-05 header comes too.
+    type Check = {
+      id: string;
+      status: string;
+      details?: Record<string, unknown>;
+    };
+    const dated = { 'mcp-protocol-version': REV_STATEFUL };
+    const answers: Record<string, unknown> = {};
+    const connect = async (name: string) => {
+      const url = `/s/relaunch/${REV_STATEFUL}/${name}/mcp`;
+      const probe = await postMcp(
+        url,
+        statelessBody('server/discover'),
+        statelessHeaders
+      );
+      expect(probe.status, name).toBe(400);
+      answers[name] = await probe.json();
+      const init = await postMcp(url, initBody('dual-era'));
+      expect(await init.text()).toContain(
+        `"protocolVersion":"${REV_STATEFUL}"`
+      );
+      const initialized = await postMcp(
+        url,
+        { jsonrpc: '2.0', method: 'notifications/initialized' },
+        dated
+      );
+      expect(initialized.status, name).toBe(202);
+      await initialized.text();
+      const listed = await postMcp(
+        url,
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+        dated
+      );
+      expect(listed.status, name).toBe(200);
+      await listed.text();
+      const get = await fetch(`${base}${url}`, {
+        headers: {
+          accept: 'text/event-stream',
+          'mcp-protocol-version': '2024-11-05'
+        }
+      });
+      expect(get.status, name).toBe(405);
+      await get.text();
+    };
+    for (const name of ['tools_call', 'initialize']) {
+      await connect(name);
+      if (name === 'tools_call') {
+        await postMcp(
+          `/s/relaunch/${REV_STATEFUL}/tools_call/mcp`,
+          {
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'tools/call',
+            params: { name: 'add_numbers', arguments: { a: 5, b: 3 } }
+          },
+          dated
+        ).then((r) => r.text());
+      }
+      // Two relaunches.
+      await connect(name);
+      await connect(name);
+    }
+    // Every dated cell turns the probe away with the same answer.
+    expect(answers.initialize).toEqual(answers.tools_call);
+
+    const report = await fetch(`${base}/results/relaunch`).then((r) =>
+      r.json()
+    );
+    const column = report.columns.find(
+      (c: { revision: string }) => c.revision === REV_STATEFUL
+    );
+    for (const name of ['tools_call', 'initialize']) {
+      const results = await fetch(
+        `${base}/results/relaunch/${REV_STATEFUL}/${name}`
+      ).then((r) => r.json());
+      expect(
+        results.checks.filter((c: Check) => c.status === 'FAILURE'),
+        name
+      ).toEqual([]);
+      // One note for the probe, however many times it came; the GET is not
+      // a probe.
+      expect(
+        results.checks
+          .filter((c: Check) => c.id === 'hosted-modern-probe')
+          .map((c: Check) => [c.details?.method, c.details?.headerVersion]),
+        name
+      ).toEqual([['server/discover', REV_STATELESS]]);
+      expect(
+        results.checks.filter((c: Check) => c.id === 'hosted-get-on-mcp-path'),
+        name
+      ).toHaveLength(1);
+      expect(results.verdict, name).toBe('pass');
+      expect(
+        column.cells.find((c: { scenario: string }) => c.scenario === name)
+          .verdict,
+        name
+      ).toBe('pass');
+    }
+  });
+
+  it('keeps a repeated legacy initialize on a 2026-07-28 cell a probe', async () => {
+    // The mirror case: a dual-era client that opens every connect with
+    // initialize, is answered -32022 and carries on at 2026-07-28.
+    type Check = { id: string; status: string };
+    const url = `/s/legacy2/${REV_STATELESS}/tools_call/mcp`;
+    for (let connect = 0; connect < 3; connect++) {
+      const init = await postMcp(url, initBody('dual'));
+      expect(init.status).toBe(400);
+      expect((await init.json()).error.code).toBe(-32022);
+      await postMcp(url, statelessBody('tools/list'), {
+        ...statelessHeaders,
+        'mcp-method': 'tools/list'
+      }).then((r) => r.text());
+    }
+    await postMcp(
+      url,
+      statelessBody('tools/call', {
+        name: 'add_numbers',
+        arguments: { a: 1, b: 2 }
+      }),
+      {
+        ...statelessHeaders,
+        'mcp-method': 'tools/call',
+        'mcp-name': 'add_numbers'
+      }
+    ).then((r) => r.text());
+    const results = await fetch(
+      `${base}/results/legacy2/${REV_STATELESS}/tools_call`
+    ).then((r) => r.json());
+    expect(results.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(
+      results.checks.filter((c: Check) => c.id === 'hosted-legacy-probe')
+    ).toHaveLength(1);
+    expect(results.verdict).toBe('pass');
+  });
+
+  it('turns server/discover away alike on dated cells and composites', async () => {
+    type Check = { id: string; status: string };
+    const probe = (url: string) =>
+      postMcp(url, statelessBody('server/discover'), statelessHeaders).then(
+        async (r) => ({ status: r.status, body: await r.json() })
+      );
+    const single = await probe(`/s/cdisc/${REV_STATEFUL}/tools_call/mcp`);
+    const composite = await probe(
+      `/s/cdisc/${REV_STATEFUL}/initialize+tools_call/mcp`
+    );
+    expect(single.status).toBe(400);
+    expect(composite).toEqual(single);
+    for (const name of ['initialize', 'tools_call']) {
+      const results = await fetch(
+        `${base}/results/cdisc/${REV_STATEFUL}/${name}`
+      ).then((r) => r.json());
+      expect(
+        results.checks.filter(
+          (c: Check) => c.id.startsWith('hosted-') && c.status === 'FAILURE'
+        ),
+        name
+      ).toEqual([]);
+      expect(
+        results.checks.filter((c: Check) => c.id === 'hosted-modern-probe'),
+        name
+      ).toHaveLength(1);
+    }
+  });
+
+  it('answers an empty or malformed body with a plain parse error', async () => {
+    // Single cells on both wires, a raw scenario, and a composite: one
+    // answer, and no parser exception anywhere.
+    type Check = { id: string; status: string; details?: unknown };
+    const cells = [
+      `/s/parse/${REV_STATEFUL}/tools_call/mcp`,
+      `/s/parse/${REV_STATEFUL}/initialize/mcp`,
+      `/s/parse/${REV_STATELESS}/tools_call/mcp`,
+      `/s/parse/${REV_STATELESS}/tools_call+http-standard-headers/mcp`
+    ];
+    for (const url of cells) {
+      for (const body of ['', '{"jsonrpc":"2.0","id":1,"method":']) {
+        const r = await fetch(`${base}${url}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+            'mcp-protocol-version': '2024-11-05'
+          },
+          body
+        });
+        expect(r.status, `${url} ${JSON.stringify(body)}`).toBe(400);
+        expect(await r.json()).toEqual({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'Parse error' }
+        });
+      }
+    }
+    // A bodiless POST with no Content-Type is the same parse error.
+    const bare = await fetch(`${base}${cells[1]}`, { method: 'POST' });
+    expect(bare.status).toBe(400);
+    expect((await bare.json()).error.code).toBe(-32700);
+
+    for (const cell of [
+      `parse/${REV_STATEFUL}/tools_call`,
+      `parse/${REV_STATEFUL}/initialize`,
+      `parse/${REV_STATELESS}/tools_call`
+    ]) {
+      const results = await fetch(`${base}/results/${cell}`).then((r) =>
+        r.text()
+      );
+      expect(results, cell).not.toContain('SyntaxError');
+      const checks: Check[] = JSON.parse(results).checks;
+      expect(
+        checks.filter((c) => c.id.startsWith('hosted-') && c.status !== 'INFO'),
+        cell
+      ).toEqual([]);
+      expect(
+        checks.some((c) => c.id === 'hosted-modern-probe'),
+        cell
+      ).toBe(false);
+      expect(
+        checks
+          .filter((c) => c.id === 'hosted-unparseable-body')
+          .map((c) => (c.details as { body: string }).body)
+          .sort(),
+        cell
+      ).toEqual(['empty', 'malformed']);
+    }
   });
 
   it('HTML-escapes the run id in the results report', () => {
@@ -1927,7 +2182,7 @@ describe('hosted server across processes (shared store)', () => {
         id: 1,
         method: 'initialize',
         params: {
-          protocolVersion: '2025-06-18',
+          protocolVersion: REV_STATEFUL,
           clientInfo: { name: 'frz', version: '0' },
           capabilities: {}
         }
@@ -1952,6 +2207,96 @@ describe('hosted server across processes (shared store)', () => {
     // Cell links are the serving process's, not the one it was frozen on.
     expect(cell.resultsUrl).toBe(`${b}/results/frz/${REV_STATEFUL}/initialize`);
     expect(await store.listSnapshots('frz')).toHaveLength(1);
+  });
+
+  it('keeps a probing client passing when its connects land on different processes', async () => {
+    // The dual-era client of the single-process case, with each request
+    // load-balanced to the other isolate: neither judges a probe from what
+    // it has seen before, so no order of arrival can fail it.
+    const [a, b] = origins;
+    let turn = 0;
+    const post = (
+      path: string,
+      body: object,
+      headers: Record<string, string> = {}
+    ) =>
+      fetch(`${[a, b][turn++ % 2]}${path}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...headers
+        },
+        body: JSON.stringify(body)
+      }).then(async (r) => {
+        await r.text();
+        return r.status;
+      });
+    const url = `/s/mpprobe/${REV_STATEFUL}/tools_call/mcp`;
+    const dated = { 'mcp-protocol-version': REV_STATEFUL };
+    const discover = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'server/discover',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+          'io.modelcontextprotocol/clientInfo': { name: 'mp', version: '0' },
+          'io.modelcontextprotocol/clientCapabilities': {}
+        }
+      }
+    };
+    const init = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        clientInfo: { name: 'mp', version: '0' },
+        capabilities: {}
+      }
+    };
+    for (let connect = 0; connect < 3; connect++) {
+      expect(
+        await post(url, discover, { 'mcp-protocol-version': REV_STATELESS })
+      ).toBe(400);
+      expect(await post(url, init)).toBe(200);
+      expect(
+        await post(
+          url,
+          { jsonrpc: '2.0', method: 'notifications/initialized' },
+          dated
+        )
+      ).toBe(202);
+      if (connect === 0) {
+        expect(
+          await post(
+            url,
+            {
+              jsonrpc: '2.0',
+              id: 2,
+              method: 'tools/call',
+              params: { name: 'add_numbers', arguments: { a: 1, b: 2 } }
+            },
+            dated
+          )
+        ).toBe(200);
+      }
+    }
+    for (const { sessions } of apps) await sessions.flush();
+    type Check = { id: string; status: string };
+    for (const origin of [a, b]) {
+      const results = await fetch(
+        `${origin}/results/mpprobe/${REV_STATEFUL}/tools_call`
+      ).then((r) => r.json());
+      expect(
+        results.checks.filter((c: Check) => c.status === 'FAILURE')
+      ).toEqual([]);
+      expect(
+        results.checks.filter((c: Check) => c.id === 'hosted-modern-probe')
+      ).toHaveLength(1);
+      expect(results.verdict).toBe('pass');
+    }
   });
 
   it('writes nothing to the store when results are read', async () => {

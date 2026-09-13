@@ -61,23 +61,33 @@ import {
   renderReport,
   renderResults
 } from './html';
-import { bodyFitsBuffer, onBodySettled, tapJsonBody } from './body';
+import {
+  bodyFitsBuffer,
+  declaresNoBody,
+  onBodySettled,
+  tapJsonBody
+} from './body';
 import { identityFrom } from './identity';
 import { isStatefulVersion } from '../connection/select';
 import {
   answeredVersion,
   describeRequest,
+  discoverReply,
   getOnMcpCheck,
   GET_ON_MCP_REPLY,
   isAcceptedInitialize,
   isLegacyProbe,
   isModernProbe,
+  isUnparseable,
+  legacyAnswer,
   legacyInitializeReply,
   legacyProbeCheck,
   modernProbeCheck,
+  PARSE_ERROR_REPLY,
   pinInitializeVersion,
   refusalOf,
   tapResponse,
+  unparseableBodyCheck,
   versionAnswer,
   versionOfferedCheck,
   wireRejectedCheck,
@@ -344,61 +354,35 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   }
 
   /**
-   * What a dated cell has told its client about revisions, in arrival order:
-   * `arrivals` numbers requests as they reach dispatch(), and an answer is
-   * stamped with the number of the last request that had arrived when it went
-   * out, so a request numbered above it was sent after the client had it
-   * (parallel requests sent before the answer are still probes). Kept per
-   * process: on a multi-process host a request that lands where the answer
-   * was not seen is judged as a probe — noted, never failed.
+   * The probe notes this process has recorded per cell, keyed by kind and
+   * the revision probed for, and whether each already carries the cell's
+   * version answer. Only a note's wording depends on it (see noteProbe());
+   * whether a request is a probe never does.
    */
-  interface RevisionAnswers {
-    /** An `initialize` was accepted: every revision has had its answer. */
-    initialized?: number;
-    /** The cell's first version answer to each foreign revision. */
-    refused: Map<string, number>;
-    /** The modern probe recorded per foreign revision. */
-    probes: Map<string, { check: ConformanceCheck; answered: boolean }>;
-  }
-  let arrivals = 0;
-  const revisionAnswers = new WeakMap<HostedRun, RevisionAnswers>();
-  function answersOf(run: HostedRun): RevisionAnswers {
-    let told = revisionAnswers.get(run);
-    if (!told) {
-      told = { refused: new Map(), probes: new Map() };
-      revisionAnswers.set(run, told);
-    }
-    return told;
-  }
+  const probeNotes = new WeakMap<
+    HostedRun,
+    Map<string, { check: ConformanceCheck; answered: boolean }>
+  >();
 
   /**
-   * Note a modern probe (isModernProbe()) once per header version. A probe
-   * an auth cell met with 401 is repeated after sign-in and then draws the
-   * cell's version answer, which is what the note should report: the first
-   * note is updated in place when that answer arrives.
+   * Record a probe's note once per `key`. A probe an auth cell met with 401
+   * is repeated after sign-in and then draws the cell's version answer,
+   * which is what the note should report: the first note is updated in
+   * place when that answer arrives.
    */
-  function noteModernProbe(
+  function noteProbe(
     run: HostedRun,
-    told: RevisionAnswers,
-    method: string | undefined,
-    headerVersion: string,
-    response: CapturedResponse,
-    respondedAt: number
+    key: string,
+    check: ConformanceCheck,
+    answered: boolean
   ): void {
-    const answer = versionAnswer(run.revision, headerVersion, response);
-    if (answer && !told.refused.has(headerVersion))
-      told.refused.set(headerVersion, respondedAt);
-    const check = modernProbeCheck(
-      run.revision,
-      method,
-      headerVersion,
-      answer ?? refusalOf(response)
-    );
-    const seen = told.probes.get(headerVersion);
+    let notes = probeNotes.get(run);
+    if (!notes) probeNotes.set(run, (notes = new Map()));
+    const seen = notes.get(key);
     if (!seen) {
-      told.probes.set(headerVersion, { check, answered: !!answer });
-      sessions.recordHostedCheck(run, `modern-probe:${headerVersion}`, check);
-    } else if (answer && !seen.answered) {
+      notes.set(key, { check, answered });
+      sessions.recordHostedCheck(run, key, check);
+    } else if (answered && !seen.answered) {
       seen.check.description = check.description;
       seen.check.details = check.details;
       seen.answered = true;
@@ -435,8 +419,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     // header to the SDK's), and identity is what the client said.
     const headers = { ...req.headers };
     const headerVersion = req.header('mcp-protocol-version');
-    const arrival = ++arrivals;
-    let respondedAt = arrival;
+    const httpMethod = req.method;
     let request: RequestInfo | undefined;
     let body: Buffer | undefined;
     let response: CapturedResponse | undefined;
@@ -454,37 +437,26 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const judge = (): boolean => {
       if (judged || !request || !response) return false;
       judged = true;
-      const told = mcp ? answersOf(run) : undefined;
-      // Whether the cell had already answered this request's header before
-      // the client sent it (an accepted initialize, or a version answer to
-      // the same foreign revision).
-      const answeredAt = Math.min(
-        told?.initialized ?? Infinity,
-        (headerVersion === undefined
-          ? undefined
-          : told?.refused.get(headerVersion)) ?? Infinity
-      );
-      // A foreign-revision request a dated cell turned away before it had
-      // answered is the client negotiating (it falls back to `initialize`):
-      // noted, and neither judgement.
+      // Era detection on a dated cell (a server/discover, or another
+      // 2026-07-28-shaped request it turned away) is the client negotiating:
+      // noted once per revision probed for, and neither judgement — however
+      // often it comes, and whatever the cell answered before it.
       if (
-        told &&
-        headerVersion !== undefined &&
-        isModernProbe(
-          run.revision,
-          request,
-          headerVersion,
-          response,
-          arrival > answeredAt
-        )
+        mcp &&
+        isModernProbe(run.revision, request, headerVersion, response)
       ) {
-        noteModernProbe(
+        const version = headerVersion ?? request.metaVersion;
+        const answer = versionAnswer(run.revision, version, response);
+        noteProbe(
           run,
-          told,
-          request.methods[0],
-          headerVersion,
-          response,
-          respondedAt
+          `modern-probe:${version ?? ''}`,
+          modernProbeCheck(
+            run.revision,
+            request.methods[0],
+            version,
+            answer ?? refusalOf(response)
+          ),
+          !!answer
         );
       } else if (mcp) {
         const rejection = wireRejection(response, run.revision, headerVersion);
@@ -497,17 +469,17 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           // rejection it may have drawn.
           if (isLegacyProbe(run.revision, method)) {
             explained = true;
-            // Looked up without the header: a -32022 to an initialize that
-            // happened to name the cell's revision is still the answer.
-            sessions.recordHostedCheck(
+            const answer = legacyAnswer(run.revision, response);
+            noteProbe(
               run,
               `probe:${headerVersion ?? ''}`,
               legacyProbeCheck(
                 run.revision,
                 headerVersion,
-                wireRejection(response, run.revision, undefined),
+                answer,
                 request.bodyVersion
-              )
+              ),
+              answer?.code !== undefined
             );
             continue;
           }
@@ -534,8 +506,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           );
         }
       }
-      if (told && isAcceptedInitialize(request, response)) {
-        told.initialized ??= respondedAt;
+      // A GET the cell serves no stream for (the scenario's own 405, or
+      // fallthrough()'s): noted so the client's author sees it.
+      if (mcp && httpMethod === 'GET' && response.status === 405)
+        sessions.recordHostedCheck(
+          run,
+          'get-on-mcp',
+          getOnMcpCheck(run.revision)
+        );
+      if (mcp && isAcceptedInitialize(request, response)) {
         // Asked for another revision, told the cell's (pinInitializeVersion()).
         const asked = request.bodyVersion;
         if (isStatefulVersion(run.revision) && asked && asked !== run.revision)
@@ -560,7 +539,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     });
     tapResponse(res, (captured) => {
       response = captured;
-      respondedAt = arrivals;
       judge();
       persist();
     });
@@ -573,24 +551,38 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       );
     }
 
-    // Every cell on the stateless wire answers a legacy initialize the same
-    // way, before the scenario sees it (see legacyInitializeReply()). Not an
-    // auth cell: its resource server must answer 401 before it looks at the
-    // protocol, and after sign-in it gives the same -32022 itself
-    // (auth/helpers/createServer.ts). Raw node calls: a composite's replayed
-    // request has no express helpers.
+    // Raw node calls: a composite's replayed request has no express helpers.
     const sendJson = (status: number, body: unknown) => {
       res.statusCode = status;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(body));
     };
+    /** Answer a POST whose body is empty or not JSON, and note it. */
+    const parseError = (empty: boolean) => {
+      sessions.recordHostedCheck(
+        run,
+        `unparseable:${empty ? 'empty' : 'malformed'}`,
+        unparseableBodyCheck(run.revision, empty, headerVersion)
+      );
+      sendJson(400, PARSE_ERROR_REPLY);
+    };
     // An express scenario with no route for the request calls this instead
     // of answering with Express's HTML 404 (a raw listener ignores it). On
     // the MCP endpoint that is a GET the scenario serves no stream for —
     // VS Code sends one after a 400, as its old HTTP+SSE fallback — so it
-    // gets the SDK transport's 405, and the cell notes it.
+    // gets the SDK transport's 405, and the cell notes it (judge()). A body
+    // the scenario's JSON parser refused is a parse error, as it is before
+    // dispatch, not a crash.
     const fallthrough = (err?: unknown) => {
       if (res.headersSent) return;
+      if (
+        err &&
+        mcp &&
+        (err as { type?: unknown }).type === 'entity.parse.failed'
+      ) {
+        parseError(false);
+        return;
+      }
       if (err) {
         sendJson(500, {
           jsonrpc: '2.0',
@@ -600,11 +592,6 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         return;
       }
       if (mcp && req.method === 'GET') {
-        sessions.recordHostedCheck(
-          run,
-          'get-on-mcp',
-          getOnMcpCheck(run.revision)
-        );
         res.setHeader('allow', 'POST');
         sendJson(405, GET_ON_MCP_REPLY);
         return;
@@ -620,23 +607,32 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         ) => void
       )(req, res, fallthrough);
 
-    if (
-      mcp &&
-      req.method === 'POST' &&
-      !isStatefulVersion(run.revision) &&
-      !run.auxListeners &&
-      bodyFitsBuffer(req)
-    ) {
-      onBodySettled(req, (captured) => {
-        const reply = legacyInitializeReply(
-          run.revision,
-          captured,
-          headerVersion
-        );
-        if (reply) sendJson(reply.status, reply.body);
-        else handOn();
-      });
-      return;
+    // What every cell of a column answers alike is answered here, before the
+    // scenario sees the request: a body that is empty or not JSON (a plain
+    // -32700), a legacy initialize on the stateless wire (see
+    // legacyInitializeReply()) and a server/discover on a dated one (see
+    // discoverReply()). Not an auth cell: its resource server must answer
+    // 401 before it looks at the request, and after sign-in it gives the
+    // same version answers itself (auth/helpers/createServer.ts).
+    if (mcp && req.method === 'POST' && !run.auxListeners) {
+      if (declaresNoBody(req)) {
+        parseError(true);
+        return;
+      }
+      if (bodyFitsBuffer(req)) {
+        onBodySettled(req, (captured) => {
+          if (captured !== undefined && isUnparseable(captured)) {
+            parseError(captured.toString().trim() === '');
+            return;
+          }
+          const reply =
+            legacyInitializeReply(run.revision, captured, headerVersion) ??
+            discoverReply(run.revision, captured, headerVersion);
+          if (reply) sendJson(reply.status, reply.body);
+          else handOn();
+        });
+        return;
+      }
     }
     handOn();
   }
