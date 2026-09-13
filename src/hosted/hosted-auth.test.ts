@@ -336,7 +336,14 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/scope-retry-limit',
   'auth/token-endpoint-auth-basic',
   'auth/token-endpoint-auth-post',
-  'auth/token-endpoint-auth-none'
+  'auth/token-endpoint-auth-none',
+  'auth/iss-supported',
+  'auth/iss-not-advertised',
+  'auth/iss-supported-missing',
+  'auth/iss-wrong-issuer',
+  'auth/iss-unexpected',
+  'auth/iss-normalized',
+  'auth/metadata-issuer-mismatch'
 ];
 
 /** Scenarios that need one process's memory across requests. */
@@ -469,13 +476,13 @@ describe.each([
         const failures = results.checks.filter(
           (c: ConformanceCheck) => c.status === 'FAILURE'
         );
-        expect({
-          clientError: getScenario(scenario)?.allowClientError
-            ? undefined
-            : clientError,
-          failures,
-          verdict: results.verdict
-        }).toEqual({ clientError: undefined, failures: [], verdict: 'pass' });
+        // The client error is shown either way: it usually explains a failure.
+        const allowed = getScenario(scenario)?.allowClientError;
+        expect({ clientError, failures, verdict: results.verdict }).toEqual({
+          clientError: allowed ? clientError : undefined,
+          failures: [],
+          verdict: 'pass'
+        });
       });
     }
   }
