@@ -240,6 +240,23 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
       body: JSON.stringify(initBody())
     });
     expect(ok.status).toBe(200);
+    await ok.text();
+
+    // The mock's tool is described: some clients (VS Code) refuse to call
+    // a tool that is not.
+    const listed = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: {
+        ...jsonHeaders(),
+        authorization: `Bearer ${tok.access_token}`,
+        'mcp-protocol-version': '2025-11-25'
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
+    });
+    expect(listed.status).toBe(200);
+    expect(await listed.text()).toContain(
+      'Call it to confirm an authorized request reaches the server'
+    );
 
     // Snapshot the raw log as a write-through store would persist it: no
     // end-of-run verdicts yet (step 9 below re-judges this copy).

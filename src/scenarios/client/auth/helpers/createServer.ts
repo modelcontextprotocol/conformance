@@ -20,6 +20,10 @@ import { createRequestLogger } from '../../../request-logger';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import { SpecReferences } from '../spec-references';
 
+/** Clients may refuse to call a tool that is not described. */
+const TEST_TOOL_DESCRIPTION =
+  'Returns the text "test". Call it to confirm an authorized request reaches the server.';
+
 export interface ServerOptions {
   prmPath?: string | null;
   requiredScopes?: string[];
@@ -71,6 +75,7 @@ export function createServer(
         tools: [
           {
             name: 'test-tool',
+            description: TEST_TOOL_DESCRIPTION,
             inputSchema: { type: 'object' }
           }
         ]
@@ -282,7 +287,13 @@ export function createServer(
         jsonrpc: '2.0',
         id,
         result: withRequiredDraftResultFields(method, {
-          tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
+          tools: [
+            {
+              name: 'test-tool',
+              description: TEST_TOOL_DESCRIPTION,
+              inputSchema: { type: 'object' }
+            }
+          ]
         })
       });
     }
