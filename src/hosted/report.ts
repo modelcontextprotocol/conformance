@@ -2,8 +2,10 @@
  * Verdicts for a run: the matrix with a result per cell.
  *
  *   pass        checks recorded, none FAILURE
- *   fail        any FAILURE
- *   incomplete  the cell exists but nothing was recorded, or it was never hit
+ *   fail        any FAILURE seen in the client's traffic
+ *   incomplete  the cell exists but nothing was recorded, or it was never
+ *               hit, or its only FAILUREs are ones not seen yet (a step the
+ *               flow has not reached)
  *   n/a         the scenario does not apply to the revision
  *
  * Each cell also has a `state` that splits `incomplete` into not tried, in
@@ -48,15 +50,16 @@ export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
  *                  only an older revision and did not retry
  *   not-startable  this deployment cannot start the cell
  *
- * and `fail` is split by whose failures they are:
+ * and one more whose checks were judged:
  *
  *   waiting        every FAILURE is "not seen" — the scenario's own
  *                  expectation that nothing has met yet (see ./shown.ts),
  *                  none from the client's traffic: an auth flow sitting on a
- *                  consent screen, an elicitation form still to answer.
+ *                  consent screen, an elicitation form still to answer. Its
+ *                  verdict is `incomplete`, not `fail` (see viewCell()).
  *
- * `pass`, `fail` and `n/a` are the verdict's. The verdict and the score are
- * never changed by the state.
+ * `pass`, `fail` and `n/a` are the verdict's. The score is never changed by
+ * the state.
  */
 export type CellState =
   | 'pass'
@@ -107,8 +110,11 @@ export function viewCell(
   const shown = results
     ? shownChecks(cell.scenario, cell.revision, results.checks)
     : undefined;
-  const verdict = verdictFor(cell, results?.checks, results?.recorded);
-  const state = stateOf(cell, verdict, shown);
+  const judged = verdictFor(cell, results?.checks, results?.recorded);
+  const state = stateOf(cell, judged, shown);
+  // Every failure only "not seen": nothing the client did has failed, so
+  // the cell is not done rather than failed. Neither verdict scores.
+  const verdict: Verdict = state === 'waiting' ? 'incomplete' : judged;
   const note =
     state === 'waiting'
       ? WAITING_NOTE
