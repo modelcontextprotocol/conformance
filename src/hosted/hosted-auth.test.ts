@@ -297,6 +297,38 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(rejudged.filter((c) => c.status === 'FAILURE')).toEqual([]);
   });
 
+  it('shows a client that re-fetches the metadata and never reaches the AS as one row per check', async () => {
+    const cell = 'stuck/2025-11-25/auth/metadata-default';
+    const mcpUrl = `${rs}/s/${cell}/mcp`;
+    const r401 = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(initBody())
+    });
+    expect(r401.status).toBe(401);
+    await r401.text();
+    // Three tries at discovery, then the client gives up before the AS.
+    for (let i = 0; i < 3; i++) {
+      await fetch(
+        `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`
+      ).then((r) => r.json());
+    }
+
+    type Row = { id: string; status: string; repeats?: number };
+    const results = await fetch(`${rs}/results/${cell}`).then((r) => r.json());
+    const prm = results.checks.filter(
+      (c: Row) => c.id === 'prm-pathbased-requested'
+    );
+    expect(prm).toEqual([
+      expect.objectContaining({ status: 'SUCCESS', repeats: 3 })
+    ]);
+    expect(results.summary.passed).toBe(1);
+    const page = await fetch(`${rs}/results/${cell}`, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(page).toContain('recorded 3 times');
+  });
+
   it('notes a dual-era client probing a dated auth cell, and does not fail it', async () => {
     // A dual-era client's live sequence on 2025-11-25/auth/metadata-default:
     // server/discover at 2026-07-28 draws the 401, the client signs in,

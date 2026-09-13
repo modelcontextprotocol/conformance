@@ -17,6 +17,7 @@ import {
 import type { ClientIdentity } from './identity';
 import type { Cause } from './findings';
 import type { SnapshotInfo } from './store';
+import type { ShownCheck } from './shown';
 import {
   BY_LABEL,
   REACHED,
@@ -543,12 +544,14 @@ function reasonOf(c: ConformanceCheck): string | undefined {
 
 export function renderResults(
   ref: CellRef,
-  checks: ConformanceCheck[],
+  checks: ShownCheck[],
   status?: CellStatus
 ): string {
   const items = checks
     .map((c) => {
-      const pill = `<span class=pill style="${STATUS_STYLE[c.status]}">${c.status}</span>`;
+      const pill = `<span class=pill style="${STATUS_STYLE[c.status]}">${c.status}</span>${
+        c.repeats ? ` <span class=muted>recorded ${c.repeats} times</span>` : ''
+      }`;
       const refs = (c.specReferences ?? [])
         .map((r) =>
           r.url

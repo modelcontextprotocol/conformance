@@ -23,6 +23,7 @@ import type { ConformanceCheck } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
 import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
+import { shownChecks, type ShownCheck } from './shown';
 import {
   findingsOf,
   groupCauses,
@@ -138,7 +139,8 @@ export interface RunReport {
   frozenAt?: string;
 }
 
-export function summarize(checks: ConformanceCheck[]): CheckSummary {
+/** Counts over a cell's rows as shown (see ./shown.ts): a repeat is one. */
+export function summarize(checks: readonly ShownCheck[]): CheckSummary {
   const counts = { SUCCESS: 0, FAILURE: 0, WARNING: 0, SKIPPED: 0, INFO: 0 };
   for (const c of checks) counts[c.status]++;
   return {
@@ -273,7 +275,7 @@ export async function buildReport(
         state,
         ...(verdict === 'incomplete' &&
           cell.startable && { note: incompleteNote(results?.checks ?? []) }),
-        ...(results && { summary: summarize(results.checks) }),
+        ...(results && { summary: summarize(shownChecks(results.checks)) }),
         ...(findings?.length && { findings }),
         ...(stoppedBy && { cause: stoppedBy }),
         resultsUrl: sources.resultsUrl(ref),

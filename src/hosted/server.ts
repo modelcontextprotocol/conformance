@@ -102,6 +102,7 @@ import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
 import { reportMarkdown } from './markdown';
+import { shownChecks, type ShownCheck } from './shown';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
@@ -1081,10 +1082,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           ? undefined
           : await sessions.results(cellId(ref));
       const status = cellStatus(cell, r);
+      // One row per check, as the page and the report count them.
+      const shown = shownChecks(r?.checks ?? []);
       if (wantsHtml(req)) {
-        res.type('html').send(renderResults(ref, r?.checks ?? [], status));
+        res.type('html').send(renderResults(ref, shown, status));
       } else {
-        res.json({ ...summarise(ref, r?.checks ?? []), ...status });
+        res.json({ ...summarise(ref, shown), ...status });
       }
       return;
     }
@@ -1226,7 +1229,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   return { app, sessions, matrix };
 }
 
-export function summarise(ref: CellRef, checks: ConformanceCheck[]) {
+export function summarise(ref: CellRef, checks: ShownCheck[]) {
   return {
     runId: ref.runId,
     revision: ref.revision,

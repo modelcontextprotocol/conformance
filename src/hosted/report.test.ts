@@ -185,6 +185,23 @@ describe('verdicts', () => {
     ).toBe('n/a');
   });
 
+  it('counts a check recorded again once', async () => {
+    const matrix = buildMatrix({});
+    const rev = '2025-11-25';
+    const again = [check('SUCCESS'), check('SUCCESS'), check('SUCCESS')];
+    const report = await buildReport(matrix, 'r', rev, {
+      listCells: async () => [
+        { runId: 'r', revision: rev, scenarioName: 'initialize' }
+      ],
+      results: async () => ({ checks: again, recorded: again.length }),
+      resultsUrl: () => ''
+    });
+    const cell = report.columns[0].cells.find(
+      (c) => c.scenario === 'initialize'
+    )!;
+    expect(cell.summary).toMatchObject({ passed: 1, total: 1 });
+  });
+
   it('says once that a legacy-only client stopped every cell it reached', async () => {
     const matrix = buildMatrix({});
     const served = '2026-07-28';

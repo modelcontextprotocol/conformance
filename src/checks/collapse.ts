@@ -13,23 +13,31 @@ import type { CheckStatus, ConformanceCheck } from '../types';
  * iteration of the `_meta` test-case loop. Collapsing reports each ID once
  * without hiding a failure recorded on any occurrence, which is what lets an
  * expected-failures baseline address a check by ID.
+ *
+ * `keyOf` names what counts as a duplicate (default: the ID). The hosted
+ * results page passes ID plus description, so checks that share an ID but
+ * check different things (one per method) stay apart.
  */
-export function collapseDuplicateChecks(
-  checks: ConformanceCheck[]
-): ConformanceCheck[] {
+export function collapseDuplicateChecks<T extends ConformanceCheck>(
+  checks: readonly T[],
+  keyOf: (c: T) => string = (c) => c.id
+): T[] {
   const severity = (s: CheckStatus): number =>
     s === 'FAILURE' ? 3 : s === 'WARNING' ? 2 : s === 'SUCCESS' ? 1 : 0;
-  // Winning index per non-INFO id: highest severity, ties → last occurrence.
+  // Winning index per non-INFO key: highest severity, ties → last occurrence.
   const winner = new Map<string, number>();
   checks.forEach((c, i) => {
     if (c.status === 'INFO') return;
-    const cur = winner.get(c.id);
+    const key = keyOf(c);
+    const cur = winner.get(key);
     if (
       cur === undefined ||
       severity(c.status) >= severity(checks[cur].status)
     ) {
-      winner.set(c.id, i);
+      winner.set(key, i);
     }
   });
-  return checks.filter((c, i) => c.status === 'INFO' || winner.get(c.id) === i);
+  return checks.filter(
+    (c, i) => c.status === 'INFO' || winner.get(keyOf(c)) === i
+  );
 }
