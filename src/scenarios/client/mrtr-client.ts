@@ -574,11 +574,14 @@ export class MRTRClientScenario extends HandlerScenario {
    * One row per check id, built fresh so the raw log stays as observed: a
    * FAILURE wins over any SUCCESS for the same id (a merged log from several
    * processes can hold both), otherwise the latest row. Expected checks that
-   * never ran are reported as FAILURE.
+   * never ran are reported as FAILURE. Such a report is never an
+   * observation: should one find its way into a log, it is ignored, so it
+   * cannot outrank a SUCCESS another process saw.
    */
   getChecks(): ConformanceCheck[] {
     const byId = new Map<string, ConformanceCheck>();
     for (const check of this.checks) {
+      if (isNotObserved(check)) continue;
       const previous = byId.get(check.id);
       if (!previous || previous.status !== 'FAILURE') byId.set(check.id, check);
     }
@@ -591,12 +594,22 @@ export class MRTRClientScenario extends HandlerScenario {
         description: `MRTR client check: ${slug}`,
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
-        details: {
-          message: 'Tool was not called by client or MRTR flow not completed'
-        },
+        details: { message: NOT_OBSERVED_MESSAGE },
         specReferences: MRTR_SPEC_REFERENCES
       });
     }
     return result;
   }
+}
+
+const NOT_OBSERVED_MESSAGE =
+  'Tool was not called by client or MRTR flow not completed';
+
+/** A row getChecks() reports for an expected check nothing has met yet. */
+function isNotObserved(check: ConformanceCheck): boolean {
+  return (
+    check.name === check.id &&
+    check.details?.message === NOT_OBSERVED_MESSAGE &&
+    EXPECTED_CHECK_IDS.includes(check.id)
+  );
 }
