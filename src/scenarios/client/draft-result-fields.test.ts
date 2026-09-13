@@ -125,7 +125,8 @@ describe('http-standard-headers mock results (2026-07-28)', () => {
         params?: object;
         cacheable: boolean;
       }> = [
-        { method: 'initialize', cacheable: false },
+        // initialize is not a 2026-07-28 method; this scenario answers it
+        // with -32022 (see legacy-initialize.test.ts).
         { method: 'tools/list', cacheable: true },
         {
           method: 'tools/call',

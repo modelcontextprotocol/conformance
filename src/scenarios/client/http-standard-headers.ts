@@ -112,10 +112,9 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     // Check Mcp-Method header for every request
     this.checkMcpMethodHeader(req, request);
 
-    // Route to handlers
-    if (request.method === 'initialize') {
-      this.handleInitialize(res, request);
-    } else if (request.method === 'tools/list') {
+    // Route to handlers (initialize never gets here: the base class answers
+    // it with the versions this 2026-07-28-only server supports)
+    if (request.method === 'tools/list') {
       this.handleToolsList(res, request);
     } else if (request.method === 'tools/call') {
       this.checkMcpNameHeader(req, request, 'params.name');
@@ -236,10 +235,6 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
 
   protected discoverCapabilities(): object {
     return { tools: {}, resources: {}, prompts: {} };
-  }
-
-  private handleInitialize(res: http.ServerResponse, request: any): void {
-    this.sendInitialize(res, request);
   }
 
   private handleToolsList(res: http.ServerResponse, request: any): void {

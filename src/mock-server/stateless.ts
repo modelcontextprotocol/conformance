@@ -113,6 +113,29 @@ export function validateStatelessRequest(
     }) as const;
 
   const headerVersion = req.headers['mcp-protocol-version'];
+  // initialize is the dated revisions' handshake. A server that supports only
+  // modern versions SHOULD name them in any error it returns to an initialize
+  // (2026-07-28 basic/versioning), so a dual-era client that opens this way
+  // learns what to retry with. It is answered before the header and _meta
+  // checks, which would otherwise turn it away without naming a version.
+  if (method === 'initialize') {
+    return {
+      kind: 'reject',
+      status: 400,
+      body: {
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32022,
+          message: 'Unsupported protocol version',
+          data: {
+            supported: supportedVersions,
+            requested: String(params.protocolVersion ?? headerVersion ?? '')
+          }
+        }
+      }
+    };
+  }
   if (!headerVersion) {
     return reject(400, -32020, 'Missing MCP-Protocol-Version header');
   }

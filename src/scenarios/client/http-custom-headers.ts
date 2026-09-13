@@ -276,9 +276,7 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     res: http.ServerResponse,
     request: any
   ): void {
-    if (request.method === 'initialize') {
-      this.sendInitialize(res, request);
-    } else if (request.method === 'tools/list') {
+    if (request.method === 'tools/list') {
       this.handleToolsList(res, request);
     } else if (request.method === 'tools/call') {
       this.handleToolsCall(req, res, request);
@@ -805,9 +803,7 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     res: http.ServerResponse,
     request: any
   ): void {
-    if (request.method === 'initialize') {
-      this.sendInitialize(res, request);
-    } else if (request.method === 'tools/list') {
+    if (request.method === 'tools/list') {
       this.handleToolsList(res, request);
     } else if (request.method === 'tools/call') {
       this.handleToolsCall(req, res, request);

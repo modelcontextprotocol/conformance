@@ -173,6 +173,34 @@ export class RequestMetadataScenario extends HandlerScenario {
         return;
       }
 
+      // initialize is the dated revisions' handshake, not a 2026-07-28
+      // request: it carries no per-request _meta to judge, and it is not the
+      // client's first choice of version for the simulated rejection below.
+      // Answered as a modern-only server should, naming its version
+      // (2026-07-28 basic/versioning), and otherwise left out of the run.
+      if (request?.method === 'initialize') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id ?? null,
+            error: {
+              code: -32022,
+              message: 'Unsupported protocol version',
+              data: {
+                supported: [DRAFT_PROTOCOL_VERSION],
+                requested: String(
+                  request.params?.protocolVersion ??
+                    req.headers['mcp-protocol-version'] ??
+                    ''
+                )
+              }
+            }
+          })
+        );
+        return;
+      }
+
       this.requestsObserved++;
 
       // Extract version and headers

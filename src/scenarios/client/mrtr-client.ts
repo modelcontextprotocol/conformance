@@ -148,6 +148,27 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
         return;
       }
 
+      case 'initialize': {
+        // The dated revisions' handshake. This server supports only
+        // 2026-07-28, so it names that version in the error, as a
+        // modern-only server should (2026-07-28 basic/versioning).
+        res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: -32022,
+            message: 'Unsupported protocol version',
+            data: {
+              supported: [DRAFT_PROTOCOL_VERSION],
+              requested: String(
+                (params as Record<string, unknown>)?.protocolVersion ?? ''
+              )
+            }
+          }
+        });
+        return;
+      }
+
       case 'notifications/initialized': {
         res.status(204).end();
         return;
