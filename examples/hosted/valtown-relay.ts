@@ -29,9 +29,14 @@
 
 declare const process: { env: Record<string, string | undefined> };
 
-const RS_ORIGIN = process.env.CONFORMANCE_RS_ORIGIN;
-const RELAY_SECRET = process.env.CONFORMANCE_RELAY_SECRET;
-const ROLE = process.env.CONFORMANCE_RELAY_ROLE ?? 'as';
+export interface RelayConfig {
+  /** Origin of the RS app whose `/__aux/<role>` backchannel we forward to. */
+  rsOrigin?: string;
+  /** Shared secret sent as `x-relay-secret`; the same value as on the RS. */
+  secret?: string;
+  /** Which aux origin this relay is: `as` (default), `as2` or `idp`. */
+  role?: string;
+}
 
 /**
  * Headers we forward from the client. Everything else is dropped so a client
@@ -46,63 +51,81 @@ const FORWARD_HEADERS = [
   'user-agent'
 ] as const;
 
-export default async function handler(req: Request): Promise<Response> {
-  if (!RS_ORIGIN || !RELAY_SECRET) {
-    return Response.json(
-      {
-        error:
-          'relay misconfigured: set CONFORMANCE_RS_ORIGIN and CONFORMANCE_RELAY_SECRET'
-      },
-      { status: 500 }
-    );
-  }
+/**
+ * The relay's fetch handler for one role. The default export builds it from
+ * the environment; tests and examples/hosted/local-relay.ts build one per
+ * role in a single process.
+ */
+export function createRelay(
+  config: RelayConfig
+): (req: Request) => Promise<Response> {
+  const { rsOrigin, secret } = config;
+  const role = config.role ?? 'as';
 
-  const url = new URL(req.url);
-  const target = `${RS_ORIGIN}/__aux/${ROLE}${url.pathname}${url.search}`;
+  return async function handler(req: Request): Promise<Response> {
+    if (!rsOrigin || !secret) {
+      return Response.json(
+        {
+          error:
+            'relay misconfigured: set CONFORMANCE_RS_ORIGIN and CONFORMANCE_RELAY_SECRET'
+        },
+        { status: 500 }
+      );
+    }
 
-  const headers = new Headers();
-  for (const h of FORWARD_HEADERS) {
-    const v = req.headers.get(h);
-    if (v) headers.set(h, v);
-  }
-  headers.set('x-relay-secret', RELAY_SECRET);
-  // Don't invite the RS edge to compress: the bytes are re-framed below anyway.
-  headers.set('accept-encoding', 'identity');
-  // The aux handler reconstructs absolute URLs (issuer, endpoints) from
-  // getAuxBaseUrl() which the RS app already knows, so it doesn't strictly
-  // need this — but it's useful for logging/debugging on the RS side.
-  headers.set('x-relay-host', url.host);
+    const url = new URL(req.url);
+    const target = `${rsOrigin}/__aux/${role}${url.pathname}${url.search}`;
 
-  const upstream = await fetch(target, {
-    method: req.method,
-    headers,
-    body:
-      req.method === 'GET' || req.method === 'HEAD'
-        ? undefined
-        : await req.arrayBuffer(),
-    // /authorize 302s to the client's redirect_uri — pass it through, don't
-    // follow it ourselves.
-    redirect: 'manual'
-  });
+    const headers = new Headers();
+    for (const h of FORWARD_HEADERS) {
+      const v = req.headers.get(h);
+      if (v) headers.set(h, v);
+    }
+    headers.set('x-relay-secret', secret);
+    // Don't invite the RS edge to compress: the bytes are re-framed below anyway.
+    headers.set('accept-encoding', 'identity');
+    // The aux handler reconstructs absolute URLs (issuer, endpoints) from
+    // getAuxBaseUrl() which the RS app already knows, so it doesn't strictly
+    // need this — but it's useful for logging/debugging on the RS side.
+    headers.set('x-relay-host', url.host);
 
-  // fetch() transparently decompresses a gzip/br upstream body but leaves the
-  // upstream's content-length (the *compressed* size) in place. Forwarding
-  // that header with the decompressed bytes makes the client truncate the
-  // body ("Unterminated string in JSON at position N" on AS metadata). So:
-  // buffer the body, drop every framing/encoding header, and let the runtime
-  // derive content-length from the bytes we actually send.
-  const body = await upstream.arrayBuffer();
-  const outHeaders = new Headers(upstream.headers);
-  for (const h of [
-    'content-encoding',
-    'content-length',
-    'transfer-encoding',
-    'connection'
-  ]) {
-    outHeaders.delete(h);
-  }
-  return new Response(body.byteLength ? body : null, {
-    status: upstream.status,
-    headers: outHeaders
-  });
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body:
+        req.method === 'GET' || req.method === 'HEAD'
+          ? undefined
+          : await req.arrayBuffer(),
+      // /authorize 302s to the client's redirect_uri — pass it through, don't
+      // follow it ourselves.
+      redirect: 'manual'
+    });
+
+    // fetch() transparently decompresses a gzip/br upstream body but leaves the
+    // upstream's content-length (the *compressed* size) in place. Forwarding
+    // that header with the decompressed bytes makes the client truncate the
+    // body ("Unterminated string in JSON at position N" on AS metadata). So:
+    // buffer the body, drop every framing/encoding header, and let the runtime
+    // derive content-length from the bytes we actually send.
+    const body = await upstream.arrayBuffer();
+    const outHeaders = new Headers(upstream.headers);
+    for (const h of [
+      'content-encoding',
+      'content-length',
+      'transfer-encoding',
+      'connection'
+    ]) {
+      outHeaders.delete(h);
+    }
+    return new Response(body.byteLength ? body : null, {
+      status: upstream.status,
+      headers: outHeaders
+    });
+  };
 }
+
+export default createRelay({
+  rsOrigin: process.env.CONFORMANCE_RS_ORIGIN,
+  secret: process.env.CONFORMANCE_RELAY_SECRET,
+  role: process.env.CONFORMANCE_RELAY_ROLE
+});
