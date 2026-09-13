@@ -2140,6 +2140,56 @@ describe('hosted server', () => {
     });
   });
 
+  it('does not pass a cell where the client never spoke its revision', async () => {
+    // The client asked for 2025-06-18, was told 2025-11-25, and said
+    // nothing more: its handshake checks passed, but 2025-11-25 was never
+    // tested.
+    type Check = { id: string; status: string };
+    await postMcp(
+      `/s/mute/${REV_STATEFUL}/initialize/mcp`,
+      initBody('mute')
+    ).then((r) => r.text());
+    const quiet = await fetch(
+      `${base}/results/mute/${REV_STATEFUL}/initialize`
+    ).then((r) => r.json());
+    expect(quiet.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(quiet.verdict).toBe('incomplete');
+    expect(
+      quiet.checks.filter((c: Check) => c.id === 'hosted-revision-not-spoken')
+    ).toEqual([
+      expect.objectContaining({
+        status: 'INFO',
+        description: expect.stringContaining(
+          `The client never spoke ${REV_STATEFUL} here`
+        )
+      })
+    ]);
+    // The marker that decides it is never shown.
+    expect(
+      quiet.checks.some((c: Check) => c.id === 'hosted-revision-spoken')
+    ).toBe(false);
+
+    // Once it does, the cell passes, and the note is gone.
+    await postMcp(
+      `/s/mute/${REV_STATEFUL}/initialize/mcp`,
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      { 'mcp-protocol-version': REV_STATEFUL }
+    ).then((r) => r.text());
+    const spoke = await fetch(
+      `${base}/results/mute/${REV_STATEFUL}/initialize`
+    ).then((r) => r.json());
+    expect(spoke.verdict).toBe('pass');
+    expect(
+      spoke.checks.some(
+        (c: Check) =>
+          c.id === 'hosted-revision-not-spoken' ||
+          c.id === 'hosted-revision-spoken'
+      )
+    ).toBe(false);
+  });
+
   it('HTML-escapes the run id in the results report', () => {
     const html = renderResults(
       {

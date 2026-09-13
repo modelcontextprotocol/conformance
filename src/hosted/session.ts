@@ -34,6 +34,7 @@ import {
   IDENTITY_CHECK_ID,
   type IdentityObservation
 } from './identity';
+import { REVISION_SPOKEN_CHECK_ID, revisionNotSpokenCheck } from './wire';
 
 /** Store writer suffix for the hosted layer's own checks (client identity). */
 const HOSTED_WRITER_SUFFIX = '/hosted';
@@ -169,7 +170,9 @@ export interface RunResults extends CellRef {
    * How many checks were recorded from traffic: the scenario's own raw log
    * (before judgement, which may add "expected but never seen" failures)
    * plus the hosted layer's FAILUREs (a request the wire turned away is
-   * traffic too), but not its INFO checks. Zero means nothing was exercised.
+   * traffic too), but not its INFO checks. Zero means nothing was exercised
+   * at the cell's revision: also zero when nothing failed and the client
+   * never spoke it (see judgedAtRevision()).
    */
   recorded: number;
 }
@@ -616,23 +619,47 @@ const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
  * A cell's results from its scenario's raw log (merged across processes)
  * and the hosted layer's checks: the scenario's judgement, as a cell served
  * on its revision reads it (atCellRevision()), then the hosted checks.
+ *
+ * A cell must not pass on checks recorded around the protocol — a finished
+ * OAuth flow, say — when the client never spoke the cell's revision there:
+ * without a REVISION_SPOKEN_CHECK_ID marker (spokeRevision()) and with no
+ * FAILURE, `recorded` is zero, so the verdict is incomplete, and the cell
+ * says why (revisionNotSpokenCheck()). A scenario that expects the client
+ * to stop before it reaches the MCP endpoint (`allowClientError`: it must
+ * reject a bad issuer, say) is judged on its own checks as before. The
+ * markers themselves are never shown.
  */
 function judgedAtRevision(
   ref: CellRef,
   scenarioLog: ConformanceCheck[],
-  hosted: ConformanceCheck[]
+  hostedLog: ConformanceCheck[]
 ): RunResults {
-  return {
-    ...ref,
-    checks: [
-      ...atCellRevision(
-        finalizeChecks(ref.scenarioName, scenarioLog, ref.revision),
-        ref.revision
-      ),
-      ...hosted
-    ],
-    recorded: scenarioLog.length + hostedFailures(hosted)
-  };
+  const spoke = hostedLog.some((c) => c.id === REVISION_SPOKEN_CHECK_ID);
+  const hosted = hostedLog.filter((c) => c.id !== REVISION_SPOKEN_CHECK_ID);
+  const checks = [
+    ...atCellRevision(
+      finalizeChecks(ref.scenarioName, scenarioLog, ref.revision),
+      ref.revision
+    ),
+    ...hosted
+  ];
+  let recorded = scenarioLog.length + hostedFailures(hosted);
+  if (
+    recorded > 0 &&
+    !spoke &&
+    !getScenario(ref.scenarioName)?.allowClientError &&
+    !checks.some((c) => c.status === 'FAILURE')
+  ) {
+    const last = checks.reduce(
+      (t, c) => ((c.timestamp ?? '') > t ? (c.timestamp ?? '') : t),
+      ''
+    );
+    checks.push(
+      revisionNotSpokenCheck(ref.revision, last || new Date().toISOString())
+    );
+    recorded = 0;
+  }
+  return { ...ref, checks, recorded };
 }
 
 function logStoreError(e: unknown): void {

@@ -86,6 +86,8 @@ import {
   PARSE_ERROR_REPLY,
   pinInitializeVersion,
   refusalOf,
+  revisionSpokenCheck,
+  spokeRevision,
   tapResponse,
   unparseableBodyCheck,
   versionAnswer,
@@ -506,6 +508,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           );
         }
       }
+      if (mcp && spokeRevision(run.revision, request, headerVersion, response))
+        sessions.recordHostedCheck(
+          run,
+          'spoken',
+          revisionSpokenCheck(run.revision)
+        );
       // A GET the cell serves no stream for (the scenario's own 405, or
       // fallthrough()'s): noted so the client's author sees it.
       if (mcp && httpMethod === 'GET' && response.status === 405)

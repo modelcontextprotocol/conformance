@@ -366,6 +366,68 @@ export function unparseableBodyCheck(
   };
 }
 
+export const REVISION_SPOKEN_CHECK_ID = 'hosted-revision-spoken';
+
+/**
+ * Whether the exchange shows the client speaking the cell's revision
+ * `served`: an accepted (2xx) request at it. On a dated cell that is an
+ * `initialize` asking for `served`, or a later request whose header names
+ * it; on the stateless wire, a request whose header names it. A cell that
+ * never saw one has not tested its revision, whatever else it recorded (see
+ * SessionManager.results()).
+ */
+export function spokeRevision(
+  served: SpecVersion,
+  request: RequestInfo,
+  headerVersion: string | undefined,
+  response: CapturedResponse
+): boolean {
+  if (response.status < 200 || response.status >= 300) return false;
+  if (!request.methods.length) return false;
+  if (request.methods.includes('initialize')) {
+    return isStatefulVersion(served) && request.bodyVersion === served;
+  }
+  return headerVersion === served;
+}
+
+/**
+ * The marker spokeRevision() leaves on a cell: kept with the hosted checks
+ * so every process's sighting is pooled, and never shown.
+ */
+export function revisionSpokenCheck(served: SpecVersion): ConformanceCheck {
+  return {
+    id: REVISION_SPOKEN_CHECK_ID,
+    name: 'RevisionSpoken',
+    description: `The client made an accepted request at ${served}`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { served }
+  };
+}
+
+export const REVISION_NOT_SPOKEN_CHECK_ID = 'hosted-revision-not-spoken';
+
+/**
+ * Said on a cell whose checks would otherwise pass but where no request at
+ * its revision was ever accepted (an OAuth flow completed, then the client
+ * spoke only another revision, or nothing): it has not been tested yet.
+ */
+export function revisionNotSpokenCheck(
+  served: SpecVersion,
+  timestamp: string
+): ConformanceCheck {
+  return {
+    id: REVISION_NOT_SPOKEN_CHECK_ID,
+    name: 'RevisionNotSpoken',
+    description:
+      `The client never spoke ${served} here: no MCP request at ${served} was accepted, ` +
+      'so the checks recorded so far cannot make this cell pass',
+    status: 'INFO',
+    timestamp,
+    details: { served }
+  };
+}
+
 /**
  * The cell's answer to a request at a revision it does not serve, or
  * undefined when the response is not one: a 4xx lifecycle rejection (see

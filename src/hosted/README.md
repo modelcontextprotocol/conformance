@@ -305,6 +305,16 @@ declines or goes quiet is explained. One that carries on at the version it
 asked for is a wrong revision. The initialize scenario's
 `mcp-client-initialization` check says the same: on a hosted cell its
 `details.versionMatch` is whether the client asked for the cell's revision.
+
+A cell passes only once the client has spoken its revision there: an accepted
+request at it (an `initialize` asking for it, or a request whose
+`MCP-Protocol-Version` names it). A cell whose checks would otherwise pass
+without one — an OAuth flow completed by a client that then spoke only an
+older revision, say — is `incomplete`, with the INFO check
+`hosted-revision-not-spoken` saying why. A scenario that expects the client to
+stop before it reaches the MCP endpoint (it must reject a bad issuer, say) is
+judged on its own checks as before.
+
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
 `stateless-request-rejected`, except a rejected `initialize`, which it notes
