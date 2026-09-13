@@ -232,7 +232,18 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
       res.status(problem.status).json({ error: problem.error });
       return;
     }
-    if (suffix === '' && deps.isPageRequest(req)) {
+    if (deps.isPageRequest(req)) {
+      // A browser opening the MCP URL itself is sent to the page about it.
+      if (suffix !== '') {
+        const q = req.originalUrl.indexOf('?');
+        const page = deps.cellBaseUrl(req, {
+          runId,
+          revision,
+          scenarioName: names.join(COMPOSITE_SEPARATOR)
+        });
+        res.redirect(303, q === -1 ? page : page + req.originalUrl.slice(q));
+        return;
+      }
       const v = view(req, runId, revision, names);
       if (deps.wantsHtml(req)) res.type('html').send(renderComposite(v));
       else res.json(v);

@@ -448,12 +448,13 @@ describe('hosted server', () => {
     expect(page.headers.get('content-type')).toContain('text/html');
     expect(page.headers.get('link')).toBeNull();
 
-    // An SSE GET is the client under test; it reaches the scenario's mount
-    // (whose root is not the MCP endpoint here) and carries the results link.
+    // An SSE GET is the client under test; it reaches the scenario, which
+    // serves no stream on its MCP endpoint (405, not Express's HTML 404),
+    // and carries the results link.
     const sse = await fetch(url, {
       headers: { accept: 'text/html, text/event-stream' }
     });
-    expect(sse.status).toBe(404);
+    expect(sse.status).toBe(405);
     expect(sse.headers.get('link')).toContain(
       `/results/dis/${REV_STATEFUL}/tools_call>`
     );
@@ -1199,6 +1200,56 @@ describe('hosted server', () => {
     expect(rawChecksOf(touched.scenario)).toHaveLength(rawBefore);
     expect(last.verdict).toBe(first.verdict);
     expect(last.summary).toEqual(first.summary);
+  });
+
+  it('answers a GET on an MCP path it serves no stream on with 405, and notes it', async () => {
+    // VS Code sends this after a 400, as its old HTTP+SSE fallback; these
+    // scenarios' express apps have no GET route, so it used to get
+    // Express's HTML "Cannot GET" 404.
+    const sse = { accept: 'text/event-stream' };
+    for (const path of [
+      `/s/getx/${REV_STATELESS}/tools_call/mcp`,
+      `/s/getx/${REV_STATEFUL}/tools_call/mcp`,
+      `/s/getx/${REV_STATELESS}/json-schema-ref-no-deref/mcp`
+    ]) {
+      const r = await fetch(`${base}${path}`, { headers: sse });
+      expect(r.status, path).toBe(405);
+      expect(r.headers.get('allow'), path).toBe('POST');
+      expect(await r.json(), path).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed.' },
+        id: null
+      });
+    }
+    const results = await fetch(
+      `${base}/results/getx/${REV_STATELESS}/tools_call`
+    ).then((r) => r.json());
+    expect(
+      results.checks
+        .filter((c: { id: string }) => c.id === 'hosted-get-on-mcp-path')
+        .map((c: { status: string }) => c.status)
+    ).toEqual(['INFO']);
+    expect(results.verdict).toBe('incomplete');
+
+    // A scenario that serves a stream there still does.
+    const ctl = new AbortController();
+    const stream = await fetch(
+      `${base}/s/getx/${REV_STATELESS}/http-standard-headers/mcp`,
+      { headers: sse, signal: ctl.signal }
+    );
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get('content-type')).toContain('text/event-stream');
+    ctl.abort();
+
+    // A browser opening an MCP URL is sent to the cell's page, query kept.
+    const page = await fetch(
+      `${base}/s/getx/${REV_STATELESS}/tools_call/mcp?format=html`,
+      { headers: { accept: 'text/html' }, redirect: 'manual' }
+    );
+    expect(page.status).toBe(303);
+    expect(page.headers.get('location')).toBe(
+      `${base}/s/getx/${REV_STATELESS}/tools_call?format=html`
+    );
   });
 
   it('treats a rejected foreign-revision probe on a dated cell as negotiation', async () => {

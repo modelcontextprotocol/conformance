@@ -82,6 +82,14 @@ DELETE, well-known paths — is dispatched to the scenario. Dispatched
 responses carry `link: <…/results/<run-id>/<rev>/<scenario>>;
 rel="conformance-results"`.
 
+A browser opening a cell's (or composite's) MCP URL itself is redirected to
+its page. A GET for an event stream on an MCP endpoint whose scenario serves
+none there (most do not; `sse-retry` and the `http-*-headers` scenarios do)
+answers 405 with `Allow: POST` and the SDK transport's JSON-RPC error rather
+than an HTML 404, and records the INFO check `hosted-get-on-mcp-path` —
+clients send one to open a stream, and VS Code sends one after a 400 as its
+fallback to the old HTTP+SSE transport.
+
 **Config JSON** (run, column or cell scope):
 
 ```json

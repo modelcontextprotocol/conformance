@@ -305,6 +305,37 @@ describe('composite cells on the hosted server', () => {
     }
   });
 
+  it('answers a GET on its MCP path with 405, and sends a browser to its page', async () => {
+    const names = DEFAULT_COMPOSITES[STATELESS];
+    const cell = `${base}/s/comp7/${STATELESS}/${names.join('+')}`;
+    // VS Code's old HTTP+SSE fallback after a 400: not Express's HTML 404.
+    const get = await fetch(`${cell}/mcp`, {
+      headers: { accept: 'text/event-stream' }
+    });
+    expect(get.status).toBe(405);
+    expect(get.headers.get('allow')).toBe('POST');
+    expect(await get.json()).toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed.' },
+      id: null
+    });
+    const results = (await (
+      await fetch(`${base}/results/comp7/${STATELESS}/${names[0]}`)
+    ).json()) as { checks: { id: string; status: string }[] };
+    expect(
+      results.checks
+        .filter((c) => c.id === 'hosted-get-on-mcp-path')
+        .map((c) => c.status)
+    ).toEqual(['INFO']);
+
+    const browser = await fetch(`${cell}/mcp`, {
+      headers: { accept: 'text/html' },
+      redirect: 'manual'
+    });
+    expect(browser.status).toBe(303);
+    expect(browser.headers.get('location')).toBe(cell);
+  });
+
   it('refuses composites it cannot serve, saying why', async () => {
     const post = (path: string) =>
       statelessPost(

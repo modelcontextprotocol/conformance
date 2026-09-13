@@ -352,6 +352,39 @@ export function legacyProbeCheck(
   };
 }
 
+export const GET_ON_MCP_CHECK_ID = 'hosted-get-on-mcp-path';
+
+/**
+ * The 405 a cell answers a GET on its MCP endpoint with when its scenario
+ * serves no GET stream there, shaped like the SDK transport's own.
+ */
+export const GET_ON_MCP_REPLY = {
+  jsonrpc: '2.0',
+  error: { code: -32000, message: 'Method not allowed.' },
+  id: null
+} as const;
+
+/**
+ * A GET to the MCP endpoint of a cell that serves no stream there: a client
+ * opening a standalone SSE stream, or falling back to the old HTTP+SSE
+ * transport after a POST was turned away. Noted so the client's author sees
+ * it; the spec allows either, so it never decides the verdict.
+ */
+export function getOnMcpCheck(served: SpecVersion): ConformanceCheck {
+  return {
+    id: GET_ON_MCP_CHECK_ID,
+    name: 'GetOnMcpPath',
+    description:
+      'The client sent GET to the MCP endpoint — to open a server-sent event stream, ' +
+      'or to fall back to the old HTTP+SSE transport after a POST was turned away. ' +
+      'This cell serves no such stream, so it answered 405 Method Not Allowed; ' +
+      'a client should carry on with POST',
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { served, status: 405 }
+  };
+}
+
 export function wireRejectedCheck(
   rejection: WireRejection,
   request: RequestInfo,

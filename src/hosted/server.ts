@@ -60,6 +60,8 @@ import { identityFrom } from './identity';
 import { isStatefulVersion } from '../connection/select';
 import {
   describeRequest,
+  getOnMcpCheck,
+  GET_ON_MCP_REPLY,
   isLegacyProbe,
   isNegotiation,
   legacyInitializeReply,
@@ -440,6 +442,47 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     // protocol, and after sign-in it gives the same -32022 itself
     // (auth/helpers/createServer.ts). Raw node calls: a composite's replayed
     // request has no express helpers.
+    const sendJson = (status: number, body: unknown) => {
+      res.statusCode = status;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(body));
+    };
+    // An express scenario with no route for the request calls this instead
+    // of answering with Express's HTML 404 (a raw listener ignores it). On
+    // the MCP endpoint that is a GET the scenario serves no stream for —
+    // VS Code sends one after a 400, as its old HTTP+SSE fallback — so it
+    // gets the SDK transport's 405, and the cell notes it.
+    const fallthrough = (err?: unknown) => {
+      if (res.headersSent) return;
+      if (err) {
+        sendJson(500, {
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32603, message: 'Internal error' }
+        });
+        return;
+      }
+      if (mcp && req.method === 'GET') {
+        sessions.recordHostedCheck(
+          run,
+          'get-on-mcp',
+          getOnMcpCheck(run.revision)
+        );
+        res.setHeader('allow', 'POST');
+        sendJson(405, GET_ON_MCP_REPLY);
+        return;
+      }
+      sendJson(404, { error: `Cannot ${req.method} ${req.url}` });
+    };
+    const handOn = () =>
+      (
+        listener as (
+          req: Request,
+          res: Response,
+          next: (err?: unknown) => void
+        ) => void
+      )(req, res, fallthrough);
+
     if (
       mcp &&
       req.method === 'POST' &&
@@ -453,17 +496,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           captured,
           headerVersion
         );
-        if (!reply) {
-          listener(req, res);
-          return;
-        }
-        res.statusCode = reply.status;
-        res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify(reply.body));
+        if (reply) sendJson(reply.status, reply.body);
+        else handOn();
       });
       return;
     }
-    listener(req, res);
+    handOn();
   }
 
   // ---------- representation ----------
@@ -676,6 +714,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const resolved = resolveCell(segments, res);
     if (!resolved) return;
     const { ref, suffix } = resolved;
+
+    // A browser opening the MCP URL itself is sent to the cell's page.
+    if (suffix === MCP_PATH && isPageRequest(req)) {
+      const q = req.originalUrl.indexOf('?');
+      const page = cellBaseUrl(req, ref);
+      res.redirect(303, q === -1 ? page : page + req.originalUrl.slice(q));
+      return;
+    }
 
     if (suffix === '' && isPageRequest(req)) {
       sendConfig(
