@@ -53,7 +53,8 @@ export const DEFAULT_COMPOSITES: Record<string, string[]> = {
     'tools_call',
     'http-standard-headers',
     'http-custom-headers',
-    'json-schema-ref-no-deref'
+    'json-schema-ref-no-deref',
+    'sep-2322-client-request-state'
   ]
 };
 

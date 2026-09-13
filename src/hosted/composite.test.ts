@@ -289,7 +289,7 @@ describe('composite cells on the hosted server', () => {
     ).text();
     expect(html).toContain('One URL for several scenarios');
     expect(html).toContain(
-      `${base}/s/comp5/${STATELESS}/tools_call+http-standard-headers+http-custom-headers+json-schema-ref-no-deref/mcp`
+      `${base}/s/comp5/${STATELESS}/tools_call+http-standard-headers+http-custom-headers+json-schema-ref-no-deref+sep-2322-client-request-state/mcp`
     );
     expect(html).toContain(
       `${base}/s/comp5/${STATEFUL}/initialize+tools_call/mcp`

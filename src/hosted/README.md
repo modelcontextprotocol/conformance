@@ -248,8 +248,11 @@ are listed in `examples/hosted/valtown-manifest.json`.
 val.town spreads one run's requests over several isolates that share no
 memory, so `valtown.ts` excludes the scenarios whose checks depend on one
 process seeing consecutive requests (`sse-retry`, `auth/metadata-var2`,
-`elicitation-sep1034-client-defaults`, `sep-2322-client-request-state`); the
-matrix shows them as not startable with that reason. Everything else
+`elicitation-sep1034-client-defaults`); the matrix shows them as not
+startable with that reason. `sep-2322-client-request-state` (MRTR) runs
+here: the only state its retry needs, the original request id and the exact
+`requestState`, travels inside the `requestState` it sends, with a digest so
+any isolate can rebuild and compare it byte for byte. Everything else
 persists its raw check log to the account's SQLite (`RunStore`,
 `examples/hosted/valtown-store.ts`) and `/results` re-judges the merged log.
 

@@ -8,12 +8,18 @@
  *
  * The server exposes two tools. The client calls each tool, gets InputRequiredResult,
  * fulfills the elicitation, and retries. The server verifies correct client behavior.
+ *
+ * The first call and its retry may reach different processes of a
+ * multi-process host that share no memory. The only state the retry needs,
+ * the original request id and the exact requestState, travels inside the
+ * requestState the server sends, with a digest so any process can rebuild
+ * the expected string and compare it byte for byte.
  */
 
 import type { ConformanceCheck, RequestListener } from '../../types';
 import { HandlerScenario, DRAFT_PROTOCOL_VERSION } from '../../types';
 import express, { Request, Response } from 'express';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 const MRTR_SPEC_REFERENCES = [
   {
@@ -65,6 +71,17 @@ const TOOLS = [
   }
 ];
 
+const EXPECTED_CHECK_IDS = [
+  'sep-2322-client-request-state-echoed',
+  'sep-2322-client-jsonrpc-id-different',
+  'sep-2322-client-no-state-omitted',
+  'sep-2322-client-parallel-isolation',
+  'sep-2322-default-result-type-complete'
+];
+
+/** INFO record of the first echo_state call, a fallback for its retry. */
+const ECHO_INITIAL_CHECK_ID = 'sep-2322-echo-state-initial';
+
 interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: string | number;
@@ -72,14 +89,40 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
+/**
+ * The requestState sent on the first echo_state call: the call's id and a
+ * nonce, plus a digest over both, in a fixed key order. Rebuilding it from
+ * the fields a client echoed reproduces the exact string only if the client
+ * left it untouched: re-serialized JSON changes the bytes, and an edited id
+ * or nonce changes the digest.
+ */
+function echoState(originalId: string | number, nonce: string): string {
+  const digest = createHash('sha256')
+    .update(JSON.stringify({ nonce, originalId }))
+    .digest('base64url')
+    .slice(0, 22);
+  return JSON.stringify({ nonce, originalId, digest });
+}
+
+/** The state this server would have sent for the fields in `state`, if any. */
+function rebuildEchoState(
+  state: string
+): { originalId: string | number; expected: string } | undefined {
+  try {
+    const parsed = JSON.parse(state) as Record<string, unknown>;
+    const { nonce, originalId } = parsed;
+    if (typeof nonce !== 'string') return undefined;
+    if (typeof originalId !== 'string' && typeof originalId !== 'number')
+      return undefined;
+    return { originalId, expected: echoState(originalId, nonce) };
+  } catch {
+    return undefined;
+  }
+}
+
 function createMRTRServer(checks: ConformanceCheck[]): express.Application {
   const app = express();
   app.use(express.json());
-
-  // Track original JSON-RPC ids per tool to verify they change on retry
-  const originalIds = new Map<string, string | number>();
-  // Track the exact requestState string sent, to verify byte-exact echo on retry
-  const sentStates = new Map<string, string>();
 
   app.post('/mcp', (req: Request, res: Response) => {
     const body = req.body as JsonRpcRequest;
@@ -189,13 +232,19 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     res: Response
   ) {
     if (!inputResponses) {
-      // Initial call — store original id, return InputRequiredResult with requestState
-      originalIds.set('echo_state', id);
-      const state = JSON.stringify({
-        nonce: randomUUID(),
-        originalId: id
+      // Initial call: return InputRequiredResult with a requestState that
+      // carries this call's id, and note both in the log as a fallback.
+      const state = echoState(id, randomUUID());
+      checks.push({
+        id: ECHO_INITIAL_CHECK_ID,
+        name: 'MRTREchoStateInitialCall',
+        description:
+          'The server answered the first test_mrtr_echo_state call with a requestState',
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        specReferences: MRTR_SPEC_REFERENCES,
+        details: { originalId: id, requestStateSent: state }
       });
-      sentStates.set('echo_state', state);
       res.json({
         jsonrpc: '2.0',
         id,
@@ -221,9 +270,16 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       return;
     }
 
-    // Retry — verify requestState was echoed back correctly
-    const originalId = originalIds.get('echo_state');
-    const sentState = sentStates.get('echo_state');
+    // Retry: what was sent comes from the echoed state itself, or failing
+    // that from the log of the first call (possibly another process's).
+    const rebuilt = requestState ? rebuildEchoState(requestState) : undefined;
+    const initial = [...checks]
+      .reverse()
+      .find((c) => c.id === ECHO_INITIAL_CHECK_ID)?.details as
+      | { originalId?: string | number; requestStateSent?: string }
+      | undefined;
+    const originalId = rebuilt?.originalId ?? initial?.originalId;
+    const sentState = rebuilt?.expected ?? initial?.requestStateSent;
 
     // Check 1: requestState must be present and byte-for-byte identical to
     // what the server sent. The spec requires the client to echo back the
@@ -256,7 +312,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
 
     // Check 2: JSON-RPC id must differ from original
     const idErrors: string[] = [];
-    if (id === originalId) {
+    if (originalId === undefined) {
+      idErrors.push(
+        'Could not tell the original request id: the retry carried no usable requestState and the first call was not recorded'
+      );
+    } else if (id === originalId) {
       idErrors.push(
         `JSON-RPC id is the same on retry (${id}) — MUST be different`
       );
@@ -410,12 +470,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
   ) {
     const checkId = 'sep-2322-default-result-type-complete';
 
-    // If the client retries this tool, it means it did NOT treat the result as complete
+    // If the client retries this tool, it did NOT treat the result as
+    // complete. The SUCCESS noted for the first answer may sit in another
+    // process's log, so it is not removed here: getChecks() lets the
+    // FAILURE win.
     if (inputResponses) {
-      // Remove any prior SUCCESS for this check (emitted when we first sent the response)
-      const existingIdx = checks.findIndex((c) => c.id === checkId);
-      if (existingIdx !== -1) checks.splice(existingIdx, 1);
-
       checks.push({
         id: checkId,
         name: 'DefaultResultTypeComplete',
@@ -470,35 +529,47 @@ export class MRTRClientScenario extends HandlerScenario {
   mcpPath = '/mcp';
   private checks: ConformanceCheck[] = [];
 
+  /** What a client driven by hand (or by a generic steps interpreter) should do. */
+  readonly steps = [
+    { op: 'tools/list' },
+    { op: 'tools/call', name: 'test_mrtr_echo_state' },
+    { op: 'tools/call', name: 'test_mrtr_unrelated' },
+    { op: 'tools/call', name: 'test_mrtr_no_state' },
+    { op: 'tools/call', name: 'test_mrtr_no_result_type' }
+  ] as const;
+
   handler(_getBaseUrl: () => string): RequestListener {
     this.checks = [];
     return createMRTRServer(this.checks);
   }
 
+  /**
+   * One row per check id, built fresh so the raw log stays as observed: a
+   * FAILURE wins over any SUCCESS for the same id (a merged log from several
+   * processes can hold both), otherwise the latest row. Expected checks that
+   * never ran are reported as FAILURE.
+   */
   getChecks(): ConformanceCheck[] {
-    const expectedSlugs = [
-      'sep-2322-client-request-state-echoed',
-      'sep-2322-client-jsonrpc-id-different',
-      'sep-2322-client-no-state-omitted',
-      'sep-2322-client-parallel-isolation',
-      'sep-2322-default-result-type-complete'
-    ];
-
-    for (const slug of expectedSlugs) {
-      if (!this.checks.find((c) => c.id === slug)) {
-        this.checks.push({
-          id: slug,
-          name: slug,
-          description: `MRTR client check: ${slug}`,
-          status: 'FAILURE',
-          timestamp: new Date().toISOString(),
-          details: {
-            message: 'Tool was not called by client or MRTR flow not completed'
-          },
-          specReferences: MRTR_SPEC_REFERENCES
-        });
-      }
+    const byId = new Map<string, ConformanceCheck>();
+    for (const check of this.checks) {
+      const previous = byId.get(check.id);
+      if (!previous || previous.status !== 'FAILURE') byId.set(check.id, check);
     }
-    return this.checks;
+    const result = [...byId.values()];
+    for (const slug of EXPECTED_CHECK_IDS) {
+      if (byId.has(slug)) continue;
+      result.push({
+        id: slug,
+        name: slug,
+        description: `MRTR client check: ${slug}`,
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        details: {
+          message: 'Tool was not called by client or MRTR flow not completed'
+        },
+        specReferences: MRTR_SPEC_REFERENCES
+      });
+    }
+    return result;
   }
 }

@@ -67,20 +67,17 @@ describe('val.town fetch bridge', () => {
     expect(await r.text()).toContain('The sum of 7 and 4 is 11');
   });
 
-  it('marks single-process scenarios as not startable on val.town', async () => {
+  it('marks single-process scenarios as not startable on val.town, but runs MRTR', async () => {
     const r = await post('/s/x/2025-11-25/sse-retry', { jsonrpc: '2.0' });
     expect(r.status).toBe(501);
     expect((await r.json()).reason).toMatch(/single-process host/);
     const list = await handler(new Request('http://test/scenarios')).then((r) =>
       r.json()
     );
+    // MRTR carries its cross-request state in the requestState it sends.
     const cell = list.find(
       (s: { name: string }) => s.name === 'sep-2322-client-request-state'
     ).cells[1];
-    expect(cell).toMatchObject({
-      revision: '2026-07-28',
-      startable: false,
-      startReason: expect.stringMatching(/single-process host/)
-    });
+    expect(cell).toMatchObject({ revision: '2026-07-28', startable: true });
   });
 });
