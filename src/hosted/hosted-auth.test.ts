@@ -333,7 +333,10 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/scope-from-scopes-supported',
   'auth/scope-omitted-when-undefined',
   'auth/scope-step-up',
-  'auth/scope-retry-limit'
+  'auth/scope-retry-limit',
+  'auth/token-endpoint-auth-basic',
+  'auth/token-endpoint-auth-post',
+  'auth/token-endpoint-auth-none'
 ];
 
 /** Scenarios that need one process's memory across requests. */
