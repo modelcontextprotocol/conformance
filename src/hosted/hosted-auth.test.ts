@@ -343,7 +343,8 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/iss-wrong-issuer',
   'auth/iss-unexpected',
   'auth/iss-normalized',
-  'auth/metadata-issuer-mismatch'
+  'auth/metadata-issuer-mismatch',
+  'auth/resource-mismatch'
 ];
 
 /** Scenarios that need one process's memory across requests. */
