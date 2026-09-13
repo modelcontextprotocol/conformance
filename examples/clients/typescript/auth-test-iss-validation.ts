@@ -71,10 +71,13 @@ async function oauthFlowWithIssValidation(
     throw new Error('No authorization server in PRM');
   }
 
-  // 2. Fetch Authorization Server Metadata
+  // 2. Fetch Authorization Server Metadata. RFC 8414 §3.1: the well-known
+  // segment goes between the host and the issuer's path, if it has one.
+  const issuerUrl = new URL(authServerUrl);
+  const issuerPath = issuerUrl.pathname.replace(/\/$/, '');
   const asMetadataUrl = new URL(
-    '/.well-known/oauth-authorization-server',
-    authServerUrl
+    `/.well-known/oauth-authorization-server${issuerPath}`,
+    issuerUrl.origin
   );
   const asResponse = await fetchFn(asMetadataUrl.toString());
   if (!asResponse.ok) {

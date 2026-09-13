@@ -66,7 +66,7 @@ describe('hosted matrix', () => {
       startable: false,
       startReason: 'needs relay origin(s) [as]'
     });
-    expect(bare.cell('auth/scope-step-up', '2025-11-25')).toMatchObject({
+    expect(bare.cell('auth/dpop', '2025-11-25')).toMatchObject({
       startable: false,
       startReason: 'not converted for hosting yet'
     });

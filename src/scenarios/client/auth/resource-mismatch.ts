@@ -1,9 +1,12 @@
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
-import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
 import { untestableCheck } from '../../untestable.js';
@@ -27,64 +30,47 @@ import { untestableCheck } from '../../untestable.js';
  * - Client should abort due to resource mismatch
  * - Test passes if client does NOT complete the auth flow (no authorization request)
  */
-export class ResourceMismatchScenario implements Scenario {
+export class ResourceMismatchScenario extends AuthHandlerScenario {
   name = 'auth/resource-mismatch';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client rejects when PRM resource does not match server URL';
   allowClientError = true;
 
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private authorizationRequestMade = false;
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
-    this.authorizationRequestMade = false;
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    // An authorization request means the client proceeded despite the
+    // mismatch; getChecks() reads it from the log.
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: ['none'],
-      onAuthorizationRequest: () => {
-        // If we get here, the client incorrectly proceeded with auth
-        this.authorizationRequestMade = true;
-      },
       onRegistrationRequest: () => ({
         clientId: `test-client-${Date.now()}`,
         clientSecret: undefined,
         tokenEndpointAuthMethod: 'none'
       })
     });
-    await this.authServer.start(authApp);
 
     // Create server that returns a mismatched resource in PRM
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [],
-        tokenVerifier,
-        // Return a different origin in PRM - this should be rejected by the client
-        prmResourceOverride: 'https://evil.example.com/mcp'
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [],
+      tokenVerifier,
+      // Return a different origin in PRM - this should be rejected by the client
+      prmResourceOverride: 'https://evil.example.com/mcp'
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     const timestamp = new Date().toISOString();
     const specRefs = [
       SpecReferences.RFC_8707_RESOURCE_INDICATORS,
@@ -96,16 +82,19 @@ export class ResourceMismatchScenario implements Scenario {
     // document never read the mismatched `resource`, so it cannot have
     // compared it. Absent that fetch the requirement was never exercised,
     // which is the untestable case (#248) rather than a pass or a violation.
-    if (!this.checks.some((c) => c.id === 'resource-mismatch-rejected')) {
+    if (!checks.some((c) => c.id === 'resource-mismatch-rejected')) {
       const prmRequested = this.checks.some(
         (c) => c.id === 'prm-pathbased-requested'
       );
-      const correctlyRejected = prmRequested && !this.authorizationRequestMade;
+      const authorizationRequestMade = this.checks.some(
+        (c) => c.id === 'authorization-request'
+      );
+      const correctlyRejected = prmRequested && !authorizationRequestMade;
       const observations = {
         prmResource: 'https://evil.example.com/mcp',
         expectedBehavior: 'Client should NOT proceed with authorization',
         prmRequested,
-        authorizationRequestMade: this.authorizationRequestMade
+        authorizationRequestMade
       };
 
       if (!prmRequested) {
@@ -122,9 +111,9 @@ export class ResourceMismatchScenario implements Scenario {
           propertyReached: false,
           stopReason: 'prm-not-requested'
         };
-        this.checks.push(check);
+        checks.push(check);
       } else {
-        this.checks.push({
+        checks.push({
           id: 'resource-mismatch-rejected',
           name: 'Client rejects mismatched resource',
           description: correctlyRejected
@@ -144,6 +133,6 @@ export class ResourceMismatchScenario implements Scenario {
       }
     }
 
-    return this.checks;
+    return checks;
   }
 }

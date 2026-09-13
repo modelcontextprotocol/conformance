@@ -1,9 +1,11 @@
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls } from '../../../types.js';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck
+} from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
-import { ServerLifecycle } from './helpers/serverLifecycle.js';
 import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
 import {
@@ -48,13 +50,11 @@ const AUTH_METHOD_NAMES: Record<AuthMethod, string> = {
   none: 'no authentication (public client)'
 };
 
-class TokenEndpointAuthScenario implements Scenario {
+class TokenEndpointAuthScenario extends AuthHandlerScenario {
   name: string;
   readonly source = { introducedIn: '2025-06-18' } as const;
   description: string;
   private expectedAuthMethod: AuthMethod;
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
   // Track resource parameters for RFC 8707 validation
@@ -63,19 +63,21 @@ class TokenEndpointAuthScenario implements Scenario {
   private prmResource?: string;
 
   constructor(expectedAuthMethod: AuthMethod) {
+    super();
     this.expectedAuthMethod = expectedAuthMethod;
     this.name = `auth/token-endpoint-auth-${expectedAuthMethod === 'client_secret_basic' ? 'basic' : expectedAuthMethod === 'client_secret_post' ? 'post' : 'none'}`;
     this.description = `Tests that client uses ${AUTH_METHOD_NAMES[expectedAuthMethod]} when server only supports ${expectedAuthMethod}`;
   }
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
     this.authorizationResource = undefined;
     this.tokenResource = undefined;
     this.prmResource = undefined;
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       tokenEndpointAuthMethodsSupported: [this.expectedAuthMethod],
       onAuthorizationRequest: ({ resource }) => {
@@ -141,37 +143,25 @@ class TokenEndpointAuthScenario implements Scenario {
         tokenEndpointAuthMethod: this.expectedAuthMethod
       })
     });
-    await this.authServer.start(authApp);
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: [],
-        tokenVerifier,
-        onPrmRequest: ({ resource }) => {
-          this.prmResource = resource;
-        }
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: [],
+      tokenVerifier,
+      onPrmRequest: ({ resource }) => {
+        this.prmResource = resource;
       }
-    );
-    await this.server.start(app);
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     const timestamp = new Date().toISOString();
 
-    if (!this.checks.some((c) => c.id === 'token-endpoint-auth-method')) {
-      this.checks.push({
+    if (!checks.some((c) => c.id === 'token-endpoint-auth-method')) {
+      checks.push({
         id: 'token-endpoint-auth-method',
         name: 'Token endpoint authentication method',
         description: 'Client did not make a token request',
@@ -186,7 +176,7 @@ class TokenEndpointAuthScenario implements Scenario {
     // so fall back to what the request logger recorded.
     const observed = observeResourceParameters(this.checks);
     addResourceParameterChecks(
-      this.checks,
+      checks,
       {
         authorizationResource:
           this.authorizationResource ?? observed.authorizationResource,
@@ -196,7 +186,7 @@ class TokenEndpointAuthScenario implements Scenario {
       timestamp
     );
 
-    return this.checks;
+    return checks;
   }
 }
 

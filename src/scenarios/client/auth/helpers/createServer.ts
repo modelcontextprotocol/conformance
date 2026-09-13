@@ -116,6 +116,7 @@ export function createServer(
         (prmPath === '/.well-known/oauth-protected-resource'
           ? getBaseUrl()
           : `${getBaseUrl()}/mcp`);
+      const authorizationServers = [getAuthServerUrl()];
 
       checks.push({
         id: 'prm-pathbased-requested',
@@ -131,8 +132,10 @@ export function createServer(
           url: req.url,
           path: req.path,
           // Recorded so the RFC 8707 checks can be re-derived from the log
-          // (see observeResourceParameters).
-          resource
+          // (see observeResourceParameters), and verdicts about the issuer
+          // the client was sent to likewise.
+          resource,
+          authorizationServers
         }
       });
 
@@ -140,7 +143,7 @@ export function createServer(
 
       const prmResponse: any = {
         resource,
-        authorization_servers: [getAuthServerUrl()]
+        authorization_servers: authorizationServers
       };
 
       if (scopesSupported !== undefined) {

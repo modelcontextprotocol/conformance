@@ -33,9 +33,10 @@ registerRequirementSources(REQUIREMENT_SOURCES);
  * val.town spreads one run's requests over several isolates that share no
  * memory. Scenarios whose checks depend on one process seeing consecutive
  * requests (SSE reconnect timing, tenant-prefixed AS state, elicitation
- * round-trips) cannot be judged there; the matrix shows them as not
- * startable with this reason. (MRTR carries its cross-request state inside
- * the requestState it sends, so it runs here.)
+ * round-trips, the authorization-server switch in the SEP-2352 migration
+ * scenario) cannot be judged there; the matrix shows them as not startable
+ * with this reason. (MRTR carries its cross-request state inside the
+ * requestState it sends, so it runs here.)
  */
 const SINGLE_PROCESS_ONLY =
   "needs a single-process host (Val Town isolates don't share in-memory state)";
@@ -43,6 +44,7 @@ const EXCLUDE = Object.fromEntries(
   [
     'sse-retry',
     'auth/metadata-var2',
+    'auth/authorization-server-migration',
     'elicitation-sep1034-client-defaults'
   ].map((name) => [name, SINGLE_PROCESS_ONLY])
 );
