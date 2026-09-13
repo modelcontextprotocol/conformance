@@ -9,15 +9,26 @@ const SCOPES_SEPARATOR = '.scopes.';
 
 let processKey: Buffer | undefined;
 
+/** Shorter relay secrets are never used, so tokens can't help guess them. */
+const MIN_SHARED_SECRET_LENGTH = 32;
+
 /**
- * Key for the scopes MAC: the relay secret, which every process of a hosted
- * deployment shares and no client sees, or else a random key for this
- * process (enough when one process both mints and verifies).
+ * Key for the scopes MAC. Every process of a hosted deployment must share
+ * it, so it is derived from the relay secret they already share — never
+ * the secret itself: each token a client receives is a MAC it could try
+ * offline guesses against, and the relay secret guards the /__aux
+ * backchannel. A short or missing relay secret is not used at all; a random
+ * key for this process takes its place (enough when one process both mints
+ * and verifies, as outside a multi-process host).
  */
-function macKey(): string | Buffer {
-  return (
-    process.env.CONFORMANCE_RELAY_SECRET ?? (processKey ??= randomBytes(32))
-  );
+function macKey(): Buffer {
+  const secret = process.env.CONFORMANCE_RELAY_SECRET;
+  if (secret && secret.length >= MIN_SHARED_SECRET_LENGTH) {
+    return createHmac('sha256', secret)
+      .update('mcp-conformance/token-scopes')
+      .digest();
+  }
+  return (processKey ??= randomBytes(32));
 }
 
 function mac(payload: string): string {
