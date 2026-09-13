@@ -27,7 +27,7 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   MCP_DCR: {
     id: 'MCP-Dynamic-client-registration',
-    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/client#dynamic-client-registration'
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#dynamic-client-registration'
   },
   OAUTH_2_1_AUTHORIZATION_ENDPOINT: {
     id: 'OAUTH-2.1-authorization-endpoint',
