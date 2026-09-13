@@ -60,9 +60,10 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     // client that never sent prompts/list isn't violating SEP-2243 — it just
     // didn't exercise that path. Emit SKIPPED (not FAILURE) so a prompts-less
     // client doesn't show red, but the gap is still visible in the report.
+    // The initialize handshake is not part of 2026-07-28 (changelog: "remove
+    // the initialize/notifications/initialized handshake"), so it is neither
+    // expected nor judged here; see LEGACY_HANDSHAKE.
     const expectedMethods = [
-      'initialize',
-      'notifications/initialized',
       'tools/list',
       'tools/call',
       'resources/list',
@@ -137,9 +138,21 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     }
   }
 
+  /**
+   * The legacy handshake. It is not part of 2026-07-28, and a dual-era client
+   * may open with it to learn the server's era (basic/versioning, "Backward
+   * Compatibility with Initialization-Based Versions"), so the 2026-07-28
+   * Mcp-Method header is not expected on it.
+   */
+  private static readonly LEGACY_HANDSHAKE = new Set([
+    'initialize',
+    'notifications/initialized'
+  ]);
+
   private checkMcpMethodHeader(req: http.IncomingMessage, request: any): void {
     const method = request.method;
     if (!method) return;
+    if (HttpStandardHeadersScenario.LEGACY_HANDSHAKE.has(method)) return;
 
     // Already recorded a check for this method
     const name = HttpStandardHeadersScenario.methodCheckName(method);

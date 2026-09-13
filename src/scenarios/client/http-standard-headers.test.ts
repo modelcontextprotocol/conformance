@@ -6,46 +6,54 @@ import { finalizeChecks, rawChecksOf } from '../../hosted/session';
 /**
  * Negative test for SEP-2243 standard-header checks: a client that omits
  * Mcp-Method on a POST must produce a FAILURE row, and one that includes it
- * must produce SUCCESS. Pins the check id so coverage is tracked.
+ * must produce SUCCESS. Pins the check id so coverage is tracked. The
+ * carrier is tools/list, a 2026-07-28 request: the legacy initialize
+ * handshake is not part of that revision and is not judged.
  */
 describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
-  async function postInitialize(
+  async function post(
     serverUrl: string,
+    method: string,
     extraHeaders: Record<string, string>
   ): Promise<void> {
-    await fetch(serverUrl, {
+    const r = await fetch(serverUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         ...extraHeaders
       },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2026-07-28',
-          clientInfo: { name: 'neg-test', version: '0' },
-          capabilities: {}
-        }
-      })
+      body: JSON.stringify(
+        method === 'initialize'
+          ? {
+              jsonrpc: '2.0',
+              id: 1,
+              method,
+              params: {
+                protocolVersion: '2025-11-25',
+                clientInfo: { name: 'neg-test', version: '0' },
+                capabilities: {}
+              }
+            }
+          : { jsonrpc: '2.0', id: 1, method }
+      )
     });
+    await r.text();
   }
 
   // The coarse check id is emitted once per method/name case, so we narrow to
-  // the initialize Mcp-Method emission via its (case-specific) name.
+  // the tools/list Mcp-Method emission via its (case-specific) name.
   const COARSE_ID = 'sep-2243-client-includes-standard-headers';
-  const INIT_METHOD_NAME = 'ClientMcpMethodHeader_initialize';
+  const LIST_METHOD_NAME = 'ClientMcpMethodHeader_tools_list';
 
-  it('FAILs the initialize Mcp-Method emission when Mcp-Method is missing', async () => {
+  it('FAILs the tools/list Mcp-Method emission when Mcp-Method is missing', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start(testScenarioContext());
     try {
-      await postInitialize(serverUrl, {}); // no Mcp-Method header
+      await post(serverUrl, 'tools/list', {}); // no Mcp-Method header
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === COARSE_ID && c.name === INIT_METHOD_NAME
+        (c) => c.id === COARSE_ID && c.name === LIST_METHOD_NAME
       );
       expect(check?.status).toBe('FAILURE');
     } finally {
@@ -53,16 +61,36 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     }
   });
 
-  it('SUCCEEDs the initialize Mcp-Method emission when Mcp-Method matches', async () => {
+  it('SUCCEEDs the tools/list Mcp-Method emission when Mcp-Method matches', async () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start(testScenarioContext());
     try {
-      await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
+      await post(serverUrl, 'tools/list', { 'Mcp-Method': 'tools/list' });
       const checks = scenario.getChecks();
       const check = checks.find(
-        (c) => c.id === COARSE_ID && c.name === INIT_METHOD_NAME
+        (c) => c.id === COARSE_ID && c.name === LIST_METHOD_NAME
       );
       expect(check?.status).toBe('SUCCESS');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('does not judge the legacy initialize handshake', async () => {
+    // A dual-era client may open with initialize to learn the server's era
+    // (2026-07-28 basic/versioning, "Backward Compatibility"); Mcp-Method is a
+    // 2026-07-28 header, so its absence there is not a finding.
+    const scenario = new HttpStandardHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      await post(serverUrl, 'initialize', {}); // no Mcp-Method header
+      await post(serverUrl, 'notifications/initialized', {});
+      expect(rawChecksOf(scenario)).toHaveLength(0);
+      const names = scenario.getChecks().map((c) => c.name);
+      expect(names).not.toContain('ClientMcpMethodHeader_initialize');
+      expect(names).not.toContain(
+        'ClientMcpMethodHeader_notifications_initialized'
+      );
     } finally {
       await scenario.stop();
     }
@@ -72,7 +100,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     const scenario = new HttpStandardHeadersScenario();
     const { serverUrl } = await scenario.start(testScenarioContext());
     try {
-      await postInitialize(serverUrl, { 'Mcp-Method': 'initialize' });
+      await post(serverUrl, 'tools/list', { 'Mcp-Method': 'tools/list' });
       const first = scenario.getChecks();
       const second = scenario.getChecks();
       expect(second.length).toBe(first.length);
@@ -106,17 +134,8 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     }
     const a = await drive([
       {
-        body: {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: '2026-07-28',
-            clientInfo: { name: 'split', version: '0' },
-            capabilities: {}
-          }
-        },
-        headers: { 'Mcp-Method': 'initialize' }
+        body: { jsonrpc: '2.0', id: 1, method: 'resources/list' },
+        headers: { 'Mcp-Method': 'resources/list' }
       }
     ]);
     const b = await drive([
@@ -139,7 +158,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
       }
     ]);
     expect(rawChecksOf(a).map((c) => c.name)).toEqual([
-      'ClientMcpMethodHeader_initialize'
+      'ClientMcpMethodHeader_resources_list'
     ]);
     expect(rawChecksOf(b).map((c) => c.name)).toEqual([
       'ClientMcpMethodHeader_tools_list',
@@ -160,21 +179,23 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     for (const c of judged)
       byName.set(c.name, [...(byName.get(c.name) ?? []), c.status]);
     // One row per method, never SUCCESS and SKIPPED for the same one.
-    expect(byName.get('ClientMcpMethodHeader_initialize')).toEqual(['SUCCESS']);
+    expect(byName.get('ClientMcpMethodHeader_resources_list')).toEqual([
+      'SUCCESS'
+    ]);
     expect(byName.get('ClientMcpMethodHeader_tools_list')).toEqual(['SUCCESS']);
     expect(byName.get('ClientMcpMethodHeader_tools_call')).toEqual(['SUCCESS']);
     expect(byName.get('ClientMcpNameHeader_tools_call')).toEqual(['FAILURE']);
     expect(byName.get('ClientMcpMethodHeader_prompts_get')).toEqual([
       'SKIPPED'
     ]);
-    expect(judged).toHaveLength(8 + 3);
-    // A log merged twice over (two processes that both saw initialize)
+    expect(judged).toHaveLength(6 + 3);
+    // A log merged twice over (two processes that both saw resources/list)
     // still yields one row, the first recorded; judging leaves logs alone.
     const twice = finalizeChecks('http-standard-headers', [
       ...rawChecksOf(a),
       ...rawChecksOf(a)
     ]);
-    expect(twice).toHaveLength(8 + 3);
+    expect(twice).toHaveLength(6 + 3);
     expect(rawChecksOf(a)).toHaveLength(1);
     expect(rawChecksOf(b)).toHaveLength(3);
   });
