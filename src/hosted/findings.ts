@@ -53,6 +53,8 @@ export interface LegacyStop {
   served: string;
   /** The JSON-RPC code the cell answered with, when it turned it away. */
   code?: number;
+  /** The HTTP status it was turned away with, when it was (401: sign in). */
+  status?: number;
   /** It then sent GET to the MCP endpoint: the old HTTP+SSE fallback. */
   fellBack: boolean;
 }
@@ -109,7 +111,15 @@ export function oneLineReason(c: ConformanceCheck): string {
 export function legacyStop(
   checks: readonly ConformanceCheck[]
 ): LegacyStop | undefined {
-  const probe = checks.find((c) => c.id === LEGACY_PROBE_CHECK_ID);
+  // Several processes may each have noted it; the one that drew the cell's
+  // version answer says the most.
+  const probes = checks.filter((c) => c.id === LEGACY_PROBE_CHECK_ID);
+  const probe =
+    probes.find(
+      (c) =>
+        typeof (c.details?.rejected as { code?: unknown } | undefined)?.code ===
+        'number'
+    ) ?? probes[0];
   if (!probe) return undefined;
   const served = String(probe.details?.served ?? '');
   const retried = checks.some(
@@ -119,13 +129,16 @@ export function legacyStop(
       c.details.protocolVersions.includes(served)
   );
   if (retried) return undefined;
-  const rejected = probe.details?.rejected as { code?: unknown } | undefined;
+  const rejected = probe.details?.rejected as
+    | { code?: unknown; status?: unknown }
+    | undefined;
   return {
     ...(str(probe.details?.requestedVersion) && {
       asked: probe.details!.requestedVersion as string
     }),
     served,
     ...(typeof rejected?.code === 'number' && { code: rejected.code }),
+    ...(typeof rejected?.status === 'number' && { status: rejected.status }),
     fellBack: checks.some((c) => c.id === GET_ON_MCP_CHECK_ID)
   };
 }
@@ -282,14 +295,18 @@ export function findingsOf(
 
 /** The sentence for a legacy-handshake cause over `stops` (one per cell). */
 export function legacyCauseText(stops: readonly LegacyStop[]): string {
-  const { asked, served, code } = stops[0];
+  const { asked, served, code, status } = stops[0];
   const spoke = asked
     ? `The client spoke ${asked} only`
     : 'The client spoke only the legacy handshake';
   const answer =
     code !== undefined
       ? `the cell answered ${code} (supported: ${served})`
-      : 'the cell accepted it';
+      : status === 401
+        ? 'the cell asked it to sign in first (HTTP 401)'
+        : status !== undefined
+          ? `the cell turned it away (HTTP ${status})`
+          : 'the cell accepted it';
   let text = `${spoke}: it opened with initialize, ${answer}, and the client did not retry at ${served}.`;
   const fellBack = stops.filter((s) => s.fellBack).length;
   if (fellBack) {

@@ -459,8 +459,163 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(after.verdict).toBe('fail');
   });
 
+  it('does not pass a 2026-07-28 auth cell the client never spoke 2026-07-28 on', async () => {
+    // VS Code's own client, live: it completes OAuth on a 2026-07-28 cell,
+    // but only speaks 2025-11-25 — its initialize draws the 401, then after
+    // sign-in the -32022, and its GET the 405. The OAuth checks all pass;
+    // the cell must still not.
+    type Check = {
+      id: string;
+      status: string;
+      description?: string;
+      details?: Record<string, unknown>;
+    };
+    const legacyInit = {
+      ...initBody(),
+      params: { ...initBody().params, protocolVersion: '2025-11-25' }
+    };
+    const legacyOnly = async (cell: string) => {
+      const mcpUrl = `${rs}/s/${cell}/mcp`;
+      const post = (headers: Record<string, string> = {}) =>
+        fetch(mcpUrl, {
+          method: 'POST',
+          headers: { ...jsonHeaders(), ...headers },
+          body: JSON.stringify(legacyInit)
+        });
+      const challenged = await post();
+      expect(challenged.status).toBe(401);
+      await challenged.text();
+      const bearer = { authorization: `Bearer ${await signIn(cell, mcpUrl)}` };
+      const refused = await post(bearer);
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error.code).toBe(-32022);
+      const get = await fetch(mcpUrl, {
+        headers: { ...bearer, accept: 'text/event-stream' }
+      });
+      expect(get.status).toBe(405);
+      await get.text();
+      return fetch(`${rs}/results/${cell}`).then((r) => r.json());
+    };
+
+    for (const scenario of [
+      'auth/metadata-default',
+      // Another client's legacy-only OAuth flow read 12/0, pass.
+      'auth/scope-omitted-when-undefined'
+    ]) {
+      const cell = `vsc/2026-07-28/${scenario}`;
+      const results = await legacyOnly(cell);
+      expect(
+        results.checks.filter((c: Check) => c.status === 'FAILURE'),
+        scenario
+      ).toEqual([]);
+      expect(
+        results.checks.filter((c: Check) => c.status === 'SUCCESS').length,
+        scenario
+      ).toBeGreaterThan(0);
+      expect(results.verdict, scenario).toBe('incomplete');
+      expect(
+        results.checks.find(
+          (c: Check) => c.id === 'hosted-revision-not-spoken'
+        ),
+        scenario
+      ).toMatchObject({
+        status: 'INFO',
+        description: expect.stringContaining(
+          'The client never spoke 2026-07-28 here'
+        )
+      });
+      // The legacy probe says what the cell answered: the sign-in challenge
+      // came first, then the version answer, which is what it reports.
+      const probes = results.checks.filter(
+        (c: Check) => c.id === 'hosted-legacy-probe'
+      );
+      expect(probes, scenario).toHaveLength(1);
+      expect(probes[0].details.rejected, scenario).toMatchObject({
+        status: 400,
+        code: -32022
+      });
+      expect(probes[0].description, scenario).not.toContain('accepted');
+    }
+
+    // The run report: the cell is stopped by the legacy-only cause.
+    const report = await fetch(`${rs}/results/vsc`).then((r) => r.json());
+    const cell = report.columns
+      .find((c: { revision: string }) => c.revision === '2026-07-28')
+      .cells.find(
+        (c: { scenario: string }) => c.scenario === 'auth/metadata-default'
+      );
+    expect(cell).toMatchObject({ verdict: 'incomplete', state: 'incomplete' });
+    const cause = report.causes.find(
+      (c: { key: string }) => c.key === cell.cause
+    );
+    expect(cause.text).toContain('The client spoke 2025-11-25 only');
+    expect(cause.text).toContain('did not retry at 2026-07-28');
+
+    // A client that never signed in: the note says the cell asked it to,
+    // not that it accepted the request.
+    const unsigned = `vsc-nosign/2026-07-28/auth/metadata-default`;
+    const r = await fetch(`${rs}/s/${unsigned}/mcp`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(legacyInit)
+    });
+    expect(r.status).toBe(401);
+    await r.text();
+    const quiet = await fetch(`${rs}/results/${unsigned}`).then((res) =>
+      res.json()
+    );
+    const note = quiet.checks.find(
+      (c: Check) => c.id === 'hosted-legacy-probe'
+    );
+    expect(note.description).toContain(
+      'the cell answered HTTP 401, asking the client to sign in first'
+    );
+    expect(note.description).not.toContain('accepted');
+    expect(note.details.rejected).toEqual({ status: 401 });
+
+    // A client that speaks 2026-07-28 after the same sign-in passes.
+    const modern = 'm26/2026-07-28/auth/metadata-default';
+    const mcpUrl = `${rs}/s/${modern}/mcp`;
+    const token = await signIn(modern, mcpUrl);
+    const listed = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: {
+        ...jsonHeaders(),
+        authorization: `Bearer ${token}`,
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'tools/list'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': {
+              name: 'modern',
+              version: '0'
+            },
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      })
+    });
+    expect(listed.status).toBe(200);
+    await listed.text();
+    const passed = await fetch(`${rs}/results/${modern}`).then((res) =>
+      res.json()
+    );
+    expect(passed.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(passed.verdict).toBe('pass');
+  });
+
   /** Walk the cell's OAuth flow by hand and return an access token. */
   async function signIn(cell: string, mcpUrl: string): Promise<string> {
+    // 2026-07-28 registration asks for an application_type (SEP-837).
+    const modern = cell.includes('/2026-07-28/');
     await fetch(
       `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`
     ).then((r) => r.json());
@@ -471,7 +626,11 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     const reg = await fetch(asMeta.registration_endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ client_name: 'vitest', redirect_uris: [redirect] })
+      body: JSON.stringify({
+        client_name: 'vitest',
+        redirect_uris: [redirect],
+        ...(modern && { application_type: 'native' })
+      })
     }).then((r) => r.json());
     const authz = await fetch(
       `${asMeta.authorization_endpoint}?` +

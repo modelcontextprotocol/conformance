@@ -198,6 +198,37 @@ export function identityChecksIn(
   return Array.from(byKey.values());
 }
 
+const CLIENT_INITIALIZATION_CHECK_ID = 'mcp-client-initialization';
+
+/**
+ * The initialize scenario's `mcp-client-initialization` check as a hosted
+ * cell served on `served` should read it. The scenario says whether the
+ * version the client asked for is one it could negotiate (the CLI runner
+ * accepts any), and names the SDK's latest as expected; a hosted cell tests
+ * exactly `served` and answers initialize with it (see
+ * pinInitializeVersion()), so `versionMatch` says whether the client asked
+ * for `served`, and `expectedSpecVersion` is `served`. The status is left
+ * alone: a well-formed handshake asking for another version is noted by
+ * hosted-version-offered, and judged by what the client sends next.
+ */
+export function atCellRevision(
+  checks: ConformanceCheck[],
+  served: string
+): ConformanceCheck[] {
+  return checks.map((c) => {
+    if (c.id !== CLIENT_INITIALIZATION_CHECK_ID || !c.details) return c;
+    const sent = c.details.protocolVersionSent;
+    return {
+      ...c,
+      details: {
+        ...c.details,
+        expectedSpecVersion: served,
+        versionMatch: sent === served
+      }
+    };
+  });
+}
+
 /** The clients a check list names, one per (name, version). */
 export function identitiesIn(checks: ConformanceCheck[]): ClientIdentity[] {
   return identityChecksIn(checks).map((c) => identityIn(c) as ClientIdentity);

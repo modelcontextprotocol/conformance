@@ -16,11 +16,11 @@
  * Both are FAILUREs, so they decide the cell's verdict (see report.ts). A
  * request that is both is one mistake and records only the wrong revision,
  * with the rejection folded in. Probing for a revision is negotiation, not
- * a mistake, and is noted as INFO in both directions: on a dated cell a
- * request at another revision (a `server/discover` at 2026-07-28, say) that
- * the cell turned away before it had given its answer is a modern probe
- * (see isModernProbe()); on the stateless wire
- * an `initialize` is a legacy probe (see isLegacyProbe()).
+ * a mistake, and is noted as INFO in both directions, judged from the
+ * request itself so that neither its timing nor which process saw it
+ * matters: on a dated cell a `server/discover`, or another 2026-07-28-shaped
+ * request the cell turned away, is a modern probe (see isModernProbe()); on
+ * the stateless wire an `initialize` is a legacy probe (see isLegacyProbe()).
  */
 
 import type { ServerResponse } from 'http';
@@ -43,6 +43,17 @@ function asRecord(v: unknown): Record<string, unknown> | undefined {
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/** Whether a request body is not JSON at all: empty, or malformed. */
+export function isUnparseable(body: Buffer | string | undefined): boolean {
+  if (body === undefined) return false;
+  try {
+    JSON.parse(body.toString());
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /** The JSON-RPC message(s) of a body: one object, or a batch. */
@@ -90,6 +101,11 @@ export interface RequestInfo {
    * params on the stateful wire, `_meta` on the stateless one.
    */
   bodyVersion?: string;
+  /**
+   * The protocol version in a message's per-request `_meta`: the shape of a
+   * 2026-07-28 (stateless) request, which a dated revision never uses.
+   */
+  metaVersion?: string;
 }
 
 export function describeRequest(
@@ -98,16 +114,21 @@ export function describeRequest(
   const messages = body === undefined ? [] : messagesOfJson(body.toString());
   const methods: string[] = [];
   let bodyVersion: string | undefined;
+  let metaVersion: string | undefined;
   for (const m of messages) {
     const method = str(m.method);
     if (method) methods.push(method);
     const params = asRecord(m.params);
-    const meta = asRecord(params?._meta);
+    metaVersion ??= str(asRecord(params?._meta)?.[META_PROTOCOL_VERSION]);
     bodyVersion ??=
-      str(meta?.[META_PROTOCOL_VERSION]) ??
+      metaVersion ??
       (method === 'initialize' ? str(params?.protocolVersion) : undefined);
   }
-  return { methods, ...(bodyVersion && { bodyVersion }) };
+  return {
+    methods,
+    ...(bodyVersion && { bodyVersion }),
+    ...(metaVersion && { metaVersion })
+  };
 }
 
 /** The response a cell gave, as captured by tapResponse(). */
@@ -222,33 +243,189 @@ export interface Refusal {
   message?: string;
 }
 
+export const DISCOVER_METHOD = 'server/discover';
+
+/** Whether revision `a` is later than `b` (both are dates, YYYY-MM-DD). */
+function isNewer(a: string, b: string): boolean {
+  return a > b;
+}
+
 /**
- * Whether a request to a dated cell is a modern probe — version negotiation
- * rather than a client at the wrong revision: its header names a revision
- * `served` does not serve, it is not `initialize` (which negotiates on this
- * wire and is never judged), the cell did not accept it (any 4xx: the
- * transport's unsupported-version 400, a -32601 for a method the dated wire
- * lacks, or the 401 an auth cell answers before it looks at the protocol),
- * and the cell had not yet given the client its answer (`answered`; see
- * versionAnswer()). A dual-era client opens a dated cell that way —
- * `server/discover` at 2026-07-28 is turned away, then it falls back to
- * `initialize` at `served` — so it is noted (modernProbeCheck()), never
- * failed. A foreign-revision request the cell accepted, or one sent after
- * the cell's answer, is the client carrying on at the wrong revision; on
- * the stateless wire nothing is a modern probe (see isLegacyProbe() for
- * the mirror case there).
+ * Whether a request to a dated cell is a modern probe — era detection
+ * rather than a client at the wrong revision — judged from the request and
+ * the answer it drew alone, never from what came before it (2026-07-28
+ * basic/versioning, "Backward Compatibility with Initialization-Based
+ * Versions"):
+ *
+ *   - a `server/discover`, whenever it arrives and however often: a dual-era
+ *     client may send one on every connect, and a dated cell
+ *     always turns it away (see discoverReply());
+ *   - any other request in the 2026-07-28 shape — per-request `_meta` naming
+ *     a revision newer than `served` — that the cell turned away (a 4xx: the
+ *     transport's 400, or the 401 an auth cell answers first). On HTTP a
+ *     dual-era client may probe with any modern request, and it may re-probe
+ *     whenever it reconnects.
+ *
+ * Either is noted (modernProbeCheck()), never failed. `initialize`
+ * negotiates on this wire and is never judged. A foreign-revision request
+ * the cell accepted, or one in the dated shape (no per-request `_meta`)
+ * whose header names another revision, is the client carrying on at the
+ * wrong revision. On the stateless wire nothing is a modern probe (see
+ * isLegacyProbe() for the mirror case there).
  */
 export function isModernProbe(
   served: SpecVersion,
   request: RequestInfo,
   headerVersion: string | undefined,
-  response: CapturedResponse,
-  answered: boolean
+  response: CapturedResponse
 ): boolean {
-  if (!isStatefulVersion(served) || answered) return false;
-  if (headerVersion === undefined || headerVersion === served) return false;
+  if (!isStatefulVersion(served)) return false;
   if (request.methods.includes('initialize')) return false;
+  if (request.methods.includes(DISCOVER_METHOD)) return true;
+  const version = headerVersion ?? request.metaVersion;
+  if (!request.metaVersion || !version || !isNewer(version, served))
+    return false;
   return response.status >= 400 && response.status < 500;
+}
+
+/**
+ * The answer every dated cell gives a `server/discover`, or undefined when
+ * `body` is not one (or the cell is on the stateless wire): HTTP 400 with a
+ * JSON-RPC -32000 "Unsupported protocol version", what the 2025-11-25 SDK
+ * transport answers a header it does not know. That is how a server without
+ * 2026-07-28 support turns a modern request away on HTTP: a 4xx whose body
+ * is not a recognized modern error, so a dual-era client falls back to
+ * `initialize` (2026-07-28 basic/transports/streamable-http, "Backward
+ * Compatibility"). A 404 with -32601 would not do: that is a modern server
+ * saying it lacks the method, and a client may take it as a modern server.
+ * The hosted layer sends it before the scenario sees the request, so every
+ * dated cell and composite agrees; the bundled servers answered 400, 404 or
+ * even a DiscoverResult.
+ */
+export function discoverReply(
+  served: SpecVersion,
+  body: Buffer | undefined,
+  headerVersion: string | undefined
+): { status: number; body: Record<string, unknown> } | undefined {
+  if (!isStatefulVersion(served) || body === undefined) return undefined;
+  const message = messagesOfJson(body.toString());
+  if (message.length !== 1 || message[0].method !== DISCOVER_METHOD)
+    return undefined;
+  const requested = headerVersion ?? describeRequest(body).metaVersion;
+  return {
+    status: 400,
+    body: {
+      jsonrpc: '2.0',
+      id: message[0].id ?? null,
+      error: {
+        code: -32000,
+        message:
+          requested && requested !== served
+            ? `Bad Request: Unsupported protocol version: ${requested} (supported versions: ${served})`
+            : `Bad Request: ${DISCOVER_METHOD} is not part of ${served}; open a session with initialize`
+      }
+    }
+  };
+}
+
+export const UNPARSEABLE_BODY_CHECK_ID = 'hosted-unparseable-body';
+
+/** The answer to a POST whose body is not JSON: a plain -32700. */
+export const PARSE_ERROR_REPLY = {
+  jsonrpc: '2.0',
+  id: null,
+  error: { code: -32700, message: 'Parse error' }
+} as const;
+
+/**
+ * A POST to the MCP endpoint whose body is empty or not JSON. The hosted
+ * layer answers it with PARSE_ERROR_REPLY before the scenario sees it (the
+ * bundled servers quoted their parser's exception), and notes it so the
+ * client's author sees what was sent.
+ */
+export function unparseableBodyCheck(
+  served: SpecVersion,
+  empty: boolean,
+  headerVersion: string | undefined
+): ConformanceCheck {
+  return {
+    id: UNPARSEABLE_BODY_CHECK_ID,
+    name: 'UnparseableBody',
+    description:
+      `The client sent a POST to the MCP endpoint ${empty ? 'with an empty body' : 'whose body is not valid JSON'}, ` +
+      'so the cell answered HTTP 400 with JSON-RPC error -32700 (Parse error)',
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: {
+      served,
+      body: empty ? 'empty' : 'malformed',
+      headerVersion: headerVersion ?? null,
+      status: 400,
+      code: -32700
+    }
+  };
+}
+
+export const REVISION_SPOKEN_CHECK_ID = 'hosted-revision-spoken';
+
+/**
+ * Whether the exchange shows the client speaking the cell's revision
+ * `served`: an accepted (2xx) request at it. On a dated cell that is an
+ * `initialize` asking for `served`, or a later request whose header names
+ * it; on the stateless wire, a request whose header names it. A cell that
+ * never saw one has not tested its revision, whatever else it recorded (see
+ * SessionManager.results()).
+ */
+export function spokeRevision(
+  served: SpecVersion,
+  request: RequestInfo,
+  headerVersion: string | undefined,
+  response: CapturedResponse
+): boolean {
+  if (response.status < 200 || response.status >= 300) return false;
+  if (!request.methods.length) return false;
+  if (request.methods.includes('initialize')) {
+    return isStatefulVersion(served) && request.bodyVersion === served;
+  }
+  return headerVersion === served;
+}
+
+/**
+ * The marker spokeRevision() leaves on a cell: kept with the hosted checks
+ * so every process's sighting is pooled, and never shown.
+ */
+export function revisionSpokenCheck(served: SpecVersion): ConformanceCheck {
+  return {
+    id: REVISION_SPOKEN_CHECK_ID,
+    name: 'RevisionSpoken',
+    description: `The client made an accepted request at ${served}`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { served }
+  };
+}
+
+export const REVISION_NOT_SPOKEN_CHECK_ID = 'hosted-revision-not-spoken';
+
+/**
+ * Said on a cell whose checks would otherwise pass but where no request at
+ * its revision was ever accepted (an OAuth flow completed, then the client
+ * spoke only another revision, or nothing): it has not been tested yet.
+ */
+export function revisionNotSpokenCheck(
+  served: SpecVersion,
+  timestamp: string
+): ConformanceCheck {
+  return {
+    id: REVISION_NOT_SPOKEN_CHECK_ID,
+    name: 'RevisionNotSpoken',
+    description:
+      `The client never spoke ${served} here: no MCP request at ${served} was accepted, ` +
+      'so the checks recorded so far cannot make this cell pass',
+    status: 'INFO',
+    timestamp,
+    details: { served }
+  };
 }
 
 /**
@@ -411,32 +588,42 @@ export function versionOfferedCheck(
   };
 }
 
+/**
+ * `version` is the revision the probe asked for (its header, else its
+ * `_meta`); `refusal` is how the cell turned it away.
+ */
 export function modernProbeCheck(
   served: SpecVersion,
   method: string | undefined,
-  headerVersion: string,
+  version: string | undefined,
   refusal: Refusal
 ): ConformanceCheck {
+  const asked = version ? `asked for ${version}` : 'probed';
   return {
     id: MODERN_PROBE_CHECK_ID,
     name: 'ModernProbe',
     description:
-      `The client asked for ${headerVersion}${method ? ` with ${method}` : ''} on a cell served on ${served}, ` +
+      `The client ${asked}${method ? ` with ${method}` : ''} on a cell served on ${served}, ` +
       `and the cell answered ${refusalText(refusal)}. ` +
-      `That is version negotiation, not a failure: the client is judged on what it sends next, at ${served}`,
+      `That is version negotiation, not a failure, however often the client repeats it: ` +
+      `the client is judged on the requests it makes at ${served}`,
     status: 'INFO',
     timestamp: new Date().toISOString(),
     details: {
       served,
       ...(method && { method }),
-      headerVersion,
+      headerVersion: version ?? null,
       rejected: { ...refusal }
     }
   };
 }
 
 function refusalText(r: Refusal): string {
-  if (r.code === undefined) return `HTTP ${r.status}`;
+  if (r.code === undefined) {
+    return r.status === 401
+      ? 'HTTP 401, asking the client to sign in first'
+      : `HTTP ${r.status}`;
+  }
   return `HTTP ${r.status}, JSON-RPC error ${r.code}${r.message ? `: ${r.message}` : ''}`;
 }
 
@@ -447,7 +634,7 @@ function refusalText(r: Refusal): string {
  * (stateful) revision `initialize` negotiates and is exempt, and every later
  * request's header, when present, must name the cell's revision — unless
  * it was a modern probe (isModernProbe()), which the caller decides from
- * the response and what the cell had already answered.
+ * the request and the response.
  */
 export function wrongRevision(
   served: SpecVersion,
@@ -523,10 +710,26 @@ export function legacyInitializeReply(
   };
 }
 
+/**
+ * What the cell answered a legacy `initialize`, for its note: its version
+ * answer (a -32022 naming the revisions it serves), another refusal (the
+ * 401 an auth cell answers before it looks at the protocol), or undefined
+ * when it accepted the request.
+ */
+export function legacyAnswer(
+  served: SpecVersion,
+  response: CapturedResponse
+): Refusal | undefined {
+  if (response.status < 400) return undefined;
+  // Looked up without the header: a -32022 to an initialize that happened
+  // to name the cell's revision is still the answer.
+  return wireRejection(response, served, undefined) ?? refusalOf(response);
+}
+
 export function legacyProbeCheck(
   served: SpecVersion,
   headerVersion: string | undefined,
-  rejection?: WireRejection,
+  answer?: Refusal,
   requestedVersion?: string
 ): ConformanceCheck {
   return {
@@ -535,8 +738,8 @@ export function legacyProbeCheck(
     description:
       `The client opened with initialize, the legacy handshake, on a cell served on ${served}. ` +
       'On this revision that is era detection, not a failure' +
-      (rejection
-        ? `; the cell answered ${response(rejection)}: ${rejection.message}`
+      (answer
+        ? `; the cell answered ${refusalText(answer)}`
         : '; the cell accepted it'),
     status: 'INFO',
     timestamp: new Date().toISOString(),
@@ -544,13 +747,7 @@ export function legacyProbeCheck(
       served,
       headerVersion: headerVersion ?? null,
       ...(requestedVersion && { requestedVersion }),
-      ...(rejection && {
-        rejected: {
-          status: rejection.status,
-          code: rejection.code,
-          message: rejection.message
-        }
-      })
+      ...(answer && { rejected: { ...answer } })
     }
   };
 }

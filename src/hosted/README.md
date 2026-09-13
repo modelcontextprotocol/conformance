@@ -229,9 +229,9 @@ request away (`src/hosted/wire.ts`):
   is not the column's; on a dated column any post-`initialize` request whose
   header names another revision (`initialize` itself negotiates and is
   exempt); once per distinct (method, header version). On a dated column a
-  foreign-revision request the cell turned away before it had given the
-  client its answer is a modern probe, not a wrong revision (see below); one
-  the cell accepted, or one sent after its answer, is.
+  modern probe is not a wrong revision (see below); a foreign-revision
+  request the cell accepted, or one in the dated shape whose header names
+  another revision, is.
 
 A request that is both — the wrong revision, and turned away for it — is one
 mistake and records one check: `hosted-wrong-revision`, with the rejection in
@@ -260,20 +260,38 @@ judged on what it sent next, and one that never does leaves the cell
 
 The mirror case on a dated column is a modern probe: a dual-era client opens
 with `server/discover` (or any request) at `2026-07-28`, the cell turns it
-away, and the client falls back to `initialize` at the cell's revision. Any
-4xx counts as turning it away — the SDK transport's 400 "Unsupported protocol
-version", a `-32601` from a scenario that has no such method, or the 401 an
-`auth/*` cell answers before it looks at the protocol — as long as the cell
-had not yet given the client its answer: a version rejection of that same
-header version, or an accepted `initialize`. The hosted layer records it as
-the INFO check `hosted-modern-probe`, once per header version, with the
-method in `details.method` and the answer in `details.rejected`; a probe
-first met with 401 and repeated after sign-in reports the version answer it
-drew then. A request at that version sent after the answer is the client
-carrying on at the wrong revision (`hosted-wrong-revision`, the rejection
-folded in). Which answer a request saw is tracked per process, so on a
-multi-process host a request that lands where the answer was not seen is
-noted as a probe rather than failed.
+away, and the client falls back to `initialize` at the cell's revision. It may
+do so on every connect, so whether a request is a probe is read
+from the request alone, never from what the cell answered before it or which
+process saw it:
+
+- a `server/discover` is always a probe, however often and whenever it comes;
+- any other request in the `2026-07-28` shape (per-request `_meta` naming a
+  newer revision) is a probe when the cell turned it away (a 4xx, including
+  the 401 an `auth/*` cell answers before it looks at the protocol).
+
+Every dated cell, composites included, answers `server/discover` the same
+way before the scenario sees it: HTTP 400 with JSON-RPC `-32000` "Bad Request:
+Unsupported protocol version: … (supported versions: <revision>)", what the
+`2025-11-25` SDK transport answers. On HTTP that is how a server without
+`2026-07-28` support turns a modern request away: a 4xx whose body is not a
+recognized modern error, so the client falls back (2026-07-28
+`basic/transports/streamable-http`, "Backward Compatibility"); a 404 with
+`-32601` is what a modern server says of a method it lacks, and a client may
+take it for one. An `auth/*` cell answers 401 first, and its resource server
+gives the same 400 after sign-in. The hosted layer records a probe as the
+INFO check `hosted-modern-probe`, once per revision probed for, with the
+method in `details.method` and the answer in `details.rejected`; a probe first
+met with 401 and repeated after sign-in reports the version answer it drew
+then. A request in the dated shape (no per-request `_meta`) whose header names
+another revision is the client carrying on at the wrong revision
+(`hosted-wrong-revision`, any rejection folded in), and so is a
+foreign-revision request the cell accepted.
+
+A POST to a cell's MCP endpoint whose body is empty or not JSON gets HTTP 400
+with a plain JSON-RPC `-32700` "Parse error" on every cell and composite (the
+bundled servers quoted their parser's exception), and the INFO check
+`hosted-unparseable-body`. It is neither a probe nor a wrong revision.
 
 A dated cell tests exactly its column's revision, so its `initialize` answer
 always states it: the bundled servers would echo an older version they
@@ -284,7 +302,18 @@ scenario's own answer), and when the client asked for another version
 records the INFO check `hosted-version-offered` with
 `details.requestedVersion` and `details.answeredVersion`, so a client that
 declines or goes quiet is explained. One that carries on at the version it
-asked for is a wrong revision.
+asked for is a wrong revision. The initialize scenario's
+`mcp-client-initialization` check says the same: on a hosted cell its
+`details.versionMatch` is whether the client asked for the cell's revision.
+
+A cell passes only once the client has spoken its revision there: an accepted
+request at it (an `initialize` asking for it, or a request whose
+`MCP-Protocol-Version` names it). A cell whose checks would otherwise pass
+without one — an OAuth flow completed by a client that then spoke only an
+older revision, say — is `incomplete`, with the INFO check
+`hosted-revision-not-spoken` saying why. A scenario that expects the client to
+stop before it reaches the MCP endpoint (it must reject a bad issuer, say) is
+judged on its own checks as before.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
