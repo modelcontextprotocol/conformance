@@ -119,14 +119,15 @@ let _nextStatelessId = 1;
 async function statelessRequest(
   serverUrl: string,
   method: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  fetchFn: FetchLike = fetch
 ): Promise<any> {
   const _meta = {
     'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
     ...STATELESS_META_BASE,
     ...((params._meta as object | undefined) ?? {})
   };
-  const response = await fetch(serverUrl, {
+  const response = await fetchFn(serverUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -422,6 +423,21 @@ async function runAuthClient(serverUrl: string): Promise<void> {
     CIMD_CLIENT_METADATA_URL
   )(fetch);
 
+  if (USE_STATELESS_LIFECYCLE) {
+    // No initialize on the stateless lifecycle: the first tools/list draws
+    // the 401 and the OAuth fetch authorizes and retries it.
+    await statelessRequest(serverUrl, 'tools/list', {}, oauthFetch);
+    logger.debug('Successfully listed tools statelessly');
+    await statelessRequest(
+      serverUrl,
+      'tools/call',
+      { name: 'test-tool', arguments: {} },
+      oauthFetch
+    );
+    logger.debug('Successfully called tool statelessly');
+    return;
+  }
+
   const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
     fetch: oauthFetch
   });
@@ -527,6 +543,16 @@ async function runAuthMigrationClient(serverUrl: string): Promise<void> {
     new URL(serverUrl),
     issuerAware401
   )(fetch);
+  if (USE_STATELESS_LIFECYCLE) {
+    await statelessRequest(serverUrl, 'tools/list', {}, oauthFetch); // phase 1: AS₁
+    await statelessRequest(
+      serverUrl,
+      'tools/call',
+      { name: 'test-tool', arguments: {} },
+      oauthFetch
+    ); // phase 2: AS₂
+    return;
+  }
   const client = new Client(
     { name: 'auth-migration-client', version: '1.0.0' },
     { capabilities: {} }
