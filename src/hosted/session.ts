@@ -192,12 +192,15 @@ export function freshScenario(proto: Scenario): Scenario {
  */
 export function finalizeChecks(
   scenarioName: string,
-  merged: ConformanceCheck[]
+  merged: ConformanceCheck[],
+  revision?: SpecVersion
 ): ConformanceCheck[] {
   const proto = getScenario(scenarioName);
   if (!proto) return merged;
   try {
-    const fresh = freshScenario(proto) as unknown as {
+    const scenario = freshScenario(proto);
+    if (revision) scenario.judgeAt?.(revision);
+    const fresh = scenario as unknown as {
       checks?: unknown;
       getChecks(): ConformanceCheck[];
     };
@@ -529,7 +532,11 @@ export class SessionManager {
     return {
       ...ref,
       checks: [
-        ...finalizeChecks(ref.scenarioName, scenarioLog.sort(byTime)),
+        ...finalizeChecks(
+          ref.scenarioName,
+          scenarioLog.sort(byTime),
+          ref.revision
+        ),
         ...hosted
       ],
       recorded: scenarioLog.length + hostedFailures(hosted)

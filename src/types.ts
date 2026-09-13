@@ -179,6 +179,14 @@ export interface Scenario {
    * implement this to carry them over.
    */
   fresh?(): Scenario;
+  /**
+   * Called on a fresh instance before it judges a merged log (the hosted
+   * server's re-judgement, src/hosted/session.ts), with the revision the
+   * cell ran at: the one piece of the run's context such an instance cannot
+   * read from the log. Scenarios whose verdicts depend on the revision
+   * record it here.
+   */
+  judgeAt?(specVersion: SpecVersion): void;
   start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
