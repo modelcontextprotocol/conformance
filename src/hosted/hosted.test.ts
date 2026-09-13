@@ -886,37 +886,39 @@ describe('hosted server', () => {
       errorMessage?: string;
       details?: Record<string, unknown>;
     };
-    const rejected = results.checks.filter(
-      (c: Check) => c.id === 'hosted-wire-rejected'
-    );
-    // Once per distinct (code, message): the repeated -32602 is one check.
-    expect(rejected.map((c: Check) => c.details?.code)).toEqual([
-      -32602, -32020
-    ]);
-    expect(rejected[0]).toMatchObject({
-      status: 'FAILURE',
-      details: {
-        status: 400,
-        method: 'initialize',
-        requestedVersion: REV_STATEFUL
-      }
-    });
-    expect(rejected[1].details).toMatchObject({
-      code: -32020,
-      requestedVersion: '2025-06-18' // no header: the body's version
-    });
+    // Each request was one mistake — initialize on the stateless wire, which
+    // the wire also turned away — so it records one check, not two.
+    expect(
+      results.checks.some((c: Check) => c.id === 'hosted-wire-rejected')
+    ).toBe(false);
     const wrong = results.checks.filter(
       (c: Check) => c.id === 'hosted-wrong-revision'
     );
-    // Once per distinct (method, header version).
+    // Once per distinct (method, header version): the repeat is one check.
     expect(wrong.map((c: Check) => c.errorMessage)).toEqual([
-      `cell is served on ${REV_STATELESS}; client sent initialize`,
-      `cell is served on ${REV_STATELESS}; client sent initialize`
+      expect.stringMatching(
+        new RegExp(
+          `^cell is served on ${REV_STATELESS}; client sent initialize \\(turned away: HTTP 400, JSON-RPC error -32602: `
+        )
+      ),
+      expect.stringMatching(
+        new RegExp(
+          `^cell is served on ${REV_STATELESS}; client sent initialize \\(turned away: HTTP 400, JSON-RPC error -32020: `
+        )
+      )
     ]);
-    expect(wrong.map((c: Check) => c.details?.headerVersion)).toEqual([
-      REV_STATEFUL,
-      null
-    ]);
+    expect(wrong[0]).toMatchObject({
+      status: 'FAILURE',
+      details: {
+        method: 'initialize',
+        headerVersion: REV_STATEFUL,
+        rejected: { status: 400, code: -32602 }
+      }
+    });
+    expect(wrong[1].details).toMatchObject({
+      headerVersion: null,
+      rejected: { status: 400, code: -32020 }
+    });
     const report = await fetch(`${base}/results/rej`).then((r) => r.json());
     const cellOf = (rev: string, name: string) =>
       report.columns

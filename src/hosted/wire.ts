@@ -13,9 +13,11 @@
  *                          the stateless wire, a header naming another
  *                          revision).
  *
- * Both are FAILUREs, so they decide the cell's verdict (see report.ts). On a
- * dated cell a request at a foreign revision that the wire turned away is
- * version negotiation and records neither (see isNegotiation()).
+ * Both are FAILUREs, so they decide the cell's verdict (see report.ts). A
+ * request that is both is one mistake and records only the wrong revision,
+ * with the rejection folded in. On a dated cell a request at a foreign
+ * revision that the wire turned away is version negotiation and records
+ * neither (see isNegotiation()).
  */
 
 import type { ServerResponse } from 'http';
@@ -290,11 +292,16 @@ function response(r: WireRejection): string {
   return `HTTP ${r.status}, JSON-RPC error ${r.code}`;
 }
 
+/**
+ * `rejection` is the wire turning the same request away: one mistake, so it
+ * is folded into this check rather than recorded as hosted-wire-rejected too.
+ */
 export function wrongRevisionCheck(
   served: SpecVersion,
   method: string,
   headerVersion: string | undefined,
-  reason: string
+  reason: string,
+  rejection?: WireRejection
 ): ConformanceCheck {
   return {
     id: WRONG_REVISION_CHECK_ID,
@@ -302,11 +309,22 @@ export function wrongRevisionCheck(
     description: `The client spoke a revision other than the one this cell is served on`,
     status: 'FAILURE',
     timestamp: new Date().toISOString(),
-    errorMessage: `cell is served on ${served}; client ${reason}`,
+    errorMessage:
+      `cell is served on ${served}; client ${reason}` +
+      (rejection
+        ? ` (turned away: ${response(rejection)}: ${rejection.message})`
+        : ''),
     details: {
       served,
       method,
-      headerVersion: headerVersion ?? null
+      headerVersion: headerVersion ?? null,
+      ...(rejection && {
+        rejected: {
+          status: rejection.status,
+          code: rejection.code,
+          message: rejection.message
+        }
+      })
     }
   };
 }

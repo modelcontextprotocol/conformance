@@ -356,17 +356,27 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       // A foreign-revision request a dated cell turned away is the client
       // negotiating (it falls back to `initialize`): neither judgement.
       if (mcp && !isNegotiation(run.revision, headerVersion, response)) {
+        const rejection = wireRejection(response, run.revision, headerVersion);
+        // One mistake, one check: a wrong-revision request the wire also
+        // turned away records the revision, with the rejection folded in.
+        let explained = false;
         for (const method of request.methods) {
           const reason = wrongRevision(run.revision, method, headerVersion);
           if (!reason) continue;
+          explained = explained || rejection !== undefined;
           sessions.recordHostedCheck(
             run,
             `revision:${method}:${headerVersion ?? ''}`,
-            wrongRevisionCheck(run.revision, method, headerVersion, reason)
+            wrongRevisionCheck(
+              run.revision,
+              method,
+              headerVersion,
+              reason,
+              rejection
+            )
           );
         }
-        const rejection = wireRejection(response, run.revision, headerVersion);
-        if (rejection) {
+        if (rejection && !explained) {
           sessions.recordHostedCheck(
             run,
             `rejected:${rejection.code}:${rejection.message}`,

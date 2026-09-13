@@ -140,6 +140,12 @@ request away (`src/hosted/wire.ts`):
   `initialize` — and records neither check; one the wire accepted is
   still a wrong revision.
 
+A request that is both — the wrong revision, and turned away for it — is one
+mistake and records one check: `hosted-wrong-revision`, with the rejection in
+its message and in `details.rejected`. `hosted-wire-rejected` is left for a
+client that spoke the cell's revision and was still turned away (a missing
+`_meta`, say).
+
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as
 `stateless-request-rejected`.
