@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHostedApp } from './server';
 import { renderResults } from './html';
-import { SessionManager, cellId } from './session';
+import { SessionManager, cellId, rawChecksOf } from './session';
 import { MemoryRunStore } from './store';
 import type { HostedMatrix } from './matrix';
 import type { Server } from 'http';
@@ -1081,6 +1081,64 @@ describe('hosted server', () => {
     expect(results.verdict).toBe('pass');
   });
 
+  it('never changes results by reading them', async () => {
+    const page = (path: string) =>
+      fetch(`${base}${path}`, { headers: { accept: 'text/html' } }).then((r) =>
+        r.text()
+      );
+    const json = (path: string) =>
+      fetch(`${base}${path}`).then((r) => r.json());
+
+    // A cell only its config page created has seen no client: nothing to
+    // judge, however often its results are viewed.
+    await page(`/s/view/${REV_STATEFUL}/tools_call`);
+    for (let i = 0; i < 3; i++) {
+      await page(`/results/view/${REV_STATEFUL}/tools_call`);
+    }
+    await page('/results/view');
+    expect(
+      await json(`/results/view/${REV_STATEFUL}/tools_call`)
+    ).toMatchObject({
+      verdict: 'incomplete',
+      summary: { failed: 0, total: 0 },
+      checks: []
+    });
+    const fresh = sessions.get(
+      cellId({
+        runId: 'view',
+        revision: REV_STATEFUL,
+        scenarioName: 'tools_call'
+      })
+    )!;
+    expect(rawChecksOf(fresh.scenario)).toEqual([]);
+
+    // http-custom-headers appends its "never seen" FAILUREs to its log when
+    // judged: reading a touched cell must leave the log and verdict alone.
+    await postMcp(
+      `/s/view/${REV_STATELESS}/http-custom-headers/mcp`,
+      statelessBody('tools/list'),
+      { ...statelessHeaders, 'mcp-method': 'tools/list' }
+    ).then((r) => r.text());
+    const touched = sessions.get(
+      cellId({
+        runId: 'view',
+        revision: REV_STATELESS,
+        scenarioName: 'http-custom-headers'
+      })
+    )!;
+    const rawBefore = rawChecksOf(touched.scenario).length;
+    const cell = `/results/view/${REV_STATELESS}/http-custom-headers`;
+    const first = await json(cell);
+    for (let i = 0; i < 3; i++) {
+      await page(cell);
+      await page('/results/view');
+    }
+    const last = await json(cell);
+    expect(rawChecksOf(touched.scenario)).toHaveLength(rawBefore);
+    expect(last.verdict).toBe(first.verdict);
+    expect(last.summary).toEqual(first.summary);
+  });
+
   it('treats a rejected foreign-revision probe on a dated cell as negotiation', async () => {
     type Check = { id: string; status: string; errorMessage?: string };
     const hostedChecks = (checks: Check[]) =>
@@ -1262,6 +1320,81 @@ describe('hosted server across processes (shared store)', () => {
     await Promise.all(
       servers.map((s) => new Promise<void>((r) => s.close(() => r())))
     );
+  });
+
+  it('writes nothing to the store when results are read', async () => {
+    const [a, b] = origins;
+    const html = { headers: { accept: 'text/html' } };
+    // A cell only a config page created: nothing stored, nothing judged.
+    const freshId = `viewst/${REV_STATEFUL}/tools_call`;
+    await fetch(`${a}/s/${freshId}`, html).then((r) => r.text());
+    for (const o of [a, b, a]) {
+      await fetch(`${o}/results/${freshId}`, html).then((r) => r.text());
+    }
+    expect(await store.loadRun(freshId)).toBeUndefined();
+    expect((await store.loadChecks(freshId)).size).toBe(0);
+    // The live server's case: the process that served the cell page holds a
+    // scenario instance the other does not. Reads from either, at every
+    // scope, must agree — nothing failed, nothing to judge yet.
+    const cellOf = (report: { columns: { cells: { scenario: string }[] }[] }) =>
+      report.columns[0].cells.find((c) => c.scenario === 'tools_call') as {
+        verdict: string;
+        summary?: unknown;
+      };
+    for (let round = 0; round < 3; round++) {
+      for (const o of [a, b]) {
+        expect(
+          await fetch(`${o}/results/${freshId}`).then((r) => r.json())
+        ).toMatchObject({
+          verdict: 'incomplete',
+          summary: { failed: 0, total: 0 }
+        });
+        for (const scope of [`viewst/${REV_STATEFUL}`, 'viewst']) {
+          const cell = cellOf(
+            await fetch(`${o}/results/${scope}`).then((r) => r.json())
+          );
+          expect(cell.verdict).toBe('incomplete');
+          expect(cell.summary).toBeUndefined();
+        }
+      }
+    }
+
+    // A touched cell: its rows are what the traffic wrote, however often
+    // either process reads it.
+    const id = `viewst/${REV_STATELESS}/http-custom-headers`;
+    await fetch(`${a}/s/${id}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': REV_STATELESS,
+        'mcp-method': 'tools/list'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      })
+    }).then((r) => r.text());
+    await apps[0].sessions.flush();
+    const rows = () =>
+      store.loadChecks(id).then((m) => JSON.stringify([...m.entries()]));
+    const written = await rows();
+    const first = await fetch(`${a}/results/${id}`).then((r) => r.json());
+    for (const o of [a, b, a, b]) {
+      await fetch(`${o}/results/${id}`, html).then((r) => r.text());
+    }
+    for (const { sessions } of apps) await sessions.flush();
+    expect(await rows()).toBe(written);
+    const last = await fetch(`${b}/results/${id}`).then((r) => r.json());
+    expect(last.verdict).toBe(first.verdict);
+    expect(last.summary).toEqual(first.summary);
   });
 
   it('passes tools_call when tools/list and tools/call land on different processes', async () => {

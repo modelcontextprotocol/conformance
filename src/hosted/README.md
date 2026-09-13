@@ -70,7 +70,9 @@ path), so the config, the matrix pages and `/scenarios` show one URL shape.
 cell nobody has hit (plus `startable: false, startReason` for one this
 deployment cannot start) and `n/a` with the `reason` for a scenario that
 does not apply to the revision. Only an unknown revision or scenario is
-a 404.
+a 404. Reading results never changes them: every view judges a copy of the
+cell's log, so a page left open or reloaded cannot turn a verdict, and a
+cell that only a config page created stays empty until a client hits it.
 
 **Representation.** Config and results answer HTML when the request prefers
 `text/html` and JSON otherwise; `?format=html|json` overrides. At a cell URL

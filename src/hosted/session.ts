@@ -484,15 +484,22 @@ export class SessionManager {
   async results(id: string): Promise<RunResults | undefined> {
     const ref = parseCellId(id);
     if (!ref) return undefined;
-    const run = this.runs.get(id);
+    // A cell that only a config page created has seen no client: there is
+    // nothing to judge, so it reads like a cell that does not exist yet.
+    const run = this.runs.get(id)?.touched ? this.runs.get(id) : undefined;
     if (!this.store) {
       if (!run) return undefined;
-      const recorded =
-        rawChecksOf(run.scenario).length + hostedFailures(run.hostedChecks);
+      const raw = rawChecksOf(run.scenario);
+      // Judged on a copy, as with a store: many scenarios' getChecks()
+      // appends its "expected but never seen" FAILUREs to the live log, so
+      // judging the live instance would let a page view change the verdict.
       return {
         ...ref,
-        checks: [...run.scenario.getChecks(), ...run.hostedChecks],
-        recorded
+        checks: [
+          ...finalizeChecks(ref.scenarioName, raw, ref.revision),
+          ...run.hostedChecks
+        ],
+        recorded: raw.length + hostedFailures(run.hostedChecks)
       };
     }
     let byWriter = new Map<string, ConformanceCheck[]>();
