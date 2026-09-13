@@ -344,7 +344,9 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/iss-unexpected',
   'auth/iss-normalized',
   'auth/metadata-issuer-mismatch',
-  'auth/resource-mismatch'
+  'auth/resource-mismatch',
+  'auth/offline-access-scope',
+  'auth/offline-access-not-supported'
 ];
 
 /** Scenarios that need one process's memory across requests. */

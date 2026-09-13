@@ -1,11 +1,37 @@
-import type { ScenarioContext } from '../../../mock-server';
-import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
+import {
+  AuthHandlerScenario,
+  AuthHandlerContext,
+  AuthHandlers,
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
+} from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
-import { ServerLifecycle } from './helpers/serverLifecycle';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
+
+/**
+ * The URL-based client_id (CIMD) of the latest logged authorization request,
+ * if the client used one. Read from the log so it survives the request and
+ * the judgement landing in different processes.
+ */
+function cimdClientIdIn(checks: ConformanceCheck[]): string | undefined {
+  let cimdUrl: string | undefined;
+  for (const c of checks) {
+    if (c.id !== 'authorization-request') continue;
+    const clientId = (c.details?.query as Record<string, unknown> | undefined)
+      ?.client_id;
+    if (typeof clientId === 'string' && clientId.startsWith('http')) {
+      cimdUrl = clientId;
+    }
+  }
+  return cimdUrl;
+}
+
+/** Whether a grant_types observation (DCR body or CIMD document) is logged. */
+function grantTypesCheckedIn(checks: ConformanceCheck[]): boolean {
+  return checks.some((c) => c.id === 'sep-2207-client-metadata-grant-types');
+}
 
 /**
  * Scenario: Offline Access Scope (SEP-2207)
@@ -22,26 +48,21 @@ import { MockTokenVerifier } from './helpers/mockTokenVerifier';
  * - PRM: scopes_supported does NOT include 'offline_access' (per SEP-2207 server guidance)
  * - Both CIMD and DCR paths available
  */
-export class OfflineAccessScopeScenario implements Scenario {
+export class OfflineAccessScopeScenario extends AuthHandlerScenario {
   name = 'auth/offline-access-scope';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that a client that wants a refresh token handles offline_access scope and refresh_token grant type when AS supports them (SEP-2207)';
 
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
-  private grantTypesChecked = false;
-  private capturedCimdUrl: string | undefined;
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
-    this.grantTypesChecked = false;
-    this.capturedCimdUrl = undefined;
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const tokenVerifier = new MockTokenVerifier(this.checks, ['mcp:basic']);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'offline_access'],
       clientIdMetadataDocumentSupported: true,
@@ -49,7 +70,6 @@ export class OfflineAccessScopeScenario implements Scenario {
         // DCR path: inspect grant_types in registration body
         const grantTypes: string[] = req.body.grant_types || [];
         const hasRefreshToken = grantTypes.includes('refresh_token');
-        this.grantTypesChecked = true;
         this.checks.push({
           id: 'sep-2207-client-metadata-grant-types',
           name: 'Client metadata includes refresh_token grant type (DCR)',
@@ -73,10 +93,7 @@ export class OfflineAccessScopeScenario implements Scenario {
         };
       },
       onAuthorizationRequest: (data) => {
-        // Capture CIMD URL if client used URL-based client_id
-        if (data.clientId && data.clientId.startsWith('http')) {
-          this.capturedCimdUrl = data.clientId;
-        }
+        // A URL-based client_id (CIMD) is read back from the log in stop().
 
         // Check if client included offline_access in scope
         const requestedScopes = data.scope ? data.scope.split(' ') : [];
@@ -97,35 +114,28 @@ export class OfflineAccessScopeScenario implements Scenario {
         });
       }
     });
-    await this.authServer.start(authApp);
 
     // PRM does NOT include offline_access (per SEP-2207 server guidance:
     // servers SHOULD NOT include offline_access in PRM scopes_supported)
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: ['mcp:basic'],
-        scopesSupported: ['mcp:basic'],
-        tokenVerifier
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: ['mcp:basic'],
+      scopesSupported: ['mcp:basic'],
+      tokenVerifier
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   async stop() {
     // If client used CIMD and we haven't checked grant_types yet,
     // attempt to fetch the CIMD URL to inspect the metadata document
-    if (this.capturedCimdUrl && !this.grantTypesChecked) {
+    const capturedCimdUrl = cimdClientIdIn(this.checks);
+    if (capturedCimdUrl && !grantTypesCheckedIn(this.checks)) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(this.capturedCimdUrl, {
+        const response = await fetch(capturedCimdUrl, {
           signal: controller.signal
         });
         clearTimeout(timeout);
@@ -134,7 +144,6 @@ export class OfflineAccessScopeScenario implements Scenario {
           const metadata = await response.json();
           const grantTypes: string[] = metadata.grant_types || [];
           const hasRefreshToken = grantTypes.includes('refresh_token');
-          this.grantTypesChecked = true;
           this.checks.push({
             id: 'sep-2207-client-metadata-grant-types',
             name: 'Client metadata includes refresh_token grant type (CIMD)',
@@ -146,14 +155,13 @@ export class OfflineAccessScopeScenario implements Scenario {
             specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
             details: {
               registrationMethod: 'CIMD',
-              cimdUrl: this.capturedCimdUrl,
+              cimdUrl: capturedCimdUrl,
               grantTypes: grantTypes.length > 0 ? grantTypes.join(' ') : 'none'
             }
           });
         }
       } catch {
         // CIMD URL didn't resolve - emit info check
-        this.grantTypesChecked = true;
         this.checks.push({
           id: 'sep-2207-client-metadata-grant-types',
           name: 'Client metadata includes refresh_token grant type (CIMD)',
@@ -164,23 +172,23 @@ export class OfflineAccessScopeScenario implements Scenario {
           specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
           details: {
             registrationMethod: 'CIMD',
-            cimdUrl: this.capturedCimdUrl,
+            cimdUrl: capturedCimdUrl,
             fetchFailed: true
           }
         });
       }
     }
 
-    await this.authServer.stop();
-    await this.server.stop();
+    await super.stop();
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     const timestamp = new Date().toISOString();
 
     // If grant_types was never checked (no DCR, no CIMD, possibly pre-registered)
-    if (!this.grantTypesChecked) {
-      this.checks.push({
+    if (!grantTypesCheckedIn(this.checks)) {
+      checks.push({
         id: 'sep-2207-client-metadata-grant-types',
         name: 'Client metadata includes refresh_token grant type',
         description:
@@ -198,7 +206,7 @@ export class OfflineAccessScopeScenario implements Scenario {
     if (
       !this.checks.some((c) => c.id === 'sep-2207-offline-access-requested')
     ) {
-      this.checks.push({
+      checks.push({
         id: 'sep-2207-offline-access-requested',
         name: 'Client requests offline_access scope',
         description:
@@ -209,7 +217,7 @@ export class OfflineAccessScopeScenario implements Scenario {
       });
     }
 
-    return this.checks;
+    return checks;
   }
 }
 
@@ -227,25 +235,24 @@ export class OfflineAccessScopeScenario implements Scenario {
  * - AS metadata: scopes_supported does NOT include 'offline_access'
  * - PRM: standard scopes
  */
-export class OfflineAccessNotSupportedScenario implements Scenario {
+export class OfflineAccessNotSupportedScenario extends AuthHandlerScenario {
   name = 'auth/offline-access-not-supported';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Tests that client does not request offline_access when AS does not list it in scopes_supported (SEP-2207)';
 
-  private authServer = new ServerLifecycle();
-  private server = new ServerLifecycle();
   private checks: ConformanceCheck[] = [];
 
-  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+  authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
+    const getAsUrl = () => ctx.getAuxBaseUrl('as');
 
     const tokenVerifier = new MockTokenVerifier(this.checks, [
       'mcp:basic',
       'mcp:read'
     ]);
 
-    const authApp = createAuthServer(ctx, this.checks, this.authServer.getUrl, {
+    const authApp = createAuthServer(ctx, this.checks, getAsUrl, {
       tokenVerifier,
       scopesSupported: ['mcp:basic', 'mcp:read'],
       onAuthorizationRequest: (data) => {
@@ -267,35 +274,23 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
         });
       }
     });
-    await this.authServer.start(authApp);
 
-    const app = createServer(
-      ctx,
-      this.checks,
-      this.server.getUrl,
-      this.authServer.getUrl,
-      {
-        prmPath: '/.well-known/oauth-protected-resource/mcp',
-        requiredScopes: ['mcp:basic', 'mcp:read'],
-        scopesSupported: ['mcp:basic', 'mcp:read'],
-        tokenVerifier
-      }
-    );
-    await this.server.start(app);
+    const rsApp = createServer(ctx, this.checks, ctx.getRsBaseUrl, getAsUrl, {
+      prmPath: '/.well-known/oauth-protected-resource/mcp',
+      requiredScopes: ['mcp:basic', 'mcp:read'],
+      scopesSupported: ['mcp:basic', 'mcp:read'],
+      tokenVerifier
+    });
 
-    return { serverUrl: `${this.server.getUrl()}/mcp` };
-  }
-
-  async stop() {
-    await this.authServer.stop();
-    await this.server.stop();
+    return { rs: rsApp, aux: { as: authApp } };
   }
 
   getChecks(): ConformanceCheck[] {
+    const checks = [...this.checks];
     if (
       !this.checks.some((c) => c.id === 'sep-2207-offline-access-not-requested')
     ) {
-      this.checks.push({
+      checks.push({
         id: 'sep-2207-offline-access-not-requested',
         name: 'Client does not request unsupported offline_access',
         description:
@@ -306,6 +301,6 @@ export class OfflineAccessNotSupportedScenario implements Scenario {
       });
     }
 
-    return this.checks;
+    return checks;
   }
 }
