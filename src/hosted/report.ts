@@ -6,6 +6,11 @@
  *   incomplete  the cell exists but nothing was recorded, or it was never hit
  *   n/a         the scenario does not apply to the revision
  *
+ * Each cell also has a `state` that splits `incomplete` into not tried, in
+ * progress and incomplete (see CellState), and, once the client reached it,
+ * its failures and warnings one line each; the run's are grouped by cause
+ * (see ./findings.ts). The verdict itself is unchanged by either.
+ *
  * Per column, "scored X of N" counts passes among every cell the revision's
  * requirement set scores — N is the yaml's count, whether or not this
  * deployment can start the cell — and says separately how many of those N
@@ -17,15 +22,52 @@
 import type { ConformanceCheck } from '../types';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
+import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
 import {
-  IDENTITY_CHECK_ID,
-  identitiesIn,
-  mergeIdentities,
-  type ClientIdentity
-} from './identity';
-import { LEGACY_PROBE_CHECK_ID } from './wire';
+  findingsOf,
+  groupCauses,
+  legacyCauseKey,
+  legacyStop,
+  type Cause,
+  type CellFindings,
+  type Finding
+} from './findings';
 
 export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
+
+/**
+ * Where a cell stands, finer than its verdict: `incomplete` is split by
+ * whether the client got there at all.
+ *
+ *   not-tried      no request reached the cell
+ *   in-progress    the client reached it but has not yet done anything its
+ *                  scenario tests (it lists what it is waiting for)
+ *   incomplete     the client reached it and stopped before the scenario
+ *                  could test anything, for a reason the server saw: it spoke
+ *                  only an older revision and did not retry
+ *   not-startable  this deployment cannot start the cell
+ *
+ * `pass`, `fail` and `n/a` are the verdict's.
+ */
+export type CellState =
+  | 'pass'
+  | 'fail'
+  | 'in-progress'
+  | 'incomplete'
+  | 'not-tried'
+  | 'not-startable'
+  | 'n/a';
+
+export function stateOf(
+  cell: Pick<MatrixCell, 'scoring' | 'startable'>,
+  verdict: Verdict,
+  checks: readonly ConformanceCheck[] | undefined
+): CellState {
+  if (verdict !== 'incomplete') return verdict;
+  if (!cell.startable) return 'not-startable';
+  if (!checks) return 'not-tried';
+  return legacyStop(checks) ? 'incomplete' : 'in-progress';
+}
 
 export interface CheckSummary {
   passed: number;
@@ -44,10 +86,20 @@ export interface CellReport {
   startable: boolean;
   startReason?: string;
   verdict: Verdict;
+  /** Where the cell stands, finer than the verdict (see CellState). */
+  state: CellState;
   /** On a startable incomplete cell: why, in plain words (incompleteNote()). */
   note?: string;
   /** Absent when the cell was never exercised or does not apply. */
   summary?: CheckSummary;
+  /**
+   * On a cell the client reached: its failures and warnings, one line each,
+   * marked client or scenario. On an `in-progress` cell they are only what
+   * the scenario is still waiting for.
+   */
+  findings?: Finding[];
+  /** On an `incomplete` cell: the cause that stopped it (RunReport.causes). */
+  cause?: string;
   resultsUrl: string;
   identities?: ClientIdentity[];
 }
@@ -63,15 +115,27 @@ export interface ColumnReport {
   cells: CellReport[];
   /** The not_scored / unlisted cells that were exercised, with verdicts. */
   notScored: CellReport[];
+  /** How many of the column's cells stand where, n/a cells left out. */
+  counts: Partial<Record<CellState, number>>;
   identities: ClientIdentity[];
 }
 
 export interface RunReport {
   runId: string;
   revision?: string;
+  /** When the report was built (ISO 8601). */
+  generatedAt: string;
   columns: ColumnReport[];
   /** Every client identity seen anywhere in the run. */
   identities: ClientIdentity[];
+  /**
+   * Every grouped finding said once, with the cells it covers: client
+   * causes first, then those covering the most cells (see ./findings.ts).
+   */
+  causes: Cause[];
+  /** On a frozen copy (POST /results/<run-id>/freeze): its id and time. */
+  snapshotId?: string;
+  frozenAt?: string;
 }
 
 export function summarize(checks: ConformanceCheck[]): CheckSummary {
@@ -124,20 +188,11 @@ export function incompleteNote(checks: readonly ConformanceCheck[]): string {
 
 /** Said when a legacy initialize is all the cell has seen of the client. */
 function legacyOnly(checks: readonly ConformanceCheck[]): string | undefined {
-  const probe = checks.find((c) => c.id === LEGACY_PROBE_CHECK_ID);
-  if (!probe) return undefined;
-  const served = String(probe.details?.served ?? '');
-  const retried = checks.some(
-    (c) =>
-      c.id === IDENTITY_CHECK_ID &&
-      Array.isArray(c.details?.protocolVersions) &&
-      c.details.protocolVersions.includes(served)
-  );
-  if (retried) return undefined;
-  const asked = probe.details?.requestedVersion;
-  return typeof asked === 'string'
-    ? `the client spoke ${asked} only (it opened with initialize) and did not retry at ${served}`
-    : `the client only sent initialize, the legacy handshake, and did not retry at ${served}`;
+  const stop = legacyStop(checks);
+  if (!stop) return undefined;
+  return stop.asked
+    ? `the client spoke ${stop.asked} only (it opened with initialize) and did not retry at ${stop.served}`
+    : `the client only sent initialize, the legacy handshake, and did not retry at ${stop.served}`;
 }
 
 export interface ReportSources {
@@ -160,6 +215,7 @@ export async function buildReport(
   );
   const columns: ColumnReport[] = [];
   const allIdentities = new Map<string, ClientIdentity>();
+  const reached: CellFindings[] = [];
 
   for (const rev of matrix.revisions) {
     if (revision !== undefined && rev !== revision) continue;
@@ -181,6 +237,29 @@ export async function buildReport(
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
       const verdict = verdictFor(cell, results?.checks, results?.recorded);
+      const state = stateOf(cell, verdict, results?.checks);
+      const stop = results ? legacyStop(results.checks) : undefined;
+      // An in-progress cell's findings are only what it waits for: listed
+      // on its row, never grouped as causes.
+      const findings = results
+        ? findingsOf(
+            cell.scenario,
+            cell.revision,
+            results.checks,
+            stop,
+            state !== 'in-progress'
+          )
+        : undefined;
+      const stoppedBy =
+        state === 'incomplete' && stop ? legacyCauseKey(stop) : undefined;
+      if (results) {
+        reached.push({
+          cell: `${cell.revision}/${cell.scenario}`,
+          findings: findings ?? [],
+          ...(stop && { stop }),
+          ...(stoppedBy && { stoppedBy })
+        });
+      }
       cells.push({
         scenario: cell.scenario,
         revision: cell.revision,
@@ -191,12 +270,19 @@ export async function buildReport(
           startReason: cell.startReason
         }),
         verdict,
+        state,
         ...(verdict === 'incomplete' &&
           cell.startable && { note: incompleteNote(results?.checks ?? []) }),
         ...(results && { summary: summarize(results.checks) }),
+        ...(findings?.length && { findings }),
+        ...(stoppedBy && { cause: stoppedBy }),
         resultsUrl: sources.resultsUrl(ref),
         ...(seen.length && { identities: seen })
       });
+    }
+    const counts: Partial<Record<CellState, number>> = {};
+    for (const c of cells) {
+      if (c.state !== 'n/a') counts[c.state] = (counts[c.state] ?? 0) + 1;
     }
     const scoredCells = cells.filter((c) => c.scoring === 'scored');
     columns.push({
@@ -212,6 +298,7 @@ export async function buildReport(
           (c.scoring === 'not_scored' || c.scoring === 'unlisted') &&
           c.summary !== undefined
       ),
+      counts,
       identities: Array.from(identities.values())
     });
   }
@@ -219,7 +306,9 @@ export async function buildReport(
   return {
     runId,
     ...(revision !== undefined && { revision }),
+    generatedAt: new Date().toISOString(),
     columns,
-    identities: Array.from(allIdentities.values())
+    identities: Array.from(allIdentities.values()),
+    causes: groupCauses(reached)
   };
 }

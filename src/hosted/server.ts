@@ -77,8 +77,10 @@ import {
 import {
   buildReport,
   incompleteNote,
+  stateOf,
   summarize,
   verdictFor,
+  type CellState,
   type Verdict
 } from './report';
 import { parseComposite } from './composite';
@@ -963,6 +965,8 @@ export function summarise(ref: CellRef, checks: ConformanceCheck[]) {
 export interface CellStatus {
   scoring: MatrixCell['scoring'];
   verdict: Verdict;
+  /** Where the cell stands, finer than the verdict (see CellState). */
+  state: CellState;
   /**
    * On a startable incomplete cell: why, in plain words — nothing recorded
    * yet, or the checks listed are only what the scenario still expects.
@@ -983,6 +987,7 @@ export function cellStatus(
   return {
     scoring: cell.scoring,
     verdict,
+    state: stateOf(cell, verdict, results?.checks),
     ...(verdict === 'incomplete' &&
       cell.startable && { note: incompleteNote(results?.checks ?? []) }),
     ...(cell.reason !== undefined && { reason: cell.reason }),

@@ -652,6 +652,7 @@ describe('hosted server', () => {
       scenario: 'tools_call',
       scoring: 'scored',
       verdict: 'incomplete',
+      state: 'not-tried',
       note: 'nothing recorded yet — point the client at the MCP endpoint',
       summary: zeros,
       checks: []

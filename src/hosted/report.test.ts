@@ -132,8 +132,25 @@ describe('verdicts', () => {
     expect(by('initialize').verdict).toBe('fail');
     expect(by('elicitation-sep1034-client-defaults')).toMatchObject({
       verdict: 'incomplete',
+      state: 'in-progress',
       summary: { total: 0 }
     });
+    // The state splits incomplete by whether the client got there at all.
+    expect(by('tools_call').state).toBe('pass');
+    expect(by('initialize').state).toBe('fail');
+    expect(by('sse-retry').state).toBe('not-startable');
+    expect(by('request-metadata').state).toBe('n/a');
+    expect(col.counts).toMatchObject({ pass: 2, fail: 1, 'in-progress': 1 });
+    expect(report.columns[1].counts['not-tried']).toBeGreaterThan(0);
+    expect(col.counts['n/a']).toBeUndefined();
+    // The failure is on its row, one line, and said once as a cause.
+    expect(by('initialize').findings).toEqual([
+      expect.objectContaining({ status: 'FAILURE', check: 'c', by: 'client' })
+    ]);
+    expect(report.causes.map((c) => [c.check, c.cells])).toEqual([
+      ['c', [`${rev}/initialize`]]
+    ]);
+    expect(Date.parse(report.generatedAt)).not.toBeNaN();
     expect(by('request-metadata')).toMatchObject({ verdict: 'n/a' });
     expect(by('request-metadata').summary).toBeUndefined();
     expect(by('sse-retry')).toMatchObject({
@@ -166,5 +183,48 @@ describe('verdicts', () => {
     expect(
       column.columns[0].cells.find((c) => c.scenario === 'initialize')!.verdict
     ).toBe('n/a');
+  });
+
+  it('says once that a legacy-only client stopped every cell it reached', async () => {
+    const matrix = buildMatrix({});
+    const served = '2026-07-28';
+    const probe = legacyProbeCheck(
+      served,
+      '2025-11-25',
+      { status: 400, code: -32022, message: 'Unsupported protocol version' },
+      '2025-11-25'
+    );
+    const ids = [`r/${served}/tools_call`, `r/${served}/request-metadata`];
+    const report = await buildReport(matrix, 'r', served, {
+      listCells: async () =>
+        ids.map((id) => {
+          const [runId, revision, ...rest] = id.split('/');
+          return {
+            runId,
+            revision: revision as CellRef['revision'],
+            scenarioName: rest.join('/')
+          };
+        }),
+      // INFO only: nothing the scenario tests was recorded.
+      results: async (id) =>
+        ids.includes(id) ? { checks: [probe], recorded: 0 } : undefined,
+      resultsUrl: () => ''
+    });
+    const cells = report.columns[0].cells.filter((c) =>
+      ['tools_call', 'request-metadata'].includes(c.scenario)
+    );
+    expect(cells.map((c) => [c.verdict, c.state])).toEqual([
+      ['incomplete', 'incomplete'],
+      ['incomplete', 'incomplete']
+    ]);
+    expect(report.causes).toHaveLength(1);
+    expect(report.causes[0]).toMatchObject({
+      by: 'client',
+      cells: [`${served}/tools_call`, `${served}/request-metadata`]
+    });
+    expect(report.causes[0].text).toMatch(
+      /^The client spoke 2025-11-25 only: it opened with initialize/
+    );
+    expect(cells.every((c) => c.cause === report.causes[0].key)).toBe(true);
   });
 });
