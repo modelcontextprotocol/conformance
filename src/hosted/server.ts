@@ -105,6 +105,8 @@ export interface HostedServerOptions {
    * requests on a host that has none).
    */
   exclude?: Record<string, string>;
+  /** See SessionManagerOptions.tokenKeyBudgetMs. */
+  tokenKeyBudgetMs?: number;
 }
 
 const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
@@ -145,7 +147,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   const sessions = new SessionManager({
     ttlMs: opts.ttlMs,
     auxOrigins,
-    store: opts.store
+    store: opts.store,
+    tokenKeyBudgetMs: opts.tokenKeyBudgetMs
   });
   const matrix = buildMatrix({ auxOrigins, exclude: opts.exclude });
   const revisions: readonly string[] = matrix.revisions;

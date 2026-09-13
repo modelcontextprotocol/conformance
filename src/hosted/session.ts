@@ -37,6 +37,22 @@ import {
 /** Name of the deployment's auth token key in the store's shared secrets. */
 const TOKEN_MAC_KEY = 'token-mac-key';
 
+function warnUnsharedTokenKey(reason: string): void {
+  console.warn(
+    `[hosted] WARNING: the run store could not share a key for auth tokens (${reason}), ` +
+      'so this process signs them with its own: scope checks ' +
+      '(auth/scope-step-up and others) will fail whenever one run reaches ' +
+      "several processes, as on Val Town. Check the store's sharedSecret()."
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+  });
+}
+
 /** Store writer suffix for the hosted layer's own checks (client identity). */
 const HOSTED_WRITER_SUFFIX = '/hosted';
 
@@ -149,6 +165,12 @@ export interface SessionManagerOptions {
    * processes (serverless isolates). Omit for a single long-lived process.
    */
   store?: RunStore;
+  /**
+   * How long, in all, to wait at startup for the deployment's key for auth
+   * tokens, retries included. Past it the process signs tokens with its
+   * own key (and says so). Default 5000 ms.
+   */
+  tokenKeyBudgetMs?: number;
 }
 
 /** Results view: the cell plus its judged checks. */
@@ -239,7 +261,7 @@ export class SessionManager {
     const sweepIntervalMs = opts.sweepIntervalMs ?? 30_000;
     this.sweeper = setInterval(() => this.sweep(), sweepIntervalMs);
     this.sweeper.unref?.();
-    this.keyLoaded = this.loadTokenMacKey();
+    this.keyLoaded = this.loadTokenMacKey(opts.tokenKeyBudgetMs ?? 5_000);
   }
 
   /**
@@ -264,28 +286,58 @@ export class SessionManager {
    * the relay secret or anything else configured, since every token a
    * client receives is a MAC it could try offline guesses against. Without a
    * store there is one process, and the helpers' per-process key serves.
+   *
+   * The wait is bounded by `budgetMs`: a store call that fails is retried
+   * with a short backoff (a cold-start 503 must not strand the process on a
+   * key of its own), and one that never answers is given up on, so requests
+   * are never held longer. The key is chosen once, when the wait ends; one
+   * that arrives later is ignored, so the process never signs with two.
    */
-  private async loadTokenMacKey(): Promise<void> {
+  private async loadTokenMacKey(budgetMs: number): Promise<void> {
     const store = this.store;
     if (!store) return;
-    try {
-      if (!store.sharedSecret) {
-        throw new Error('the store keeps no shared secrets');
-      }
-      const hex = await store.sharedSecret(TOKEN_MAC_KEY, () =>
-        randomBytes(32).toString('hex')
-      );
-      this.tokenMacKey = Buffer.from(hex, 'hex');
-    } catch (e) {
-      console.warn(
-        '[hosted] WARNING: the run store could not share a key for auth ' +
-          `tokens (${e instanceof Error ? e.message : String(e)}), so each ` +
-          'process signs them with its own: scope checks ' +
-          '(auth/scope-step-up and others) will fail whenever one run ' +
-          "reaches several processes, as on Val Town. Check the store's " +
-          'sharedSecret().'
-      );
+    const sharedSecret = store.sharedSecret?.bind(store);
+    if (!sharedSecret) {
+      warnUnsharedTokenKey('the store keeps no shared secrets');
+      return;
     }
+    const candidate = randomBytes(32).toString('hex');
+    const deadline = Date.now() + budgetMs;
+    let settled = false;
+    let lastError = '';
+    const fetchKey = async (): Promise<string> => {
+      for (let delay = 100; ; delay *= 2) {
+        try {
+          return await sharedSecret(TOKEN_MAC_KEY, () => candidate);
+        } catch (e) {
+          // An error may quote the statement it failed on: never the key.
+          lastError = (e instanceof Error ? e.message : String(e))
+            .split(candidate)
+            .join('<key>');
+          if (settled || Date.now() + delay >= deadline) throw e;
+          await sleep(delay);
+          if (settled) throw e;
+        }
+      }
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hex = await Promise.race([
+      fetchKey().catch(() => undefined),
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => {
+          lastError ||= `no answer within ${budgetMs} ms`;
+          resolve(undefined);
+        }, budgetMs);
+        timer.unref?.();
+      })
+    ]);
+    settled = true;
+    clearTimeout(timer);
+    if (hex !== undefined) {
+      this.tokenMacKey = Buffer.from(hex, 'hex');
+      return;
+    }
+    warnUnsharedTokenKey(lastError);
   }
 
   /**
