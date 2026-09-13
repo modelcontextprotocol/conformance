@@ -1013,6 +1013,74 @@ describe('hosted server', () => {
     ).toEqual([]);
   });
 
+  it('answers a legacy initialize identically on every 2026-07-28 cell', async () => {
+    // json-schema-ref-no-deref's bundled SDK server completes a legacy
+    // handshake (the CLI's SDK clients rely on that), after which the cell
+    // would fail the client for following it. The hosted layer answers first,
+    // so the whole column says the same thing.
+    type Check = {
+      id: string;
+      status: string;
+      details?: Record<string, unknown>;
+    };
+    const legacyInit = {
+      ...initBody(),
+      params: { ...initBody().params, protocolVersion: REV_STATEFUL }
+    };
+    const expected = {
+      jsonrpc: '2.0',
+      id: 1,
+      error: {
+        code: -32022,
+        message: 'Unsupported protocol version',
+        data: { supported: [REV_STATELESS], requested: REV_STATEFUL }
+      }
+    };
+    const cells = matrix
+      .cells()
+      .filter((c) => c.revision === REV_STATELESS && c.startable)
+      .map((c) => c.scenario);
+    expect(cells).toContain('json-schema-ref-no-deref');
+    for (const name of cells) {
+      const r = await postMcp(
+        `/s/legacy/${REV_STATELESS}/${name}/mcp`,
+        legacyInit,
+        { 'mcp-protocol-version': REV_STATEFUL }
+      );
+      expect(r.status, name).toBe(400);
+      expect(await r.json(), name).toEqual(expected);
+    }
+
+    // The client then speaks 2026-07-28 on the cell that used to accept the
+    // handshake: judged on that, with the probe noted and nothing failed.
+    const url = `/s/legacy/${REV_STATELESS}/json-schema-ref-no-deref/mcp`;
+    const listed = await postMcp(
+      url,
+      statelessBody('tools/list'),
+      statelessHeaders
+    );
+    expect(listed.status).toBe(200);
+    await listed.text();
+    const results = await fetch(
+      `${base}/results/legacy/${REV_STATELESS}/json-schema-ref-no-deref`
+    ).then((r) => r.json());
+    const probe = results.checks.find(
+      (c: Check) => c.id === 'hosted-legacy-probe'
+    );
+    expect(probe).toMatchObject({
+      status: 'INFO',
+      details: {
+        headerVersion: REV_STATEFUL,
+        requestedVersion: REV_STATEFUL,
+        rejected: { status: 400, code: -32022 }
+      }
+    });
+    expect(results.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(results.verdict).toBe('pass');
+  });
+
   it('treats a rejected foreign-revision probe on a dated cell as negotiation', async () => {
     type Check = { id: string; status: string; errorMessage?: string };
     const hostedChecks = (checks: Check[]) =>

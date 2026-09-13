@@ -3,6 +3,7 @@ import type { Server } from 'http';
 import { createHostedApp } from './server';
 import type { SessionManager } from './session';
 import {
+  DEFAULT_COMPOSITES,
   mergeLifecycle,
   mergeList,
   notComposableReason,
@@ -255,6 +256,53 @@ describe('composite cells on the hosted server', () => {
 
     expect(await verdict('comp2', STATEFUL, 'initialize')).toBe('pass');
     expect(await verdict('comp2', STATEFUL, 'tools_call')).toBe('pass');
+  });
+
+  it('answers a legacy initialize on the stateless wire like a single cell', async () => {
+    // One child (json-schema-ref-no-deref) would complete the handshake on
+    // its own, and the merged answer used to accept it; then every child
+    // failed the client for the 2025-11-25 requests that followed.
+    const names = DEFAULT_COMPOSITES[STATELESS];
+    expect(names).toContain('json-schema-ref-no-deref');
+    const url = `${base}/s/comp6/${STATELESS}/${names.join('+')}/mcp`;
+    const legacy = (id: number | undefined, method: string, params = {}) =>
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': STATEFUL
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          ...(id !== undefined && { id }),
+          method,
+          params
+        })
+      });
+    const init = await legacy(7, 'initialize', {
+      protocolVersion: STATEFUL,
+      capabilities: {},
+      clientInfo: { name: 'legacy-client', version: '1.0.0' }
+    });
+    expect(init.status).toBe(400);
+    expect(await init.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 7,
+      error: {
+        code: -32022,
+        message: 'Unsupported protocol version',
+        data: { supported: [STATELESS], requested: STATEFUL }
+      }
+    });
+    for (const name of names) {
+      const results = (await (
+        await fetch(`${base}/results/comp6/${STATELESS}/${name}`)
+      ).json()) as { checks: { id: string; status: string }[] };
+      const ids = results.checks.map((c) => c.id);
+      expect(ids, name).toContain('hosted-legacy-probe');
+      expect(ids, name).not.toContain('hosted-wrong-revision');
+    }
   });
 
   it('refuses composites it cannot serve, saying why', async () => {

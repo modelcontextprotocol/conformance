@@ -98,6 +98,21 @@ export function onBody(req: IncomingMessage, cb: (body: Buffer) => void): void {
 }
 
 /**
+ * Whether it is safe to wait for the whole body before handing the request
+ * to the listener that reads it: the body is already buffered, or it is a
+ * tapped body whose declared length fits in the stream's buffer. Node stops
+ * reading the socket once that buffer is full, so a larger or chunked body
+ * that nobody reads would never finish.
+ */
+export function bodyFitsBuffer(req: IncomingMessage): boolean {
+  const r = req as Tapped;
+  if (r[BUFFERED_BODY] !== undefined) return true;
+  if (r[TAP] === undefined) return false;
+  const length = Number(req.headers['content-length']);
+  return Number.isFinite(length) && length < req.readableHighWaterMark;
+}
+
+/**
  * Like onBody(), but always settles: `cb` gets the body when it was captured
  * and `undefined` as soon as it is known there will be none — the request is
  * not a JSON POST, was never tapped, or ran over the cap. Callers that must

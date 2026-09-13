@@ -152,11 +152,20 @@ An `initialize` on the `2026-07-28` column is neither. A client may open with
 the legacy handshake to learn the server's era, and a modern-only server
 answers it with an error naming its versions, after which the client retries
 with one of them (2026-07-28 `basic/versioning`, "Backward Compatibility with
-Initialization-Based Versions"). The hosted layer records it as the INFO check
-`hosted-legacy-probe`, once per header version, with any rejection it drew in
-`details.rejected`. It never decides the verdict: a client that probes and
-then speaks `2026-07-28` is judged on what it sent next, and one that never
-does leaves the cell `incomplete`, not green.
+Initialization-Based Versions"). Every cell of the column, composites
+included, gives the same answer — HTTP 400 with JSON-RPC `-32022`
+"Unsupported protocol version" and `data: {supported: ["2026-07-28"],
+requested}` — and the hosted layer sends it before the scenario sees the
+request, so a scenario whose bundled server would complete the handshake
+(`json-schema-ref-no-deref`, which the CLI runner's SDK clients still open
+that way) cannot accept it here. An `auth/*` cell answers 401 first, as a
+protected server must, and its resource server gives the same `-32022` after
+sign-in. The hosted layer records the probe as the INFO check
+`hosted-legacy-probe`, once per header version, with the version asked for in
+`details.requestedVersion` and the answer in `details.rejected`. It never
+decides the verdict: a client that probes and then speaks `2026-07-28` is
+judged on what it sent next, and one that never does leaves the cell
+`incomplete`, not green.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as

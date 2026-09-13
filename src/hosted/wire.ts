@@ -279,10 +279,52 @@ export function isLegacyProbe(served: SpecVersion, method: string): boolean {
   return method === 'initialize' && !isStatefulVersion(served);
 }
 
+/**
+ * The answer every cell on the stateless wire gives a legacy `initialize`,
+ * or undefined when `body` is not one (or the cell is on a dated revision):
+ * HTTP 400 with -32022 naming the revision the cell serves, as a modern-only
+ * server should (2026-07-28 basic/versioning). The hosted layer sends it
+ * before the scenario sees the request, so every cell of the column agrees —
+ * a scenario whose bundled SDK server would complete the handshake (the CLI
+ * runner's SDK clients rely on json-schema-ref-no-deref doing so) cannot
+ * accept it here and then fail the client for following that answer.
+ */
+export function legacyInitializeReply(
+  served: SpecVersion,
+  body: Buffer | undefined,
+  headerVersion: string | undefined
+): { status: number; body: Record<string, unknown> } | undefined {
+  if (isStatefulVersion(served) || body === undefined) return undefined;
+  let message: Record<string, unknown> | undefined;
+  try {
+    message = asRecord(JSON.parse(body.toString()));
+  } catch {
+    return undefined;
+  }
+  if (message?.method !== 'initialize') return undefined;
+  const params = asRecord(message.params);
+  return {
+    status: 400,
+    body: {
+      jsonrpc: '2.0',
+      id: message.id ?? null,
+      error: {
+        code: -32022,
+        message: 'Unsupported protocol version',
+        data: {
+          supported: [served],
+          requested: String(params?.protocolVersion ?? headerVersion ?? '')
+        }
+      }
+    }
+  };
+}
+
 export function legacyProbeCheck(
   served: SpecVersion,
   headerVersion: string | undefined,
-  rejection?: WireRejection
+  rejection?: WireRejection,
+  requestedVersion?: string
 ): ConformanceCheck {
   return {
     id: LEGACY_PROBE_CHECK_ID,
@@ -298,6 +340,7 @@ export function legacyProbeCheck(
     details: {
       served,
       headerVersion: headerVersion ?? null,
+      ...(requestedVersion && { requestedVersion }),
       ...(rejection && {
         rejected: {
           status: rejection.status,

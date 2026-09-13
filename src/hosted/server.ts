@@ -55,12 +55,14 @@ import {
   renderReport,
   renderResults
 } from './html';
-import { onBodySettled, tapJsonBody } from './body';
+import { bodyFitsBuffer, onBodySettled, tapJsonBody } from './body';
 import { identityFrom } from './identity';
+import { isStatefulVersion } from '../connection/select';
 import {
   describeRequest,
   isLegacyProbe,
   isNegotiation,
+  legacyInitializeReply,
   legacyProbeCheck,
   tapResponse,
   wireRejectedCheck,
@@ -370,10 +372,17 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           // rejection it may have drawn.
           if (isLegacyProbe(run.revision, method)) {
             explained = true;
+            // Looked up without the header: a -32022 to an initialize that
+            // happened to name the cell's revision is still the answer.
             sessions.recordHostedCheck(
               run,
               `probe:${headerVersion ?? ''}`,
-              legacyProbeCheck(run.revision, headerVersion, rejection)
+              legacyProbeCheck(
+                run.revision,
+                headerVersion,
+                wireRejection(response, run.revision, undefined),
+                request.bodyVersion
+              )
             );
             continue;
           }
@@ -418,6 +427,36 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       judge();
       persist();
     });
+
+    // Every cell on the stateless wire answers a legacy initialize the same
+    // way, before the scenario sees it (see legacyInitializeReply()). Not an
+    // auth cell: its resource server must answer 401 before it looks at the
+    // protocol, and after sign-in it gives the same -32022 itself
+    // (auth/helpers/createServer.ts). Raw node calls: a composite's replayed
+    // request has no express helpers.
+    if (
+      mcp &&
+      req.method === 'POST' &&
+      !isStatefulVersion(run.revision) &&
+      !run.auxListeners &&
+      bodyFitsBuffer(req)
+    ) {
+      onBodySettled(req, (captured) => {
+        const reply = legacyInitializeReply(
+          run.revision,
+          captured,
+          headerVersion
+        );
+        if (!reply) {
+          listener(req, res);
+          return;
+        }
+        res.statusCode = reply.status;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(reply.body));
+      });
+      return;
+    }
     listener(req, res);
   }
 
