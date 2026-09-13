@@ -99,7 +99,7 @@ import {
 import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
-import { reportMarkdown } from './markdown';
+import { reportMarkdown, reportText } from './markdown';
 import type { ShownCheck } from './shown';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
@@ -1141,7 +1141,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         snapshotId,
         frozenAt: frozen.frozenAt,
         url,
-        markdownUrl: `${url}?format=md`
+        markdownUrl: `${url}?format=md`,
+        textUrl: `${url}?format=text`
       });
   });
 
@@ -1165,10 +1166,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     };
   }
 
-  /** `?format=md` (or `markdown`) is the report as Markdown. */
-  function reportFormat(req: Request): 'html' | 'json' | 'md' {
+  /**
+   * `?format=md` (or `markdown`) is the report as Markdown; `?format=text`
+   * (or `plain`) as plain lines, for a chat that renders no tables.
+   */
+  function reportFormat(req: Request): 'html' | 'json' | 'md' | 'text' {
     const format = req.query.format;
     if (format === 'md' || format === 'markdown') return 'md';
+    if (format === 'text' || format === 'plain') return 'text';
     return wantsHtml(req) ? 'html' : 'json';
   }
 
@@ -1201,18 +1206,22 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const snapshot = report.snapshotId
       ? resultsUrlFor(req, report.runId, 'snapshot', report.snapshotId)
       : undefined;
-    const markdown = reportMarkdown(report, {
-      live,
-      ...(snapshot && { snapshot })
-    });
+    const links = { live, ...(snapshot && { snapshot }) };
+    const markdown = reportMarkdown(report, links);
     switch (reportFormat(req)) {
       case 'md':
         res.set('content-type', 'text/markdown; charset=utf-8').send(markdown);
+        return;
+      case 'text':
+        res
+          .set('content-type', 'text/plain; charset=utf-8')
+          .send(reportText(report, links));
         return;
       case 'html':
         res.type('html').send(
           renderReport(matrix, report, {
             markdown,
+            text: reportText(report, links),
             liveUrl: live,
             ...(frozen && { snapshots: frozen })
           })

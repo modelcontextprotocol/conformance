@@ -886,6 +886,8 @@ function scoringPillFor(cell: CellReport): string {
 export interface ReportPageOptions {
   /** The report as Markdown (see ./markdown.ts), for the copy button. */
   markdown: string;
+  /** The same as plain lines (reportText()), for a chat without tables. */
+  text: string;
   /** The live report, which a frozen copy links back to. */
   liveUrl: string;
   /** The run's frozen copies, listed on the live report. */
@@ -900,7 +902,8 @@ function reportActions(report: RunReport, opts: ReportPageOptions): string {
     : `/results/${run}${report.revision ? `/${esc(report.revision)}` : ''}`;
   const formats =
     `<button class=copy data-copy-text="${esc(opts.markdown)}">copy as Markdown</button> ` +
-    `<a href="${here}?format=md">Markdown</a> · <a href="${here}?format=json">JSON</a>`;
+    `<button class=copy data-copy-text="${esc(opts.text)}" title="plain lines: Slack shows a Markdown table as raw pipes">copy for Slack</button> ` +
+    `<a href="${here}?format=md">Markdown</a> · <a href="${here}?format=text">plain text</a> · <a href="${here}?format=json">JSON</a>`;
   if (report.frozenAt) {
     return (
       `<p class=note>A frozen copy, taken ${esc(utcMinute(report.frozenAt))}: it does not change ` +

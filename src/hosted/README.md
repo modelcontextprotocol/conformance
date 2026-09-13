@@ -198,6 +198,9 @@ check, a verdict or a score (`src/hosted/findings.ts`).
 `?format=md` gives the same report as Markdown: the client, the score, the
 causes and a table of only the cells the client reached, each failure
 marked `client` or `not seen`. The page has a button that copies it.
+`?format=text` gives the same as plain lines, one bullet per reached cell,
+for a chat that shows a Markdown table as raw pipes (Slack); the page's
+"copy for Slack" button copies that.
 Anything taken from traffic is escaped so it cannot open a link, a tag or a
 new table cell.
 

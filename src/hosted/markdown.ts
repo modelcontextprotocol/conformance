@@ -57,7 +57,10 @@ export function utcMinute(iso: string): string {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }
 
-export function identityText(identities: readonly ClientIdentity[]): string {
+export function identityText(
+  identities: readonly ClientIdentity[],
+  text: (s: string) => string = mdText
+): string {
   if (!identities.length) return 'no client seen yet';
   return identities
     .map((i) => {
@@ -67,7 +70,7 @@ export function identityText(identities: readonly ClientIdentity[]): string {
       const proto = i.protocolVersions.length
         ? ` (protocol ${i.protocolVersions.join(', ')})`
         : '';
-      return mdText(who + proto);
+      return text(who + proto);
     })
     .join('; ');
 }
@@ -149,11 +152,28 @@ export function showsCounts(cell: CellReport): boolean {
   return ['pass', 'fail', 'waiting'].includes(cell.state);
 }
 
-/** "the flow has not reached `a`, `b`", or the reason as plain text. */
-function unmetText(u: Unmet): string {
+/**
+ * How text taken from traffic is written: as escaped Markdown, or as plain
+ * text for a chat that renders no Markdown table (Slack), where it only has
+ * to stay on one line.
+ */
+interface Style {
+  text(s: string): string;
+  code(s: string): string;
+}
+
+const MARKDOWN: Style = { text: mdText, code: mdCode };
+
+const PLAIN: Style = {
+  text: (s) => s.replace(/\s+/g, ' ').trim(),
+  code: (s) => '`' + s.replace(/[`\s]+/g, ' ') + '`'
+};
+
+/** "the flow has not reached `a`, `b`", or the reason. */
+function unmetText(u: Unmet, st: Style): string {
   return u.checks
-    ? `the flow has not reached ${u.checks.map(mdCode).join(', ')}`
-    : mdText(u.reason);
+    ? `the flow has not reached ${u.checks.map(st.code).join(', ')}`
+    : st.text(u.reason);
 }
 
 /** What a passing cell's row says. */
@@ -167,19 +187,25 @@ export function stopNote(cell: CellReport): string {
   return (cell.note ?? '').split('; ')[0];
 }
 
+/** A reached cell's "what happened", one line per item. */
 function happened(
   cell: CellReport,
   causes: ReadonlyMap<string, Cause>,
-  numbers: ReadonlyMap<string, number>
-): string {
+  numbers: ReadonlyMap<string, number>,
+  st: Style
+): string[] {
   const findings = cell.findings ?? [];
   if (cell.state === 'in-progress') {
-    return findings.length
-      ? `waiting for: ${waitingFor(cell).map(unmetText).join('; ')}`
-      : mdText(cell.note ?? '');
+    return [
+      findings.length
+        ? `waiting for: ${waitingFor(cell)
+            .map((u) => unmetText(u, st))
+            .join('; ')}`
+        : st.text(cell.note ?? '')
+    ];
   }
   if (cell.state === 'incomplete') {
-    return mdText(stopNote(cell)) + causeRef(cell.cause, causes, numbers);
+    return [st.text(stopNote(cell)) + causeRef(cell.cause, causes, numbers)];
   }
   // A waiting cell's own expectations are what it waits for; anything the
   // client did (a warning) is listed as on any other row.
@@ -190,16 +216,16 @@ function happened(
   const lines = listed.map(
     (f) =>
       `${f.status === 'WARNING' ? 'warning, ' : ''}${BY_LABEL[f.by]}: ` +
-      `${mdCode(f.check)} ${mdText(f.reason)}${causeRef(f.cause, causes, numbers)}`
+      `${st.code(f.check)} ${st.text(f.reason)}${causeRef(f.cause, causes, numbers)}`
   );
   if (cell.state === 'waiting') {
     lines.unshift(
-      `${mdText(cell.note ?? '')}; not seen yet: ${waitingFor(cell)
-        .map(unmetText)
+      `${st.text(cell.note ?? '')}; not seen yet: ${waitingFor(cell)
+        .map((u) => unmetText(u, st))
         .join('; ')}`
     );
   }
-  return lines.length ? lines.join('<br>') : NO_FINDINGS;
+  return lines.length ? lines : [NO_FINDINGS];
 }
 
 export interface MarkdownLinks {
@@ -209,51 +235,85 @@ export interface MarkdownLinks {
   snapshot?: string;
 }
 
+/** The lines both forms open with: when, who, and the score per revision. */
+function summaryLines(
+  report: RunReport,
+  links: MarkdownLinks,
+  st: Style,
+  bullet: string
+): string[] {
+  const out = [
+    report.frozenAt && links.snapshot
+      ? `${bullet}Frozen ${utcMinute(report.frozenAt)}: ${links.snapshot} (live report: ${links.live})`
+      : `${bullet}As of ${utcMinute(report.generatedAt)}: ${links.live}`,
+    `${bullet}Client: ${identityText(report.identities, st.text)}`
+  ];
+  for (const col of report.columns) {
+    const reached = countsText(col.counts, REACHED);
+    const notTried = col.counts['not-tried'] ?? 0;
+    out.push(
+      `${bullet}${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass ` +
+        `(${col.scored.startable} startable here). ` +
+        `Reached: ${reached || 'none'}` +
+        (notTried ? `; ${notTried} not tried.` : '.')
+    );
+  }
+  return out;
+}
+
+/** Each cause once, numbered, with the cells it covers. */
+function causeLines(report: RunReport, st: Style): string[] {
+  return report.causes.map((c, i) => {
+    const cells = c.cells.slice(0, CELLS_NAMED).map(st.text).join(', ');
+    const more =
+      c.cells.length > CELLS_NAMED
+        ? ` and ${c.cells.length - CELLS_NAMED} more`
+        : '';
+    const who = c.by === 'client' ? 'Client' : 'Not seen';
+    return (
+      `${i + 1}. ${who}: ${c.check ? `${st.code(c.check)} ` : ''}${st.text(c.text)} ` +
+      `(${c.cells.length === 1 ? cells : `${c.cells.length} cells: ${cells}${more}`})`
+    );
+  });
+}
+
+function reachedCells(report: RunReport): CellReport[] {
+  return report.columns.flatMap((col) =>
+    col.cells.filter((c) => REACHED.includes(c.state))
+  );
+}
+
+function countsOf(cell: CellReport): string {
+  const s = cell.summary;
+  return s && showsCounts(cell)
+    ? `${s.passed} / ${s.failed} / ${s.warnings}`
+    : '–';
+}
+
+const LEGEND =
+  '"client" failures were seen in the client’s traffic; "not seen" ones are ' +
+  'the scenario’s own expectations that nothing has met yet.';
+
 export function reportMarkdown(
   report: RunReport,
   links: MarkdownLinks
 ): string {
   const causes = new Map(report.causes.map((c) => [c.key, c]));
   const numbers = causeNumbers(report.causes);
-  const out: string[] = [];
   const scope = report.revision ? ` at ${report.revision}` : '';
-  out.push(`**MCP conformance: run ${mdCode(report.runId)}${scope}**`, '');
-  out.push(
-    report.frozenAt && links.snapshot
-      ? `- Frozen ${utcMinute(report.frozenAt)}: ${links.snapshot} (live report: ${links.live})`
-      : `- As of ${utcMinute(report.generatedAt)}: ${links.live}`
-  );
-  out.push(`- Client: ${identityText(report.identities)}`);
-  for (const col of report.columns) {
-    const reached = countsText(col.counts, REACHED);
-    const notTried = col.counts['not-tried'] ?? 0;
+  const out = [
+    `**MCP conformance: run ${mdCode(report.runId)}${scope}**`,
+    '',
+    ...summaryLines(report, links, MARKDOWN, '- ')
+  ];
+  if (report.causes.length) {
     out.push(
-      `- ${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass ` +
-        `(${col.scored.startable} startable here). ` +
-        `Reached: ${reached || 'none'}` +
-        (notTried ? `; ${notTried} not tried.` : '.')
+      '',
+      '**What went wrong, by cause**',
+      ...causeLines(report, MARKDOWN)
     );
   }
-
-  if (report.causes.length) {
-    out.push('', '**What went wrong, by cause**');
-    report.causes.forEach((c, i) => {
-      const cells = c.cells.slice(0, CELLS_NAMED).map(mdText).join(', ');
-      const more =
-        c.cells.length > CELLS_NAMED
-          ? ` and ${c.cells.length - CELLS_NAMED} more`
-          : '';
-      const who = c.by === 'client' ? 'Client' : 'Not seen';
-      out.push(
-        `${i + 1}. ${who}: ${c.check ? `${mdCode(c.check)} ` : ''}${mdText(c.text)} ` +
-          `(${c.cells.length === 1 ? cells : `${c.cells.length} cells: ${cells}${more}`})`
-      );
-    });
-  }
-
-  const rows = report.columns.flatMap((col) =>
-    col.cells.filter((c) => REACHED.includes(c.state))
-  );
+  const rows = reachedCells(report);
   if (rows.length) {
     out.push(
       '',
@@ -261,21 +321,46 @@ export function reportMarkdown(
       '| --- | --- | --- | --- |'
     );
     for (const cell of rows) {
-      const s = cell.summary;
-      const counts =
-        s && showsCounts(cell)
-          ? `${s.passed} / ${s.failed} / ${s.warnings}`
-          : '–';
       out.push(
         `| [${mdText(`${cell.revision} ${cell.scenario}`)}](${cell.resultsUrl}) ` +
-          `| ${STATE_LABEL[cell.state]} | ${counts} | ${happened(cell, causes, numbers)} |`
+          `| ${STATE_LABEL[cell.state]} | ${countsOf(cell)} | ` +
+          `${happened(cell, causes, numbers, MARKDOWN).join('<br>')} |`
       );
     }
-    out.push(
-      '',
-      '"client" failures were seen in the client’s traffic; "not seen" ones are ' +
-        'the scenario’s own expectations that nothing has met yet.'
-    );
+    out.push('', LEGEND);
+  } else {
+    out.push('', 'No cell has been reached yet.');
+  }
+  return out.join('\n') + '\n';
+}
+
+/**
+ * The same report as plain lines, for a chat that shows a Markdown table as
+ * raw pipes (Slack): the summary, the causes, then one bullet per reached
+ * cell with what happened under it.
+ */
+export function reportText(report: RunReport, links: MarkdownLinks): string {
+  const causes = new Map(report.causes.map((c) => [c.key, c]));
+  const numbers = causeNumbers(report.causes);
+  const scope = report.revision ? ` at ${report.revision}` : '';
+  const out = [
+    `MCP conformance: run ${report.runId}${scope}`,
+    ...summaryLines(report, links, PLAIN, '• ')
+  ];
+  if (report.causes.length) {
+    out.push('', 'What went wrong, by cause', ...causeLines(report, PLAIN));
+  }
+  const rows = reachedCells(report);
+  if (rows.length) {
+    out.push('', 'Cells the client reached (pass / fail / warn)');
+    for (const cell of rows) {
+      const lines = happened(cell, causes, numbers, PLAIN);
+      out.push(
+        `• ${cell.revision} ${cell.scenario}: ${STATE_LABEL[cell.state]}, ${countsOf(cell)} — ${cell.resultsUrl}`,
+        ...lines.map((l) => `    ◦ ${l}`)
+      );
+    }
+    out.push('', LEGEND);
   } else {
     out.push('', 'No cell has been reached yet.');
   }

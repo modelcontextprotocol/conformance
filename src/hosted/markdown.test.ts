@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { mdCode, mdText, reportMarkdown, utcMinute } from './markdown';
+import {
+  mdCode,
+  mdText,
+  reportMarkdown,
+  reportText,
+  utcMinute
+} from './markdown';
 import type { CellReport, RunReport } from './report';
 
 const cell = (over: Partial<CellReport>): CellReport => ({
@@ -135,5 +141,79 @@ describe('reportMarkdown', () => {
       'Frozen 2026-09-13 22:00 UTC: http://x/results/r/snapshot/s1 (live report: http://x/results/r)'
     );
     expect(md).toContain('No cell has been reached yet.');
+  });
+});
+
+describe('reportText', () => {
+  it('says the same as plain lines a chat without tables can show', () => {
+    const text = reportText(
+      report(
+        [
+          cell({}),
+          cell({
+            scenario: 'auth/metadata-default',
+            verdict: 'fail',
+            state: 'waiting',
+            note: 'waiting for the client or the person to finish the flow',
+            summary: {
+              passed: 1,
+              failed: 0,
+              notSeen: 2,
+              warnings: 0,
+              info: 3,
+              skipped: 0,
+              total: 6
+            },
+            findings: [
+              {
+                status: 'FAILURE',
+                check: 'client-registration',
+                reason: 'the flow did not reach this step',
+                by: 'scenario'
+              },
+              {
+                status: 'FAILURE',
+                check: 'token-request',
+                reason: 'the flow did not reach this step',
+                by: 'scenario'
+              }
+            ]
+          })
+        ],
+        {
+          causes: [
+            {
+              key: 'k',
+              by: 'client',
+              check: 'c',
+              text: 'a | <b>',
+              cells: ['2025-11-25/tools_call']
+            }
+          ]
+        }
+      ),
+      { live: 'http://x/results/r' }
+    );
+    expect(text).toBe(
+      [
+        'MCP conformance: run r',
+        '• As of 2026-09-13 21:47 UTC: http://x/results/r',
+        '• Client: VS Code 1.137 (protocol 2025-11-25)',
+        '• 2025-11-25: 1 of 18 scored cells pass (15 startable here). Reached: 1 pass, 1 fail; 12 not tried.',
+        '',
+        'What went wrong, by cause',
+        '1. Client: `c` a | <b> (2025-11-25/tools_call)',
+        '',
+        'Cells the client reached (pass / fail / warn)',
+        '• 2025-11-25 tools_call: pass, – — http://x/results/r/2025-11-25/tools_call',
+        '    ◦ no failures or warnings',
+        '• 2025-11-25 auth/metadata-default: waiting, 1 / 0 / 0 — http://x/results/r/2025-11-25/tools_call',
+        '    ◦ waiting for the client or the person to finish the flow; not seen yet: the flow has not reached `client-registration`, `token-request`',
+        '',
+        '"client" failures were seen in the client’s traffic; "not seen" ones are the scenario’s own expectations that nothing has met yet.',
+        ''
+      ].join('\n')
+    );
+    expect(text).not.toContain('| --- |');
   });
 });

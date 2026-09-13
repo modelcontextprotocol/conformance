@@ -381,6 +381,7 @@ describe('hosted HTML', () => {
     expect(report.causes[0].text).toBe(evil); // on the row and as a cause
     const html = renderReport(matrix, report, {
       markdown: evil,
+      text: evil,
       liveUrl: 'http://x/results/r'
     });
     expect(html).not.toContain('<img');

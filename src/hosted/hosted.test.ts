@@ -1147,6 +1147,13 @@ describe('hosted server', () => {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
     expect(reportPage).toContain('1 waiting');
+    // Plain lines for a chat that shows a Markdown table as raw pipes.
+    expect(reportPage).toContain('copy for Slack');
+    const text = await fetch(`${base}/results/wait?format=text`);
+    expect(text.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect(await text.text()).toContain(
+      `• ${REV_STATELESS} sep-2322-client-request-state: waiting, 0 / 0 / 0`
+    );
   });
 
   it('says why each skipped check was skipped, and keeps them out of the counts', async () => {
