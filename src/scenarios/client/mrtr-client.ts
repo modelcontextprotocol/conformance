@@ -79,8 +79,11 @@ const EXPECTED_CHECK_IDS = [
   'sep-2322-default-result-type-complete'
 ];
 
-/** INFO record of the first echo_state call, a fallback for its retry. */
-const ECHO_INITIAL_CHECK_ID = 'sep-2322-echo-state-initial';
+/**
+ * INFO record of the first echo_state call, a fallback for its retry. Not
+ * prefixed with the SEP: it is the server's bookkeeping, not a requirement.
+ */
+const ECHO_INITIAL_CHECK_ID = 'mrtr-echo-state-initial';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -270,16 +273,21 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       return;
     }
 
-    // Retry: what was sent comes from the echoed state itself, or failing
-    // that from the log of the first call (possibly another process's).
+    // Retry: what was sent comes from the echoed state itself when it is
+    // exactly what this server would have sent, or failing that from the log
+    // of the first call (possibly another process's). A state that does not
+    // rebuild byte for byte is never believed, so an edited originalId cannot
+    // steer the id check.
     const rebuilt = requestState ? rebuildEchoState(requestState) : undefined;
+    const intact =
+      rebuilt && rebuilt.expected === requestState ? rebuilt : undefined;
     const initial = [...checks]
       .reverse()
       .find((c) => c.id === ECHO_INITIAL_CHECK_ID)?.details as
       | { originalId?: string | number; requestStateSent?: string }
       | undefined;
-    const originalId = rebuilt?.originalId ?? initial?.originalId;
-    const sentState = rebuilt?.expected ?? initial?.requestStateSent;
+    const originalId = intact?.originalId ?? initial?.originalId;
+    const sentState = intact?.expected ?? initial?.requestStateSent;
 
     // Check 1: requestState must be present and byte-for-byte identical to
     // what the server sent. The spec requires the client to echo back the
@@ -310,13 +318,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
       }
     });
 
-    // Check 2: JSON-RPC id must differ from original
+    // Check 2: JSON-RPC id must differ from original. When the original id
+    // cannot be recovered (no intact state and no record of the first call)
+    // there is nothing to compare, and check 1 has already failed the retry.
     const idErrors: string[] = [];
-    if (originalId === undefined) {
-      idErrors.push(
-        'Could not tell the original request id: the retry carried no usable requestState and the first call was not recorded'
-      );
-    } else if (id === originalId) {
+    if (originalId !== undefined && id === originalId) {
       idErrors.push(
         `JSON-RPC id is the same on retry (${id}) — MUST be different`
       );

@@ -148,6 +148,57 @@ describe('MRTR echo-state without shared memory', () => {
     }
   });
 
+  test('does not believe an edited originalId in a state that fails the echo check', async () => {
+    const a = await started();
+    try {
+      const first = await call(a.url, 1, 'test_mrtr_echo_state');
+      const parsed = JSON.parse(first.result.requestState as string);
+      // The id rewritten from the number 1 to the string "1", digest
+      // recomputed: the retry reuses id 1, which must still be caught.
+      const forged = JSON.stringify({ ...parsed, originalId: '1' });
+      await call(a.url, 1, 'test_mrtr_echo_state', {
+        ...confirmed,
+        requestState: forged
+      });
+      expect(status(a.s, 'sep-2322-client-request-state-echoed')).toBe(
+        'FAILURE'
+      );
+      expect(status(a.s, 'sep-2322-client-jsonrpc-id-different')).toBe(
+        'FAILURE'
+      );
+    } finally {
+      await a.s.stop();
+    }
+  });
+
+  test('does not fail the id check when the original id cannot be recovered', async () => {
+    // A process that never saw the first call, and a retry with no state:
+    // the echo check fails, and there is no original id to compare with.
+    const b = await started();
+    try {
+      await call(b.url, 5, 'test_mrtr_echo_state', confirmed);
+      expect(status(b.s, 'sep-2322-client-request-state-echoed')).toBe(
+        'FAILURE'
+      );
+      expect(status(b.s, 'sep-2322-client-jsonrpc-id-different')).toBe(
+        'SUCCESS'
+      );
+    } finally {
+      await b.s.stop();
+    }
+  });
+
+  test('records the first call under an id outside the SEP namespace', async () => {
+    const a = await started();
+    try {
+      await call(a.url, 1, 'test_mrtr_echo_state');
+      const info = a.s.getChecks().filter((c) => c.status === 'INFO');
+      expect(info.map((c) => c.id)).toEqual(['mrtr-echo-state-initial']);
+    } finally {
+      await a.s.stop();
+    }
+  });
+
   test('reports one row for a retried no-result-type call', async () => {
     const a = await started();
     try {
