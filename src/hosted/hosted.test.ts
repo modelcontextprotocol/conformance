@@ -458,7 +458,7 @@ describe('hosted server', () => {
       reason: 'introduced in 2025-06-18, removed in 2026-07-28'
     });
     // not converted for hosting yet
-    res = await postMcp(`/s/x/${REV_STATEFUL}/auth/scope-step-up`, body);
+    res = await postMcp(`/s/x/${REV_STATEFUL}/auth/dpop`, body);
     expect(res.status).toBe(501);
     expect((await res.json()).reason).toBe('not converted for hosting yet');
     // needs a relay origin
