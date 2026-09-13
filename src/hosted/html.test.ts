@@ -8,7 +8,8 @@ import {
   renderConfig,
   renderLanding,
   renderMatrixTable,
-  renderReport
+  renderReport,
+  renderResults
 } from './html';
 import type { RunConfig } from './server';
 import { buildReport } from './report';
@@ -386,5 +387,30 @@ describe('hosted HTML', () => {
     });
     expect(html).not.toContain('<img');
     expect(html).toContain('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('keeps a live report and a cell page current, never a frozen copy', async () => {
+    const report = await buildReport(matrix, 'r', undefined, {
+      listCells: async () => [],
+      results: async () => undefined,
+      resultsUrl: () => ''
+    });
+    const opts = { markdown: '', text: '', liveUrl: 'http://x/results/r' };
+    const live = renderReport(matrix, report, opts);
+    expect(live).toContain('Updates every 10 s while this tab is open');
+    expect(live).toContain('id=live-toggle');
+    expect(live).toContain('document.hidden');
+    const frozen = renderReport(
+      matrix,
+      { ...report, snapshotId: 's', frozenAt: report.generatedAt },
+      opts
+    );
+    expect(frozen).not.toContain('live-toggle');
+    expect(frozen).not.toContain('Updates every');
+    const cell = renderResults(
+      { runId: 'r', revision: '2026-07-28', scenarioName: 'tools_call' },
+      []
+    );
+    expect(cell).toContain('Updates every 10 s while this tab is open');
   });
 });

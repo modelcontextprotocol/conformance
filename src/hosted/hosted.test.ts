@@ -1861,7 +1861,7 @@ describe('hosted server', () => {
       },
       []
     );
-    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<script>x</script>');
     expect(html).toContain('&quot;&gt;&lt;script&gt;x&lt;/script&gt;');
   });
 

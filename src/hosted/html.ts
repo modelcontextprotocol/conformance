@@ -603,6 +603,50 @@ ${copyScript}`
   );
 }
 
+/** How often a live page checks for news, in seconds. */
+const LIVE_SECONDS = 10;
+
+/**
+ * What keeps a live page (the run report, a cell's results) current while
+ * a person drives a client: every LIVE_SECONDS, while the tab is visible,
+ * the page fetches itself and swaps in its #live part if that changed,
+ * keeping open whatever was open. A note says so and has a stop button. A
+ * frozen copy never has it.
+ */
+const liveNote =
+  `<p class=muted id=live-note>Updates every ${LIVE_SECONDS} s while this tab is open ` +
+  `<button class=copy id=live-toggle type=button>stop</button> <span id=live-status></span></p>`;
+
+const liveScript = `<script>
+(function(){
+  var box=document.getElementById('live'),btn=document.getElementById('live-toggle'),
+      st=document.getElementById('live-status'),on=true;
+  if(!box||!btn)return;
+  btn.addEventListener('click',function(){
+    on=!on;btn.textContent=on?'stop':'resume';st.textContent=on?'':'stopped';
+  });
+  function tick(){
+    if(!on||document.hidden)return;
+    st.textContent='updating…';
+    fetch(location.href,{headers:{accept:'text/html'},cache:'no-store'})
+      .then(function(r){return r.text()})
+      .then(function(t){
+        var next=new DOMParser().parseFromString(t,'text/html').getElementById('live');
+        if(next&&next.innerHTML!==box.innerHTML){
+          var open=[].map.call(box.querySelectorAll('details[open]>summary'),function(x){return x.textContent});
+          box.innerHTML=next.innerHTML;
+          [].forEach.call(box.querySelectorAll('details>summary'),function(x){
+            if(open.indexOf(x.textContent)>=0)x.parentNode.open=true;
+          });
+        }
+        st.textContent='';
+      })
+      .catch(function(){st.textContent='could not update';});
+  }
+  setInterval(tick,${LIVE_SECONDS * 1000});
+})();
+</script>`;
+
 /** One line saying where the cell stands, for the cell results page. */
 function statusLine(status: CellStatus): string {
   const pill = statePill(status.state);
@@ -695,11 +739,11 @@ export function renderResults(
     )}">${esc(ref.revision)}</a> › <code>${esc(ref.scenarioName)}</code> · <a href="/s/${esc(
       ref.runId
     )}/${esc(ref.revision)}/${esc(ref.scenarioName)}">config</a></p>
-${status ? statusLine(status) : ''}<p>${esc(countsLine(counts))}${
+${liveNote}<div id=live>${status ? statusLine(status) : ''}<p>${esc(countsLine(counts))}${
       counts.skipped
         ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
         : ''
-    }</p>${items}`
+    }</p>${items}</div>${liveScript}`
   );
 }
 
@@ -1012,6 +1056,7 @@ export function renderReport(
       report.revision ? ` <small>@ ${esc(report.revision)}</small>` : ''
     }${report.frozenAt ? ' <small>(frozen)</small>' : ''}</h1>
 <p class=crumbs>${crumbs.join(' › ')}</p>
+${report.frozenAt ? '' : liveNote}<div id=live>
 <p>Client: ${identityLine(report.identities)}</p>
 ${reportActions(report, opts)}
 <h2>Summary</h2>
@@ -1034,7 +1079,8 @@ older revision and did not retry) reads <i>incomplete</i>.
 set scores (N is the set's count; the cells this deployment can start are
 given alongside). Not-scored and unlisted cells are listed below the table.</p>
 <table>${head}${rows}</table>
-${notScored}
+${notScored}</div>
+${report.frozenAt ? '' : liveScript}
 ${copyScript}`
   );
 }
