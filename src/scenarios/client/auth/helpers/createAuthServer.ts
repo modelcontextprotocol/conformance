@@ -264,12 +264,13 @@ export interface AuthServerOptions {
     | TokenRequestResult
     | TokenRequestError
     | Promise<TokenRequestResult | TokenRequestError>;
+  /** Awaited before the redirect is sent, so what it logs is in the log. */
   onAuthorizationRequest?: (requestData: {
     clientId?: string;
     scope?: string;
     resource?: string;
     timestamp: string;
-  }) => void;
+  }) => void | Promise<void>;
   onRegistrationRequest?: (req: Request) => {
     clientId: string;
     clientSecret?: string;
@@ -446,102 +447,105 @@ export function createAuthServer(
     res.json(metadata);
   });
 
-  app.get(authRoutes.authorization_endpoint, (req: Request, res: Response) => {
-    const timestamp = new Date().toISOString();
-    checks.push({
-      id: 'authorization-request',
-      name: 'AuthorizationRequest',
-      description: 'Client made authorization request',
-      status: 'SUCCESS',
-      timestamp,
-      specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
-      details: {
-        query: req.query,
-        // The revision the run targets, so a verdict that depends on it can
-        // be re-judged from the log alone (a fresh instance has no context).
-        specVersion: ctx.specVersion
-      }
-    });
-
-    // PKCE: Store code_challenge for later verification
-    const codeChallenge = req.query.code_challenge as string | undefined;
-    const codeChallengeMethod = req.query.code_challenge_method as
-      | string
-      | undefined;
-    storedCodeChallenge = codeChallenge;
-
-    // PKCE: Check code_challenge is present
-    checks.push({
-      id: 'pkce-code-challenge-sent',
-      name: 'PKCE Code Challenge',
-      description: codeChallenge
-        ? 'Client sent code_challenge in authorization request'
-        : 'Client MUST send code_challenge in authorization request',
-      status: codeChallenge ? 'SUCCESS' : 'FAILURE',
-      timestamp,
-      specReferences: [SpecReferences.MCP_PKCE]
-    });
-
-    // PKCE: Check S256 method is used
-    checks.push({
-      id: 'pkce-s256-method-used',
-      name: 'PKCE S256 Method',
-      description:
-        codeChallengeMethod === 'S256'
-          ? 'Client used S256 code challenge method'
-          : 'Client MUST use S256 code challenge method when technically capable',
-      status: codeChallengeMethod === 'S256' ? 'SUCCESS' : 'FAILURE',
-      timestamp,
-      specReferences: [SpecReferences.MCP_PKCE],
-      details: {
-        method: codeChallengeMethod || 'not specified'
-      }
-    });
-
-    // Track scopes from authorization request for token issuance
-    const scopeParam = req.query.scope as string | undefined;
-    lastAuthorizationScopes = scopeParam ? scopeParam.split(' ') : [];
-
-    if (onAuthorizationRequest) {
-      onAuthorizationRequest({
-        clientId: req.query.client_id as string | undefined,
-        scope: scopeParam,
-        resource: req.query.resource as string | undefined,
-        timestamp
+  app.get(
+    authRoutes.authorization_endpoint,
+    async (req: Request, res: Response) => {
+      const timestamp = new Date().toISOString();
+      checks.push({
+        id: 'authorization-request',
+        name: 'AuthorizationRequest',
+        description: 'Client made authorization request',
+        status: 'SUCCESS',
+        timestamp,
+        specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
+        details: {
+          query: req.query,
+          // The revision the run targets, so a verdict that depends on it can
+          // be re-judged from the log alone (a fresh instance has no context).
+          specVersion: ctx.specVersion
+        }
       });
-    }
 
-    const redirectUri = req.query.redirect_uri as string;
-    const state = req.query.state as string;
-    const redirectUrl = new URL(redirectUri);
-    redirectUrl.searchParams.set(
-      'code',
-      packFlowCode({
-        challenge: codeChallenge,
-        scopes: lastAuthorizationScopes
-      })
-    );
-    if (state) {
-      redirectUrl.searchParams.set('state', state);
-    }
+      // PKCE: Store code_challenge for later verification
+      const codeChallenge = req.query.code_challenge as string | undefined;
+      const codeChallengeMethod = req.query.code_challenge_method as
+        | string
+        | undefined;
+      storedCodeChallenge = codeChallenge;
 
-    // ISS: Include iss parameter in redirect if configured. The 'correct'
-    // value must equal the metadata `issuer` exactly (RFC 9207 §2.4 simple
-    // string comparison), so honor the same metadataIssuer override the
-    // metadata document does.
-    if (issInRedirect === 'correct') {
-      redirectUrl.searchParams.set('iss', resolveIssuer());
-    } else if (issInRedirect === 'wrong') {
-      redirectUrl.searchParams.set('iss', 'https://evil.example.com');
-    } else if (issInRedirect === 'normalized') {
-      // Normalization-equivalent variant of the correct issuer: identical
-      // after RFC 3986 scheme-based normalization (trailing slash on an
-      // empty path) but different under simple string comparison.
-      redirectUrl.searchParams.set('iss', `${resolveIssuer()}/`);
-    }
+      // PKCE: Check code_challenge is present
+      checks.push({
+        id: 'pkce-code-challenge-sent',
+        name: 'PKCE Code Challenge',
+        description: codeChallenge
+          ? 'Client sent code_challenge in authorization request'
+          : 'Client MUST send code_challenge in authorization request',
+        status: codeChallenge ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.MCP_PKCE]
+      });
 
-    res.redirect(redirectUrl.toString());
-  });
+      // PKCE: Check S256 method is used
+      checks.push({
+        id: 'pkce-s256-method-used',
+        name: 'PKCE S256 Method',
+        description:
+          codeChallengeMethod === 'S256'
+            ? 'Client used S256 code challenge method'
+            : 'Client MUST use S256 code challenge method when technically capable',
+        status: codeChallengeMethod === 'S256' ? 'SUCCESS' : 'FAILURE',
+        timestamp,
+        specReferences: [SpecReferences.MCP_PKCE],
+        details: {
+          method: codeChallengeMethod || 'not specified'
+        }
+      });
+
+      // Track scopes from authorization request for token issuance
+      const scopeParam = req.query.scope as string | undefined;
+      lastAuthorizationScopes = scopeParam ? scopeParam.split(' ') : [];
+
+      if (onAuthorizationRequest) {
+        await onAuthorizationRequest({
+          clientId: req.query.client_id as string | undefined,
+          scope: scopeParam,
+          resource: req.query.resource as string | undefined,
+          timestamp
+        });
+      }
+
+      const redirectUri = req.query.redirect_uri as string;
+      const state = req.query.state as string;
+      const redirectUrl = new URL(redirectUri);
+      redirectUrl.searchParams.set(
+        'code',
+        packFlowCode({
+          challenge: codeChallenge,
+          scopes: lastAuthorizationScopes
+        })
+      );
+      if (state) {
+        redirectUrl.searchParams.set('state', state);
+      }
+
+      // ISS: Include iss parameter in redirect if configured. The 'correct'
+      // value must equal the metadata `issuer` exactly (RFC 9207 §2.4 simple
+      // string comparison), so honor the same metadataIssuer override the
+      // metadata document does.
+      if (issInRedirect === 'correct') {
+        redirectUrl.searchParams.set('iss', resolveIssuer());
+      } else if (issInRedirect === 'wrong') {
+        redirectUrl.searchParams.set('iss', 'https://evil.example.com');
+      } else if (issInRedirect === 'normalized') {
+        // Normalization-equivalent variant of the correct issuer: identical
+        // after RFC 3986 scheme-based normalization (trailing slash on an
+        // empty path) but different under simple string comparison.
+        redirectUrl.searchParams.set('iss', `${resolveIssuer()}/`);
+      }
+
+      res.redirect(redirectUrl.toString());
+    }
+  );
 
   app.post(authRoutes.token_endpoint, async (req: Request, res: Response) => {
     const timestamp = new Date().toISOString();
