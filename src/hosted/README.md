@@ -279,8 +279,14 @@ consult the latest log to decide how to answer a request cannot be hosted
 here. `auth/authorization-server-migration` is one — its PRM switches
 authorization servers once a token has been accepted, and an isolate whose
 copy predates that keeps sending the client to the first server.
-`src/hosted/hosted-auth.test.ts` drives every hostable auth scenario through
-two processes sharing a store to hold the rest to this.
+`auth/scope-retry-limit` also answers from its copy of the log — it stops a
+client with a 410 after three token-bearing requests — but only to bound a
+client that never stops by itself. Its verdict counts the authorization
+attempts in the merged log, so across isolates a client with no retry limit
+is stopped later (up to three 403s per isolate) and still fails, and one that
+limits itself never reaches the cut-off. `src/hosted/hosted-auth.test.ts`
+drives every hostable auth scenario through two processes sharing a store to
+hold the rest to this, and a client with no retry limit through both.
 
 ### Two-val auth setup
 

@@ -93,6 +93,15 @@ describe('hosted matrix', () => {
       startable: false,
       startReason: 'nope'
     });
+    // An exclusion outranks a missing relay origin: val.town excludes the
+    // migration scenario and has no as2 relay, and must say the former.
+    const excludedAuth = buildMatrix({
+      auxOrigins: { as: 'https://as.example' },
+      exclude: { 'auth/authorization-server-migration': 'single process' }
+    });
+    expect(
+      excludedAuth.cell('auth/authorization-server-migration', '2026-07-28')
+    ).toMatchObject({ startable: false, startReason: 'single process' });
     expect(bare.cell('nope', '2026-07-28')).toBeUndefined();
   });
 });

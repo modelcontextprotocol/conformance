@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -6,26 +7,52 @@ import { SpecReferences } from '../spec-references';
 
 const SCOPES_SEPARATOR = '.scopes.';
 
+let processKey: Buffer | undefined;
+
+/**
+ * Key for the scopes MAC: the relay secret, which every process of a hosted
+ * deployment shares and no client sees, or else a random key for this
+ * process (enough when one process both mints and verifies).
+ */
+function macKey(): string | Buffer {
+  return (
+    process.env.CONFORMANCE_RELAY_SECRET ?? (processKey ??= randomBytes(32))
+  );
+}
+
+function mac(payload: string): string {
+  return createHmac('sha256', macKey()).update(payload).digest('base64url');
+}
+
 /**
  * Append the granted scopes to an opaque test token. The resource server
  * that verifies a token is not always the process that minted it — on
  * serverless hosts (val.town) the token request and the MCP request land on
  * isolates that share no memory — so the token itself carries what the
- * verifier would otherwise look up. Like the flow code in createAuthServer,
- * it is a state carrier for a test fixture, not a credential: nothing signs
- * or checks it.
+ * verifier would otherwise look up. The scopes are MACed with a key no
+ * client sees, so a client cannot grant itself scopes by editing a token;
+ * beyond that the token is a test fixture, not a credential.
  */
 export function tokenWithScopes(token: string, scopes: string[]): string {
-  return `${token}${SCOPES_SEPARATOR}${Buffer.from(scopes.join(' ')).toString('base64url')}`;
+  const payload = `${token}${SCOPES_SEPARATOR}${Buffer.from(scopes.join(' ')).toString('base64url')}`;
+  return `${payload}.${mac(payload)}`;
 }
 
+/** The scopes a token carries, if its MAC checks out. */
 function scopesFromToken(token: string): string[] | undefined {
   const at = token.lastIndexOf(SCOPES_SEPARATOR);
   if (at < 0) return undefined;
-  const scope = Buffer.from(
-    token.slice(at + SCOPES_SEPARATOR.length),
-    'base64url'
-  ).toString();
+  const rest = token.slice(at + SCOPES_SEPARATOR.length);
+  const dot = rest.indexOf('.');
+  if (dot < 0) return undefined;
+  const given = Buffer.from(rest.slice(dot + 1));
+  const expected = Buffer.from(
+    mac(token.slice(0, at + SCOPES_SEPARATOR.length + dot))
+  );
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    return undefined;
+  }
+  const scope = Buffer.from(rest.slice(0, dot), 'base64url').toString();
   return scope ? scope.split(' ') : [];
 }
 

@@ -1,32 +1,16 @@
+import type { ScenarioContext } from '../../../mock-server';
 import {
   AuthHandlerScenario,
   AuthHandlerContext,
   AuthHandlers,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  ScenarioUrls
 } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { SpecReferences } from './spec-references';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier';
-
-/**
- * The URL-based client_id (CIMD) of the latest logged authorization request,
- * if the client used one. Read from the log so it survives the request and
- * the judgement landing in different processes.
- */
-function cimdClientIdIn(checks: ConformanceCheck[]): string | undefined {
-  let cimdUrl: string | undefined;
-  for (const c of checks) {
-    if (c.id !== 'authorization-request') continue;
-    const clientId = (c.details?.query as Record<string, unknown> | undefined)
-      ?.client_id;
-    if (typeof clientId === 'string' && clientId.startsWith('http')) {
-      cimdUrl = clientId;
-    }
-  }
-  return cimdUrl;
-}
 
 /** Whether a grant_types observation (DCR body or CIMD document) is logged. */
 function grantTypesCheckedIn(checks: ConformanceCheck[]): boolean {
@@ -55,6 +39,18 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
     'Tests that a client that wants a refresh token handles offline_access scope and refresh_token grant type when AS supports them (SEP-2207)';
 
   private checks: ConformanceCheck[] = [];
+  /**
+   * Whether to fetch a CIMD client's metadata document. Only when run
+   * locally through start(): the hosted server calls authHandlers() itself
+   * and must not fetch URLs a client hands it, so there a CIMD client's
+   * grant_types stay uninspected (INFO).
+   */
+  private fetchesCimd = false;
+
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
+    this.fetchesCimd = true;
+    return super.start(ctx);
+  }
 
   authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
@@ -92,9 +88,7 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
           tokenEndpointAuthMethod: 'none'
         };
       },
-      onAuthorizationRequest: (data) => {
-        // A URL-based client_id (CIMD) is read back from the log in stop().
-
+      onAuthorizationRequest: async (data) => {
         // Check if client included offline_access in scope
         const requestedScopes = data.scope ? data.scope.split(' ') : [];
         const hasOfflineAccess = requestedScopes.includes('offline_access');
@@ -112,6 +106,17 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
             requestedScope: data.scope || 'none'
           }
         });
+
+        // A URL-based client_id (CIMD): inspect its metadata document now,
+        // before answering, so the observation is in the log that the
+        // results are judged from.
+        if (
+          this.fetchesCimd &&
+          data.clientId?.startsWith('http') &&
+          !grantTypesCheckedIn(this.checks)
+        ) {
+          await this.inspectCimd(data.clientId);
+        }
       }
     });
 
@@ -127,59 +132,51 @@ export class OfflineAccessScopeScenario extends AuthHandlerScenario {
     return { rs: rsApp, aux: { as: authApp } };
   }
 
-  async stop() {
-    // If client used CIMD and we haven't checked grant_types yet,
-    // attempt to fetch the CIMD URL to inspect the metadata document
-    const capturedCimdUrl = cimdClientIdIn(this.checks);
-    if (capturedCimdUrl && !grantTypesCheckedIn(this.checks)) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(capturedCimdUrl, {
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-
-        if (response.ok) {
-          const metadata = await response.json();
-          const grantTypes: string[] = metadata.grant_types || [];
-          const hasRefreshToken = grantTypes.includes('refresh_token');
-          this.checks.push({
-            id: 'sep-2207-client-metadata-grant-types',
-            name: 'Client metadata includes refresh_token grant type (CIMD)',
-            description: hasRefreshToken
-              ? 'Client metadata document includes refresh_token in grant_types'
-              : 'Client SHOULD include refresh_token in grant_types client metadata (SEP-2207)',
-            status: hasRefreshToken ? 'SUCCESS' : 'WARNING',
-            timestamp: new Date().toISOString(),
-            specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
-            details: {
-              registrationMethod: 'CIMD',
-              cimdUrl: capturedCimdUrl,
-              grantTypes: grantTypes.length > 0 ? grantTypes.join(' ') : 'none'
-            }
-          });
-        }
-      } catch {
-        // CIMD URL didn't resolve - emit info check
+  /** Fetch a CIMD client's metadata document and log its grant_types. */
+  private async inspectCimd(cimdUrl: string): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      const response = await fetch(cimdUrl, { signal: controller.signal });
+      if (response.ok) {
+        const metadata = await response.json();
+        const grantTypes: string[] = metadata.grant_types || [];
+        const hasRefreshToken = grantTypes.includes('refresh_token');
         this.checks.push({
           id: 'sep-2207-client-metadata-grant-types',
           name: 'Client metadata includes refresh_token grant type (CIMD)',
-          description:
-            'Client used CIMD but metadata URL could not be fetched to verify grant_types',
-          status: 'INFO',
+          description: hasRefreshToken
+            ? 'Client metadata document includes refresh_token in grant_types'
+            : 'Client SHOULD include refresh_token in grant_types client metadata (SEP-2207)',
+          status: hasRefreshToken ? 'SUCCESS' : 'WARNING',
           timestamp: new Date().toISOString(),
           specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
           details: {
             registrationMethod: 'CIMD',
-            cimdUrl: capturedCimdUrl,
-            fetchFailed: true
+            cimdUrl,
+            grantTypes: grantTypes.length > 0 ? grantTypes.join(' ') : 'none'
           }
         });
       }
+    } catch {
+      // CIMD URL didn't resolve - emit info check
+      this.checks.push({
+        id: 'sep-2207-client-metadata-grant-types',
+        name: 'Client metadata includes refresh_token grant type (CIMD)',
+        description:
+          'Client used CIMD but metadata URL could not be fetched to verify grant_types',
+        status: 'INFO',
+        timestamp: new Date().toISOString(),
+        specReferences: [SpecReferences.SEP_2207_REFRESH_TOKEN_GUIDANCE],
+        details: {
+          registrationMethod: 'CIMD',
+          cimdUrl,
+          fetchFailed: true
+        }
+      });
+    } finally {
+      clearTimeout(timeout);
     }
-
-    await super.stop();
   }
 
   getChecks(): ConformanceCheck[] {

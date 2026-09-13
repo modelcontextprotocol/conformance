@@ -131,6 +131,10 @@ export function startability(
   scenario: Scenario,
   opts: MatrixOptions
 ): { startable: true } | { startable: false; reason: string } {
+  // The deployment's own refusal comes first: a scenario it will not mount
+  // stays refused, with its reason, whatever relay origins it has.
+  const excluded = opts.exclude?.[scenario.name];
+  if (excluded) return { startable: false, reason: excluded };
   if (scenario instanceof AuthHandlerScenario) {
     const missing = scenario.auxRoles.filter((r) => !opts.auxOrigins?.[r]);
     if (missing.length) {
@@ -142,8 +146,6 @@ export function startability(
   } else if (typeof scenario.handler !== 'function') {
     return { startable: false, reason: 'not converted for hosting yet' };
   }
-  const excluded = opts.exclude?.[scenario.name];
-  if (excluded) return { startable: false, reason: excluded };
   return { startable: true };
 }
 

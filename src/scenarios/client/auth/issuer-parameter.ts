@@ -471,13 +471,10 @@ export class IssParameterNormalizedVariantScenario extends AuthHandlerScenario {
   allowClientError = true;
 
   private checks: ConformanceCheck[] = [];
-  /** The AS base URL while serving; unset on an instance that only judges a log. */
-  private getAsUrl: (() => string) | undefined;
 
   authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
     const getAsUrl = () => ctx.getAuxBaseUrl('as');
-    this.getAsUrl = getAsUrl;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -501,7 +498,9 @@ export class IssParameterNormalizedVariantScenario extends AuthHandlerScenario {
     const timestamp = new Date().toISOString();
 
     if (!checks.some((c) => c.id === 'sep-2468-client-no-normalization')) {
-      const recordedIssuer = declaredIssuer(this.checks) ?? this.getAsUrl?.();
+      // The issuer as the log shows it; a client that never fetched the
+      // metadata document never recorded one, and neither does the check.
+      const recordedIssuer = declaredIssuer(this.checks);
       checks.push(
         issRejectionCheck({
           id: 'sep-2468-client-no-normalization',
@@ -511,10 +510,10 @@ export class IssParameterNormalizedVariantScenario extends AuthHandlerScenario {
           failDescription:
             'Client MUST NOT apply scheme/host case folding, default-port elision, trailing-slash, or percent-encoding normalization to iss before comparison; a trailing-slash variant of the issuer must be treated as a mismatch',
           ...issFlow(this.checks),
-          observations: {
-            recordedIssuer,
-            issSentInRedirect: `${recordedIssuer}/`
-          },
+          observations:
+            recordedIssuer === undefined
+              ? {}
+              : { recordedIssuer, issSentInRedirect: `${recordedIssuer}/` },
           timestamp
         })
       );
@@ -543,13 +542,10 @@ export class MetadataIssuerMismatchScenario extends AuthHandlerScenario {
   allowClientError = true;
 
   private checks: ConformanceCheck[] = [];
-  /** The AS base URL while serving; unset on an instance that only judges a log. */
-  private getAsUrl: (() => string) | undefined;
 
   authHandlers(ctx: AuthHandlerContext): AuthHandlers {
     this.checks = [];
     const getAsUrl = () => ctx.getAuxBaseUrl('as');
-    this.getAsUrl = getAsUrl;
 
     const tokenVerifier = new MockTokenVerifier(this.checks, []);
 
@@ -594,9 +590,10 @@ export class MetadataIssuerMismatchScenario extends AuthHandlerScenario {
         'authorization-request',
         'token-request'
       ].some((id) => logged(this.checks, id));
+      // The issuer the PRM sent the client to, when the log shows it.
+      const expectedIssuer = advertisedAuthorizationServer(this.checks);
       const observations = {
-        expectedIssuer:
-          advertisedAuthorizationServer(this.checks) ?? this.getAsUrl?.(),
+        ...(expectedIssuer !== undefined && { expectedIssuer }),
         metadataIssuer: 'https://attacker.example.com',
         metadataRequested,
         metadataEndpointsUsed

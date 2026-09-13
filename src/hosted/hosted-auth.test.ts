@@ -18,6 +18,7 @@ import { getScenario } from '../scenarios';
 import type { AuxOriginRole, ConformanceCheck, SpecVersion } from '../types';
 import { toFetchHandler } from '../../examples/hosted/fetch-bridge';
 import { listenFetch, listenRelay } from '../../examples/hosted/local-relay';
+import { runClient as noRetryLimitClient } from '../../examples/clients/typescript/auth-test-no-retry-limit';
 
 const RELAY_SECRET = 'test-relay-secret-do-not-use-in-prod';
 
@@ -507,6 +508,25 @@ describe.each([
       });
     }
   }
+
+  // scope-retry-limit's 410 cut-off counts the answers in each process's
+  // copy of the log, so across processes a client that never stops is cut
+  // off later. The verdict counts every attempt in the merged log, so it
+  // still fails such a client.
+  it('auth/scope-retry-limit still fails a client with no retry limit', async () => {
+    const cell = `p${processes}-noretry/2025-11-25/auth/scope-retry-limit`;
+    const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then((r) =>
+      r.json()
+    );
+    await noRetryLimitClient(config.cells[0].url).catch(() => undefined);
+    const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
+      r.json()
+    );
+    expect(
+      results.checks.find((c: ConformanceCheck) => c.id === 'scope-retry-limit')
+    ).toMatchObject({ status: 'FAILURE' });
+    expect(results.verdict).toBe('fail');
+  });
 });
 
 function originOf(server: Server): string {

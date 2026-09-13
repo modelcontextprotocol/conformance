@@ -290,8 +290,13 @@ export class ScopeStepUpAuthScenario extends AuthHandlerScenario {
   // SEP-2350's set-wise union requirement was introduced in 2026-07-28 (the
   // current draft); it was not a requirement at 2025-11-25, where
   // non-accumulating re-auth is conformant. Gate the union check accordingly.
-  // Unset on an instance that only judges a log; see getChecks().
+  // An instance that only judges a log gets it from judgeAt(), or failing
+  // that from the log; see getChecks().
   private specVersion: SpecVersion | undefined;
+
+  judgeAt(specVersion: SpecVersion): void {
+    this.specVersion = specVersion;
+  }
 
   private static readonly initialScope = 'mcp:basic';
   // tools/call gates on mcp:write only (not the union) so the scenario can
