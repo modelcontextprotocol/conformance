@@ -951,16 +951,28 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
     error?: { code: number; message: string };
   }> {
     const id = nextId++;
+    // MRTR exists only on 2026-07-28, so every request carries that
+    // revision's wire obligations: the protocol-version header and _meta.
     const body: Record<string, unknown> = {
       jsonrpc: '2.0',
       id,
-      method
+      method,
+      params: {
+        ...(params ?? {}),
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': STATELESS_PROTOCOL_VERSION,
+          ...STATELESS_META_BASE
+        }
+      }
     };
-    if (params) body.params = params;
 
     const resp = await fetch(serverUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': STATELESS_PROTOCOL_VERSION
+      },
       body: JSON.stringify(body)
     });
 
