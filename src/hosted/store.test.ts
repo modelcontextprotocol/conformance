@@ -18,6 +18,23 @@ describe('MemoryRunStore', () => {
     });
     expect(await store.listRuns('nope/')).toEqual([]);
   });
+
+  it('keeps each snapshot as first saved, lists them oldest first, deletes per run', async () => {
+    const store = new MemoryRunStore();
+    await store.saveSnapshot('r1', 'a', '{"v":1}');
+    await store.saveSnapshot('r1', 'a', '{"v":2}'); // frozen: first body wins
+    await store.saveSnapshot('r1', 'b', '{"v":3}');
+    await store.saveSnapshot('r2', 'a', '{}');
+    expect(await store.loadSnapshot('r1', 'a')).toBe('{"v":1}');
+    expect(await store.loadSnapshot('r1', 'zz')).toBeUndefined();
+    expect((await store.listSnapshots('r1')).map((s) => s.id)).toEqual([
+      'a',
+      'b'
+    ]);
+    await store.deleteSnapshots('r1');
+    expect(await store.listSnapshots('r1')).toEqual([]);
+    expect(await store.loadSnapshot('r2', 'a')).toBe('{}');
+  });
 });
 
 describe('SqliteRunStore', () => {
@@ -46,5 +63,44 @@ describe('SqliteRunStore', () => {
     )!;
     expect(select.sql).toContain("WHERE id LIKE ? ESCAPE '\\'");
     expect(select.args).toEqual(['r\\_1\\%/%']);
+  });
+
+  it('stores snapshots in their own table, first body kept', async () => {
+    const statements: { sql: string; args: unknown[] }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const { statement } = JSON.parse(init.body);
+        statements.push(statement);
+        const rows = statement.sql.includes('SELECT body')
+          ? [['{"runId":"r1"}']]
+          : statement.sql.includes('SELECT id, created_at')
+            ? [['s1', 5]]
+            : [];
+        return new Response(JSON.stringify({ rows }), { status: 200 });
+      })
+    );
+    const store = new SqliteRunStore({ token: 't' });
+    await store.saveSnapshot('r1', 's1', '{"runId":"r1"}');
+    expect(await store.loadSnapshot('r1', 's1')).toBe('{"runId":"r1"}');
+    expect(await store.listSnapshots('r1')).toEqual([
+      { id: 's1', createdAt: 5 }
+    ]);
+    await store.deleteSnapshots('r1');
+
+    const creates = statements.filter((s) =>
+      s.sql.includes('CREATE TABLE IF NOT EXISTS hosted_snapshots_v1')
+    );
+    expect(creates).toHaveLength(1); // once per isolate
+    const insert = statements.find((s) =>
+      s.sql.includes('INSERT INTO hosted_snapshots_v1')
+    )!;
+    expect(insert.sql).toContain('ON CONFLICT(run_id, id) DO NOTHING');
+    expect(insert.args.slice(0, 3)).toEqual(['r1', 's1', '{"runId":"r1"}']);
+    expect(
+      statements.some((s) =>
+        s.sql.includes('DELETE FROM hosted_snapshots_v1 WHERE run_id = ?')
+      )
+    ).toBe(true);
   });
 });
