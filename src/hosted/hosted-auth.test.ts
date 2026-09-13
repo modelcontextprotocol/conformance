@@ -7,12 +7,17 @@
  * relay-secret guard work end to end.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
 import { createHostedApp } from './server';
 import { SessionManager, rawChecksOf, finalizeChecks } from './session';
 import { buildMatrix } from './matrix';
+import { MemoryRunStore } from './store';
+import { getScenario } from '../scenarios';
+import type { AuxOriginRole, ConformanceCheck, SpecVersion } from '../types';
+import { toFetchHandler } from '../../examples/hosted/fetch-bridge';
+import { listenFetch, listenRelay } from '../../examples/hosted/local-relay';
 
 const RELAY_SECRET = 'test-relay-secret-do-not-use-in-prod';
 
@@ -300,6 +305,182 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     );
   });
 });
+
+/**
+ * Every hosted auth scenario, driven by the repo's everything-client through
+ * a local deployment: the RS app behind an HTTP origin plus one
+ * examples/hosted/local-relay.ts relay per aux role, at every revision the
+ * scenario applies to.
+ *
+ * Each deployment is run twice. With one process and no store, /results
+ * judges the live scenario. With two processes sharing a store, the RS
+ * origin deals requests round-robin between two hosted apps, each behind
+ * the fetch bridge valtown.ts uses and flushed before it answers — the way
+ * val.town spreads one run over isolates that share no memory. A scenario
+ * that keeps state in memory between two requests fails there as it would
+ * on val.town, and /results re-judges the merged log in a fresh instance.
+ */
+const HOSTED_AUTH_SCENARIOS = [
+  'auth/basic-cimd',
+  'auth/metadata-default',
+  'auth/metadata-var1',
+  // auth/metadata-var2 is left out: the everything-client's SDK fails its
+  // resource-parameter-matches-prm check (see index.test.ts), and val.town
+  // excludes it as single-process only.
+  'auth/metadata-var3',
+  'auth/pre-registration'
+];
+
+/** Scenarios that need one process's memory across requests. */
+const SINGLE_PROCESS_ONLY = new Set<string>([]);
+
+const AUX_ROLES: AuxOriginRole[] = ['as', 'as2'];
+
+interface Deployment {
+  rs: string;
+  close(): Promise<void>;
+}
+
+async function deploy(processes: number): Promise<Deployment> {
+  let handlers: Array<(req: Request) => Promise<Response>> = [];
+  let turn = 0;
+  const front = await listenFetch(0, (req) =>
+    handlers[turn++ % handlers.length](req)
+  );
+  const rs = originOf(front);
+  const relays = await Promise.all(
+    AUX_ROLES.map((role) =>
+      listenRelay(0, { rsOrigin: rs, secret: RELAY_SECRET, role })
+    )
+  );
+  const auxOrigins = Object.fromEntries(
+    AUX_ROLES.map((role, i) => [role, originOf(relays[i])])
+  );
+  const store = processes > 1 ? new MemoryRunStore() : undefined;
+  const apps = Array.from({ length: processes }, () =>
+    createHostedApp({ auxOrigins, relaySecret: RELAY_SECRET, store })
+  );
+  handlers = apps.map(({ app, sessions }) => {
+    const bridge = toFetchHandler(app);
+    return async (req: Request) => {
+      const res = await bridge(req);
+      await sessions.flush();
+      return res;
+    };
+  });
+  return {
+    rs,
+    async close() {
+      for (const { sessions } of apps) await sessions.close();
+      await Promise.all([front, ...relays].map(closeServer));
+    }
+  };
+}
+
+/**
+ * The everything-client, imported for `revision`: it picks its lifecycle
+ * from MCP_CONFORMANCE_PROTOCOL_VERSION when the module is evaluated, so
+ * each revision gets its own copy.
+ */
+const everythingClients = new Map<
+  string,
+  Promise<(name: string) => ((url: string) => Promise<void>) | undefined>
+>();
+function everythingClient(revision: string) {
+  let loaded = everythingClients.get(revision);
+  if (!loaded) {
+    loaded = (async () => {
+      process.env.MCP_CONFORMANCE_PROTOCOL_VERSION = revision;
+      vi.resetModules();
+      const client =
+        await import('../../examples/clients/typescript/everything-client');
+      const { setLogLevel } =
+        await import('../../examples/clients/typescript/helpers/logger');
+      setLogLevel('error');
+      return client.getHandler;
+    })();
+    everythingClients.set(revision, loaded);
+  }
+  return loaded;
+}
+
+/** The revisions a scenario is mounted at (every column but `n/a`). */
+function revisionsOf(scenario: string): SpecVersion[] {
+  const matrix = buildMatrix({ auxOrigins: { as: 'x', as2: 'y' } });
+  return matrix.revisions.filter(
+    (rev) => matrix.cell(scenario, rev)!.scoring !== 'n/a'
+  ) as SpecVersion[];
+}
+
+describe.each([
+  { label: 'one process', processes: 1 },
+  { label: 'two processes sharing a store', processes: 2 }
+])('everything-client through the hosted server ($label)', ({ processes }) => {
+  let dep: Deployment;
+  beforeAll(async () => {
+    dep = await deploy(processes);
+  });
+  afterAll(async () => {
+    await dep.close();
+    for (const k of [
+      'MCP_CONFORMANCE_SCENARIO',
+      'MCP_CONFORMANCE_PROTOCOL_VERSION',
+      'MCP_CONFORMANCE_CONTEXT'
+    ])
+      delete process.env[k];
+  });
+
+  const scenarios = HOSTED_AUTH_SCENARIOS.filter(
+    (s) => processes === 1 || !SINGLE_PROCESS_ONLY.has(s)
+  );
+  for (const scenario of scenarios) {
+    for (const revision of revisionsOf(scenario)) {
+      it(`${scenario} passes at ${revision}`, async () => {
+        const cell = `p${processes}/${revision}/${scenario}`;
+        // What a person would copy from the cell's config page.
+        const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then(
+          (r) => r.json()
+        );
+        expect(config.cells).toHaveLength(1);
+        const { url, env } = config.cells[0];
+        delete process.env.MCP_CONFORMANCE_CONTEXT;
+        Object.assign(process.env, env);
+
+        const handler = (await everythingClient(revision))(scenario);
+        expect(handler).toBeDefined();
+        let clientError: string | undefined;
+        try {
+          await handler!(url);
+        } catch (e) {
+          clientError = String(e);
+        }
+
+        const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
+          r.json()
+        );
+        const failures = results.checks.filter(
+          (c: ConformanceCheck) => c.status === 'FAILURE'
+        );
+        expect({
+          clientError: getScenario(scenario)?.allowClientError
+            ? undefined
+            : clientError,
+          failures,
+          verdict: results.verdict
+        }).toEqual({ clientError: undefined, failures: [], verdict: 'pass' });
+      });
+    }
+  }
+});
+
+function originOf(server: Server): string {
+  return `http://localhost:${(server.address() as { port: number }).port}`;
+}
+
+function closeServer(server: Server): Promise<void> {
+  server.closeAllConnections?.();
+  return new Promise((r) => server.close(() => r()));
+}
 
 function listen(
   app: express.Application,

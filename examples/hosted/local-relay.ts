@@ -19,7 +19,14 @@ export function listenRelay(
   port: number,
   config: RelayConfig
 ): Promise<http.Server> {
-  const handler = createRelay(config);
+  return listenFetch(port, createRelay(config));
+}
+
+/** Serve a fetch-style handler on `port` (0 for any free port). */
+export function listenFetch(
+  port: number,
+  handler: (req: Request) => Promise<Response>
+): Promise<http.Server> {
   const server = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
