@@ -143,6 +143,12 @@ export interface HostedRun extends CellRef {
   seeded: Map<ConformanceCheck, string>;
   /** Settled once the cell has been seeded from the store (or never will be). */
   hydration?: Promise<void>;
+  /** The last write queued for the cell; writes land one after another. */
+  lastWrite?: Promise<void>;
+  /** A write queued but not started yet: a persist() meanwhile joins it. */
+  queuedWrite?: Promise<void>;
+  /** Each of this process's rows as last written (JSON), by writer id. */
+  written: Map<string, string>;
 }
 
 export interface SessionManagerOptions {
@@ -328,7 +334,8 @@ export class SessionManager {
       hostedChecks: [],
       identities: new Map(),
       hostedKeys: new Set(),
-      seeded: new Map()
+      seeded: new Map(),
+      written: new Map()
     };
     this.runs.set(id, run);
     return run;
@@ -455,37 +462,72 @@ export class SessionManager {
   /**
    * Write this process's view of a cell's checks through to the store; the
    * first write also records that the cell exists, so a cell that was only
-   * configured (never hit) does not show up as exercised.
+   * configured (never hit) does not show up as exercised. A cell's writes
+   * land in order, each with the cell as it stands when the write starts,
+   * so an older view never overwrites a newer one.
    */
   persist(run: HostedRun): Promise<void> {
     const store = this.store;
     if (!store) return Promise.resolve();
-    const p = (async () => {
-      if (!run.saved) {
-        // Mark saved only once the write landed: a failed saveRun must be
-        // retried on the next persist, or the cell never appears in
-        // listRuns() and the report shows it as never exercised even though
-        // its checks are in the store.
-        await store.saveRun(run.id, run.scenarioName);
-        run.saved = true;
-      }
-      await store.saveChecks(
-        run.id,
-        this.writerId,
-        this.ownChecks(run).map((c) => ({ ...c }))
-      );
-      if (run.hostedChecks.length) {
-        await store.saveChecks(
-          run.id,
-          this.writerId + HOSTED_WRITER_SUFFIX,
-          run.hostedChecks.map((c) => ({ ...c }))
-        );
-      }
-    })()
+    if (run.queuedWrite) return run.queuedWrite;
+    const p: Promise<void> = (run.lastWrite ?? Promise.resolve())
+      .then(() => {
+        run.queuedWrite = undefined;
+        return this.write(run, store);
+      })
       .catch(logStoreError)
       .finally(() => this.pending.delete(p));
+    run.queuedWrite = run.lastWrite = p;
     this.pending.add(p);
     return p;
+  }
+
+  /**
+   * One write of the cell's rows, sent together: a flush waits one store
+   * round trip, not one per row. A row that has not changed since this
+   * process last wrote it is not sent again.
+   */
+  private async write(run: HostedRun, store: RunStore): Promise<void> {
+    // A cell not yet seeded from the store holds only what this process saw
+    // since it built the cell: written over this writer's row, that could
+    // drop what the writer recorded before the cell was evicted. So it is
+    // seeded first; but when it has recorded nothing (a request answered
+    // before seeding), its row is left alone and the write waits on nothing
+    // but itself.
+    const ownRow =
+      run.hydration !== undefined || rawChecksOf(run.scenario).length > 0;
+    if (ownRow) await this.hydrate(run);
+    const rows: Array<[string, ConformanceCheck[]]> = [];
+    if (ownRow) rows.push([this.writerId, this.ownChecks(run)]);
+    if (run.hostedChecks.length)
+      rows.push([this.writerId + HOSTED_WRITER_SUFFIX, run.hostedChecks]);
+    const writes: Promise<void>[] = [];
+    for (const [writer, checks] of rows) {
+      const json = JSON.stringify(checks);
+      if (run.written.get(writer) === json) continue;
+      writes.push(
+        store
+          .saveChecks(run.id, writer, JSON.parse(json) as ConformanceCheck[])
+          .then(() => void run.written.set(writer, json))
+      );
+    }
+    if (!run.saved) {
+      // Marked saved only once the write landed: a failed saveRun must be
+      // retried on the next persist, or the cell never appears in
+      // listRuns() and the report shows it as never exercised even though
+      // its checks are in the store.
+      writes.push(
+        store.saveRun(run.id, run.scenarioName).then(() => {
+          run.saved = true;
+        })
+      );
+    }
+    // Every write is let finish before a failure is reported, so what did
+    // land is remembered and only the rest is retried.
+    const failed = (await Promise.allSettled(writes)).find(
+      (r): r is PromiseRejectedResult => r.status === 'rejected'
+    );
+    if (failed) throw failed.reason;
   }
 
   /**
@@ -520,6 +562,9 @@ export class SessionManager {
       // judging the live instance would let a page view change the verdict.
       return judgedAtRevision(ref, raw, run.hostedChecks);
     }
+    // A cell built for a discover and not seeded since (see write()) holds
+    // less than this process's row: seeded, its log is the whole of it.
+    if (run) await this.hydrate(run);
     let byWriter = new Map<string, ConformanceCheck[]>();
     let known = false;
     try {

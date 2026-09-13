@@ -72,7 +72,10 @@ export default async function (request: Request): Promise<Response> {
   const response = await bridge(request);
   // The bridge buffers until end(), by which point the scenario has recorded
   // its checks and the write-through has started; finish it before the
-  // isolate is allowed to go idle.
+  // isolate is allowed to go idle. val.town has no waitUntil, and a promise
+  // still running after the response may be stopped with the isolate, so
+  // the record is not left to one. The write is one store round trip: a
+  // cell's rows go together, and a discover does not wait on seeding.
   await sessions.flush();
   return response;
 }

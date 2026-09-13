@@ -77,6 +77,7 @@ import {
   GET_ON_MCP_REPLY,
   isAcceptedInitialize,
   isLegacyProbe,
+  isLoneDiscover,
   isModernProbe,
   isUnparseable,
   legacyAnswer,
@@ -314,17 +315,16 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   }
 
   /**
-   * The cell, hydrated from the store when this process has never seen it
-   * (see SessionManager.acquire) — a request must not be dispatched before
-   * the scenario knows the run's history.
+   * The cell, built on first reference but not yet seeded from the store;
+   * or undefined, with the request answered, when it cannot be mounted.
    */
-  async function createRun(
+  function mountCell(
     req: Request,
     ref: CellRef,
     res: Response
-  ): Promise<HostedRun | undefined> {
+  ): HostedRun | undefined {
     try {
-      return await sessions.acquire(ref, (r) => cellBaseUrl(req, r));
+      return sessions.getOrCreate(ref, (r) => cellBaseUrl(req, r));
     } catch (e) {
       if (e instanceof UnknownScenarioError) {
         res.status(404).json({ error: e.message });
@@ -336,6 +336,56 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       }
       throw e;
     }
+  }
+
+  /**
+   * The cell, hydrated from the store when this process has never seen it
+   * (see SessionManager.acquire) — a request must not be dispatched before
+   * the scenario knows the run's history.
+   */
+  async function createRun(
+    req: Request,
+    ref: CellRef,
+    res: Response
+  ): Promise<HostedRun | undefined> {
+    const run = mountCell(req, ref, res);
+    if (run) await sessions.hydrate(run);
+    return run;
+  }
+
+  /**
+   * Make the cells ready for a request to their MCP endpoint (`mcp`) or
+   * another path: seeded from the store, unless the request is a
+   * `server/discover` whose answer no history can change. A client may give
+   * discover a second before it falls back to an older handshake, so that
+   * answer does not wait on the store; it is recorded all the same
+   * (SessionManager.persist). Which discovers qualify: the hosted layer's
+   * own refusal on a dated cell (discoverReply()), and on a stateless one
+   * the scenario's, unless it reads its log to answer
+   * (Scenario.discoverReadsHistory). Not an auth cell's, whose resource
+   * server decides before it looks at the request.
+   */
+  async function prepare(
+    runs: HostedRun[],
+    req: Request,
+    mcp: boolean
+  ): Promise<void> {
+    const early =
+      mcp &&
+      req.method === 'POST' &&
+      bodyFitsBuffer(req) &&
+      runs.every(
+        (run) =>
+          !run.auxListeners &&
+          (isStatefulVersion(run.revision) ||
+            !run.scenario.discoverReadsHistory)
+      ) &&
+      (await new Promise<boolean>((resolve) =>
+        onBodySettled(req, (body) =>
+          resolve(body !== undefined && isLoneDiscover(body))
+        )
+      ));
+    if (!early) await Promise.all(runs.map((run) => sessions.hydrate(run)));
   }
 
   /**
@@ -788,7 +838,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // app.use(prefix, fn) would do, but with a dynamic prefix.
   const composite = createCompositeRoute({
     matrix,
-    createRun,
+    mountCell,
+    prepare,
     dispatch,
     cellBaseUrl,
     resultsUrlFor,
@@ -882,19 +933,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       return;
     }
 
-    const run = await createRun(req, ref, res);
+    const run = mountCell(req, ref, res);
     if (!run) return;
     // Rewrite to the path the scenario expects (it thinks it's at root).
     // The query string is preserved because we keep the express req object.
     const rewritten = scenarioPath(run, suffix) || run.mcpPath || '/';
-    dispatch(
-      run,
-      run.listener,
-      req,
-      res,
-      rewritten,
-      isMcpEndpoint(run, rewritten)
-    );
+    const mcp = isMcpEndpoint(run, rewritten);
+    await prepare([run], req, mcp);
+    dispatch(run, run.listener, req, res, rewritten, mcp);
   });
 
   // ---------- root well-known dispatch (RS side) ----------

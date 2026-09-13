@@ -460,6 +460,19 @@ the run's first request exactly once — sees the run's history rather than
 just this isolate's. Seeded checks are persisted by the isolate that wrote
 them; an isolate's row holds only what it recorded or rewrote itself.
 
+A `server/discover` is the exception: a client may give it about a second
+before it falls back to an older handshake (the GitHub Copilot runtime
+does), so it is answered without waiting on the store, on a single cell and
+on a composite alike. The dated cells' refusal is the hosted layer's own,
+and a 2026-07-28 scenario's answer does not depend on its log unless it sets
+`discoverReadsHistory` (`request-metadata` does: its one rejection can fall
+on a discover), in which case the cell is seeded first as before. Auth cells
+are always seeded first. The discover is still recorded: an isolate writes
+its rows for a cell together (`SessionManager.persist`), skipping rows that
+have not changed, so `valtown.ts` — which flushes before it answers, so that
+no write is left to an isolate that may be stopped — waits one store round
+trip for a discover, rather than one per row after seeding.
+
 Auth scenarios keep nothing only in memory between two requests. The PKCE
 challenge and requested scopes ride in the authorization code, the granted
 scopes ride in the access token (in plain text: test tokens are fixtures,

@@ -72,6 +72,8 @@ export class RequestMetadataScenario extends HandlerScenario {
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Per-request _meta and MCP-Protocol-Version header obligations (SEP-2575)';
+  /** A discover can be the request that draws the run's one rejection. */
+  readonly discoverReadsHistory = true;
 
   private checks: ConformanceCheck[] = [];
   private requestsObserved = 0;

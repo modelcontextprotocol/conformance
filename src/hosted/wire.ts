@@ -288,6 +288,12 @@ export function isModernProbe(
   return response.status >= 400 && response.status < 500;
 }
 
+/** Whether `body` holds one JSON-RPC message, a `server/discover`. */
+export function isLoneDiscover(body: Buffer): boolean {
+  const message = messagesOfJson(body.toString());
+  return message.length === 1 && message[0].method === DISCOVER_METHOD;
+}
+
 /**
  * The answer every dated cell gives a `server/discover`, or undefined when
  * `body` is not one (or the cell is on the stateless wire): HTTP 400 with a
