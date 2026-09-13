@@ -9,8 +9,11 @@ const SCOPES_SEPARATOR = '.scopes.';
 
 let processKey: Buffer | undefined;
 
-/** Shorter relay secrets are never used, so tokens can't help guess them. */
-const MIN_SHARED_SECRET_LENGTH = 32;
+/**
+ * Shorter relay secrets are never used, so tokens can't help guess them.
+ * The hosted server warns at startup when its relay secret is shorter.
+ */
+export const MIN_SHARED_SECRET_LENGTH = 32;
 
 /**
  * Key for the scopes MAC. Every process of a hosted deployment must share
