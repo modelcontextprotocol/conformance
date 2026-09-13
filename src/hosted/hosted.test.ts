@@ -576,7 +576,7 @@ describe('hosted server', () => {
     ).toBe(false);
 
     // <cell>/mcp on a root-mounted scenario is its MCP endpoint for the
-    // hosted judgement too: a stateful initialize there is a wrong revision.
+    // hosted judgement too: a stateful initialize there is a legacy probe.
     await postMcp(
       `/s/mcp1/${REV_STATELESS}/request-metadata/mcp`,
       initBody()
@@ -585,9 +585,7 @@ describe('hosted server', () => {
       `${base}/results/mcp1/${REV_STATELESS}/request-metadata`
     ).then((r) => r.json());
     expect(
-      judged.checks.some(
-        (c: { id: string }) => c.id === 'hosted-wrong-revision'
-      )
+      judged.checks.some((c: { id: string }) => c.id === 'hosted-legacy-probe')
     ).toBe(true);
   });
 
@@ -856,10 +854,13 @@ describe('hosted server', () => {
     );
   });
 
-  it('fails a cell when the wire rejects the request or the client speaks another revision', async () => {
+  it('notes a legacy initialize on the stateless wire, and fails other wrong revisions', async () => {
     // Felix's live case: a 2025-11-25 initialize on a 2026-07-28 cell. The
-    // stateless mock turns it away (no _meta) and the scenario never sees a
-    // request it could judge — the cell must read fail, not green.
+    // stateless mock turns it away (no _meta). A dual-era client may open
+    // that way to learn the server's era (2026-07-28 basic/versioning,
+    // "Backward Compatibility"), so it is noted, not failed; and as the
+    // scenario never saw a request it could judge, the cell reads
+    // incomplete, never green.
     const url = `/s/rej/${REV_STATELESS}/tools_call/mcp`;
     const legacyInit = {
       ...initBody(),
@@ -886,45 +887,33 @@ describe('hosted server', () => {
       errorMessage?: string;
       details?: Record<string, unknown>;
     };
-    // Each request was one mistake — initialize on the stateless wire, which
-    // the wire also turned away — so it records one check, not two.
+    // Neither a wrong revision nor a wire rejection: the probe explains both.
     expect(
-      results.checks.some((c: Check) => c.id === 'hosted-wire-rejected')
-    ).toBe(false);
-    const wrong = results.checks.filter(
-      (c: Check) => c.id === 'hosted-wrong-revision'
-    );
-    // Once per distinct (method, header version): the repeat is one check.
-    expect(wrong.map((c: Check) => c.errorMessage)).toEqual([
-      expect.stringMatching(
-        new RegExp(
-          `^cell is served on ${REV_STATELESS}; client sent initialize \\(turned away: HTTP 400, JSON-RPC error -32602: `
-        )
-      ),
-      expect.stringMatching(
-        new RegExp(
-          `^cell is served on ${REV_STATELESS}; client sent initialize \\(turned away: HTTP 400, JSON-RPC error -32020: `
-        )
+      results.checks.some(
+        (c: Check) =>
+          c.id === 'hosted-wire-rejected' || c.id === 'hosted-wrong-revision'
       )
+    ).toBe(false);
+    const probes = results.checks.filter(
+      (c: Check) => c.id === 'hosted-legacy-probe'
+    );
+    // Once per distinct header version: the repeat is one check.
+    expect(
+      probes.map((c: Check) => [
+        c.status,
+        c.details?.headerVersion,
+        (c.details?.rejected as { code?: number } | undefined)?.code
+      ])
+    ).toEqual([
+      ['INFO', REV_STATEFUL, -32602],
+      ['INFO', null, -32020]
     ]);
-    expect(wrong[0]).toMatchObject({
-      status: 'FAILURE',
-      details: {
-        method: 'initialize',
-        headerVersion: REV_STATEFUL,
-        rejected: { status: 400, code: -32602 }
-      }
-    });
-    expect(wrong[1].details).toMatchObject({
-      headerVersion: null,
-      rejected: { status: 400, code: -32020 }
-    });
     const report = await fetch(`${base}/results/rej`).then((r) => r.json());
     const cellOf = (rev: string, name: string) =>
       report.columns
         .find((c: { revision: string }) => c.revision === rev)
         .cells.find((c: { scenario: string }) => c.scenario === name);
-    expect(cellOf(REV_STATELESS, 'tools_call').verdict).toBe('fail');
+    expect(cellOf(REV_STATELESS, 'tools_call').verdict).toBe('incomplete');
 
     // On a dated revision initialize negotiates freely, but every later
     // request must name the cell's revision in its header.

@@ -130,14 +130,13 @@ request away (`src/hosted/wire.ts`):
   rejects a run's first request once), not a wire rejection.
 - `hosted-wrong-revision` — the client spoke a revision other than the
   cell's: on the `2026-07-28` column any request whose `MCP-Protocol-Version`
-  is not the column's, or any `initialize`; on a dated column any
-  post-`initialize` request whose header names another revision
-  (`initialize` itself negotiates and is exempt); once per distinct
-  (method, header version). On a dated column a foreign-revision request
-  the wire turned away (a 4xx lifecycle rejection, or `-32601` for a
-  method the dated wire lacks) is version negotiation — a dual-era client
-  probes with `server/discover` at `2026-07-28`, then falls back to
-  `initialize` — and records neither check; one the wire accepted is
+  is not the column's; on a dated column any post-`initialize` request whose
+  header names another revision (`initialize` itself negotiates and is
+  exempt); once per distinct (method, header version). On a dated column a
+  foreign-revision request the wire turned away (a 4xx lifecycle rejection,
+  or `-32601` for a method the dated wire lacks) is version negotiation — a
+  dual-era client probes with `server/discover` at `2026-07-28`, then falls
+  back to `initialize` — and records neither check; one the wire accepted is
   still a wrong revision.
 
 A request that is both — the wrong revision, and turned away for it — is one
@@ -145,6 +144,16 @@ mistake and records one check: `hosted-wrong-revision`, with the rejection in
 its message and in `details.rejected`. `hosted-wire-rejected` is left for a
 client that spoke the cell's revision and was still turned away (a missing
 `_meta`, say).
+
+An `initialize` on the `2026-07-28` column is neither. A client may open with
+the legacy handshake to learn the server's era, and a modern-only server
+answers it with an error naming its versions, after which the client retries
+with one of them (2026-07-28 `basic/versioning`, "Backward Compatibility with
+Initialization-Based Versions"). The hosted layer records it as the INFO check
+`hosted-legacy-probe`, once per header version, with any rejection it drew in
+`details.rejected`. It never decides the verdict: a client that probes and
+then speaks `2026-07-28` is judged on what it sent next, and one that never
+does leaves the cell `incomplete`, not green.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as

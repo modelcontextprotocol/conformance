@@ -59,7 +59,9 @@ import { onBodySettled, tapJsonBody } from './body';
 import { identityFrom } from './identity';
 import {
   describeRequest,
+  isLegacyProbe,
   isNegotiation,
+  legacyProbeCheck,
   tapResponse,
   wireRejectedCheck,
   wireRejection,
@@ -363,6 +365,18 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         // turned away records the revision, with the rejection folded in.
         let explained = false;
         for (const method of request.methods) {
+          // An initialize on the stateless wire is era detection (see
+          // isLegacyProbe()): noted, never failed, and it explains the
+          // rejection it may have drawn.
+          if (isLegacyProbe(run.revision, method)) {
+            explained = true;
+            sessions.recordHostedCheck(
+              run,
+              `probe:${headerVersion ?? ''}`,
+              legacyProbeCheck(run.revision, headerVersion, rejection)
+            );
+            continue;
+          }
           const reason = wrongRevision(run.revision, method, headerVersion);
           if (!reason) continue;
           explained = explained || rejection !== undefined;

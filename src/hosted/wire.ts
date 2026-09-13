@@ -17,7 +17,8 @@
  * request that is both is one mistake and records only the wrong revision,
  * with the rejection folded in. On a dated cell a request at a foreign
  * revision that the wire turned away is version negotiation and records
- * neither (see isNegotiation()).
+ * neither (see isNegotiation()); on the stateless wire an `initialize` is a
+ * legacy probe, noted as INFO and never failed (see isLegacyProbe()).
  */
 
 import type { ServerResponse } from 'http';
@@ -262,6 +263,50 @@ export function wrongRevision(
       ? 'sent no MCP-Protocol-Version header'
       : `sent ${headerVersion}`;
   return undefined;
+}
+
+export const LEGACY_PROBE_CHECK_ID = 'hosted-legacy-probe';
+
+/**
+ * Whether `method` on a cell served at `served` is a legacy probe: an
+ * `initialize` on the stateless wire. A dual-era client may open that way to
+ * learn the server's era, and a modern-only server answers it with an error
+ * naming its versions (2026-07-28 basic/versioning, "Backward Compatibility
+ * with Initialization-Based Versions"), so it is negotiation, not a wrong
+ * revision — and it explains any rejection it drew.
+ */
+export function isLegacyProbe(served: SpecVersion, method: string): boolean {
+  return method === 'initialize' && !isStatefulVersion(served);
+}
+
+export function legacyProbeCheck(
+  served: SpecVersion,
+  headerVersion: string | undefined,
+  rejection?: WireRejection
+): ConformanceCheck {
+  return {
+    id: LEGACY_PROBE_CHECK_ID,
+    name: 'LegacyProbe',
+    description:
+      `The client opened with initialize, the legacy handshake, on a cell served on ${served}. ` +
+      'On this revision that is era detection, not a failure' +
+      (rejection
+        ? `; the cell answered ${response(rejection)}: ${rejection.message}`
+        : '; the cell accepted it'),
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: {
+      served,
+      headerVersion: headerVersion ?? null,
+      ...(rejection && {
+        rejected: {
+          status: rejection.status,
+          code: rejection.code,
+          message: rejection.message
+        }
+      })
+    }
+  };
 }
 
 export function wireRejectedCheck(
