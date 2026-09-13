@@ -65,6 +65,41 @@ describe('SqliteRunStore', () => {
     expect(select.args).toEqual(['r\\_1\\%/%']);
   });
 
+  it('writes in one round trip, creating the tables only when a write fails', async () => {
+    const statements: string[] = [];
+    let tables = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        const { sql } = JSON.parse(init.body).statement as { sql: string };
+        statements.push(sql.trim().split(/\s+/).slice(0, 3).join(' '));
+        if (sql.includes('CREATE TABLE')) tables = true;
+        else if (!tables)
+          return new Response('no such table: hosted_runs_v2', {
+            status: 400
+          });
+        return new Response(JSON.stringify({ rows: [] }), { status: 200 });
+      })
+    );
+    const warm = new SqliteRunStore({ token: 't' });
+    await warm.saveChecks('r1/2026-07-28/tools_call', 'w', []);
+    expect(statements).toEqual(['INSERT INTO hosted_checks_v2']);
+
+    // A fresh account: the write fails, the tables are made, it is retried.
+    statements.length = 0;
+    tables = false;
+    const fresh = new SqliteRunStore({ token: 't' });
+    await fresh.saveChecks('r1/2026-07-28/tools_call', 'w', []);
+    await fresh.saveChecks('r1/2026-07-28/tools_call', 'w', []);
+    expect(statements).toEqual([
+      'INSERT INTO hosted_checks_v2',
+      'CREATE TABLE IF',
+      'CREATE TABLE IF',
+      'INSERT INTO hosted_checks_v2',
+      'INSERT INTO hosted_checks_v2'
+    ]);
+  });
+
   it('stores snapshots in their own table, first body kept', async () => {
     const statements: { sql: string; args: unknown[] }[] = [];
     vi.stubGlobal(

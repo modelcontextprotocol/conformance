@@ -3,10 +3,11 @@
  *
  * val.town injects an API token into every val as the `valtown` env var; the
  * SQLite API is `POST /v1/sqlite/execute {statement:{sql,args}}`. Two tables
- * for runs, created lazily once per isolate, and a third for frozen reports,
- * created the first time an isolate touches one. Old runs are swept on
- * new-run creation and old snapshots on new-snapshot creation, throttled per
- * isolate, so the database stays bounded without a cron.
+ * for runs, created the first time a statement on them fails (so a cold
+ * isolate does not spend two round trips making sure), and a third for
+ * frozen reports, created the first time an isolate touches one. Old runs
+ * are swept on new-run creation and old snapshots on new-snapshot creation,
+ * throttled per isolate, so the database stays bounded without a cron.
  */
 
 import type { ConformanceCheck } from '../../src/types';
@@ -73,6 +74,25 @@ export class SqliteRunStore implements RunStore {
     return body.rows ?? [];
   }
 
+  /**
+   * A statement on the runs tables. They exist but for a fresh account, so
+   * it is sent at once; only if it fails are the tables created and the
+   * statement sent again. A cold isolate's first write is one round trip,
+   * not three.
+   */
+  private async execRuns(sql: string, args: unknown[] = []): Promise<Row[]> {
+    if (this.ready) {
+      await this.ready;
+      return this.exec(sql, args);
+    }
+    try {
+      return await this.exec(sql, args);
+    } catch {
+      await this.init();
+      return this.exec(sql, args);
+    }
+  }
+
   private init(): Promise<void> {
     this.ready ??= (async () => {
       await this.exec(
@@ -92,8 +112,7 @@ export class SqliteRunStore implements RunStore {
   }
 
   async saveRun(id: string, scenarioName: string): Promise<void> {
-    await this.init();
-    await this.exec(
+    await this.execRuns(
       `INSERT INTO hosted_runs_v2 (id, scenario, created_at) VALUES (?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET scenario = excluded.scenario`,
       [id, scenarioName, Date.now()]
@@ -102,8 +121,7 @@ export class SqliteRunStore implements RunStore {
   }
 
   async loadRun(id: string): Promise<string | undefined> {
-    await this.init();
-    const rows = await this.exec(
+    const rows = await this.execRuns(
       `SELECT scenario FROM hosted_runs_v2 WHERE id = ?`,
       [id]
     );
@@ -113,11 +131,10 @@ export class SqliteRunStore implements RunStore {
   async listRuns(
     prefix: string
   ): Promise<Array<{ id: string; scenarioName: string }>> {
-    await this.init();
     // LIKE treats % and _ as wildcards; escape them (and the escape char) so
     // the prefix matches literally.
     const like = prefix.replace(/[\\%_]/g, (c) => `\\${c}`) + '%';
-    const rows = await this.exec(
+    const rows = await this.execRuns(
       `SELECT id, scenario FROM hosted_runs_v2 WHERE id LIKE ? ESCAPE '\\'`,
       [like]
     );
@@ -132,8 +149,7 @@ export class SqliteRunStore implements RunStore {
     writer: string,
     checks: ConformanceCheck[]
   ): Promise<void> {
-    await this.init();
-    await this.exec(
+    await this.execRuns(
       `INSERT INTO hosted_checks_v2 (run_id, writer, checks, updated_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(run_id, writer) DO UPDATE
@@ -143,8 +159,7 @@ export class SqliteRunStore implements RunStore {
   }
 
   async loadChecks(id: string): Promise<Map<string, ConformanceCheck[]>> {
-    await this.init();
-    const rows = await this.exec(
+    const rows = await this.execRuns(
       `SELECT writer, checks FROM hosted_checks_v2 WHERE run_id = ?`,
       [id]
     );
@@ -160,9 +175,8 @@ export class SqliteRunStore implements RunStore {
   }
 
   async deleteRun(id: string): Promise<void> {
-    await this.init();
-    await this.exec(`DELETE FROM hosted_checks_v2 WHERE run_id = ?`, [id]);
-    await this.exec(`DELETE FROM hosted_runs_v2 WHERE id = ?`, [id]);
+    await this.execRuns(`DELETE FROM hosted_checks_v2 WHERE run_id = ?`, [id]);
+    await this.execRuns(`DELETE FROM hosted_runs_v2 WHERE id = ?`, [id]);
   }
 
   private initSnapshots(): Promise<void> {
