@@ -5,7 +5,7 @@ import type { ScenarioContext } from '../../../../mock-server';
 import { isStatefulVersion } from '../../../../connection/select';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
-import { MockTokenVerifier } from './mockTokenVerifier';
+import { MockTokenVerifier, tokenWithScopes } from './mockTokenVerifier';
 import * as jose from 'jose';
 import {
   generateIssuerKey,
@@ -381,7 +381,10 @@ export function createAuthServer(
       ],
       details: {
         url: req.url,
-        path: req.path
+        path: req.path,
+        // The issuer this document declares, so a verdict that compares
+        // against it can be re-judged from the log alone.
+        issuer: resolveIssuer()
       }
     });
 
@@ -453,7 +456,10 @@ export function createAuthServer(
       timestamp,
       specReferences: [SpecReferences.OAUTH_2_1_AUTHORIZATION_ENDPOINT],
       details: {
-        query: req.query
+        query: req.query,
+        // The revision the run targets, so a verdict that depends on it can
+        // be re-judged from the log alone (a fresh instance has no context).
+        specVersion: ctx.specVersion
       }
     });
 
@@ -695,7 +701,10 @@ export function createAuthServer(
 
         if (dpopMisbehavior === 'unbound-token') {
           // Misbehaviour: ignore the binding and issue a plain Bearer token.
-          const bearer = `test-token-${Date.now()}`;
+          const bearer = tokenWithScopes(
+            `test-token-${Date.now()}`,
+            grantedScopes
+          );
           if (tokenVerifier) tokenVerifier.registerToken(bearer, grantedScopes);
           res.json({
             access_token: bearer,
@@ -758,6 +767,9 @@ export function createAuthServer(
       token = result.token;
       scopes = result.scopes;
     }
+
+    // The resource server may verify this token in another process.
+    token = tokenWithScopes(token, scopes);
 
     // Register token with verifier if provided
     if (tokenVerifier) {
