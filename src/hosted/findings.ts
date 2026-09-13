@@ -78,7 +78,8 @@ export function oneLine(text: string, max = REASON_MAX): string {
  */
 export function oneLineReason(c: ConformanceCheck): string {
   const details = (c.details ?? {}) as Record<string, unknown>;
-  let text = c.errorMessage || str(details.message) || c.description || c.name;
+  const message = c.errorMessage || str(details.message);
+  let text = message || c.description || c.name;
   for (const key of Object.keys(details)) {
     if (!key.startsWith('expected')) continue;
     const expected = details[key];
@@ -92,6 +93,11 @@ export function oneLineReason(c: ConformanceCheck): string {
   }
   const stop = str(details.stopReason);
   if (stop) text += ` (${stop})`;
+  // A requirement read from the description says nothing of where it was
+  // missed; the method it was judged on does. (Not added to a message: one
+  // mistake made on several methods stays one cause.)
+  const method = str(details.method);
+  if (!message && method && !text.includes(method)) text += ` (on ${method})`;
   return oneLine(text);
 }
 

@@ -24,7 +24,9 @@ import {
   causeNumbers,
   countsText,
   onlyWaiting,
-  utcMinute
+  stopNote,
+  utcMinute,
+  waitingFor
 } from './markdown';
 import { describeStep, type Step } from '../steps';
 import {
@@ -677,13 +679,13 @@ function happenedHtml(
   const findings = cell.findings ?? [];
   if (cell.state === 'in-progress') {
     return findings.length
-      ? `<div class=muted>waiting for:</div>${findings
-          .map((f) => `<div>${esc(f.reason)}</div>`)
+      ? `<div class=muted>waiting for:</div>${waitingFor(cell)
+          .map((reason) => `<div>${esc(reason)}</div>`)
           .join('')}`
       : `<div class=muted>${esc(cell.note ?? '')}</div>`;
   }
   if (cell.state === 'incomplete') {
-    return `<div>${esc(cell.note ?? '')}${causeLink(cell.cause, causes, numbers)}</div>`;
+    return `<div>${esc(stopNote(cell))}${causeLink(cell.cause, causes, numbers)}</div>`;
   }
   if (!findings.length)
     return '<span class=muted>no failures or warnings</span>';

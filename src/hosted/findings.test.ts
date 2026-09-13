@@ -76,6 +76,22 @@ describe('oneLineReason', () => {
     );
   });
 
+  it('says which method a requirement was missed on, but never splits a message', () => {
+    expect(
+      oneLineReason(
+        check({
+          description: 'Client populates _meta on every request',
+          details: { method: 'tools/list' }
+        })
+      )
+    ).toBe('Client populates _meta on every request (on tools/list)');
+    expect(
+      oneLineReason(
+        check({ errorMessage: 'no header', details: { method: 'tools/list' } })
+      )
+    ).toBe('no header');
+  });
+
   it('keeps to one line', () => {
     expect(oneLineReason(check({ errorMessage: 'a\n  b\tc' }))).toBe('a b c');
     const long = oneLineReason(check({ errorMessage: 'x'.repeat(500) }));

@@ -104,9 +104,10 @@ describe('reportMarkdown', () => {
     expect(md).toBe(
       [
         '**MCP conformance: run `r`**',
-        'As of 2026-09-13 21:47 UTC: http://x/results/r',
-        'Client: VS Code 1.137 (protocol 2025-11-25)',
-        '2025-11-25: 1 of 18 scored cells pass. Reached: 1 pass, 1 fail; 12 not tried.',
+        '',
+        '- As of 2026-09-13 21:47 UTC: http://x/results/r',
+        '- Client: VS Code 1.137 (protocol 2025-11-25)',
+        '- 2025-11-25: 1 of 18 scored cells pass. Reached: 1 pass, 1 fail; 12 not tried.',
         '',
         '**What went wrong, by cause**',
         '1. Client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> (2025-11-25/auth/token-endpoint-auth-basic)',

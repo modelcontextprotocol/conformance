@@ -101,6 +101,19 @@ function causeRef(
   return ` (cause ${numbers.get(key)})`;
 }
 
+/** An in-progress cell's distinct reasons, what it is still waiting for. */
+export function waitingFor(cell: CellReport): string[] {
+  return [...new Set((cell.findings ?? []).map((f) => f.reason))];
+}
+
+/**
+ * Why an incomplete cell stopped: its note without the tail about the
+ * failures its own page lists (incompleteNote() joins the two with "; ").
+ */
+export function stopNote(cell: CellReport): string {
+  return (cell.note ?? '').split('; ')[0];
+}
+
 /** Whether every failure on a failed cell is only the scenario still waiting. */
 export function onlyWaiting(cell: CellReport): boolean {
   const failures = (cell.findings ?? []).filter((f) => f.status === 'FAILURE');
@@ -119,11 +132,11 @@ function happened(
   const findings = cell.findings ?? [];
   if (cell.state === 'in-progress') {
     return findings.length
-      ? `waiting for: ${findings.map((f) => mdText(f.reason)).join('; ')}`
+      ? `waiting for: ${waitingFor(cell).map(mdText).join('; ')}`
       : mdText(cell.note ?? '');
   }
   if (cell.state === 'incomplete') {
-    return mdText(cell.note ?? '') + causeRef(cell.cause, causes, numbers);
+    return mdText(stopNote(cell)) + causeRef(cell.cause, causes, numbers);
   }
   const lines = findings.map(
     (f) =>
@@ -153,18 +166,18 @@ export function reportMarkdown(
   const numbers = causeNumbers(report.causes);
   const out: string[] = [];
   const scope = report.revision ? ` at ${report.revision}` : '';
-  out.push(`**MCP conformance: run ${mdCode(report.runId)}${scope}**`);
+  out.push(`**MCP conformance: run ${mdCode(report.runId)}${scope}**`, '');
   out.push(
     report.frozenAt && links.snapshot
-      ? `Frozen ${utcMinute(report.frozenAt)}: ${links.snapshot} (live report: ${links.live})`
-      : `As of ${utcMinute(report.generatedAt)}: ${links.live}`
+      ? `- Frozen ${utcMinute(report.frozenAt)}: ${links.snapshot} (live report: ${links.live})`
+      : `- As of ${utcMinute(report.generatedAt)}: ${links.live}`
   );
-  out.push(`Client: ${identityText(report.identities)}`);
+  out.push(`- Client: ${identityText(report.identities)}`);
   for (const col of report.columns) {
     const reached = countsText(col.counts, REACHED);
     const notTried = col.counts['not-tried'] ?? 0;
     out.push(
-      `${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass. ` +
+      `- ${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass. ` +
         `Reached: ${reached || 'none'}` +
         (notTried ? `; ${notTried} not tried.` : '.')
     );
