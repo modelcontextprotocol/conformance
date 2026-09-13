@@ -51,6 +51,7 @@ export function createServer(
     prmResourceOverride,
     onPrmRequest
   } = options;
+  tokenVerifier?.useMacKey(ctx.tokenMacKey);
   // Factory: create a fresh Server per request to avoid "Already connected" errors
   // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
   function createMcpServer() {
@@ -159,7 +160,8 @@ export function createServer(
     // until after the server has started
     // TODO: Find a way to do this w/ pre-applying middleware.
     const verifier =
-      tokenVerifier || new MockTokenVerifier(checks, requiredScopes);
+      tokenVerifier ||
+      new MockTokenVerifier(checks, requiredScopes, ctx.tokenMacKey);
 
     const authMiddleware =
       options.authMiddleware ??

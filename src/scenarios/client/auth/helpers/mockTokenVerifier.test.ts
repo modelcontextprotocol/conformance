@@ -1,11 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createHmac } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import { MockTokenVerifier, tokenWithScopes } from './mockTokenVerifier';
 
 const b64 = (s: string) => Buffer.from(s).toString('base64url');
 
-const verify = async (token: string) =>
-  (await new MockTokenVerifier([]).verifyAccessToken(token)).scopes;
+const verify = async (token: string, key?: Buffer) =>
+  (await new MockTokenVerifier([], [], key).verifyAccessToken(token)).scopes;
+
+const macWith = (key: Buffer | string, payload: string) =>
+  createHmac('sha256', key).update(payload).digest('base64url');
 
 describe('the scopes MAC key', () => {
   const saved = process.env.CONFORMANCE_RELAY_SECRET;
@@ -14,21 +17,27 @@ describe('the scopes MAC key', () => {
     else process.env.CONFORMANCE_RELAY_SECRET = saved;
   });
 
-  // A token is a MAC a client could run offline guesses against, so the
-  // relay secret that guards /__aux must never be its key.
-  it.each([
-    ['a long', 'x'.repeat(64)],
-    ['a short', 'short-secret']
-  ])('is never %s relay secret itself', async (_, secret) => {
+  // Every token a client receives is a MAC it could run offline guesses
+  // against, so no key may depend on the relay secret, however long.
+  it('never verifies a token signed with the relay secret or a key derived from it', async () => {
+    const secret = 'x'.repeat(64);
     process.env.CONFORMANCE_RELAY_SECRET = secret;
-    const token = tokenWithScopes('test-token-2', ['mcp:basic']);
-    const cut = token.lastIndexOf('.');
-    expect(token.slice(cut + 1)).not.toBe(
-      createHmac('sha256', secret)
-        .update(token.slice(0, cut))
-        .digest('base64url')
-    );
-    expect(await verify(token)).toEqual(['mcp:basic']);
+    const payload = `test-token-2.scopes.${b64('mcp:admin')}`;
+    const derived = createHmac('sha256', secret)
+      .update('mcp-conformance/token-scopes')
+      .digest();
+    for (const key of [secret, derived]) {
+      const token = `${payload}.${macWith(key, payload)}`;
+      expect(await verify(token)).toEqual([]);
+    }
+  });
+
+  it("checks carried scopes under the run's key", async () => {
+    const key = randomBytes(32);
+    const token = tokenWithScopes('test-token-3', ['mcp:basic'], key);
+    expect(await verify(token, key)).toEqual(['mcp:basic']);
+    expect(await verify(token, randomBytes(32))).toEqual([]);
+    expect(await verify(token)).toEqual([]);
   });
 });
 
