@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import {
+  duration,
   escapeHtml as esc,
   jsonForScript,
   prose,
@@ -9,11 +10,13 @@ import {
   renderLanding,
   renderMatrixTable,
   renderReport,
-  renderResults
+  renderResults,
+  REPO_URL
 } from './html';
 import type { RunConfig } from './server';
 import { buildReport } from './report';
-import { cellId } from './session';
+import { cellId, DEFAULT_CELL_TTL_MS } from './session';
+import { CLIENTS } from './client-config';
 import { identityCheck, identityOf } from './identity';
 
 const matrix = buildMatrix({ exclude: { 'sse-retry': 'excluded <here>' } });
@@ -57,10 +60,160 @@ function configFor(runId: string, scope: Partial<RunConfig> = {}): RunConfig {
   };
 }
 
+/** A single process without a store, at the default idle TTL. */
+const IN_MEMORY = { idleMs: DEFAULT_CELL_TTL_MS };
+
+/** The page's text with tags dropped and whitespace folded. */
+const text = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+describe('landing page for a newcomer', () => {
+  const html = renderLanding('http://x', matrix, IN_MEMORY);
+  const said = text(html);
+
+  it('says what this is and what a cell is before the matrix', () => {
+    const matrixAt = html.indexOf('<h2 id=matrix>');
+    expect(matrixAt).toBeGreaterThan(0);
+    for (const id of ['start', 'score', 'trust', 'retention']) {
+      const at = html.indexOf(`<h2 id=${id}>`);
+      expect(at, id).toBeGreaterThan(0);
+      expect(at, id).toBeLessThan(matrixAt);
+    }
+    expect(said).toContain(
+      'This server tests an MCP client that you point at it by hand'
+    );
+    expect(said).toContain(
+      'Each cell of the matrix below is one scenario at one specification revision, with its own MCP URL.'
+    );
+  });
+
+  it('gives the five-minute path: new run, composite, per-client config, steps, results', () => {
+    expect(html).toContain('<a href="/s">Start a new run</a>');
+    expect(said).toContain('One URL for several scenarios');
+    expect(said).toContain('Each auth scenario needs a URL of its own.');
+    expect(said).toContain(
+      'VS Code, Codex, Goose and any client that reads mcpServers JSON'
+    );
+    expect(said).toContain('/results/<run-id>');
+    expect(said).toContain('Freeze a copy to link to');
+    expect(said).toContain('Markdown or plain text');
+    // The section names match the run page's headings, which carry anchors.
+    const run = renderConfig('http://x', matrix, configFor('run0'));
+    expect(run).toContain(
+      '<h2 id=composites>One URL for several scenarios</h2>'
+    );
+    expect(run).toContain('<h2 id=client-config>Paste into your client</h2>');
+    expect(said).toContain('Paste into your client');
+    for (const client of CLIENTS)
+      expect(run).toContain(`<b>${client.label}</b>`);
+  });
+
+  it('explains the score from the matrix and every state in one line', () => {
+    expect(said).toContain('“X of N scored (M startable here)”');
+    for (const r of matrix.revisions) {
+      const set = matrix
+        .cells()
+        .filter((c) => c.revision === r && c.scoring === 'scored');
+      const here = set.filter((c) => c.startable).length;
+      expect(said).toContain(`${r} scores ${set.length} and can start ${here}`);
+    }
+    expect(said).toContain(
+      'Verdicts come only from what your client actually sent'
+    );
+    expect(said).toContain(
+      'a cell passes only once your client has spoken that cell’s revision there'
+    );
+    for (const state of [
+      'pass',
+      'fail',
+      'waiting',
+      'in progress',
+      'incomplete',
+      'not tried'
+    ]) {
+      expect(html).toContain(`">${state}</span></dt><dd>`);
+    }
+  });
+
+  it('says results are self-reported and not an SDK tier measurement', () => {
+    expect(said).toContain(
+      'Nothing stops anyone from testing a modified client'
+    );
+    expect(said).toContain('share a frozen copy’s link');
+    expect(said).toContain('These results are not an SDK tier measurement.');
+    expect(html).toContain(`href="${REPO_URL}#sdk-tier-assessment"`);
+    expect(html).toContain(`href="${REPO_URL}#conformance-requirements"`);
+  });
+
+  it('links the repo, each revision’s specification and the issue tracker', () => {
+    expect(html).toContain(`href="${REPO_URL}"`);
+    expect(html).toContain(`href="${REPO_URL}/issues"`);
+    for (const r of matrix.revisions) {
+      expect(html).toContain(
+        `<a href="https://modelcontextprotocol.io/specification/${r}">${r}</a>`
+      );
+    }
+  });
+});
+
+describe('landing page retention', () => {
+  const retention = (r: Parameters<typeof renderLanding>[2]) =>
+    text(
+      renderLanding('http://x', matrix, r).match(
+        /<h2 id=retention>.*?<\/p>/s
+      )![0]
+    );
+
+  it('writes durations in the largest unit that divides them', () => {
+    expect(duration(DEFAULT_CELL_TTL_MS)).toBe('5 minutes');
+    expect(duration(6 * 3600_000)).toBe('6 hours');
+    expect(duration(30 * 24 * 3600_000)).toBe('30 days');
+    expect(duration(90 * 60_000)).toBe('90 minutes');
+    expect(duration(3600_000)).toBe('1 hour');
+    expect(duration(1500)).toBe('1500 ms');
+  });
+
+  it('a single process says runs live in memory, for the idle TTL in force', () => {
+    const said = retention(IN_MEMORY);
+    expect(said).toContain('Anyone with a run’s link can read its results.');
+    expect(said).toContain(
+      `dropped once the cell has had no request for ${duration(DEFAULT_CELL_TTL_MS)}`
+    );
+    expect(said).toContain('frozen copies last until the server restarts');
+    expect(said).toContain('DELETE /results/<run-id> removes a run');
+    expect(retention({ idleMs: 90 * 60_000 })).toContain(
+      'no request for 90 minutes'
+    );
+  });
+
+  it('a deployment with a store states both of its lifetimes and the idle TTL', () => {
+    const said = retention({
+      idleMs: DEFAULT_CELL_TTL_MS,
+      store: { runMs: 2 * 3600_000, snapshotMs: 7 * 24 * 3600_000 }
+    });
+    expect(said).toContain(
+      'recorded traffic is kept for 2 hours from your client’s first request to it'
+    );
+    expect(said).toContain('A frozen copy is kept for 7 days');
+    expect(said).toContain(
+      'A cell with no request for 5 minutes leaves memory and is rebuilt from its stored traffic'
+    );
+    expect(said).not.toContain('in memory only');
+    // A store that states no lifetimes invents none.
+    const vague = retention({ idleMs: DEFAULT_CELL_TTL_MS, store: {} });
+    expect(vague).not.toMatch(/kept for \d/);
+    expect(vague).toContain('for as long as it is set to keep it');
+  });
+});
+
 describe('hosted HTML', () => {
   it('landing shows the static matrix with scoring, startability and steps, no run links', () => {
-    const html = renderLanding('http://x', matrix);
-    expect(html).toContain('<a href="/s">Start a run</a>');
+    const html = renderLanding('http://x', matrix, IN_MEMORY);
+    expect(html).toContain('<a href="/s">Start a new run</a>');
     for (const r of matrix.revisions) expect(html).toContain(`<th>${r}</th>`);
     expect(html).toContain('<code>tools_call</code>');
     expect(html).toContain('not startable: needs relay origin(s) [as]');
@@ -124,7 +277,7 @@ describe('hosted HTML', () => {
   });
 
   it('shows each step as a plain line next to the JSON', () => {
-    const landing = renderLanding('http://x', matrix);
+    const landing = renderLanding('http://x', matrix, IN_MEMORY);
     expect(landing).toContain(
       '<ol class=steps><li>list the tools</li><li>call add_numbers with a=5 and b=3</li></ol>'
     );
@@ -286,7 +439,7 @@ describe('hosted HTML', () => {
     expect(prose('**PRM:** `/.well-known/x` <b>\nnext', true)).toBe(
       '<b>PRM:</b> <code>/.well-known/x</code> &lt;b&gt;<br>next'
     );
-    const landing = renderLanding('http://x', matrix);
+    const landing = renderLanding('http://x', matrix, IN_MEMORY);
     expect(landing).toContain('<b>PRM:</b>');
     expect(landing).not.toContain('**PRM:**');
   });

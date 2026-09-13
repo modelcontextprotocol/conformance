@@ -17,7 +17,7 @@ import {
 } from './report';
 import type { ClientIdentity } from './identity';
 import type { Cause } from './findings';
-import type { SnapshotInfo } from './store';
+import type { SnapshotInfo, StoreRetention } from './store';
 import type { ShownCheck } from './shown';
 import {
   BY_LABEL,
@@ -115,6 +115,10 @@ const css = `
   td.num{white-space:nowrap;font-variant-numeric:tabular-nums}
   td.what div{margin:.1rem 0}
   .client{margin:.6rem 0}
+  ol.start li{margin:.3rem 0}
+  dl.states{display:grid;grid-template-columns:max-content 1fr;gap:.2rem .75rem;
+    margin:.4rem 0}
+  dl.states dd{margin:0}
 `;
 
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
@@ -330,24 +334,185 @@ function renderMatrixCell(cell: MatrixCell, opts: TableOptions): string {
   return `<td class=cell>${lines}</td>`;
 }
 
-export function renderLanding(origin: string, matrix: HostedMatrix): string {
-  const startable = matrix.cells().filter((c) => c.startable).length;
+export const REPO_URL = 'https://github.com/modelcontextprotocol/conformance';
+
+/** A revision's specification on modelcontextprotocol.io. */
+export function specUrl(revision: string): string {
+  return `https://modelcontextprotocol.io/specification/${revision}`;
+}
+
+/** What the landing page says about how long this deployment keeps a run. */
+export interface LandingRetention {
+  /** SessionManager.ttlMs: a cell with no request for this long leaves memory. */
+  idleMs: number;
+  /**
+   * Present when runs persist to a store (a serverless deployment), with
+   * the store's own lifetimes when it states them (RunStore.retention).
+   */
+  store?: Partial<StoreRetention>;
+}
+
+/** "5 minutes", "6 hours", "30 days": the largest unit that divides `ms`. */
+export function duration(ms: number): string {
+  const units: [number, string][] = [
+    [86_400_000, 'day'],
+    [3_600_000, 'hour'],
+    [60_000, 'minute'],
+    [1_000, 'second']
+  ];
+  for (const [size, unit] of units) {
+    if (ms >= size && ms % size === 0) {
+      const n = ms / size;
+      return `${n} ${unit}${n === 1 ? '' : 's'}`;
+    }
+  }
+  return `${ms} ms`;
+}
+
+/** Each state a report shows, in one line (see CellState). */
+const STATE_MEANING: [CellState, string][] = [
+  [
+    'pass',
+    'the client did what the scenario tests, and nothing it sent broke a check'
+  ],
+  [
+    'fail',
+    'something the client sent broke a check; the cell leads with the reason'
+  ],
+  [
+    'waiting',
+    'the only failures are steps the scenario still expects, such as a sign-in or a form not finished yet'
+  ],
+  [
+    'in-progress',
+    'the client reached the cell but has not yet done anything the scenario tests'
+  ],
+  [
+    'incomplete',
+    'the client reached the cell and stopped: it spoke only an older revision and did not retry'
+  ],
+  ['not-tried', 'nothing has reached the cell yet']
+];
+
+function retentionHtml(r: LandingRetention): string {
+  const idle = duration(r.idleMs);
+  let kept: string;
+  if (!r.store) {
+    kept =
+      `This server keeps runs in memory only: a cell’s recorded traffic is dropped ` +
+      `once the cell has had no request for ${idle}, and frozen copies last until ` +
+      `the server restarts.`;
+  } else {
+    const { runMs, snapshotMs } = r.store;
+    kept =
+      (runMs !== undefined
+        ? `A cell’s recorded traffic is kept for ${duration(runMs)} from your ` +
+          `client’s first request to it; after that the cell reads as not tried. `
+        : `A cell’s recorded traffic is kept in this deployment’s store for as long as it is set to keep it. `) +
+      (snapshotMs !== undefined
+        ? `A frozen copy is kept for ${duration(snapshotMs)} from when it was ` +
+          `frozen, so freeze one to keep a result. `
+        : '') +
+      `A cell with no request for ${idle} leaves memory and is rebuilt from ` +
+      `its stored traffic on its next request, which loses nothing.`;
+  }
+  return (
+    `<h2 id=retention>How long results last</h2>` +
+    `<p>Anyone with a run’s link can read its results. ${kept} ` +
+    `<code>DELETE /results/&lt;run-id&gt;</code> removes a run and its frozen copies at once.</p>`
+  );
+}
+
+/**
+ * The landing page: what this is, how to test a client in five minutes,
+ * what a score means, what a result is not, how long results last, then
+ * the static matrix.
+ */
+export function renderLanding(
+  origin: string,
+  matrix: HostedMatrix,
+  retention: LandingRetention
+): string {
+  const cells = matrix.cells();
+  const startable = cells.filter((c) => c.startable).length;
+  const scored = matrix.revisions
+    .map((r) => {
+      const set = cells.filter(
+        (c) => c.revision === r && c.scoring === 'scored'
+      );
+      const here = set.filter((c) => c.startable).length;
+      return `<code>${esc(r)}</code> scores ${set.length} and can start ${here}`;
+    })
+    .join('; ');
+  const states = STATE_MEANING.map(
+    ([state, meaning]) => `<dt>${statePill(state)}</dt><dd>${esc(meaning)}</dd>`
+  ).join('');
+  const specs = matrix.revisions
+    .map((r) => `<a href="${esc(specUrl(r))}">${esc(r)}</a>`)
+    .join(' · ');
   return page(
     'MCP Conformance — hosted',
     `<h1>MCP Conformance — hosted</h1>
-<p>Client conformance as a service. One run exercises the whole matrix below:
-every client scenario at every specification revision that ships a
-requirement set (${matrix.revisions.map((r) => `<code>${esc(r)}</code>`).join(', ')}).
-Each cell is its own MCP server speaking that revision's wire, at
-<code>${esc(origin)}/s/&lt;run-id&gt;/&lt;revision&gt;/&lt;scenario&gt;</code>
-(plus the scenario's MCP path); results mirror the shape under
-<code>/results/&lt;run-id&gt;</code>.</p>
-<p><b><a href="/s">Start a run</a></b> — mints a run id and shows this matrix
-with a link and a copyable config per cell. Cells are created lazily on first
-request; cells that show <i>steps</i> tell a generic client what to do
-(<code>MCP_CONFORMANCE_CONTEXT.steps</code>).</p>
+<p>This server tests an MCP <b>client</b> that you point at it by hand, such as an
+IDE, a desktop agent or a deployed client that a script cannot drive. Each cell
+of the matrix below is one scenario at one specification revision, with its own
+MCP URL.</p>
+
+<h2 id=start>Test your client in five minutes</h2>
+<ol class=start>
+<li><b><a href="/s">Start a new run</a>.</b> The run page holds every URL for that
+run; keep to that one run.</li>
+<li>On the run page, <b>One URL for several scenarios</b> gives one URL per revision
+that carries most of its scenarios without a sign-in. Each auth scenario needs a
+URL of its own. <b>Paste into your client</b> puts all of them in one block per
+client, for VS Code, Codex, Goose and any client that reads <code>mcpServers</code> JSON.</li>
+<li>Make your client do what each cell’s steps say, usually list the tools and call
+one. For an auth cell, connect and approve the sign-in: the test authorization
+server approves at once, with no account.</li>
+<li>Read the results at <code>/results/&lt;run-id&gt;</code>, linked from the run
+page, which updates itself while it is open. <i>Freeze a copy to link to</i> gives a
+link that never changes, and you can copy the report as Markdown or plain text for
+an issue or a chat.</li>
+</ol>
+<p class=muted>Some clients speak 2026-07-28 only behind an opt-in (Codex CLI:
+<code>codex --enable mcp_2026_07_28</code>), and many pick up new servers only when
+they start or open a new chat.</p>
+
+<h2 id=score>What the score means</h2>
+<p>A report column reads “X of N scored (M startable here)”: X of the N cells the
+revision’s frozen <a href="${REPO_URL}#conformance-requirements">requirement set</a>
+scores have passed, and M is how many of those N this deployment can start:
+${scored}. Cells marked <i>not scored</i> or <i>not in the requirement set</i> run and report
+but never count. Verdicts come only from what your client actually sent to this
+server, and a cell passes only once your client has spoken that cell’s revision
+there: a finished sign-in or an older handshake is not enough.</p>
+<dl class=states>${states}</dl>
+
+<h2 id=trust>Self-reported, and not a tier</h2>
+<p>Results describe what your client did against this server. Nothing stops
+anyone from testing a modified client, so to offer a result as evidence, share a
+frozen copy’s link: it is dated, and anyone can check it by pointing the same client
+build at a new run. Everything sent to a run’s URLs counts as your client’s, so
+debug with other tools on a separate run.</p>
+<p>These results are not an SDK tier measurement. SDK tiers (SEP-1730) are assessed
+with <code>tier-check</code>, whose conformance pass rates come from the CLI runner
+driving the SDK’s own conformance client and server
+(<a href="${REPO_URL}#sdk-tier-assessment">SDK Tier Assessment</a>). This server is
+for clients that cannot be scripted that way.</p>
+
+${retentionHtml(retention)}
+
+<p class=muted>Source, CLI and docs: <a href="${REPO_URL}">modelcontextprotocol/conformance</a>.
+Specification: ${specs}. A check looks wrong or a scenario misbehaves?
+<a href="${REPO_URL}/issues">Open an issue</a> with the frozen Markdown report.</p>
+
+<h2 id=matrix>The matrix</h2>
 <p class=muted>${matrix.rows.length} scenarios × ${matrix.revisions.length} revisions,
-${startable} startable cells here. <a href="/scenarios">JSON</a>.</p>
+${startable} startable cells here. A cell’s MCP URL is
+<code>${esc(origin)}/s/&lt;run-id&gt;/&lt;revision&gt;/&lt;scenario&gt;${MCP_PATH}</code>, and
+its results sit at the same path under <code>/results</code>. Cells that show
+<i>steps</i> tell a generic client what to do
+(<code>MCP_CONFORMANCE_CONTEXT.steps</code>). <a href="/scenarios">JSON</a>.</p>
 ${renderMatrixTable(matrix, { origin })}`
   );
 }
@@ -427,7 +592,7 @@ function clientBlocks(
     );
   });
   return (
-    `<h2>Paste into your client</h2><p class=muted>${intro} If the file ` +
+    `<h2 id=client-config>Paste into your client</h2><p class=muted>${intro} If the file ` +
     `already has the top-level key (<code>servers</code>, <code>extensions</code>, ` +
     `<code>mcpServers</code>), paste only the entries under it.</p>${blocks.join('')}`
   );
@@ -556,7 +721,7 @@ function compositeLinks(
       `<button class=copy data-copy-text="${esc(url)}">copy URL</button></li>`
   );
   if (!items.length) return '';
-  return `<h2>One URL for several scenarios</h2>
+  return `<h2 id=composites>One URL for several scenarios</h2>
 <p>For a client you configure by hand, give it one of these instead of a URL
 per scenario. Each scenario still records and scores in its own cell below.</p>
 <ul>${items.join('')}</ul>`;

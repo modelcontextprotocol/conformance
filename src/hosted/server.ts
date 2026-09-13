@@ -745,7 +745,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // ---------- discovery ----------
 
   app.get('/', (req, res) => {
-    res.type('html').send(renderLanding(origin(req), matrix));
+    // The page states this deployment's lifetimes, not the defaults.
+    res.type('html').send(
+      renderLanding(origin(req), matrix, {
+        idleMs: sessions.ttlMs,
+        ...(opts.store && { store: opts.store.retention ?? {} })
+      })
+    );
   });
 
   app.get('/scenarios', (_req, res) => {
