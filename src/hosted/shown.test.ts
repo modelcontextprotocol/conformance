@@ -1,5 +1,6 @@
 import { beforeAll, describe, it, expect } from 'vitest';
-import { shownChecks } from './shown';
+import { jsonRows, shownChecks } from './shown';
+import { summarize } from './report';
 import { finalizeChecks } from './session';
 import type { ConformanceCheck } from '../types';
 import { hostedScenarios } from './catalog';
@@ -180,5 +181,37 @@ describe('shownChecks: steps the flow never reached', () => {
     expect(
       shown.find((c) => c.id === 'resource-parameter-in-token')!.notSeen
     ).toBe(true);
+  });
+
+  it('gives them as NOT_SEEN in the JSON, so the rows count as the summary does', () => {
+    const authorize = check({
+      id: 'incoming-auth-request',
+      status: 'INFO',
+      details: { path: '/authorize', query: {} }
+    });
+    const shown = shownChecks(AUTH, R, stuck([authorize]));
+    const rows = jsonRows(shown);
+    const status = (id: string) => rows.find((c) => c.id === id)!.status;
+    // The client's own failure stays a FAILURE; the step never reached
+    // reads NOT_SEEN and keeps notSeen.
+    expect(status('resource-parameter-in-authorization')).toBe('FAILURE');
+    expect(status('resource-parameter-in-token')).toBe('NOT_SEEN');
+    for (const c of rows.filter((r) => r.status === 'NOT_SEEN')) {
+      expect(c.notSeen).toBe(true);
+    }
+    // Presentation only: the rows given in, and their counts, are unchanged.
+    expect(
+      shown.filter((c) => c.notSeen).every((c) => c.status === 'FAILURE')
+    ).toBe(true);
+    const count = (s: string) => rows.filter((c) => c.status === s).length;
+    expect({
+      passed: count('SUCCESS'),
+      failed: count('FAILURE'),
+      notSeen: count('NOT_SEEN'),
+      warnings: count('WARNING'),
+      info: count('INFO'),
+      skipped: count('SKIPPED'),
+      total: rows.length
+    }).toEqual(summarize(shown));
   });
 });

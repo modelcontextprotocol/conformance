@@ -328,7 +328,7 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     expect(
       results.checks.find((c: Row) => c.id === 'authorization-server-metadata')
     ).toMatchObject({
-      status: 'FAILURE',
+      status: 'NOT_SEEN',
       notSeen: true,
       reason: 'the flow did not reach this step'
     });

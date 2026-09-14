@@ -1125,17 +1125,19 @@ describe('hosted server', () => {
       note: 'waiting for the client or the person to finish the flow',
       summary: { failed: 0, notSeen: 5 }
     });
-    expect(
-      json.checks.filter((c: { status: string }) => c.status === 'FAILURE')
-    ).toHaveLength(5);
-    expect(
-      json.checks
-        .filter((c: { status: string }) => c.status === 'FAILURE')
-        .every((c: { notSeen?: boolean }) => c.notSeen === true)
-    ).toBe(true);
+    // Its rows read NOT_SEEN (and keep notSeen), never FAILURE, so counting
+    // them by status gives the summary.
+    const rows = json.checks as { status: string; notSeen?: boolean }[];
+    expect(rows.filter((c) => c.status === 'FAILURE')).toEqual([]);
+    const unmet = rows.filter((c) => c.status === 'NOT_SEEN');
+    expect(unmet).toHaveLength(5);
+    expect(unmet.every((c) => c.notSeen === true)).toBe(true);
     const page = await fetch(`${base}${cell}`, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
+    // The page is as it was: a "not seen" pill, no new status word.
+    expect(page).toContain('>not seen</span>');
+    expect(page).not.toContain('NOT_SEEN');
     expect(page).toContain('>waiting</span>');
     expect(page).toContain(
       'waiting for the client or the person to finish the flow'
@@ -1148,7 +1150,24 @@ describe('hosted server', () => {
       (c: { scenario: string }) =>
         c.scenario === 'sep-2322-client-request-state'
     );
-    expect(row).toMatchObject({ verdict: 'incomplete', state: 'waiting' });
+    expect(row).toMatchObject({
+      verdict: 'incomplete',
+      state: 'waiting',
+      summary: { failed: 0, notSeen: 5 }
+    });
+    // What it waits for reads NOT_SEEN in the report's JSON too.
+    type ReportFinding = { status: string; by: string };
+    expect(
+      row.findings.filter((f: ReportFinding) => f.status === 'FAILURE')
+    ).toEqual([]);
+    expect(
+      row.findings.filter((f: ReportFinding) => f.status === 'NOT_SEEN')
+    ).not.toHaveLength(0);
+    expect(
+      row.findings
+        .filter((f: ReportFinding) => f.status === 'NOT_SEEN')
+        .every((f: ReportFinding) => f.by === 'scenario')
+    ).toBe(true);
     expect(report.columns[1].counts.waiting).toBe(1);
     const md = await fetch(`${base}/results/wait?format=md`).then((r) =>
       r.text()
@@ -1156,6 +1175,7 @@ describe('hosted server', () => {
     expect(md).toMatch(
       /\| waiting \| 0 \/ 0 \/ 0 \| waiting for the client or the person to finish the flow/
     );
+    expect(md).not.toContain('NOT_SEEN');
     const reportPage = await fetch(`${base}/results/wait`, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
@@ -1214,13 +1234,13 @@ describe('hosted server', () => {
     const cell = `/results/inc/${REV_STATEFUL}/tools_call`;
     const json = await fetch(`${base}${cell}`).then((r) => r.json());
     expect(json.verdict).toBe('incomplete');
-    // A FAILURE row, but the scenario's own expectation: not the client's.
+    // The scenario's own expectation, not the client's: NOT_SEEN in the JSON.
     expect(json.summary).toMatchObject({ failed: 0, notSeen: 1 });
     expect(json.note).toBe(
       'the client has not yet done anything this scenario tests; the failure listed is what it is still waiting for'
     );
     // tools_call gives its reason in details.message, not errorMessage.
-    const failure = json.checks.find((c: Check) => c.status === 'FAILURE');
+    const failure = json.checks.find((c: Check) => c.status === 'NOT_SEEN');
     expect(failure.details.message).toBe('Tool was not called by client');
 
     const html = await page(cell);
@@ -1823,7 +1843,7 @@ describe('hosted server', () => {
     expect(probesIn(never.checks)).toHaveLength(1);
     expect(
       never.checks.find((c: Check) => c.id === 'tool-add-numbers').status
-    ).toBe('FAILURE');
+    ).toBe('NOT_SEEN');
     expect(await verdictOf('neg2', REV_STATEFUL, 'tools_call')).toBe(
       'incomplete'
     );

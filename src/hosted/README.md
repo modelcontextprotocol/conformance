@@ -195,11 +195,12 @@ per check: a check recorded again with the same id, description and
 is one row with `repeats`, kept by the expected-failures collapse rule (the
 worst, ties to the latest). A FAILURE the scenario reports before it has
 seen anything, such as a step of the auth flow the client never reached, is
-marked `notSeen` with the reason "the flow did not reach this step" (or the
-scenario's own words, "Tool was not called by client") and counted in
-`summary.notSeen`, apart from the client's `failed`. Every FAILURE, WARNING
-and SKIPPED row carries a one-line `reason`, and no row carries `details:
-null`. None of this changes a check's status or a verdict. Per column, `scored: { passed, total, startable }` counts passes
+given as `status: "NOT_SEEN"`, marked `notSeen: true`, with the reason "the
+flow did not reach this step" (or the scenario's own words, "Tool was not
+called by client") and counted in `summary.notSeen`, apart from the client's
+`failed`. Every FAILURE, WARNING, NOT_SEEN and SKIPPED row carries a one-line
+`reason`, and no row carries `details: null`. None of this changes a stored
+check or a verdict: the run's log and the CLI still record a FAILURE. Per column, `scored: { passed, total, startable }` counts passes
 among every cell the revision's requirement set scores — `total` is the
 yaml's count whether or not this deployment can start the cell, `startable`
 how many of those it can (the HTML says "3 of 32 scored (11 startable
@@ -211,6 +212,30 @@ exchanges only: on the stateful wire the `initialize` params and the
 `_meta['io.modelcontextprotocol/clientInfo']` and the accepted request's
 `MCP-Protocol-Version` header. Recorded as an INFO check
 `hosted-client-identity` on the cell with `details.protocolVersions`.
+
+**Check statuses.** Each row of a cell's JSON `checks` has one `status`, and
+counting the rows by status gives the cell's `summary`:
+
+- `SUCCESS`: the client did what the check tests (`summary.passed`).
+- `FAILURE`: something in the client's traffic broke a requirement
+  (`summary.failed`). Any FAILURE makes the verdict `fail`.
+- `NOT_SEEN`: a step the scenario expects that nothing has reached yet. The
+  flow stopped before it, or is still going (a consent screen, a form to
+  answer); nothing the client did is wrong (`summary.notSeen`). The row also
+  carries `notSeen: true`. The run's log and the CLI record it as a FAILURE,
+  but on its own it never makes a cell `fail`: a cell with nothing else
+  wrong is `incomplete`.
+- `WARNING`: something in the client's traffic worth fixing that the spec
+  does not require, usually a SHOULD (`summary.warnings`). It never changes
+  the verdict.
+- `SKIPPED`: the client did nothing this check covers; `reason` says what
+  (`summary.skipped`).
+- `INFO`: a record, not a judgement, such as a request log or the client's
+  identity (`summary.info`).
+
+The run report's `findings` use the same words: a finding the scenario
+reports (`by: "scenario"`) reads `NOT_SEEN`, one of the client's (`by:
+"client"`) `FAILURE` or `WARNING`.
 
 **Run report.** The run and column reports are meant to be linked, so a
 person can see how a client did without opening each cell. Every cell has a

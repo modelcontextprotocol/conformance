@@ -20,7 +20,7 @@
  * carries `details: null`.
  */
 
-import type { ConformanceCheck, SpecVersion } from '../types';
+import type { CheckStatus, ConformanceCheck, SpecVersion } from '../types';
 import { collapseDuplicateChecks } from '../checks/collapse';
 import { notSeenIn, notSeenReason, oneLine, oneLineReason } from './findings';
 
@@ -37,6 +37,29 @@ export interface ShownCheck extends ConformanceCheck {
    * row: why nothing was checked.
    */
   reason?: string;
+}
+
+/**
+ * A row's `status` as the JSON gives it: the check's own, except that a
+ * not-seen FAILURE reads NOT_SEEN, so that counting rows by status gives
+ * the summary's counts (./report.ts summarize()).
+ */
+export type ShownStatus = CheckStatus | 'NOT_SEEN';
+
+/** A row as a cell's JSON gives it (see jsonRows()). */
+export interface JsonCheck extends Omit<ShownCheck, 'status'> {
+  status: ShownStatus;
+}
+
+/**
+ * The rows as the JSON gives them. Presentation only: the stored log, the
+ * verdict and the counts keep FAILURE, and the row keeps `notSeen: true`.
+ * A not-seen WARNING stays a WARNING, as the summary counts it.
+ */
+export function jsonRows(rows: readonly ShownCheck[]): JsonCheck[] {
+  return rows.map((c) =>
+    c.status === 'FAILURE' && c.notSeen ? { ...c, status: 'NOT_SEEN' } : c
+  );
 }
 
 /** Why a SKIPPED check was skipped, when it does not say. */

@@ -202,6 +202,49 @@ export interface RunReport {
   frozenAt?: string;
 }
 
+/** A finding as the run report's JSON gives it (see reportJson()). */
+export interface JsonFinding extends Omit<Finding, 'status'> {
+  status: Finding['status'] | 'NOT_SEEN';
+}
+
+type JsonCell = Omit<CellReport, 'findings'> & { findings?: JsonFinding[] };
+
+export interface JsonRunReport extends Omit<RunReport, 'columns'> {
+  columns: (Omit<ColumnReport, 'cells' | 'notScored'> & {
+    cells: JsonCell[];
+    notScored: JsonCell[];
+  })[];
+}
+
+/**
+ * The run report as its JSON gives it: a FAILURE that is the scenario's own
+ * expectation not yet met (`by: "scenario"`) reads NOT_SEEN, as a cell's
+ * rows do (./shown.ts jsonRows()). Presentation only: the HTML, the
+ * Markdown, the causes, every count and a frozen copy's stored form are
+ * built from the report as it is.
+ */
+export function reportJson(report: RunReport): JsonRunReport {
+  const cell = (c: CellReport): JsonCell =>
+    c.findings
+      ? {
+          ...c,
+          findings: c.findings.map((f) =>
+            f.by === 'scenario' && f.status === 'FAILURE'
+              ? { ...f, status: 'NOT_SEEN' }
+              : f
+          )
+        }
+      : c;
+  return {
+    ...report,
+    columns: report.columns.map((col) => ({
+      ...col,
+      cells: col.cells.map(cell),
+      notScored: col.notScored.map(cell)
+    }))
+  };
+}
+
 /** Counts over a cell's rows as shown (see ./shown.ts): a repeat is one. */
 export function summarize(checks: readonly ShownCheck[]): CheckSummary {
   const counts = { SUCCESS: 0, FAILURE: 0, WARNING: 0, SKIPPED: 0, INFO: 0 };
