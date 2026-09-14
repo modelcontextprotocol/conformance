@@ -916,7 +916,7 @@ export function renderCell(
   );
 }
 
-/** A cell's page data without its judged rows' log rows, for JSON. */
+/** An earlier attempt's cause in one line: its first failure, or its note. */
 export function earlierCause(
   shown: readonly ShownCheck[],
   note: string | undefined

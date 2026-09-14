@@ -39,22 +39,25 @@ what `conformance client --spec-version <rev>` would run.
 
 ## Routes
 
-| Route                                         | Purpose                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /`                                       | Landing page for a newcomer (see below), then the static matrix (scoring, startability, steps)   |
-| `GET /scenarios`                              | JSON rows with a cell per revision                                                               |
-| `GET /s`                                      | Mints a run id, `303 → /s/<run-id>`                                                              |
-| `GET /s/<run-id>`                             | Config for every startable cell of the run                                                       |
-| `GET /s/<run-id>/<rev>`                       | Config for one column                                                                            |
-| `GET /s/<run-id>/<rev>/<scenario>`            | Config for one cell (a page request, see below)                                                  |
-| `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus `/mcp`, for every scenario (see below). |
-| `GET /results/<run-id>`                       | Verdict per cell, the score per column, client identity                                          |
-| `GET /results/<run-id>/<rev>`                 | One column                                                                                       |
-| `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, scoring, verdict, state, summary, checks}` (see below)    |
-| `GET /results/<run-id>[/<rev>]?format=md`     | The run report as Markdown, for an issue or a chat                                               |
-| `POST /results/<run-id>/freeze`               | Freeze the run's report: `201 {snapshotId, url, markdownUrl}`, or `303` to it for a browser      |
-| `GET /results/<run-id>/snapshot/<id>`         | A frozen report (HTML, JSON or `?format=md`); later traffic never changes it                     |
-| `DELETE /results/<run-id>`                    | Tear down every cell of the run, and its snapshots                                               |
+| Route                                                  | Purpose                                                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `GET /`                                                | Landing page for a newcomer (see below), then the static matrix (scoring, startability, steps)         |
+| `GET /scenarios`                                       | JSON rows with a cell per revision                                                                     |
+| `GET /s`                                               | Mints a run id, `303 → /s/<run-id>`                                                                    |
+| `GET /s/<run-id>`                                      | Config for every startable cell of the run                                                             |
+| `GET /s/<run-id>/<rev>`                                | Config for one column                                                                                  |
+| `GET /s/<run-id>/<rev>/<scenario>`                     | The cell's page (the same as its results page), or its config as JSON (see below)                      |
+| `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]`          | The cell's server. The MCP endpoint is the cell URL plus `/mcp`, for every scenario (see below).       |
+| `GET /results/<run-id>`                                | Verdict per cell, the score per column, client identity                                                |
+| `GET /results/<run-id>/<rev>`                          | One column                                                                                             |
+| `GET /results/<run-id>/<rev>/<scenario>`               | One cell: `{runId, revision, scenario, scoring, verdict, state, summary, checks, attempt}` (see below) |
+| `GET /results/<run-id>/<rev>/<scenario>/traffic.jsonl` | The cell's traffic, one exchange a line, every attempt (see below)                                     |
+| `POST /results/<run-id>/<rev>/<scenario>/reset`        | Reset the cell: `{attempt}`, or `303` back to its page for a browser                                   |
+| `GET /results/<run-id>[/<rev>]?format=md`              | The run report as Markdown, for an issue or a chat                                                     |
+| `POST /results/<run-id>/freeze`                        | Freeze the run's report: `201 {snapshotId, url, markdownUrl}`, or `303` to it for a browser            |
+| `GET /results/<run-id>/snapshot/<id>`                  | A frozen report (HTML, JSON or `?format=md`); later traffic never changes it                           |
+| `GET /results/<run-id>/snapshot/<id>/<rev>/<scenario>` | A reached cell's page as frozen with the report, traffic included                                      |
+| `DELETE /results/<run-id>`                             | Tear down every cell of the run, and its snapshots                                                     |
 
 Run ids match `[A-Za-z0-9_-]{1,64}`; pick your own or take the minted one.
 Minted ids are ten characters of lower-case Crockford base32 (no `i`, `l`,
@@ -145,6 +148,78 @@ handler root (`mcpPath` `''`) are reached at `<cell>/mcp` as well: the
 server rewrites that suffix to `/` before dispatch (and
 `/.well-known/oauth-protected-resource/s/<cell>/mcp` to the bare well-known
 path), so the config, the matrix pages and `/scenarios` show one URL shape.
+
+**The cell page** (`/results/<run-id>/<rev>/<scenario>`, and the same page
+at `/s/<run-id>/<rev>/<scenario>`) is written for the author of one client
+debugging one failing test, and for a server author reading that client's
+traffic. Top to bottom:
+
+1. The attempt, with **Reset this cell** and the earlier attempts folded
+   under it (each with its time, verdict and one-line cause), then the
+   verdict line: every state as a pill, a glyph and a word (`✓ pass`,
+   `✗ fail`, `◔ waiting`, `■ stopped`, `◑ in progress`, `◒ incomplete`,
+   `○ not tried`), the counts and the client.
+2. For a failing or stopped cell, **What to fix**: the failing check in
+   words, the spec sentence (the check's requirement, with its reference at
+   the cell's revision), and the exchange that decided it inline, with the
+   offending field or header marked, and expected against what the client
+   sent where the check's details give both. For a stopped cell: the last
+   exchange and what the flow was still waiting for.
+3. The scenario's steps as a checklist, each tied to its exchanges: the
+   generic-client steps (after `initialize` on a dated revision), or, on an
+   auth cell, the sign-in's steps (401, protected-resource metadata, the
+   sign-in server's metadata, registration, authorization, token, the
+   signed-in call).
+4. The traffic as one numbered list, with a gutter of three lanes (the
+   cell's MCP endpoint, metadata at the cell's origin, the sign-in server),
+   the time, the connection, `MCP-Protocol-Version`, Authorization (present
+   or absent) and the status; each row opens to its headers and bodies. A
+   new connection and a pause of 30 seconds or more are said in a line. A
+   check's row links to its exchange.
+5. The failed, not-seen and warning checks, then the passed checks and the
+   notes folded. The scenarios' own request logs (`incoming-request`,
+   `outgoing-response` and their auth twins) are left out: the traffic
+   replaces them. The JSON keeps every check.
+
+The set-up is folded below: the MCP URL with the client picker, the steps,
+the credentials a cell gives (`auth/pre-registration`) and the env the CLI
+runner would set. The page refreshes itself like the report.
+
+**Traffic.** Every request the hosted layer hands a cell is recorded, not
+only an auth cell's: the method and path, the JSON-RPC methods and ids, the
+`Mcp-*` headers, User-Agent, Content-Type, Accept, Last-Event-ID and Origin,
+Authorization (and DPoP) only as present or absent, the body cut at 8 KB
+(`TRAFFIC_BODY_CAP`) with its size when cut, the status, the answer's
+`Content-Type`, `WWW-Authenticate`, `Location` and `Mcp-*` headers and its
+body cut the same way, and the connection (the MCP session on a dated
+revision, else the socket where the host shows one). Credential values in
+bodies (`access_token`, `refresh_token`, `client_secret`, …) read
+`(not kept)`. The same exchange asked again right away is one row with a
+count. Each process writes, per build of a cell, one row of exchanges to the
+run store beside its checks, capped at 150 exchanges or 192 KB
+(`TRAFFIC_ROW_EXCHANGES`, `TRAFFIC_ROW_BYTES`; later ones are counted, not
+kept), and a store refuses a row that would take one cell past 1 MB
+(`TRAFFIC_CELL_BYTES`). `traffic.jsonl` gives every attempt's exchanges,
+each line with its `attempt`, its number `n` and its `connection`.
+
+**Attempts and reset.** "Reset this cell" (on the cell page, and on each
+cell that needs a look in the run report) keeps the cell's URL and starts a
+new attempt, which the client's next request opens. Anyone with the run link
+can reset, as with everything else in a run. The latest attempt sets the
+cell's verdict and state, in its results, the run report and the score;
+until the client sends it a request the cell reads not tried, with a note
+saying when it was reset. The earlier attempts stay, listed under the latest
+on the cell's page, and their traffic stays in `traffic.jsonl`. The store
+keeps a cell's resets (`RunStore.startAttempt`/`loadAttempts`), and each
+attempt's checks and traffic in rows of their own (writer ids tagged
+`a<n>:`), so any process judges the right attempt from the stored log; a
+process that notices a newer attempt rebuilds the cell with a fresh
+scenario. On an auth cell the reset also forgets what the cell's sign-in
+server issued: an access token from before the reset is withheld from the
+cell, which answers its normal 401; a registration, code or refresh token
+from before it is refused by the sign-in server (`invalid_client`,
+`invalid_grant`) until this attempt issues it again. The credentials are
+kept only as keyed hashes.
 
 **Cell results** answer 200 for every cell of the matrix, exercised or not:
 `verdict` is `incomplete` with a zero `summary` and empty `checks` for a
@@ -350,8 +425,11 @@ new table cell.
 link to" button) stores the whole run's report as it stands, in the run
 store, and answers with its permalink `/results/<run-id>/snapshot/<id>`.
 The copy never changes as more traffic arrives, so it can be cited in an
-issue; its cell links open the live results. A snapshot is plain JSON in
-the store with no protection beyond the run id, like the rest of a run. For
+issue. Each cell the client had reached is frozen with it, as its page and
+its latest attempt's traffic (`/results/<run-id>/snapshot/<id>/<rev>/<scenario>`,
+and `…/traffic.jsonl`), and the copy's cell links open those; the other
+cells link to the live results. A snapshot is plain JSON in the store with
+no protection beyond the run id, like the rest of a run. For
 how long one is kept, see "How long results last" above.
 
 The hosted layer also records two FAILUREs of its own about requests to a

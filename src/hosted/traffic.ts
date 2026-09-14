@@ -12,7 +12,8 @@
  * take one cell's traffic over TRAFFIC_CELL_BYTES.
  *
  * What is never kept: the value of an Authorization or DPoP header (only
- * whether one was sent). A credential the cell issued (a registered
+ * whether one was sent), nor a credential's value in a body (see
+ * redacted()). A credential the cell issued (a registered
  * client_id, an authorization code, an access or refresh token) is kept as
  * a keyed hash in `issued`, so that after a reset the cell can refuse one
  * handed out before it (see refusedCredential()).
