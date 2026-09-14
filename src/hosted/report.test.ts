@@ -281,11 +281,16 @@ describe('stopped', () => {
     ...extra
   });
 
-  it('reads a waiting cell stopped once its client is quiet for two minutes, verdict unchanged', () => {
-    expect(viewCell(cell, results(), T + MIN)).toMatchObject({
+  it('reads a waiting cell stopped once its client is quiet for a minute, verdict unchanged', () => {
+    expect(viewCell(cell, results(), T + MIN - 1_000)).toMatchObject({
       state: 'waiting',
       verdict: 'incomplete',
       note: WAITING_NOTE
+    });
+    expect(viewCell(cell, results(), T + MIN)).toMatchObject({
+      state: 'stopped',
+      verdict: 'incomplete',
+      note: 'stopped: no request from your client for 1 minute; re-run it'
     });
     expect(viewCell(cell, results(), T + 3 * MIN + 5_000)).toMatchObject({
       state: 'stopped',

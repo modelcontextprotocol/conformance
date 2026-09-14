@@ -260,7 +260,7 @@ is not seen — nothing the client did is wrong, the flow has not finished (a
 consent screen, an elicitation form still to answer); its note says "waiting
 for the client or the person to finish the flow", and its verdict is
 `incomplete` until the steps happen. A waiting cell whose client has sent the
-cell nothing for two minutes, with no sign-in page or form open (the sign-in
+cell nothing for a minute, with no sign-in page or form open (the sign-in
 reached `/authorize` but not `/token`, or an MRTR `input_required` result or
 a server request on an open stream not yet answered), reads `stopped`
 instead: its note says "stopped: no request from your client for N minutes;

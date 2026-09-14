@@ -87,7 +87,7 @@ export const WAITING_NOTE =
   'waiting for the client or the person to finish the flow';
 
 /** How long a waiting cell's client may be silent before it reads stopped. */
-export const STOPPED_AFTER_MS = 2 * 60_000;
+export const STOPPED_AFTER_MS = 60_000;
 
 /** What a `stopped` cell's note says, `quietMs` after the last request. */
 export function stoppedNote(quietMs: number): string {

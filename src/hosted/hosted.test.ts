@@ -11,7 +11,7 @@ const REV_STATEFUL = '2025-11-25';
 const REV_STATELESS = '2026-07-28';
 
 /**
- * A waiting cell whose client has sent nothing for two minutes reads
+ * A waiting cell whose client has sent nothing for a minute reads
  * stopped, unless a person has a form open; the pages read the time by the
  * app's clock, faked here.
  */
@@ -72,7 +72,7 @@ describe('hosted server: a waiting cell whose client went quiet', () => {
     return res.text();
   }
 
-  it('reads stopped after two quiet minutes on the cell and the report, with the verdict unchanged', async () => {
+  it('reads stopped after a quiet minute on the cell and the report, with the verdict unchanged', async () => {
     now = Date.now();
     const mcp = `/s/quiet/${REV_STATELESS}/tools_call/mcp`;
     await send(mcp, 'tools/list');
