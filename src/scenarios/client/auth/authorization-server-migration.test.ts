@@ -46,6 +46,7 @@ describe('auth/authorization-server-migration no-reuse checks', () => {
       atNewAs('register'),
       atNewAs('authorize', 'fresh-client')
     ]);
-    for (const id of REUSE_IDS) expect(statusOf(judged, id), id).toBe('SUCCESS');
+    for (const id of REUSE_IDS)
+      expect(statusOf(judged, id), id).toBe('SUCCESS');
   });
 });

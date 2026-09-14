@@ -280,7 +280,11 @@ describe('passed counts', () => {
   it('a client that never listed the tools earns no passes on the invalid-tool cell', () => {
     // The cell a refused legacy initialize reached: nothing listed, nothing
     // called. Its MUST NOT checks are not exercised, not passed.
-    const judged = finalizeChecks('http-invalid-tool-headers', [], '2026-07-28');
+    const judged = finalizeChecks(
+      'http-invalid-tool-headers',
+      [],
+      '2026-07-28'
+    );
     const summary = summarize(
       shownChecks('http-invalid-tool-headers', '2026-07-28', judged)
     );
