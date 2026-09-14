@@ -712,38 +712,61 @@ function readyComposites(
 const STARTER_AUTH = 'auth/metadata-default';
 
 /**
- * The run page's client blocks. The full one: the ready-made composites and
- * every auth cell, which cannot share a URL, switched off where the client
+ * The entries of the run page's client blocks. The full one covers every
+ * startable cell of the run once: the ready-made composites, then each cell
+ * no composite carries (one that cannot share a URL, such as
+ * `request-metadata`), then every auth cell, switched off where the client
  * can say so, since each starts a sign-in when the client connects (and
  * `codex mcp list` fetches the metadata of every one that is on). The
  * starter: the composites and one auth cell per revision, on.
  */
+export function runClientEntries(
+  origin: string,
+  matrix: HostedMatrix,
+  config: RunConfig
+): { starter: ServerEntry[]; all: ServerEntry[] } {
+  const ready = readyComposites(origin, matrix, config);
+  const composites = ready.map((c) => ({
+    name: compositeName(c.revision, c.children),
+    url: c.url
+  }));
+  const covered = new Set(
+    ready.flatMap((c) => c.children.map((child) => `${c.revision}/${child}`))
+  );
+  const isAuth = (c: CellConfig) => c.scenario.startsWith('auth/');
+  const entry = (c: CellConfig) => ({
+    name: serverName(c.revision, c.scenario),
+    url: c.url
+  });
+  const auth = config.cells.filter(isAuth);
+  const alone = config.cells.filter(
+    (c) => !isAuth(c) && !covered.has(`${c.revision}/${c.scenario}`)
+  );
+  return {
+    starter: [
+      ...composites,
+      ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
+    ],
+    all: [
+      ...composites,
+      ...alone.map(entry),
+      ...auth.map((c) => ({ ...entry(c), enabled: false }))
+    ]
+  };
+}
+
+/** The run page's client blocks (see runClientEntries()). */
 function runClientBlocks(
   origin: string,
   matrix: HostedMatrix,
   config: RunConfig
 ): string {
-  const composites = readyComposites(origin, matrix, config).map((c) => ({
-    name: compositeName(c.revision, c.children),
-    url: c.url
-  }));
-  const auth = config.cells.filter((c) => c.scenario.startsWith('auth/'));
-  const entry = (c: (typeof auth)[number]) => ({
-    name: serverName(c.revision, c.scenario),
-    url: c.url
-  });
-  const starter = [
-    ...composites,
-    ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
-  ];
-  const all = [
-    ...composites,
-    ...auth.map((c) => ({ ...entry(c), enabled: false }))
-  ];
+  const { starter, all } = runClientEntries(origin, matrix, config);
   return clientBlocks(
     all,
     `The starter block is the ready-made composites and <code>${STARTER_AUTH}</code> at each revision. ` +
-      'The full block adds every auth cell (they cannot share a URL), switched off where the client can say so: ' +
+      'The full block covers every startable cell once: the composites, each cell that cannot share a URL ' +
+      '(such as <code>request-metadata</code>), and every auth cell, switched off where the client can say so: ' +
       'switch on the ones you want to test.',
     starter
   );
