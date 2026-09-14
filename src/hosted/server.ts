@@ -104,6 +104,7 @@ import {
   reportJson,
   summarize,
   viewCell,
+  withNotTriedHints,
   type CellState,
   type ReportSources,
   type RunReport,
@@ -1281,9 +1282,19 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   async function sendReport(
     req: Request,
     res: Response,
-    report: RunReport,
+    judged: RunReport,
     frozen?: SnapshotInfo[]
   ): Promise<void> {
+    // Each not-tried cell's MCP URL and what the client must do there, from
+    // its steps: added here for every format, a frozen copy included, and
+    // never stored. The step descriptions load with the first report.
+    const { describeStep } = await import('../steps');
+    const report = withNotTriedHints(
+      judged,
+      matrix,
+      (ref) => cellBaseUrl(req, ref),
+      describeStep
+    );
     const live = report.snapshotId
       ? resultsUrlFor(req, report.runId)
       : resultsUrlFor(
