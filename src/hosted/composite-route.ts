@@ -9,6 +9,7 @@ import { MCP_PATH, type HostedMatrix } from './matrix';
 import {
   freshScenario,
   hostedScenarioContext,
+  loadCells,
   type CellRef,
   type HostedRun
 } from './session';
@@ -249,7 +250,7 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
       return;
     }
 
-    await hostedScenarios.load(names);
+    await loadCells(names.map((scenarioName) => ({ scenarioName, revision })));
     const runs: HostedRun[] = [];
     for (const scenarioName of names) {
       const run = deps.mountCell(req, { runId, revision, scenarioName }, res);

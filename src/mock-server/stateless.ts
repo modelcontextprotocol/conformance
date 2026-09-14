@@ -14,7 +14,7 @@ import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockHandler, MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/versions';
 import { validateWireMessage } from '../validation/wire-schema';
-import { capabilitiesFromHandlers, listenMockHandler } from './stateful';
+import { capabilitiesFromHandlers, listenMockHandler } from './shared';
 
 /**
  * The required per-request `_meta` keys. `io.modelcontextprotocol/clientInfo`

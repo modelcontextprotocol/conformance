@@ -8,7 +8,7 @@ import {
   DRAFT_PROTOCOL_VERSION,
   NEGOTIABLE_PROTOCOL_VERSIONS
 } from '../../../types.js';
-import { withRequiredDraftResultFields } from '../../../mock-server/index.js';
+import { withRequiredDraftResultFields } from '../../../mock-server/stateless.js';
 
 /**
  * `ListSkillsResult` is cacheable like `resources/list`, but `skills/list` is

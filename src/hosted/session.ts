@@ -21,7 +21,12 @@ import {
   SpecVersion,
   isSpecVersion
 } from '../types';
-import { createHandlerFor, type ScenarioContext } from '../mock-server';
+import type {
+  MockHandler,
+  RequestHandlers,
+  ScenarioContext
+} from '../mock-server';
+import { isStatefulVersion } from '../connection/versions';
 import { hostedScenarios } from './catalog';
 import type { RunStore } from './store';
 import {
@@ -107,8 +112,67 @@ export function hostedScenarioContext(
           'ScenarioContext.createServer() binds a loopback port and is not available when hosted; use createHandler()'
         )
       ),
-    createHandler: (handlers) => createHandlerFor(specVersion)(handlers)
+    createHandler: (handlers) => mockFactory(specVersion)(handlers, specVersion)
   };
+}
+
+type MockFactory = (
+  handlers: RequestHandlers,
+  specVersion: SpecVersion
+) => MockHandler;
+
+/**
+ * The mock servers cells are built on, one per lifecycle, each loaded with
+ * the first cell that needs it (see loadCells()): the stateful one brings the
+ * SDK server, which a stateless cell never needs.
+ */
+const mockFactories: { stateful?: MockFactory; stateless?: MockFactory } = {};
+
+function mockFactory(specVersion: SpecVersion): MockFactory {
+  const factory = isStatefulVersion(specVersion)
+    ? mockFactories.stateful
+    : mockFactories.stateless;
+  if (!factory) {
+    throw new Error(
+      `the mock server for ${specVersion} is not loaded; await loadCells() before building its cells`
+    );
+  }
+  return factory;
+}
+
+async function loadMock(specVersion: SpecVersion): Promise<void> {
+  if (isStatefulVersion(specVersion)) {
+    mockFactories.stateful ??= (
+      await import('../mock-server/stateful')
+    ).createHandlerStateful;
+  } else {
+    mockFactories.stateless ??= (
+      await import('../mock-server/stateless')
+    ).createHandlerStateless;
+  }
+}
+
+/**
+ * Load what building these cells needs: each one's scenario and the mock
+ * server of its revision. A request loads what it touches and nothing more,
+ * so a cold process answers it without evaluating every scenario module.
+ */
+export async function loadCells(
+  cells: Iterable<Pick<CellRef, 'scenarioName' | 'revision'>>
+): Promise<void> {
+  const list = Array.from(cells);
+  const revisions = new Set(list.map((c) => c.revision));
+  await Promise.all([
+    hostedScenarios.load(list.map((c) => c.scenarioName)),
+    ...Array.from(revisions, loadMock)
+  ]);
+}
+
+/** loadCells() for every scenario at each of `revisions`. */
+export async function loadAllCells(
+  revisions: readonly SpecVersion[]
+): Promise<void> {
+  await Promise.all([hostedScenarios.loadAll(), ...revisions.map(loadMock)]);
 }
 
 export interface HostedRun extends CellRef {
@@ -382,7 +446,7 @@ export class SessionManager {
     ref: CellRef,
     baseUrlFor: (ref: CellRef) => string
   ): Promise<HostedRun> {
-    await hostedScenarios.load([ref.scenarioName]);
+    await loadCells([ref]);
     const run = this.getOrCreate(ref, baseUrlFor);
     await this.hydrate(run);
     return run;

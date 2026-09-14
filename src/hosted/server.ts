@@ -48,7 +48,9 @@ import {
   StoreUnavailableError,
   cellId,
   mintId,
-  mintRunId
+  mintRunId,
+  loadAllCells,
+  loadCells
 } from './session';
 import {
   buildMatrix,
@@ -908,7 +910,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         return;
       }
       // Config for every cell of the scope builds every one of them.
-      await hostedScenarios.loadAll();
+      await loadAllCells(matrix.revisions);
       sendConfig(
         req,
         res,
@@ -934,7 +936,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
     // The cell's own scenario and no other: a discover must not wait on
     // every scenario module (see ./catalog.ts).
-    await hostedScenarios.load([ref.scenarioName]);
+    await loadCells([ref]);
 
     if (suffix === '' && isPageRequest(req)) {
       sendConfig(
@@ -974,7 +976,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     async (req, res) => {
       const resolved = resolveCell(req.params[0].split('/'), res);
       if (!resolved) return;
-      await hostedScenarios.load([resolved.ref.scenarioName]);
+      await loadCells([resolved.ref]);
       const run = await createRun(req, resolved.ref, res);
       if (!run) return;
       // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
@@ -1072,7 +1074,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       const { prefix, ref, suffix } = located;
       const cell = matrix.cell(ref.scenarioName, ref.revision)!;
       if (!checkStartable(cell, res)) return;
-      await hostedScenarios.load([ref.scenarioName]);
+      await loadCells([ref]);
       const search = req.url.includes('?')
         ? req.url.slice(req.url.indexOf('?'))
         : '';

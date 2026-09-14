@@ -3,16 +3,17 @@ import http from 'http';
 import {
   SessionManager,
   cellId,
+  loadAllCells,
   rawChecksOf,
   type CellRef,
   type HostedRun
 } from './session';
 import { MemoryRunStore } from './store';
 import type { ConformanceCheck, RequestListener } from '../types';
-import { hostedScenarios } from './catalog';
+import { ALL_SPEC_VERSIONS } from '../scenarios/applicability';
 
-// Judged without the HTTP layer, which loads the scenarios a request needs.
-beforeAll(() => hostedScenarios.loadAll());
+// Cells built without the HTTP layer, which loads what a request needs.
+beforeAll(() => loadAllCells(ALL_SPEC_VERSIONS));
 
 const ref: CellRef = {
   runId: 'r1',

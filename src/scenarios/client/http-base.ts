@@ -1,4 +1,4 @@
-import { withRequiredDraftResultFields } from '../../mock-server';
+import { withRequiredDraftResultFields } from '../../mock-server/stateless';
 /**
  * Shared HTTP test-server scaffold for client-under-test SEP-2243 scenarios.
  *

@@ -1,4 +1,4 @@
-import { withRequiredDraftResultFields } from '../../mock-server';
+import { withRequiredDraftResultFields } from '../../mock-server/stateless';
 import http from 'http';
 import {
   HandlerScenario,
