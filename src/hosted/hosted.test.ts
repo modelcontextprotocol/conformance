@@ -93,8 +93,9 @@ describe('hosted server: a waiting cell whose client went quiet', () => {
     const page = await fetch(cell, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
-    expect(page).toContain('>stopped</span>');
-    expect(page).toContain(note);
+    expect(page).toContain(
+      '■</span> stopped</span>: no request from your client for 3 minutes; re-run it'
+    );
     const report = await fetch(`${base}/results/quiet`).then((r) => r.json());
     const row = report.columns[1].cells.find(
       (c: { scenario: string }) => c.scenario === 'tools_call'
@@ -786,7 +787,9 @@ describe('hosted server', () => {
       state: 'not-tried',
       note: 'nothing recorded yet — point the client at the MCP endpoint',
       summary: zeros,
-      checks: []
+      checks: [],
+      attempt: 1,
+      trafficUrl: `${base}/results/fresh/${REV_STATEFUL}/tools_call/traffic.jsonl`
     });
     // n/a: the scenario does not apply to the revision.
     const na = await fetch(`${base}/results/fresh/${REV_STATELESS}/initialize`);
@@ -1270,10 +1273,10 @@ describe('hosted server', () => {
     const page = await fetch(`${base}${cell}`, {
       headers: { accept: 'text/html' }
     }).then((r) => r.text());
-    // The page is as it was: a "not seen" pill, no new status word.
-    expect(page).toContain('>not seen</span>');
+    // A "not seen" pill, and no new status word.
+    expect(page).toContain('○</span> not seen</span>');
     expect(page).not.toContain('NOT_SEEN');
-    expect(page).toContain('>waiting</span>');
+    expect(page).toContain('◔</span> waiting</span>');
     expect(page).toContain(
       'waiting for the client or the person to finish the flow'
     );
@@ -1347,7 +1350,9 @@ describe('hosted server', () => {
     expect(page).toContain(
       `<p>1 passed, 0 failed <span class=muted>· ${skipped.length} skipped: the client did nothing they check</span></p>`
     );
-    expect(page).toContain('SKIPPED</span> Client did not send a tools/call');
+    expect(page).toMatch(
+      /skipped<\/span> <code>[^<]+<\/code> Client did not send a tools\/call/
+    );
   });
 
   it('explains an incomplete cell that lists failures, leading each failure with its reason', async () => {
@@ -1381,11 +1386,11 @@ describe('hosted server', () => {
     const html = await page(cell);
     expect(html).not.toContain('nothing recorded yet');
     expect(html).toContain(json.note);
-    // The headline is the reason; the check's own description stays below.
+    // The row leads with the reason; the check's own description stays below.
     expect(html).toContain(
-      'not seen</span> Tool was not called by client</h3>'
+      `not seen</span> <code>${failure.id}</code> Tool was not called by client`
     );
-    expect(html).toContain(`${failure.description}</p>`);
+    expect(html).toContain(`${failure.description}</div>`);
 
     // The run report says the same, and does not count those failures.
     const report = await fetch(`${base}/results/inc`).then((r) => r.json());
@@ -2469,9 +2474,52 @@ describe('hosted server across processes (shared store)', () => {
       (c: { scenario: string }) => c.scenario === 'initialize'
     );
     expect(cell.state).toBe('pass');
-    // Cell links are the serving process's, not the one it was frozen on.
-    expect(cell.resultsUrl).toBe(`${b}/results/frz/${REV_STATEFUL}/initialize`);
-    expect(await store.listSnapshots('frz')).toHaveLength(1);
+    // A reached cell links to its page as frozen with the report, at the
+    // serving process's host, not the one it was frozen on.
+    const frozenCell = `${b}/results/frz/snapshot/${frozen.snapshotId}/${REV_STATEFUL}/initialize`;
+    expect(cell.resultsUrl).toBe(frozenCell);
+    // The report and the one reached cell's page.
+    expect(await store.listSnapshots('frz')).toHaveLength(2);
+
+    // The frozen cell page carries the cell's traffic, whatever comes later.
+    await fetch(`${b}/s/frz/${REV_STATEFUL}/initialize/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'ping' })
+    }).then((r) => r.text());
+    await apps[1].sessions.flush();
+    const stored = await fetch(frozenCell).then((r) => r.json());
+    expect(stored.frozenAt).toBe(frozen.frozenAt);
+    expect(stored.traffic.exchanges).toHaveLength(1);
+    expect(stored.traffic.exchanges[0]).toMatchObject({
+      method: 'POST',
+      path: '/mcp',
+      rpc: [{ method: 'initialize', id: 1 }],
+      status: 200
+    });
+    const page = await fetch(frozenCell, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(page).toContain('A frozen copy of this cell');
+    expect(page).toContain('Traffic: 1 exchange');
+    expect(page).not.toContain('Reset this cell');
+    const lines = await fetch(`${frozenCell}/traffic.jsonl`).then((r) =>
+      r.text()
+    );
+    expect(lines.trim().split('\n')).toHaveLength(1);
+    // The live cell has both requests.
+    const live = await fetch(
+      `${a}/results/frz/${REV_STATEFUL}/initialize/traffic.jsonl`
+    ).then((r) => r.text());
+    expect(live.trim().split('\n')).toHaveLength(2);
+    // The live report lists the frozen copy once, not its cell pages.
+    const reportPage = await fetch(`${a}/results/frz`, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(reportPage.match(/\/results\/frz\/snapshot\//g)).toHaveLength(1);
   });
 
   it('keeps a probing client passing when its connects land on different processes', async () => {

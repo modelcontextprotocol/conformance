@@ -64,7 +64,7 @@ import {
   type ServerEntry
 } from './client-config';
 
-const STATE_STYLE: Record<CellState, string> = {
+export const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
   fail: 'background:#fee2e2;color:#991b1b',
   waiting: 'background:#e0e7ff;color:#3730a3',
@@ -76,7 +76,7 @@ const STATE_STYLE: Record<CellState, string> = {
   'n/a': 'background:#f3f4f6;color:#9ca3af'
 };
 
-const STATUS_STYLE: Record<CheckStatus, string> = {
+export const STATUS_STYLE: Record<CheckStatus, string> = {
   SUCCESS: 'background:#d1fae5;color:#065f46',
   FAILURE: 'background:#fee2e2;color:#991b1b',
   WARNING: 'background:#fef3c7;color:#92400e',
@@ -84,14 +84,14 @@ const STATUS_STYLE: Record<CheckStatus, string> = {
   INFO: 'background:#dbeafe;color:#1e40af'
 };
 
-const SCORING_STYLE: Record<MatrixCell['scoring'], string> = {
+export const SCORING_STYLE: Record<MatrixCell['scoring'], string> = {
   scored: 'background:#dbeafe;color:#1e40af',
   not_scored: 'background:#ede9fe;color:#5b21b6',
   unlisted: 'background:#f3f4f6;color:#374151',
   'n/a': 'background:#f3f4f6;color:#9ca3af'
 };
 
-const SCORING_LABEL: Record<MatrixCell['scoring'], string> = {
+export const SCORING_LABEL: Record<MatrixCell['scoring'], string> = {
   scored: 'scored',
   not_scored: 'not scored',
   unlisted: 'not in the requirement set',
@@ -190,7 +190,7 @@ const HAND_NOTES: Record<string, string> = {
     'prompts and get one.'
 };
 
-function handNote(scenario: string): string {
+export function handNote(scenario: string): string {
   const note = HAND_NOTES[scenario];
   return note ? `<p class=note>${esc(note)}</p>` : '';
 }
@@ -199,7 +199,7 @@ function handNote(scenario: string): string {
  * Plain steps for an auth cell, which has no generic-client steps: what a
  * person does with a client they drive by hand.
  */
-function authSteps(scenario: string): string {
+export function authSteps(scenario: string): string {
   if (!scenario.startsWith('auth/')) return '';
   const lines = [
     'add the MCP URL to your client and connect',
@@ -217,7 +217,7 @@ function authSteps(scenario: string): string {
 const CREDENTIAL_KEYS = ['client_id', 'client_secret'] as const;
 
 /** Credentials the scenario gives the client, as fields a person can copy. */
-function credentials(cell: CellConfig): string {
+export function credentials(cell: CellConfig): string {
   const raw = cell.env.MCP_CONFORMANCE_CONTEXT;
   if (!raw) return '';
   let context: Record<string, unknown>;
@@ -248,7 +248,11 @@ function credentials(cell: CellConfig): string {
  * passes its own (a frozen copy's is the build that froze it); `null` says
  * the report was stored before builds were recorded.
  */
-function page(title: string, body: string, build?: BuildInfo | null): string {
+export function page(
+  title: string,
+  body: string,
+  build?: BuildInfo | null
+): string {
   return `<!doctype html><meta charset=utf-8>
 <title>${esc(title)}</title><style>${css}</style>
 ${body}${build === undefined ? '' : buildFooter(build)}`;
@@ -293,7 +297,7 @@ function stepsDetails(cell: Pick<MatrixCell, 'steps'>): string {
 }
 
 /** Open, for a page about one scenario: the lines, the JSON folded below. */
-function stepsOpen(steps: readonly Step[]): string {
+export function stepsOpen(steps: readonly Step[]): string {
   return (
     stepLines(steps) +
     `<details><summary>as JSON (<code>MCP_CONFORMANCE_CONTEXT.steps</code>)</summary>` +
@@ -588,7 +592,7 @@ function crumbs(config: RunConfig): string {
  * "<rev>/<scenario>"` (that cell's server entry plus its env), or
  * `data-copy-text` (that literal text, such as a bare MCP URL).
  */
-const copyScript = `<script>
+export const copyScript = `<script>
 (function(){
   var el=document.getElementById('cfg');
   var cfg=el?JSON.parse(el.textContent):null;
@@ -611,7 +615,7 @@ const copyScript = `<script>
 })();
 </script>`;
 
-function envPre(cell: CellConfig): string {
+export function envPre(cell: CellConfig): string {
   const lines = Object.entries(cell.env).map(
     ([k, v]) => `${k}=${JSON.stringify(v)}`
   );
@@ -880,11 +884,11 @@ const LIVE_SECONDS = 10;
  * keeping open whatever was open. A note says so and has a stop button. A
  * frozen copy never has it.
  */
-const liveNote =
+export const liveNote =
   `<p class=muted id=live-note>Updates every ${LIVE_SECONDS} s while this tab is open ` +
   `<button class=copy id=live-toggle type=button>stop</button> <span id=live-status></span></p>`;
 
-const liveScript = `<script>
+export const liveScript = `<script>
 (function(){
   var box=document.getElementById('live'),btn=document.getElementById('live-toggle'),
       st=document.getElementById('live-status'),on=true;
@@ -915,7 +919,7 @@ const liveScript = `<script>
 </script>`;
 
 /** One line saying where the cell stands, for the cell results page. */
-function statusLine(status: CellStatus): string {
+export function statusLine(status: CellStatus): string {
   const pill = statePill(status.state);
   const scoring = `<span class=pill style="${SCORING_STYLE[status.scoring]}">${SCORING_LABEL[status.scoring]}</span>`;
   let note = '';
@@ -941,7 +945,7 @@ const NOT_SEEN_STYLE = STATUS_STYLE.SKIPPED;
  * said once, and not the "Expected Check Missing" placeholder some auth
  * scenarios give an expectation nothing met.
  */
-function about(c: ConformanceCheck): string {
+export function about(c: ConformanceCheck): string {
   const parts = [c.name, c.description].filter(
     (p, i, all) =>
       p && !p.startsWith('Expected Check Missing') && all.indexOf(p) === i
@@ -1016,7 +1020,7 @@ ${liveNote}<div id=live>${status ? statusLine(status) : ''}<p>${esc(countsLine(c
   );
 }
 
-function identityLine(identities: ClientIdentity[]): string {
+export function identityLine(identities: ClientIdentity[]): string {
   if (!identities.length) return '<span class=muted>no client seen yet</span>';
   return identities
     .map((i) => {
@@ -1040,7 +1044,7 @@ function identityLine(identities: ClientIdentity[]): string {
     .join('<br>');
 }
 
-function statePill(state: CellState): string {
+export function statePill(state: CellState): string {
   return `<span class=pill style="${STATE_STYLE[state]}">${STATE_LABEL[state]}</span>`;
 }
 

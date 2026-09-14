@@ -342,7 +342,9 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     }).then((r) => r.text());
     expect(page).toContain('recorded 3 times');
     expect(page).toContain('1 passed, 0 failed, 6 not seen');
-    expect(page).toContain('>not seen</span> the flow did not reach this step');
+    expect(page).toMatch(
+      /not seen<\/span> <code>[a-z-]+<\/code> the flow did not reach this step/
+    );
     expect(page).not.toContain('Expected Check Missing');
     // Nothing the client did is wrong: the cell waits, and is not done.
     expect(results).toMatchObject({

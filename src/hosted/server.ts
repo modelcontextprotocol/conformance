@@ -69,9 +69,33 @@ import {
 import {
   bodyFitsBuffer,
   declaresNoBody,
+  onAnyBody,
   onBodySettled,
   tapJsonBody
 } from './body';
+import {
+  capped,
+  connectionOf,
+  issuedBy,
+  keptRequestHeaders,
+  keptResponseHeaders,
+  refusalBody,
+  refusedCredential,
+  rpcOf,
+  connectionNumbers,
+  jsonLine,
+  type Exchange
+} from './traffic';
+
+/** The response headers an exchange keeps (see keptResponseHeaders()). */
+const RESPONSE_HEADERS = [
+  'content-type',
+  'www-authenticate',
+  'location',
+  'allow',
+  'mcp-session-id',
+  'mcp-protocol-version'
+];
 import { identityFrom } from './identity';
 import { isStatefulVersion } from '../connection/versions';
 import {
@@ -110,6 +134,9 @@ import {
   type CapturedResponse,
   type RequestInfo
 } from './wire';
+import type { CellPageData, EarlierSummary } from './cell-page';
+import { identitiesIn } from './identity';
+import { REACHED } from './markdown';
 import {
   buildReport,
   reportJson,
@@ -136,6 +163,13 @@ import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
  * step descriptions (and zod) with it.
  */
 const pages = () => import('./html');
+const cellPages = () => import('./cell-page');
+
+/** A cell's traffic as JSON lines, under its results path. */
+const TRAFFIC_SUFFIX = '/traffic.jsonl';
+
+/** A reached cell's page as a frozen copy stores it. */
+type FrozenCell = CellPageData & { frozenAt: string };
 
 export interface HostedServerOptions {
   publicOrigin?: string;
@@ -450,10 +484,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
    * The probe notes this process has recorded per cell, keyed by kind and
    * the revision probed for, and whether each already carries the cell's
    * version answer. Only a note's wording depends on it (see noteProbe());
-   * whether a request is a probe never does.
+   * whether a request is a probe never does. Keyed by the cell's list of
+   * hosted checks, which a reset replaces (a new attempt notes afresh).
    */
   const probeNotes = new WeakMap<
-    HostedRun,
+    ConformanceCheck[],
     Map<string, { check: ConformanceCheck; answered: boolean }>
   >();
 
@@ -469,8 +504,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     check: ConformanceCheck,
     answered: boolean
   ): void {
-    let notes = probeNotes.get(run);
-    if (!notes) probeNotes.set(run, (notes = new Map()));
+    let notes = probeNotes.get(run.hostedChecks);
+    if (!notes) probeNotes.set(run.hostedChecks, (notes = new Map()));
     const seen = notes.get(key);
     if (!seen) {
       notes.set(key, { check, answered });
@@ -498,7 +533,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     req: Request,
     res: Response,
     rewrittenUrl: string,
-    mcp = false
+    mcp = false,
+    role?: AuxOriginRole
   ) {
     res.setHeader(
       'link',
@@ -507,6 +543,85 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     req.url = rewrittenUrl;
     run.touched = true;
     sessions.noteActivity(run);
+
+    // The exchange as the cell's traffic keeps it (./traffic.ts): the
+    // request now, the answer once it is out.
+    const presented = req.header('authorization');
+    // A composite's copy of a request has no originalUrl.
+    const asked = req.originalUrl ?? '';
+    const query = asked.indexOf('?');
+    const exchange: Exchange = {
+      at: new Date().toISOString(),
+      lane: role ? 'sign-in' : mcp ? 'mcp' : 'metadata',
+      ...(role && { role }),
+      method: req.method,
+      path: mcp
+        ? (run.mcpPath || MCP_PATH) + (query === -1 ? '' : asked.slice(query))
+        : rewrittenUrl,
+      headers: keptRequestHeaders(req.headers),
+      authorization: presented ? 'present' : 'absent'
+    };
+    // A token the cell issued before its last reset is withheld: the cell
+    // answers as it answers a request that carries none.
+    if (
+      refusedCredential(run.refused, presented, '', undefined, undefined) ===
+      'token'
+    ) {
+      delete req.headers.authorization;
+      delete req.headers.dpop;
+      exchange.refused = 'token';
+    }
+    const started = Date.parse(exchange.at);
+    let requestBody: Buffer | undefined;
+    let bodySettled = false;
+    /** Whether the exchange went into the traffic (it is filled in later). */
+    let added = false;
+    let recorded = false;
+    /** Fill in the answer (so far) and add the exchange to the traffic. */
+    const record = (soFar?: string, captured?: CapturedResponse) => {
+      if (!bodySettled) return;
+      if (!recorded) {
+        recorded = true;
+        const body = capped(requestBody?.toString('utf8'), requestBody?.length);
+        const rpc = rpcOf(requestBody?.toString('utf8'));
+        if (body.text !== undefined) exchange.body = body.text;
+        if (body.bytes !== undefined) exchange.bodyBytes = body.bytes;
+        if (rpc) exchange.rpc = rpc;
+      }
+      const session = res.getHeader('mcp-session-id');
+      const conn = connectionOf(
+        req,
+        typeof session === 'string' ? session : undefined
+      );
+      if (conn && role === undefined) exchange.conn = conn;
+      exchange.status = res.statusCode;
+      const responseHeaders = keptResponseHeaders(
+        (n) => res.getHeader(n),
+        RESPONSE_HEADERS
+      );
+      if (Object.keys(responseHeaders).length)
+        exchange.responseHeaders = responseHeaders;
+      const text = captured ? captured.head : soFar;
+      const answer = capped(text, captured?.size);
+      if (answer.text !== undefined) exchange.responseBody = answer.text;
+      if (answer.bytes !== undefined) exchange.responseBytes = answer.bytes;
+      if (captured) {
+        exchange.ms = Date.now() - started;
+        sessions.noteIssued(
+          run,
+          issuedBy(
+            exchange.path,
+            captured.status,
+            responseHeaders.location,
+            captured.body
+          )
+        );
+      }
+      if (!added) {
+        added = true;
+        sessions.recordExchange(run, exchange);
+      }
+    };
 
     // The headers as the client sent them: a scenario may rewrite them
     // before handing the request on (json-schema-ref-deref maps the draft
@@ -658,6 +773,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       // write-through.
       if (judge() && response) persist();
     });
+    onAnyBody(req, (captured) => {
+      requestBody = captured;
+      bodySettled = true;
+      // The answer went out before the body was in: record it now.
+      if (response) {
+        record(undefined, response);
+        persist();
+      }
+    });
     tapResponse(
       res,
       (captured) => {
@@ -668,12 +792,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         if (captured.status === 401 && run.scenario.servesRootPrm)
           sessions.noteChallenge(run, requesterOf(req));
         judge();
+        record(undefined, captured);
         persist();
       },
       // A server-sent event stream may stay open for as long as the client
       // listens, so what the cell records as it sends each event is written
       // through then, not left for an end that may never come.
-      () => {
+      (soFar) => {
         const type = res.getHeader('content-type');
         if (typeof type === 'string' && type.includes('text/event-stream')) {
           // A POST answered with a stream the cell writes to before its
@@ -683,6 +808,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
             heldOpen = true;
             sessions.noteActivity(run, true);
           }
+          record(soFar());
           persist();
         }
       }
@@ -757,6 +883,29 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           next: (err?: unknown) => void
         ) => void
       )(req, res, fallthrough);
+
+    // On the sign-in server, a code, refresh token or registration the cell
+    // issued before its last reset is refused with the OAuth error for it,
+    // before the scenario sees the request: the client must start over.
+    if (role && run.refused.size) {
+      const decide = (captured?: Buffer) => {
+        const kind = refusedCredential(
+          run.refused,
+          undefined,
+          rewrittenUrl,
+          captured?.toString('utf8'),
+          req.header('content-type')
+        );
+        if (!kind) return handOn();
+        exchange.refused = kind;
+        const status =
+          kind === 'client_id' && req.method === 'POST' ? 401 : 400;
+        sendJson(status, refusalBody(kind));
+      };
+      if (req.method === 'POST' && bodyFitsBuffer(req)) onAnyBody(req, decide);
+      else decide();
+      return;
+    }
 
     // What every cell of a column answers alike is answered here, before the
     // scenario sees the request: a body that is empty or not JSON (a plain
@@ -1032,6 +1181,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     await loadCells([ref]);
 
     if (suffix === '' && isPageRequest(req)) {
+      // The cell's page is one page, here and at its results path; its
+      // JSON here is still the cell's config.
+      if (wantsHtml(req)) {
+        const view = await cellView(req, ref, resolved.cell);
+        await sendCellPage(req, res, ref, resolved.cell, view);
+        return;
+      }
       await sendConfig(
         req,
         res,
@@ -1243,7 +1399,16 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         return;
       }
       await sessions.ready(run);
-      dispatch(run, listener, req, res, (prefix + suffix || '/') + search);
+      // A reset in another process may have rebuilt the cell's handlers.
+      dispatch(
+        run,
+        run.auxListeners?.[role] ?? listener,
+        req,
+        res,
+        (prefix + suffix || '/') + search,
+        false,
+        role
+      );
     });
   }
 
@@ -1258,7 +1423,20 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     }
     // A frozen report: /results/<run-id>/snapshot/<snapshot-id>.
     if (revision === 'snapshot') {
-      const [snapshotId] = rest;
+      const [snapshotId, cellRevision, ...cellRest] = rest;
+      // A reached cell's page as frozen with the report:
+      // /results/<run-id>/snapshot/<snapshot-id>/<rev>/<scenario>.
+      if (cellRevision !== undefined) {
+        await sendFrozenCell(
+          req,
+          res,
+          runId,
+          snapshotId,
+          cellRevision,
+          cellRest
+        );
+        return;
+      }
       let body: string | undefined;
       if (segments.length === 3 && SNAPSHOT_ID_RE.test(snapshotId)) {
         try {
@@ -1293,7 +1471,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
     if (segments.length >= 3) {
       const resolved = resolveScenario(rest);
-      if (!resolved || resolved.suffix !== '') {
+      const suffix = resolved?.suffix;
+      if (!resolved || (suffix !== '' && suffix !== TRAFFIC_SUFFIX)) {
         res.status(404).json({ error: `unknown scenario '${rest.join('/')}'` });
         return;
       }
@@ -1304,19 +1483,17 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       };
       const cell = matrix.cell(resolved.scenarioName, ref.revision)!;
       await hostedScenarios.load([ref.scenarioName]);
+      if (suffix === TRAFFIC_SUFFIX) {
+        sendTraffic(res, ref, await sessions.traffic(cellId(ref)));
+        return;
+      }
       // A cell nobody has hit yet is a valid, incomplete cell — not an
       // unknown run: the config page links here before any traffic.
-      const r =
-        cell.scoring === 'n/a'
-          ? undefined
-          : await sessions.results(cellId(ref));
-      // One row per check, as the page and the report count them.
-      const { shown, ...status } = cellStatus(cell, r, clock());
+      const view = await cellView(req, ref, cell);
       if (wantsHtml(req)) {
-        const { renderResults } = await pages();
-        res.type('html').send(renderResults(ref, shown, status, build));
+        await sendCellPage(req, res, ref, cell, view);
       } else {
-        res.json({ ...summarise(ref, shown), ...status });
+        res.json(cellJson(req, ref, view));
       }
       return;
     }
@@ -1329,7 +1506,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     // The live page lists the run's frozen copies; nothing else needs them.
     const frozen =
       reportFormat(req) === 'html'
-        ? await snapshots.listSnapshots(runId).catch(() => [])
+        ? await snapshots
+            .listSnapshots(runId)
+            .then((list) => list.filter((s) => !s.id.includes('/')))
+            .catch(() => [])
         : undefined;
     await sendReport(req, res, report, frozen);
   });
@@ -1351,12 +1531,37 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       reportSources(req)
     );
     const snapshotId = mintId(8);
+    const frozenAt = report.generatedAt;
+    // Each reached cell's page goes with the report, traffic included, each
+    // its own row beside it (`<snapshot-id>/<rev>/<scenario>`), written
+    // first so the report never links to a page that is not there.
+    const reached = report.columns.flatMap((col) =>
+      col.cells.filter((c) => REACHED.includes(c.state))
+    );
     const frozen: RunReport = {
       ...report,
       snapshotId,
-      frozenAt: report.generatedAt
+      frozenAt,
+      frozenCells: reached.map((c) => `${c.revision}/${c.scenario}`)
     };
     try {
+      await Promise.all(
+        reached.map(async (c) => {
+          const ref: CellRef = {
+            runId,
+            revision: c.revision as SpecVersion,
+            scenarioName: c.scenario
+          };
+          const cell = matrix.cell(c.scenario, c.revision)!;
+          const { data } = await cellView(req, ref, cell);
+          const stored: FrozenCell = { ...data, frozenAt };
+          await snapshots.saveSnapshot(
+            runId,
+            `${snapshotId}/${c.revision}/${c.scenario}`,
+            JSON.stringify(stored)
+          );
+        })
+      );
       await snapshots.saveSnapshot(runId, snapshotId, JSON.stringify(frozen));
     } catch (e) {
       console.error('[hosted] snapshot:', e instanceof Error ? e.message : e);
@@ -1379,6 +1584,54 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         markdownUrl: `${url}?format=md`,
         textUrl: `${url}?format=text`
       });
+  });
+
+  // Reset one cell: its client's next request starts a new attempt, which
+  // sets the cell's verdict from then on; what earlier attempts recorded
+  // stays, listed on the cell's page. The cell keeps its URL. Anyone with
+  // the run link can, as with everything else in a run.
+  app.post(/^\/results\/(.+)\/reset$/, async (req, res) => {
+    const [runId, revision, ...rest] = segmentsOf(req.params[0]);
+    if (!RUN_ID_RE.test(runId ?? '')) {
+      res.status(400).json({ error: 'invalid run-id' });
+      return;
+    }
+    if (!revisions.includes(revision ?? '')) {
+      res
+        .status(404)
+        .json({ error: `unknown revision '${revision ?? ''}'`, revisions });
+      return;
+    }
+    const resolved = resolveScenario(rest);
+    if (!resolved || resolved.suffix !== '') {
+      res.status(404).json({ error: `unknown scenario '${rest.join('/')}'` });
+      return;
+    }
+    const cell = matrix.cell(resolved.scenarioName, revision)!;
+    if (!checkStartable(cell, res)) return;
+    const ref: CellRef = {
+      runId,
+      revision: revision as SpecVersion,
+      scenarioName: resolved.scenarioName
+    };
+    await loadCells([ref]);
+    const attempt = await sessions.reset(cellId(ref), clock());
+    if (wantsHtml(req)) {
+      res.redirect(
+        303,
+        req.query.back === 'report'
+          ? `/results/${runId}`
+          : `/results/${cellId(ref)}`
+      );
+      return;
+    }
+    res.json({
+      runId,
+      revision,
+      scenario: ref.scenarioName,
+      attempt,
+      resultsUrl: resultsUrlFor(req, cellId(ref))
+    });
   });
 
   app.delete('/results/:runId', async (req, res) => {
@@ -1419,12 +1672,202 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
    * keeps what the run said, not the host name it was frozen through.
    */
   function relink(req: Request, report: RunReport): RunReport {
+    const frozen = new Set(report.frozenCells ?? []);
     for (const col of report.columns) {
       for (const c of [...col.cells, ...col.notScored]) {
-        c.resultsUrl = resultsUrlFor(req, report.runId, c.revision, c.scenario);
+        // A cell frozen with the report links to its page as frozen.
+        c.resultsUrl =
+          report.snapshotId && frozen.has(`${c.revision}/${c.scenario}`)
+            ? resultsUrlFor(
+                req,
+                report.runId,
+                'snapshot',
+                report.snapshotId,
+                c.revision,
+                c.scenario
+              )
+            : resultsUrlFor(req, report.runId, c.revision, c.scenario);
       }
     }
     return report;
+  }
+
+  /** A cell's page as its results and config paths serve it. */
+  interface CellView {
+    data: CellPageData;
+    status: CellStatus;
+    shown: ShownCheck[];
+  }
+
+  /**
+   * What a cell's page shows: its current attempt's verdict and checks, its
+   * earlier attempts each in a line, and the current attempt's traffic.
+   */
+  async function cellView(
+    req: Request,
+    ref: CellRef,
+    cell: MatrixCell
+  ): Promise<CellView> {
+    const now = clock();
+    const r =
+      cell.scoring === 'n/a' ? undefined : await sessions.results(cellId(ref));
+    // One row per check, as the page and the report count them.
+    const { shown, ...status } = cellStatus(cell, r, now);
+    const traffic = r
+      ? await sessions.traffic(cellId(ref))
+      : new Map<number, { exchanges: Exchange[]; omitted: number }>();
+    const attempt = r?.attempt ?? 1;
+    const { earlierCause } = await cellPages();
+    const earlier: EarlierSummary[] = (r?.earlier ?? []).map((e) => {
+      const v = viewCell(cell, e.results, now);
+      const first = traffic.get(e.attempt)?.exchanges[0]?.at;
+      const cause = earlierCause(v.shown ?? [], v.note);
+      return {
+        attempt: e.attempt,
+        ...(e.startedAt && { startedAt: e.startedAt }),
+        ...(first && { firstRequestAt: first }),
+        ...(e.results.lastRequestAt && {
+          lastRequestAt: e.results.lastRequestAt
+        }),
+        verdict: v.verdict,
+        state: v.state,
+        ...(cause && { cause })
+      };
+    });
+    const data: CellPageData = {
+      ref,
+      description:
+        matrix.rows.find((row) => row.scenario === ref.scenarioName)
+          ?.description ?? '',
+      status,
+      shown,
+      identities: r && !r.fresh ? identitiesIn(r.checks) : [],
+      attempt,
+      ...(r?.resetAt && { resetAt: r.resetAt }),
+      earlier,
+      traffic: traffic.get(attempt) ?? { exchanges: [], omitted: 0 },
+      ...(cell.startable && {
+        mcpUrl: `${cellBaseUrl(req, ref)}${cell.mcpPath}`
+      }),
+      ...(cell.steps && { steps: cell.steps })
+    };
+    return { data, status, shown };
+  }
+
+  /** A cell's results as JSON: its rows and status, and its attempts. */
+  function cellJson(req: Request, ref: CellRef, view: CellView) {
+    const { data, status, shown } = view;
+    return {
+      ...summarise(ref, shown),
+      ...status,
+      attempt: data.attempt,
+      ...(data.resetAt && { resetAt: data.resetAt }),
+      ...(data.earlier.length && { earlier: data.earlier }),
+      trafficUrl: `${resultsUrlFor(req, cellId(ref))}${TRAFFIC_SUFFIX}`
+    };
+  }
+
+  async function sendCellPage(
+    req: Request,
+    res: Response,
+    ref: CellRef,
+    cell: MatrixCell,
+    view: CellView
+  ): Promise<void> {
+    let config: CellConfig | undefined;
+    if (cell.startable) {
+      await loadCells([ref]);
+      const run = mountCell(req, ref, res);
+      if (!run) return;
+      config = cellConfig(req, run, cell);
+    }
+    const resettable =
+      cell.startable &&
+      !['not-tried', 'not-startable', 'n/a'].includes(view.status.state);
+    const { renderCell } = await cellPages();
+    res
+      .type('html')
+      .send(renderCell(view.data, { live: { config, resettable }, build }));
+  }
+
+  /** A frozen copy of a reached cell's page (see the freeze route). */
+  async function sendFrozenCell(
+    req: Request,
+    res: Response,
+    runId: string,
+    snapshotId: string,
+    revision: string,
+    rest: string[]
+  ): Promise<void> {
+    const resolved = revisions.includes(revision)
+      ? resolveScenario(rest)
+      : undefined;
+    const suffix = resolved?.suffix;
+    let body: string | undefined;
+    if (
+      resolved &&
+      (suffix === '' || suffix === TRAFFIC_SUFFIX) &&
+      SNAPSHOT_ID_RE.test(snapshotId)
+    ) {
+      try {
+        body = await snapshots.loadSnapshot(
+          runId,
+          `${snapshotId}/${revision}/${resolved.scenarioName}`
+        );
+      } catch (e) {
+        console.error('[hosted] snapshot:', e instanceof Error ? e.message : e);
+        res
+          .status(503)
+          .json({ error: 'could not read the snapshot; try again' });
+        return;
+      }
+    }
+    if (body === undefined || !resolved) {
+      res.status(404).json({
+        error: `no frozen cell '${[revision, ...rest].join('/')}' in snapshot '${snapshotId}' of run '${runId}'`
+      });
+      return;
+    }
+    const stored = JSON.parse(body) as FrozenCell;
+    if (suffix === TRAFFIC_SUFFIX) {
+      sendTraffic(res, stored.ref, new Map([[stored.attempt, stored.traffic]]));
+      return;
+    }
+    if (!wantsHtml(req)) {
+      res.json(stored);
+      return;
+    }
+    const { renderCell } = await cellPages();
+    res.type('html').send(
+      renderCell(
+        {
+          ...stored,
+          mcpUrl: `${cellBaseUrl(req, stored.ref)}${matrix.cell(stored.ref.scenarioName, stored.ref.revision)?.mcpPath ?? MCP_PATH}`
+        },
+        { frozen: { snapshotId, frozenAt: stored.frozenAt }, build: null }
+      )
+    );
+  }
+
+  /** A cell's traffic as JSON lines, one exchange a line, every attempt. */
+  function sendTraffic(
+    res: Response,
+    ref: CellRef,
+    byAttempt: ReadonlyMap<number, { exchanges: Exchange[]; omitted: number }>
+  ): void {
+    const lines: string[] = [];
+    for (const [attempt, { exchanges, omitted }] of byAttempt) {
+      const conns = connectionNumbers(exchanges);
+      exchanges.forEach((e, i) =>
+        lines.push(jsonLine(e, attempt, i + 1, conns))
+      );
+      if (omitted) lines.push(JSON.stringify({ attempt, omitted }));
+    }
+    const name = `${ref.revision}-${ref.scenarioName.replace(/[^A-Za-z0-9._-]+/g, '_')}-traffic.jsonl`;
+    res
+      .set('content-type', 'application/jsonl; charset=utf-8')
+      .set('content-disposition', `inline; filename="${name}"`)
+      .send(lines.map((l) => `${l}\n`).join(''));
   }
 
   async function sendReport(
