@@ -96,15 +96,17 @@ export class ToolsCallScenario extends HandlerScenario {
     // Built fresh on every call so getChecks() is idempotent — the runner may
     // call it more than once and we must not accumulate duplicates. Judged
     // from the raw log, not the mock's `recorded`, which only this process's
-    // mock instance holds.
-    const call = this.checks.find((c) => c.id === TOOLS_CALL_EVENT_ID);
-    const args = call?.details?.arguments as
-      | { a?: unknown; b?: unknown }
-      | undefined;
-    const ok =
-      call !== undefined &&
-      typeof args?.a === 'number' &&
-      typeof args?.b === 'number';
+    // mock instance holds. Every call is judged, from every connection and
+    // process: one that sends bad arguments fails the check whenever it
+    // came, and is the one shown.
+    const argsOf = (c: ConformanceCheck) =>
+      c.details?.arguments as { a?: unknown; b?: unknown } | undefined;
+    const numeric = (c: ConformanceCheck) =>
+      typeof argsOf(c)?.a === 'number' && typeof argsOf(c)?.b === 'number';
+    const calls = this.checks.filter((c) => c.id === TOOLS_CALL_EVENT_ID);
+    const call = calls.find((c) => !numeric(c)) ?? calls[0];
+    const args = call && argsOf(call);
+    const ok = call !== undefined && numeric(call);
     return [
       {
         id: 'tool-add-numbers',
@@ -113,13 +115,19 @@ export class ToolsCallScenario extends HandlerScenario {
         status: ok ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         specReferences: [SPEC_REF, SPEC_REF_2026_07_28],
+        ...(call &&
+          !ok && {
+            errorMessage: `Client called '${String(call.details?.name)}' without numbers for a and b`
+          }),
         details: ok
           ? {
               a: args!.a,
               b: args!.b,
               result: (args!.a as number) + (args!.b as number)
             }
-          : { message: 'Tool was not called by client' }
+          : call
+            ? { name: call.details?.name, arguments: args }
+            : { message: 'Tool was not called by client' }
       }
     ];
   }

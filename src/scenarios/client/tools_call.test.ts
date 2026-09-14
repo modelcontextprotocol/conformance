@@ -3,7 +3,7 @@ import { beforeAll, describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ToolsCallScenario } from './tools_call';
-import { DRAFT_PROTOCOL_VERSION } from '../../types';
+import { DRAFT_PROTOCOL_VERSION, type ConformanceCheck } from '../../types';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
 import { hostedScenarios } from '../../hosted/catalog';
 
@@ -136,6 +136,40 @@ describe('tools_call scenario', () => {
     expect(judged).toHaveLength(1);
     expect(judged[0]).toMatchObject({
       id: 'tool-add-numbers',
+      status: 'SUCCESS',
+      details: { a: 2, b: 3, result: 5 }
+    });
+  });
+
+  it('judges every call: a call without numbers fails, before or after a good one', () => {
+    const call = (a: unknown, at: string): ConformanceCheck => ({
+      id: 'tools-call-requested',
+      name: 'ToolsCallRequested',
+      description: "Client called tool 'add_numbers'",
+      status: 'INFO',
+      timestamp: at,
+      details: { name: 'add_numbers', arguments: { a, b: 3 } }
+    });
+    const good = call(2, '2026-01-01T00:00:00.000Z');
+    const bad = call('two', '2026-01-01T00:01:00.000Z');
+    for (const log of [
+      [good, bad],
+      [bad, good]
+    ]) {
+      const [judged] = finalizeChecks('tools_call', log);
+      expect(judged).toMatchObject({
+        id: 'tool-add-numbers',
+        status: 'FAILURE',
+        errorMessage: "Client called 'add_numbers' without numbers for a and b",
+        details: { name: 'add_numbers', arguments: { a: 'two', b: 3 } }
+      });
+    }
+    // Two good calls: one SUCCESS with the first call's values, as before.
+    const [ok] = finalizeChecks('tools_call', [
+      good,
+      call(7, '2026-01-01T00:02:00.000Z')
+    ]);
+    expect(ok).toMatchObject({
       status: 'SUCCESS',
       details: { a: 2, b: 3, result: 5 }
     });

@@ -158,7 +158,7 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
       },
       {
         body: { jsonrpc: '2.0', id: 4, method: 'tools/list' },
-        headers: {} // second tools/list: the first already decided
+        headers: { 'Mcp-Method': 'tools/list' } // a repeat adds no row
       }
     ]);
     expect(rawChecksOf(a).map((c) => c.name)).toEqual([
@@ -202,5 +202,82 @@ describe('HttpStandardHeadersScenario (SEP-2243) — negative', () => {
     expect(twice).toHaveLength(6 + 3);
     expect(rawChecksOf(a)).toHaveLength(1);
     expect(rawChecksOf(b)).toHaveLength(3);
+  });
+});
+
+/**
+ * Every request is judged, not only the first of each method: a client that
+ * conforms at first and later sends a request without the header, from the
+ * same connection or another, fails, and so does one that fails first and
+ * conforms later. A conforming client adds one row per method however often
+ * it calls it.
+ */
+describe('HttpStandardHeadersScenario (SEP-2243) — every request', () => {
+  const LIST = 'ClientMcpMethodHeader_tools_list';
+
+  async function drive(
+    headersPerRequest: Record<string, string>[]
+  ): Promise<HttpStandardHeadersScenario> {
+    const scenario = new HttpStandardHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      let id = 0;
+      for (const headers of headersPerRequest) {
+        const r = await fetch(serverUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: ++id,
+            method: 'tools/list'
+          })
+        });
+        await r.text();
+      }
+    } finally {
+      await scenario.stop();
+    }
+    return scenario;
+  }
+
+  const statuses = (checks: { name: string; status: string }[]) =>
+    checks.filter((c) => c.name === LIST).map((c) => c.status);
+
+  it('fails a pass followed by a request without Mcp-Method on one connection', async () => {
+    const s = await drive([{ 'Mcp-Method': 'tools/list' }, {}]);
+    expect(statuses(rawChecksOf(s))).toEqual(['SUCCESS', 'FAILURE']);
+    expect(statuses(s.getChecks())).toEqual(['FAILURE']);
+  });
+
+  it('fails a pass on one connection followed by a regression on another (merged log)', async () => {
+    const first = await drive([{ 'Mcp-Method': 'tools/list' }]);
+    const second = await drive([{}]);
+    const judged = finalizeChecks('http-standard-headers', [
+      ...rawChecksOf(first),
+      ...rawChecksOf(second)
+    ]);
+    expect(statuses(judged)).toEqual(['FAILURE']);
+    expect(judged.find((c) => c.name === LIST)?.errorMessage).toMatch(
+      /Missing Mcp-Method header on tools\/list/
+    );
+  });
+
+  it('still fails a regression followed by a pass, with both recorded', async () => {
+    const s = await drive([{}, { 'Mcp-Method': 'tools/list' }]);
+    expect(statuses(rawChecksOf(s))).toEqual(['FAILURE', 'SUCCESS']);
+    expect(statuses(s.getChecks())).toEqual(['FAILURE']);
+    const judged = finalizeChecks('http-standard-headers', rawChecksOf(s));
+    expect(statuses(judged)).toEqual(['FAILURE']);
+  });
+
+  it('a conforming client that repeats a method keeps one SUCCESS row, as before', async () => {
+    const s = await drive([
+      { 'Mcp-Method': 'tools/list' },
+      { 'Mcp-Method': 'tools/list' },
+      { 'Mcp-Method': 'tools/list' }
+    ]);
+    expect(statuses(rawChecksOf(s))).toEqual(['SUCCESS']);
+    expect(statuses(s.getChecks())).toEqual(['SUCCESS']);
+    expect(s.getChecks()).toHaveLength(9);
   });
 });
