@@ -1,0 +1,197 @@
+# Conformance requirements for the 2026-07-28 specification revision.
+#
+# This file is the canonical answer to "which scenarios must my implementation pass
+# to conform to 2026-07-28". It is FROZEN: the lists below were fixed when the
+# revision shipped and must not be edited afterwards. An implementation is measured
+# against the suite as it stood when it was expected to conform, not against whatever
+# the suite has accumulated since.
+#
+# Anchor: @modelcontextprotocol/conformance@0.2.0-alpha.10, published 2026-07-27, the
+# release current when this revision shipped. That release could express spec-version
+# applicability, so this set is a faithful snapshot of what was required at ship.
+#
+# `server` and `client` are named for the subcommand that runs them, and list what
+# conformance to this revision requires. Scenarios run at THIS revision's wire
+# version: the dated revisions through 2025-11-25 use the stateful initialize
+# handshake and 2026-07-28 is stateless with per-request _meta, so a scenario that
+# applies to both must be run once under each and one run does not cover the other.
+#
+# There is deliberately no authorization-server section: the MCP specification puts
+# authorization-server implementation beyond its own scope, so those scenarios serve
+# people deploying an authorization server, not implementations of MCP itself.
+#
+# `not_scored` is run and reported but never counts toward a pass rate; each entry
+# says why. `extension` is optional by definition (SEP-1730: "Experimental features
+# and protocol extensions ... are not required for any tier"). `added-after-release`
+# means added to the suite after the anchor release this file is derived from
+# (0.2.0-alpha.10, published the day before this revision shipped), so no
+# implementation pinning a published referee could have been running it. Promoting an entry into the lists above is a deliberate, reviewable
+# change.
+#
+# Scenarios that were PENDING in the source release are never scored — SEP-1730
+# scores "applicable required tests" only, and pending means the suite's own
+# reference fixture cannot pass them yet. They still RUN, under not_scored with
+# reason: pending (or extension for the tasks suite), because the implementation
+# under test may well pass what the reference fixture cannot, and invisible
+# coverage is how gaps hide.
+
+server:
+  - server-stateless
+  - completion-complete
+  - tools-list
+  - tools-call-simple-text
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-error
+  - tools-call-with-progress
+  - server-sse-multiple-streams
+  - resources-list
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - sep-2164-resource-not-found
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  - dns-rebinding-protection
+  - caching
+  - input-required-result-basic-elicitation
+  - input-required-result-basic-sampling
+  - input-required-result-basic-list-roots
+  - input-required-result-request-state
+  - input-required-result-multiple-input-requests
+  - input-required-result-multi-round
+  - input-required-result-missing-input-response
+  - input-required-result-non-tool-request
+  - input-required-result-result-type
+  - input-required-result-unsupported-methods
+  - input-required-result-tampered-state
+  - input-required-result-capability-check
+  - input-required-result-ignore-extra-params
+  - input-required-result-validate-input
+
+client:
+  - tools_call
+  - request-metadata
+  - auth/metadata-default
+  - auth/metadata-var1
+  - auth/metadata-var2
+  - auth/metadata-var3
+  - auth/basic-cimd
+  - auth/scope-from-www-authenticate
+  - auth/scope-from-scopes-supported
+  - auth/scope-omitted-when-undefined
+  - auth/scope-step-up
+  - auth/scope-retry-limit
+  - auth/token-endpoint-auth-basic
+  - auth/token-endpoint-auth-post
+  - auth/token-endpoint-auth-none
+  - auth/pre-registration
+  - auth/resource-mismatch
+  - auth/offline-access-scope
+  - auth/offline-access-not-supported
+  - auth/authorization-server-migration
+  - auth/iss-supported
+  - auth/iss-not-advertised
+  - auth/iss-supported-missing
+  - auth/iss-wrong-issuer
+  - auth/iss-unexpected
+  - auth/iss-normalized
+  - auth/metadata-issuer-mismatch
+  - sep-2322-client-request-state
+  - http-standard-headers
+  - http-custom-headers
+  - http-invalid-tool-headers
+  - json-schema-ref-no-deref
+
+not_scored:
+  - scenario: auth/client-credentials-jwt
+    leg: client
+    reason: extension
+  - scenario: auth/client-credentials-basic
+    leg: client
+    reason: extension
+  - scenario: auth/enterprise-managed-authorization
+    leg: client
+    reason: extension
+  - scenario: auth/dpop
+    leg: client
+    reason: extension
+  - scenario: auth/dpop-nonce
+    leg: client
+    reason: extension
+  - scenario: auth/wif-jwt-bearer
+    leg: client
+    reason: extension
+  - scenario: json-schema-2020-12-preservation
+    leg: client
+    reason: added-after-release
+  - scenario: tasks-lifecycle
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-capability-negotiation
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-wire-fields
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-request-state-removal
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-mrtr-input
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-request-headers
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-dispatch-and-envelope
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-status-notifications
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-required-task-error
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: tasks-mrtr-composition
+    leg: server
+    reason: extension
+    note: >-
+      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+  - scenario: json-schema-2020-12
+    leg: server
+    reason: pending
+    note: >-
+      the reference fixture cannot pass it yet; the implementation under test might
+  - scenario: http-header-validation
+    leg: server
+    reason: pending
+    note: >-
+      SEP-2243; pending against the reference fixture
+  - scenario: http-custom-header-server-validation
+    leg: server
+    reason: pending
+    note: >-
+      SEP-2243; pending against the reference fixture

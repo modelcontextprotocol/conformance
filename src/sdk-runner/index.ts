@@ -8,7 +8,7 @@ import { resolveSpecVersion } from '../scenarios';
 
 type Mode = 'client' | 'server';
 
-function execShell(command: string, cwd: string): Promise<void> {
+export function execShell(command: string, cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { shell: true, cwd, stdio: 'inherit' });
     child.on('error', reject);
@@ -59,7 +59,7 @@ async function waitForReady(url: string, timeoutMs: number): Promise<void> {
   );
 }
 
-async function withManagedServer<T>(
+export async function withManagedServer<T>(
   command: string,
   cwd: string,
   url: string,
@@ -102,14 +102,28 @@ async function withManagedServer<T>(
   } finally {
     stopping = true;
     console.error(`[sdk] Stopping server`);
-    if (process.platform !== 'win32' && child.pid) {
-      try {
-        process.kill(-child.pid, 'SIGTERM');
-      } catch {
-        child.kill('SIGTERM');
+    const gone = new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once('exit', () => resolve());
+    });
+    const signal = (sig: NodeJS.Signals) => {
+      if (process.platform !== 'win32' && child.pid) {
+        try {
+          process.kill(-child.pid, sig);
+        } catch {
+          child.kill(sig);
+        }
+      } else {
+        child.kill(sig);
       }
-    } else {
-      child.kill('SIGTERM');
+    };
+    signal('SIGTERM');
+    // Wait for the process to actually release its port: a consecutive run on
+    // the same port must never race a dying predecessor. Escalate if needed.
+    const timer = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    if ((await Promise.race([gone.then(() => true), timer(5000)])) !== true) {
+      signal('SIGKILL');
+      await Promise.race([gone, timer(2000)]);
     }
   }
 }
@@ -121,14 +135,23 @@ function passThrough(options: {
   verbose?: boolean;
   output?: string;
   specVersion?: string;
+  requirements?: string;
 }): string[] {
   const args: string[] = [];
-  if (options.scenario) args.push('--scenario', options.scenario);
-  else if (options.suite) args.push('--suite', options.suite);
+  // A requirement set replaces scenario/suite/spec-version selection: it names
+  // the scenarios AND pins the wire version they run at.
+  if (options.requirements) {
+    args.push('--requirements', options.requirements);
+  } else if (options.scenario) {
+    args.push('--scenario', options.scenario);
+  } else if (options.suite) {
+    args.push('--suite', options.suite);
+  }
   if (options.timeout) args.push('--timeout', options.timeout);
   if (options.verbose) args.push('--verbose');
   if (options.output) args.push('-o', options.output);
-  if (options.specVersion) args.push('--spec-version', options.specVersion);
+  if (!options.requirements && options.specVersion)
+    args.push('--spec-version', options.specVersion);
   return args;
 }
 
@@ -173,6 +196,10 @@ export function createSdkCommand(): Command {
       '--spec-version <version>',
       'Spec version to target (passed through; defaults to the SDK config)'
     )
+    .option(
+      '--requirements <revision>',
+      "Run exactly the scenarios this spec revision requires, at that revision's wire, with the SDK invocation resolved for that revision (e.g. 2026-07-28). Replaces --suite/--scenario/--spec-version"
+    )
     .option('--verbose', 'Verbose output (passed through)')
     .action(async (sdkArg: string | undefined, options) => {
       try {
@@ -197,7 +224,20 @@ export function createSdkCommand(): Command {
         // default) selects that version's specOverrides entry, so version-
         // specific invocations live in config instead of copy-paste flags.
         // 'draft' resolves to its dated alias so overlay keys stay canonical.
-        const requestedSpec = options.specVersion ?? baseConfig.specVersion;
+        if (
+          options.requirements &&
+          (options.specVersion || options.suite || options.scenario)
+        ) {
+          throw new Error(
+            '--requirements cannot be combined with --spec-version, --suite or --scenario: a requirement set already fixes which scenarios run and at which wire.'
+          );
+        }
+        // A requirements revision doubles as the spec version for config
+        // resolution, so the specOverrides entry for that revision picks the
+        // right server command/url (go-sdk needs a different process per wire
+        // era, csharp-sdk a different endpoint).
+        const requestedSpec =
+          options.requirements ?? options.specVersion ?? baseConfig.specVersion;
         const specVersion: string | undefined = requestedSpec
           ? resolveSpecVersion(requestedSpec)
           : undefined;
@@ -224,9 +264,13 @@ export function createSdkCommand(): Command {
           options.serverUrl ?? builtinConfig.server?.url;
         // CLI override resolves relative to the user's invocation cwd; the
         // built-in default resolves relative to the SDK checkout.
+        // Under --requirements the frozen set decides pass/fail and tier-check
+        // ignores baselines entirely, so auto-attaching the SDK's own baseline
+        // would let the two commands return opposite verdicts for the same
+        // run. An explicit --expected-failures remains a deliberate choice.
         const expectedFailures = options.expectedFailures
           ? path.resolve(options.expectedFailures)
-          : builtinConfig.expectedFailures
+          : builtinConfig.expectedFailures && !options.requirements
             ? path.resolve(dir, builtinConfig.expectedFailures)
             : undefined;
         // Resolve -o to an absolute path so it lands where the user expects,
@@ -257,11 +301,14 @@ export function createSdkCommand(): Command {
             clientCmd,
             ...passThrough({
               scenario: options.scenario,
-              suite: options.suite ?? 'all',
+              suite: options.requirements
+                ? undefined
+                : (options.suite ?? 'all'),
               timeout: options.timeout,
               verbose: options.verbose,
               output,
-              specVersion
+              specVersion,
+              requirements: options.requirements
             })
           ];
           if (expectedFailures)
@@ -283,10 +330,13 @@ export function createSdkCommand(): Command {
               // Default to the `active` suite (excludes pending/draft) — the same
               // suite tiering runs, and the most reasonable default to avoid
               // surfacing intentionally-deferred `pending` scenarios.
-              suite: options.suite ?? 'active',
+              suite: options.requirements
+                ? undefined
+                : (options.suite ?? 'active'),
               verbose: options.verbose,
               output,
-              specVersion
+              specVersion,
+              requirements: options.requirements
             })
           ];
           if (expectedFailures)

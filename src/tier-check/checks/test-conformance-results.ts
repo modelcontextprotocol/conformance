@@ -1,4 +1,5 @@
-import { execFileSync } from 'child_process';
+import { spawn } from 'child_process';
+import { resolve as resolvePath } from 'path';
 import { mkdtempSync, readFileSync, existsSync, globSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
@@ -10,6 +11,12 @@ import {
   listClientScenariosForSpec,
   getScenarioSpecVersions
 } from '../../scenarios';
+import {
+  notScoredScenarios,
+  RequirementSet,
+  scenariosToRun,
+  scoredScenarios
+} from '../../requirements';
 import {
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION,
@@ -115,7 +122,14 @@ function stripTimestamp(dirName: string): string {
 function reconcileWithExpected(
   result: ConformanceResult,
   expectedScenarios: string[],
-  resultPrefix?: string
+  resultPrefix?: string,
+  /**
+   * Names that count toward the pass rate. When a requirement set is in play it
+   * decides this directly, so extensions and post-release additions are run and
+   * reported but never scored. Undefined keeps the spec-version heuristic.
+   */
+  scoredNames?: Set<string>,
+  notScoredReasons?: Map<string, string>
 ): ConformanceResult {
   const reportedNames = new Set(
     result.details.map((d) => {
@@ -127,38 +141,56 @@ function reconcileWithExpected(
     })
   );
 
-  // Attach specVersion to existing detail entries
+  // Normalise to the canonical scenario name. Results live in per-run
+  // directories (`server-ping-<timestamp>`), and reporting that spelling means
+  // a reported name does not match the same scenario in `list` or in a
+  // requirement set.
   for (const detail of result.details) {
     let name = stripTimestamp(detail.scenario);
     if (resultPrefix) {
       name = name.replace(new RegExp(`^${resultPrefix}-`), '');
     }
+    detail.scenario = name;
     detail.specVersions = getScenarioSpecVersions(name);
+    const reason = notScoredReasons?.get(name);
+    if (reason) detail.notScoredReason = reason;
   }
 
   for (const expected of expectedScenarios) {
     if (!reportedNames.has(expected)) {
       result.failed++;
       result.total++;
+      const reason = notScoredReasons?.get(expected);
       result.details.push({
         scenario: expected,
         passed: false,
         checks_passed: 0,
         checks_failed: 0,
-        specVersions: getScenarioSpecVersions(expected)
+        specVersions: getScenarioSpecVersions(expected),
+        ...(reason ? { notScoredReason: reason } : {})
       });
     }
   }
 
-  // pass_rate only counts tier-scoring scenarios (date-versioned, not draft/extension).
-  // passed/failed/total reflect ALL scenarios for full reporting; pass_rate and status
-  // reflect only tier-scoring scenarios for tier logic.
-  const tierDetails = result.details.filter((d) =>
-    isTierScoring(d.specVersions)
-  );
+  // passed/failed/total describe the SCORED set, so they agree with pass_rate and
+  // with the report. Counting every scenario here made the object self-
+  // contradictory (passed 56, total 64, pass_rate 1) and invited 56/64 to be
+  // quoted as the conformance rate. Anything run without being scored is
+  // reported under not_scored instead.
+  const tierDetails = scoredNames
+    ? result.details.filter((d) => scoredNames.has(d.scenario))
+    : result.details.filter((d) => isTierScoring(d.specVersions));
   const tierPassed = tierDetails.filter((d) => d.passed).length;
   const tierTotal = tierDetails.length;
+  const unscored = result.details.filter((d) => !tierDetails.includes(d));
 
+  result.passed = tierPassed;
+  result.failed = tierTotal - tierPassed;
+  result.total = tierTotal;
+  result.not_scored = {
+    total: unscored.length,
+    failed: unscored.filter((d) => !d.passed).length
+  };
   result.pass_rate = tierTotal > 0 ? tierPassed / tierTotal : 0;
   result.status =
     result.pass_rate >= 1.0
@@ -171,12 +203,133 @@ function reconcileWithExpected(
 }
 
 /**
+ * Run the conformance CLI as a child. A non-zero exit is normal when scenarios
+ * fail, so it is not itself an error; what matters is whether the child got far
+ * enough to write results. Returns the child's stderr when it did not.
+ */
+function unmeasured(error: string): ConformanceResult {
+  return {
+    status: 'fail',
+    pass_rate: 0,
+    passed: 0,
+    failed: 0,
+    total: 0,
+    details: [],
+    error
+  };
+}
+
+function runChild(args: string[], cwd?: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    // Async on purpose: a leg can run under a managed SDK server whose
+    // stdout/stderr the parent is draining. A synchronous exec would block the
+    // event loop for the whole leg, the server's pipes would fill, its log
+    // writes would block, and the server would freeze mid-leg — scored as
+    // conformance failures against the SDK.
+    const child = spawn(process.execPath, args, {
+      // Results are read from the -o directory, so the child's stdout is
+      // noise. Keep a bounded stderr tail for error reporting.
+      stdio: ['ignore', 'ignore', 'pipe'],
+      cwd
+    });
+    let stderr = '';
+    child.stderr.on('data', (d) => {
+      if (stderr.length < 64 * 1024) stderr += d.toString();
+    });
+    // Generous whole-leg budget: a slow SDK on CI-class hardware must not
+    // have a killed harness scored as conformance failures.
+    const timer = setTimeout(() => child.kill('SIGKILL'), 600_000);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve(err.message);
+    });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(undefined);
+      else if (signal) resolve(`conformance run terminated (${signal})`);
+      else {
+        const tail = stderr.trim();
+        // Non-zero exit is normal when scenarios fail; what matters is whether
+        // the child got far enough to write results. Callers treat this as
+        // fatal only when the output directory is empty.
+        resolve(tail ? tail.split('\n').slice(-3).join(' ') : undefined);
+      }
+    });
+  });
+}
+
+/**
  * Run server conformance tests by shelling out to the conformance CLI.
  */
+/** Merge per-revision results so a single pass rate spans every revision claimed. */
+export function mergeByRevision(
+  parts: { revision: string; result: ConformanceResult }[]
+): ConformanceResult {
+  // Single revision: same result, but details still carry their revision so
+  // the JSON shape does not depend on how many revisions were claimed.
+  if (parts.length === 1) {
+    const only = parts[0];
+    return {
+      ...only.result,
+      details: only.result.details.map((d) => ({
+        ...d,
+        revision: only.revision
+      }))
+    };
+  }
+
+  const errored = parts.find((p) => p.result.error);
+  if (errored)
+    return unmeasured(`${errored.revision}: ${errored.result.error}`);
+
+  // A skipped leg never ran; folding it into the numbers would report a
+  // failure that never happened. All revisions skipped is a skipped leg.
+  // SOME revisions skipped means a claimed revision went unmeasured, which
+  // must surface through the error/exit machinery rather than merge into a
+  // clean pass that quietly covers fewer revisions than were claimed.
+  const skipped = parts.filter((p) => p.result.status === 'skipped');
+  if (skipped.length === parts.length) {
+    return {
+      status: 'skipped',
+      pass_rate: 0,
+      passed: 0,
+      failed: 0,
+      total: 0,
+      details: []
+    };
+  }
+  if (skipped.length > 0) {
+    return unmeasured(
+      `${skipped.map((p) => p.revision).join(', ')}: leg not measured for this revision`
+    );
+  }
+
+  const details = parts.flatMap((p) =>
+    p.result.details.map((d) => ({ ...d, revision: p.revision }))
+  );
+  const scored = details.filter((d) => !d.notScoredReason);
+  const passed = scored.filter((d) => d.passed).length;
+  const unscored = details.filter((d) => d.notScoredReason);
+  const pass_rate = scored.length > 0 ? passed / scored.length : 0;
+  return {
+    status: pass_rate >= 1 ? 'pass' : pass_rate >= 0.8 ? 'partial' : 'fail',
+    pass_rate,
+    passed,
+    failed: scored.length - passed,
+    total: scored.length,
+    not_scored: {
+      total: unscored.length,
+      failed: unscored.filter((d) => !d.passed).length
+    },
+    details
+  };
+}
+
 export async function checkConformance(options: {
   serverUrl?: string;
   skip?: boolean;
   specVersion?: SpecVersion;
+  requirements?: RequirementSet;
 }): Promise<ConformanceResult> {
   if (options.skip || !options.serverUrl) {
     return {
@@ -191,24 +344,37 @@ export async function checkConformance(options: {
 
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-server-'));
   const args = [
-    process.argv[1],
+    resolvePath(process.argv[1]),
     'server',
     '--url',
     options.serverUrl,
     '-o',
     outputDir
   ];
-  if (options.specVersion) {
+  if (options.requirements) {
+    args.push('--requirements', options.requirements.revision);
+  } else if (options.specVersion) {
     args.push('--spec-version', options.specVersion);
   }
 
-  try {
-    execFileSync(process.execPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 120_000
-    });
-  } catch {
-    // Non-zero exit is expected when tests fail — results are still in outputDir
+  const failure = await runChild(args);
+
+  const parsedServer = parseOutputDir(outputDir);
+  if (failure && parsedServer.total === 0) return unmeasured(failure);
+
+  if (options.requirements) {
+    return reconcileWithExpected(
+      parsedServer,
+      scenariosToRun(options.requirements, 'server'),
+      'server',
+      new Set(scoredScenarios(options.requirements, 'server')),
+      new Map(
+        notScoredScenarios(options.requirements, 'server').map((e) => [
+          e.scenario,
+          e.reason
+        ])
+      )
+    );
   }
 
   const activeScenarios = new Set(listActiveClientScenarios());
@@ -218,11 +384,7 @@ export async function checkConformance(options: {
       )
     : [...activeScenarios];
 
-  return reconcileWithExpected(
-    parseOutputDir(outputDir),
-    expectedScenarios,
-    'server'
-  );
+  return reconcileWithExpected(parsedServer, expectedScenarios, 'server');
 }
 
 /**
@@ -232,6 +394,15 @@ export async function checkClientConformance(options: {
   clientCmd?: string;
   skip?: boolean;
   specVersion?: SpecVersion;
+  requirements?: RequirementSet;
+  /**
+   * Working directory for the client command. SDK CI keeps client commands
+   * relative to the SDK checkout (.venv/bin/python …, ./.conformance-client);
+   * spawning them from the conformance repo turns that into a silent 0%.
+   */
+  cwd?: string;
+  /** Per-scenario client timeout in ms, forwarded to the client leg. */
+  timeoutMs?: number;
 }): Promise<ConformanceResult> {
   if (options.skip || !options.clientCmd) {
     return {
@@ -246,31 +417,48 @@ export async function checkClientConformance(options: {
 
   const outputDir = mkdtempSync(join(tmpdir(), 'tier-check-client-'));
   const args = [
-    process.argv[1],
+    resolvePath(process.argv[1]),
     'client',
     '--command',
     options.clientCmd,
-    '--suite',
-    'all',
     '-o',
     outputDir
   ];
-  if (options.specVersion) {
-    args.push('--spec-version', options.specVersion);
+  if (options.requirements) {
+    args.push('--requirements', options.requirements.revision);
+  } else {
+    args.push('--suite', 'all');
+    if (options.specVersion) {
+      args.push('--spec-version', options.specVersion);
+    }
+  }
+  if (options.timeoutMs) {
+    args.push('--timeout', String(options.timeoutMs));
   }
 
-  try {
-    execFileSync(process.execPath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 120_000
-    });
-  } catch {
-    // Non-zero exit is expected when tests fail — results are still in outputDir
+  const failure = await runChild(args, options.cwd);
+
+  const parsedClient = parseOutputDir(outputDir);
+  if (failure && parsedClient.total === 0) return unmeasured(failure);
+
+  if (options.requirements) {
+    return reconcileWithExpected(
+      parsedClient,
+      scenariosToRun(options.requirements, 'client'),
+      undefined,
+      new Set(scoredScenarios(options.requirements, 'client')),
+      new Map(
+        notScoredScenarios(options.requirements, 'client').map((e) => [
+          e.scenario,
+          e.reason
+        ])
+      )
+    );
   }
 
   const expectedScenarios = options.specVersion
     ? listScenariosForSpec(options.specVersion)
     : listScenarios();
 
-  return reconcileWithExpected(parseOutputDir(outputDir), expectedScenarios);
+  return reconcileWithExpected(parsedClient, expectedScenarios);
 }

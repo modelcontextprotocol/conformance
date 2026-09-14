@@ -87,6 +87,15 @@ function probeBody(specVersion: string): {
   };
 }
 
+function getResponseHeader(
+  headers: Record<string, string | string[] | undefined>,
+  name: string
+): string | undefined {
+  const value = headers[name] ?? headers[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
 /**
  * Send an MCP request with custom Host and Origin headers.
  * Both headers are set to the same value so that servers checking either
@@ -96,7 +105,7 @@ async function sendRequestWithHostAndOrigin(
   serverUrl: string,
   hostOrOrigin: string,
   specVersion: string
-): Promise<{ statusCode: number; body: unknown }> {
+): Promise<{ statusCode: number; body: unknown; sessionId?: string }> {
   // Build the SEP-2243 standard headers (Mcp-Method, Accept, ...) for the
   // probe's JSON-RPC method so a strictly-conformant server only rejects the
   // request for the Host/Origin values under test, then layer the
@@ -112,6 +121,43 @@ async function sendRequestWithHostAndOrigin(
       }
     }),
     body: JSON.stringify(probe)
+  });
+
+  let body: unknown;
+  try {
+    body = await response.body.json();
+  } catch {
+    body = null;
+  }
+
+  return {
+    statusCode: response.statusCode,
+    body,
+    sessionId: getResponseHeader(response.headers, 'mcp-session-id')
+  };
+}
+
+async function sendInitializedNotification(
+  serverUrl: string,
+  hostOrOrigin: string,
+  specVersion: string,
+  sessionId?: string
+): Promise<{ statusCode: number; body: unknown }> {
+  const method = 'notifications/initialized';
+  const response = await request(serverUrl, {
+    method: 'POST',
+    headers: buildStandardHeaders(method, undefined, {
+      headers: {
+        Host: hostOrOrigin,
+        Origin: `http://${hostOrOrigin}`,
+        'MCP-Protocol-Version': specVersion,
+        ...(sessionId ? { 'Mcp-Session-Id': sessionId } : {})
+      }
+    }),
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method
+    })
   });
 
   let body: unknown;
@@ -253,25 +299,50 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       );
       const isAccepted =
         response.statusCode >= 200 && response.statusCode < 300;
+      const initializedNotification =
+        isAccepted && specVersion !== DRAFT_PROTOCOL_VERSION
+          ? await sendInitializedNotification(
+              serverUrl,
+              validHost,
+              specVersion,
+              response.sessionId
+            )
+          : undefined;
+      const initializedAccepted =
+        !initializedNotification ||
+        (initializedNotification.statusCode >= 200 &&
+          initializedNotification.statusCode < 300);
 
       const details = {
         hostHeader: validHost,
         originHeader: `http://${validHost}`,
         statusCode: response.statusCode,
-        body: response.body
+        body: response.body,
+        ...(initializedNotification
+          ? {
+              initializedNotification: {
+                statusCode: initializedNotification.statusCode,
+                body: initializedNotification.body,
+                sessionIdSent: response.sessionId ?? null
+              }
+            }
+          : {})
       };
 
-      if (isAccepted) {
+      if (isAccepted && initializedAccepted) {
         checks.push({
           ...acceptedCheckBase,
           status: 'SUCCESS',
           details
         });
       } else {
+        const errorMessage = !isAccepted
+          ? `Expected HTTP 2xx for valid localhost Host/Origin headers, got ${response.statusCode}`
+          : `Expected HTTP 2xx for initialized notification after valid localhost initialize, got ${initializedNotification?.statusCode}`;
         checks.push({
           ...acceptedCheckBase,
           status: 'FAILURE',
-          errorMessage: `Expected HTTP 2xx for valid localhost Host/Origin headers, got ${response.statusCode}`,
+          errorMessage,
           details
         });
       }

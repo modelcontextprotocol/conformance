@@ -209,7 +209,7 @@
         {
           "check": "sep-2243-x-mcp-header-primitive-only",
           "status": "tested",
-          "text": "x-mcp-header MUST only be applied to parameters with primitive types (number, string, or boolean).",
+          "text": "x-mcp-header MUST only be applied to parameters with primitive types (integer, string, boolean). Parameters with type `number` are not permitted.",
           "url": "https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers"
         },
         {
@@ -221,7 +221,7 @@
         {
           "check": "sep-2243-client-encode-values",
           "status": "tested",
-          "text": "Clients MUST encode parameter values before including them in HTTP headers: number values MUST be converted to their decimal string representation; boolean values MUST be converted to the lowercase strings \"true\" or \"false\"."
+          "text": "Clients MUST encode parameter values before including them in HTTP headers: integer values MUST be converted to their decimal string representation; boolean values MUST be converted to the lowercase strings \"true\" or \"false\"."
         },
         {
           "check": "sep-2243-client-base64-unsafe",

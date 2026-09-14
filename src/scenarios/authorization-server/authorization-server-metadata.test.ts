@@ -205,6 +205,39 @@ describe('AuthorizationServerOptionsSchema', () => {
       expect(result.data.scenario).toBeUndefined();
     }
   });
+
+  it('accepts an absolute resource URI', async () => {
+    const schema = await getSchema();
+    const result = schema.safeParse({
+      url: 'https://example.com',
+      resource: 'https://mcp.example.com/mcp'
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.resource).toBe('https://mcp.example.com/mcp');
+    }
+  });
+
+  it('rejects a resource URI with a fragment', async () => {
+    const schema = await getSchema();
+    const result = schema.safeParse({
+      url: 'https://example.com',
+      resource: 'https://mcp.example.com/mcp#section'
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain('fragment');
+    }
+  });
+
+  it('rejects a resource that is not an absolute URI', async () => {
+    const schema = await getSchema();
+    const result = schema.safeParse({
+      url: 'https://example.com',
+      resource: '/mcp'
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('printAuthorizationServerResults', () => {

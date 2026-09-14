@@ -13,7 +13,12 @@ const PRE_REGISTERED_CLIENT_SECRET = 'pre-registered-secret';
  * Scenario: Pre-registration (static client credentials)
  *
  * Tests OAuth flow where the server does NOT support Dynamic Client Registration.
- * Clients must use pre-registered credentials passed via context.
+ * Clients must use pre-registered credentials passed via context. The context
+ * also carries the mock AS's `issuer` identifier: clients targeting the
+ * 2026-07-28 spec MUST associate pre-registered credentials with the
+ * authorization server that issued them, keyed by that issuer
+ * (Authorization Server Binding):
+ * https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration#authorization-server-binding
  *
  * This tests the pre-registration approach described in the MCP spec:
  * https://modelcontextprotocol.io/specification/draft/basic/authorization#preregistration
@@ -123,7 +128,11 @@ export class PreRegistrationScenario implements Scenario {
       serverUrl: `${this.server.getUrl()}/mcp`,
       context: {
         client_id: PRE_REGISTERED_CLIENT_ID,
-        client_secret: PRE_REGISTERED_CLIENT_SECRET
+        client_secret: PRE_REGISTERED_CLIENT_SECRET,
+        // The `issuer` the mock AS publishes in its metadata — the scenario
+        // sets neither `metadataIssuer` nor `routePrefix`, so createAuthServer
+        // resolves the published issuer to exactly this URL.
+        issuer: this.authServer.getUrl()
       }
     };
   }
