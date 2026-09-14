@@ -26,7 +26,6 @@ import {
   type ChildResult,
   type CompositeView
 } from './composite';
-import { renderComposite } from './html';
 import { hostedScenarios } from './catalog';
 import type { SpecVersion } from '../types';
 
@@ -245,8 +244,12 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
         return;
       }
       const v = view(req, runId, revision, names);
-      if (deps.wantsHtml(req)) res.type('html').send(renderComposite(v));
-      else res.json(v);
+      if (deps.wantsHtml(req)) {
+        const { renderComposite } = await import('./html');
+        res.type('html').send(renderComposite(v));
+      } else {
+        res.json(v);
+      }
       return;
     }
 

@@ -59,12 +59,6 @@ import {
   type MatrixCell
 } from './matrix';
 import {
-  renderLanding,
-  renderConfig,
-  renderReport,
-  renderResults
-} from './html';
-import {
   bodyFitsBuffer,
   declaresNoBody,
   onBodySettled,
@@ -121,6 +115,13 @@ import { reportMarkdown, reportText } from './markdown';
 import type { ShownCheck } from './shown';
 import { hostedScenarios } from './catalog';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
+
+/**
+ * The page renderers, loaded with the first page anyone asks for. A client's
+ * MCP request, a discover included, never renders one, and ./html brings the
+ * step descriptions (and zod) with it.
+ */
+const pages = () => import('./html');
 
 export interface HostedServerOptions {
   publicOrigin?: string;
@@ -795,8 +796,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     };
   }
 
-  function sendConfig(req: Request, res: Response, config: RunConfig): void {
+  async function sendConfig(
+    req: Request,
+    res: Response,
+    config: RunConfig
+  ): Promise<void> {
     if (wantsHtml(req)) {
+      const { renderConfig } = await pages();
       res.type('html').send(renderConfig(origin(req), matrix, config));
     } else {
       res.json(config);
@@ -805,7 +811,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
   // ---------- discovery ----------
 
-  app.get('/', (req, res) => {
+  app.get('/', async (req, res) => {
+    const { renderLanding } = await pages();
     // The page states this deployment's lifetimes, not the defaults.
     res.type('html').send(
       renderLanding(origin(req), matrix, {
@@ -911,7 +918,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       }
       // Config for every cell of the scope builds every one of them.
       await loadAllCells(matrix.revisions);
-      sendConfig(
+      await sendConfig(
         req,
         res,
         runConfig(req, runId, {
@@ -939,7 +946,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     await loadCells([ref]);
 
     if (suffix === '' && isPageRequest(req)) {
-      sendConfig(
+      await sendConfig(
         req,
         res,
         runConfig(req, ref.runId, {
@@ -1125,7 +1132,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         });
         return;
       }
-      sendReport(req, res, relink(req, JSON.parse(body) as RunReport));
+      await sendReport(req, res, relink(req, JSON.parse(body) as RunReport));
       return;
     }
 
@@ -1158,6 +1165,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       // One row per check, as the page and the report count them.
       const { shown, ...status } = cellStatus(cell, r);
       if (wantsHtml(req)) {
+        const { renderResults } = await pages();
         res.type('html').send(renderResults(ref, shown, status));
       } else {
         res.json({ ...summarise(ref, shown), ...status });
@@ -1175,7 +1183,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       reportFormat(req) === 'html'
         ? await snapshots.listSnapshots(runId).catch(() => [])
         : undefined;
-    sendReport(req, res, report, frozen);
+    await sendReport(req, res, report, frozen);
   });
 
   // Freeze the run's report as it stands now: a permalink later traffic
@@ -1269,12 +1277,12 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     return report;
   }
 
-  function sendReport(
+  async function sendReport(
     req: Request,
     res: Response,
     report: RunReport,
     frozen?: SnapshotInfo[]
-  ): void {
+  ): Promise<void> {
     const live = report.snapshotId
       ? resultsUrlFor(req, report.runId)
       : resultsUrlFor(
@@ -1296,7 +1304,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           .set('content-type', 'text/plain; charset=utf-8')
           .send(reportText(report, links));
         return;
-      case 'html':
+      case 'html': {
+        const { renderReport } = await pages();
         res.type('html').send(
           renderReport(matrix, report, {
             markdown,
@@ -1306,6 +1315,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           })
         );
         return;
+      }
       default:
         res.json(report);
     }
