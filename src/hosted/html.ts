@@ -5,7 +5,12 @@
  */
 
 import { ConformanceCheck, CheckStatus } from '../types';
-import { MCP_PATH, type HostedMatrix, type MatrixCell } from './matrix';
+import {
+  MCP_PATH,
+  startableCount,
+  type HostedMatrix,
+  type MatrixCell
+} from './matrix';
 import { buildCommit, buildText, type BuildInfo } from './build';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
@@ -470,7 +475,7 @@ export function renderLanding(
   build?: BuildInfo
 ): string {
   const cells = matrix.cells();
-  const startable = cells.filter((c) => c.startable).length;
+  const startableCells = cells.filter((c) => c.startable);
   const scored = matrix.revisions
     .map((r) => {
       const set = cells.filter(
@@ -545,7 +550,7 @@ Specification: ${specs}. A check looks wrong or a scenario misbehaves?
 
 <h2 id=matrix>The matrix</h2>
 <p class=muted>${matrix.rows.length} scenarios × ${matrix.revisions.length} revisions,
-${startable} startable cells here. A cell’s MCP URL is
+${esc(startableCount(startableCells, matrix.revisions))} here. A cell’s MCP URL is
 <code>${esc(origin)}/s/&lt;run-id&gt;/&lt;revision&gt;/&lt;scenario&gt;${MCP_PATH}</code>, and
 its results sit at the same path under <code>/results</code>. Cells that show
 <i>steps</i> tell a generic client what to do
@@ -693,14 +698,16 @@ ${
 ${envPre(cell)}
 <p><a href="${esc(cell.resultsUrl)}">results for this cell</a></p>`;
   } else {
-    const scope = config.revision
-      ? `revision <code>${esc(config.revision)}</code>`
-      : 'every revision';
+    // Per revision when the page covers several: a total summed over
+    // revisions read as "N at every revision" is taken for N per revision.
+    const count = config.revision
+      ? `${startableCount(config.cells, [config.revision])} at revision <code>${esc(config.revision)}</code>`
+      : esc(startableCount(config.cells, matrix.revisions));
     body = `<h1>run <code>${esc(config.runId)}</code>${
       config.revision ? ` <small>@ ${esc(config.revision)}</small>` : ''
     }</h1>
 ${crumbs(config)}
-<p>${config.cells.length} startable cell${config.cells.length === 1 ? '' : 's'} at ${scope}.
+<p>${count}.
 Point your client at a cell's MCP URL (open it for the env the CLI runner
 would set), then read the <a href="${esc(config.resultsUrl)}">results</a>.
 <button class=copy data-copy="all">copy mcpServers for all ${config.cells.length}</button></p>

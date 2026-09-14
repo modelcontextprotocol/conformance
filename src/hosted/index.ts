@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHostedApp } from './server';
+import { startableCount } from './matrix';
 import { buildInfo } from './build';
 import { gitBuild, packageRoot } from './git-build';
 import { AuxOriginRole } from '../types';
@@ -48,12 +49,14 @@ export async function runHostedServer(opts: HostedCliOptions): Promise<void> {
 
   const server = app.listen(opts.port, () => {
     const origin = opts.publicOrigin ?? `http://localhost:${opts.port}`;
-    const startable = matrix.cells().filter((c) => c.startable).length;
+    const startable = startableCount(
+      matrix.cells().filter((c) => c.startable),
+      matrix.revisions
+    );
     console.error(`MCP conformance hosted server listening on ${origin}`);
     console.error(
-      `  ${matrix.rows.length} scenarios × ${matrix.revisions.length} revisions ` +
-        `(${matrix.revisions.join(', ')}); ${startable} startable cells under ` +
-        `${origin}/s/<run-id>/<revision>/<scenario>`
+      `  ${matrix.rows.length} scenarios × ${matrix.revisions.length} revisions; ` +
+        `${startable} under ${origin}/s/<run-id>/<revision>/<scenario>`
     );
     console.error(`  GET ${origin}/s mints a run id`);
     if (haveAux.length) {

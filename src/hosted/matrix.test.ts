@@ -1,7 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { buildMatrix, notApplicableReason, scoringFor } from './matrix';
+import {
+  buildMatrix,
+  notApplicableReason,
+  scoringFor,
+  startableCount
+} from './matrix';
 import { loadRequirements } from '../requirements';
 import { getScenario } from '../scenarios';
+
+describe('startableCount', () => {
+  const at = (revision: string) => ({ revision }) as { revision: never };
+
+  it('says a total over several revisions per revision, never as each', () => {
+    const cells = [
+      ...Array.from({ length: 18 }, () => at('2025-11-25')),
+      ...Array.from({ length: 31 }, () => at('2026-07-28'))
+    ];
+    expect(startableCount(cells, ['2025-11-25', '2026-07-28'])).toBe(
+      '49 startable cells (18 at 2025-11-25, 31 at 2026-07-28)'
+    );
+  });
+
+  it('is a plain count for one revision', () => {
+    expect(startableCount([at('2026-07-28')], ['2026-07-28'])).toBe(
+      '1 startable cell'
+    );
+  });
+
+  it('adds up to the matrix’s startable cells', () => {
+    const matrix = buildMatrix();
+    const cells = matrix.cells().filter((c) => c.startable);
+    const said = startableCount(cells, matrix.revisions);
+    const per = [...said.matchAll(/(\d+) at /g)].map((m) => Number(m[1]));
+    expect(per.reduce((a, b) => a + b, 0)).toBe(cells.length);
+  });
+});
 
 describe('hosted matrix', () => {
   const requirements = loadRequirements('2026-07-28');

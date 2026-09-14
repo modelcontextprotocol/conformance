@@ -254,6 +254,37 @@ describe('hosted HTML', () => {
     expect(html).toContain('navigator.clipboard.writeText');
   });
 
+  it('run page and landing count startable cells per revision, not "at every revision"', () => {
+    const config = configFor('run6');
+    const per = matrix.revisions
+      .map(
+        (r) => `${config.cells.filter((c) => c.revision === r).length} at ${r}`
+      )
+      .join(', ');
+    const html = renderConfig('http://x', matrix, config);
+    expect(html).toContain(
+      `<p>${config.cells.length} startable cells (${per}).`
+    );
+    expect(html).not.toContain('at every revision');
+
+    const cells = matrix.cells().filter((c) => c.startable);
+    const landingPer = matrix.revisions
+      .map((r) => `${cells.filter((c) => c.revision === r).length} at ${r}`)
+      .join(', ');
+    expect(renderLanding('http://x', matrix, IN_MEMORY)).toContain(
+      `${cells.length} startable cells (${landingPer}) here.`
+    );
+
+    const column = renderConfig(
+      'http://x',
+      matrix,
+      configFor('run7', { revision: '2026-07-28' })
+    );
+    expect(column).toMatch(
+      /<p>\d+ startable cells? at revision <code>2026-07-28<\/code>\./
+    );
+  });
+
   it('column page filters to one revision', () => {
     const html = renderConfig(
       'http://x',

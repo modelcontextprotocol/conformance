@@ -48,6 +48,24 @@ export function publicMcpPath(scenario: Pick<Scenario, 'mcpPath'>): string {
   return scenario.mcpPath || MCP_PATH;
 }
 
+/**
+ * "49 startable cells (18 at 2025-11-25, 31 at 2026-07-28)": the startable
+ * `cells` counted, and per revision when there is more than one, so a total
+ * summed over revisions is never read as a count per revision.
+ */
+export function startableCount(
+  cells: readonly Pick<MatrixCell, 'revision'>[],
+  revisions: readonly string[]
+): string {
+  const n = cells.length;
+  const total = `${n} startable cell${n === 1 ? '' : 's'}`;
+  if (revisions.length < 2) return total;
+  const per = revisions.map(
+    (r) => `${cells.filter((c) => c.revision === r).length} at ${r}`
+  );
+  return `${total} (${per.join(', ')})`;
+}
+
 export interface MatrixCell {
   scenario: string;
   revision: SpecVersion;
