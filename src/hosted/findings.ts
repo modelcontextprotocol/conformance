@@ -315,6 +315,18 @@ const STEPS: Record<string, { path: string; check: string }> = {
   'resource-parameter-in-token': { path: '/token', check: 'token-request' }
 };
 
+/**
+ * Whether the flow sits at a step a person takes: the client opened the
+ * authorization endpoint (a consent page, in a browser) and has not reached
+ * the token endpoint yet.
+ */
+export function awaitingSignIn(checks: readonly ConformanceCheck[]): boolean {
+  return (
+    reachedStep(checks, STEPS['resource-parameter-in-authorization']) &&
+    !reachedStep(checks, STEPS['resource-parameter-in-token'])
+  );
+}
+
 function reachedStep(
   checks: readonly ConformanceCheck[],
   step: { path: string; check: string }

@@ -26,6 +26,7 @@ export const STATE_LABEL: Record<CellState, string> = {
   pass: 'pass',
   fail: 'fail',
   waiting: 'waiting',
+  stopped: 'stopped',
   'in-progress': 'in progress',
   incomplete: 'incomplete',
   'not-tried': 'not tried',
@@ -38,6 +39,7 @@ export const REACHED: readonly CellState[] = [
   'pass',
   'fail',
   'waiting',
+  'stopped',
   'in-progress',
   'incomplete'
 ];
@@ -160,7 +162,7 @@ export function waitingFor(cell: CellReport): Unmet[] {
 
 /** Whether a cell's row shows its pass / fail / warn counts. */
 export function showsCounts(cell: CellReport): boolean {
-  return ['pass', 'fail', 'waiting'].includes(cell.state);
+  return ['pass', 'fail', 'waiting', 'stopped'].includes(cell.state);
 }
 
 /**
@@ -218,18 +220,16 @@ function happened(
   if (cell.state === 'incomplete') {
     return [st.text(stopNote(cell)) + causeRef(cell.cause, causes, numbers)];
   }
-  // A waiting cell's own expectations are what it waits for; anything the
-  // client did (a warning) is listed as on any other row.
-  const listed =
-    cell.state === 'waiting'
-      ? findings.filter((f) => f.by === 'client')
-      : findings;
+  // A waiting (or stopped) cell's own expectations are what it waits for;
+  // anything the client did (a warning) is listed as on any other row.
+  const waits = cell.state === 'waiting' || cell.state === 'stopped';
+  const listed = waits ? findings.filter((f) => f.by === 'client') : findings;
   const lines = listed.map(
     (f) =>
       `${f.status === 'WARNING' ? 'warning, ' : ''}${BY_LABEL[f.by]}: ` +
       `${st.code(f.check)} ${st.text(f.reason)}${causeRef(f.cause, causes, numbers)}`
   );
-  if (cell.state === 'waiting') {
+  if (waits) {
     lines.unshift(
       `${st.text(cell.note ?? '')}; not seen yet: ${waitingFor(cell)
         .map((u) => unmetText(u, st))

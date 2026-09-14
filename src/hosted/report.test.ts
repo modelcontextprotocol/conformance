@@ -9,6 +9,8 @@ import {
   summarize,
   unavailableScenarios,
   verdictFor,
+  viewCell,
+  WAITING_NOTE,
   withNotTriedHints,
   type RunReport
 } from './report';
@@ -253,6 +255,94 @@ describe('grouping', () => {
       )
     ).toBe(
       'connect; the cell tests that client respects SSE retry field timing'
+    );
+  });
+});
+
+describe('stopped', () => {
+  const rev = '2026-07-28' as CellRef['revision'];
+  const at = '2026-09-14T06:44:40.000Z';
+  const T = Date.parse(at);
+  const MIN = 60_000;
+  // tools_call after the client listed the tools and went quiet: its only
+  // failure is "Tool was not called by client", not seen yet.
+  const listed: ConformanceCheck = {
+    id: 'tools-list-requested',
+    name: 'ToolsListRequested',
+    description: 'Client requested tools/list',
+    status: 'INFO',
+    timestamp: at
+  };
+  const cell = buildMatrix().cell('tools_call', rev)!;
+  const results = (extra: { awaitingInput?: true } = {}) => ({
+    checks: finalizeChecks('tools_call', [listed], rev),
+    recorded: 1,
+    lastRequestAt: at,
+    ...extra
+  });
+
+  it('reads a waiting cell stopped once its client is quiet for two minutes, verdict unchanged', () => {
+    expect(viewCell(cell, results(), T + MIN)).toMatchObject({
+      state: 'waiting',
+      verdict: 'incomplete',
+      note: WAITING_NOTE
+    });
+    expect(viewCell(cell, results(), T + 3 * MIN + 5_000)).toMatchObject({
+      state: 'stopped',
+      verdict: 'incomplete',
+      note: 'stopped: no request from your client for 3 minutes; re-run it'
+    });
+    // No request time known: nothing says it stopped.
+    const untimed = { checks: results().checks, recorded: 1 };
+    expect(viewCell(cell, untimed, T + 60 * MIN).state).toBe('waiting');
+  });
+
+  it('keeps waiting while a person has a form or a sign-in page open', () => {
+    expect(
+      viewCell(cell, results({ awaitingInput: true }), T + 30 * MIN).state
+    ).toBe('waiting');
+    const authorize: ConformanceCheck = {
+      id: 'authorization-request',
+      name: 'AuthorizationRequest',
+      description: 'Client made authorization request',
+      status: 'SUCCESS',
+      timestamp: at
+    };
+    const signingIn = results();
+    signingIn.checks = [...signingIn.checks, authorize];
+    expect(viewCell(cell, signingIn, T + 30 * MIN).state).toBe('waiting');
+    // Once the token was asked for the sign-in is over: quiet means stopped.
+    signingIn.checks = [
+      ...signingIn.checks,
+      { ...authorize, id: 'token-request', name: 'TokenRequest' }
+    ];
+    expect(viewCell(cell, signingIn, T + 30 * MIN).state).toBe('stopped');
+  });
+
+  it("says so in the report, its groups and its Markdown, at the report's clock", async () => {
+    const id = `r/${rev}/tools_call`;
+    const report = await buildReport(buildMatrix(), 'r', rev, {
+      listCells: async () => [
+        { runId: 'r', revision: rev, scenarioName: 'tools_call' }
+      ],
+      results: async (x) => (x === id ? results() : undefined),
+      resultsUrl: (ref) => `http://x/results/${cellId(ref)}`,
+      now: () => T + 5 * MIN
+    });
+    const col = report.columns[0];
+    const note =
+      'stopped: no request from your client for 5 minutes; re-run it';
+    expect(col.cells.find((c) => c.scenario === 'tools_call')).toMatchObject({
+      state: 'stopped',
+      verdict: 'incomplete',
+      note
+    });
+    expect(col.counts.stopped).toBe(1);
+    expect(groupColumn(col).problems.map((c) => c.scenario)).toContain(
+      'tools_call'
+    );
+    expect(reportMarkdown(report, { live: 'http://x/results/r' })).toContain(
+      note
     );
   });
 });

@@ -29,6 +29,7 @@ import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
 import { shownChecks, type ShownCheck } from './shown';
 import type { BuildInfo } from './build';
 import {
+  awaitingSignIn,
   eraStop,
   eraStopText,
   findingsOf,
@@ -61,6 +62,11 @@ export type Verdict = 'pass' | 'fail' | 'incomplete' | 'n/a';
  *                  none from the client's traffic: an auth flow sitting on a
  *                  consent screen, an elicitation form still to answer. Its
  *                  verdict is `incomplete`, not `fail` (see viewCell()).
+ *   stopped        a waiting cell whose client has sent nothing for
+ *                  STOPPED_AFTER_MS, with no step a person is known to be
+ *                  taking (a sign-in page opened, a form handed over and not
+ *                  answered): the client most likely crashed or gave up. Its
+ *                  verdict is `incomplete` too; only the label differs.
  *
  * `pass`, `fail` and `n/a` are the verdict's. The score is never changed by
  * the state.
@@ -69,6 +75,7 @@ export type CellState =
   | 'pass'
   | 'fail'
   | 'waiting'
+  | 'stopped'
   | 'in-progress'
   | 'incomplete'
   | 'not-tried'
@@ -78,6 +85,38 @@ export type CellState =
 /** What a `waiting` cell's note says. */
 export const WAITING_NOTE =
   'waiting for the client or the person to finish the flow';
+
+/** How long a waiting cell's client may be silent before it reads stopped. */
+export const STOPPED_AFTER_MS = 2 * 60_000;
+
+/** What a `stopped` cell's note says, `quietMs` after the last request. */
+export function stoppedNote(quietMs: number): string {
+  const minutes = Math.floor(quietMs / 60_000);
+  return `stopped: no request from your client for ${minutes} minute${minutes === 1 ? '' : 's'}; re-run it`;
+}
+
+/** What a cell's results say, as the pages read them. */
+export type CellResults = Pick<
+  RunResults,
+  'checks' | 'recorded' | 'lastRequestAt' | 'awaitingInput'
+>;
+
+/**
+ * How long a waiting cell's client has been silent at `now`, in ms, when
+ * that means it stopped: STOPPED_AFTER_MS or more since its last request,
+ * with no step a person is known to be taking — a sign-in page opened and
+ * no token asked for, or a form handed over and not answered. Undefined
+ * otherwise, including when no request time is known.
+ */
+export function stoppedFor(
+  results: Pick<CellResults, 'checks' | 'lastRequestAt' | 'awaitingInput'>,
+  now: number
+): number | undefined {
+  const quiet = now - Date.parse(results.lastRequestAt ?? '');
+  if (!(quiet >= STOPPED_AFTER_MS)) return undefined;
+  if (results.awaitingInput || awaitingSignIn(results.checks)) return undefined;
+  return quiet;
+}
 
 /** `checks` as shown (./shown.ts), so a "not seen" row can be told apart. */
 export function stateOf(
@@ -109,22 +148,31 @@ export interface CellView {
 
 export function viewCell(
   cell: Pick<MatrixCell, 'scenario' | 'revision' | 'scoring' | 'startable'>,
-  results: Pick<RunResults, 'checks' | 'recorded'> | undefined
+  results: CellResults | undefined,
+  now: number = Date.now()
 ): CellView {
   const shown = results
     ? shownChecks(cell.scenario, cell.revision, results.checks)
     : undefined;
   const judged = verdictFor(cell, results?.checks, results?.recorded);
-  const state = stateOf(cell, judged, shown);
+  const stood = stateOf(cell, judged, shown);
+  // A waiting cell whose client has gone quiet, with no step a person is
+  // known to be taking, has stopped: said so, so nobody waits on it.
+  const quiet =
+    stood === 'waiting' && results ? stoppedFor(results, now) : undefined;
+  const state: CellState = quiet === undefined ? stood : 'stopped';
   // Every failure only "not seen": nothing the client did has failed, so
   // the cell is not done rather than failed. Neither verdict scores.
-  const verdict: Verdict = state === 'waiting' ? 'incomplete' : judged;
+  const verdict: Verdict =
+    state === 'waiting' || state === 'stopped' ? 'incomplete' : judged;
   const note =
-    state === 'waiting'
-      ? WAITING_NOTE
-      : verdict === 'incomplete' && cell.startable
-        ? incompleteNote(shown ?? [])
-        : undefined;
+    quiet !== undefined
+      ? stoppedNote(quiet)
+      : state === 'waiting'
+        ? WAITING_NOTE
+        : verdict === 'incomplete' && cell.startable
+          ? incompleteNote(shown ?? [])
+          : undefined;
   return { verdict, state, ...(note && { note }), ...(shown && { shown }) };
 }
 
@@ -289,6 +337,7 @@ export interface ColumnGroups {
 const PROBLEMS: readonly CellState[] = [
   'fail',
   'waiting',
+  'stopped',
   'in-progress',
   'incomplete'
 ];
@@ -490,12 +539,12 @@ function legacyOnly(checks: readonly ConformanceCheck[]): string | undefined {
 export interface ReportSources {
   /** Cells of the run that were exercised (in memory or in the store). */
   listCells(runId: string): Promise<CellRef[]>;
-  results(
-    id: string
-  ): Promise<Pick<RunResults, 'checks' | 'recorded'> | undefined>;
+  results(id: string): Promise<CellResults | undefined>;
   resultsUrl(ref: CellRef): string;
   /** The server build, recorded in the report (RunReport.server). */
   build?: BuildInfo;
+  /** The time the report is built at (ms); defaults to the clock. */
+  now?: () => number;
 }
 
 export async function buildReport(
@@ -508,6 +557,7 @@ export async function buildReport(
     (await sources.listCells(runId)).map((ref) => cellId(ref))
   );
   const columns: ColumnReport[] = [];
+  const now = sources.now?.() ?? Date.now();
   const allIdentities = new Map<string, ClientIdentity>();
   const reached: CellFindings[] = [];
 
@@ -530,7 +580,7 @@ export async function buildReport(
       const seen = results ? identitiesIn(results.checks) : [];
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
-      const { verdict, state, note, shown } = viewCell(cell, results);
+      const { verdict, state, note, shown } = viewCell(cell, results, now);
       // What stopped the client: a legacy handshake, or (on a cell that
       // reads incomplete for it) requests at another revision turned away.
       const stop = results
@@ -548,7 +598,7 @@ export async function buildReport(
             stop,
             state !== 'in-progress'
           ).map((f) =>
-            state === 'waiting' && f.by === 'scenario'
+            (state === 'waiting' || state === 'stopped') && f.by === 'scenario'
               ? { ...f, cause: undefined }
               : f
           )

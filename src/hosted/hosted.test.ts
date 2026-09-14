@@ -10,6 +10,127 @@ import { takeWireViolations } from '../validation/wire-schema';
 const REV_STATEFUL = '2025-11-25';
 const REV_STATELESS = '2026-07-28';
 
+/**
+ * A waiting cell whose client has sent nothing for two minutes reads
+ * stopped, unless a person has a form open; the pages read the time by the
+ * app's clock, faked here.
+ */
+describe('hosted server: a waiting cell whose client went quiet', () => {
+  let server: Server;
+  let sessions: SessionManager;
+  let base: string;
+  let now = Date.now();
+
+  beforeAll(async () => {
+    const hosted = createHostedApp({ clock: () => now });
+    sessions = hosted.sessions;
+    await new Promise<void>((resolve) => {
+      server = hosted.app.listen(0, () => {
+        const addr = server.address();
+        if (addr && typeof addr === 'object')
+          base = `http://localhost:${addr.port}`;
+        resolve();
+      });
+    });
+  });
+
+  afterAll(async () => {
+    await sessions.close();
+    await new Promise<void>((r) => server.close(() => r()));
+  });
+
+  /** A SEP-2575 stateless request, with the SEP-2243 headers. */
+  async function send(path: string, method: string, params: object = {}) {
+    const name = (params as { name?: string }).name;
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': REV_STATELESS,
+        'mcp-method': method,
+        ...(name && { 'mcp-name': name })
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method,
+        params: {
+          ...params,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': REV_STATELESS,
+            'io.modelcontextprotocol/clientInfo': {
+              name: 'vitest',
+              version: '0'
+            },
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      })
+    });
+    expect(res.status).toBe(200);
+    return res.text();
+  }
+
+  it('reads stopped after two quiet minutes on the cell and the report, with the verdict unchanged', async () => {
+    now = Date.now();
+    const mcp = `/s/quiet/${REV_STATELESS}/tools_call/mcp`;
+    await send(mcp, 'tools/list');
+    const cell = `${base}/results/quiet/${REV_STATELESS}/tools_call`;
+    expect(await fetch(cell).then((r) => r.json())).toMatchObject({
+      state: 'waiting',
+      verdict: 'incomplete'
+    });
+
+    now += 3 * 60_000 + 1_000;
+    const note =
+      'stopped: no request from your client for 3 minutes; re-run it';
+    expect(await fetch(cell).then((r) => r.json())).toMatchObject({
+      state: 'stopped',
+      verdict: 'incomplete',
+      note
+    });
+    const page = await fetch(cell, {
+      headers: { accept: 'text/html' }
+    }).then((r) => r.text());
+    expect(page).toContain('>stopped</span>');
+    expect(page).toContain(note);
+    const report = await fetch(`${base}/results/quiet`).then((r) => r.json());
+    const row = report.columns[1].cells.find(
+      (c: { scenario: string }) => c.scenario === 'tools_call'
+    );
+    expect(row).toMatchObject({
+      state: 'stopped',
+      verdict: 'incomplete',
+      note
+    });
+    const md = await fetch(`${base}/results/quiet?format=md`).then((r) =>
+      r.text()
+    );
+    expect(md).toContain(note);
+
+    // The client comes back: waiting again.
+    await send(mcp, 'tools/list');
+    now = Date.now();
+    expect((await fetch(cell).then((r) => r.json())).state).toBe('waiting');
+  });
+
+  it('keeps waiting while an MRTR form it handed the client is open', async () => {
+    now = Date.now();
+    const mcp = `/s/form/${REV_STATELESS}/sep-2322-client-request-state/mcp`;
+    await send(mcp, 'tools/list');
+    expect(
+      await send(mcp, 'tools/call', { name: 'test_mrtr_echo_state' })
+    ).toContain('input_required');
+    now += 10 * 60_000;
+    const cell = `${base}/results/form/${REV_STATELESS}/sep-2322-client-request-state`;
+    expect(await fetch(cell).then((r) => r.json())).toMatchObject({
+      state: 'waiting',
+      verdict: 'incomplete'
+    });
+  });
+});
+
 describe('hosted server', () => {
   let server: Server;
   let sessions: SessionManager;

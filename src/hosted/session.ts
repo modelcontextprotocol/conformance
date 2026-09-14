@@ -41,6 +41,8 @@ import {
   type IdentityObservation
 } from './identity';
 import {
+  ACTIVITY_CHECK_ID,
+  activityCheck,
   AUTH_STOP_CHECK_ID,
   REVISION_REACHED_CHECK_ID,
   REVISION_SPOKEN_CHECK_ID,
@@ -270,6 +272,17 @@ export interface RunResults extends CellRef {
    * never spoke it (see judgedAtRevision()).
    */
   recorded: number;
+  /**
+   * When the client last sent the cell a request (ISO 8601), as any process
+   * saw it; absent when nothing records one.
+   */
+  lastRequestAt?: string;
+  /**
+   * The cell has handed the client something to put before a person (an
+   * MRTR input_required result, a request on a stream still open) that no
+   * answer has closed yet.
+   */
+  awaitingInput?: true;
 }
 
 /** Hosted checks that count as exercise: what went wrong on the wire. */
@@ -612,6 +625,28 @@ export class SessionManager {
   }
 
   /**
+   * Note a request from the client to the cell at `at`, and whether the cell
+   * now waits on input the client must collect from a person (undefined
+   * leaves that as it stands). The marker is re-stamped at most once per
+   * ACTIVITY_RESOLUTION_MS, so a busy client does not rewrite the cell's
+   * hosted row on every request: how long a client has been quiet is told
+   * in minutes.
+   */
+  noteActivity(run: HostedRun, awaitingInput?: boolean, at = Date.now()): void {
+    const marker = run.hostedChecks.find((c) => c.id === ACTIVITY_CHECK_ID);
+    if (!marker) {
+      run.hostedChecks.push(activityCheck(at, awaitingInput ?? false));
+      return;
+    }
+    const was = marker.details?.awaitingInput === true;
+    const awaiting = awaitingInput ?? was;
+    const since = at - Date.parse(marker.timestamp ?? '');
+    if (since < ACTIVITY_RESOLUTION_MS && awaiting === was) return;
+    marker.timestamp = new Date(at).toISOString();
+    marker.details = { awaitingInput: awaiting };
+  }
+
+  /**
    * Note that the cell answered a request from `requester` (a keyed hash of
    * the client's address, '' when unknown) with a sign-in challenge (401),
    * so that a later request from the same requester naming no cell can be
@@ -840,6 +875,8 @@ export class SessionManager {
       ...identityChecksIn(hostedLog),
       ...hostedLog.filter((c) => {
         if (c.id === IDENTITY_CHECK_ID) return false;
+        // Every process's activity marker, so the latest can be read.
+        if (c.id === ACTIVITY_CHECK_ID) return true;
         const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
         if (seen.has(key)) return false;
         seen.add(key);
@@ -910,6 +947,9 @@ export class SessionManager {
   }
 }
 
+/** How often a cell's activity marker is re-stamped at most (noteActivity()). */
+export const ACTIVITY_RESOLUTION_MS = 15_000;
+
 const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
   (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
 
@@ -949,7 +989,8 @@ function judgedAtRevision(
     (c) =>
       c.id !== REVISION_SPOKEN_CHECK_ID &&
       c.id !== REVISION_REACHED_CHECK_ID &&
-      c.id !== AUTH_STOP_CHECK_ID
+      c.id !== AUTH_STOP_CHECK_ID &&
+      c.id !== ACTIVITY_CHECK_ID
   );
   const checks = [
     ...atCellRevision(
@@ -969,7 +1010,25 @@ function judgedAtRevision(
     );
     recorded = 0;
   }
-  return { ...ref, checks, recorded };
+  // When the client last sent the cell anything, as any process saw it: the
+  // activity markers (re-stamped as requests come) and the logs' own times.
+  const lastRequestAt = [...scenarioLog, ...hostedLog].reduce(
+    (t, c) => ((c.timestamp ?? '') > t ? (c.timestamp ?? '') : t),
+    ''
+  );
+  const latest = hostedLog
+    .filter((c) => c.id === ACTIVITY_CHECK_ID)
+    .reduce<
+      ConformanceCheck | undefined
+    >((m, c) => (!m || (c.timestamp ?? '') > (m.timestamp ?? '') ? c : m), undefined);
+  const awaitingInput = latest?.details?.awaitingInput === true;
+  return {
+    ...ref,
+    checks,
+    recorded,
+    ...(lastRequestAt && { lastRequestAt }),
+    ...(awaitingInput && { awaitingInput })
+  };
 }
 
 function logStoreError(e: unknown): void {

@@ -41,7 +41,6 @@ import {
   SessionManager,
   HostedRun,
   CellRef,
-  RunResults,
   RUN_ID_RE,
   UnknownScenarioError,
   NotHostableError,
@@ -81,6 +80,7 @@ import {
   authStopCheck,
   describeRequest,
   discoverReply,
+  asksForInput,
   getOnMcpCheck,
   GET_ON_MCP_REPLY,
   isAcceptedInitialize,
@@ -171,6 +171,12 @@ export interface HostedServerOptions {
    * `hosted` command passes the checkout's git commit.
    */
   build?: BuildInfo;
+  /**
+   * The clock a cell's quiet time is read by (ms since the epoch): a waiting
+   * cell whose client has been silent for STOPPED_AFTER_MS reads stopped.
+   * Defaults to Date.now; tests pass a fake one.
+   */
+  clock?: () => number;
 }
 
 const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
@@ -211,6 +217,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 } {
   const auxOrigins = opts.auxOrigins ?? {};
   const build = opts.build ?? buildInfo();
+  const clock = opts.clock ?? Date.now;
   const haveAux = AUX_ROLES.filter((r) => auxOrigins[r]);
   const sessions = new SessionManager({
     ttlMs: opts.ttlMs,
@@ -499,6 +506,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     );
     req.url = rewrittenUrl;
     run.touched = true;
+    sessions.noteActivity(run);
 
     // The headers as the client sent them: a scenario may rewrite them
     // before handing the request on (json-schema-ref-deref maps the draft
@@ -510,6 +518,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     let body: Buffer | undefined;
     let response: CapturedResponse | undefined;
     let judged = false;
+    /** This response is a stream that put a request of the cell's to the client. */
+    let heldOpen = false;
 
     // Write this process's view through once the scenario has answered
     // (hosted scenarios record their checks before calling end()).
@@ -523,6 +533,11 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const judge = (): boolean => {
       if (judged || !request || !response) return false;
       judged = true;
+      // The cell handed the client input to collect from a person (MRTR),
+      // or the call that did so has been answered.
+      if (asksForInput(response)) sessions.noteActivity(run, true);
+      else if (heldOpen || request.methods.includes('tools/call'))
+        sessions.noteActivity(run, false);
       // Era detection on a dated cell (a server/discover, or another
       // 2026-07-28-shaped request it turned away) is the client negotiating:
       // noted once per revision probed for, and neither judgement — however
@@ -660,10 +675,24 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       // through then, not left for an end that may never come.
       () => {
         const type = res.getHeader('content-type');
-        if (typeof type === 'string' && type.includes('text/event-stream'))
+        if (typeof type === 'string' && type.includes('text/event-stream')) {
+          // A POST answered with a stream the cell writes to before its
+          // result: a request of the cell's (an elicitation, say) is before
+          // the client, and the cell waits on its answer until the end.
+          if (httpMethod === 'POST' && !heldOpen) {
+            heldOpen = true;
+            sessions.noteActivity(run, true);
+          }
           persist();
+        }
       }
     );
+    // A stream the client dropped before it ended answers nothing.
+    res.on('close', () => {
+      if (!heldOpen || response) return;
+      sessions.noteActivity(run, false);
+      persist();
+    });
     // Outside the tap, so what is judged is what the client was told.
     if (mcp && req.method === 'POST' && isStatefulVersion(run.revision)) {
       pinInitializeVersion(
@@ -1282,7 +1311,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           ? undefined
           : await sessions.results(cellId(ref));
       // One row per check, as the page and the report count them.
-      const { shown, ...status } = cellStatus(cell, r);
+      const { shown, ...status } = cellStatus(cell, r, clock());
       if (wantsHtml(req)) {
         const { renderResults } = await pages();
         res.type('html').send(renderResults(ref, shown, status, build));
@@ -1369,7 +1398,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       listCells: (id) => sessions.listCells(id),
       results: (id) => sessions.results(id),
       resultsUrl: (ref) => resultsUrlFor(req, cellId(ref)),
-      build
+      build,
+      now: clock
     };
   }
 
@@ -1501,9 +1531,10 @@ export interface CellStatus {
 
 export function cellStatus(
   cell: MatrixCell,
-  results: Pick<RunResults, 'checks' | 'recorded'> | undefined
+  results: Parameters<typeof viewCell>[1],
+  now?: number
 ): CellStatus & { shown: ShownCheck[] } {
-  const { verdict, state, note, shown } = viewCell(cell, results);
+  const { verdict, state, note, shown } = viewCell(cell, results, now);
   return {
     scoring: cell.scoring,
     verdict,

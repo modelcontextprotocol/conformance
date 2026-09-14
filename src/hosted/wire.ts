@@ -455,6 +455,39 @@ export function revisionReachedCheck(served: SpecVersion): ConformanceCheck {
   };
 }
 
+export const ACTIVITY_CHECK_ID = 'hosted-client-activity';
+
+/**
+ * The marker of the client's latest request to a cell, at any of its paths
+ * (MCP, metadata, sign-in), re-stamped as requests come (see
+ * SessionManager.noteActivity()): kept with the hosted checks so every
+ * process's is pooled, and never shown. `awaitingInput` is set while the
+ * cell has handed the client something to put before a person (an MRTR
+ * input_required result, or a request of its own on a stream still open)
+ * that no answer has closed yet.
+ */
+export function activityCheck(
+  at: number,
+  awaitingInput: boolean
+): ConformanceCheck {
+  return {
+    id: ACTIVITY_CHECK_ID,
+    name: 'ClientActivity',
+    description: 'The latest request the client sent the cell',
+    status: 'INFO',
+    timestamp: new Date(at).toISOString(),
+    details: { awaitingInput }
+  };
+}
+
+/** Whether a response asks the client to collect input: MRTR's input_required. */
+export function asksForInput(response: CapturedResponse): boolean {
+  return (
+    response.body !== undefined &&
+    /"resultType"\s*:\s*"input_required"/.test(response.body)
+  );
+}
+
 export const AUTH_STOP_CHECK_ID = 'hosted-auth-stop';
 
 /** The OAuth error a 401 or 403 carries, in its challenge or its body. */

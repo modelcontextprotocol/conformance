@@ -259,7 +259,12 @@ and names a revision only when it is one this suite knows), plus `waiting` when 
 is not seen — nothing the client did is wrong, the flow has not finished (a
 consent screen, an elicitation form still to answer); its note says "waiting
 for the client or the person to finish the flow", and its verdict is
-`incomplete` until the steps happen. A check the scenario marks untestable
+`incomplete` until the steps happen. A waiting cell whose client has sent the
+cell nothing for two minutes, with no sign-in page or form open (the sign-in
+reached `/authorize` but not `/token`, or an MRTR `input_required` result or
+a server request on an open stream not yet answered), reads `stopped`
+instead: its note says "stopped: no request from your client for N minutes;
+re-run it", and its verdict stays `incomplete`. A check the scenario marks untestable
 because the flow never reached it (`details.untestable`, "Not testable:
 client never reached the authorization endpoint") is not seen too. The others are
 `pass`, `fail`, `not-startable` and `n/a`. Each column counts its cells per state. A cell
@@ -276,7 +281,7 @@ there folded in. None of this changes a check, a verdict or a score
 (`src/hosted/findings.ts`).
 
 The HTML page shows the causes, then the cells by revision, each revision in
-the same order: what needs a look (`fail`, then `waiting`, `in-progress`,
+the same order: what needs a look (`fail`, then `waiting`, `stopped`, `in-progress`,
 `incomplete`, failures inline), then "Not tried yet (N): your client never
 connected to these", then "Passed (N)". A not-tried cell gives its MCP URL
 with a copy button and what the client must do there (its steps, the sign-in

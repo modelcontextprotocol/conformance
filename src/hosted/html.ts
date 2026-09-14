@@ -68,6 +68,7 @@ const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
   fail: 'background:#fee2e2;color:#991b1b',
   waiting: 'background:#e0e7ff;color:#3730a3',
+  stopped: 'background:#fef3c7;color:#92400e',
   'in-progress': 'background:#dbeafe;color:#1e40af',
   incomplete: 'background:#fef3c7;color:#92400e',
   'not-tried': 'background:#f3f4f6;color:#6b7280',
@@ -422,6 +423,10 @@ const STATE_MEANING: [CellState, string][] = [
   [
     'waiting',
     'the only failures are steps the scenario still expects, such as a sign-in or a form not finished yet'
+  ],
+  [
+    'stopped',
+    'waiting, but the client has sent nothing for a few minutes and no sign-in or form is open: it most likely stopped, so re-run it'
   ],
   [
     'in-progress',
@@ -920,7 +925,7 @@ function statusLine(status: CellStatus): string {
     note = `not startable here: ${esc(status.startReason ?? '')}`;
   } else if (status.verdict === 'incomplete') {
     note = esc(status.note ?? incompleteNote([]));
-  } else if (status.state === 'waiting') {
+  } else if (status.state === 'waiting' || status.state === 'stopped') {
     note = esc(status.note ?? '');
   } else if (status.reason) {
     note = esc(status.reason);
@@ -1102,7 +1107,7 @@ function happenedHtml(
   }
   // A waiting cell's own expectations are what it waits for; anything the
   // client did (a warning) is listed as on any other row.
-  const waiting = cell.state === 'waiting';
+  const waiting = cell.state === 'waiting' || cell.state === 'stopped';
   const lines = findings
     .filter((f) => !waiting || f.by === 'client')
     .map(
@@ -1429,7 +1434,8 @@ A cell the client never reached reads <i>not tried</i>; one it reached where
 nothing its scenario tests has happened yet reads <i>in progress</i> and lists
 what it is waiting for; one whose only failures are steps it has not seen yet
 (a sign-in or a form still to finish) reads <i>waiting</i>, though its verdict
-is still a fail until they happen; one where the client stopped short (it spoke only
+is still a fail until they happen, or <i>stopped</i> once the client has sent nothing
+for a few minutes with no sign-in or form open; one where the client stopped short (it spoke only
 another revision, was turned away, and did not retry) reads <i>incomplete</i>.
 The score leads with the scored cells you can run here (<i>X of the M scored
 cells you can run here pass</i>) and keeps the requirement set's count
