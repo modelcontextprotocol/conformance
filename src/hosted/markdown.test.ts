@@ -139,7 +139,9 @@ describe('reportMarkdown', () => {
         '- Client: VS Code 1.137 (protocol 2025-11-25)',
         '- Server: build not recorded',
         // The score and the counts are as they were.
-        '- 2025-11-25: 1 of 18 scored cells pass (15 startable here). Reached: 1 pass, 1 fail; 12 not tried.',
+        '- 2025-11-25: 1 of the 15 scored cells you can run here pass · 18 are scored for 2025-11-25; ' +
+          'the other 3 cannot start on this deployment (see Unavailable on this deployment below). ' +
+          'Reached: 1 pass, 1 fail; 12 not tried.',
         '',
         '**What went wrong, by cause**',
         '1. Client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> (2025-11-25/auth/token-endpoint-auth-basic)',
@@ -214,7 +216,9 @@ describe('reportMarkdown', () => {
       { live: 'http://x/results/r' }
     );
     expect(md).toContain(
-      '- 2026-07-28: 0 of 20 scored cells pass (12 startable here). Reached: none; 2 not tried.'
+      '- 2026-07-28: 0 of the 12 scored cells you can run here pass · 20 are scored for 2026-07-28; ' +
+        'the other 8 cannot start on this deployment (see Unavailable on this deployment below). ' +
+        'Reached: none; 2 not tried.'
     );
     expect(md).toContain(
       '\n**2026-07-28** — Not tried yet (2): your client never connected to any cell at this revision.\n'
@@ -299,7 +303,9 @@ describe('reportText', () => {
         '• As of 2026-09-13 21:47 UTC: http://x/results/r',
         '• Client: VS Code 1.137 (protocol 2025-11-25)',
         '• Server: build not recorded',
-        '• 2025-11-25: 1 of 18 scored cells pass (15 startable here). Reached: 1 pass, 1 fail; 12 not tried.',
+        '• 2025-11-25: 1 of the 15 scored cells you can run here pass · 18 are scored for 2025-11-25; ' +
+          'the other 3 cannot start on this deployment (see Unavailable on this deployment below). ' +
+          'Reached: 1 pass, 1 fail; 12 not tried.',
         '',
         'What went wrong, by cause',
         '1. Client: `c` a | <b> (2025-11-25/tools_call)',

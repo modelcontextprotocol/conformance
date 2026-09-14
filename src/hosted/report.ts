@@ -13,7 +13,7 @@
  * its failures and warnings one line each; the run's are grouped by cause
  * (see ./findings.ts). The verdict itself is unchanged by either.
  *
- * Per column, "scored X of N" counts passes among every cell the revision's
+ * Per column, `scored` counts passes among every cell the revision's
  * requirement set scores — N is the yaml's count, whether or not this
  * deployment can start the cell — and says separately how many of those N
  * are startable here; not_scored and unlisted cells are reported next to the

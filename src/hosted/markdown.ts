@@ -246,6 +246,30 @@ export interface MarkdownLinks {
   snapshot?: string;
 }
 
+/**
+ * A revision's score, led by what a person could run here and keeping the
+ * requirement set's scored total: "13 of the 15 scored cells you can run
+ * here pass · 18 are scored for 2025-11-25; the other 3 cannot start on
+ * this deployment (see Unavailable below)". The numbers are the column's
+ * `scored` fields.
+ */
+export function scoreText(
+  col: Pick<ColumnReport, 'revision' | 'scored'>
+): string {
+  const { passed, total, startable } = col.scored;
+  if (total === 0) return `no cells are scored for ${col.revision}`;
+  if (startable === total) return `${passed} of the ${total} scored cells pass`;
+  const other = total - startable;
+  const lead =
+    startable === 0
+      ? 'none of the scored cells can run here'
+      : `${passed} of the ${startable} scored cells you can run here pass`;
+  return (
+    `${lead} · ${total} are scored for ${col.revision}; the other ${other} ` +
+    `cannot start on this deployment (see ${UNAVAILABLE_HEADING} below)`
+  );
+}
+
 /** The lines both forms open with: when, who, and the score per revision. */
 function summaryLines(
   report: RunReport,
@@ -264,8 +288,7 @@ function summaryLines(
     const reached = countsText(col.counts, REACHED);
     const notTried = col.counts['not-tried'] ?? 0;
     out.push(
-      `${bullet}${col.revision}: ${col.scored.passed} of ${col.scored.total} scored cells pass ` +
-        `(${col.scored.startable} startable here). ` +
+      `${bullet}${col.revision}: ${scoreText(col)}. ` +
         `Reached: ${reached || 'none'}` +
         (notTried ? `; ${notTried} not tried.` : '.')
     );
@@ -330,7 +353,7 @@ export const UNAVAILABLE_HEADING = 'Unavailable on this deployment';
 export const UNAVAILABLE_WHY =
   'This deployment cannot start these cells, so no client can reach them ' +
   'here, and the lists above leave them out. A scored one still counts in ' +
-  'the N of “X of N scored”.';
+  'the number scored for its revision.';
 
 /** A not-tried cell's line: where to point the client, and what it must do. */
 function notTriedText(cell: CellReport, st: Style): string {

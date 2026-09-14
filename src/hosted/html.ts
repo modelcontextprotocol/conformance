@@ -35,6 +35,7 @@ import {
   NOT_TRIED_WHY,
   notTriedHeading,
   passedHeading,
+  scoreText,
   showsCounts,
   UNAVAILABLE_HEADING,
   UNAVAILABLE_WHY,
@@ -514,10 +515,11 @@ an issue or a chat.</li>
 they start or open a new chat.</p>
 
 <h2 id=score>What the score means</h2>
-<p>A report column reads “X of N scored (M startable here)”: X of the N cells the
+<p>A report column reads “X of the M scored cells you can run here pass · N are scored
+for the revision”: X is how many have passed, M is how many of the N cells the
 revision’s frozen <a href="${REPO_URL}#conformance-requirements">requirement set</a>
-scores have passed, and M is how many of those N this deployment can start:
-${scored}. Cells marked <i>not scored</i> or <i>not in the requirement set</i> run and report
+scores this deployment can start, and N is the set’s count, whether or not each
+can start here: ${scored}. Cells marked <i>not scored</i> or <i>not in the requirement set</i> run and report
 but never count. Verdicts come only from what your client actually sent to this
 server, and a cell passes only once your client has spoken that cell’s revision
 there: a finished sign-in or an older handshake is not enough.</p>
@@ -1330,7 +1332,7 @@ export function renderReport(
         (col) =>
           `<th><a href="/results/${esc(report.runId)}/${esc(col.revision)}">${esc(
             col.revision
-          )}</a><div class=muted>${col.scored.passed} of ${col.scored.total} scored (${col.scored.startable} startable here)</div>` +
+          )}</a><div class=muted>${esc(scoreText(col))}</div>` +
           `<div class=muted>${identityLine(col.identities)}</div></th>`
       )
       .join('') +
@@ -1389,9 +1391,8 @@ export function renderReport(
       const counts = countsText(col.counts, [...REACHED, 'not-tried']);
       return (
         `<li><a href="/results/${run}/${esc(col.revision)}">${esc(col.revision)}</a>: ` +
-        `<b>${col.scored.passed} of ${col.scored.total}</b> scored cells pass ` +
-        `<span class=muted>(${col.scored.startable} startable here)</span>` +
-        `${counts ? ` · ${esc(counts)}` : ''}</li>`
+        `${esc(scoreText(col))}` +
+        `${counts ? ` <span class=muted>· reached: ${esc(counts)}</span>` : ''}</li>`
       );
     })
     .join('');
@@ -1423,9 +1424,9 @@ what it is waiting for; one whose only failures are steps it has not seen yet
 (a sign-in or a form still to finish) reads <i>waiting</i>, though its verdict
 is still a fail until they happen; one where the client stopped short (it spoke only
 another revision, was turned away, and did not retry) reads <i>incomplete</i>.
-<i>X of N scored</i> counts passes among every cell the revision's requirement
-set scores (N is the set's count; the cells this deployment can start are
-given alongside). Not-scored and unlisted cells are listed below the table;
+The score leads with the scored cells you can run here (<i>X of the M scored
+cells you can run here pass</i>) and keeps the requirement set's count
+(<i>N are scored</i>); the other N−M cannot start on this deployment. Not-scored and unlisted cells are listed below the table;
 scenarios this deployment cannot start are left out of it.</p>
 <table>${head}${rows}</table>
 ${notScored}
