@@ -7,7 +7,11 @@
  *   GET  /                                   Landing page: the static matrix
  *   GET  /scenarios                          JSON rows with per-revision cells
  *   GET  /s                                  Mint a run id → 303 /s/<run-id>
- *   GET  /s/<run-id>                         Config for every startable cell
+ *   GET  /s/<run-id>                         Config for every startable cell;
+ *                                            as HTML, the run page with each
+ *                                            URL's live status
+ *   GET  /s/<run-id>/bulk                    Every client's config for every
+ *                                            cell, and the run's matrix
  *   GET  /s/<run-id>/<rev>                   … for one revision (a column)
  *   GET  /s/<run-id>/<rev>/<scenario>        … for one cell
  *   ALL  /s/<run-id>/<rev>/<scenario>[/<suffix>]
@@ -148,6 +152,7 @@ import {
   type RunReport,
   type Verdict
 } from './report';
+import { runLive } from './run-status';
 import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
@@ -170,6 +175,12 @@ const TRAFFIC_SUFFIX = '/traffic.jsonl';
 
 /** A reached cell's page as a frozen copy stores it. */
 type FrozenCell = CellPageData & { frozenAt: string };
+
+/** The run page and the bulk page, loaded the same way (see pages). */
+const runPages = () => import('./run-page');
+
+/** `/s/<run-id>/bulk`: every client's config for every cell of the run. */
+const BULK = 'bulk';
 
 export interface HostedServerOptions {
   publicOrigin?: string;
@@ -1133,12 +1144,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     }
 
     if (segments.length <= 2) {
-      // Run or column scope: config only.
+      // Run or column scope, or the run's bulk page: config only.
+      const bulk = segments.length === 2 && revision === BULK;
       if (!RUN_ID_RE.test(runId)) {
         res.status(400).json({ error: 'invalid run-id' });
         return;
       }
-      if (segments.length === 2 && !revisions.includes(revision)) {
+      if (segments.length === 2 && !bulk && !revisions.includes(revision)) {
         res
           .status(404)
           .json({ error: `unknown revision '${revision}'`, revisions });
@@ -1153,14 +1165,30 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       }
       // Config for every cell of the scope builds every one of them.
       await loadAllCells(matrix.revisions);
-      await sendConfig(
-        req,
-        res,
-        runConfig(req, runId, {
-          revision:
-            segments.length === 2 ? (revision as SpecVersion) : undefined
-        })
-      );
+      const scope =
+        segments.length === 2 && !bulk ? (revision as SpecVersion) : undefined;
+      const config = runConfig(req, runId, { revision: scope });
+      if (bulk) {
+        const { bulkJson, renderBulkPage } = await runPages();
+        if (wantsHtml(req)) {
+          res
+            .type('html')
+            .send(renderBulkPage(origin(req), matrix, config, build));
+        } else {
+          res.json(bulkJson(origin(req), matrix, config));
+        }
+        return;
+      }
+      if (!wantsHtml(req)) {
+        res.json(config);
+        return;
+      }
+      // Each URL's live line, judged as the report judges its cell.
+      const live = await runLive(matrix, runId, scope, reportSources(req));
+      const { renderRunPage } = await runPages();
+      res
+        .type('html')
+        .send(renderRunPage(origin(req), matrix, config, live, build));
       return;
     }
 

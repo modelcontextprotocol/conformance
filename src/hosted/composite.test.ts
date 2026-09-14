@@ -380,7 +380,9 @@ describe('composite cells on the hosted server', () => {
     const html = await (
       await fetch(`${base}/s/comp5`, { headers: { accept: 'text/html' } })
     ).text();
-    expect(html).toContain('One URL for several scenarios');
+    expect(html).toContain(
+      'Add one URL per revision for the scenarios that need no sign-in'
+    );
     expect(html).toContain(
       `${base}/s/comp5/${STATELESS}/tools_call+http-standard-headers+http-custom-headers+json-schema-ref-no-deref+sep-2322-client-request-state/mcp`
     );

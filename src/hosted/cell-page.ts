@@ -54,6 +54,8 @@ import {
   stepsOpen
 } from './html';
 import type { BuildInfo } from './build';
+import { configPicker, pickerScript } from './config-picker';
+import { serverName } from './client-config';
 
 /** A glyph per state, so none is told by colour alone. */
 export const STATE_GLYPH: Record<CellState, string> = {
@@ -160,6 +162,9 @@ const cellCss = `
   table.traffic td.t{white-space:nowrap;font-variant-numeric:tabular-nums}
   table.traffic tr:target td{background:#fef9c3}
   table.xa{width:auto}
+  ul.urls{margin:.3rem 0;padding-left:1.25rem}
+  .picker select{font:inherit;padding:1px 6px}
+  .picker [data-pick]{margin-top:.4rem}
 `;
 
 function time(iso: string): string {
@@ -403,7 +408,7 @@ function attemptsBlock(
       `registrations, codes and tokens this cell issued, so your client has to sign in again.</div>`
     : '';
   const earlier = data.earlier.length
-    ? `<details><summary>${data.earlier.length} earlier attempt${
+    ? `<details id=earlier><summary>${data.earlier.length} earlier attempt${
         data.earlier.length === 1 ? '' : 's'
       }</summary><ul>${data.earlier
         .slice()
@@ -710,7 +715,7 @@ function trafficTable(
     rows.push(
       `<tr id=x${i + 1}${failed ? ' class=bad' : ''}><td class=num>${i + 1}</td>${lanes}` +
         `<td class=t>${esc(time(e.at))}</td><td class=num>${n ?? '–'}</td>` +
-        `<td><details><summary>${summary}</summary>${exchangeText(e)}</details>` +
+        `<td><details id=xd${i + 1}><summary>${summary}</summary>${exchangeText(e)}</details>` +
         `${marks.length ? `<div>${marks.join(' · ')}</div>` : ''}</td>` +
         `<td>${esc(e.headers['mcp-protocol-version'] ?? '–')}</td>` +
         `<td>${esc(e.authorization)}</td><td class=num>${esc(statusText(e.status))}</td></tr>`
@@ -820,12 +825,19 @@ function setupSection(data: CellPageData, live: CellPageLive): string {
     : authSteps(data.ref.scenarioName)
         .replace(/<h2>/g, '<h3>')
         .replace(/<\/h2>/g, '</h3>');
+  const picker = configPicker(
+    [{ name: serverName(cell.revision, cell.scenario), url: cell.url }],
+    {
+      urlPanel: `<pre>${esc(cell.url)}</pre><div class=actions><button class=copy data-copy-text="${esc(
+        cell.url
+      )}">copy URL</button></div>`
+    }
+  );
   return (
     `<details class=section id=setup><summary>Set-up: the MCP URL, steps and credentials</summary>` +
-    `<h3>MCP endpoint</h3><pre>${esc(cell.url)}</pre>` +
-    `<div class=actions><button class=copy data-copy-text="${esc(cell.url)}">copy URL</button> ` +
-    `<span class=muted>Config for VS Code, Codex, Goose and other clients is on ` +
-    `<a href="${runPage}#client-config">the run page</a>.</span></div>` +
+    `<h3>MCP endpoint</h3>${picker}` +
+    `<p class=muted>Every cell of the run, and composites that carry several, are on ` +
+    `<a href="${runPage}">the run page</a>.</p>` +
     handNote(data.ref.scenarioName) +
     credentials(cell)
       .replace(/<h2>/g, '<h3>')
@@ -893,7 +905,7 @@ export function renderCell(
     trafficTable(data, failedAt, trafficUrl) +
     checkSections(data, at) +
     `</div>` +
-    (live ? setupSection(data, live) : '') +
+    (live ? setupSection(data, live) + pickerScript : '') +
     (frozen ? '' : liveScript) +
     copyScript;
   return page(

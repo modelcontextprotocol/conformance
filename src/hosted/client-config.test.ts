@@ -9,7 +9,7 @@ import {
 } from './client-config';
 import { DEFAULT_COMPOSITES, parseComposite } from './composite';
 import { createHostedApp, type RunConfig } from './server';
-import { runClientEntries } from './html';
+import { runClientEntries } from './run-page';
 import { MCP_PATH } from './matrix';
 
 const entries: ServerEntry[] = [
