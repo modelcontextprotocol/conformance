@@ -22,6 +22,7 @@
  */
 
 import type { ConformanceCheck } from '../types';
+import type { Step } from '../steps';
 import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
 import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
@@ -166,6 +167,12 @@ export interface CellReport {
   cause?: string;
   resultsUrl: string;
   identities?: ClientIdentity[];
+  /**
+   * On a `not-tried` cell as served (withNotTriedHints()), never stored:
+   * the cell's MCP URL, and what the client must do there.
+   */
+  mcpUrl?: string;
+  hint?: string;
 }
 
 export interface ColumnReport {
@@ -213,15 +220,20 @@ export interface JsonRunReport extends Omit<RunReport, 'columns'> {
   columns: (Omit<ColumnReport, 'cells' | 'notScored'> & {
     cells: JsonCell[];
     notScored: JsonCell[];
+    /** Startable cells nothing reached (see groupColumn()). */
+    notTried: JsonCell[];
+    /** Cells this deployment cannot start (see groupColumn()). */
+    unavailable: JsonCell[];
   })[];
 }
 
 /**
  * The run report as its JSON gives it: a FAILURE that is the scenario's own
  * expectation not yet met (`by: "scenario"`) reads NOT_SEEN, as a cell's
- * rows do (./shown.ts jsonRows()). Presentation only: the HTML, the
- * Markdown, the causes, every count and a frozen copy's stored form are
- * built from the report as it is.
+ * rows do (./shown.ts jsonRows()), and each column adds its `notTried` and
+ * `unavailable` cells as lists of their own (`cells` still has every cell).
+ * Presentation only: the HTML, the Markdown, the causes, every count and a
+ * frozen copy's stored form are built from the report as it is.
  */
 export function reportJson(report: RunReport): JsonRunReport {
   const cell = (c: CellReport): JsonCell =>
@@ -237,10 +249,162 @@ export function reportJson(report: RunReport): JsonRunReport {
       : c;
   return {
     ...report,
+    columns: report.columns.map((col) => {
+      const { notTried, unavailable } = groupColumn(col);
+      return {
+        ...col,
+        cells: col.cells.map(cell),
+        notScored: col.notScored.map(cell),
+        notTried: notTried.map(cell),
+        unavailable: unavailable.map(cell)
+      };
+    })
+  };
+}
+
+/**
+ * A column's cells in the order every form of the report lists them, n/a
+ * cells left out: what needs a look, what the client has not tried, what
+ * passed; and apart, what this deployment cannot start.
+ */
+export interface ColumnGroups {
+  /** Reached, not passing: fail, then waiting, in progress, incomplete. */
+  problems: CellReport[];
+  /** Startable cells no request reached. */
+  notTried: CellReport[];
+  passed: CellReport[];
+  /** Cells this deployment cannot start (and nothing reached). */
+  unavailable: CellReport[];
+}
+
+const PROBLEMS: readonly CellState[] = [
+  'fail',
+  'waiting',
+  'in-progress',
+  'incomplete'
+];
+
+/**
+ * Grouped by `state` alone, so a frozen copy stored before the groups
+ * existed is grouped the same way when it is read.
+ */
+export function groupColumn(col: Pick<ColumnReport, 'cells'>): ColumnGroups {
+  const of = (state: CellState) => col.cells.filter((c) => c.state === state);
+  return {
+    problems: PROBLEMS.flatMap(of),
+    notTried: of('not-tried'),
+    passed: of('pass'),
+    unavailable: of('not-startable')
+  };
+}
+
+/** A scenario this deployment cannot start, once for all its revisions. */
+export interface UnavailableScenario {
+  scenario: string;
+  revisions: string[];
+  reason: string;
+}
+
+export function unavailableScenarios(
+  report: Pick<RunReport, 'columns'>
+): UnavailableScenario[] {
+  const out = new Map<string, UnavailableScenario>();
+  for (const col of report.columns) {
+    for (const c of groupColumn(col).unavailable) {
+      const reason = c.startReason ?? '';
+      const key = `${c.scenario}\n${reason}`;
+      const seen = out.get(key);
+      if (seen) seen.revisions.push(c.revision);
+      else {
+        out.set(key, { scenario: c.scenario, revisions: [c.revision], reason });
+      }
+    }
+  }
+  return Array.from(out.values());
+}
+
+/** Auth scenarios whose client gets its token without a sign-in page. */
+export const NO_SIGN_IN =
+  /^auth\/(client-credentials-|wif-|enterprise-managed-)/;
+
+/** How many of a cell's steps a hint names before "and N more". */
+const HINT_STEPS = 3;
+
+/** A step described longer than this names its tool without arguments. */
+const HINT_STEP_CHARS = 60;
+
+/**
+ * What a client must do at a cell, in a line: its steps when it has them,
+ * else the sign-in for an auth cell, else what the scenario tests. `describe`
+ * is ../steps describeStep(), passed in so this module does not load the
+ * step schemas (see ./server.ts pages()).
+ */
+export function notTriedHint(
+  cell: Pick<MatrixCell, 'scenario' | 'steps'>,
+  description: string,
+  describe: (step: Step) => string
+): string {
+  const steps = cell.steps ?? [];
+  if (steps.length) {
+    const short = (step: Step) => {
+      const said = describe(step);
+      return step.op === 'tools/call' && said.length > HINT_STEP_CHARS
+        ? `call ${step.name} with the arguments on the cell’s page`
+        : said;
+    };
+    const named = steps.slice(0, HINT_STEPS).map(short);
+    const more = steps.length - named.length;
+    return (
+      `connect, then ${named.join(', then ')}` +
+      (more ? `, and ${more} more step${more === 1 ? '' : 's'}` : '')
+    );
+  }
+  if (cell.scenario.startsWith('auth/')) {
+    return NO_SIGN_IN.test(cell.scenario)
+      ? 'connect; it gets its token itself, with the credentials the cell gives it'
+      : 'connect and approve the sign-in (the test authorization server approves at once), then list the tools';
+  }
+  const what = description
+    .split('\n')[0]
+    .trim()
+    .replace(/^tests?\s+/i, '');
+  return what ? `connect; the cell tests ${what}` : 'connect';
+}
+
+/**
+ * The report with each not-tried cell's MCP URL and hint added, for the
+ * page and every export. Never stored: a frozen copy gets them when it is
+ * read, at the host it is read through, like its results links.
+ */
+export function withNotTriedHints(
+  report: RunReport,
+  matrix: HostedMatrix,
+  cellUrl: (ref: CellRef) => string,
+  describe: (step: Step) => string
+): RunReport {
+  const descriptions = new Map(
+    matrix.rows.map((r) => [r.scenario, r.description])
+  );
+  const add = (c: CellReport): CellReport => {
+    const cell =
+      c.state === 'not-tried' ? matrix.cell(c.scenario, c.revision) : undefined;
+    if (!cell) return c;
+    const ref: CellRef = {
+      runId: report.runId,
+      revision: cell.revision,
+      scenarioName: cell.scenario
+    };
+    return {
+      ...c,
+      mcpUrl: `${cellUrl(ref)}${cell.mcpPath}`,
+      hint: notTriedHint(cell, descriptions.get(c.scenario) ?? '', describe)
+    };
+  };
+  return {
+    ...report,
     columns: report.columns.map((col) => ({
       ...col,
-      cells: col.cells.map(cell),
-      notScored: col.notScored.map(cell)
+      cells: col.cells.map(add)
     }))
   };
 }

@@ -1,8 +1,19 @@
 import { beforeAll, describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
-import { buildReport, incompleteNote, reportJson, verdictFor } from './report';
+import {
+  buildReport,
+  groupColumn,
+  incompleteNote,
+  notTriedHint,
+  reportJson,
+  unavailableScenarios,
+  verdictFor,
+  withNotTriedHints,
+  type RunReport
+} from './report';
 import { reportMarkdown } from './markdown';
 import { cellId, finalizeChecks, type CellRef } from './session';
+import { describeStep } from '../steps';
 import { identityCheck, identityOf } from './identity';
 import { legacyProbeCheck } from './wire';
 import type { ConformanceCheck } from '../types';
@@ -45,6 +56,201 @@ describe('incomplete notes', () => {
     );
     expect(incompleteNote([probe, retried])).toBe(
       'the client has not yet done anything this scenario tests'
+    );
+  });
+});
+
+describe('grouping', () => {
+  const sourcesFor = (results: Map<string, ConformanceCheck[]>) => ({
+    listCells: async () =>
+      Array.from(results.keys()).map((id) => {
+        const [runId, revision, ...rest] = id.split('/');
+        return {
+          runId,
+          revision: revision as CellRef['revision'],
+          scenarioName: rest.join('/')
+        };
+      }),
+    results: async (id: string) => {
+      const checks = results.get(id);
+      return checks ? { checks, recorded: checks.length } : undefined;
+    },
+    resultsUrl: (ref: CellRef) => `http://x/results/${cellId(ref)}`
+  });
+  const rev = '2025-11-25';
+  // tools_call is refused here at every revision; auth/* cells have no
+  // relay origin, so this deployment cannot start them either.
+  const matrix = buildMatrix({ exclude: { tools_call: 'excluded here' } });
+  let report: RunReport;
+  beforeAll(async () => {
+    report = await buildReport(
+      matrix,
+      'r',
+      undefined,
+      sourcesFor(
+        new Map([
+          [`r/${rev}/initialize`, [check('SUCCESS')]],
+          [`r/${rev}/elicitation-sep1034-client-defaults`, []],
+          [`r/${rev}/sse-retry`, [check('FAILURE')]]
+        ])
+      )
+    );
+  });
+
+  it('lists what needs a look, then not tried, then passes, and unavailable cells apart, with every count as it was', () => {
+    const col = report.columns[0];
+    const groups = groupColumn(col);
+    // Failures before what is still going, whatever the matrix order.
+    expect(groups.problems.map((c) => [c.scenario, c.state])).toEqual([
+      ['sse-retry', 'fail'],
+      ['elicitation-sep1034-client-defaults', 'in-progress']
+    ]);
+    expect(groups.passed.map((c) => c.scenario)).toEqual(['initialize']);
+    expect(groups.unavailable.map((c) => c.scenario)).toEqual(
+      expect.arrayContaining(['tools_call', 'auth/metadata-default'])
+    );
+    // Nothing reached 2026-07-28: its startable cells are all not tried.
+    const later = groupColumn(report.columns[1]);
+    expect(later.notTried.length).toBeGreaterThan(0);
+    expect(later.problems).toEqual([]);
+    for (const [i, c] of report.columns.entries()) {
+      const g = groupColumn(c);
+      for (const cell of g.notTried) {
+        expect(cell).toMatchObject({ state: 'not-tried', startable: true });
+      }
+      for (const cell of g.unavailable) expect(cell.startable).toBe(false);
+      // Every cell but n/a is in exactly one group.
+      const grouped = [
+        ...g.problems,
+        ...g.notTried,
+        ...g.passed,
+        ...g.unavailable
+      ];
+      expect(new Set(grouped.map((x) => x.scenario)).size, `${i}`).toBe(
+        grouped.length
+      );
+      expect(grouped).toHaveLength(
+        c.cells.filter((x) => x.state !== 'n/a').length
+      );
+      // The counts are untouched by the grouping.
+      expect(c.counts['not-tried'] ?? 0).toBe(g.notTried.length);
+      expect(c.counts['not-startable'] ?? 0).toBe(g.unavailable.length);
+    }
+    expect(col.scored.total).toBe(
+      matrix.cells().filter((c) => c.revision === rev && c.scoring === 'scored')
+        .length
+    );
+    // One line per scenario, with every revision it is unavailable at.
+    expect(
+      unavailableScenarios(report).find((u) => u.scenario === 'tools_call')
+    ).toEqual({
+      scenario: 'tools_call',
+      revisions: [rev, '2026-07-28'],
+      reason: 'excluded here'
+    });
+  });
+
+  it('gives JSON a notTried and an unavailable list per revision, and keeps every cell in cells', () => {
+    const json = reportJson(report);
+    for (const [i, col] of json.columns.entries()) {
+      const groups = groupColumn(report.columns[i]);
+      expect(col.cells).toHaveLength(report.columns[i].cells.length);
+      expect(col.notTried.map((c) => c.scenario)).toEqual(
+        groups.notTried.map((c) => c.scenario)
+      );
+      expect(col.unavailable.map((c) => c.scenario)).toEqual(
+        groups.unavailable.map((c) => c.scenario)
+      );
+      expect(col.counts).toEqual(report.columns[i].counts);
+    }
+  });
+
+  it('adds each not-tried cell its MCP URL and what the client must do, on a copy', () => {
+    const served = withNotTriedHints(
+      report,
+      matrix,
+      (ref) => `http://x/s/${cellId(ref)}`,
+      describeStep
+    );
+    for (const [i, col] of served.columns.entries()) {
+      for (const c of col.cells) {
+        if (c.state !== 'not-tried') {
+          expect(c.mcpUrl).toBeUndefined();
+          continue;
+        }
+        expect(c.mcpUrl).toBe(`http://x/s/r/${c.revision}/${c.scenario}/mcp`);
+        const steps = matrix.cell(c.scenario, c.revision)!.steps;
+        if (steps) {
+          expect(c.hint).toMatch(
+            new RegExp(`^connect, then ${describeStep(steps[0])}`)
+          );
+        } else {
+          expect(c.hint).toMatch(/^connect/);
+        }
+      }
+      // The report it was given is left as it is (a frozen copy's form).
+      expect(report.columns[i].cells.some((c) => c.mcpUrl)).toBe(false);
+    }
+    // A copy stored before the groups existed groups the same way.
+    const stored = JSON.parse(JSON.stringify(report)) as RunReport;
+    expect(groupColumn(stored.columns[0])).toEqual(
+      groupColumn(report.columns[0])
+    );
+  });
+
+  it('says what the client must do from the steps, the sign-in or the description', () => {
+    const tools = matrix.cell('tools_call', rev)!;
+    expect(notTriedHint(tools, '', describeStep)).toBe(
+      'connect, then list the tools, then call add_numbers with a=5 and b=3'
+    );
+    expect(
+      notTriedHint(
+        {
+          scenario: 'x',
+          steps: [
+            { op: 'tools/list' },
+            { op: 'wait', ms: 1 },
+            { op: 'wait', ms: 2 },
+            { op: 'disconnect' }
+          ]
+        },
+        '',
+        describeStep
+      )
+    ).toBe(
+      'connect, then list the tools, then wait 1 ms, then wait 2 ms, and 1 more step'
+    );
+    // A call whose arguments would fill the line names the tool only.
+    expect(
+      notTriedHint(
+        {
+          scenario: 'x',
+          steps: [
+            {
+              op: 'tools/call',
+              name: 'big',
+              arguments: { a: 'x'.repeat(80) }
+            },
+            { op: 'tools/call', name: 'small', arguments: { a: 1 } }
+          ]
+        },
+        '',
+        describeStep
+      )
+    ).toBe(
+      'connect, then call big with the arguments on the cell’s page, then call small with a=1'
+    );
+    expect(
+      notTriedHint({ scenario: 'auth/metadata-default' }, '', describeStep)
+    ).toMatch(/^connect and approve the sign-in/);
+    expect(
+      notTriedHint(
+        { scenario: 'sse-retry' },
+        'Tests that client respects SSE retry field timing',
+        describeStep
+      )
+    ).toBe(
+      'connect; the cell tests that client respects SSE retry field timing'
     );
   });
 });
