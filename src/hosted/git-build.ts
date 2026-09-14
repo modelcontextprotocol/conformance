@@ -11,9 +11,24 @@ import { dirname, join } from 'node:path';
 
 const PACKAGE_NAME = '@modelcontextprotocol/conformance';
 
+/**
+ * The environment without git's own GIT_* variables. A git hook runs with
+ * GIT_DIR (and others) set, and with GIT_DIR set git treats any directory
+ * as the top of that repository; without them, discovery depends only on
+ * the directory git runs in.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([name]) => !name.toUpperCase().startsWith('GIT_')
+    )
+  );
+}
+
 function git(dir: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd: dir,
+    env: gitEnv(),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
     timeout: 2000

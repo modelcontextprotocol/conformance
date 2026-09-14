@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,5 +41,21 @@ describe('server build', () => {
     // A directory that is not the top of a checkout.
     expect(gitBuild(__dirname)).toBeUndefined();
     expect(gitBuild(mkdtempSync(join(tmpdir(), 'no-git-')))).toBeUndefined();
+  });
+
+  it('ignores GIT_DIR in the environment, as a git hook sets it', () => {
+    const root = packageRoot(__dirname)!;
+    const gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
+      cwd: root,
+      encoding: 'utf8'
+    }).trim();
+    vi.stubEnv('GIT_DIR', gitDir);
+    try {
+      expect(gitBuild(root)).toMatch(/^[0-9a-f]{7,40}(-dirty)?$/);
+      expect(gitBuild(__dirname)).toBeUndefined();
+      expect(gitBuild(mkdtempSync(join(tmpdir(), 'no-git-')))).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
