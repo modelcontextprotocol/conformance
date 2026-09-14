@@ -50,6 +50,16 @@ describe('GET / states this deployment’s lifetimes', () => {
     expect(said).not.toContain('in memory only');
   });
 
+  it('names the server build in the footer', async () => {
+    expect(
+      await landing({
+        build: { build: '9004a11', deployedAt: '2026-09-14T06:40:00.000Z' }
+      })
+    ).toContain('Server build 9004a11, deployed 2026-09-14 06:40 UTC.');
+    // Not stamped (a repository checkout's server.ts, not the CLI).
+    expect(await landing()).toContain('Server build unknown.');
+  });
+
   it('a store that states none: no numbers invented', async () => {
     const said = await landing({ store: new MemoryRunStore() });
     expect(said).toContain('for as long as it is set to keep it');

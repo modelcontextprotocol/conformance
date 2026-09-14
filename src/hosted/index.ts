@@ -1,5 +1,16 @@
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHostedApp } from './server';
+import { buildInfo } from './build';
+import { gitBuild, packageRoot } from './git-build';
 import { AuxOriginRole } from '../types';
+
+/** The checkout's commit when run from one, else the deploy's stamp. */
+function localBuild() {
+  const root = packageRoot(dirname(fileURLToPath(import.meta.url)));
+  const build = root ? gitBuild(root) : undefined;
+  return build ? buildInfo({ build }) : buildInfo();
+}
 
 export { createHostedApp } from './server';
 export { buildMatrix } from './matrix';
@@ -31,7 +42,8 @@ export async function runHostedServer(opts: HostedCliOptions): Promise<void> {
     publicOrigin: opts.publicOrigin,
     ttlMs: opts.ttlMs,
     auxOrigins,
-    relaySecret: opts.relaySecret
+    relaySecret: opts.relaySecret,
+    build: localBuild()
   });
 
   const server = app.listen(opts.port, () => {

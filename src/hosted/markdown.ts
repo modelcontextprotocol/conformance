@@ -20,6 +20,7 @@ import {
 } from './report';
 import { NOT_REACHED, type Cause, type Finding } from './findings';
 import type { ClientIdentity } from './identity';
+import { buildText } from './build';
 
 export const STATE_LABEL: Record<CellState, string> = {
   pass: 'pass',
@@ -256,7 +257,8 @@ function summaryLines(
     report.frozenAt && links.snapshot
       ? `${bullet}Frozen ${utcMinute(report.frozenAt)}: ${links.snapshot} (live report: ${links.live})`
       : `${bullet}As of ${utcMinute(report.generatedAt)}: ${links.live}`,
-    `${bullet}Client: ${identityText(report.identities, st.text)}`
+    `${bullet}Client: ${identityText(report.identities, st.text)}`,
+    `${bullet}Server: ${st.text(buildText(report.server))}`
   ];
   for (const col of report.columns) {
     const reached = countsText(col.counts, REACHED);

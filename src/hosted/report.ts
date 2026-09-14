@@ -27,6 +27,7 @@ import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
 import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
 import { shownChecks, type ShownCheck } from './shown';
+import type { BuildInfo } from './build';
 import {
   findingsOf,
   groupCauses,
@@ -207,6 +208,12 @@ export interface RunReport {
   /** On a frozen copy (POST /results/<run-id>/freeze): its id and time. */
   snapshotId?: string;
   frozenAt?: string;
+  /**
+   * The server build that produced the report (see ./build.ts): stored with
+   * a frozen copy, so it says which build it came from. Absent on a copy
+   * frozen before builds were recorded.
+   */
+  server?: BuildInfo;
 }
 
 /** A finding as the run report's JSON gives it (see reportJson()). */
@@ -479,6 +486,8 @@ export interface ReportSources {
     id: string
   ): Promise<Pick<RunResults, 'checks' | 'recorded'> | undefined>;
   resultsUrl(ref: CellRef): string;
+  /** The server build, recorded in the report (RunReport.server). */
+  build?: BuildInfo;
 }
 
 export async function buildReport(
@@ -589,6 +598,7 @@ export async function buildReport(
     generatedAt: new Date().toISOString(),
     columns,
     identities: Array.from(allIdentities.values()),
-    causes: groupCauses(reached)
+    causes: groupCauses(reached),
+    ...(sources.build && { server: sources.build })
   };
 }

@@ -6,6 +6,7 @@
 
 import { ConformanceCheck, CheckStatus } from '../types';
 import { MCP_PATH, type HostedMatrix, type MatrixCell } from './matrix';
+import { buildCommit, buildText, type BuildInfo } from './build';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import {
@@ -234,10 +235,28 @@ function credentials(cell: CellConfig): string {
   );
 }
 
-function page(title: string, body: string): string {
+/**
+ * The page, with a footer naming the server build when `build` is given:
+ * the commit linked to its source, and when it was deployed. A report
+ * passes its own (a frozen copy's is the build that froze it); `null` says
+ * the report was stored before builds were recorded.
+ */
+function page(title: string, body: string, build?: BuildInfo | null): string {
   return `<!doctype html><meta charset=utf-8>
 <title>${esc(title)}</title><style>${css}</style>
-${body}`;
+${body}${build === undefined ? '' : buildFooter(build)}`;
+}
+
+function buildFooter(build: BuildInfo | null): string {
+  const text = buildText(build ?? undefined);
+  const commit = build ? buildCommit(build) : undefined;
+  const shown = commit
+    ? esc(text).replace(
+        esc(build!.build),
+        `<a href="${REPO_URL}/commit/${commit}"><code>${esc(build!.build)}</code></a>`
+      )
+    : esc(text);
+  return `\n<footer class=muted>Server ${shown}.</footer>`;
 }
 
 function scoringPill(cell: MatrixCell): string {
@@ -446,7 +465,8 @@ function retentionHtml(r: LandingRetention): string {
 export function renderLanding(
   origin: string,
   matrix: HostedMatrix,
-  retention: LandingRetention
+  retention: LandingRetention,
+  build?: BuildInfo
 ): string {
   const cells = matrix.cells();
   const startable = cells.filter((c) => c.startable).length;
@@ -528,7 +548,8 @@ ${startable} startable cells here. A cell’s MCP URL is
 its results sit at the same path under <code>/results</code>. Cells that show
 <i>steps</i> tell a generic client what to do
 (<code>MCP_CONFORMANCE_CONTEXT.steps</code>). <a href="/scenarios">JSON</a>.</p>
-${renderMatrixTable(matrix, { origin })}`
+${renderMatrixTable(matrix, { origin })}`,
+    build
   );
 }
 
@@ -625,7 +646,8 @@ function clientBlocks(
 export function renderConfig(
   origin: string,
   matrix: HostedMatrix,
-  config: RunConfig
+  config: RunConfig,
+  build?: BuildInfo
 ): string {
   const title = config.scenario
     ? `${config.scenario} @ ${config.revision} — run ${config.runId}`
@@ -688,7 +710,7 @@ ${renderMatrixTable(matrix, {
   revision: config.revision
 })}`;
   }
-  return page(title, `${body}\n${embedded}\n${copyScript}`);
+  return page(title, `${body}\n${embedded}\n${copyScript}`, build);
 }
 
 /** The run page's ready-made composites, per revision in scope. */
@@ -916,7 +938,8 @@ function about(c: ConformanceCheck): string {
 export function renderResults(
   ref: CellRef,
   checks: ShownCheck[],
-  status?: CellStatus
+  status?: CellStatus,
+  build?: BuildInfo
 ): string {
   const items = checks
     .map((c) => {
@@ -974,7 +997,8 @@ ${liveNote}<div id=live>${status ? statusLine(status) : ''}<p>${esc(countsLine(c
       counts.skipped
         ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
         : ''
-    }</p>${items}</div>${liveScript}`
+    }</p>${items}</div>${liveScript}`,
+    build
   );
 }
 
@@ -1407,6 +1431,7 @@ scenarios this deployment cannot start are left out of it.</p>
 ${notScored}
 ${unavailableSection(report)}</div>
 ${report.frozenAt ? '' : liveScript}
-${copyScript}`
+${copyScript}`,
+    report.server ?? null
   );
 }

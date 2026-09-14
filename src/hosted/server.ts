@@ -116,6 +116,7 @@ import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
 import { reportMarkdown, reportText } from './markdown';
 import { jsonRows, type ShownCheck } from './shown';
 import { hostedScenarios } from './catalog';
+import { buildInfo, type BuildInfo } from './build';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
 /**
@@ -153,6 +154,12 @@ export interface HostedServerOptions {
    * requests on a host that has none).
    */
   exclude?: Record<string, string>;
+  /**
+   * The build to show on every page and record in each report. Defaults to
+   * the deploy's stamp (./build-stamp.ts), else "unknown"; the local
+   * `hosted` command passes the checkout's git commit.
+   */
+  build?: BuildInfo;
 }
 
 const AUX_ROLES: readonly AuxOriginRole[] = ['as', 'as2', 'idp'];
@@ -192,6 +199,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   matrix: HostedMatrix;
 } {
   const auxOrigins = opts.auxOrigins ?? {};
+  const build = opts.build ?? buildInfo();
   const haveAux = AUX_ROLES.filter((r) => auxOrigins[r]);
   const sessions = new SessionManager({
     ttlMs: opts.ttlMs,
@@ -805,7 +813,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   ): Promise<void> {
     if (wantsHtml(req)) {
       const { renderConfig } = await pages();
-      res.type('html').send(renderConfig(origin(req), matrix, config));
+      res.type('html').send(renderConfig(origin(req), matrix, config, build));
     } else {
       res.json(config);
     }
@@ -817,10 +825,15 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     const { renderLanding } = await pages();
     // The page states this deployment's lifetimes, not the defaults.
     res.type('html').send(
-      renderLanding(origin(req), matrix, {
-        idleMs: sessions.ttlMs,
-        ...(opts.store && { store: opts.store.retention ?? {} })
-      })
+      renderLanding(
+        origin(req),
+        matrix,
+        {
+          idleMs: sessions.ttlMs,
+          ...(opts.store && { store: opts.store.retention ?? {} })
+        },
+        build
+      )
     );
   });
 
@@ -1168,7 +1181,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       const { shown, ...status } = cellStatus(cell, r);
       if (wantsHtml(req)) {
         const { renderResults } = await pages();
-        res.type('html').send(renderResults(ref, shown, status));
+        res.type('html').send(renderResults(ref, shown, status, build));
       } else {
         res.json({ ...summarise(ref, shown), ...status });
       }
@@ -1251,7 +1264,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     return {
       listCells: (id) => sessions.listCells(id),
       results: (id) => sessions.results(id),
-      resultsUrl: (ref) => resultsUrlFor(req, cellId(ref))
+      resultsUrl: (ref) => resultsUrlFor(req, cellId(ref)),
+      build
     };
   }
 
