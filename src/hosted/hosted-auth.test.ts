@@ -689,6 +689,111 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     }
   });
 
+  it('passes a dated cell a dual-era client reached, signed in at and was stopped at by the auth layer', async () => {
+    // Goose, live, on 2025-11-25/auth/scope-retry-limit: its opening
+    // server/discover at 2026-07-28 draws the 401, it signs in, repeats the
+    // discover with its token, is answered 403 insufficient_scope by the
+    // auth layer (which answers before any version is looked at), and
+    // correctly stops there without ever speaking 2025-11-25.
+    type Check = { id: string; status: string };
+    const discover = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'server/discover',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientInfo': { name: 'goose', version: '0' },
+          'io.modelcontextprotocol/clientCapabilities': {}
+        }
+      }
+    };
+    const goose = async (cell: string, token: () => Promise<string>) => {
+      const post = (headers: Record<string, string> = {}) =>
+        fetch(`${rs}/s/${cell}/mcp`, {
+          method: 'POST',
+          headers: {
+            ...jsonHeaders(),
+            'mcp-protocol-version': '2026-07-28',
+            ...headers
+          },
+          body: JSON.stringify(discover)
+        });
+      const challenged = await post();
+      expect(challenged.status).toBe(401);
+      await challenged.text();
+      const stopped = await post({ authorization: `Bearer ${await token()}` });
+      expect(stopped.status).toBe(403);
+      expect((await stopped.json()).error).toBe('insufficient_scope');
+      return fetch(`${rs}/results/${cell}`).then((r) => r.json());
+    };
+
+    const cell = 'goose/2025-11-25/auth/scope-retry-limit';
+    const passed = await goose(cell, () => signIn(cell, `${rs}/s/${cell}/mcp`));
+    expect(passed.checks.filter((c: Check) => c.status === 'FAILURE')).toEqual(
+      []
+    );
+    expect(
+      passed.checks.find((c: Check) => c.id === 'scope-retry-limit')
+    ).toMatchObject({ status: 'SUCCESS' });
+    expect(passed.verdict).toBe('pass');
+    // The marker is the hosted layer's own, and never shown.
+    expect(passed.checks.some((c: Check) => c.id === 'hosted-auth-stop')).toBe(
+      false
+    );
+
+    // A token the client did not get by signing in at this cell counts for
+    // nothing: the cell has not seen the sign-in it tests.
+    const borrowed = 'goose-nosign/2025-11-25/auth/scope-retry-limit';
+    const unsigned = await goose(borrowed, async () => 'test-token-borrowed');
+    expect(unsigned.verdict).toBe('incomplete');
+  });
+
+  it('says why a cell a 2026-07-28-only client was turned away from reads incomplete', async () => {
+    // A client that speaks 2026-07-28 only, on a 2025-11-25 cell: its
+    // server/discover is answered with the version error and it stops.
+    const cell = 'm26only/2025-11-25/tools_call';
+    const r = await fetch(`${rs}/s/${cell}/mcp`, {
+      method: 'POST',
+      headers: { ...jsonHeaders(), 'mcp-protocol-version': '2026-07-28' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'server/discover',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'm', version: '0' },
+            'io.modelcontextprotocol/clientCapabilities': {}
+          }
+        }
+      })
+    });
+    expect(r.status).toBe(400);
+    await r.text();
+    const report = await fetch(`${rs}/results/m26only`).then((res) =>
+      res.json()
+    );
+    const reported = report.columns
+      .find((c: { revision: string }) => c.revision === '2025-11-25')
+      .cells.find((c: { scenario: string }) => c.scenario === 'tools_call');
+    expect(reported).toMatchObject({
+      verdict: 'incomplete',
+      state: 'incomplete'
+    });
+    expect(reported.note).toContain(
+      "the client's requests here carried 2026-07-28 and were turned away at version negotiation"
+    );
+    const cause = report.causes.find(
+      (c: { key: string }) => c.key === reported.cause
+    );
+    expect(cause.text).toBe(
+      "The client's requests here carried 2026-07-28 and were turned away at version negotiation " +
+        '(the cell answered -32000; it serves 2025-11-25), and it did not retry at 2025-11-25, ' +
+        'so nothing it did counts for 2025-11-25 (the same behaviour is judged on the 2026-07-28 cell).'
+    );
+  });
+
   /** Walk the cell's OAuth flow by hand and return an access token. */
   async function signIn(cell: string, mcpUrl: string): Promise<string> {
     // 2026-07-28 registration asks for an application_type (SEP-837).

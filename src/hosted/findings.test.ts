@@ -1,5 +1,8 @@
 import { beforeAll, describe, it, expect } from 'vitest';
 import {
+  eraCauseKey,
+  eraCauseText,
+  eraStop,
   findingsOf,
   groupCauses,
   legacyCauseKey,
@@ -10,8 +13,14 @@ import {
 } from './findings';
 import { finalizeChecks } from './session';
 import { untestableCheck } from '../scenarios/untestable';
-import { identityCheck, identityOf } from './identity';
-import { getOnMcpCheck, legacyProbeCheck, wrongRevisionCheck } from './wire';
+import { IDENTITY_CHECK_ID, identityCheck, identityOf } from './identity';
+import {
+  getOnMcpCheck,
+  legacyProbeCheck,
+  modernProbeCheck,
+  wrongRevisionCheck,
+  type Refusal
+} from './wire';
 import type { ConformanceCheck } from '../types';
 import { hostedScenarios } from './catalog';
 
@@ -104,6 +113,96 @@ describe('oneLineReason', () => {
     const long = oneLineReason(check({ errorMessage: 'x'.repeat(500) }));
     expect(long).toHaveLength(240);
     expect(long.endsWith('…')).toBe(true);
+  });
+});
+
+describe('eraStop', () => {
+  const modern = (version: string | undefined, refusal: Refusal) =>
+    modernProbeCheck('2025-11-25', 'server/discover', version, refusal);
+  const signIn: Refusal = { status: 401 };
+  const versionAnswer: Refusal = {
+    status: 400,
+    code: -32000,
+    message: 'Unsupported protocol version'
+  };
+
+  it('says what the requests carried, where they were stopped, and where it is judged', () => {
+    const stopped = eraStop([modern('2026-07-28', signIn)])!;
+    expect(stopped).toEqual({
+      carried: '2026-07-28',
+      served: '2025-11-25',
+      status: 401
+    });
+    expect(eraCauseText([stopped])).toBe(
+      "The client's requests here carried 2026-07-28 and were stopped at the sign-in step " +
+        '(the cell answered HTTP 401, asking it to sign in), and it did not retry at 2025-11-25, ' +
+        'so nothing it did counts for 2025-11-25 (the same behaviour is judged on the 2026-07-28 cell).'
+    );
+    // The version answer, when it came, is what the stop reports.
+    const turned = eraStop([
+      modern('2026-07-28', signIn),
+      modern('2026-07-28', versionAnswer)
+    ])!;
+    expect(turned).toMatchObject({ status: 400, code: -32000 });
+    expect(eraCauseText([turned])).toContain(
+      'were turned away at version negotiation (the cell answered -32000; it serves 2025-11-25)'
+    );
+  });
+
+  it('is no stop once the client spoke the cell’s revision', () => {
+    const spoke = check({
+      id: IDENTITY_CHECK_ID,
+      status: 'INFO',
+      details: { protocolVersions: ['2025-11-25'] }
+    });
+    expect(eraStop([modern('2026-07-28', signIn), spoke])).toBeUndefined();
+    expect(eraStop([check({})])).toBeUndefined();
+  });
+
+  it('never repeats a revision the client made up', () => {
+    const hostile = '<img src=x onerror=alert(1)>| # x\n';
+    const stopped = eraStop([modern(hostile, signIn)])!;
+    expect(stopped.carried).toBeUndefined();
+    const text = eraCauseText([stopped]);
+    expect(text).toContain('carried another revision');
+    expect(text).not.toContain('<img');
+    expect(text).not.toContain('judged on');
+    expect(eraCauseKey(stopped)).not.toContain('<img');
+  });
+
+  it('is one cause over the cells it stopped', () => {
+    const stopped = eraStop([modern('2026-07-28', signIn)])!;
+    const key = eraCauseKey(stopped);
+    const causes = groupCauses([
+      {
+        cell: '2025-11-25/auth/a',
+        findings: [],
+        stop: stopped,
+        stoppedBy: key
+      },
+      {
+        cell: '2025-11-25/auth/b',
+        findings: [
+          {
+            status: 'FAILURE',
+            check: 'x',
+            reason: 'the flow did not reach this step',
+            by: 'scenario',
+            cause: key
+          }
+        ],
+        stop: stopped,
+        stoppedBy: key
+      }
+    ]);
+    expect(causes).toEqual([
+      {
+        key,
+        by: 'client',
+        text: eraCauseText([stopped]),
+        cells: ['2025-11-25/auth/a', '2025-11-25/auth/b']
+      }
+    ]);
   });
 });
 

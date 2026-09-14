@@ -243,7 +243,10 @@ person can see how a client did without opening each cell. Every cell has a
 `not-tried` (no request reached it), `in-progress` (the client reached it
 but nothing its scenario tests has happened yet) and `incomplete` (the
 client reached it and stopped short: it opened with a legacy `initialize`
-and never retried at the cell's revision), plus `waiting` when every failure
+and never retried at the cell's revision, or, on a dated cell, its requests
+carried another revision, were turned away at version negotiation or at the
+sign-in step, and it never spoke the cell's revision; the cause says which,
+and names a revision only when it is one this suite knows), plus `waiting` when every failure
 is not seen — nothing the client did is wrong, the flow has not finished (a
 consent screen, an elicitation form still to answer); its note says "waiting
 for the client or the person to finish the flow", and its verdict is
@@ -403,7 +406,17 @@ older revision, say — is `incomplete`, with the INFO check
 stop before it is let in (it must reject a bad issuer, say) passes once the
 client sent the cell an MCP request at its revision, however it was answered
 (a 401 sign-in challenge counts); metadata fetches alone, as a client makes
-when it only lists its servers, leave it `incomplete` the same way.
+when it only lists its servers, leave it `incomplete` the same way. It also
+passes once the client signed in at the cell (its token endpoint answered a
+token request) and a request presenting the token was then ended by the auth
+layer, answered 401 or 403 with an OAuth error such as `insufficient_scope`,
+whatever revision that request carried: with a token presented the auth
+layer answers before any version is looked at, so a dual-era client that
+opens a 2025-11-25 `auth/scope-retry-limit` cell with a 2026-07-28
+`server/discover` and correctly stops after the 403 has done what the
+scenario tests (the hidden marker is `hosted-auth-stop`). A request without
+a token, and one turned away at version negotiation after sign-in, still do
+not count.
 
 Both decide the verdict like any FAILURE. The `auth/*` resource server
 records the same rejection in the scenario's own log as

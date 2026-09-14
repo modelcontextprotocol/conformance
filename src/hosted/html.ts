@@ -423,7 +423,7 @@ const STATE_MEANING: [CellState, string][] = [
   ],
   [
     'incomplete',
-    'the client reached the cell and stopped: it spoke only an older revision and did not retry'
+    'the client reached the cell and stopped: it spoke only another revision, was turned away, and did not retry'
   ],
   ['not-tried', 'nothing has reached the cell yet']
 ];
@@ -1421,8 +1421,8 @@ A cell the client never reached reads <i>not tried</i>; one it reached where
 nothing its scenario tests has happened yet reads <i>in progress</i> and lists
 what it is waiting for; one whose only failures are steps it has not seen yet
 (a sign-in or a form still to finish) reads <i>waiting</i>, though its verdict
-is still a fail until they happen; one where the client stopped short (it spoke only an
-older revision and did not retry) reads <i>incomplete</i>.
+is still a fail until they happen; one where the client stopped short (it spoke only
+another revision, was turned away, and did not retry) reads <i>incomplete</i>.
 <i>X of N scored</i> counts passes among every cell the revision's requirement
 set scores (N is the set's count; the cells this deployment can start are
 given alongside). Not-scored and unlisted cells are listed below the table;

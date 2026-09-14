@@ -68,6 +68,8 @@ import { identityFrom } from './identity';
 import { isStatefulVersion } from '../connection/versions';
 import {
   answeredVersion,
+  authLayerStop,
+  authStopCheck,
   describeRequest,
   discoverReply,
   getOnMcpCheck,
@@ -585,6 +587,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           run,
           'reached',
           revisionReachedCheck(run.revision)
+        );
+      // Stopped by the auth layer with a token presented, at whatever
+      // revision: judged against the cell's sign-in (signedInAuthStop()).
+      if (mcp && authLayerStop(headers.authorization, response))
+        sessions.recordHostedCheck(
+          run,
+          'auth-stop',
+          authStopCheck(run.revision)
         );
       // A GET the cell serves no stream for (the scenario's own 405, or
       // fallthrough()'s): noted so the client's author sees it.
