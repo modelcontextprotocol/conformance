@@ -114,7 +114,8 @@ export const SCENARIO_CATALOG: readonly ScenarioMeta[] = [
     "auxRoles": [
       "as"
     ],
-    "hostable": true
+    "hostable": true,
+    "servesRootPrm": true
   },
   {
     "name": "auth/metadata-var3",

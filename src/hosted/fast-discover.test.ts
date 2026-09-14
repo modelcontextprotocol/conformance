@@ -68,6 +68,12 @@ class SlowStore implements RunStore {
       this.inner.deleteSnapshots(runId)
     );
   }
+  saveChallenge(id: string, at: number) {
+    return this.slow('saveChallenge', () => this.inner.saveChallenge(id, at));
+  }
+  listChallenges(since: number) {
+    return this.slow('listChallenges', () => this.inner.listChallenges(since));
+  }
 }
 
 /** A 2026-07-28 request as a client sends it: version in header and _meta. */

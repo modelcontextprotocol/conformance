@@ -795,9 +795,7 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/basic-cimd',
   'auth/metadata-default',
   'auth/metadata-var1',
-  // auth/metadata-var2 is left out: the everything-client's SDK fails its
-  // resource-parameter-matches-prm check (see index.test.ts), and val.town
-  // excludes it as single-process only.
+  'auth/metadata-var2',
   'auth/metadata-var3',
   'auth/pre-registration',
   'auth/scope-from-www-authenticate',

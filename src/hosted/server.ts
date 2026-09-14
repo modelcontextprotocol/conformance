@@ -50,8 +50,16 @@ import {
   mintId,
   mintRunId,
   loadAllCells,
-  loadCells
+  loadCells,
+  parseCellId
 } from './session';
+import {
+  ROOT_PRM_PATH,
+  ROOT_PRM_WINDOW_MS,
+  rootPrmAmbiguousCheck,
+  rootPrmAttributedCheck,
+  rootPrmUnattributed
+} from './root-prm';
 import {
   buildMatrix,
   MCP_PATH,
@@ -610,6 +618,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     });
     tapResponse(res, (captured) => {
       response = captured;
+      // Noted before the response is flushed, so the client's next request,
+      // to the origin-root metadata, finds the note from any process.
+      if (captured.status === 401 && run.scenario.servesRootPrm)
+        sessions.noteChallenge(run);
       judge();
       persist();
     });
@@ -999,6 +1011,53 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       );
     }
   );
+
+  // A client falls back to the bare origin-root path when the path-inserted
+  // one is a 404, which it is for a scenario serving its metadata at the
+  // root. That path names no cell, so it is answered as the root-metadata
+  // cell most recently challenged, from whichever process (./root-prm.ts).
+  app.get(/^\/\.well-known\/oauth-protected-resource\/?$/, async (req, res) => {
+    const challenged = await sessions.recentChallenges(ROOT_PRM_WINDOW_MS);
+    const refs = challenged.flatMap(({ id }) => {
+      const ref = parseCellId(id);
+      return ref && matrix.cell(ref.scenarioName, ref.revision)?.startable
+        ? [ref]
+        : [];
+    });
+    if (!refs.length) {
+      res
+        .status(404)
+        .json(
+          rootPrmUnattributed(
+            hostedScenarios.names.filter(
+              (n) => hostedScenarios.meta(n)?.servesRootPrm
+            )
+          )
+        );
+      return;
+    }
+    const [ref, ...others] = refs;
+    await loadCells([ref]);
+    const run = await createRun(req, ref, res);
+    if (!run) return;
+    sessions.recordHostedCheck(run, 'root-prm', rootPrmAttributedCheck());
+    if (others.length) {
+      const ids = others.map(cellId);
+      sessions.recordHostedCheck(
+        run,
+        `root-prm-ambiguous:${ids.join(' ')}`,
+        rootPrmAmbiguousCheck(ids)
+      );
+    }
+    const q = req.url.indexOf('?');
+    dispatch(
+      run,
+      run.listener,
+      req,
+      res,
+      ROOT_PRM_PATH + (q === -1 ? '' : req.url.slice(q))
+    );
+  });
 
   // ---------- aux-origin backchannel (relay target) ----------
   //

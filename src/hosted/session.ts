@@ -28,7 +28,7 @@ import type {
 } from '../mock-server';
 import { isStatefulVersion } from '../connection/versions';
 import { hostedScenarios } from './catalog';
-import type { RunStore } from './store';
+import { CHALLENGE_RETENTION_MS, type RunStore } from './store';
 import {
   addProtocolVersion,
   atCellRevision,
@@ -345,6 +345,8 @@ export class SessionManager {
    * the cell wrote it: only such a row can be written over with less.
    */
   private ownRows = new Set<string>();
+  /** Without a store: when each cell last answered with a 401. */
+  private challenges = new Map<string, number>();
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
@@ -539,6 +541,47 @@ export class SessionManager {
     const check = identityCheck(identityOf(observed));
     run.identities.set(key, check);
     run.hostedChecks.push(check);
+  }
+
+  /**
+   * Note that the cell answered a request with a sign-in challenge (401),
+   * so that a later request naming no cell can be attributed to it (see
+   * ./root-prm.ts). With a store the note is written through and flush()
+   * waits for it: a client following the challenge to another process
+   * finds it there.
+   */
+  noteChallenge(run: HostedRun, at = Date.now()): void {
+    const store = this.store;
+    if (!store) {
+      for (const [id, when] of this.challenges) {
+        if (when < at - CHALLENGE_RETENTION_MS) this.challenges.delete(id);
+      }
+      this.challenges.set(run.id, at);
+      return;
+    }
+    const p: Promise<void> = retrying(() => store.saveChallenge(run.id, at))
+      .catch(logStoreError)
+      .finally(() => this.pending.delete(p));
+    this.pending.add(p);
+  }
+
+  /** Cells challenged in the last `windowMs`, latest first. */
+  async recentChallenges(
+    windowMs: number
+  ): Promise<Array<{ id: string; at: number }>> {
+    const since = Date.now() - windowMs;
+    const store = this.store;
+    if (!store) {
+      return Array.from(this.challenges, ([id, at]) => ({ id, at }))
+        .filter((c) => c.at >= since)
+        .sort((a, b) => b.at - a.at);
+    }
+    try {
+      return await retrying(() => store.listChallenges(since));
+    } catch (e) {
+      logStoreError(e);
+      throw new StoreUnavailableError(e);
+    }
   }
 
   get(id: string): HostedRun | undefined {

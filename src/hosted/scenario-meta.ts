@@ -23,6 +23,8 @@ export interface ScenarioMeta {
   /** Whether the hosted server can mount it: handler() or authHandlers(). */
   hostable: boolean;
   allowClientError?: boolean;
+  /** Set when the scenario serves its metadata at the origin root. */
+  servesRootPrm?: true;
 }
 
 export function scenarioMeta(scenario: Scenario): ScenarioMeta {
@@ -37,6 +39,7 @@ export function scenarioMeta(scenario: Scenario): ScenarioMeta {
     hostable: auth || typeof scenario.handler === 'function',
     ...(scenario.allowClientError !== undefined && {
       allowClientError: scenario.allowClientError
-    })
+    }),
+    ...(scenario.servesRootPrm && { servesRootPrm: true as const })
   };
 }

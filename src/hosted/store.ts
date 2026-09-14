@@ -71,7 +71,20 @@ export interface RunStore {
   /** A run's snapshots, oldest first. */
   listSnapshots(runId: string): Promise<SnapshotInfo[]>;
   deleteSnapshots(runId: string): Promise<void>;
+  /**
+   * Note that cell `id` answered a request with a sign-in challenge (401)
+   * at `at` (ms since the epoch), replacing the cell's earlier note. A
+   * request that names no cell (the origin-root protected resource
+   * metadata, see ./root-prm.ts) is attributed from these notes, whichever
+   * process sent the challenge. A store may drop notes after an hour.
+   */
+  saveChallenge(id: string, at: number): Promise<void>;
+  /** Cells whose latest challenge is at or after `since`, latest first. */
+  listChallenges(since: number): Promise<Array<{ id: string; at: number }>>;
 }
+
+/** How long a store must keep a challenge note (see saveChallenge()). */
+export const CHALLENGE_RETENTION_MS = 3600_000;
 
 /**
  * In-process store — used by tests to exercise the merge path, and by a
@@ -142,5 +155,19 @@ export class MemoryRunStore implements RunStore {
   }
   async deleteSnapshots(runId: string): Promise<void> {
     this.snapshots.delete(runId);
+  }
+  private challenges = new Map<string, number>();
+  async saveChallenge(id: string, at: number): Promise<void> {
+    for (const [cell, when] of this.challenges) {
+      if (when < at - CHALLENGE_RETENTION_MS) this.challenges.delete(cell);
+    }
+    this.challenges.set(id, at);
+  }
+  async listChallenges(
+    since: number
+  ): Promise<Array<{ id: string; at: number }>> {
+    return Array.from(this.challenges, ([id, at]) => ({ id, at }))
+      .filter((c) => c.at >= since)
+      .sort((a, b) => b.at - a.at);
   }
 }

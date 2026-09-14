@@ -208,6 +208,15 @@ export interface Scenario {
    */
   readonly discoverReadsHistory?: boolean;
   /**
+   * Whether the scenario's resource server serves its protected resource
+   * metadata only at the bare origin-root path
+   * (`/.well-known/oauth-protected-resource`), which no client can tie to
+   * one MCP URL. The hosted server, where every cell shares one origin,
+   * answers that path for the cell of such a scenario that most recently
+   * answered with a 401 (see src/hosted/root-prm.ts).
+   */
+  readonly servesRootPrm?: boolean;
+  /**
    * Client-side choreography as data (see src/steps). When present the
    * runner includes it in MCP_CONFORMANCE_CONTEXT as `steps`, so a client
    * with no bespoke handler for this scenario can still drive it.

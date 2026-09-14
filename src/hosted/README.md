@@ -450,12 +450,27 @@ npx @modelcontextprotocol/conformance hosted \
   --relay-secret "$(openssl rand -hex 32)"
 ```
 
-Two extra routes appear when `--as-origin` is set:
+Three routes serve the auth scenarios (`/__aux` only when `--as-origin` is
+set):
 
-| Route                                               | Purpose                                                              |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /.well-known/oauth-protected-resource/s/<...>` | RFC 9728 root-level PRM dispatch — recovers the cell from the suffix |
-| `ALL /__aux/<role>/*`                               | Relay backchannel; 403 without `x-relay-secret`                      |
+| Route                                               | Purpose                                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET /.well-known/oauth-protected-resource/s/<...>` | RFC 9728 root-level PRM dispatch — recovers the cell from the suffix                         |
+| `GET /.well-known/oauth-protected-resource`         | Origin-root PRM, which names no cell — answered as the cell most recently challenged (below) |
+| `ALL /__aux/<role>/*`                               | Relay backchannel; 403 without `x-relay-secret`                                              |
+
+**Origin-root metadata:** `auth/metadata-var2` serves its protected resource
+metadata only at the bare `/.well-known/oauth-protected-resource` and names no
+metadata URL in its `WWW-Authenticate` header. A client that follows RFC 9728
+first tries the path-inserted URL (`…/oauth-protected-resource/s/<cell>/mcp`),
+which the cell answers 404, and then falls back to the bare path — one URL for
+every cell on the server. The hosted server answers it as the cell of such a
+scenario (`Scenario.servesRootPrm`) that most recently answered a request with
+a 401, within 120 seconds, and notes that on the cell. The challenge is noted
+in the run store, so the request can land on any process. With no such cell,
+the answer is a 404 saying to open the cell's URL first; with more than one,
+the latest wins and the cell says so. Run one `auth/metadata-var2` cell at a
+time and the attribution is exact.
 
 Scenarios needing `as2`/`idp` origins become startable when `--as2-origin` /
 `--idp-origin` are set; deploy one more relay per role with
@@ -477,7 +492,7 @@ are listed in `examples/hosted/valtown-manifest.json`.
 
 val.town spreads one run's requests over several isolates that share no
 memory, so `valtown.ts` excludes the scenarios whose checks depend on one
-process seeing consecutive requests (`sse-retry`, `auth/metadata-var2`,
+process seeing consecutive requests (`sse-retry`,
 `auth/authorization-server-migration`, `elicitation-sep1034-client-defaults`);
 the matrix shows them as not startable with that reason.
 `sep-2322-client-request-state` (MRTR) runs here: the only state its retry

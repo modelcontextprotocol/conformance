@@ -95,6 +95,10 @@ abstract class MetadataDiscoveryScenario extends AuthHandlerScenario {
   get name() {
     return `auth/${this.config.name}`;
   }
+  /** See Scenario.servesRootPrm. */
+  get servesRootPrm(): boolean {
+    return this.config.prmLocation === '/.well-known/oauth-protected-resource';
+  }
   get description() {
     return `Tests Basic OAuth metadata discovery flow.
 

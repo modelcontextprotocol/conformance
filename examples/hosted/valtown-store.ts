@@ -11,10 +11,11 @@
  */
 
 import type { ConformanceCheck } from '../../src/types';
-import type {
-  RunStore,
-  SnapshotInfo,
-  StoreRetention
+import {
+  CHALLENGE_RETENTION_MS,
+  type RunStore,
+  type SnapshotInfo,
+  type StoreRetention
 } from '../../src/hosted/store';
 
 const API = 'https://api.val.town/v1/sqlite/execute';
@@ -54,6 +55,7 @@ export class SqliteRunStore implements RunStore {
   private snapshotsReady: Promise<void> | undefined;
   private lastSweep = 0;
   private lastSnapshotSweep = 0;
+  private lastChallengeSweep = 0;
 
   constructor(opts: SqliteRunStoreOptions = {}) {
     const token = opts.token ?? process.env.valtown;
@@ -260,6 +262,47 @@ export class SqliteRunStore implements RunStore {
     await this.exec(`DELETE FROM hosted_snapshots_v1 WHERE run_id = ?`, [
       runId
     ]);
+  }
+
+  /**
+   * A statement on the challenge notes, whose table is created the first
+   * time a statement on it fails, as the runs tables are (see execRuns()).
+   */
+  private async execChallenges(sql: string, args: unknown[]): Promise<Row[]> {
+    try {
+      return await this.exec(sql, args);
+    } catch {
+      await this.exec(
+        `CREATE TABLE IF NOT EXISTS hosted_challenges_v1 (
+           cell_id TEXT PRIMARY KEY, at INTEGER NOT NULL)`
+      );
+      return this.exec(sql, args);
+    }
+  }
+
+  async saveChallenge(id: string, at: number): Promise<void> {
+    await this.execChallenges(
+      `INSERT INTO hosted_challenges_v1 (cell_id, at) VALUES (?, ?)
+       ON CONFLICT(cell_id) DO UPDATE SET at = excluded.at`,
+      [id, at]
+    );
+    const now = Date.now();
+    if (now - this.lastChallengeSweep < 5 * 60_000) return;
+    this.lastChallengeSweep = now;
+    void this.exec(`DELETE FROM hosted_challenges_v1 WHERE at < ?`, [
+      now - CHALLENGE_RETENTION_MS
+    ]).catch(() => {});
+  }
+
+  async listChallenges(
+    since: number
+  ): Promise<Array<{ id: string; at: number }>> {
+    const rows = await this.execChallenges(
+      `SELECT cell_id, at FROM hosted_challenges_v1 WHERE at >= ?
+       ORDER BY at DESC LIMIT 20`,
+      [since]
+    );
+    return rows.map(([id, at]) => ({ id: id as string, at: Number(at) }));
   }
 
   private async sweepSnapshots(): Promise<void> {

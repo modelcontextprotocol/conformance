@@ -69,6 +69,12 @@ class FlakyStore implements RunStore {
   deleteSnapshots(runId: string) {
     return this.inner.deleteSnapshots(runId);
   }
+  saveChallenge(id: string, at: number) {
+    return this.inner.saveChallenge(id, at);
+  }
+  listChallenges(since: number) {
+    return this.read(() => this.inner.listChallenges(since));
+  }
 }
 
 describe('MRTR across processes, one chat per tool', () => {
