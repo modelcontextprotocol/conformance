@@ -935,6 +935,8 @@ const AUX_ROLES: AuxOriginRole[] = ['as', 'as2'];
 
 interface Deployment {
   rs: string;
+  /** The store the processes share, when there are several. */
+  store?: MemoryRunStore;
   close(): Promise<void>;
 }
 
@@ -973,12 +975,181 @@ async function deploy(processes: number, evict = false): Promise<Deployment> {
   });
   return {
     rs,
+    ...(store && { store }),
     async close() {
       for (const { sessions } of apps) await sessions.close();
       await Promise.all([front, ...relays].map(closeServer));
     }
   };
 }
+
+/**
+ * Walk a cell's OAuth flow by hand against a deployment, from its
+ * protected-resource metadata: register, authorize, exchange the code.
+ */
+async function signInAt(
+  rs: string,
+  cell: string
+): Promise<{
+  token: string;
+  clientId: string;
+  code: string;
+  asMeta: Record<string, string>;
+}> {
+  const mcpUrl = `${rs}/s/${cell}/mcp`;
+  const prm = await fetch(
+    `${rs}/.well-known/oauth-protected-resource/s/${cell}/mcp`
+  ).then((r) => r.json());
+  const as = new URL(prm.authorization_servers[0] as string).origin;
+  const asMeta = await fetch(
+    `${as}/.well-known/oauth-authorization-server/r/${cell}`
+  ).then((r) => r.json());
+  const redirect = 'http://localhost:0/cb';
+  const reg = await fetch(asMeta.registration_endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ client_name: 'vitest', redirect_uris: [redirect] })
+  }).then((r) => r.json());
+  const authz = await fetch(
+    `${asMeta.authorization_endpoint}?` +
+      new URLSearchParams({
+        response_type: 'code',
+        client_id: reg.client_id,
+        redirect_uri: redirect,
+        code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+        code_challenge_method: 'S256',
+        resource: mcpUrl
+      }),
+    { redirect: 'manual' }
+  );
+  const code = new URL(authz.headers.get('location')!).searchParams.get(
+    'code'
+  )!;
+  const tok = await fetch(asMeta.token_endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirect,
+      client_id: reg.client_id,
+      code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+      resource: mcpUrl
+    })
+  }).then((r) => r.json());
+  expect(tok.access_token).toBeTruthy();
+  return {
+    token: tok.access_token as string,
+    clientId: reg.client_id as string,
+    code,
+    asMeta
+  };
+}
+
+describe('resetting an auth cell, across two processes that forget their cells', () => {
+  let dep: Deployment;
+  beforeAll(async () => {
+    dep = await deploy(2, true);
+  });
+  afterAll(async () => {
+    await dep.close();
+  });
+
+  it('forgets what its sign-in server issued: a cached token gets the normal 401', async () => {
+    const cell = 'reset/2025-11-25/auth/metadata-default';
+    const mcpUrl = `${dep.rs}/s/${cell}/mcp`;
+    const init = (token?: string) =>
+      fetch(mcpUrl, {
+        method: 'POST',
+        headers: {
+          ...jsonHeaders(),
+          ...(token && { authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify(initBody())
+      });
+    expect((await init()).status).toBe(401);
+    const first = await signInAt(dep.rs, cell);
+    const signedIn = await init(first.token);
+    expect(signedIn.status).toBe(200);
+    await signedIn.text();
+
+    const reset = await fetch(`${dep.rs}/results/${cell}/reset`, {
+      method: 'POST'
+    }).then((r) => r.json());
+    expect(reset.attempt).toBe(2);
+
+    // The cached token: answered as a request without one.
+    const stale = await init(first.token);
+    expect(stale.status).toBe(401);
+    expect(stale.headers.get('www-authenticate')).toContain(
+      'resource_metadata='
+    );
+    await stale.text();
+    // The cached registration and code: refused with the OAuth errors.
+    const oldClient = await fetch(
+      `${first.asMeta.authorization_endpoint}?` +
+        new URLSearchParams({
+          response_type: 'code',
+          client_id: first.clientId,
+          redirect_uri: 'http://localhost:0/cb',
+          code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+          code_challenge_method: 'S256'
+        }),
+      { redirect: 'manual' }
+    );
+    expect(oldClient.status).toBe(400);
+    expect((await oldClient.json()).error).toBe('invalid_client');
+    const oldCode = await fetch(first.asMeta.token_endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: first.code,
+        redirect_uri: 'http://localhost:0/cb',
+        code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+      })
+    });
+    expect(oldCode.status).toBe(400);
+    expect((await oldCode.json()).error).toBe('invalid_grant');
+
+    // Signing in again works, and the new token is let in.
+    const second = await signInAt(dep.rs, cell);
+    const again = await init(second.token);
+    expect(again.status).toBe(200);
+    await again.text();
+
+    const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
+      r.json()
+    );
+    expect(results).toMatchObject({
+      attempt: 2,
+      earlier: [{ attempt: 1 }]
+    });
+    expect(
+      results.checks.filter((c: ConformanceCheck) => c.status === 'FAILURE')
+    ).toEqual([]);
+    const lines = (
+      await fetch(`${dep.rs}/results/${cell}/traffic.jsonl`).then((r) =>
+        r.text()
+      )
+    )
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    const refused = lines
+      .filter((l) => l.attempt === 2 && l.refused)
+      .map((l) => l.refused);
+    expect(refused).toEqual(['token', 'client_id', 'code']);
+
+    // No token's value is kept anywhere in the store's traffic.
+    const kept = JSON.stringify(
+      Array.from((await dep.store!.loadTraffic(cell)).values())
+    );
+    for (const token of [first.token, second.token])
+      expect(kept).not.toContain(token);
+    expect(kept).toContain('(not kept)');
+  });
+});
 
 /**
  * The everything-client, imported for `revision`: it picks its lifecycle
