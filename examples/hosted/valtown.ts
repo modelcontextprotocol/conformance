@@ -35,20 +35,19 @@ registerRequirementSources(REQUIREMENT_SOURCES);
 /**
  * val.town spreads one run's requests over several isolates that share no
  * memory. Scenarios whose checks depend on one process seeing consecutive
- * requests (SSE reconnect timing, elicitation round-trips, the
- * authorization-server switch in the SEP-2352 migration scenario) cannot be
- * judged there; the matrix shows them as not startable with this reason.
- * (MRTR carries its cross-request state inside the requestState it sends,
- * so it runs here.)
+ * requests (SSE reconnect timing, elicitation round-trips) cannot be judged
+ * there; the matrix shows them as not startable with this reason. (MRTR
+ * carries its cross-request state inside the requestState it sends, and the
+ * SEP-2352 migration scenario reads the run's latest log before every
+ * request, so both run here.)
  */
 const SINGLE_PROCESS_ONLY =
   "needs a single-process host (Val Town isolates don't share in-memory state)";
 const EXCLUDE = Object.fromEntries(
-  [
-    'sse-retry',
-    'auth/authorization-server-migration',
-    'elicitation-sep1034-client-defaults'
-  ].map((name) => [name, SINGLE_PROCESS_ONLY])
+  ['sse-retry', 'elicitation-sep1034-client-defaults'].map((name) => [
+    name,
+    SINGLE_PROCESS_ONLY
+  ])
 );
 
 // Auth scenarios need a second public origin (RFC 8414 well-known is

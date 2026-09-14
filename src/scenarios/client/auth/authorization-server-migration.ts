@@ -47,6 +47,8 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
   description =
     'Tests that a client, when the PRM authorization_servers changes to a new issuer, re-registers with the new authorization server and does not reuse credentials from the previous one (SEP-2352).';
   readonly auxRoles: readonly AuxOriginRole[] = ['as', 'as2'];
+  /** Which authorization server the PRM names is read from the log. */
+  readonly answersFromLog = true;
   private checks: ConformanceCheck[] = [];
 
   authHandlers(ctx: AuthHandlerContext): AuthHandlers {

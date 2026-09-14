@@ -288,6 +288,20 @@ export function rawChecksOf(scenario: Scenario): ConformanceCheck[] {
 }
 
 /**
+ * The scenario's log as an array the hosted server can seed from the store:
+ * its plain `checks` array (what finalizeChecks() re-judges), when its
+ * rawChecks(), if it has one, reads that same array. A scenario whose raw
+ * view is something else is not seeded. A rebuilt cell that is not seeded
+ * writes its process's row over with only what it saw since the rebuild.
+ */
+function seedableLog(scenario: Scenario): ConformanceCheck[] | undefined {
+  const bag = (scenario as unknown as { checks?: unknown }).checks;
+  if (!Array.isArray(bag)) return undefined;
+  if (scenario.rawChecks && scenario.rawChecks() !== bag) return undefined;
+  return bag as ConformanceCheck[];
+}
+
+/**
  * New, unstarted instance of a registered scenario. Prefers `Scenario.fresh()`
  * so scenarios registered with constructor parameters keep them; falls back
  * to the no-arg constructor.
@@ -450,7 +464,7 @@ export class SessionManager {
   ): Promise<HostedRun> {
     await loadCells([ref]);
     const run = this.getOrCreate(ref, baseUrlFor);
-    await this.hydrate(run);
+    await this.ready(run);
     return run;
   }
 
@@ -474,8 +488,8 @@ export class SessionManager {
       return (run.hydration = Promise.resolve());
     }
     const attempt: Promise<void> = (async () => {
-      const bag = (run.scenario as unknown as { checks?: unknown }).checks;
-      if (!Array.isArray(bag) || run.scenario.rawChecks) {
+      const bag = seedableLog(run.scenario);
+      if (!bag) {
         run.hydrated = true;
         return;
       }
@@ -493,13 +507,64 @@ export class SessionManager {
       }
       if (!merged.length) return;
       merged.sort(byTime);
-      (bag as ConformanceCheck[]).unshift(...merged);
+      bag.unshift(...merged);
     })().catch((e: unknown) => {
       logStoreError(e);
       if (run.hydration === attempt) run.hydration = undefined;
     });
     run.hydration = attempt;
     return attempt;
+  }
+
+  /**
+   * What a request goes through before it is dispatched: the cell seeded
+   * from the store (hydrate()), and for a scenario that decides how to
+   * answer from its log (Scenario.answersFromLog), what other processes
+   * have recorded since. Without that, a process whose copy of the log
+   * predates another's request answers as if it had not happened.
+   */
+  async ready(run: HostedRun): Promise<void> {
+    const seededBefore = run.hydrated === true;
+    await this.hydrate(run);
+    if (seededBefore && run.scenario.answersFromLog) await this.refresh(run);
+  }
+
+  /**
+   * Add to the cell's scenario log, in time order, the checks other
+   * processes have written since it was seeded. Each is marked seeded, so
+   * it stays its writer's to persist. When the store cannot be read, the
+   * cell is served as it stands.
+   */
+  private async refresh(run: HostedRun): Promise<void> {
+    const store = this.store;
+    const log = seedableLog(run.scenario);
+    if (!store || !log) return;
+    let byWriter: Map<string, ConformanceCheck[]>;
+    try {
+      byWriter = await retrying(() => store.loadChecks(run.id));
+    } catch (e) {
+      logStoreError(e);
+      return;
+    }
+    const known = new Set(run.seeded.values());
+    const fresh: ConformanceCheck[] = [];
+    for (const [writer, checks] of byWriter) {
+      if (writer === this.writerId || writer.endsWith(HOSTED_WRITER_SUFFIX))
+        continue;
+      for (const c of checks) {
+        const json = JSON.stringify(c);
+        if (known.has(json)) continue;
+        known.add(json);
+        const copy = { ...c };
+        run.seeded.set(copy, json);
+        fresh.push(copy);
+      }
+    }
+    for (const c of fresh.sort(byTime)) {
+      let i = log.length;
+      while (i > 0 && byTime(log[i - 1], c) > 0) i--;
+      log.splice(i, 0, c);
+    }
   }
 
   /**

@@ -364,7 +364,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     res: Response
   ): Promise<HostedRun | undefined> {
     const run = mountCell(req, ref, res);
-    if (run) await sessions.hydrate(run);
+    if (run) await sessions.ready(run);
     return run;
   }
 
@@ -400,7 +400,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
           resolve(body !== undefined && isLoneDiscover(body))
         )
       ));
-    if (!early) await Promise.all(runs.map((run) => sessions.hydrate(run)));
+    if (!early) await Promise.all(runs.map((run) => sessions.ready(run)));
   }
 
   /**
@@ -1154,7 +1154,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         res.status(404).json({ error: `no aux '${role}' handler for cell` });
         return;
       }
-      await sessions.hydrate(run);
+      await sessions.ready(run);
       dispatch(run, listener, req, res, (prefix + suffix || '/') + search);
     });
   }

@@ -493,8 +493,8 @@ are listed in `examples/hosted/valtown-manifest.json`.
 val.town spreads one run's requests over several isolates that share no
 memory, so `valtown.ts` excludes the scenarios whose checks depend on one
 process seeing consecutive requests (`sse-retry`,
-`auth/authorization-server-migration`, `elicitation-sep1034-client-defaults`);
-the matrix shows them as not startable with that reason.
+`elicitation-sep1034-client-defaults`); the matrix shows them as not
+startable with that reason.
 `sep-2322-client-request-state` (MRTR) runs here: the only state its retry
 needs, the original request id and the exact `requestState`, travels inside
 the `requestState` it sends, with a digest so any isolate can rebuild and
@@ -508,7 +508,21 @@ merged log the store holds for the cell (`SessionManager.acquire`), so a
 scenario that keys its behaviour on its own log — `request-metadata` rejects
 the run's first request exactly once — sees the run's history rather than
 just this isolate's. Seeded checks are persisted by the isolate that wrote
-them; an isolate's row holds only what it recorded or rewrote itself.
+them; an isolate's row holds only what it recorded or rewrote itself. A
+scenario is seeded when it keeps a plain `checks` array and its
+`rawChecks()`, if it has one, reads that array (the `auth/metadata-*`
+scenarios and `json-schema-ref-deref` do): a cell rebuilt after eviction
+that was not seeded would write its isolate's row over with only what it
+saw since.
+
+Seeding happens once per cell per isolate, so an isolate's copy of the log
+can lag behind the run. A scenario that decides how to answer a request from
+its log sets `Scenario.answersFromLog`, and its cell reads what other
+isolates have recorded since before every request (`SessionManager.ready`),
+at the cost of one store read per request.
+`auth/authorization-server-migration` is one: its PRM switches authorization
+servers once a token has been accepted, and without the catch-up an isolate
+whose copy predates that would keep sending the client to the first server.
 
 A `server/discover` is the exception: a client may give it about a second
 before it falls back to an older handshake (the GitHub Copilot runtime
@@ -538,20 +552,18 @@ not credentials, and an implementation that edits its own tokens only
 misleads its own report), and a verdict that spans requests (which
 authorization request came first, whether the client went on to the token
 endpoint) is read from the log when the log is judged, not counted as the
-requests arrive. Hydration happens once per cell per isolate, so an
-isolate's copy of the log can lag behind the run: a scenario that must
-consult the latest log to decide how to answer a request cannot be hosted
-here. `auth/authorization-server-migration` is one — its PRM switches
-authorization servers once a token has been accepted, and an isolate whose
-copy predates that keeps sending the client to the first server.
-`auth/scope-retry-limit` also answers from its copy of the log — it stops a
+requests arrive. The migration scenario reads the run's latest log before
+each request (above). `auth/scope-retry-limit` answers from its copy of the
+log without that catch-up — it stops a
 client with a 410 after three token-bearing requests — but only to bound a
 client that never stops by itself. Its verdict counts the authorization
 attempts in the merged log, so across isolates a client with no retry limit
 is stopped later (up to three 403s per isolate) and still fails, and one that
 limits itself never reaches the cut-off. `src/hosted/hosted-auth.test.ts`
-drives every hostable auth scenario through two processes sharing a store to
-hold the rest to this, and a client with no retry limit through both.
+drives every hostable auth scenario through one process, through two
+processes sharing a store, and through two that forget every cell after each
+request (each request rebuilds its cell from the store) to hold the rest to
+this, and a client with no retry limit through each.
 
 ### Two-val auth setup
 

@@ -217,6 +217,15 @@ export interface Scenario {
    */
   readonly servesRootPrm?: boolean;
   /**
+   * Whether the scenario decides how to answer a request from what its log
+   * already holds (the migration scenario switches authorization servers
+   * once a token has been accepted). The hosted server then brings the
+   * scenario's log up to date from its store before every request, not only
+   * the first one a process sees, so a request that lands on another
+   * process sees what the previous one recorded (src/hosted/session.ts).
+   */
+  readonly answersFromLog?: boolean;
+  /**
    * Client-side choreography as data (see src/steps). When present the
    * runner includes it in MCP_CONFORMANCE_CONTEXT as `steps`, so a client
    * with no bespoke handler for this scenario can still drive it.

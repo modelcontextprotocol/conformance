@@ -819,16 +819,6 @@ const HOSTED_AUTH_SCENARIOS = [
   'auth/authorization-server-migration'
 ];
 
-/**
- * Scenarios that need one process's memory across requests. The migration
- * scenario's PRM switches authorization servers once a token has been
- * accepted; a process whose replayed log predates that acceptance keeps
- * sending the client to the first one (val.town excludes it too).
- */
-const SINGLE_PROCESS_ONLY = new Set<string>([
-  'auth/authorization-server-migration'
-]);
-
 const AUX_ROLES: AuxOriginRole[] = ['as', 'as2'];
 
 interface Deployment {
@@ -836,7 +826,7 @@ interface Deployment {
   close(): Promise<void>;
 }
 
-async function deploy(processes: number): Promise<Deployment> {
+async function deploy(processes: number, evict = false): Promise<Deployment> {
   let handlers: Array<(req: Request) => Promise<Response>> = [];
   let turn = 0;
   const front = await listenFetch(0, (req) =>
@@ -860,6 +850,12 @@ async function deploy(processes: number): Promise<Deployment> {
     return async (req: Request) => {
       const res = await bridge(req);
       await sessions.flush();
+      // An isolate that drops every cell between requests, as one that
+      // idles out would: each request rebuilds its cell from the store.
+      if (evict) {
+        for (const run of sessions.list())
+          await sessions.destroy(run.id, false);
+      }
       return res;
     };
   });
@@ -908,84 +904,91 @@ function revisionsOf(scenario: string): SpecVersion[] {
 }
 
 describe.each([
-  { label: 'one process', processes: 1 },
-  { label: 'two processes sharing a store', processes: 2 }
-])('everything-client through the hosted server ($label)', ({ processes }) => {
-  let dep: Deployment;
-  beforeAll(async () => {
-    dep = await deploy(processes);
-  });
-  afterAll(async () => {
-    await dep.close();
-    for (const k of [
-      'MCP_CONFORMANCE_SCENARIO',
-      'MCP_CONFORMANCE_PROTOCOL_VERSION',
-      'MCP_CONFORMANCE_CONTEXT'
-    ])
-      delete process.env[k];
-  });
-
-  const scenarios = HOSTED_AUTH_SCENARIOS.filter(
-    (s) => processes === 1 || !SINGLE_PROCESS_ONLY.has(s)
-  );
-  for (const scenario of scenarios) {
-    for (const revision of revisionsOf(scenario)) {
-      it(`${scenario} passes at ${revision}`, async () => {
-        const cell = `p${processes}/${revision}/${scenario}`;
-        // What a person would copy from the cell's config page.
-        const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then(
-          (r) => r.json()
-        );
-        expect(config.cells).toHaveLength(1);
-        const { url, env } = config.cells[0];
-        delete process.env.MCP_CONFORMANCE_CONTEXT;
-        Object.assign(process.env, env);
-
-        const handler = (await everythingClient(revision))(scenario);
-        expect(handler).toBeDefined();
-        let clientError: string | undefined;
-        try {
-          await handler!(url);
-        } catch (e) {
-          clientError = String(e);
-        }
-
-        const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
-          r.json()
-        );
-        const failures = results.checks.filter(
-          (c: ConformanceCheck) => c.status === 'FAILURE'
-        );
-        // The client error is shown either way: it usually explains a failure.
-        const allowed = getScenario(scenario)?.allowClientError;
-        expect({ clientError, failures, verdict: results.verdict }).toEqual({
-          clientError: allowed ? clientError : undefined,
-          failures: [],
-          verdict: 'pass'
-        });
-      });
-    }
+  { label: 'one process', processes: 1, evict: false },
+  { label: 'two processes sharing a store', processes: 2, evict: false },
+  {
+    label: 'two processes that forget every cell after each request',
+    processes: 2,
+    evict: true
   }
+])(
+  'everything-client through the hosted server ($label)',
+  ({ processes, evict }) => {
+    let dep: Deployment;
+    beforeAll(async () => {
+      dep = await deploy(processes, evict);
+    });
+    afterAll(async () => {
+      await dep.close();
+      for (const k of [
+        'MCP_CONFORMANCE_SCENARIO',
+        'MCP_CONFORMANCE_PROTOCOL_VERSION',
+        'MCP_CONFORMANCE_CONTEXT'
+      ])
+        delete process.env[k];
+    });
 
-  // scope-retry-limit's 410 cut-off counts the answers in each process's
-  // copy of the log, so across processes a client that never stops is cut
-  // off later. The verdict counts every attempt in the merged log, so it
-  // still fails such a client.
-  it('auth/scope-retry-limit still fails a client with no retry limit', async () => {
-    const cell = `p${processes}-noretry/2025-11-25/auth/scope-retry-limit`;
-    const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then((r) =>
-      r.json()
-    );
-    await noRetryLimitClient(config.cells[0].url).catch(() => undefined);
-    const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
-      r.json()
-    );
-    expect(
-      results.checks.find((c: ConformanceCheck) => c.id === 'scope-retry-limit')
-    ).toMatchObject({ status: 'FAILURE' });
-    expect(results.verdict).toBe('fail');
-  });
-});
+    for (const scenario of HOSTED_AUTH_SCENARIOS) {
+      for (const revision of revisionsOf(scenario)) {
+        it(`${scenario} passes at ${revision}`, async () => {
+          const cell = `p${processes}/${revision}/${scenario}`;
+          // What a person would copy from the cell's config page.
+          const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then(
+            (r) => r.json()
+          );
+          expect(config.cells).toHaveLength(1);
+          const { url, env } = config.cells[0];
+          delete process.env.MCP_CONFORMANCE_CONTEXT;
+          Object.assign(process.env, env);
+
+          const handler = (await everythingClient(revision))(scenario);
+          expect(handler).toBeDefined();
+          let clientError: string | undefined;
+          try {
+            await handler!(url);
+          } catch (e) {
+            clientError = String(e);
+          }
+
+          const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
+            r.json()
+          );
+          const failures = results.checks.filter(
+            (c: ConformanceCheck) => c.status === 'FAILURE'
+          );
+          // The client error is shown either way: it usually explains a failure.
+          const allowed = getScenario(scenario)?.allowClientError;
+          expect({ clientError, failures, verdict: results.verdict }).toEqual({
+            clientError: allowed ? clientError : undefined,
+            failures: [],
+            verdict: 'pass'
+          });
+        });
+      }
+    }
+
+    // scope-retry-limit's 410 cut-off counts the answers in each process's
+    // copy of the log, so across processes a client that never stops is cut
+    // off later. The verdict counts every attempt in the merged log, so it
+    // still fails such a client.
+    it('auth/scope-retry-limit still fails a client with no retry limit', async () => {
+      const cell = `p${processes}-noretry/2025-11-25/auth/scope-retry-limit`;
+      const config = await fetch(`${dep.rs}/s/${cell}?format=json`).then((r) =>
+        r.json()
+      );
+      await noRetryLimitClient(config.cells[0].url).catch(() => undefined);
+      const results = await fetch(`${dep.rs}/results/${cell}`).then((r) =>
+        r.json()
+      );
+      expect(
+        results.checks.find(
+          (c: ConformanceCheck) => c.id === 'scope-retry-limit'
+        )
+      ).toMatchObject({ status: 'FAILURE' });
+      expect(results.verdict).toBe('fail');
+    });
+  }
+);
 
 function originOf(server: Server): string {
   return `http://localhost:${(server.address() as { port: number }).port}`;
