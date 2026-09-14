@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
-import { ALL_SPEC_VERSIONS } from './scenarios';
+import { ALL_SPEC_VERSIONS } from './scenarios/applicability';
 import { SPEC_VERSION_TIMELINE, type SpecVersion } from './types';
 
 /**

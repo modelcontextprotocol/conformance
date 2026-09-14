@@ -24,7 +24,7 @@
  */
 
 import type { ServerResponse } from 'http';
-import { isStatefulVersion } from '../connection/select';
+import { isStatefulVersion } from '../connection/versions';
 import type { ConformanceCheck, SpecVersion } from '../types';
 
 export const WIRE_REJECTED_CHECK_ID = 'hosted-wire-rejected';

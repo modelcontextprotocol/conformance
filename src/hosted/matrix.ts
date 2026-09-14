@@ -17,7 +17,8 @@
  * `n/a` cells are never mounted; the other three are, when startable.
  */
 
-import { isScenarioApplicableAt, scenarios } from '../scenarios';
+import { scenarios } from '../scenarios';
+import { isScenarioApplicableAt } from '../scenarios/applicability';
 import {
   listRequirementRevisions,
   loadRequirements,

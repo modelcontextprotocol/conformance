@@ -15,7 +15,7 @@ import {
   withRequiredDraftResultFields,
   type ScenarioContext
 } from '../../../../mock-server';
-import { isStatefulVersion } from '../../../../connection/select';
+import { isStatefulVersion } from '../../../../connection/versions';
 import { createRequestLogger } from '../../../request-logger';
 import { MockTokenVerifier } from './mockTokenVerifier';
 import { SpecReferences } from '../spec-references';

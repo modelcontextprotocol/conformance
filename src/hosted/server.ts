@@ -69,7 +69,7 @@ import {
   tapJsonBody
 } from './body';
 import { identityFrom } from './identity';
-import { isStatefulVersion } from '../connection/select';
+import { isStatefulVersion } from '../connection/versions';
 import {
   answeredVersion,
   describeRequest,

@@ -12,7 +12,7 @@ import express from 'express';
 import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
 import type { MockHandler, MockServer, RequestHandlers } from './index';
-import { STATELESS_SPEC_VERSIONS } from '../connection/select';
+import { STATELESS_SPEC_VERSIONS } from '../connection/versions';
 import { validateWireMessage } from '../validation/wire-schema';
 import { capabilitiesFromHandlers, listenMockHandler } from './stateful';
 

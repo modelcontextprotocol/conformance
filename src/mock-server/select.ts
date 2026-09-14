@@ -1,6 +1,6 @@
 import type { SpecVersion } from '../types';
 import type { MockHandler, MockServer, RequestHandlers } from './index';
-import { isStatefulVersion } from '../connection/select';
+import { isStatefulVersion } from '../connection/versions';
 import { createHandlerStateful, createServerStateful } from './stateful';
 import { createHandlerStateless, createServerStateless } from './stateless';
 

@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { createHash } from 'crypto';
 import type { ConformanceCheck } from '../../../../types';
 import type { ScenarioContext } from '../../../../mock-server';
-import { isStatefulVersion } from '../../../../connection/select';
+import { isStatefulVersion } from '../../../../connection/versions';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier, tokenWithScopes } from './mockTokenVerifier';
