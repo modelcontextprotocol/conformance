@@ -89,7 +89,8 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
       matrix.cell('auth/authorization-server-migration', '2026-07-28')
     ).toMatchObject({
       startable: false,
-      startReason: 'needs relay origin(s) [as2]'
+      startReason:
+        'needs a second sign-in server, which this deployment is not set up with'
     });
     expect(
       buildMatrix({ auxOrigins: { as: asOrigin, as2: asOrigin } }).cell(
@@ -100,7 +101,11 @@ describe('hosted auth scenarios (RS + AS relay)', () => {
     // Scenarios without authHandlers() stay unstartable regardless.
     expect(
       startability(getScenario('auth/dpop')!, { auxOrigins: { as: asOrigin } })
-    ).toEqual({ startable: false, reason: 'not converted for hosting yet' });
+    ).toEqual({
+      startable: false,
+      reason:
+        'not available on the hosted server yet; run it with the conformance CLI'
+    });
   });
 
   it('rejects /__aux/* without the relay secret', async () => {

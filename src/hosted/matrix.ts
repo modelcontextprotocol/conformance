@@ -127,6 +127,27 @@ export function scoringFor(
   return { scoring: 'n/a', reason: notApplicableReason(scenario.source) };
 }
 
+/** What each relay role is, as a client developer would call it. */
+const RELAY_ROLE_WORDS: Record<AuxOriginRole, string> = {
+  as: 'a separate sign-in server',
+  as2: 'a second sign-in server',
+  idp: 'a separate identity provider'
+};
+
+/**
+ * Why a scenario that needs these relay origins cannot start. The origins
+ * are configured with --as-origin / --as2-origin / --idp-origin (see the
+ * hosted README); the page says what is missing, not how it is configured.
+ */
+export function missingRelaysReason(missing: readonly AuxOriginRole[]): string {
+  const needs = missing.map((r) => RELAY_ROLE_WORDS[r]).join(' and ');
+  return `needs ${needs}, which this deployment is not set up with`;
+}
+
+/** Why a scenario with neither handler() nor authHandlers() cannot start. */
+export const NOT_HOSTED_REASON =
+  'not available on the hosted server yet; run it with the conformance CLI';
+
 /**
  * Whether this deployment can mount `scenario` at all, and if not, why.
  * Takes a scenario's catalog entry or the scenario itself.
@@ -143,13 +164,10 @@ export function startability(
   if (scenario.auxRoles) {
     const missing = scenario.auxRoles.filter((r) => !opts.auxOrigins?.[r]);
     if (missing.length) {
-      return {
-        startable: false,
-        reason: `needs relay origin(s) [${missing.join(', ')}]`
-      };
+      return { startable: false, reason: missingRelaysReason(missing) };
     }
   } else if (!scenario.hostable) {
-    return { startable: false, reason: 'not converted for hosting yet' };
+    return { startable: false, reason: NOT_HOSTED_REASON };
   }
   return { startable: true };
 }

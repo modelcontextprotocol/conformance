@@ -69,10 +69,15 @@ describe('val.town fetch bridge', () => {
     expect(await r.text()).toContain('The sum of 7 and 4 is 11');
   });
 
-  it('marks single-process scenarios as not startable on val.town, but runs MRTR', async () => {
-    const r = await post('/s/x/2025-11-25/sse-retry', { jsonrpc: '2.0' });
+  it('says in plain words why elicitation cannot run on val.town, but runs MRTR', async () => {
+    const r = await post(
+      '/s/x/2025-11-25/elicitation-sep1034-client-defaults/mcp',
+      { jsonrpc: '2.0' }
+    );
     expect(r.status).toBe(501);
-    expect((await r.json()).reason).toMatch(/single-process host/);
+    expect((await r.json()).reason).toMatch(
+      /answer arrives as a separate request that Val Town cannot guarantee reaches the same instance/
+    );
     const list = await handler(new Request('http://test/scenarios')).then((r) =>
       r.json()
     );

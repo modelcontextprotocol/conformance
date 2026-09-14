@@ -221,7 +221,9 @@ describe('hosted HTML', () => {
     expect(html).toContain('<a href="/s">Start a new run</a>');
     for (const r of matrix.revisions) expect(html).toContain(`<th>${r}</th>`);
     expect(html).toContain('<code>tools_call</code>');
-    expect(html).toContain('not startable: needs relay origin(s) [as]');
+    expect(html).toContain(
+      'not startable: needs a separate sign-in server, which this deployment is not set up with'
+    );
     expect(html).toContain(
       'n/a <span class=muted>— introduced in 2025-06-18, removed in 2026-07-28'
     );
@@ -682,7 +684,7 @@ describe('hosted HTML', () => {
       `<li><code>sse-retry</code> <span class=muted>${rev}</span> — excluded &lt;here&gt;</li>`
     );
     expect(bottom).toMatch(
-      /<li><code>auth\/metadata-default<\/code> <span class=muted>[^<]*<\/span> — needs relay origin\(s\) \[as\]<\/li>/
+      /<li><code>auth\/metadata-default<\/code> <span class=muted>[^<]*<\/span> — needs a separate sign-in server, which this deployment is not set up with<\/li>/
     );
   });
 

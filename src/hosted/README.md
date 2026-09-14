@@ -498,6 +498,15 @@ Scenarios needing `as2`/`idp` origins become startable when `--as2-origin` /
 `CONFORMANCE_RELAY_ROLE=as2|idp`. `auth/authorization-server-migration` is
 the one converted scenario that needs `as2`; none needs `idp` yet.
 
+The pages and the 501 answer say what a cell lacks in words a client
+developer knows, not how to configure it (`missingRelaysReason()` in
+`matrix.ts`): "a separate sign-in server" is the `as` relay (`--as-origin`,
+`CONFORMANCE_AS_ORIGIN` on val.town), "a second sign-in server" the `as2`
+relay (`--as2-origin`, `CONFORMANCE_AS2_ORIGIN`) and "a separate identity
+provider" the `idp` relay (`--idp-origin`, `CONFORMANCE_IDP_ORIGIN`). A
+scenario with neither `handler()` nor `authHandlers()` reads "not available
+on the hosted server yet; run it with the conformance CLI".
+
 **Fidelity note:** the hosted AS issuer always carries a `/r/<cell>` path
 component, so scenarios that locally test root-issuer discovery
 (`auth/metadata-default`, `auth/metadata-var1`) become path-issuer tests when
@@ -512,10 +521,13 @@ fetch-based runtimes (val.town, Deno Deploy, Bun, Workers with
 are listed in `examples/hosted/valtown-manifest.json`.
 
 val.town spreads one run's requests over several isolates that share no
-memory, so `valtown.ts` excludes the scenarios whose checks depend on one
-process seeing consecutive requests (`sse-retry`,
-`elicitation-sep1034-client-defaults`); the matrix shows them as not
-startable with that reason.
+memory, and cannot send a request to the isolate holding another one open,
+so `valtown.ts` excludes two scenarios, each with the reason the page shows:
+`sse-retry` keeps a response stream open and times the client's reconnect
+across requests that can reach different instances, and
+`elicitation-sep1034-client-defaults` keeps the tool call's response open on
+one instance while it waits for the client's answer to an elicitation
+request, which arrives as a separate request that may reach another.
 `sep-2322-client-request-state` (MRTR) runs here: the only state its retry
 needs, the original request id and the exact `requestState`, travels inside
 the `requestState` it sends, with a digest so any isolate can rebuild and

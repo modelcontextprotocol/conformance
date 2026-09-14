@@ -64,11 +64,20 @@ describe('hosted matrix', () => {
     expect(bare.cell('auth/basic-cimd', '2025-11-25')).toMatchObject({
       scoring: 'scored',
       startable: false,
-      startReason: 'needs relay origin(s) [as]'
+      startReason:
+        'needs a separate sign-in server, which this deployment is not set up with'
     });
     expect(bare.cell('auth/dpop', '2025-11-25')).toMatchObject({
       startable: false,
-      startReason: 'not converted for hosting yet'
+      startReason:
+        'not available on the hosted server yet; run it with the conformance CLI'
+    });
+    // Every missing relay is named, in the order the scenario needs them.
+    expect(
+      bare.cell('auth/authorization-server-migration', '2026-07-28')
+    ).toMatchObject({
+      startReason:
+        'needs a separate sign-in server and a second sign-in server, which this deployment is not set up with'
     });
     // n/a cells are never startable and carry no start reason.
     expect(bare.cell('initialize', '2026-07-28')).toMatchObject({
@@ -93,8 +102,8 @@ describe('hosted matrix', () => {
       startable: false,
       startReason: 'nope'
     });
-    // An exclusion outranks a missing relay origin: val.town excludes the
-    // migration scenario and has no as2 relay, and must say the former.
+    // An exclusion outranks a missing relay origin: a deployment that
+    // excludes a scenario and lacks its relay must say the former.
     const excludedAuth = buildMatrix({
       auxOrigins: { as: 'https://as.example' },
       exclude: { 'auth/authorization-server-migration': 'single process' }

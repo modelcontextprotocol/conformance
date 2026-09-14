@@ -29,6 +29,7 @@ import type {
 import { isStatefulVersion } from '../connection/versions';
 import { hostedScenarios } from './catalog';
 import { CHALLENGE_RETENTION_MS, type RunStore } from './store';
+import { missingRelaysReason, NOT_HOSTED_REASON } from './matrix';
 import {
   addProtocolVersion,
   atCellRevision,
@@ -402,7 +403,7 @@ export class SessionManager {
       if (missing.length) {
         throw new NotHostableError(
           ref.scenarioName,
-          `needs relay origin(s) [${missing.join(', ')}]`
+          missingRelaysReason(missing)
         );
       }
       const handlers = scenario.authHandlers({
@@ -1004,8 +1005,7 @@ export class UnknownScenarioError extends Error {
 export class NotHostableError extends Error {
   constructor(name: string, why?: string) {
     super(
-      `Scenario '${name}' cannot run hosted` +
-        (why ? `: ${why}` : ' (not converted for hosting yet)')
+      `scenario '${name}' cannot be started here: ${why ?? NOT_HOSTED_REASON}`
     );
   }
 }

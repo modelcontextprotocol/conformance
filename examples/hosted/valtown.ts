@@ -34,21 +34,19 @@ registerRequirementSources(REQUIREMENT_SOURCES);
 
 /**
  * val.town spreads one run's requests over several isolates that share no
- * memory. Scenarios whose checks depend on one process seeing consecutive
- * requests (SSE reconnect timing, elicitation round-trips) cannot be judged
- * there; the matrix shows them as not startable with this reason. (MRTR
- * carries its cross-request state inside the requestState it sends, and the
- * SEP-2352 migration scenario reads the run's latest log before every
- * request, so both run here.)
+ * memory, and cannot route a request to the isolate holding another one
+ * open. These scenarios cannot be served there; the matrix shows each as
+ * not startable with its reason, written for the client developer reading
+ * the page. (MRTR carries its cross-request state inside the requestState
+ * it sends, and the SEP-2352 migration scenario reads the run's latest log
+ * before every request, so both run here.)
  */
-const SINGLE_PROCESS_ONLY =
-  "needs a single-process host (Val Town isolates don't share in-memory state)";
-const EXCLUDE = Object.fromEntries(
-  ['sse-retry', 'elicitation-sep1034-client-defaults'].map((name) => [
-    name,
-    SINGLE_PROCESS_ONLY
-  ])
-);
+const EXCLUDE: Record<string, string> = {
+  'sse-retry':
+    'its reconnect test keeps a response stream open and times the reconnect across requests, and Val Town can send those requests to different server instances that share no memory',
+  'elicitation-sep1034-client-defaults':
+    "keeps the tool call's response open on one server instance while it waits for your client's answer to an elicitation request, and that answer arrives as a separate request that Val Town cannot guarantee reaches the same instance"
+};
 
 // Auth scenarios need a second public origin (RFC 8414 well-known is
 // origin-rooted). Deploy examples/hosted/valtown-relay.ts as a separate val

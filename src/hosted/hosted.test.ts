@@ -108,7 +108,8 @@ describe('hosted server', () => {
     expect(byName.get('auth/basic-cimd')!.cells[0]).toMatchObject({
       scoring: 'scored',
       startable: false,
-      startReason: 'needs relay origin(s) [as]'
+      startReason:
+        'needs a separate sign-in server, which this deployment is not set up with'
     });
     // The deployment's exclusion list shows up with its reason.
     expect(byName.get('sse-retry')!.cells[0]).toMatchObject({
@@ -501,14 +502,20 @@ describe('hosted server', () => {
       scoring: 'n/a',
       reason: 'introduced in 2025-06-18, removed in 2026-07-28'
     });
-    // not converted for hosting yet
+    // not available hosted yet
     res = await postMcp(`/s/x/${REV_STATEFUL}/auth/dpop`, body);
     expect(res.status).toBe(501);
-    expect((await res.json()).reason).toBe('not converted for hosting yet');
+    expect(await res.json()).toMatchObject({
+      error: `scenario 'auth/dpop' at ${REV_STATEFUL} cannot be started here: not available on the hosted server yet; run it with the conformance CLI`,
+      reason:
+        'not available on the hosted server yet; run it with the conformance CLI'
+    });
     // needs a relay origin
     res = await postMcp(`/s/x/${REV_STATEFUL}/auth/basic-cimd/mcp`, body);
     expect(res.status).toBe(501);
-    expect((await res.json()).reason).toBe('needs relay origin(s) [as]');
+    expect((await res.json()).reason).toBe(
+      'needs a separate sign-in server, which this deployment is not set up with'
+    );
     // excluded by the deployment
     res = await postMcp(`/s/x/${REV_STATEFUL}/sse-retry`, body);
     expect(res.status).toBe(501);
@@ -679,7 +686,8 @@ describe('hosted server', () => {
       scoring: 'scored',
       verdict: 'incomplete',
       startable: false,
-      startReason: 'needs relay origin(s) [as]'
+      startReason:
+        'needs a separate sign-in server, which this deployment is not set up with'
     });
     expect(
       await fetch(`${base}/results/fresh/${REV_STATEFUL}/sse-retry`).then((r) =>
@@ -710,7 +718,9 @@ describe('hosted server', () => {
     );
     expect(
       await page(`/results/fresh/${REV_STATEFUL}/auth/basic-cimd`)
-    ).toContain('not startable here: needs relay origin(s) [as]');
+    ).toContain(
+      'not startable here: needs a separate sign-in server, which this deployment is not set up with'
+    );
 
     // Only an unknown revision or scenario is a 404.
     expect(
