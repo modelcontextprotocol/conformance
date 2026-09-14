@@ -1,10 +1,14 @@
 import { testScenarioContext } from '../../mock-server/testing';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ToolsCallScenario } from './tools_call';
 import { DRAFT_PROTOCOL_VERSION } from '../../types';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
+import { hostedScenarios } from '../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 describe('tools_call scenario', () => {
   it('emits a single FAILURE check when the tool was never called', async () => {

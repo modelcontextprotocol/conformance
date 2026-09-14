@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import { buildReport, incompleteNote, verdictFor } from './report';
 import { cellId, finalizeChecks, type CellRef } from './session';
 import { identityCheck, identityOf } from './identity';
 import { legacyProbeCheck } from './wire';
 import type { ConformanceCheck } from '../types';
+import { hostedScenarios } from './catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const check = (status: ConformanceCheck['status']): ConformanceCheck => ({
   id: 'c',

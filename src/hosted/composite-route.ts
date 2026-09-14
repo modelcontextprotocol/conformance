@@ -26,7 +26,7 @@ import {
   type CompositeView
 } from './composite';
 import { renderComposite } from './html';
-import { scenarios } from '../scenarios';
+import { hostedScenarios } from './catalog';
 import type { SpecVersion } from '../types';
 
 /** What the composite route borrows from the hosted server. */
@@ -127,7 +127,7 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
       };
     }
     for (const name of names) {
-      if (!scenarios.has(name)) {
+      if (!hostedScenarios.has(name)) {
         return { status: 404, error: `unknown scenario '${name}'` };
       }
       const reason = notComposableReason(name);
@@ -170,7 +170,7 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
         const cell = deps.matrix.cell(name, revision)!;
         return {
           scenario: name,
-          description: scenarios.get(name)!.description,
+          description: hostedScenarios.meta(name)!.description,
           resultsUrl: deps.resultsUrlFor(req, runId, revision, name),
           ...(cell.steps && { steps: cell.steps })
         };
@@ -190,7 +190,7 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
     found = (async () => {
       const results: ChildResult[] = [];
       for (const name of names) {
-        const scenario = freshScenario(scenarios.get(name)!);
+        const scenario = freshScenario(hostedScenarios.get(name)!);
         const url = deps.cellBaseUrl(req, {
           runId: 'owners',
           revision,
@@ -249,6 +249,7 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
       return;
     }
 
+    await hostedScenarios.load(names);
     const runs: HostedRun[] = [];
     for (const scenarioName of names) {
       const run = deps.mountCell(req, { runId, revision, scenarioName }, res);

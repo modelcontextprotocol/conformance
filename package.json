@@ -22,6 +22,7 @@
     "traceability": "tsx src/index.ts traceability",
     "sync-schema": "tsx scripts/sync-schema.ts",
     "hosted:bundle-requirements": "tsx examples/hosted/bundle-requirements.ts",
+    "hosted:bundle-catalog": "tsx src/hosted/bundle-catalog.ts",
     "check": "npm run typecheck && npm run lint",
     "typecheck": "tsgo --noEmit",
     "prepack": "npm run build",

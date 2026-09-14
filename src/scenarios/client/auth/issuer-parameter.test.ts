@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { finalizeChecks } from '../../../hosted/session';
 import { testScenarioContext } from '../../../mock-server/testing';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
@@ -6,6 +6,10 @@ import {
   IssParameterNormalizedVariantScenario,
   MetadataIssuerMismatchScenario
 } from './issuer-parameter';
+import { hostedScenarios } from '../../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 /**
  * The observed issuers come from the log. When it holds none (the client

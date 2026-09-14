@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import {
   findingsOf,
   groupCauses,
@@ -13,6 +13,10 @@ import { untestableCheck } from '../scenarios/untestable';
 import { identityCheck, identityOf } from './identity';
 import { getOnMcpCheck, legacyProbeCheck, wrongRevisionCheck } from './wire';
 import type { ConformanceCheck } from '../types';
+import { hostedScenarios } from './catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const check = (over: Partial<ConformanceCheck>): ConformanceCheck => ({
   id: 'c',
@@ -150,9 +154,12 @@ describe('legacyStop', () => {
 
 describe('findingsOf', () => {
   // What tools_call reports when it has seen nothing: its own expectation.
-  const waiting = finalizeChecks('tools_call', [], '2025-11-25').find(
-    (c) => c.status === 'FAILURE'
-  )!;
+  let waiting: ConformanceCheck;
+  beforeAll(() => {
+    waiting = finalizeChecks('tools_call', [], '2025-11-25').find(
+      (c) => c.status === 'FAILURE'
+    )!;
+  });
   const wrong = wrongRevisionCheck(
     '2026-07-28',
     'tools/list',

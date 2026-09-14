@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
 import {
   duration,
@@ -18,6 +18,10 @@ import { buildReport } from './report';
 import { cellId, DEFAULT_CELL_TTL_MS } from './session';
 import { CLIENTS } from './client-config';
 import { identityCheck, identityOf } from './identity';
+import { hostedScenarios } from './catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const matrix = buildMatrix({ exclude: { 'sse-retry': 'excluded <here>' } });
 

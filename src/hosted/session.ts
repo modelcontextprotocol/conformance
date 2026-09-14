@@ -22,7 +22,7 @@ import {
   isSpecVersion
 } from '../types';
 import { createHandlerFor, type ScenarioContext } from '../mock-server';
-import { getScenario, scenarios } from '../scenarios';
+import { hostedScenarios } from './catalog';
 import type { RunStore } from './store';
 import {
   addProtocolVersion,
@@ -244,7 +244,7 @@ export function finalizeChecks(
   merged: ConformanceCheck[],
   revision?: SpecVersion
 ): ConformanceCheck[] {
-  const proto = getScenario(scenarioName);
+  const proto = hostedScenarios.get(scenarioName);
   if (!proto) return merged;
   try {
     const scenario = freshScenario(proto);
@@ -304,7 +304,7 @@ export class SessionManager {
       return existing;
     }
 
-    const proto = getScenario(ref.scenarioName);
+    const proto = hostedScenarios.get(ref.scenarioName);
     if (!proto) throw new UnknownScenarioError(ref.scenarioName);
 
     const scenario = freshScenario(proto);
@@ -382,6 +382,7 @@ export class SessionManager {
     ref: CellRef,
     baseUrlFor: (ref: CellRef) => string
   ): Promise<HostedRun> {
+    await hostedScenarios.load([ref.scenarioName]);
     const run = this.getOrCreate(ref, baseUrlFor);
     await this.hydrate(run);
     return run;
@@ -615,6 +616,7 @@ export class SessionManager {
   async results(id: string): Promise<RunResults | undefined> {
     const ref = parseCellId(id);
     if (!ref) return undefined;
+    await hostedScenarios.load([ref.scenarioName]);
     // A cell that only a config page created has seen no client: there is
     // nothing to judge, so it reads like a cell that does not exist yet.
     const run = this.runs.get(id)?.touched ? this.runs.get(id) : undefined;
@@ -759,7 +761,7 @@ function judgedAtRevision(
   const spoke = hostedLog.some((c) => c.id === REVISION_SPOKEN_CHECK_ID);
   const reached =
     spoke || hostedLog.some((c) => c.id === REVISION_REACHED_CHECK_ID);
-  const tested = getScenario(ref.scenarioName)?.allowClientError
+  const tested = hostedScenarios.meta(ref.scenarioName)?.allowClientError
     ? reached
     : spoke;
   const hosted = hostedLog.filter(
@@ -822,7 +824,7 @@ export class StoreUnavailableError extends Error {
 export class UnknownScenarioError extends Error {
   constructor(name: string) {
     super(
-      `Unknown scenario '${name}'. Available: ${Array.from(scenarios.keys()).join(', ')}`
+      `Unknown scenario '${name}'. Available: ${hostedScenarios.names.join(', ')}`
     );
   }
 }

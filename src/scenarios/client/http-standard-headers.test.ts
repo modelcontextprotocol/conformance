@@ -1,7 +1,11 @@
 import { testScenarioContext } from '../../mock-server/testing';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { HttpStandardHeadersScenario } from './http-standard-headers';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
+import { hostedScenarios } from '../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 /**
  * Negative test for SEP-2243 standard-header checks: a client that omits

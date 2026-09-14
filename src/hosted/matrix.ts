@@ -17,20 +17,20 @@
  * `n/a` cells are never mounted; the other three are, when startable.
  */
 
-import { scenarios } from '../scenarios';
 import { isScenarioApplicableAt } from '../scenarios/applicability';
 import {
   listRequirementRevisions,
   loadRequirements,
   type RequirementSet
 } from '../requirements';
-import {
-  AuthHandlerScenario,
-  type AuxOriginRole,
-  type Scenario,
-  type ScenarioSource,
-  type SpecVersion
+import type {
+  AuxOriginRole,
+  Scenario,
+  ScenarioSource,
+  SpecVersion
 } from '../types';
+import { hostedScenarios } from './catalog';
+import { scenarioMeta, type ScenarioMeta } from './scenario-meta';
 import type { Step } from '../steps';
 
 export type CellScoring = 'scored' | 'not_scored' | 'unlisted' | 'n/a';
@@ -127,16 +127,20 @@ export function scoringFor(
   return { scoring: 'n/a', reason: notApplicableReason(scenario.source) };
 }
 
-/** Whether this deployment can mount `scenario` at all, and if not, why. */
+/**
+ * Whether this deployment can mount `scenario` at all, and if not, why.
+ * Takes a scenario's catalog entry or the scenario itself.
+ */
 export function startability(
-  scenario: Scenario,
+  entry: Pick<ScenarioMeta, 'name' | 'auxRoles' | 'hostable'> | Scenario,
   opts: MatrixOptions
 ): { startable: true } | { startable: false; reason: string } {
+  const scenario = 'hostable' in entry ? entry : scenarioMeta(entry);
   // The deployment's own refusal comes first: a scenario it will not mount
   // stays refused, with its reason, whatever relay origins it has.
   const excluded = opts.exclude?.[scenario.name];
   if (excluded) return { startable: false, reason: excluded };
-  if (scenario instanceof AuthHandlerScenario) {
+  if (scenario.auxRoles) {
     const missing = scenario.auxRoles.filter((r) => !opts.auxOrigins?.[r]);
     if (missing.length) {
       return {
@@ -144,7 +148,7 @@ export function startability(
         reason: `needs relay origin(s) [${missing.join(', ')}]`
       };
     }
-  } else if (typeof scenario.handler !== 'function') {
+  } else if (!scenario.hostable) {
     return { startable: false, reason: 'not converted for hosting yet' };
   }
   return { startable: true };
@@ -153,7 +157,7 @@ export function startability(
 export function buildMatrix(opts: MatrixOptions = {}): HostedMatrix {
   const revisions = listRequirementRevisions();
   const requirements = revisions.map((r) => loadRequirements(r));
-  const rows: MatrixRow[] = Array.from(scenarios.values()).map((scenario) => {
+  const rows: MatrixRow[] = hostedScenarios.all().map((scenario) => {
     const start = startability(scenario, opts);
     const cells = requirements.map((req): MatrixCell => {
       const { scoring, reason } = scoringFor(scenario, req);

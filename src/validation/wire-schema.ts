@@ -96,6 +96,11 @@ interface CompiledSpec {
 
 const compiledSpecs = new Map<SpecVersion, CompiledSpec>();
 
+/** Versions whose schema has been compiled so far (each on first use). */
+export function compiledSpecVersions(): SpecVersion[] {
+  return Array.from(compiledSpecs.keys());
+}
+
 /** Patch known generator bugs in released spec schema.json files at load time
  * so validation matches the schema.ts source of truth; delete each branch (a
  * test trips) once the dated schema is fixed upstream and re-vendored. */

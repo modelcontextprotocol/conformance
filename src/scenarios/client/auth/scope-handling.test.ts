@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { finalizeChecks } from '../../../hosted/session';
 import { getScenario } from '../../index';
 import { testScenarioContext } from '../../../mock-server/testing';
@@ -9,6 +9,10 @@ import {
   type ConformanceCheck,
   type SpecVersion
 } from '../../../types';
+import { hostedScenarios } from '../../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 /**
  * The request sequence the C# SDK sent to auth/scope-step-up: its

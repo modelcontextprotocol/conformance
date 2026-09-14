@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { finalizeChecks } from '../../hosted/session';
 import type { ConformanceCheck } from '../../types';
+import { hostedScenarios } from '../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const MRTR = 'sep-2322-client-request-state';
 const REV = '2026-07-28';

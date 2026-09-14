@@ -1,5 +1,5 @@
 import { testScenarioContext } from '../../mock-server/testing';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import {
   HttpCustomHeadersScenario,
   HttpInvalidToolHeadersScenario,
@@ -8,6 +8,10 @@ import {
 } from './http-custom-headers';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
 import type { Step } from '../../steps';
+import { hostedScenarios } from '../../hosted/catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 /**
  * Pins the SEP-2243 requirement-level check IDs emitted by the custom-header

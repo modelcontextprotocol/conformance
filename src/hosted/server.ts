@@ -117,7 +117,7 @@ import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
 import { reportMarkdown, reportText } from './markdown';
 import type { ShownCheck } from './shown';
-import { scenarios } from '../scenarios';
+import { hostedScenarios } from './catalog';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
 export interface HostedServerOptions {
@@ -239,7 +239,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   ): { scenarioName: string; suffix: string } | undefined {
     for (let i = segments.length; i >= 1; i--) {
       const candidate = segments.slice(0, i).join('/');
-      if (scenarios.has(candidate)) {
+      if (hostedScenarios.has(candidate)) {
         return {
           scenarioName: candidate,
           suffix: i < segments.length ? '/' + segments.slice(i).join('/') : ''
@@ -907,6 +907,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         });
         return;
       }
+      // Config for every cell of the scope builds every one of them.
+      await hostedScenarios.loadAll();
       sendConfig(
         req,
         res,
@@ -929,6 +931,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       res.redirect(303, q === -1 ? page : page + req.originalUrl.slice(q));
       return;
     }
+
+    // The cell's own scenario and no other: a discover must not wait on
+    // every scenario module (see ./catalog.ts).
+    await hostedScenarios.load([ref.scenarioName]);
 
     if (suffix === '' && isPageRequest(req)) {
       sendConfig(
@@ -968,6 +974,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     async (req, res) => {
       const resolved = resolveCell(req.params[0].split('/'), res);
       if (!resolved) return;
+      await hostedScenarios.load([resolved.ref.scenarioName]);
       const run = await createRun(req, resolved.ref, res);
       if (!run) return;
       // Scenario expects e.g. '/.well-known/oauth-protected-resource/mcp'
@@ -1065,6 +1072,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       const { prefix, ref, suffix } = located;
       const cell = matrix.cell(ref.scenarioName, ref.revision)!;
       if (!checkStartable(cell, res)) return;
+      await hostedScenarios.load([ref.scenarioName]);
       const search = req.url.includes('?')
         ? req.url.slice(req.url.indexOf('?'))
         : '';
@@ -1138,6 +1146,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         scenarioName: resolved.scenarioName
       };
       const cell = matrix.cell(resolved.scenarioName, ref.revision)!;
+      await hostedScenarios.load([ref.scenarioName]);
       // A cell nobody has hit yet is a valid, incomplete cell — not an
       // unknown run: the config page links here before any traffic.
       const r =
@@ -1156,6 +1165,8 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
 
     // Run or column scope: a verdict per cell of the matrix.
     const scope = segments.length === 2 ? (revision as SpecVersion) : undefined;
+    // A verdict per cell needs every cell's scenario.
+    await hostedScenarios.loadAll();
     const report = await buildReport(matrix, runId, scope, reportSources(req));
     // The live page lists the run's frozen copies; nothing else needs them.
     const frozen =
@@ -1174,6 +1185,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       res.status(400).json({ error: 'invalid run-id' });
       return;
     }
+    await hostedScenarios.loadAll();
     const report = await buildReport(
       matrix,
       runId,

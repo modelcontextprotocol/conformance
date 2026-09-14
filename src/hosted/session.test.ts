@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import http from 'http';
 import {
   SessionManager,
@@ -9,6 +9,10 @@ import {
 } from './session';
 import { MemoryRunStore } from './store';
 import type { ConformanceCheck, RequestListener } from '../types';
+import { hostedScenarios } from './catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const ref: CellRef = {
   runId: 'r1',

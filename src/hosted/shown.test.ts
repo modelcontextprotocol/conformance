@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { shownChecks } from './shown';
 import { finalizeChecks } from './session';
 import type { ConformanceCheck } from '../types';
+import { hostedScenarios } from './catalog';
+
+// Judged without the HTTP layer, which loads the scenarios a request needs.
+beforeAll(() => hostedScenarios.loadAll());
 
 const S = 'tools_call';
 const R = '2025-11-25';
