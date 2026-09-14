@@ -12,6 +12,7 @@ import { createHostedApp } from './server';
 import { MemoryRunStore, type RunStore } from './store';
 import { DEFAULT_COMPOSITES } from './composite';
 import type { ConformanceCheck } from '../types';
+import type { TrafficRow } from './traffic';
 
 const REV = '2026-07-28';
 const MRTR = 'sep-2322-client-request-state';
@@ -74,6 +75,18 @@ class FlakyStore implements RunStore {
   }
   listChallenges(since: number, requester: string) {
     return this.read(() => this.inner.listChallenges(since, requester));
+  }
+  startAttempt(id: string, at: number) {
+    return this.inner.startAttempt(id, at);
+  }
+  loadAttempts(id: string) {
+    return this.read(() => this.inner.loadAttempts(id));
+  }
+  saveTraffic(id: string, writer: string, row: TrafficRow) {
+    return this.inner.saveTraffic(id, writer, row);
+  }
+  loadTraffic(id: string) {
+    return this.read(() => this.inner.loadTraffic(id));
   }
 }
 

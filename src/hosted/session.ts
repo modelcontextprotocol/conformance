@@ -28,7 +28,21 @@ import type {
 } from '../mock-server';
 import { isStatefulVersion } from '../connection/versions';
 import { hostedScenarios } from './catalog';
-import { MemoryRunStore, type RunStore } from './store';
+import {
+  MemoryRunStore,
+  attemptOfWriter,
+  attemptWriter,
+  type RunStore
+} from './store';
+import {
+  addExchange,
+  addIssued,
+  emptyRow,
+  mergeRows,
+  substance,
+  type Exchange,
+  type TrafficRow
+} from './traffic';
 import { missingRelaysReason, NOT_HOSTED_REASON } from './matrix';
 import {
   addProtocolVersion,
@@ -240,6 +254,36 @@ export interface HostedRun extends CellRef {
   queuedWrite?: Promise<void>;
   /** Each of this process's rows as last written (JSON), by writer id. */
   written: Map<string, string>;
+  /**
+   * Which attempt at the cell this build serves: 1 until the cell is reset
+   * (see SessionManager.reset()). Its checks and traffic go to rows of that
+   * attempt (see attemptWriter()).
+   */
+  attempt: number;
+  /** This build's traffic (see ./traffic.ts), written as a row of its own. */
+  traffic: TrafficRow;
+  /** Bytes of `traffic.exchanges` so far, for the row's cap. */
+  trafficSize: { bytes: number };
+  /** `traffic` as last written, without repeat counts (see substance()). */
+  trafficWritten?: string;
+  /**
+   * Hashes of the credentials the cell issued in earlier attempts: a client
+   * presenting one after a reset is treated as having none.
+   */
+  refused: Set<string>;
+  /** Builds the cell's scenario and handlers afresh, for a new attempt. */
+  build: () => CellParts;
+  /** The move to a newer attempt under way, if any (see renew()). */
+  renewal?: Promise<void>;
+}
+
+/** What building a cell makes: its scenario and the handlers it mounts. */
+export interface CellParts {
+  scenario: Scenario;
+  listener: RequestListener;
+  auxListeners?: Partial<Record<AuxOriginRole, RequestListener>>;
+  mcpPath: string;
+  context?: Record<string, unknown>;
 }
 
 export interface SessionManagerOptions {
@@ -283,6 +327,28 @@ export interface RunResults extends CellRef {
    * answer has closed yet.
    */
   awaitingInput?: true;
+  /** The attempt these results are from: the cell's current one. */
+  attempt?: number;
+  /** When a reset started the current attempt (ISO 8601). */
+  resetAt?: string;
+  /**
+   * Nothing has reached the current attempt yet: the cell was reset and the
+   * client has not sent it a request since.
+   */
+  fresh?: true;
+  /** The attempts before the current one, oldest first, each judged. */
+  earlier?: EarlierAttempt[];
+}
+
+/** An attempt before a cell's current one, as its results page lists it. */
+export interface EarlierAttempt {
+  attempt: number;
+  /** When a reset started it (ISO 8601); absent for the first. */
+  startedAt?: string;
+  results: Pick<
+    RunResults,
+    'checks' | 'recorded' | 'lastRequestAt' | 'awaitingInput'
+  >;
 }
 
 /** Hosted checks that count as exercise: what went wrong on the wire. */
@@ -377,6 +443,21 @@ export class SessionManager {
   private ownRows = new Set<string>();
   /** Without a store: the challenge notes (see noteChallenge()). */
   private challenges = new MemoryRunStore();
+  /**
+   * Without a store: each cell's attempts, and what its earlier attempts
+   * recorded (see renew()). This process is the only one.
+   */
+  private local = new MemoryRunStore();
+
+  /** Where a cell's attempts and traffic live. */
+  private get cells(): RunStore {
+    return this.store ?? this.local;
+  }
+
+  /** The row id of this process's scenario checks for the run's attempt. */
+  private rowOf(run: HostedRun): string {
+    return attemptWriter(this.writerId, run.attempt);
+  }
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
@@ -402,7 +483,38 @@ export class SessionManager {
 
     const proto = hostedScenarios.get(ref.scenarioName);
     if (!proto) throw new UnknownScenarioError(ref.scenarioName);
+    const build = () => this.buildCell(ref, id, proto, baseUrlFor);
+    const run: HostedRun = {
+      ...ref,
+      id,
+      ...build(),
+      createdAt: Date.now(),
+      lastSeenAt: Date.now(),
+      saved: false,
+      touched: false,
+      hostedChecks: [],
+      hostedWriter: `${this.writerId}.${++this.builds}${HOSTED_WRITER_SUFFIX}`,
+      identities: new Map(),
+      hostedKeys: new Set(),
+      seeded: new Map(),
+      written: new Map(),
+      attempt: 1,
+      traffic: emptyRow(),
+      trafficSize: { bytes: 0 },
+      refused: new Set(),
+      build
+    };
+    this.runs.set(id, run);
+    return run;
+  }
 
+  /** A fresh scenario for the cell and the handlers it mounts. */
+  private buildCell(
+    ref: CellRef,
+    id: string,
+    proto: Scenario,
+    baseUrlFor: (ref: CellRef) => string
+  ): CellParts {
     const scenario = freshScenario(proto);
     const ctx = hostedScenarioContext(ref.revision);
 
@@ -443,28 +555,13 @@ export class SessionManager {
     ).scenarioContext?.();
     const steps = (scenario as Scenario).steps;
     if (steps) context = { ...context, steps };
-
-    const run: HostedRun = {
-      ...ref,
-      id,
+    return {
       scenario,
       listener,
       auxListeners,
       mcpPath: scenario.mcpPath ?? '',
-      createdAt: Date.now(),
-      lastSeenAt: Date.now(),
-      context,
-      saved: false,
-      touched: false,
-      hostedChecks: [],
-      hostedWriter: `${this.writerId}.${++this.builds}${HOSTED_WRITER_SUFFIX}`,
-      identities: new Map(),
-      hostedKeys: new Set(),
-      seeded: new Map(),
-      written: new Map()
+      context
     };
-    this.runs.set(id, run);
-    return run;
   }
 
   /**
@@ -504,20 +601,24 @@ export class SessionManager {
       return (run.hydration = Promise.resolve());
     }
     const attempt: Promise<void> = (async () => {
-      const bag = seedableLog(run.scenario);
+      // A cell moved to a newer attempt meanwhile (renew()) seeds itself.
+      const scenario = run.scenario;
+      const bag = seedableLog(scenario);
       if (!bag) {
         run.hydrated = true;
         return;
       }
       const byWriter = await retrying(() => store.loadChecks(run.id));
+      if (run.scenario !== scenario) return;
       run.hydrated = true;
+      const own = this.rowOf(run);
       const merged: ConformanceCheck[] = [];
       for (const [writer, checks] of byWriter) {
         if (writer.endsWith(HOSTED_WRITER_SUFFIX)) continue;
+        if (attemptOfWriter(writer) !== run.attempt) continue;
         for (const c of checks) {
           const copy = { ...c };
-          if (writer !== this.writerId)
-            run.seeded.set(copy, JSON.stringify(copy));
+          if (writer !== own) run.seeded.set(copy, JSON.stringify(copy));
           merged.push(copy);
         }
       }
@@ -541,8 +642,129 @@ export class SessionManager {
    */
   async ready(run: HostedRun): Promise<void> {
     const seededBefore = run.hydrated === true;
-    await this.hydrate(run);
-    if (seededBefore && run.scenario.answersFromLog) await this.refresh(run);
+    const scenario = run.scenario;
+    // Whether the cell was reset since, read beside the seeding: a reset
+    // in another process means a fresh scenario here, seeded afresh.
+    await Promise.all([this.syncAttempt(run), this.hydrate(run)]);
+    if (run.scenario !== scenario) await this.hydrate(run);
+    else if (seededBefore && run.scenario.answersFromLog)
+      await this.refresh(run);
+  }
+
+  /**
+   * Move the cell to the store's current attempt if it has been reset
+   * since this process built it. When the store cannot be read, the cell
+   * is served as it stands.
+   */
+  private async syncAttempt(run: HostedRun): Promise<void> {
+    let resets: number[];
+    try {
+      resets = await retrying(() => this.cells.loadAttempts(run.id));
+    } catch (e) {
+      logStoreError(e);
+      return;
+    }
+    const attempt = resets.length + 1;
+    if (attempt > run.attempt) await this.renewTo(run, attempt);
+  }
+
+  /** renew() once per newer attempt, however many requests notice it. */
+  private renewTo(run: HostedRun, attempt: number): Promise<void> {
+    const next = (run.renewal ?? Promise.resolve()).then(() =>
+      attempt > run.attempt ? this.renew(run, attempt) : undefined
+    );
+    run.renewal = next.catch(logStoreError);
+    return run.renewal;
+  }
+
+  /**
+   * Start attempt `attempt` at the cell in this process: a fresh scenario
+   * and handlers, so nothing the client did before (a registration, a
+   * token, a step the scenario counts) carries over, and new rows for its
+   * checks and traffic. What the finished attempt recorded stays where it
+   * is: its last write lands first, and without a store it is kept in
+   * this process for results() to list. Every credential an earlier
+   * attempt issued, in any process, is refused from now on (see
+   * refusedCredential()).
+   */
+  private async renew(run: HostedRun, attempt: number): Promise<void> {
+    if (run.lastWrite) await run.lastWrite;
+    const refused = new Set(run.refused);
+    for (const h of run.traffic.issued) refused.add(h);
+    if (!this.store && run.touched) {
+      const raw = rawChecksOf(run.scenario).map((c) => ({ ...c }));
+      await this.local.saveChecks(run.id, this.rowOf(run), raw);
+      await this.local.saveChecks(run.id, run.hostedWriter, [
+        ...run.hostedChecks.map((c) => ({ ...c }))
+      ]);
+      await this.local.saveTraffic(run.id, run.hostedWriter, run.traffic);
+    }
+    try {
+      const rows = await retrying(() => this.cells.loadTraffic(run.id));
+      for (const [writer, row] of rows) {
+        if (attemptOfWriter(writer) >= attempt) continue;
+        for (const h of row.issued) refused.add(h);
+      }
+    } catch (e) {
+      logStoreError(e);
+    }
+    if (attempt <= run.attempt) return;
+    const old = run.scenario;
+    Object.assign(run, run.build(), {
+      attempt,
+      hostedChecks: [],
+      hostedWriter: attemptWriter(
+        `${this.writerId}.${++this.builds}${HOSTED_WRITER_SUFFIX}`,
+        attempt
+      ),
+      identities: new Map(),
+      hostedKeys: new Set(),
+      seeded: new Map(),
+      written: new Map(),
+      hydration: undefined,
+      hydrated: undefined,
+      traffic: emptyRow(),
+      trafficSize: { bytes: 0 },
+      trafficWritten: undefined,
+      refused
+    } satisfies Partial<HostedRun>);
+    try {
+      await old.stop();
+    } catch {
+      // best-effort, as in destroy()
+    }
+  }
+
+  /**
+   * Reset cell `id`: start a new attempt, at `at`, which the client's next
+   * request opens. The cell keeps its URL; what earlier attempts recorded
+   * stays and is listed under the latest. Returns the new attempt's number.
+   */
+  async reset(id: string, at: number = Date.now()): Promise<number> {
+    const cells = this.cells;
+    let attempt: number;
+    try {
+      attempt = await retrying(() => cells.startAttempt(id, at));
+    } catch (e) {
+      logStoreError(e);
+      throw new StoreUnavailableError(e);
+    }
+    const run = this.runs.get(id);
+    if (run) await this.renewTo(run, attempt);
+    return attempt;
+  }
+
+  /**
+   * Add an exchange to the cell's traffic (see addExchange()): the entry
+   * the row holds for it, or undefined when the row is at its cap.
+   */
+  recordExchange(run: HostedRun, exchange: Exchange): Exchange | undefined {
+    return addExchange(run.traffic, exchange, run.trafficSize);
+  }
+
+  /** Note the credentials a response of the cell's issued (hashes). */
+  noteIssued(run: HostedRun, hashes: readonly string[]): void {
+    addIssued(run.traffic, hashes);
   }
 
   /**
@@ -564,9 +786,10 @@ export class SessionManager {
     }
     const known = new Set(run.seeded.values());
     const fresh: ConformanceCheck[] = [];
+    const own = this.rowOf(run);
     for (const [writer, checks] of byWriter) {
-      if (writer === this.writerId || writer.endsWith(HOSTED_WRITER_SUFFIX))
-        continue;
+      if (writer === own || writer.endsWith(HOSTED_WRITER_SUFFIX)) continue;
+      if (attemptOfWriter(writer) !== run.attempt) continue;
       for (const c of checks) {
         const json = JSON.stringify(c);
         if (known.has(json)) continue;
@@ -760,9 +983,11 @@ export class SessionManager {
     // Unseeded because the store could not be read, the cell is still
     // written if this process has no row for it yet: there is nothing to
     // write over. Otherwise its row waits for a write that can seed first.
-    const deferred = ownRow && !run.hydrated && this.ownRows.has(run.id);
+    const own = this.rowOf(run);
+    const ownKey = `${run.id}#${run.attempt}`;
+    const deferred = ownRow && !run.hydrated && this.ownRows.has(ownKey);
     const rows: Array<[string, ConformanceCheck[]]> = [];
-    if (ownRow && !deferred) rows.push([this.writerId, this.ownChecks(run)]);
+    if (ownRow && !deferred) rows.push([own, this.ownChecks(run)]);
     if (run.hostedChecks.length)
       rows.push([run.hostedWriter, run.hostedChecks]);
     const writes: Promise<void>[] = [];
@@ -778,7 +1003,25 @@ export class SessionManager {
           )
         ).then(() => {
           run.written.set(writer, json);
-          if (writer === this.writerId) this.ownRows.add(run.id);
+          if (writer === own) this.ownRows.add(ownKey);
+        })
+      );
+    }
+    // The traffic row, with the checks: one round trip for both. A row
+    // whose only news is a repeat is left for the next write.
+    const traffic = run.traffic;
+    const said = substance(traffic);
+    if (
+      traffic.exchanges.length + traffic.omitted > 0 &&
+      said !== run.trafficWritten
+    ) {
+      const json = JSON.stringify(traffic);
+      const writer = run.hostedWriter;
+      writes.push(
+        retrying(() =>
+          store.saveTraffic(run.id, writer, JSON.parse(json) as TrafficRow)
+        ).then(() => {
+          if (run.traffic === traffic) run.trafficWritten = said;
         })
       );
     }
@@ -833,11 +1076,24 @@ export class SessionManager {
     const run = this.runs.get(id)?.touched ? this.runs.get(id) : undefined;
     if (!this.store) {
       if (!run) return undefined;
+      // What earlier attempts recorded, kept here when the cell was reset.
+      const [earlierRows, resets] = await Promise.all([
+        this.local.loadChecks(id),
+        this.local.loadAttempts(id)
+      ]);
       const raw = rawChecksOf(run.scenario);
       // Judged on a copy, as with a store: many scenarios' getChecks()
       // appends its "expected but never seen" FAILUREs to the live log, so
       // judging the live instance would let a page view change the verdict.
-      return judgedAtRevision(ref, raw, run.hostedChecks);
+      const latest = judgedAtRevision(ref, raw, run.hostedChecks);
+      return withAttempts(
+        ref,
+        latest,
+        run.attempt,
+        resets,
+        earlierRows,
+        raw.length + run.hostedChecks.length === 0
+      );
     }
     // A cell built for a discover and not seeded since (see write()) holds
     // less than this process's row: seeded, its log is the whole of it.
@@ -848,42 +1104,72 @@ export class SessionManager {
     const store = this.store;
     let byWriter: Map<string, ConformanceCheck[]>;
     let known: boolean;
+    let resets: number[];
     try {
-      byWriter = await retrying(() => store.loadChecks(id));
-      known = (await retrying(() => store.loadRun(id))) !== undefined;
+      [byWriter, known, resets] = await Promise.all([
+        retrying(() => store.loadChecks(id)),
+        retrying(() => store.loadRun(id)).then((s) => s !== undefined),
+        retrying(() => store.loadAttempts(id))
+      ]);
     } catch (e) {
       logStoreError(e);
       throw new StoreUnavailableError(e);
     }
     if (run) {
-      byWriter.set(this.writerId, this.ownChecks(run));
+      byWriter.set(this.rowOf(run), this.ownChecks(run));
       byWriter.set(run.hostedWriter, run.hostedChecks);
     }
     if (!run && !known && byWriter.size === 0) return undefined;
-    const scenarioLog: ConformanceCheck[] = [];
-    const hostedLog: ConformanceCheck[] = [];
+    const current = Math.max(
+      resets.length + 1,
+      run?.attempt ?? 1,
+      ...Array.from(byWriter.keys(), attemptOfWriter)
+    );
+    const latest = new Map<string, ConformanceCheck[]>();
+    const earlierRows = new Map<string, ConformanceCheck[]>();
     for (const [writer, checks] of byWriter) {
-      (writer.endsWith(HOSTED_WRITER_SUFFIX) ? hostedLog : scenarioLog).push(
-        ...checks
+      (attemptOfWriter(writer) === current ? latest : earlierRows).set(
+        writer,
+        checks
       );
     }
-    // Identity checks collapse to one per client (their protocol versions
-    // pooled); every other hosted finding is one check per distinct details.
-    const seen = new Set<string>();
-    hostedLog.sort(byTime);
-    const hosted = [
-      ...identityChecksIn(hostedLog),
-      ...hostedLog.filter((c) => {
-        if (c.id === IDENTITY_CHECK_ID) return false;
-        // Every process's activity marker, so the latest can be read.
-        if (c.id === ACTIVITY_CHECK_ID) return true;
-        const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-    ].sort(byTime);
-    return judgedAtRevision(ref, scenarioLog.sort(byTime), hosted);
+    const fresh = Array.from(latest.values()).every((c) => c.length === 0);
+    return withAttempts(
+      ref,
+      judgedRows(ref, latest),
+      current,
+      resets,
+      earlierRows,
+      fresh
+    );
+  }
+
+  /**
+   * The cell's traffic by attempt (see ./traffic.ts): every process's rows
+   * merged in time order, this process's live row included.
+   */
+  async traffic(
+    id: string
+  ): Promise<Map<number, { exchanges: Exchange[]; omitted: number }>> {
+    const run = this.runs.get(id)?.touched ? this.runs.get(id) : undefined;
+    let rows: Map<string, TrafficRow>;
+    try {
+      rows = await retrying(() => this.cells.loadTraffic(id));
+    } catch (e) {
+      logStoreError(e);
+      throw new StoreUnavailableError(e);
+    }
+    if (run) rows.set(run.hostedWriter, run.traffic);
+    const byAttempt = new Map<number, TrafficRow[]>();
+    for (const [writer, row] of rows) {
+      const n = attemptOfWriter(writer);
+      byAttempt.set(n, [...(byAttempt.get(n) ?? []), row]);
+    }
+    return new Map(
+      Array.from(byAttempt, ([n, list]) => [n, mergeRows(list)] as const).sort(
+        (a, b) => a[0] - b[0]
+      )
+    );
   }
 
   /** Exercised cells of a run: hit in this process, or saved to the store. */
@@ -952,6 +1238,93 @@ export const ACTIVITY_RESOLUTION_MS = 15_000;
 
 const byTime = (a: ConformanceCheck, b: ConformanceCheck) =>
   (a.timestamp ?? '').localeCompare(b.timestamp ?? '');
+
+/**
+ * Judge one attempt's rows, keyed by writer: the scenario's rows merged, the
+ * hosted layer's deduplicated across processes, and both judged at the
+ * cell's revision (judgedAtRevision()). The hosted layer's own checks are
+ * appended after judgement, so they never influence the scenario's
+ * verdicts — though a hosted FAILURE (wire rejection, wrong revision) does
+ * decide the cell's.
+ */
+function judgedRows(
+  ref: CellRef,
+  byWriter: ReadonlyMap<string, ConformanceCheck[]>
+): RunResults {
+  const scenarioLog: ConformanceCheck[] = [];
+  const hostedLog: ConformanceCheck[] = [];
+  for (const [writer, checks] of byWriter) {
+    (writer.endsWith(HOSTED_WRITER_SUFFIX) ? hostedLog : scenarioLog).push(
+      ...checks
+    );
+  }
+  // Identity checks collapse to one per client (their protocol versions
+  // pooled); every other hosted finding is one check per distinct details.
+  const seen = new Set<string>();
+  hostedLog.sort(byTime);
+  const hosted = [
+    ...identityChecksIn(hostedLog),
+    ...hostedLog.filter((c) => {
+      if (c.id === IDENTITY_CHECK_ID) return false;
+      // Every process's activity marker, so the latest can be read.
+      if (c.id === ACTIVITY_CHECK_ID) return true;
+      const key = `${c.id}:${JSON.stringify(c.details ?? null)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+  ].sort(byTime);
+  return judgedAtRevision(ref, scenarioLog.sort(byTime), hosted);
+}
+
+/**
+ * `latest`, the current attempt's results, with the attempt's number, when
+ * a reset started it, whether nothing has reached it yet (`fresh`), and
+ * each earlier attempt judged from its own rows (`earlierRows`, keyed by
+ * writer; see attemptOfWriter()).
+ */
+function withAttempts(
+  ref: CellRef,
+  latest: RunResults,
+  attempt: number,
+  resets: readonly number[],
+  earlierRows: ReadonlyMap<string, ConformanceCheck[]>,
+  fresh: boolean
+): RunResults {
+  if (attempt === 1) return { ...latest, attempt };
+  const iso = (ms: number | undefined) =>
+    ms === undefined ? undefined : new Date(ms).toISOString();
+  const earlier: EarlierAttempt[] = [];
+  for (let n = 1; n < attempt; n++) {
+    const rows = new Map(
+      Array.from(earlierRows).filter(([w]) => attemptOfWriter(w) === n)
+    );
+    if (!rows.size) continue;
+    const { checks, recorded, lastRequestAt, awaitingInput } = judgedRows(
+      ref,
+      rows
+    );
+    const startedAt = n > 1 ? iso(resets[n - 2]) : undefined;
+    earlier.push({
+      attempt: n,
+      ...(startedAt && { startedAt }),
+      results: {
+        checks,
+        recorded,
+        ...(lastRequestAt && { lastRequestAt }),
+        ...(awaitingInput && { awaitingInput })
+      }
+    });
+  }
+  const resetAt = iso(resets[attempt - 2]);
+  return {
+    ...latest,
+    attempt,
+    ...(resetAt && { resetAt }),
+    ...(fresh && { fresh: true as const }),
+    ...(earlier.length && { earlier })
+  };
+}
 
 /**
  * A cell's results from its scenario's raw log (merged across processes)

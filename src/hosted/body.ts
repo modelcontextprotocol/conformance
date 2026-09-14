@@ -13,6 +13,10 @@
  * Fetch-style bridges (examples/hosted/fetch-bridge.ts) already hold the
  * whole body before the listener runs; they publish it under BUFFERED_BODY
  * and the tap is skipped.
+ *
+ * Form bodies (a token request) are tapped too, for the cell's traffic
+ * (onAnyBody()); everything that reads JSON (onBody(), onBodySettled())
+ * still sees only JSON bodies.
  */
 
 import type { IncomingMessage } from 'http';
@@ -42,10 +46,19 @@ function isJsonPost(req: IncomingMessage): boolean {
   return /^application\/json\b/i.test(type);
 }
 
-/** Express middleware: start capturing JSON POST bodies as they flow in. */
+function isFormPost(req: IncomingMessage): boolean {
+  if (req.method !== 'POST') return false;
+  const type = req.headers['content-type'] ?? '';
+  return /^application\/x-www-form-urlencoded\b/i.test(type);
+}
+
+/**
+ * Express middleware: start capturing JSON and form POST bodies as they
+ * flow in.
+ */
 export function tapJsonBody(): RequestHandler {
   return (req, _res, next) => {
-    if (isJsonPost(req)) installTap(req);
+    if (isJsonPost(req) || isFormPost(req)) installTap(req);
     next();
   };
 }
@@ -89,7 +102,7 @@ export function onBody(req: IncomingMessage, cb: (body: Buffer) => void): void {
     return;
   }
   const tap = r[TAP];
-  if (!tap) return;
+  if (!tap || !isJsonPost(req)) return;
   const deliver = (body: Buffer | undefined) => {
     if (body !== undefined) cb(body);
   };
@@ -108,6 +121,7 @@ export function bodyFitsBuffer(req: IncomingMessage): boolean {
   const r = req as Tapped;
   if (r[BUFFERED_BODY] !== undefined) return true;
   if (r[TAP] === undefined) return false;
+  if (!isJsonPost(req) && !isFormPost(req)) return false;
   const length = Number(req.headers['content-length']);
   return Number.isFinite(length) && length < req.readableHighWaterMark;
 }
@@ -138,6 +152,30 @@ export function onBodySettled(
   const r = req as Tapped;
   if (r[BUFFERED_BODY] !== undefined) {
     cb(isJsonPost(req) ? r[BUFFERED_BODY] : undefined);
+    return;
+  }
+  const tap = r[TAP];
+  if (!tap || !isJsonPost(req)) {
+    cb(undefined);
+    return;
+  }
+  if (tap.done) cb(tap.body);
+  else tap.waiters.push(cb);
+}
+
+/**
+ * Like onBodySettled(), for any body the hosted layer captures: a bridged
+ * body whatever its type, or a tapped JSON or form body. For the cell's
+ * traffic, which keeps what the client sent however it was encoded.
+ */
+export function onAnyBody(
+  req: IncomingMessage,
+  cb: (body: Buffer | undefined) => void
+): void {
+  const r = req as Tapped;
+  const buffered = r[BUFFERED_BODY];
+  if (buffered !== undefined) {
+    cb(buffered.length ? buffered : undefined);
     return;
   }
   const tap = r[TAP];

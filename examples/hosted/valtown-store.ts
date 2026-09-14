@@ -5,8 +5,10 @@
  * SQLite API is `POST /v1/sqlite/execute {statement:{sql,args}}`. Two tables
  * for runs, created the first time a statement on them fails (so a cold
  * isolate does not spend two round trips making sure), and a third for
- * frozen reports, created the first time an isolate touches one. Old runs
- * are swept on new-run creation and old snapshots on new-snapshot creation,
+ * frozen reports, created the first time an isolate touches one. A cell's
+ * attempts and traffic have a table each, created the first time a
+ * statement on it fails. Old runs (with their attempts and traffic) are
+ * swept on new-run creation and old snapshots on new-snapshot creation,
  * throttled per isolate, so the database stays bounded without a cron.
  */
 
@@ -17,6 +19,7 @@ import {
   type SnapshotInfo,
   type StoreRetention
 } from '../../src/hosted/store';
+import { TRAFFIC_CELL_BYTES, type TrafficRow } from '../../src/hosted/traffic';
 
 const API = 'https://api.val.town/v1/sqlite/execute';
 
@@ -201,7 +204,99 @@ export class SqliteRunStore implements RunStore {
 
   async deleteRun(id: string): Promise<void> {
     await this.execRuns(`DELETE FROM hosted_checks_v2 WHERE run_id = ?`, [id]);
+    await this.execCell(`DELETE FROM hosted_traffic_v1 WHERE cell_id = ?`, [
+      id
+    ]);
+    await this.execCell(`DELETE FROM hosted_attempts_v1 WHERE cell_id = ?`, [
+      id
+    ]);
     await this.execRuns(`DELETE FROM hosted_runs_v2 WHERE id = ?`, [id]);
+  }
+
+  /**
+   * A statement on a cell's attempts or traffic. Their tables are created
+   * the first time a statement on them fails, as the challenge notes' are.
+   */
+  private async execCell(sql: string, args: unknown[]): Promise<Row[]> {
+    try {
+      return await this.exec(sql, args);
+    } catch {
+      await this.exec(
+        `CREATE TABLE IF NOT EXISTS hosted_attempts_v1 (
+           cell_id TEXT NOT NULL, n INTEGER NOT NULL, at INTEGER NOT NULL,
+           PRIMARY KEY (cell_id, n))`
+      );
+      await this.exec(
+        `CREATE TABLE IF NOT EXISTS hosted_traffic_v1 (
+           cell_id TEXT NOT NULL, writer TEXT NOT NULL, row TEXT NOT NULL,
+           updated_at INTEGER NOT NULL, PRIMARY KEY (cell_id, writer))`
+      );
+      return this.exec(sql, args);
+    }
+  }
+
+  async startAttempt(id: string, at: number): Promise<number> {
+    const rows = await this.execCell(
+      `INSERT INTO hosted_attempts_v1 (cell_id, n, at)
+       SELECT ?, COALESCE(MAX(n), 1) + 1, ? FROM hosted_attempts_v1 WHERE cell_id = ?
+       ON CONFLICT(cell_id, n) DO NOTHING
+       RETURNING n`,
+      [id, at, id]
+    );
+    if (rows[0]?.[0] !== undefined) return Number(rows[0][0]);
+    // Another reset took that number at the same moment: one attempt.
+    return (await this.loadAttempts(id)).length + 1;
+  }
+
+  async loadAttempts(id: string): Promise<number[]> {
+    const rows = await this.execCell(
+      `SELECT at FROM hosted_attempts_v1 WHERE cell_id = ? ORDER BY n`,
+      [id]
+    );
+    return rows.map(([at]) => Number(at));
+  }
+
+  async saveTraffic(
+    id: string,
+    writer: string,
+    row: TrafficRow
+  ): Promise<void> {
+    const json = JSON.stringify(row);
+    // Kept only while the cell's rows, this one included, stay under the cap.
+    await this.execCell(
+      `INSERT INTO hosted_traffic_v1 (cell_id, writer, row, updated_at)
+       SELECT ?, ?, ?, ? WHERE
+         (SELECT COALESCE(SUM(LENGTH(row)), 0) FROM hosted_traffic_v1
+           WHERE cell_id = ? AND writer <> ?) + ? <= ?
+       ON CONFLICT(cell_id, writer) DO UPDATE
+         SET row = excluded.row, updated_at = excluded.updated_at`,
+      [
+        id,
+        writer,
+        json,
+        Date.now(),
+        id,
+        writer,
+        json.length,
+        TRAFFIC_CELL_BYTES
+      ]
+    );
+  }
+
+  async loadTraffic(id: string): Promise<Map<string, TrafficRow>> {
+    const rows = await this.execCell(
+      `SELECT writer, row FROM hosted_traffic_v1 WHERE cell_id = ?`,
+      [id]
+    );
+    const out = new Map<string, TrafficRow>();
+    for (const [writer, row] of rows) {
+      try {
+        out.set(writer as string, JSON.parse(row as string) as TrafficRow);
+      } catch {
+        // corrupt row — ignore
+      }
+    }
+    return out;
   }
 
   private initSnapshots(): Promise<void> {
@@ -332,6 +427,13 @@ export class SqliteRunStore implements RunStore {
          (SELECT id FROM hosted_runs_v2 WHERE created_at < ?)`,
       [cutoff]
     );
+    for (const table of ['hosted_traffic_v1', 'hosted_attempts_v1']) {
+      await this.execCell(
+        `DELETE FROM ${table} WHERE cell_id IN
+           (SELECT id FROM hosted_runs_v2 WHERE created_at < ?)`,
+        [cutoff]
+      );
+    }
     await this.exec(`DELETE FROM hosted_runs_v2 WHERE created_at < ?`, [
       cutoff
     ]);

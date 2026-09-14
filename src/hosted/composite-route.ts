@@ -16,6 +16,7 @@ import {
 import { onBodySettled } from './body';
 import { jsonRpcMessages } from './wire';
 import { replay, type Replayed } from './replay';
+import { CONNECTION, connectionOf } from './traffic';
 import {
   COMPOSITE_SEPARATOR,
   mergeLifecycle,
@@ -291,11 +292,16 @@ export function createCompositeRoute(deps: CompositeDeps): CompositeHandler {
       }
 
       // Every child sees the request exactly as the client sent it.
+      // Each copy keeps the connection the client sent it over, for the
+      // cells' traffic.
+      const conn = connectionOf(req);
       const replies = await Promise.all(
         runs.map((run) =>
-          replay(req, body ?? Buffer.alloc(0), (r, s) =>
-            deps.dispatch(run, run.listener, r, s, pathOf(run), true)
-          )
+          replay(req, body ?? Buffer.alloc(0), (r, s) => {
+            if (conn)
+              (r as Request & { [CONNECTION]?: string })[CONNECTION] = conn;
+            deps.dispatch(run, run.listener, r, s, pathOf(run), true);
+          })
         )
       );
       if (where.kind === 'notification') {

@@ -139,6 +139,10 @@ export interface CapturedResponse {
   wwwAuthenticate?: string;
   /** Undefined when the body was over RESPONSE_CAP. */
   body?: string;
+  /** The body's first bytes (up to RESPONSE_CAP), even when it was over. */
+  head?: string;
+  /** The body's full size in bytes. */
+  size?: number;
 }
 
 /**
@@ -148,12 +152,13 @@ export interface CapturedResponse {
  * from `end` still sees whatever `onEnd` records before it flushes.
  * `onWrite`, when given, runs after each write before the end, likewise
  * synchronously: for a response that may never end, such as a server-sent
- * event stream the client keeps open.
+ * event stream the client keeps open. It is handed the body so far (up to
+ * RESPONSE_CAP).
  */
 export function tapResponse(
   res: ServerResponse,
   onEnd: (captured: CapturedResponse) => void,
-  onWrite?: () => void
+  onWrite?: (soFar: () => string) => void
 ): void {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -177,10 +182,11 @@ export function tapResponse(
   };
   const write = res.write;
   const end = res.end;
+  const soFar = () => Buffer.concat(chunks).toString('utf8');
   res.write = function (this: ServerResponse, ...args: unknown[]) {
     capture(args[0], args[1]);
     const out = (write as (...a: unknown[]) => boolean).apply(this, args);
-    onWrite?.();
+    onWrite?.(soFar);
     return out;
   } as ServerResponse['write'];
   res.end = function (this: ServerResponse, ...args: unknown[]) {
@@ -190,11 +196,14 @@ export function tapResponse(
       ended = true;
       const contentType = res.getHeader('content-type');
       const wwwAuthenticate = res.getHeader('www-authenticate');
+      const head = soFar();
       onEnd({
         status: res.statusCode,
         ...(typeof contentType === 'string' && { contentType }),
         ...(typeof wwwAuthenticate === 'string' && { wwwAuthenticate }),
-        ...(!overflow && { body: Buffer.concat(chunks).toString('utf8') })
+        ...(!overflow && { body: head }),
+        head,
+        size
       });
     }
     return out;

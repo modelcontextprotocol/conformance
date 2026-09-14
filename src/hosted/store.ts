@@ -23,9 +23,15 @@
  * It also keeps snapshots: a run's report frozen at one moment (POST
  * /results/<run-id>/freeze), stored as its JSON so any isolate can serve
  * the permalink and later traffic cannot change it.
+ *
+ * Per cell it also keeps its attempts — the times it was reset (POST
+ * /results/<cell>/reset), each starting a new attempt whose checks and
+ * traffic are written to rows of their own (see attemptOfWriter()) — and
+ * its traffic, one row per writer like the checks (see ./traffic.ts).
  */
 
 import type { ConformanceCheck } from '../types';
+import { TRAFFIC_CELL_BYTES, type TrafficRow } from './traffic';
 
 export interface SnapshotInfo {
   id: string;
@@ -89,6 +95,40 @@ export interface RunStore {
     since: number,
     requester: string
   ): Promise<Array<{ id: string; at: number }>>;
+  /**
+   * Start a new attempt at cell `id`, reset at `at` (ms since the epoch),
+   * and return its number: 2 for the cell's first reset. Two resets at once
+   * may start one attempt between them.
+   */
+  startAttempt(id: string, at: number): Promise<number>;
+  /**
+   * When cell `id` was reset, oldest first: attempt n + 2 started at
+   * `resets[n]`, so the current attempt is `resets.length + 1`.
+   */
+  loadAttempts(id: string): Promise<number[]>;
+  /**
+   * Replace one writer's traffic row for cell `id`. A store may refuse a
+   * row that would take the cell's traffic over TRAFFIC_CELL_BYTES; the
+   * row it keeps then is the writer's last one that fitted.
+   */
+  saveTraffic(id: string, writer: string, row: TrafficRow): Promise<void>;
+  /** All writers' traffic rows for cell `id`, keyed by writer id. */
+  loadTraffic(id: string): Promise<Map<string, TrafficRow>>;
+}
+
+/**
+ * The attempt a checks or traffic row belongs to, from its writer id:
+ * `a<n>:<writer>` for attempt n, a plain id for the first (every row
+ * written before cells could be reset).
+ */
+export function attemptOfWriter(writer: string): number {
+  const m = /^a(\d+):/.exec(writer);
+  return m ? Number(m[1]) : 1;
+}
+
+/** The writer id `writer` uses for its rows of `attempt`. */
+export function attemptWriter(writer: string, attempt: number): string {
+  return attempt > 1 ? `a${attempt}:${writer}` : writer;
 }
 
 /** How long a store must keep a challenge note (see saveChallenge()). */
@@ -137,6 +177,8 @@ export class MemoryRunStore implements RunStore {
   async deleteRun(id: string): Promise<void> {
     this.runs.delete(id);
     this.checks.delete(id);
+    this.attempts.delete(id);
+    this.traffic.delete(id);
   }
   async saveSnapshot(
     runId: string,
@@ -187,5 +229,35 @@ export class MemoryRunStore implements RunStore {
       .filter((c) => c.requester === requester && c.at >= since)
       .sort((a, b) => b.at - a.at)
       .map(({ id, at }) => ({ id, at }));
+  }
+  private attempts = new Map<string, number[]>();
+  async startAttempt(id: string, at: number): Promise<number> {
+    const resets = this.attempts.get(id) ?? [];
+    resets.push(at);
+    this.attempts.set(id, resets);
+    return resets.length + 1;
+  }
+  async loadAttempts(id: string): Promise<number[]> {
+    return [...(this.attempts.get(id) ?? [])];
+  }
+  private traffic = new Map<string, Map<string, string>>();
+  async saveTraffic(
+    id: string,
+    writer: string,
+    row: TrafficRow
+  ): Promise<void> {
+    let byWriter = this.traffic.get(id);
+    if (!byWriter) this.traffic.set(id, (byWriter = new Map()));
+    const json = JSON.stringify(row);
+    let others = 0;
+    for (const [w, r] of byWriter) if (w !== writer) others += r.length;
+    if (others + json.length > TRAFFIC_CELL_BYTES) return;
+    byWriter.set(writer, json);
+  }
+  async loadTraffic(id: string): Promise<Map<string, TrafficRow>> {
+    const out = new Map<string, TrafficRow>();
+    for (const [w, json] of this.traffic.get(id) ?? [])
+      out.set(w, JSON.parse(json) as TrafficRow);
+    return out;
   }
 }

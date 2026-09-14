@@ -98,8 +98,22 @@ export function stoppedNote(quietMs: number): string {
 /** What a cell's results say, as the pages read them. */
 export type CellResults = Pick<
   RunResults,
-  'checks' | 'recorded' | 'lastRequestAt' | 'awaitingInput'
+  | 'checks'
+  | 'recorded'
+  | 'lastRequestAt'
+  | 'awaitingInput'
+  | 'attempt'
+  | 'resetAt'
+  | 'fresh'
 >;
+
+/** What a cell reset since its client's last request says. */
+export function freshNote(
+  results: Pick<CellResults, 'attempt' | 'resetAt'>
+): string {
+  const at = results.resetAt ? ` at ${results.resetAt.slice(11, 19)} UTC` : '';
+  return `reset${at}: attempt ${results.attempt ?? 2} starts with your client’s next request`;
+}
 
 /**
  * How long a waiting cell's client has been silent at `now`, in ms, when
@@ -151,6 +165,16 @@ export function viewCell(
   results: CellResults | undefined,
   now: number = Date.now()
 ): CellView {
+  // Reset, and nothing has reached the new attempt: not tried, as a cell
+  // no request reached reads, with a note saying so.
+  if (results?.fresh) {
+    if (cell.scoring === 'n/a') return { verdict: 'n/a', state: 'n/a' };
+    return {
+      verdict: 'incomplete',
+      state: cell.startable ? 'not-tried' : 'not-startable',
+      note: freshNote(results)
+    };
+  }
   const shown = results
     ? shownChecks(cell.scenario, cell.revision, results.checks)
     : undefined;
@@ -218,6 +242,8 @@ export interface CellReport {
   cause?: string;
   resultsUrl: string;
   identities?: ClientIdentity[];
+  /** The cell's current attempt, when it has been reset (2 or more). */
+  attempt?: number;
   /**
    * On a `not-tried` cell as served (withNotTriedHints()), never stored:
    * the cell's MCP URL, and what the client must do there.
@@ -258,6 +284,12 @@ export interface RunReport {
   /** On a frozen copy (POST /results/<run-id>/freeze): its id and time. */
   snapshotId?: string;
   frozenAt?: string;
+  /**
+   * On a frozen copy: the cells whose pages were frozen with it, as
+   * `<rev>/<scenario>` (every cell the client had reached); absent on a
+   * copy frozen before cell pages were.
+   */
+  frozenCells?: string[];
   /**
    * The server build that produced the report (see ./build.ts): stored with
    * a frozen copy, so it says which build it came from. Absent on a copy
@@ -573,14 +605,17 @@ export async function buildReport(
         scenarioName: cell.scenario
       };
       const id = cellId(ref);
-      const results =
+      const got =
         cell.scoring !== 'n/a' && exercised.has(id)
           ? await sources.results(id)
           : undefined;
+      // A cell reset since its client's last request is judged as not
+      // tried (viewCell()); its earlier attempts are its own page's.
+      const results = got?.fresh ? undefined : got;
       const seen = results ? identitiesIn(results.checks) : [];
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
-      const { verdict, state, note, shown } = viewCell(cell, results, now);
+      const { verdict, state, note, shown } = viewCell(cell, got, now);
       // What stopped the client: a legacy handshake, or (on a cell that
       // reads incomplete for it) requests at another revision turned away.
       const stop = results
@@ -629,7 +664,8 @@ export async function buildReport(
         ...(findings?.length && { findings }),
         ...(stoppedBy && { cause: stoppedBy }),
         resultsUrl: sources.resultsUrl(ref),
-        ...(seen.length && { identities: seen })
+        ...(seen.length && { identities: seen }),
+        ...((got?.attempt ?? 1) > 1 && { attempt: got!.attempt })
       });
     }
     const counts: Partial<Record<CellState, number>> = {};

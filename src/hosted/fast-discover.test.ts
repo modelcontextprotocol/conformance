@@ -15,6 +15,7 @@ import { IDENTITY_CHECK_ID } from './identity';
 import { MODERN_PROBE_CHECK_ID } from './wire';
 import { toFetchHandler } from '../../examples/hosted/fetch-bridge';
 import type { ConformanceCheck } from '../types';
+import type { TrafficRow } from './traffic';
 
 const STATELESS = '2026-07-28';
 const STATEFUL = '2025-11-25';
@@ -77,6 +78,20 @@ class SlowStore implements RunStore {
     return this.slow('listChallenges', () =>
       this.inner.listChallenges(since, requester)
     );
+  }
+  startAttempt(id: string, at: number) {
+    return this.slow('startAttempt', () => this.inner.startAttempt(id, at));
+  }
+  loadAttempts(id: string) {
+    return this.slow('loadAttempts', () => this.inner.loadAttempts(id));
+  }
+  saveTraffic(id: string, writer: string, row: TrafficRow) {
+    return this.slow('saveTraffic', () =>
+      this.inner.saveTraffic(id, writer, row)
+    );
+  }
+  loadTraffic(id: string) {
+    return this.slow('loadTraffic', () => this.inner.loadTraffic(id));
   }
 }
 
