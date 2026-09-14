@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildMatrix } from './matrix';
-import { buildReport, incompleteNote, verdictFor } from './report';
+import { buildReport, incompleteNote, reportJson, verdictFor } from './report';
+import { reportMarkdown } from './markdown';
 import { cellId, finalizeChecks, type CellRef } from './session';
 import { identityCheck, identityOf } from './identity';
 import { legacyProbeCheck } from './wire';
@@ -219,6 +220,33 @@ describe('verdicts', () => {
       summary: { failed: 0, notSeen: 1 }
     });
     expect(by('initialize')).toMatchObject({ verdict: 'fail', state: 'fail' });
+    // The JSON gives a not-seen finding as NOT_SEEN and leaves the client's
+    // FAILURE; the report the HTML and Markdown are built from is untouched.
+    const before = JSON.stringify(report);
+    const markdown = reportMarkdown(report, { live: '' });
+    const json = reportJson(report);
+    expect(JSON.stringify(report)).toBe(before);
+    expect(reportMarkdown(report, { live: '' })).toBe(markdown);
+    expect(markdown).not.toContain('NOT_SEEN');
+    const jsonBy = (name: string) =>
+      json.columns[0].cells.find((c) => c.scenario === name)!;
+    expect(by('tools_call').findings).toEqual([
+      expect.objectContaining({ status: 'FAILURE', by: 'scenario' })
+    ]);
+    expect(jsonBy('tools_call').findings).toEqual([
+      expect.objectContaining({ status: 'NOT_SEEN', by: 'scenario' })
+    ]);
+    expect(jsonBy('tools_call').summary).toEqual(by('tools_call').summary);
+    expect(jsonBy('initialize').findings).toContainEqual(
+      expect.objectContaining({ status: 'FAILURE', by: 'client' })
+    );
+    expect(
+      jsonBy('initialize').findings!.filter((f) => f.by === 'scenario')
+    ).toEqual(
+      by('initialize')
+        .findings!.filter((f) => f.by === 'scenario')
+        .map((f) => ({ ...f, status: 'NOT_SEEN' }))
+    );
     // What a waiting cell waits for is on its row, not a cause: only the
     // client's own failure (and what initialize still expects) are causes.
     expect(report.causes.flatMap((c) => c.cells)).not.toContain(

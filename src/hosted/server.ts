@@ -105,6 +105,7 @@ import {
 } from './wire';
 import {
   buildReport,
+  reportJson,
   summarize,
   viewCell,
   type CellState,
@@ -116,7 +117,7 @@ import { parseComposite } from './composite';
 import { createCompositeRoute } from './composite-route';
 import { MemoryRunStore, type RunStore, type SnapshotInfo } from './store';
 import { reportMarkdown, reportText } from './markdown';
-import type { ShownCheck } from './shown';
+import { jsonRows, type ShownCheck } from './shown';
 import { scenarios } from '../scenarios';
 import { ConformanceCheck, AuxOriginRole, SpecVersion } from '../types';
 
@@ -1293,7 +1294,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         );
         return;
       default:
-        res.json(report);
+        res.json(reportJson(report));
     }
   }
 
@@ -1321,7 +1322,8 @@ export function summarise(ref: CellRef, checks: ShownCheck[]) {
     revision: ref.revision,
     scenario: ref.scenarioName,
     summary: summarize(checks),
-    checks
+    // A not-seen FAILURE reads NOT_SEEN, so the rows count as the summary.
+    checks: jsonRows(checks)
   };
 }
 
