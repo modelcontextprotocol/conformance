@@ -26,7 +26,7 @@ If this fails (exit code non-zero or shows "not logged in"), stop immediately an
 
 Do NOT proceed to any other step if this check fails.
 
-**Known SDKs need no server from you.** When the SDK is in `src/sdk-runner/known-sdks.ts` (typescript-sdk, python-sdk, go-sdk, rust-sdk, csharp-sdk, and variants), skip the server preflight entirely: Step 2's `--sdk-path` mode builds the SDK and starts the right server per revision itself. The reachability check below applies only to the URL fallback for unknown SDKs.
+**Known SDKs need no server from you.** When the SDK is in `src/sdk-runner/known-sdks.ts` (typescript-sdk, python-sdk, go-sdk, rust-sdk, csharp-sdk, ruby-sdk, and variants), skip the server preflight entirely: Step 2's `--sdk-path` mode builds the SDK and starts the right server per revision itself. The reachability check below applies only to the URL fallback for unknown SDKs.
 
 After parsing arguments (Step 1), for the URL fallback only, verify the conformance server is reachable:
 
