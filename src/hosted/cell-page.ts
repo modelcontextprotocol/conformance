@@ -378,13 +378,16 @@ function verdictLine(data: CellPageData): string {
   // Skipped checks are said apart: nothing was checked, so they are
   // neither a pass nor a failure.
   const counts = summarize(shown);
-  const countsHtml = shown.length
-    ? `<p>${esc(countsLine(counts))}${
-        counts.skipped
-          ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
-          : ''
-      }</p>`
-    : '';
+  // A pass or a fail already said its counts, unless there is more to say.
+  const more = counts.notSeen + counts.warnings + counts.skipped > 0;
+  const countsHtml =
+    shown.length && (more || (state !== 'pass' && state !== 'fail'))
+      ? `<p>${esc(countsLine(counts))}${
+          counts.skipped
+            ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
+            : ''
+        }</p>`
+      : '';
   return (
     `<div class="verdict ${esc(state)}"><span class=big><span class=glyph aria-hidden=true>${glyph}</span> ` +
     `${esc(STATE_LABEL[state])}</span>${text ? `: ${esc(text)}` : ''}` +
@@ -469,7 +472,12 @@ function fixBlock(
   const shownHere = failures.slice(0, 3);
   const items = shownHere.map((c) => {
     const i = at(c);
-    const sentence = specSentence(c);
+    // Quoted when it says more than the reason already does.
+    const requirement = specSentence(c);
+    const sentence =
+      requirement && !(c.reason ?? '').includes(requirement)
+        ? requirement
+        : undefined;
     const refs = refsHtml(c, revision);
     const { fields, missing } = faultFields(c);
     const pairs = expectedActual(c);
