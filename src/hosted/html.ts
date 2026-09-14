@@ -9,10 +9,14 @@ import { MCP_PATH, type HostedMatrix, type MatrixCell } from './matrix';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import {
+  groupColumn,
   incompleteNote,
+  NO_SIGN_IN,
   summarize,
+  unavailableScenarios,
   type CellReport,
   type CellState,
+  type ColumnReport,
   type RunReport
 } from './report';
 import type { ClientIdentity } from './identity';
@@ -27,7 +31,12 @@ import {
   countsLine,
   countsText,
   NO_FINDINGS,
+  NOT_TRIED_WHY,
+  notTriedHeading,
+  passedHeading,
   showsCounts,
+  UNAVAILABLE_HEADING,
+  UNAVAILABLE_WHY,
   stopNote,
   utcMinute,
   waitingFor,
@@ -120,6 +129,14 @@ const css = `
   dl.states{display:grid;grid-template-columns:max-content 1fr;gap:.2rem .75rem;
     margin:.4rem 0}
   dl.states dd{margin:0}
+  tr.nottried td{background:#fffbeb}
+  tr.nottried td.head{font-weight:600;color:#92400e}
+  tr.nottried details>summary{font-size:14px;font-weight:600;color:#92400e}
+  ul.nottried{margin:.4rem 0;padding-left:1.25rem}
+  ul.nottried li{margin:.3rem 0}
+  tr.sub td{font-weight:600;color:#374151}
+  details.section{margin:1.5rem 0}
+  details.section>summary{font-size:1.2em;font-weight:600;color:#111}
 `;
 
 /** Escape a string for interpolation into HTML text or a quoted attribute. */
@@ -169,9 +186,6 @@ function handNote(scenario: string): string {
   const note = HAND_NOTES[scenario];
   return note ? `<p class=note>${esc(note)}</p>` : '';
 }
-
-/** Auth scenarios whose client gets its token without a sign-in page. */
-const NO_SIGN_IN = /^auth\/(client-credentials-|wif-|enterprise-managed-)/;
 
 /**
  * Plain steps for an auth cell, which has no generic-client steps: what a
@@ -987,7 +1001,7 @@ function verdictCell(cell: CellReport): string {
   } else if (cell.summary) {
     lines += link(countsLine(cell.summary), cell.note);
   } else if (!cell.startable) {
-    lines += `<div class=muted>not startable: ${esc(cell.startReason ?? '')}</div>`;
+    lines += `<div class=muted><a href="#unavailable">unavailable on this deployment</a></div>`;
   } else {
     lines += link('not tried');
   }
@@ -1058,35 +1072,117 @@ function happenedHtml(
     : `<span class=muted>${NO_FINDINGS}</span>`;
 }
 
-/** One row per cell the client reached, grouped by revision. */
-function reachedTable(report: RunReport): string {
+/** What a not-tried cell wants: the client's steps, and its URL to copy. */
+function notTriedHtml(cell: CellReport): string {
+  const hint = cell.hint
+    ? `<div>the client must ${esc(cell.hint)}</div>`
+    : '<div class=muted>nothing reached this cell</div>';
+  const url = cell.mcpUrl
+    ? `<div class=actions><button class=copy data-copy-text="${esc(cell.mcpUrl)}">copy URL</button> ` +
+      `<code class=muted>${esc(cell.mcpUrl)}</code></div>`
+    : '';
+  return hint + url;
+}
+
+/**
+ * One revision's rows: what needs a look (fail, waiting, in progress,
+ * incomplete), then what the client has not tried, then what passed. Cells
+ * this deployment cannot start are not here (see unavailableSection()).
+ */
+function revisionRows(
+  col: ColumnReport,
+  causes: ReadonlyMap<string, Cause>,
+  numbers: ReadonlyMap<string, number>
+): string {
+  const { problems, notTried, passed } = groupColumn(col);
+  if (!problems.length && !passed.length && !notTried.length) return '';
+  const link = (cell: CellReport) =>
+    `<a href="${esc(cell.resultsUrl)}"><code>${esc(cell.scenario)}</code></a>`;
+  const reached = (cell: CellReport) => {
+    const s = cell.summary;
+    const counts =
+      s && showsCounts(cell)
+        ? `${s.passed} / ${s.failed} / ${s.warnings}`
+        : '–';
+    return (
+      `<tr><td>${link(cell)}</td>` +
+      `<td>${statePill(cell.state)}</td><td class=num>${counts}</td>` +
+      `<td class=what>${happenedHtml(cell, causes, numbers)}</td></tr>`
+    );
+  };
+  let rows = `<tr class=group><td colspan=4>${esc(col.revision)}</td></tr>`;
+  rows += problems.map(reached).join('');
+  if (notTried.length && !problems.length && !passed.length) {
+    // Nothing reached at this revision: every startable cell is here, so
+    // fold them rather than push the revisions the client did speak down.
+    const items = notTried
+      .map((cell) => `<li>${link(cell)}${notTriedHtml(cell)}</li>`)
+      .join('');
+    rows +=
+      `<tr class=nottried><td colspan=4><details><summary>${esc(
+        notTriedHeading(notTried.length, false)
+      )}</summary><p class=muted>${esc(NOT_TRIED_WHY)}</p>` +
+      `<ul class=nottried>${items}</ul></details></td></tr>`;
+  } else if (notTried.length) {
+    rows +=
+      `<tr class=nottried><td colspan=4 class=head>${esc(
+        notTriedHeading(notTried.length, true)
+      )}<div class=muted>${esc(NOT_TRIED_WHY)}</div></td></tr>` +
+      notTried
+        .map(
+          (cell) =>
+            `<tr class=nottried><td>${link(cell)}</td><td>${statePill(cell.state)}</td>` +
+            `<td class=num>–</td><td class=what>${notTriedHtml(cell)}</td></tr>`
+        )
+        .join('');
+    if (passed.length) {
+      rows += `<tr class=sub><td colspan=4>${esc(passedHeading(passed.length))}</td></tr>`;
+    }
+  }
+  return rows + passed.map(reached).join('');
+}
+
+/** Every revision's cells in its groups, one table. */
+function revisionsTable(report: RunReport): string {
   const causes = new Map(report.causes.map((c) => [c.key, c]));
   const numbers = causeNumbers(report.causes);
-  const groups = report.columns.flatMap((col) => {
-    const cells = col.cells.filter((c) => REACHED.includes(c.state));
-    if (!cells.length) return [];
-    const rows = cells.map((cell) => {
-      const s = cell.summary;
-      const counts =
-        s && showsCounts(cell)
-          ? `${s.passed} / ${s.failed} / ${s.warnings}`
-          : '–';
-      return (
-        `<tr><td><a href="${esc(cell.resultsUrl)}"><code>${esc(cell.scenario)}</code></a></td>` +
-        `<td>${statePill(cell.state)}</td><td class=num>${counts}</td>` +
-        `<td class=what>${happenedHtml(cell, causes, numbers)}</td></tr>`
-      );
-    });
-    return [
-      `<tr class=group><td colspan=4>${esc(col.revision)}</td></tr>${rows.join('')}`
-    ];
-  });
-  if (!groups.length) {
-    return '<p class=muted>No cell has been reached yet: point the client at a cell’s MCP URL.</p>';
-  }
+  const groups = report.columns
+    .map((col) => revisionRows(col, causes, numbers))
+    .join('');
+  const reachedAny = report.columns.some((col) =>
+    col.cells.some((c) => REACHED.includes(c.state))
+  );
+  const lead = reachedAny
+    ? ''
+    : '<p class=muted>No cell has been reached yet: point the client at a cell’s MCP URL.</p>';
+  if (!groups) return lead;
   return (
+    lead +
     `<table class=reached><tr><th>cell</th><th>result</th><th>pass / fail / warn</th><th>what happened</th></tr>` +
-    `${groups.join('')}</table>`
+    `${groups}</table>`
+  );
+}
+
+/**
+ * The cells this deployment cannot start, once per scenario with its
+ * revisions and the reason, folded at the bottom of the page.
+ */
+function unavailableSection(report: RunReport): string {
+  const list = unavailableScenarios(report);
+  if (!list.length) return '';
+  const items = list
+    .map(
+      (u) =>
+        `<li><code>${esc(u.scenario)}</code> <span class=muted>${u.revisions
+          .map(esc)
+          .join(', ')}</span> — ${esc(u.reason)}</li>`
+    )
+    .join('');
+  return (
+    `<details class=section id=unavailable><summary>${esc(
+      UNAVAILABLE_HEADING
+    )} (${list.length})</summary>` +
+    `<p class=muted>${esc(UNAVAILABLE_WHY)}</p><ul>${items}</ul></details>`
   );
 }
 
@@ -1192,14 +1288,22 @@ export function renderReport(
       )
       .join('') +
     '</tr>';
+  // A scenario this deployment cannot start at any revision shown is listed
+  // once at the bottom (unavailableSection()), not as a greyed-out row.
+  const hidden = new Set<CellState>(['not-startable', 'n/a']);
   const rows = matrix.rows
-    .map((row) => {
-      const cells = report.columns
-        .map((col) => col.cells.find((c) => c.scenario === row.scenario)!)
-        .map(verdictCell)
-        .join('');
-      return `<tr><td><code>${esc(row.scenario)}</code></td>${cells}</tr>`;
-    })
+    .map((row) =>
+      report.columns.map(
+        (col) => col.cells.find((c) => c.scenario === row.scenario)!
+      )
+    )
+    .filter((cells) => cells.some((c) => !hidden.has(c.state)))
+    .map(
+      (cells) =>
+        `<tr><td><code>${esc(cells[0].scenario)}</code></td>${cells
+          .map(verdictCell)
+          .join('')}</tr>`
+    )
     .join('');
   const notScored = report.columns
     .map((col) => {
@@ -1256,8 +1360,11 @@ ${reportActions(report, opts)}
 <h2>Summary</h2>
 <ul>${summary}</ul>
 ${causesList(report)}
-<h2>Cells the client reached</h2>
-${reachedTable(report)}
+<h2>Cells by revision</h2>
+<p class=muted>Each revision lists what needs a look first, then the cells your
+client has not tried, then what passed. Cells this deployment cannot start are
+listed once, folded, at the bottom of the page.</p>
+${revisionsTable(report)}
 <details><summary>as Markdown, to paste into an issue or a chat</summary><pre>${esc(
       opts.markdown
     )}</pre></details>
@@ -1271,9 +1378,11 @@ is still a fail until they happen; one where the client stopped short (it spoke 
 older revision and did not retry) reads <i>incomplete</i>.
 <i>X of N scored</i> counts passes among every cell the revision's requirement
 set scores (N is the set's count; the cells this deployment can start are
-given alongside). Not-scored and unlisted cells are listed below the table.</p>
+given alongside). Not-scored and unlisted cells are listed below the table;
+scenarios this deployment cannot start are left out of it.</p>
 <table>${head}${rows}</table>
-${notScored}</div>
+${notScored}
+${unavailableSection(report)}</div>
 ${report.frozenAt ? '' : liveScript}
 ${copyScript}`
   );
