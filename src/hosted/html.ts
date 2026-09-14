@@ -50,21 +50,17 @@ import {
   type Unmet
 } from './markdown';
 import { describeStep, type Step } from '../steps';
-import {
-  COMPOSITE_SEPARATOR,
-  DEFAULT_COMPOSITES,
-  type CompositeView
-} from './composite';
+import type { CompositeView } from './composite';
 import {
   CLIENTS,
   clientConfig,
   compositeName,
   serverName,
-  type ClientInfo,
   type ServerEntry
 } from './client-config';
+import { escapeHtml } from './escape';
 
-const STATE_STYLE: Record<CellState, string> = {
+export const STATE_STYLE: Record<CellState, string> = {
   pass: 'background:#d1fae5;color:#065f46',
   fail: 'background:#fee2e2;color:#991b1b',
   waiting: 'background:#e0e7ff;color:#3730a3',
@@ -147,16 +143,7 @@ const css = `
   details.section>summary{font-size:1.2em;font-weight:600;color:#111}
 `;
 
-/** Escape a string for interpolation into HTML text or a quoted attribute. */
-export function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
-        c
-      ]!
-  );
-}
+export { escapeHtml };
 const esc = escapeHtml;
 
 /** JSON safe inside a <script> element: `<` can't start `</script>`. */
@@ -248,7 +235,11 @@ function credentials(cell: CellConfig): string {
  * passes its own (a frozen copy's is the build that froze it); `null` says
  * the report was stored before builds were recorded.
  */
-function page(title: string, body: string, build?: BuildInfo | null): string {
+export function page(
+  title: string,
+  body: string,
+  build?: BuildInfo | null
+): string {
   return `<!doctype html><meta charset=utf-8>
 <title>${esc(title)}</title><style>${css}</style>
 ${body}${build === undefined ? '' : buildFooter(build)}`;
@@ -508,10 +499,12 @@ MCP URL.</p>
 <ol class=start>
 <li><b><a href="/s">Start a new run</a>.</b> The run page holds every URL for that
 run; keep to that one run.</li>
-<li>On the run page, <b>One URL for several scenarios</b> gives one URL per revision
-that carries most of its scenarios without a sign-in. Each auth scenario needs a
-URL of its own. <b>Paste into your client</b> puts all of them in one block per
-client, for VS Code, Codex, Goose and any client that reads <code>mcpServers</code> JSON.</li>
+<li>On the run page, add the one URL per revision that carries most of its
+scenarios without a sign-in. Each auth scenario needs a URL of its own; start with
+<code>auth/metadata-default</code>. <b>Pick your client</b> gives those URLs as one
+block in your client’s format, for VS Code, Codex, Goose, Copilot CLI and any client
+that reads <code>mcpServers</code> JSON, and every URL shows whether your client has
+reached it yet.</li>
 <li>Make your client do what each cell’s steps say, usually list the tools and call
 one. For an auth cell, connect and approve the sign-in: the test authorization
 server approves at once, with no account.</li>
@@ -588,7 +581,7 @@ function crumbs(config: RunConfig): string {
  * "<rev>/<scenario>"` (that cell's server entry plus its env), or
  * `data-copy-text` (that literal text, such as a bare MCP URL).
  */
-const copyScript = `<script>
+export const copyScript = `<script>
 (function(){
   var el=document.getElementById('cfg');
   var cfg=el?JSON.parse(el.textContent):null;
@@ -620,35 +613,22 @@ function envPre(cell: CellConfig): string {
 
 /**
  * Ready-to-paste config per client (see ./client-config.ts), each with a
- * copy button and a line on adding it to a file that already has servers.
- * With `starter` (the run page, whose full list is long): the starter block
- * open, the full one folded.
+ * copy button and a line on adding it to a file that already has servers:
+ * one cell's or composite's entry, or every entry of a run on the bulk page
+ * (./run-page.ts), where `copy` names what the button copies.
  */
-function clientBlocks(
+export function clientBlocks(
   entries: readonly ServerEntry[],
   intro: string,
-  starter?: readonly ServerEntry[]
+  copy = 'copy'
 ): string {
   if (!entries.length) return '';
-  const block = (
-    client: ClientInfo,
-    list: readonly ServerEntry[],
-    label: string
-  ) => {
-    const text = clientConfig(client.kind, list);
-    return `<button class=copy data-copy-text="${esc(text)}">${esc(label)}</button><pre>${esc(text)}</pre>`;
-  };
   const blocks = CLIENTS.map((client) => {
-    const head =
-      `<div class=client><b>${esc(client.label)}</b> <span class=muted>${esc(client.where)}</span>` +
-      `<p class=muted>${esc(client.merge)}</p>`;
-    if (!starter) return `${head}${block(client, entries, 'copy')}</div>`;
-    const all = `all ${entries.length} entries${
-      client.switchesOff ? ', auth cells switched off' : ''
-    }`;
+    const text = clientConfig(client.kind, entries);
     return (
-      `${head}${block(client, starter, 'copy starter')}` +
-      `<details><summary>${esc(all)}</summary>${block(client, entries, 'copy all')}</details></div>`
+      `<div class=client><b>${esc(client.label)}</b> <span class=muted>${esc(client.where)}</span>` +
+      `<p class=muted>${esc(client.merge)}</p>` +
+      `<button class=copy data-copy-text="${esc(text)}">${esc(copy)}</button><pre>${esc(text)}</pre></div>`
     );
   });
   return `<h2 id=client-config>Paste into your client</h2><p class=muted>${intro}</p>${blocks.join('')}`;
@@ -703,130 +683,10 @@ ${
 ${envPre(cell)}
 <p><a href="${esc(cell.resultsUrl)}">results for this cell</a></p>`;
   } else {
-    // Per revision when the page covers several: a total summed over
-    // revisions read as "N at every revision" is taken for N per revision.
-    const count = config.revision
-      ? `${startableCount(config.cells, [config.revision])} at revision <code>${esc(config.revision)}</code>`
-      : esc(startableCount(config.cells, matrix.revisions));
-    body = `<h1>run <code>${esc(config.runId)}</code>${
-      config.revision ? ` <small>@ ${esc(config.revision)}</small>` : ''
-    }</h1>
-${crumbs(config)}
-<p>${count}.
-Point your client at a cell's MCP URL (open it for the env the CLI runner
-would set), then read the <a href="${esc(config.resultsUrl)}">results</a>.
-<button class=copy data-copy="all">copy mcpServers for all ${config.cells.length}</button></p>
-${compositeLinks(origin, matrix, config)}
-${runClientBlocks(origin, matrix, config)}
-${renderMatrixTable(matrix, {
-  origin,
-  runId: config.runId,
-  revision: config.revision
-})}`;
+    // A run or a column: renderRunPage() in ./run-page.ts, with live status.
+    throw new Error('renderConfig renders one cell; see renderRunPage()');
   }
   return page(title, `${body}\n${embedded}\n${copyScript}`, build);
-}
-
-/** The run page's ready-made composites, per revision in scope. */
-function readyComposites(
-  origin: string,
-  matrix: HostedMatrix,
-  config: RunConfig
-): { revision: string; children: string[]; cell: string; url: string }[] {
-  const revisions = config.revision ? [config.revision] : matrix.revisions;
-  return revisions.flatMap((revision) => {
-    const children = (DEFAULT_COMPOSITES[revision] ?? []).filter(
-      (name) => matrix.cell(name, revision)?.startable
-    );
-    if (children.length < 2) return [];
-    const cell = `${origin}/s/${config.runId}/${revision}/${children.join(COMPOSITE_SEPARATOR)}`;
-    return [{ revision, children, cell, url: `${cell}${MCP_PATH}` }];
-  });
-}
-
-/** The auth cell the run page's starter block carries, per revision. */
-const STARTER_AUTH = 'auth/metadata-default';
-
-/**
- * The entries of the run page's client blocks. The full one covers every
- * startable cell of the run once: the ready-made composites, then each cell
- * no composite carries (one that cannot share a URL, such as
- * `request-metadata`), then every auth cell, switched off where the client
- * can say so, since each starts a sign-in when the client connects (and
- * `codex mcp list` fetches the metadata of every one that is on). The
- * starter: the composites and one auth cell per revision, on.
- */
-export function runClientEntries(
-  origin: string,
-  matrix: HostedMatrix,
-  config: RunConfig
-): { starter: ServerEntry[]; all: ServerEntry[] } {
-  const ready = readyComposites(origin, matrix, config);
-  const composites = ready.map((c) => ({
-    name: compositeName(c.revision, c.children),
-    url: c.url
-  }));
-  const covered = new Set(
-    ready.flatMap((c) => c.children.map((child) => `${c.revision}/${child}`))
-  );
-  const isAuth = (c: CellConfig) => c.scenario.startsWith('auth/');
-  const entry = (c: CellConfig) => ({
-    name: serverName(c.revision, c.scenario),
-    url: c.url
-  });
-  const auth = config.cells.filter(isAuth);
-  const alone = config.cells.filter(
-    (c) => !isAuth(c) && !covered.has(`${c.revision}/${c.scenario}`)
-  );
-  return {
-    starter: [
-      ...composites,
-      ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
-    ],
-    all: [
-      ...composites,
-      ...alone.map(entry),
-      ...auth.map((c) => ({ ...entry(c), enabled: false }))
-    ]
-  };
-}
-
-/** The run page's client blocks (see runClientEntries()). */
-function runClientBlocks(
-  origin: string,
-  matrix: HostedMatrix,
-  config: RunConfig
-): string {
-  const { starter, all } = runClientEntries(origin, matrix, config);
-  return clientBlocks(
-    all,
-    `The starter block is the ready-made composites and <code>${STARTER_AUTH}</code> at each revision. ` +
-      'The full block covers every startable cell once: the composites, each cell that cannot share a URL ' +
-      '(such as <code>request-metadata</code>), and every auth cell, switched off where the client can say so: ' +
-      'switch on the ones you want to test.',
-    starter
-  );
-}
-
-/**
- * The run page's ready-made composites: per revision, one MCP URL carrying
- * several scenarios, for a client that is configured by hand.
- */
-function compositeLinks(
-  origin: string,
-  matrix: HostedMatrix,
-  config: RunConfig
-): string {
-  const items = readyComposites(origin, matrix, config).map(
-    ({ revision, children, cell, url }) =>
-      `<li><code>${esc(revision)}</code>: <a href="${esc(cell)}">${children.length} scenarios</a> at <code>${esc(url)}</code> ` +
-      `<button class=copy data-copy-text="${esc(url)}">copy URL</button></li>`
-  );
-  if (!items.length) return '';
-  return `<h2 id=composites>One URL for several scenarios</h2>
-<p>For a client you configure by hand, give it one of these instead of a URL
-per scenario. Each scenario still records and scores in its own cell below.</p>
-<ul>${items.join('')}</ul>`;
 }
 
 /**
@@ -871,20 +731,21 @@ ${copyScript}`
 }
 
 /** How often a live page checks for news, in seconds. */
-const LIVE_SECONDS = 10;
+export const LIVE_SECONDS = 10;
 
 /**
  * What keeps a live page (the run report, a cell's results) current while
  * a person drives a client: every LIVE_SECONDS, while the tab is visible,
  * the page fetches itself and swaps in its #live part if that changed,
- * keeping open whatever was open. A note says so and has a stop button. A
- * frozen copy never has it.
+ * keeping open whatever was open: a fold by its id when it has one (its
+ * summary may carry live counts), else by its summary. A note says so and
+ * has a stop button. A frozen copy never has it.
  */
-const liveNote =
+export const liveNote =
   `<p class=muted id=live-note>Updates every ${LIVE_SECONDS} s while this tab is open ` +
   `<button class=copy id=live-toggle type=button>stop</button> <span id=live-status></span></p>`;
 
-const liveScript = `<script>
+export const liveScript = `<script>
 (function(){
   var box=document.getElementById('live'),btn=document.getElementById('live-toggle'),
       st=document.getElementById('live-status'),on=true;
@@ -900,10 +761,11 @@ const liveScript = `<script>
       .then(function(t){
         var next=new DOMParser().parseFromString(t,'text/html').getElementById('live');
         if(next&&next.innerHTML!==box.innerHTML){
-          var open=[].map.call(box.querySelectorAll('details[open]>summary'),function(x){return x.textContent});
+          var key=function(x){return x.parentNode.id?'#'+x.parentNode.id:x.textContent};
+          var open=[].map.call(box.querySelectorAll('details[open]>summary'),key);
           box.innerHTML=next.innerHTML;
           [].forEach.call(box.querySelectorAll('details>summary'),function(x){
-            if(open.indexOf(x.textContent)>=0)x.parentNode.open=true;
+            if(open.indexOf(key(x))>=0)x.parentNode.open=true;
           });
         }
         st.textContent='';
@@ -1040,7 +902,7 @@ function identityLine(identities: ClientIdentity[]): string {
     .join('<br>');
 }
 
-function statePill(state: CellState): string {
+export function statePill(state: CellState): string {
   return `<span class=pill style="${STATE_STYLE[state]}">${STATE_LABEL[state]}</span>`;
 }
 

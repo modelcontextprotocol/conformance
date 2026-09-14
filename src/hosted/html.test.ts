@@ -19,6 +19,8 @@ import { scoreText } from './markdown';
 import { cellId, DEFAULT_CELL_TTL_MS } from './session';
 import { describeStep } from '../steps';
 import { CLIENTS } from './client-config';
+import { renderBulkPage, renderRunPage } from './run-page';
+import type { RunLive } from './run-status';
 import { identityCheck, identityOf } from './identity';
 import { hostedScenarios } from './catalog';
 
@@ -69,6 +71,14 @@ function configFor(runId: string, scope: Partial<RunConfig> = {}): RunConfig {
 /** A single process without a store, at the default idle TTL. */
 const IN_MEMORY = { idleMs: DEFAULT_CELL_TTL_MS };
 
+/** A run nothing has reached yet, for the run page. */
+const NO_LIVE: RunLive = {
+  cells: new Map(),
+  reached: 0,
+  needsLook: 0,
+  now: 0
+};
+
 /** The page's text with tags dropped and whitespace folded. */
 const text = (html: string) =>
   html
@@ -99,23 +109,21 @@ describe('landing page for a newcomer', () => {
 
   it('gives the five-minute path: new run, composite, per-client config, steps, results', () => {
     expect(html).toContain('<a href="/s">Start a new run</a>');
-    expect(said).toContain('One URL for several scenarios');
-    expect(said).toContain('Each auth scenario needs a URL of its own.');
+    expect(said).toContain('one URL per revision');
+    expect(said).toContain('Each auth scenario needs a URL of its own');
     expect(said).toContain(
-      'VS Code, Codex, Goose and any client that reads mcpServers JSON'
+      'VS Code, Codex, Goose, Copilot CLI and any client that reads mcpServers JSON'
     );
     expect(said).toContain('/results/<run-id>');
     expect(said).toContain('Freeze a copy to link to');
     expect(said).toContain('Markdown or plain text');
-    // The section names match the run page's headings, which carry anchors.
-    const run = renderConfig('http://x', matrix, configFor('run0'));
-    expect(run).toContain(
-      '<h2 id=composites>One URL for several scenarios</h2>'
-    );
-    expect(run).toContain('<h2 id=client-config>Paste into your client</h2>');
-    expect(said).toContain('Paste into your client');
+    // The section it names matches the run page's heading, with an anchor,
+    // and the picker offers every client the landing page names.
+    const run = renderRunPage('http://x', matrix, configFor('run0'), NO_LIVE);
+    expect(run).toContain('<h2 id=client-config>Pick your client</h2>');
+    expect(said).toContain('Pick your client');
     for (const client of CLIENTS)
-      expect(run).toContain(`<b>${client.label}</b>`);
+      expect(run).toContain(`>${client.label}</option>`);
   });
 
   it('explains the score from the matrix and every state in one line', () => {
@@ -237,9 +245,9 @@ describe('hosted HTML', () => {
     expect(html).toContain('excluded &lt;here&gt;');
   });
 
-  it('run page links every startable cell and embeds the config for the copy buttons', () => {
+  it('bulk page links every startable cell and embeds the config for the copy buttons', () => {
     const config = configFor('run1');
-    const html = renderConfig('http://x', matrix, config);
+    const html = renderBulkPage('http://x', matrix, config);
     expect(html).toContain('<a href="/s/run1/2026-07-28/tools_call">open</a>');
     expect(html).toContain(
       '<a href="/results/run1/2026-07-28/tools_call">results</a>'
@@ -256,14 +264,12 @@ describe('hosted HTML', () => {
 
   it('run page and landing count startable cells per revision, not "at every revision"', () => {
     const config = configFor('run6');
-    const per = matrix.revisions
-      .map(
-        (r) => `${config.cells.filter((c) => c.revision === r).length} at ${r}`
-      )
-      .join(', ');
-    const html = renderConfig('http://x', matrix, config);
-    expect(html).toContain(
-      `<p>${config.cells.length} startable cells (${per}).`
+    const [older, newer] = matrix.revisions.map(
+      (r) => config.cells.filter((c) => c.revision === r).length
+    );
+    const html = renderRunPage('http://x', matrix, config, NO_LIVE);
+    expect(text(html)).toContain(
+      `At ${matrix.revisions[0]}, ${older} cells can start here, and at ${matrix.revisions[1]}, ${newer} can.`
     );
     expect(html).not.toContain('at every revision');
 
@@ -275,27 +281,25 @@ describe('hosted HTML', () => {
       `${cells.length} startable cells (${landingPer}) here.`
     );
 
-    const column = renderConfig(
+    const column = renderRunPage(
       'http://x',
       matrix,
-      configFor('run7', { revision: '2026-07-28' })
+      configFor('run7', { revision: '2026-07-28' }),
+      NO_LIVE
     );
-    expect(column).toMatch(
-      /<p>\d+ startable cells? at revision <code>2026-07-28<\/code>\./
-    );
+    expect(text(column)).toMatch(/At 2026-07-28, \d+ cells? can start here\./);
   });
 
-  it('column page filters to one revision', () => {
-    const html = renderConfig(
+  it('column page lists one revision', () => {
+    const html = renderRunPage(
       'http://x',
       matrix,
-      configFor('run2', { revision: '2025-11-25' })
+      configFor('run2', { revision: '2025-11-25' }),
+      NO_LIVE
     );
-    expect(html).toContain(
-      '<th><a href="/s/run2/2025-11-25">2025-11-25</a></th>'
-    );
-    expect(html).not.toContain('2026-07-28</a></th>');
-    expect(html).toContain('href="/s/run2/2025-11-25/initialize"');
+    expect(html).toContain('/s/run2/2025-11-25/initialize+tools_call/mcp');
+    expect(html).toContain('href="/s/run2/2025-11-25/elicitation-sep1034');
+    expect(html).not.toContain('/2026-07-28/');
   });
 
   it('cell page shows the endpoint, env and steps with a copy button', () => {
@@ -370,12 +374,16 @@ describe('hosted HTML', () => {
   });
 
   it('offers the bare MCP URL to copy on every cell, cell page and composite', () => {
-    const run = renderConfig('http://x', matrix, configFor('run6'));
-    expect(run).toContain(
+    const bulk = renderBulkPage('http://x', matrix, configFor('run6'));
+    expect(bulk).toContain(
       '<button class=copy data-copy-text="http://x/s/run6/2026-07-28/tools_call/mcp">copy URL</button>'
     );
+    const run = renderRunPage('http://x', matrix, configFor('run6'), NO_LIVE);
     expect(run).toMatch(
-      /data-copy-text="http:\/\/x\/s\/run6\/2026-07-28\/tools_call\+[^"]*\/mcp">copy URL/
+      /data-copy-text="http:\/\/x\/s\/run6\/2026-07-28\/tools_call\+[^"]*\/mcp" title="[^"]*">copy URL/
+    );
+    expect(run).toContain(
+      'data-copy-text="http://x/s/run6/2026-07-28/request-metadata/mcp"'
     );
     const cell = renderConfig(
       'http://x',
@@ -439,7 +447,7 @@ describe('hosted HTML', () => {
     );
   });
 
-  it('offers one block per client on the run page: the ready-made composites and every auth cell', () => {
+  it('offers one block per client: the starter on the run page, every cell on the bulk page', () => {
     const withAuth = buildMatrix({ auxOrigins: { as: 'http://as' } });
     const cells = withAuth
       .cells()
@@ -455,25 +463,36 @@ describe('hosted HTML', () => {
           MCP_CONFORMANCE_PROTOCOL_VERSION: c.revision
         }
       }));
-    const run = renderConfig('http://x', withAuth, {
+    const config: RunConfig = {
       runId: 'run9',
       resultsUrl: 'http://x/results/run9',
       mcpServers: {},
       cells
-    });
-    // Per client a starter block and the full one; the full one is longer.
-    const blocksWith = (marker: string) =>
-      [...run.matchAll(/data-copy-text="([^"]*)"/g)]
+    };
+    const run = renderRunPage('http://x', withAuth, config, NO_LIVE);
+    const bulk = renderBulkPage('http://x', withAuth, config);
+    const blockWith = (page: string, marker: string) => {
+      const found = [...page.matchAll(/data-copy-text="([^"]*)"/g)]
         .map((m) => m[1])
-        .filter((t) => t.includes(marker))
-        .sort((a, b) => a.length - b.length);
-    const [gooseStarter, goose] = blocksWith('type: streamable_http');
-    const [codexStarter, codex] = blocksWith('[mcp_servers.');
+        .filter((t) => t.includes(marker));
+      expect(found, marker).toHaveLength(1);
+      return found[0];
+    };
+    const [gooseStarter, codexStarter] = [
+      blockWith(run, 'type: streamable_http'),
+      blockWith(run, '[mcp_servers.')
+    ];
+    const [goose, codex] = [
+      blockWith(bulk, 'type: streamable_http'),
+      blockWith(bulk, '[mcp_servers.')
+    ];
     // Pasted under the file's own `extensions:` key: no key of its own.
     expect(goose).not.toMatch(/^extensions:/m);
-    expect(run).toContain(
-      'Paste under extensions: in ~/.config/goose/config.yaml.'
-    );
+    for (const page of [run, bulk]) {
+      expect(page).toContain(
+        'Paste under extensions: in ~/.config/goose/config.yaml.'
+      );
+    }
     // Auth cells arrive switched off, the composites on.
     expect(goose).toContain(
       '  c9e-2026-07-28-auth-resource-mismatch:\n    enabled: false'
@@ -491,7 +510,8 @@ describe('hosted HTML', () => {
       expect(starter).not.toContain('enabled = false');
     }
     // Copilot CLI has its own block (its entries need `tools`).
-    expect(run).toContain('<b>Copilot CLI</b>');
+    expect(bulk).toContain('<b>Copilot CLI</b>');
+    expect(run).toContain('<option value="copilot">Copilot CLI</option>');
     const auth = cells.filter((c) => c.scenario.startsWith('auth/'));
     expect(auth.length).toBeGreaterThan(10);
     for (const name of [
@@ -504,6 +524,7 @@ describe('hosted HTML', () => {
     // Only those: a cell a composite covers is not listed again.
     expect(goose).not.toContain('c9e-2026-07-28-tools_call:');
     expect(run).toContain('data-copy-text="{\n  &quot;servers&quot;');
+    expect(bulk).toContain('data-copy-text="{\n  &quot;servers&quot;');
   });
 
   it('renders the markdown in scenario descriptions instead of showing it raw', () => {
@@ -563,9 +584,18 @@ describe('hosted HTML', () => {
 
   it('escapes request-derived values', () => {
     const evil = '"><img src=x onerror=alert(1)>';
-    const html = renderConfig('http://x', matrix, configFor(evil));
-    expect(html).not.toContain('<img');
-    expect(html).toContain('&quot;&gt;&lt;img');
+    for (const html of [
+      renderRunPage('http://x', matrix, configFor(evil), NO_LIVE),
+      renderBulkPage('http://x', matrix, configFor(evil)),
+      renderConfig(
+        'http://x',
+        matrix,
+        configFor(evil, { revision: '2026-07-28', scenario: 'tools_call' })
+      )
+    ]) {
+      expect(html).not.toContain('<img');
+      expect(html).toContain('&quot;&gt;&lt;img');
+    }
     expect(
       renderMatrixTable(matrix, { origin: 'http://x', runId: evil })
     ).not.toContain('<img');

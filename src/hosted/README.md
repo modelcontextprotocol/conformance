@@ -68,8 +68,9 @@ name (`auth/metadata-var2/tenant1` → scenario `auth/metadata-var2`, suffix
 Before the matrix it says, in plain sentences: what this is (a server that
 tests a client you point at it by hand; a cell is one scenario at one
 revision with its own MCP URL); how to test a client in five minutes (a new
-run at `/s`, the run page's composite URLs and per-client config blocks,
-the cell steps, the report and its frozen, Markdown and plain-text copies);
+run at `/s`, the run page's composite URLs, `auth/metadata-default` and
+client picker, the cell steps, the report and its frozen, Markdown and
+plain-text copies);
 what the score means (the frozen requirement set's scored cells per
 revision, "X of the M scored cells you can run here pass · N are scored for
 the revision", one line per state, and that a
@@ -82,8 +83,41 @@ issue tracker are. Every page ends with the server's build (short commit,
 run report stores it as `server` (`build`, `deployedAt`), so a frozen copy
 names the build that froze it. The Val Town deploy stamps the staged
 `src/hosted/build-stamp.ts`; the local `hosted` command reads the checkout's
-commit from git; anything else reads "unknown". The run page's two sections it names carry anchors,
-`#composites` and `#client-config`.
+commit from git; anything else reads "unknown". The run page's sections carry anchors:
+`#client-config`, `#composites`, `#own-url`, `#auth` and `#results`.
+
+**The run page** (`/s/<run-id>`; `/s/<run-id>/<rev>` for one revision) is
+written for the author of one client setting it up. It says what a run is
+and how many cells can start at each revision ("At 2025-11-25, 18 cells can
+start here, and at 2026-07-28, 31 can."), then:
+
+1. **Pick your client**: a picker (`src/hosted/config-picker.ts`) whose
+   default is "Just the URL", with VS Code, Codex, Goose, Copilot CLI and
+   `mcpServers` JSON behind it. The choice is kept in the browser's
+   localStorage (`c9e-client`), read and written inside try/catch, so a
+   blocked store leaves the URL. Its block covers the starter set only: the
+   ready-made composites and `auth/metadata-default` at each revision.
+2. One URL per revision for the scenarios that need no sign-in (the
+   ready-made composite), with the scenarios behind it folded.
+3. The cells that need a URL of their own (no composite can carry them), each
+   with the reason.
+4. The auth cells: `auth/metadata-default` at each revision, then the rest
+   folded by group (metadata discovery, scopes, registration and token
+   endpoint authentication, issuer checks, other auth).
+5. How many cells the client has reached and how many need a look, with
+   "Open the results".
+
+Every URL has a live line: `✓ reached`, `✗ fails`, `■ stopped`, `◔ waiting`,
+`◑ in progress`, `◐ stopped short` or `○ not reached yet`, with the time of
+the last request and the client's name. A cell the client reached reads
+"reached" until it fails or stops; only the report says pass. A composite's
+line is its worst child's, with how many of its scenarios were reached. The
+lines are judged exactly as the report judges the cell
+(`src/hosted/run-status.ts` over `buildReport()`), from the stored log when
+there is a store, and the page refreshes them with the report's 10-second
+script, paused while the tab is hidden. The bulk page (`/s/<run-id>/bulk`)
+has every client's full block with "copy all", the `mcpServers` map of every
+cell, and the run's matrix with each cell's steps, links and copy buttons.
 
 **How long results last.** The landing page states these from the values
 the deployment runs with, not from the defaults, so it cannot disagree with
@@ -173,10 +207,10 @@ each with its own copy button and a line on adding it to a file that already
 has servers. Names are `c9e-<revision>-<scenario>` with
 anything but letters, digits, `*`and`-`made`-`
 (`c9e-2025-11-25-auth-metadata-default`); the run page's ready-made
-composites are `c9e-<revision>-composite`. The run page gives each client a
+composites are `c9e-<revision>-composite`. The run page's picker gives the
 starter block (the ready-made composites and `auth/metadata-default`per
-revision) and, folded, the full one, which covers every startable cell of the
-run once: the composites, each cell no composite carries (such as`request-metadata`and`http-invalid-tool-headers`), and every auth cell, switched off where
+revision); the bulk page gives each client the full one, which covers every
+startable cell of the run once: the composites, each cell no composite carries (such as`request-metadata`and`http-invalid-tool-headers`), and every auth cell, switched off where
 the format can say so (`enabled: false`for Goose,`enabled = false` for
 Codex), since each auth cell starts a sign-in when the client connects
 (`src/hosted/client-config.ts`). An `auth/\*`cell, which has no generic-client steps, shows plain ones for a hand-driven
