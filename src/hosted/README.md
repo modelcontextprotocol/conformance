@@ -509,12 +509,21 @@ metadata URL in its `WWW-Authenticate` header. A client that follows RFC 9728
 first tries the path-inserted URL (`…/oauth-protected-resource/s/<cell>/mcp`),
 which the cell answers 404, and then falls back to the bare path — one URL for
 every cell on the server. The hosted server answers it as the cell of such a
-scenario (`Scenario.servesRootPrm`) that most recently answered a request with
-a 401, within 120 seconds, and notes that on the cell. The challenge is noted
-in the run store, so the request can land on any process. With no such cell,
-the answer is a 404 saying to open the cell's URL first; with more than one,
-the latest wins and the cell says so. Run one `auth/metadata-var2` cell at a
-time and the attribution is exact.
+scenario (`Scenario.servesRootPrm`) that most recently answered a request
+_from the same client address_ with a 401, within 120 seconds, and notes that
+on the cell. The challenge is noted in the run store with a keyed hash of the
+address (HMAC-SHA256 under the relay secret; no address is stored), so the
+request can land on any process, and one tester's request is never answered
+as, or recorded in, another tester's run. The address is Express's `req.ip`
+(the socket's, or as the app's `trust proxy` setting allows); behind the fetch
+bridge (val.town), which has no socket, it is the last `X-Forwarded-For` hop,
+the one the platform appended. When the server sees no address at all, a
+request is matched only against challenges that had none, which is how it
+behaved before. With no such cell, the answer is a 404 saying to open the
+cell's URL first from the same client; with more than one, the latest wins
+and the cell says how many others there were, by revision and scenario, never
+by run id. Run one `auth/metadata-var2` cell at a time from a client and the
+attribution is exact.
 
 Scenarios needing `as2`/`idp` origins become startable when `--as2-origin` /
 `--idp-origin` are set; deploy one more relay per role with
