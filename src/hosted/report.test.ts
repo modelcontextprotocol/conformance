@@ -6,11 +6,13 @@ import {
   incompleteNote,
   notTriedHint,
   reportJson,
+  summarize,
   unavailableScenarios,
   verdictFor,
   withNotTriedHints,
   type RunReport
 } from './report';
+import { shownChecks } from './shown';
 import { reportMarkdown } from './markdown';
 import { cellId, finalizeChecks, type CellRef } from './session';
 import { describeStep } from '../steps';
@@ -252,6 +254,39 @@ describe('grouping', () => {
     ).toBe(
       'connect; the cell tests that client respects SSE retry field timing'
     );
+  });
+});
+
+describe('passed counts', () => {
+  const logRow = (id: string): ConformanceCheck => ({
+    id,
+    name: id,
+    description: `${id} for POST /mcp`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { method: 'POST', path: '/mcp' }
+  });
+
+  it('count only SUCCESS checks: request and response log rows count toward nothing', () => {
+    const rows = shownChecks('tools_call', '2026-07-28', [
+      logRow('incoming-request'),
+      logRow('outgoing-response'),
+      identityCheck(identityOf({ name: 'c1', protocolVersion: '2026-07-28' })),
+      check('SUCCESS')
+    ]);
+    expect(summarize(rows)).toMatchObject({ passed: 1, failed: 0, info: 3 });
+  });
+
+  it('a client that never listed the tools earns no passes on the invalid-tool cell', () => {
+    // The cell a refused legacy initialize reached: nothing listed, nothing
+    // called. Its MUST NOT checks are not exercised, not passed.
+    const judged = finalizeChecks('http-invalid-tool-headers', [], '2026-07-28');
+    const summary = summarize(
+      shownChecks('http-invalid-tool-headers', '2026-07-28', judged)
+    );
+    expect(summary.passed).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.skipped).toBeGreaterThan(0);
   });
 });
 

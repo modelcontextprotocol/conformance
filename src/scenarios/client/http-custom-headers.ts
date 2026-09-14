@@ -787,6 +787,10 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
     // invalid tool violates one specific x-mcp-header constraint, so the
     // check is emitted under that constraint's requirement ID — the client
     // rejecting the tool is how the constraint is enforced on the wire.
+    // A client that never listed the tools was never offered them: not
+    // calling one proves nothing, so it is SKIPPED, not a pass (the
+    // tools/list gate above already fails).
+    const listed = this.checks.some((c) => c.id === TOOLS_LIST_GATE_ID);
     for (const [toolName, constraintId] of Object.entries(
       INVALID_TOOL_CONSTRAINT_IDS
     )) {
@@ -795,11 +799,13 @@ export class HttpInvalidToolHeadersScenario extends BaseHttpScenario {
         id: constraintId,
         name: `ClientRejectsInvalidTool_${toolName}`,
         description: `Client MUST NOT call tool '${toolName}' with invalid x-mcp-header`,
-        status: called ? 'FAILURE' : 'SUCCESS',
+        status: called ? 'FAILURE' : listed ? 'SUCCESS' : 'SKIPPED',
         timestamp: new Date().toISOString(),
         errorMessage: called
           ? `Client called '${toolName}' which has an invalid x-mcp-header. Clients MUST reject (exclude) such tools.`
-          : undefined,
+          : listed
+            ? undefined
+            : `Not exercised: the client never listed the tools, so it was never offered '${toolName}' to reject.`,
         specReferences: [SPEC_REFERENCE_TOOL_DEF]
       });
     }

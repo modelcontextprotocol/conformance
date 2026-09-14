@@ -362,6 +362,25 @@ describe('HttpInvalidToolHeadersScenario judged from its raw log', () => {
     expect(observer.getChecks()).toHaveLength(observer.getChecks().length);
     expect(rawChecksOf(observer)).toHaveLength(2);
   });
+
+  it('does not pass the MUST NOT checks for a client that never listed the tools', () => {
+    // A client turned away before it could list anything (a legacy
+    // initialize on a 2026-07-28 cell, say) was never offered an invalid
+    // tool: not calling one is not a pass.
+    const judged = finalizeChecks('http-invalid-tool-headers', []);
+    const rejects = judged.filter((c) =>
+      c.name.startsWith('ClientRejectsInvalidTool_')
+    );
+    expect(rejects.length).toBeGreaterThan(0);
+    for (const c of rejects) {
+      expect(c.status, c.name).toBe('SKIPPED');
+      expect(c.errorMessage).toMatch(/^Not exercised: the client never listed/);
+    }
+    expect(judged.filter((c) => c.status === 'SUCCESS')).toEqual([]);
+    expect(
+      statusesFor(judged, 'sep-2243-invalid-tool-tools-list-gate')
+    ).toEqual(['FAILURE']);
+  });
 });
 
 describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {

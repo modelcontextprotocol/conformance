@@ -193,6 +193,21 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
 
     const ts = new Date().toISOString();
     const reusedAtAS2 = as2SawAs1ClientId || as2SawAs1ClientIdAtToken;
+    // Credentials can only be reused at the new AS's authorization or token
+    // endpoint: a client that never got there proves nothing either way, so
+    // the no-reuse checks are SKIPPED rather than passed (re-registration
+    // above already fails).
+    const presentedAtAS2 = atAs2.some(
+      (d) => d.endpoint === 'authorize' || d.endpoint === 'token'
+    );
+    const reuseStatus = reusedAtAS2
+      ? 'FAILURE'
+      : presentedAtAS2
+        ? 'SUCCESS'
+        : 'SKIPPED';
+    const notExercised = presentedAtAS2
+      ? undefined
+      : 'Not exercised: the client never reached the new authorization server’s authorization or token endpoint.';
     checks.push({
       id: 'sep-2352-reregister-on-as-change',
       name: 'Client re-registers with the new authorization server',
@@ -209,8 +224,9 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
       description: reusedAtAS2
         ? 'Client MUST NOT reuse client credentials from a different authorization server (SEP-2352); the previous AS client_id was observed at the new AS'
         : 'Client did not present the previous AS client_id at the new authorization server',
-      status: reusedAtAS2 ? 'FAILURE' : 'SUCCESS',
+      status: reuseStatus,
       timestamp: ts,
+      ...(notExercised && { errorMessage: notExercised }),
       specReferences: [SpecReferences.MCP_AS_BINDING_2026_07_28],
       details: {
         previousClientId: AS1_CLIENT_ID,
@@ -227,8 +243,9 @@ export class AuthorizationServerMigrationScenario extends AuthHandlerScenario {
       description: reusedAtAS2
         ? 'Client MUST NOT assume that credentials valid for one authorization server will be accepted by another (SEP-2352)'
         : 'Client treated credentials as bound to the issuing authorization server',
-      status: reusedAtAS2 ? 'FAILURE' : 'SUCCESS',
+      status: reuseStatus,
       timestamp: ts,
+      ...(notExercised && { errorMessage: notExercised }),
       specReferences: [SpecReferences.MCP_AS_LOCATION_2026_07_28]
     });
     return checks;
