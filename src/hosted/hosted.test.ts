@@ -1035,7 +1035,7 @@ describe('hosted server', () => {
     );
     expect(text).toContain('no client seen yet'); // the 2026-07-28 column
     expect(text).toContain('<b>rep-client</b>');
-    expect(text).toContain('>fail</span>');
+    expect(text).toContain('✗</span> fail</span>');
     expect(text).toContain(
       `href="${base}/results/${run}/${REV_STATEFUL}/initialize"`
     );
@@ -1537,7 +1537,7 @@ describe('hosted server', () => {
       'incomplete',
       'not tried'
     ]) {
-      expect(page).toContain(`>${state}</span>`);
+      expect(page).toContain(`</span> ${state}</span>`);
     }
     expect(page).toContain('freeze a copy to link to');
     // Traffic-derived markup is text, never markup.

@@ -151,7 +151,7 @@ describe('landing page for a newcomer', () => {
       'incomplete',
       'not tried'
     ]) {
-      expect(html).toContain(`">${state}</span></dt><dd>`);
+      expect(html).toContain(`</span> ${state}</span></dt><dd>`);
     }
   });
 

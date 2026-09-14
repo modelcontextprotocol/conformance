@@ -32,6 +32,7 @@ import type { ShownCheck } from './shown';
 import {
   BY_LABEL,
   REACHED,
+  STATE_GLYPH,
   STATE_LABEL,
   causeNumbers,
   countsLine,
@@ -903,7 +904,7 @@ export function identityLine(identities: ClientIdentity[]): string {
 }
 
 export function statePill(state: CellState): string {
-  return `<span class=pill style="${STATE_STYLE[state]}">${STATE_LABEL[state]}</span>`;
+  return `<span class=pill style="${STATE_STYLE[state]}"><span aria-hidden=true>${STATE_GLYPH[state]}</span> ${STATE_LABEL[state]}</span>`;
 }
 
 function verdictCell(cell: CellReport): string {
@@ -1015,26 +1016,40 @@ function notTriedHtml(cell: CellReport): string {
 function revisionRows(
   col: ColumnReport,
   causes: ReadonlyMap<string, Cause>,
-  numbers: ReadonlyMap<string, number>
+  numbers: ReadonlyMap<string, number>,
+  runId?: string
 ): string {
   const { problems, notTried, passed } = groupColumn(col);
   if (!problems.length && !passed.length && !notTried.length) return '';
   const link = (cell: CellReport) =>
     `<a href="${esc(cell.resultsUrl)}"><code>${esc(cell.scenario)}</code></a>`;
-  const reached = (cell: CellReport) => {
+  // What needs a look can be reset from here (the live report only): the
+  // client's next request starts a new attempt, which sets the verdict.
+  const reset = (cell: CellReport) =>
+    runId && cell.startable
+      ? `<form method=post action="/results/${esc(runId)}/${esc(cell.revision)}/${esc(
+          cell.scenario
+        )}/reset?back=report" class=inline><button class=copy type=submit>Reset this cell</button></form>`
+      : '';
+  const reached = (cell: CellReport, problem = false) => {
     const s = cell.summary;
     const counts =
       s && showsCounts(cell)
         ? `${s.passed} / ${s.failed} / ${s.warnings}`
         : '–';
+    const attempt = cell.attempt
+      ? ` <span class=muted>attempt ${cell.attempt}</span>`
+      : '';
     return (
       `<tr><td>${link(cell)}</td>` +
-      `<td>${statePill(cell.state)}</td><td class=num>${counts}</td>` +
-      `<td class=what>${happenedHtml(cell, causes, numbers)}</td></tr>`
+      `<td>${statePill(cell.state)}${attempt}</td><td class=num>${counts}</td>` +
+      `<td class=what>${happenedHtml(cell, causes, numbers)}${
+        problem ? reset(cell) : ''
+      }</td></tr>`
     );
   };
   let rows = `<tr class=group><td colspan=4>${esc(col.revision)}</td></tr>`;
-  rows += problems.map(reached).join('');
+  rows += problems.map((cell) => reached(cell, true)).join('');
   if (notTried.length && !problems.length && !passed.length) {
     // Nothing reached at this revision: every startable cell is here, so
     // fold them rather than push the revisions the client did speak down.
@@ -1062,7 +1077,7 @@ function revisionRows(
       rows += `<tr class=sub><td colspan=4>${esc(passedHeading(passed.length))}</td></tr>`;
     }
   }
-  return rows + passed.map(reached).join('');
+  return rows + passed.map((cell) => reached(cell)).join('');
 }
 
 /** Every revision's cells in its groups, one table. */
@@ -1070,7 +1085,14 @@ function revisionsTable(report: RunReport): string {
   const causes = new Map(report.causes.map((c) => [c.key, c]));
   const numbers = causeNumbers(report.causes);
   const groups = report.columns
-    .map((col) => revisionRows(col, causes, numbers))
+    .map((col) =>
+      revisionRows(
+        col,
+        causes,
+        numbers,
+        report.frozenAt ? undefined : report.runId
+      )
+    )
     .join('');
   const reachedAny = report.columns.some((col) =>
     col.cells.some((c) => REACHED.includes(c.state))
@@ -1166,7 +1188,11 @@ function reportActions(report: RunReport, opts: ReportPageOptions): string {
       `<p class=note>A frozen copy, taken ${esc(utcMinute(report.frozenAt))}: it does not change ` +
       `as more traffic arrives, so it is safe to link from an issue or a chat. ` +
       `<a href="${esc(opts.liveUrl)}">The live report</a> has anything since; ` +
-      `the cell links open the live results.</p><div class=actions>${formats}</div>`
+      `${
+        report.frozenCells
+          ? 'each cell your client reached links to its page as frozen with this copy, traffic included.'
+          : 'the cell links open the live results.'
+      }</p><div class=actions>${formats}</div>`
     );
   }
   const earlier = opts.snapshots?.length

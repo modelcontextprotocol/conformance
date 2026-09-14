@@ -34,6 +34,22 @@ export const STATE_LABEL: Record<CellState, string> = {
   'n/a': 'n/a'
 };
 
+/**
+ * A glyph per state, shown with its word, so no state is told by colour
+ * alone (the pages; the Markdown keeps the words).
+ */
+export const STATE_GLYPH: Record<CellState, string> = {
+  pass: '✓',
+  fail: '✗',
+  waiting: '◔',
+  stopped: '■',
+  'in-progress': '◑',
+  incomplete: '◒',
+  'not-tried': '○',
+  'not-startable': '⊘',
+  'n/a': '–'
+};
+
 /** States of a cell the client reached. */
 export const REACHED: readonly CellState[] = [
   'pass',
