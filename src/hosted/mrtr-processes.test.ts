@@ -69,11 +69,11 @@ class FlakyStore implements RunStore {
   deleteSnapshots(runId: string) {
     return this.inner.deleteSnapshots(runId);
   }
-  saveChallenge(id: string, at: number) {
-    return this.inner.saveChallenge(id, at);
+  saveChallenge(id: string, requester: string, at: number) {
+    return this.inner.saveChallenge(id, requester, at);
   }
-  listChallenges(since: number) {
-    return this.read(() => this.inner.listChallenges(since));
+  listChallenges(since: number, requester: string) {
+    return this.read(() => this.inner.listChallenges(since, requester));
   }
 }
 

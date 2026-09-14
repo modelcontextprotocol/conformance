@@ -58,7 +58,8 @@ import {
   ROOT_PRM_WINDOW_MS,
   rootPrmAmbiguousCheck,
   rootPrmAttributedCheck,
-  rootPrmUnattributed
+  rootPrmUnattributed,
+  requesterHasher
 } from './root-prm';
 import {
   buildMatrix,
@@ -216,6 +217,13 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // (initialize params / per-request _meta) without consuming the stream
   // the scenario is about to read.
   app.use(tapJsonBody());
+
+  // Who sent a request, for the origin-root metadata (./root-prm.ts): a
+  // keyed hash of the client's address, the same in every process that
+  // shares the relay secret.
+  const requesterOf = requesterHasher(
+    opts.relaySecret ?? process.env.CONFORMANCE_RELAY_SECRET
+  );
 
   function origin(req: Request): string {
     if (opts.publicOrigin) return opts.publicOrigin;
@@ -625,7 +633,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
         // request, to the origin-root metadata, finds the note from any
         // process.
         if (captured.status === 401 && run.scenario.servesRootPrm)
-          sessions.noteChallenge(run);
+          sessions.noteChallenge(run, requesterOf(req));
         judge();
         persist();
       },
@@ -1028,9 +1036,14 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
   // A client falls back to the bare origin-root path when the path-inserted
   // one is a 404, which it is for a scenario serving its metadata at the
   // root. That path names no cell, so it is answered as the root-metadata
-  // cell most recently challenged, from whichever process (./root-prm.ts).
+  // cell most recently challenged from the same client address, from
+  // whichever process (./root-prm.ts).
   app.get(/^\/\.well-known\/oauth-protected-resource\/?$/, async (req, res) => {
-    const challenged = await sessions.recentChallenges(ROOT_PRM_WINDOW_MS);
+    const requester = requesterOf(req);
+    const challenged = await sessions.recentChallenges(
+      ROOT_PRM_WINDOW_MS,
+      requester
+    );
     const refs = challenged.flatMap(({ id }) => {
       const ref = parseCellId(id);
       return ref && matrix.cell(ref.scenarioName, ref.revision)?.startable
@@ -1053,13 +1066,23 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     await loadCells([ref]);
     const run = await createRun(req, ref, res);
     if (!run) return;
-    sessions.recordHostedCheck(run, 'root-prm', rootPrmAttributedCheck());
+    const byAddress = requester !== '';
+    sessions.recordHostedCheck(
+      run,
+      'root-prm',
+      rootPrmAttributedCheck(byAddress)
+    );
     if (others.length) {
-      const ids = others.map(cellId);
+      // Revision and scenario only: another cell's run id would let anyone
+      // who reads this run's results read that run's too.
+      const cells = others.map(({ revision, scenarioName }) => ({
+        revision,
+        scenario: scenarioName
+      }));
       sessions.recordHostedCheck(
         run,
-        `root-prm-ambiguous:${ids.join(' ')}`,
-        rootPrmAmbiguousCheck(ids)
+        `root-prm-ambiguous:${cells.map((c) => `${c.revision}/${c.scenario}`).join(' ')}`,
+        rootPrmAmbiguousCheck(cells, byAddress)
       );
     }
     const q = req.url.indexOf('?');

@@ -68,11 +68,15 @@ class SlowStore implements RunStore {
       this.inner.deleteSnapshots(runId)
     );
   }
-  saveChallenge(id: string, at: number) {
-    return this.slow('saveChallenge', () => this.inner.saveChallenge(id, at));
+  saveChallenge(id: string, requester: string, at: number) {
+    return this.slow('saveChallenge', () =>
+      this.inner.saveChallenge(id, requester, at)
+    );
   }
-  listChallenges(since: number) {
-    return this.slow('listChallenges', () => this.inner.listChallenges(since));
+  listChallenges(since: number, requester: string) {
+    return this.slow('listChallenges', () =>
+      this.inner.listChallenges(since, requester)
+    );
   }
 }
 

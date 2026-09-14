@@ -28,7 +28,7 @@ import type {
 } from '../mock-server';
 import { isStatefulVersion } from '../connection/versions';
 import { hostedScenarios } from './catalog';
-import { CHALLENGE_RETENTION_MS, type RunStore } from './store';
+import { MemoryRunStore, type RunStore } from './store';
 import { missingRelaysReason, NOT_HOSTED_REASON } from './matrix';
 import {
   addProtocolVersion,
@@ -360,8 +360,8 @@ export class SessionManager {
    * the cell wrote it: only such a row can be written over with less.
    */
   private ownRows = new Set<string>();
-  /** Without a store: when each cell last answered with a 401. */
-  private challenges = new Map<string, number>();
+  /** Without a store: the challenge notes (see noteChallenge()). */
+  private challenges = new MemoryRunStore();
 
   constructor(opts: SessionManagerOptions = {}) {
     this.ttlMs = opts.ttlMs ?? DEFAULT_CELL_TTL_MS;
@@ -610,40 +610,41 @@ export class SessionManager {
   }
 
   /**
-   * Note that the cell answered a request with a sign-in challenge (401),
-   * so that a later request naming no cell can be attributed to it (see
-   * ./root-prm.ts). With a store the note is written through and flush()
-   * waits for it: a client following the challenge to another process
-   * finds it there.
+   * Note that the cell answered a request from `requester` (a keyed hash of
+   * the client's address, '' when unknown) with a sign-in challenge (401),
+   * so that a later request from the same requester naming no cell can be
+   * attributed to it (see ./root-prm.ts). With a store the note is written
+   * through and flush() waits for it: a client following the challenge to
+   * another process finds it there.
    */
-  noteChallenge(run: HostedRun, at = Date.now()): void {
+  noteChallenge(run: HostedRun, requester: string, at = Date.now()): void {
     const store = this.store;
     if (!store) {
-      for (const [id, when] of this.challenges) {
-        if (when < at - CHALLENGE_RETENTION_MS) this.challenges.delete(id);
-      }
-      this.challenges.set(run.id, at);
+      // In memory: written before this returns.
+      void this.challenges.saveChallenge(run.id, requester, at);
       return;
     }
-    const p: Promise<void> = retrying(() => store.saveChallenge(run.id, at))
+    const p: Promise<void> = retrying(() =>
+      store.saveChallenge(run.id, requester, at)
+    )
       .catch(logStoreError)
       .finally(() => this.pending.delete(p));
     this.pending.add(p);
   }
 
-  /** Cells challenged in the last `windowMs`, latest first. */
+  /**
+   * Cells challenged from `requester` in the last `windowMs`, latest first.
+   * Never another requester's.
+   */
   async recentChallenges(
-    windowMs: number
+    windowMs: number,
+    requester: string
   ): Promise<Array<{ id: string; at: number }>> {
     const since = Date.now() - windowMs;
     const store = this.store;
-    if (!store) {
-      return Array.from(this.challenges, ([id, at]) => ({ id, at }))
-        .filter((c) => c.at >= since)
-        .sort((a, b) => b.at - a.at);
-    }
+    if (!store) return this.challenges.listChallenges(since, requester);
     try {
-      return await retrying(() => store.listChallenges(since));
+      return await retrying(() => store.listChallenges(since, requester));
     } catch (e) {
       logStoreError(e);
       throw new StoreUnavailableError(e);

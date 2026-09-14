@@ -72,15 +72,23 @@ export interface RunStore {
   listSnapshots(runId: string): Promise<SnapshotInfo[]>;
   deleteSnapshots(runId: string): Promise<void>;
   /**
-   * Note that cell `id` answered a request with a sign-in challenge (401)
-   * at `at` (ms since the epoch), replacing the cell's earlier note. A
-   * request that names no cell (the origin-root protected resource
-   * metadata, see ./root-prm.ts) is attributed from these notes, whichever
-   * process sent the challenge. A store may drop notes after an hour.
+   * Note that cell `id` answered a request from `requester` with a sign-in
+   * challenge (401) at `at` (ms since the epoch), replacing that pair's
+   * earlier note. `requester` is a keyed hash of the client's address, ''
+   * when it is unknown (see requesterHasher() in ./root-prm.ts). A request
+   * that names no cell (the origin-root protected resource metadata) is
+   * attributed from the notes of its own requester, whichever process sent
+   * the challenge. A store may drop notes after an hour.
    */
-  saveChallenge(id: string, at: number): Promise<void>;
-  /** Cells whose latest challenge is at or after `since`, latest first. */
-  listChallenges(since: number): Promise<Array<{ id: string; at: number }>>;
+  saveChallenge(id: string, requester: string, at: number): Promise<void>;
+  /**
+   * Cells whose latest challenge to `requester` is at or after `since`,
+   * latest first. Never another requester's cells.
+   */
+  listChallenges(
+    since: number,
+    requester: string
+  ): Promise<Array<{ id: string; at: number }>>;
 }
 
 /** How long a store must keep a challenge note (see saveChallenge()). */
@@ -156,18 +164,28 @@ export class MemoryRunStore implements RunStore {
   async deleteSnapshots(runId: string): Promise<void> {
     this.snapshots.delete(runId);
   }
-  private challenges = new Map<string, number>();
-  async saveChallenge(id: string, at: number): Promise<void> {
-    for (const [cell, when] of this.challenges) {
-      if (when < at - CHALLENGE_RETENTION_MS) this.challenges.delete(cell);
+  /** Keyed by requester and cell id (a requester hash has no space). */
+  private challenges = new Map<
+    string,
+    { id: string; requester: string; at: number }
+  >();
+  async saveChallenge(
+    id: string,
+    requester: string,
+    at: number
+  ): Promise<void> {
+    for (const [key, c] of this.challenges) {
+      if (c.at < at - CHALLENGE_RETENTION_MS) this.challenges.delete(key);
     }
-    this.challenges.set(id, at);
+    this.challenges.set(`${requester} ${id}`, { id, requester, at });
   }
   async listChallenges(
-    since: number
+    since: number,
+    requester: string
   ): Promise<Array<{ id: string; at: number }>> {
-    return Array.from(this.challenges, ([id, at]) => ({ id, at }))
-      .filter((c) => c.at >= since)
-      .sort((a, b) => b.at - a.at);
+    return Array.from(this.challenges.values())
+      .filter((c) => c.requester === requester && c.at >= since)
+      .sort((a, b) => b.at - a.at)
+      .map(({ id, at }) => ({ id, at }));
   }
 }
