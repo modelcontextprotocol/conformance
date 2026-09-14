@@ -617,15 +617,27 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       // write-through.
       if (judge() && response) persist();
     });
-    tapResponse(res, (captured) => {
-      response = captured;
-      // Noted before the response is flushed, so the client's next request,
-      // to the origin-root metadata, finds the note from any process.
-      if (captured.status === 401 && run.scenario.servesRootPrm)
-        sessions.noteChallenge(run);
-      judge();
-      persist();
-    });
+    tapResponse(
+      res,
+      (captured) => {
+        response = captured;
+        // Noted before the response is flushed, so the client's next
+        // request, to the origin-root metadata, finds the note from any
+        // process.
+        if (captured.status === 401 && run.scenario.servesRootPrm)
+          sessions.noteChallenge(run);
+        judge();
+        persist();
+      },
+      // A server-sent event stream may stay open for as long as the client
+      // listens, so what the cell records as it sends each event is written
+      // through then, not left for an end that may never come.
+      () => {
+        const type = res.getHeader('content-type');
+        if (typeof type === 'string' && type.includes('text/event-stream'))
+          persist();
+      }
+    );
     // Outside the tap, so what is judged is what the client was told.
     if (mcp && req.method === 'POST' && isStatefulVersion(run.revision)) {
       pinInitializeVersion(

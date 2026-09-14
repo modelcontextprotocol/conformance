@@ -40,7 +40,17 @@ export function listenFetch(
       })
     );
     res.writeHead(out.status, Object.fromEntries(out.headers));
-    res.end(Buffer.from(await out.arrayBuffer()));
+    // Passed on as it arrives: a server-sent event stream may stay open.
+    if (out.body) {
+      const reader = out.body.getReader();
+      res.on('close', () => void reader.cancel().catch(() => {}));
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+    }
+    res.end();
   });
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }

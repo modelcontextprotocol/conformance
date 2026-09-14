@@ -522,12 +522,21 @@ are listed in `examples/hosted/valtown-manifest.json`.
 
 val.town spreads one run's requests over several isolates that share no
 memory, and cannot send a request to the isolate holding another one open,
-so `valtown.ts` excludes two scenarios, each with the reason the page shows:
-`sse-retry` keeps a response stream open and times the client's reconnect
-across requests that can reach different instances, and
-`elicitation-sep1034-client-defaults` keeps the tool call's response open on
-one instance while it waits for the client's answer to an elicitation
-request, which arrives as a separate request that may reach another.
+so `valtown.ts` excludes `elicitation-sep1034-client-defaults`, with the
+reason the page shows: it keeps the tool call's response open on one
+instance while it waits for the client's answer to an elicitation request,
+which arrives as a separate request that may reach another.
+
+`sse-retry` runs here. The fetch bridge hands a server-sent event stream
+back at its first write instead of buffering it until it ends (a
+reconnecting GET stays open for as long as the client listens), the hosted
+server writes through what the cell records on each event it sends, and
+`withServerTiming` holds the stream's end until the store write lands. The
+scenario reads the pending tool call, the next event id and the GETs so far
+from its log (`Scenario.answersFromLog`), so a reconnect that reaches
+another isolate is answered, and the verdict reads the reconnect delay from
+the log's timestamps. That compares two isolates' clocks, so any skew between
+them counts against the check's 50 ms early tolerance.
 `sep-2322-client-request-state` (MRTR) runs here: the only state its retry
 needs, the original request id and the exact `requestState`, travels inside
 the `requestState` it sends, with a digest so any isolate can rebuild and

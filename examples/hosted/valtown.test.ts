@@ -86,5 +86,9 @@ describe('val.town fetch bridge', () => {
       (s: { name: string }) => s.name === 'sep-2322-client-request-state'
     ).cells[1];
     expect(cell).toMatchObject({ revision: '2026-07-28', startable: true });
+    // sse-retry reads what it needs from the run's log and streams.
+    expect(
+      list.find((s: { name: string }) => s.name === 'sse-retry').cells[0]
+    ).toMatchObject({ revision: '2025-11-25', startable: true });
   });
 });

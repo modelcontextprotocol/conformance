@@ -42,8 +42,6 @@ registerRequirementSources(REQUIREMENT_SOURCES);
  * before every request, so both run here.)
  */
 const EXCLUDE: Record<string, string> = {
-  'sse-retry':
-    'its reconnect test keeps a response stream open and times the reconnect across requests, and Val Town can send those requests to different server instances that share no memory',
   'elicitation-sep1034-client-defaults':
     "keeps the tool call's response open on one server instance while it waits for your client's answer to an elicitation request, and that answer arrives as a separate request that Val Town cannot guarantee reaches the same instance"
 };
@@ -109,7 +107,24 @@ export function withServerTiming(
     // same (unread) body rather than appending in place.
     const headers = new Headers(response.headers);
     headers.append('server-timing', metrics.join(', '));
-    return new Response(response.body, {
+    // A server-sent event stream comes back before it ends (see the fetch
+    // bridge), so what is recorded while it is open, and the write-through
+    // queued at its end, would be left to an isolate that may be stopped:
+    // its end waits for the flush instead.
+    const eventStream = (response.headers.get('content-type') ?? '').includes(
+      'text/event-stream'
+    );
+    const body =
+      eventStream && response.body
+        ? response.body.pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+              flush: async () => {
+                await flush();
+              }
+            })
+          )
+        : response.body;
+    return new Response(body, {
       status: response.status,
       statusText: response.statusText,
       headers
@@ -117,9 +132,10 @@ export function withServerTiming(
   };
 }
 
-// The bridge buffers until end(), by which point the scenario has recorded
-// its checks and the write-through has started; finish it before the
-// isolate is allowed to go idle. val.town has no waitUntil, and a promise
+// The bridge buffers until end() (a server-sent event stream aside: see
+// withServerTiming), by which point the scenario has recorded its checks and
+// the write-through has started; finish it before the isolate is allowed to
+// go idle. val.town has no waitUntil, and a promise
 // still running after the response may be stopped with the isolate, so
 // the record is not left to one. The write is one store round trip: a
 // cell's rows go together, and a discover does not wait on seeding.

@@ -109,6 +109,44 @@ describe('withServerTiming', () => {
   });
 });
 
+describe('withServerTiming and event streams', () => {
+  it("holds an event stream's end until the store write has finished", async () => {
+    let flushes = 0;
+    let release!: () => void;
+    const wrapped = withServerTiming(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(new TextEncoder().encode('data: 1\n\n'));
+              c.close();
+            }
+          }),
+          { headers: { 'content-type': 'text/event-stream' } }
+        ),
+      () =>
+        ++flushes === 1
+          ? Promise.resolve()
+          : new Promise<void>((r) => {
+              release = r;
+            }),
+      0
+    );
+    const r = await wrapped(new Request('http://test/'));
+    let done = false;
+    const body = r.text().then((t) => {
+      done = true;
+      return t;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    // Flushed once before the headers, and again at the stream's end.
+    expect(flushes).toBe(2);
+    expect(done).toBe(false);
+    release();
+    expect(await body).toBe('data: 1\n\n');
+  });
+});
+
 describe('val.town entry', () => {
   it('adds Server-Timing to real responses, with cold on the first only', async () => {
     const first = await handler(new Request('http://test/scenarios'));

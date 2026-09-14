@@ -17,6 +17,12 @@ import {
   RequestListener
 } from '../../types.js';
 
+/** A check's timestamp in ms since the epoch, or null. */
+function wallClock(check: ConformanceCheck | undefined): number | null {
+  const t = check ? Date.parse(check.timestamp) : NaN;
+  return Number.isNaN(t) ? null : t;
+}
+
 export class SSERetryScenario implements Scenario {
   name = 'sse-retry';
   readonly source = {
@@ -25,6 +31,14 @@ export class SSERetryScenario implements Scenario {
   } as const;
   description =
     'Tests that client respects SSE retry field timing and reconnects properly (SEP-1699)';
+  /**
+   * On a serverless host the GET that resumes the tool call can reach a
+   * different process from the tool call itself, so which call is pending,
+   * the next event id and the GET count are read from the log, which the
+   * hosted server brings up to date before every request. In one process
+   * the log says what memory does.
+   */
+  readonly answersFromLog = true;
 
   private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
@@ -105,9 +119,14 @@ export class SSERetryScenario implements Scenario {
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): void {
+    // The session id the client was given, whichever process minted it.
+    const sid = req.headers['mcp-session-id'];
+    if (typeof sid === 'string' && sid) this.sessionId = sid;
+
     if (req.method === 'GET') {
       // Track GET reconnection timing and Last-Event-ID
-      this.getConnectionCount++;
+      this.getConnectionCount =
+        Math.max(this.getConnectionCount, this.getsInLog().length) + 1;
       this.getReconnectionTime = performance.now();
 
       const lastEventId = req.headers['last-event-id'] as string | undefined;
@@ -156,8 +175,7 @@ export class SSERetryScenario implements Scenario {
     });
 
     // Generate event ID
-    this.eventIdCounter++;
-    const eventId = `event-${this.eventIdCounter}`;
+    const eventId = this.nextEventId();
 
     // Send priming event with ID and retry field
     const primingContent = `id: ${eventId}\nretry: ${this.retryValue}\ndata: \n\n`;
@@ -180,11 +198,14 @@ export class SSERetryScenario implements Scenario {
     // Store the GET stream to send pending tool response
     this.getResponseStream = res;
 
-    // If we have a pending tool call, send the response now
-    if (this.pendingToolCallId !== null) {
+    // If we have a pending tool call, send the response now. The log says
+    // which, so a process that did not see the tool call still answers it
+    // and one that did does not answer it twice.
+    const pendingId = this.pendingFromLog();
+    if (pendingId !== null) {
       const toolResponse = {
         jsonrpc: '2.0',
-        id: this.pendingToolCallId,
+        id: pendingId,
         result: {
           content: [
             {
@@ -195,7 +216,7 @@ export class SSERetryScenario implements Scenario {
         }
       };
 
-      const responseEventId = `event-${++this.eventIdCounter}`;
+      const responseEventId = this.nextEventId();
       const responseContent = `event: message\nid: ${responseEventId}\ndata: ${JSON.stringify(toolResponse)}\n\n`;
       res.write(responseContent);
 
@@ -208,7 +229,7 @@ export class SSERetryScenario implements Scenario {
         details: {
           eventId: responseEventId,
           eventType: 'message',
-          jsonrpcId: this.pendingToolCallId,
+          jsonrpcId: pendingId,
           body: toolResponse,
           raw: responseContent
         }
@@ -216,6 +237,48 @@ export class SSERetryScenario implements Scenario {
 
       this.pendingToolCallId = null;
     }
+  }
+
+  /** GET requests in the log, in order. */
+  private getsInLog(): ConformanceCheck[] {
+    return this.checks.filter(
+      (c) =>
+        c.id === 'incoming-request' &&
+        (c.details as { method?: unknown } | undefined)?.method === 'GET'
+    );
+  }
+
+  /** The id of the last tools/call not yet answered on a GET stream. */
+  private pendingFromLog(): number | string | null {
+    let pending: number | string | null = null;
+    for (const c of this.checks) {
+      const d = (c.details ?? {}) as Record<string, unknown>;
+      if (c.id === 'incoming-request' && d.jsonrpcMethod === 'tools/call') {
+        pending = (d.jsonrpcId as number | string | undefined) ?? null;
+      } else if (
+        c.id === 'outgoing-sse-event' &&
+        d.eventType === 'message' &&
+        d.jsonrpcId === pending
+      ) {
+        pending = null;
+      }
+    }
+    return pending;
+  }
+
+  /** The next `event-N`, past every id this cell has sent, here or elsewhere. */
+  private nextEventId(): string {
+    let highest = this.eventIdCounter;
+    for (const c of this.checks) {
+      const id = (c.details as { eventId?: unknown } | undefined)?.eventId;
+      const n =
+        c.id === 'outgoing-sse-event' && typeof id === 'string'
+          ? Number(id.replace(/^event-/, ''))
+          : NaN;
+      if (Number.isInteger(n) && n > highest) highest = n;
+    }
+    this.eventIdCounter = highest + 1;
+    return `event-${this.eventIdCounter}`;
   }
 
   private handlePostRequest(
@@ -379,8 +442,7 @@ export class SSERetryScenario implements Scenario {
     });
 
     // Send priming event with retry field
-    this.eventIdCounter++;
-    const primingEventId = `event-${this.eventIdCounter}`;
+    const primingEventId = this.nextEventId();
     const primingContent = `id: ${primingEventId}\nretry: ${this.retryValue}\ndata: \n\n`;
     res.write(primingContent);
 
@@ -418,8 +480,31 @@ export class SSERetryScenario implements Scenario {
   }
 
   private generateChecks(): void {
+    // A fresh instance judging a merged log (the hosted server, where the
+    // tool call and the reconnect may have reached different processes)
+    // has nothing in memory: it reads the same facts from the log, timing
+    // from the checks' wall-clock timestamps.
+    const gets = this.getsInLog();
+    const getConnectionCount = Math.max(this.getConnectionCount, gets.length);
+    let closeAt = this.toolStreamCloseTime;
+    let reconnectAt = this.getReconnectionTime;
+    if (closeAt === null || reconnectAt === null) {
+      const close = this.checks.filter((c) => c.id === 'outgoing-stream-close');
+      closeAt = wallClock(close[close.length - 1]);
+      reconnectAt = wallClock(gets[gets.length - 1]);
+    }
+    const lastEventIds = this.lastEventIds.length
+      ? this.lastEventIds
+      : gets
+          .map(
+            (c) =>
+              (c.details as { headers?: Record<string, unknown> } | undefined)
+                ?.headers?.['last-event-id']
+          )
+          .filter((v): v is string => typeof v === 'string');
+
     // Check 1: Client should have reconnected via GET after tool call stream close
-    if (this.getConnectionCount < 1) {
+    if (getConnectionCount < 1) {
       this.checks.push({
         id: 'client-sse-graceful-reconnect',
         name: 'ClientGracefulReconnect',
@@ -435,8 +520,8 @@ export class SSERetryScenario implements Scenario {
           }
         ],
         details: {
-          getConnectionCount: this.getConnectionCount,
-          toolStreamCloseTime: this.toolStreamCloseTime,
+          getConnectionCount,
+          toolStreamCloseTime: closeAt,
           retryValue: this.retryValue
         }
       });
@@ -458,16 +543,13 @@ export class SSERetryScenario implements Scenario {
         }
       ],
       details: {
-        getConnectionCount: this.getConnectionCount
+        getConnectionCount
       }
     });
 
     // Check 2: Client MUST respect retry field timing
-    if (
-      this.toolStreamCloseTime !== null &&
-      this.getReconnectionTime !== null
-    ) {
-      const actualDelay = this.getReconnectionTime - this.toolStreamCloseTime;
+    if (closeAt !== null && reconnectAt !== null) {
+      const actualDelay = reconnectAt - closeAt;
       const minExpected = this.retryValue - this.EARLY_TOLERANCE;
 
       // The retry MUST is a lower bound ("waiting the given number of
@@ -496,7 +578,7 @@ export class SSERetryScenario implements Scenario {
           actualDelayMs: Math.round(actualDelay),
           minAcceptableMs: minExpected,
           earlyToleranceMs: this.EARLY_TOLERANCE,
-          getConnectionCount: this.getConnectionCount
+          getConnectionCount
         }
       });
     } else {
@@ -515,15 +597,15 @@ export class SSERetryScenario implements Scenario {
           }
         ],
         details: {
-          toolStreamCloseTime: this.toolStreamCloseTime,
-          getReconnectionTime: this.getReconnectionTime
+          toolStreamCloseTime: closeAt,
+          getReconnectionTime: reconnectAt
         }
       });
     }
 
     // Check 3: Client SHOULD send Last-Event-ID header on reconnection
     const hasLastEventId =
-      this.lastEventIds.length > 0 && this.lastEventIds[0] !== undefined;
+      lastEventIds.length > 0 && lastEventIds[0] !== undefined;
 
     this.checks.push({
       id: 'client-sse-last-event-id',
@@ -540,8 +622,8 @@ export class SSERetryScenario implements Scenario {
       ],
       details: {
         hasLastEventId,
-        lastEventIds: this.lastEventIds,
-        getConnectionCount: this.getConnectionCount
+        lastEventIds,
+        getConnectionCount
       },
       errorMessage: !hasLastEventId
         ? 'Client did not send Last-Event-ID header on reconnection. This is a SHOULD requirement for resumability.'

@@ -144,10 +144,14 @@ export interface CapturedResponse {
  * RESPONSE_CAP) the body once the response is complete. `onEnd` runs after
  * the original `end`, synchronously, so a bridge that resolves its Response
  * from `end` still sees whatever `onEnd` records before it flushes.
+ * `onWrite`, when given, runs after each write before the end, likewise
+ * synchronously: for a response that may never end, such as a server-sent
+ * event stream the client keeps open.
  */
 export function tapResponse(
   res: ServerResponse,
-  onEnd: (captured: CapturedResponse) => void
+  onEnd: (captured: CapturedResponse) => void,
+  onWrite?: () => void
 ): void {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -173,7 +177,9 @@ export function tapResponse(
   const end = res.end;
   res.write = function (this: ServerResponse, ...args: unknown[]) {
     capture(args[0], args[1]);
-    return (write as (...a: unknown[]) => boolean).apply(this, args);
+    const out = (write as (...a: unknown[]) => boolean).apply(this, args);
+    onWrite?.();
+    return out;
   } as ServerResponse['write'];
   res.end = function (this: ServerResponse, ...args: unknown[]) {
     capture(args[0], args[1]);

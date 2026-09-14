@@ -81,10 +81,6 @@ export function toFetchHandler(
       captureHeaders(h);
       return nodeRes;
     }) as ServerResponse['writeHead'];
-    nodeRes.write = ((c: string | Buffer, enc?: BufferEncoding) => {
-      if (c) chunks.push(typeof c === 'string' ? Buffer.from(c, enc) : c);
-      return true;
-    }) as ServerResponse['write'];
     nodeRes.flushHeaders = () => {};
     Object.defineProperty(nodeRes, 'statusCode', {
       get: () => status,
@@ -93,9 +89,53 @@ export function toFetchHandler(
       }
     });
 
+    // A server-sent event stream can stay open for as long as the client
+    // listens (a GET stream, a response held open), so it is handed back at
+    // its first write and fed as the listener writes; any other response is
+    // buffered until end().
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let cancelled = false;
+    const isEventStream = () =>
+      (headers.get('content-type') ?? '').includes('text/event-stream');
+
     return new Promise<Response>((resolve) => {
-      nodeRes.end = ((c?: string | Buffer, enc?: BufferEncoding) => {
-        if (c) chunks.push(typeof c === 'string' ? Buffer.from(c, enc) : c);
+      const push = (c: string | Uint8Array, enc?: BufferEncoding) => {
+        const buf = typeof c === 'string' ? Buffer.from(c, enc) : c;
+        if (!stream) {
+          chunks.push(Buffer.from(buf));
+          return;
+        }
+        if (!cancelled) stream.enqueue(buf);
+      };
+      nodeRes.write = ((c: string | Uint8Array, enc?: BufferEncoding) => {
+        if (!c) return true;
+        push(c, enc);
+        if (!stream && isEventStream()) {
+          resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  stream = controller;
+                  for (const b of chunks.splice(0)) controller.enqueue(b);
+                },
+                // The client went away: tell the listener, as a socket would.
+                cancel() {
+                  cancelled = true;
+                  nodeRes.emit('close');
+                }
+              }),
+              { status, headers }
+            )
+          );
+        }
+        return true;
+      }) as ServerResponse['write'];
+      nodeRes.end = ((c?: string | Uint8Array, enc?: BufferEncoding) => {
+        if (c) push(c, enc);
+        if (stream) {
+          if (!cancelled) stream.close();
+          return nodeRes;
+        }
         resolve(
           new Response(chunks.length ? Buffer.concat(chunks) : null, {
             status,
