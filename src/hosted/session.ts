@@ -271,6 +271,13 @@ export interface HostedRun extends CellRef {
    * presenting one after a reset is treated as having none.
    */
   refused: Set<string>;
+  /**
+   * Hashes of what the cell issued in this attempt in other processes (see
+   * refreshIssued()): the test sign-in server may issue the same value
+   * again (a fixed client_id, a code packed from the same request), and
+   * what this attempt issued is the client's to use.
+   */
+  issuedNow: Set<string>;
   /** Builds the cell's scenario and handlers afresh, for a new attempt. */
   build: () => CellParts;
   /** The move to a newer attempt under way, if any (see renew()). */
@@ -502,6 +509,7 @@ export class SessionManager {
       traffic: emptyRow(),
       trafficSize: { bytes: 0 },
       refused: new Set(),
+      issuedNow: new Set(),
       build
     };
     this.runs.set(id, run);
@@ -649,6 +657,34 @@ export class SessionManager {
     if (run.scenario !== scenario) await this.hydrate(run);
     else if (seededBefore && run.scenario.answersFromLog)
       await this.refresh(run);
+    if (run.refused.size) await this.refreshIssued(run);
+  }
+
+  /**
+   * After a reset, what this attempt has issued so far in any process
+   * (run.issuedNow), so a credential issued again is not refused. When the
+   * store cannot be read, what this process knows stands.
+   */
+  private async refreshIssued(run: HostedRun): Promise<void> {
+    try {
+      const rows = await retrying(() => this.cells.loadTraffic(run.id));
+      for (const [writer, row] of rows) {
+        if (attemptOfWriter(writer) !== run.attempt) continue;
+        for (const h of row.issued) run.issuedNow.add(h);
+      }
+    } catch (e) {
+      logStoreError(e);
+    }
+  }
+
+  /**
+   * The hashes of the credentials the cell refuses now: issued in an
+   * earlier attempt, and not issued again in this one.
+   */
+  refusedNow(run: HostedRun): ReadonlySet<string> {
+    if (!run.refused.size) return run.refused;
+    const now = new Set([...run.issuedNow, ...run.traffic.issued]);
+    return new Set([...run.refused].filter((h) => !now.has(h)));
   }
 
   /**
@@ -726,7 +762,8 @@ export class SessionManager {
       traffic: emptyRow(),
       trafficSize: { bytes: 0 },
       trafficWritten: undefined,
-      refused
+      refused,
+      issuedNow: new Set()
     } satisfies Partial<HostedRun>);
     try {
       await old.stop();

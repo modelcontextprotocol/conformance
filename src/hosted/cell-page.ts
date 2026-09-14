@@ -26,7 +26,7 @@ import type { CellRef } from './session';
 import type { CellState, Verdict } from './report';
 import type { ClientIdentity } from './identity';
 import type { ShownCheck } from './shown';
-import { STATE_LABEL, countsLine, utcMinute } from './markdown';
+import { STATE_GLYPH, STATE_LABEL, countsLine, utcMinute } from './markdown';
 import { summarize } from './report';
 import { isStatefulVersion } from '../connection/versions';
 import {
@@ -50,25 +50,11 @@ import {
   liveScript,
   page,
   prose,
-  statePill,
   stepsOpen
 } from './html';
 import type { BuildInfo } from './build';
 import { configPicker, pickerScript } from './config-picker';
 import { serverName } from './client-config';
-
-/** A glyph per state, so none is told by colour alone. */
-export const STATE_GLYPH: Record<CellState, string> = {
-  pass: '✓',
-  fail: '✗',
-  waiting: '◔',
-  stopped: '■',
-  'in-progress': '◑',
-  incomplete: '◒',
-  'not-tried': '○',
-  'not-startable': '⊘',
-  'n/a': '–'
-};
 
 const CHECK_GLYPH: Record<CheckStatus, string> = {
   SUCCESS: '✓',
@@ -283,14 +269,23 @@ function faultFields(c: ConformanceCheck): {
   const fields: string[] = [];
   const missing: string[] = [];
   for (const [k, v] of Object.entries(c.details ?? {})) {
-    if (GENERIC_KEYS.has(k) || /^expected/i.test(k)) continue;
+    if (GENERIC_KEYS.has(k) || VALUE_KEY.test(k)) continue;
     if (typeof v === 'object' && v !== null) continue;
     if (/protocol.?version/i.test(k)) fields.push('mcp-protocol-version');
     else fields.push(k);
     if (typeof v === 'string' && MISSING_VALUES.has(v)) missing.push(k);
   }
-  return { fields, missing };
+  // A header the check names in words ("Mcp-Method header value …").
+  const said = `${c.errorMessage ?? ''} ${c.description ?? ''}`;
+  for (const m of said.matchAll(
+    /\b(mcp-[a-z]+(?:-[a-z]+)*|mcp-protocol-version)\b/gi
+  ))
+    fields.push(m[1].toLowerCase());
+  return { fields: Array.from(new Set(fields)), missing };
 }
+
+/** Details keys that hold a value compared, not a field's name. */
+const VALUE_KEY = /^(expected|actual|received|got|sent)/i;
 
 /** Expected against actual, when the check's details say both. */
 function expectedActual(
@@ -312,7 +307,13 @@ function expectedActual(
           `${lower}Sent`
         ]
       : ['actual', 'received', 'got'];
-    const found = candidates.find((x) => x in d && x !== k);
+    // Else the one "actual…" (or "received…") value the details give.
+    const others = Object.keys(d).filter(
+      (x) => x !== k && /^(actual|received|got)/i.test(x)
+    );
+    const found =
+      candidates.find((x) => x in d && x !== k) ??
+      (others.length === 1 ? others[0] : undefined);
     if (found) out.push([rest ? lower : 'value', v, d[found]]);
   }
   return out;
@@ -923,9 +924,4 @@ export function earlierCause(
   const failure = shown.find((c) => c.status === 'FAILURE' && !c.notSeen);
   if (failure) return `${failure.id}: ${failure.reason ?? failure.name}`;
   return note;
-}
-
-// Kept for the state pill's callers that want the glyph too.
-export function glyphPill(state: CellState): string {
-  return `<span aria-hidden=true>${STATE_GLYPH[state]}</span> ${statePill(state)}`;
 }

@@ -159,6 +159,81 @@ export function capped(
   return { text: cut.replace(/�$/, ''), bytes: size };
 }
 
+/**
+ * Fields whose values are credentials a client could present: an access
+ * token is what an Authorization header carries, so it is no more kept in
+ * a body than in the header. What the flow needs to be read (a code, a
+ * PKCE verifier, a client_id) stays.
+ */
+const SECRET_FIELDS = new Set([
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'client_secret',
+  'client_assertion',
+  'assertion',
+  'subject_token',
+  'actor_token'
+]);
+
+/** What a credential's value reads as in a kept body. */
+export const REDACTED = '(not kept)';
+
+const SECRET_PAIR = new RegExp(
+  `"(${Array.from(SECRET_FIELDS).join('|')})"\\s*:\\s*"(?:[^"\\\\]|\\\\.)*"`,
+  'g'
+);
+
+/**
+ * A JSON or form body with each credential's value (SECRET_FIELDS, at any
+ * depth of a JSON body) replaced by REDACTED. Anything else is returned as
+ * it is.
+ */
+export function redacted(text: string | undefined): string | undefined {
+  if (!text) return text;
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Cut short, say: each "field": "value" pair is found by pattern.
+      return text.replace(
+        SECRET_PAIR,
+        (_m, k: string) => `"${k}":"${REDACTED}"`
+      );
+    }
+    let hit = false;
+    const walk = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(walk);
+      if (typeof v !== 'object' || v === null) return v;
+      return Object.fromEntries(
+        Object.entries(v).map(([k, x]) => {
+          if (SECRET_FIELDS.has(k) && typeof x === 'string') {
+            hit = true;
+            return [k, REDACTED];
+          }
+          return [k, walk(x)];
+        })
+      );
+    };
+    const out = walk(parsed);
+    return hit ? JSON.stringify(out) : text;
+  }
+  if (/^[\w.~%-]+=/.test(trimmed)) {
+    const params = new URLSearchParams(text);
+    let hit = false;
+    for (const key of params.keys()) {
+      if (SECRET_FIELDS.has(key)) {
+        params.set(key, REDACTED);
+        hit = true;
+      }
+    }
+    return hit ? params.toString() : text;
+  }
+  return text;
+}
+
 /** The JSON-RPC messages in a body: each one's method and id. */
 export function rpcOf(body: string | undefined): RpcSummary[] | undefined {
   if (!body) return undefined;
@@ -483,18 +558,21 @@ const sockets = new WeakMap<object, string>();
 let socketSeq = 0;
 
 /**
- * The connection a request came over, as Exchange.conn keeps it: its MCP
- * session when it names one (or `sessionId`, the one its answer opened),
- * else the socket, when the host has a real one. Undefined when neither can
- * be told, as behind a fetch-style host.
+ * The connection a request came over, as Exchange.conn keeps it: on the
+ * stateful wire, its MCP session when it names one (or `opened`, the one
+ * its answer opened); else the socket, when the host has a real one (the
+ * stateless wire's session header names no session). Undefined when
+ * neither can be told, as behind a fetch-style host.
  */
 export function connectionOf(
   req: IncomingMessage,
-  sessionId?: string
+  session?: { stateful: boolean; opened?: string }
 ): string | undefined {
-  const named = req.headers['mcp-session-id'];
-  const session = sessionId ?? (typeof named === 'string' ? named : undefined);
-  if (session) return `s:${session}`;
+  if (session?.stateful) {
+    const named = req.headers['mcp-session-id'];
+    const id = typeof named === 'string' ? named : session.opened;
+    if (id) return `s:${id}`;
+  }
   const carried = (req as IncomingMessage & { [CONNECTION]?: string })[
     CONNECTION
   ];

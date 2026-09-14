@@ -86,6 +86,7 @@ import {
   refusalBody,
   refusedCredential,
   rpcOf,
+  redacted,
   connectionNumbers,
   jsonLine,
   type Exchange
@@ -574,8 +575,9 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     };
     // A token the cell issued before its last reset is withheld: the cell
     // answers as it answers a request that carries none.
+    const refused = sessions.refusedNow(run);
     if (
-      refusedCredential(run.refused, presented, '', undefined, undefined) ===
+      refusedCredential(refused, presented, '', undefined, undefined) ===
       'token'
     ) {
       delete req.headers.authorization;
@@ -593,17 +595,20 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       if (!bodySettled) return;
       if (!recorded) {
         recorded = true;
-        const body = capped(requestBody?.toString('utf8'), requestBody?.length);
+        const body = capped(
+          redacted(requestBody?.toString('utf8')),
+          requestBody?.length
+        );
         const rpc = rpcOf(requestBody?.toString('utf8'));
         if (body.text !== undefined) exchange.body = body.text;
         if (body.bytes !== undefined) exchange.bodyBytes = body.bytes;
         if (rpc) exchange.rpc = rpc;
       }
       const session = res.getHeader('mcp-session-id');
-      const conn = connectionOf(
-        req,
-        typeof session === 'string' ? session : undefined
-      );
+      const conn = connectionOf(req, {
+        stateful: isStatefulVersion(run.revision),
+        ...(typeof session === 'string' && { opened: session })
+      });
       if (conn && role === undefined) exchange.conn = conn;
       exchange.status = res.statusCode;
       const responseHeaders = keptResponseHeaders(
@@ -613,7 +618,7 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
       if (Object.keys(responseHeaders).length)
         exchange.responseHeaders = responseHeaders;
       const text = captured ? captured.head : soFar;
-      const answer = capped(text, captured?.size);
+      const answer = capped(redacted(text), captured?.size);
       if (answer.text !== undefined) exchange.responseBody = answer.text;
       if (answer.bytes !== undefined) exchange.responseBytes = answer.bytes;
       if (captured) {
@@ -898,10 +903,10 @@ export function createHostedApp(opts: HostedServerOptions = {}): {
     // On the sign-in server, a code, refresh token or registration the cell
     // issued before its last reset is refused with the OAuth error for it,
     // before the scenario sees the request: the client must start over.
-    if (role && run.refused.size) {
+    if (role && refused.size) {
       const decide = (captured?: Buffer) => {
         const kind = refusedCredential(
-          run.refused,
+          refused,
           undefined,
           rewrittenUrl,
           captured?.toString('utf8'),
