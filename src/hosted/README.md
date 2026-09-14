@@ -48,7 +48,7 @@ what `conformance client --spec-version <rev>` would run.
 | `GET /s/<run-id>/<rev>`                       | Config for one column                                                                            |
 | `GET /s/<run-id>/<rev>/<scenario>`            | Config for one cell (a page request, see below)                                                  |
 | `ALL /s/<run-id>/<rev>/<scenario>[/<suffix>]` | The cell's server. The MCP endpoint is the cell URL plus `/mcp`, for every scenario (see below). |
-| `GET /results/<run-id>`                       | Verdict per cell, `scored X of N` per column, client identity                                    |
+| `GET /results/<run-id>`                       | Verdict per cell, the score per column, client identity                                          |
 | `GET /results/<run-id>/<rev>`                 | One column                                                                                       |
 | `GET /results/<run-id>/<rev>/<scenario>`      | One cell: `{runId, revision, scenario, scoring, verdict, state, summary, checks}` (see below)    |
 | `GET /results/<run-id>[/<rev>]?format=md`     | The run report as Markdown, for an issue or a chat                                               |
@@ -71,12 +71,18 @@ revision with its own MCP URL); how to test a client in five minutes (a new
 run at `/s`, the run page's composite URLs and per-client config blocks,
 the cell steps, the report and its frozen, Markdown and plain-text copies);
 what the score means (the frozen requirement set's scored cells per
-revision, "X of N scored (M startable here)", one line per state, and that a
+revision, "X of the M scored cells you can run here pass · N are scored for
+the revision", one line per state, and that a
 cell passes only once the client has spoken its revision); that results are
 self-reported and are not an SDK tier measurement (tiers come from
 `tier-check` and the CLI runner; see [SDK Tier Assessment](../../README.md#sdk-tier-assessment));
 how long results last; and where the repository, the specification and the
-issue tracker are. The run page's two sections it names carry anchors,
+issue tracker are. Every page ends with the server's build (short commit,
+`-dirty` for uncommitted changes, and the deploy time where known), and the
+run report stores it as `server` (`build`, `deployedAt`), so a frozen copy
+names the build that froze it. The Val Town deploy stamps the staged
+`src/hosted/build-stamp.ts`; the local `hosted` command reads the checkout's
+commit from git; anything else reads "unknown". The run page's two sections it names carry anchors,
 `#composites` and `#client-config`.
 
 **How long results last.** The landing page states these from the values
@@ -168,8 +174,9 @@ has servers. Names are `c9e-<revision>-<scenario>` with
 anything but letters, digits, `*`and`-`made`-`
 (`c9e-2025-11-25-auth-metadata-default`); the run page's ready-made
 composites are `c9e-<revision>-composite`. The run page gives each client a
-starter block (the ready-made composites and `auth/metadata-default` per
-revision) and, folded, the full one with every auth cell, switched off where
+starter block (the ready-made composites and `auth/metadata-default`per
+revision) and, folded, the full one, which covers every startable cell of the
+run once: the composites, each cell no composite carries (such as`request-metadata`and`http-invalid-tool-headers`), and every auth cell, switched off where
 the format can say so (`enabled: false`for Goose,`enabled = false` for
 Codex), since each auth cell starts a sign-in when the client connects
 (`src/hosted/client-config.ts`). An `auth/\*`cell, which has no generic-client steps, shows plain ones for a hand-driven
@@ -203,8 +210,10 @@ called by client") and counted in `summary.notSeen`, apart from the client's
 check or a verdict: the run's log and the CLI still record a FAILURE. Per column, `scored: { passed, total, startable }` counts passes
 among every cell the revision's requirement set scores — `total` is the
 yaml's count whether or not this deployment can start the cell, `startable`
-how many of those it can (the HTML says "3 of 32 scored (11 startable
-here)"); `not_scored`/`unlisted` results are listed next to the score, never
+how many of those it can (every form leads with what a person could run: "3
+of the 11 scored cells you can run here pass · 32 are scored for 2026-07-28;
+the other 21 cannot start on this deployment (see Unavailable on this
+deployment below)"); `not_scored`/`unlisted` results are listed next to the score, never
 inside it. The header names each client once — by `clientInfo` name and
 version — with every protocol version it negotiated, read off accepted
 exchanges only: on the stateful wire the `initialize` params and the
@@ -279,8 +288,9 @@ matrix, without the scenarios this deployment cannot start: those
 (`not-startable`: excluded by the deployment, not converted for hosting, or
 missing a relay origin) are listed once each, with their revisions and the
 reason, in a folded "Unavailable on this deployment" section at the bottom.
-`n/a` cells appear in no list. The summary's "X of N scored (M startable
-here)" still counts every scored cell, startable or not. The groups come
+`n/a` cells appear in no list. The summary's score still counts every scored
+cell, startable or not: "X of the M scored cells you can run here pass · N
+are scored for <revision>; the other N−M cannot start on this deployment". The groups come
 from each cell's `state`, so a frozen copy taken before them reads the same
 way; each not-tried cell's URL and hint are added when a report is served,
 never stored.

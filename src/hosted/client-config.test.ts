@@ -162,8 +162,8 @@ describe('run page client blocks', () => {
       const addr = server.address();
       const port = addr && typeof addr === 'object' ? addr.port : 0;
       const origin = `http://localhost:${port}`;
-      const config = (await fetch(`${origin}/s/copyall?format=json`).then(
-        (r) => r.json()
+      const config = (await fetch(`${origin}/s/copyall?format=json`).then((r) =>
+        r.json()
       )) as RunConfig;
       return { origin, matrix, config };
     } finally {
