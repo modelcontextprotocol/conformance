@@ -1,13 +1,23 @@
 /**
  * The run report as Markdown, for pasting into an issue or a chat: who the
- * client is, the score, what went wrong once per cause, and a table of only
- * the cells the client reached, each failure marked as the client's or the
- * scenario's own. Anything that came from traffic (client names, check
+ * client is, the score, what went wrong once per cause, and per revision a
+ * table of what needs a look, what the client has not tried and what passed
+ * (see groupColumn()), each failure marked as the client's or the scenario's
+ * own; then, once each, the scenarios this deployment cannot start. Anything
+ * that came from traffic (client names, check
  * messages) goes through mdText() or mdCode(), so it cannot open a link, a
  * tag, a code span or a new table cell when the Markdown is rendered.
  */
 
-import type { CellReport, CellState, CheckSummary, RunReport } from './report';
+import {
+  groupColumn,
+  unavailableScenarios,
+  type CellReport,
+  type CellState,
+  type CheckSummary,
+  type ColumnReport,
+  type RunReport
+} from './report';
 import { NOT_REACHED, type Cause, type Finding } from './findings';
 import type { ClientIdentity } from './identity';
 
@@ -277,9 +287,9 @@ function causeLines(report: RunReport, st: Style): string[] {
   });
 }
 
-function reachedCells(report: RunReport): CellReport[] {
-  return report.columns.flatMap((col) =>
-    col.cells.filter((c) => REACHED.includes(c.state))
+function anyReached(report: RunReport): boolean {
+  return report.columns.some((col) =>
+    col.cells.some((c) => REACHED.includes(c.state))
   );
 }
 
@@ -293,6 +303,109 @@ function countsOf(cell: CellReport): string {
 const LEGEND =
   '"client" failures were seen in the client’s traffic; "not seen" ones are ' +
   'the scenario’s own expectations that nothing has met yet.';
+
+/**
+ * A revision's not-tried group, headed plainly. When the client reached
+ * nothing at the revision the page folds the group (it is every cell).
+ */
+export function notTriedHeading(n: number, reachedAny: boolean): string {
+  return reachedAny
+    ? `Not tried yet (${n}): your client never connected to these`
+    : `Not tried yet (${n}): your client never connected to any cell at this revision`;
+}
+
+export const NOT_TRIED_WHY =
+  'Common reasons: the client was not given the cell’s URL; it does not ' +
+  'support what the cell tests; or it is an auth cell, which needs a URL of ' +
+  'its own (a composite URL leaves auth cells out).';
+
+export function passedHeading(n: number): string {
+  return `Passed (${n})`;
+}
+
+export const UNAVAILABLE_HEADING = 'Unavailable on this deployment';
+
+export const UNAVAILABLE_WHY =
+  'This deployment cannot start these cells, so no client can reach them ' +
+  'here, and the lists above leave them out. A scored one still counts in ' +
+  'the N of “X of N scored”.';
+
+/** A not-tried cell's line: where to point the client, and what it must do. */
+function notTriedText(cell: CellReport, st: Style): string {
+  const parts: string[] = [];
+  if (cell.mcpUrl) parts.push(`MCP URL ${st.code(cell.mcpUrl)}`);
+  parts.push(
+    cell.hint
+      ? `the client must ${st.text(cell.hint)}`
+      : 'nothing reached this cell'
+  );
+  return parts.join('; ');
+}
+
+/** "Unavailable on this deployment (N)", why, and a line per scenario. */
+function unavailableLines(
+  report: RunReport,
+  st: Style,
+  heading: (s: string) => string,
+  bullet: string
+): string[] {
+  const list = unavailableScenarios(report);
+  if (!list.length) return [];
+  return [
+    '',
+    heading(`${UNAVAILABLE_HEADING} (${list.length})`),
+    UNAVAILABLE_WHY,
+    ...list.map(
+      (u) =>
+        `${bullet}${st.code(u.scenario)} (${u.revisions.join(', ')}): ${st.text(u.reason)}`
+    )
+  ];
+}
+
+/**
+ * One revision as Markdown: a table of what needs a look, then what the
+ * client has not tried, then what passed. A revision the client reached
+ * nothing at is one line.
+ */
+function revisionMarkdown(
+  col: ColumnReport,
+  causes: ReadonlyMap<string, Cause>,
+  numbers: ReadonlyMap<string, number>
+): string[] {
+  const { problems, notTried, passed } = groupColumn(col);
+  const rev = `**${mdText(col.revision)}**`;
+  if (!problems.length && !passed.length) {
+    return notTried.length
+      ? ['', `${rev} — ${notTriedHeading(notTried.length, false)}.`]
+      : [];
+  }
+  const row = (cell: CellReport) =>
+    `| [${mdText(`${cell.revision} ${cell.scenario}`)}](${cell.resultsUrl}) ` +
+    `| ${STATE_LABEL[cell.state]} | ${countsOf(cell)} | ` +
+    `${
+      cell.state === 'not-tried'
+        ? notTriedText(cell, MARKDOWN)
+        : happened(cell, causes, numbers, MARKDOWN).join('<br>')
+    } |`;
+  const out = [
+    '',
+    rev,
+    '',
+    '| Cell | Result | Pass / fail / warn | What happened |',
+    '| --- | --- | --- | --- |',
+    ...problems.map(row)
+  ];
+  if (notTried.length) {
+    out.push(
+      `| **${notTriedHeading(notTried.length, true)}** | | | ${NOT_TRIED_WHY} |`,
+      ...notTried.map(row)
+    );
+    if (passed.length)
+      out.push(`| **${passedHeading(passed.length)}** | | | |`);
+  }
+  out.push(...passed.map(row));
+  return out;
+}
 
 export function reportMarkdown(
   report: RunReport,
@@ -313,31 +426,59 @@ export function reportMarkdown(
       ...causeLines(report, MARKDOWN)
     );
   }
-  const rows = reachedCells(report);
-  if (rows.length) {
-    out.push(
-      '',
-      '| Cell | Result | Pass / fail / warn | What happened |',
-      '| --- | --- | --- | --- |'
-    );
-    for (const cell of rows) {
-      out.push(
-        `| [${mdText(`${cell.revision} ${cell.scenario}`)}](${cell.resultsUrl}) ` +
-          `| ${STATE_LABEL[cell.state]} | ${countsOf(cell)} | ` +
-          `${happened(cell, causes, numbers, MARKDOWN).join('<br>')} |`
-      );
-    }
-    out.push('', LEGEND);
-  } else {
-    out.push('', 'No cell has been reached yet.');
+  const reached = anyReached(report);
+  if (!reached) out.push('', 'No cell has been reached yet.');
+  for (const col of report.columns) {
+    out.push(...revisionMarkdown(col, causes, numbers));
   }
+  if (reached) out.push('', LEGEND);
+  out.push(...unavailableLines(report, MARKDOWN, (s) => `**${s}**`, '- '));
   return out.join('\n') + '\n';
+}
+
+/** One revision as plain lines, in the same groups as revisionMarkdown(). */
+function revisionText(
+  col: ColumnReport,
+  causes: ReadonlyMap<string, Cause>,
+  numbers: ReadonlyMap<string, number>
+): string[] {
+  const { problems, notTried, passed } = groupColumn(col);
+  if (!problems.length && !passed.length) {
+    return notTried.length
+      ? ['', `${col.revision} — ${notTriedHeading(notTried.length, false)}.`]
+      : [];
+  }
+  const bullet = (cell: CellReport) =>
+    cell.state === 'not-tried'
+      ? [
+          `• ${cell.revision} ${cell.scenario}: ${STATE_LABEL[cell.state]} — ${cell.resultsUrl}`,
+          `    ◦ ${notTriedText(cell, PLAIN)}`
+        ]
+      : [
+          `• ${cell.revision} ${cell.scenario}: ${STATE_LABEL[cell.state]}, ${countsOf(cell)} — ${cell.resultsUrl}`,
+          ...happened(cell, causes, numbers, PLAIN).map((l) => `    ◦ ${l}`)
+        ];
+  const out = [
+    '',
+    `${col.revision} (pass / fail / warn)`,
+    ...problems.flatMap(bullet)
+  ];
+  if (notTried.length) {
+    out.push(
+      notTriedHeading(notTried.length, true),
+      NOT_TRIED_WHY,
+      ...notTried.flatMap(bullet)
+    );
+    if (passed.length) out.push(passedHeading(passed.length));
+  }
+  out.push(...passed.flatMap(bullet));
+  return out;
 }
 
 /**
  * The same report as plain lines, for a chat that shows a Markdown table as
- * raw pipes (Slack): the summary, the causes, then one bullet per reached
- * cell with what happened under it.
+ * raw pipes (Slack): the summary, the causes, then each revision's groups,
+ * one bullet per cell with what happened under it.
  */
 export function reportText(report: RunReport, links: MarkdownLinks): string {
   const causes = new Map(report.causes.map((c) => [c.key, c]));
@@ -350,19 +491,12 @@ export function reportText(report: RunReport, links: MarkdownLinks): string {
   if (report.causes.length) {
     out.push('', 'What went wrong, by cause', ...causeLines(report, PLAIN));
   }
-  const rows = reachedCells(report);
-  if (rows.length) {
-    out.push('', 'Cells the client reached (pass / fail / warn)');
-    for (const cell of rows) {
-      const lines = happened(cell, causes, numbers, PLAIN);
-      out.push(
-        `• ${cell.revision} ${cell.scenario}: ${STATE_LABEL[cell.state]}, ${countsOf(cell)} — ${cell.resultsUrl}`,
-        ...lines.map((l) => `    ◦ ${l}`)
-      );
-    }
-    out.push('', LEGEND);
-  } else {
-    out.push('', 'No cell has been reached yet.');
+  const reached = anyReached(report);
+  if (!reached) out.push('', 'No cell has been reached yet.');
+  for (const col of report.columns) {
+    out.push(...revisionText(col, causes, numbers));
   }
+  if (reached) out.push('', LEGEND);
+  out.push(...unavailableLines(report, PLAIN, (s) => s, '• '));
   return out.join('\n') + '\n';
 }

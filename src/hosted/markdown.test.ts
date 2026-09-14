@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   mdCode,
   mdText,
+  NOT_TRIED_WHY,
   reportMarkdown,
   reportText,
+  UNAVAILABLE_WHY,
   utcMinute
 } from './markdown';
 import type { CellReport, RunReport } from './report';
@@ -17,6 +19,26 @@ const cell = (over: Partial<CellReport>): CellReport => ({
   state: 'pass',
   resultsUrl: 'http://x/results/r/2025-11-25/tools_call',
   ...over
+});
+
+/** A startable cell nothing reached, as served (withNotTriedHints()). */
+const notTried = cell({
+  scenario: 'initialize',
+  verdict: 'incomplete',
+  state: 'not-tried',
+  resultsUrl: 'http://x/results/r/2025-11-25/initialize',
+  mcpUrl: 'http://x/s/r/2025-11-25/initialize/mcp',
+  hint: 'connect, then list the tools'
+});
+
+/** A cell this deployment cannot start. */
+const unavailable = cell({
+  scenario: 'sse-retry',
+  verdict: 'incomplete',
+  state: 'not-startable',
+  startable: false,
+  startReason: 'needs a single-process host',
+  resultsUrl: 'http://x/results/r/2025-11-25/sse-retry'
 });
 
 const report = (cells: CellReport[], over: Partial<RunReport> = {}) =>
@@ -40,6 +62,9 @@ const report = (cells: CellReport[], over: Partial<RunReport> = {}) =>
     ...over
   }) as RunReport;
 
+const LEGEND =
+  '"client" failures were seen in the client’s traffic; "not seen" ones are the scenario’s own expectations that nothing has met yet.';
+
 describe('markdown escaping', () => {
   it('keeps traffic-derived text from opening markup or a table cell', () => {
     expect(mdText('a <script>x</script> [l](u) *b* `c` d|e\\f\n g')).toBe(
@@ -51,7 +76,7 @@ describe('markdown escaping', () => {
 });
 
 describe('reportMarkdown', () => {
-  it('lists only reached cells, with each failure marked as whose it is', () => {
+  it('lists each revision as fail, then not tried, then passes, with unavailable cells once at the bottom', () => {
     const md = reportMarkdown(
       report(
         [
@@ -66,6 +91,8 @@ describe('reportMarkdown', () => {
               total: 18
             }
           }),
+          notTried,
+          unavailable,
           cell({
             scenario: 'auth/token-endpoint-auth-basic',
             verdict: 'fail',
@@ -88,11 +115,6 @@ describe('reportMarkdown', () => {
                 cause: 'k'
               }
             ]
-          }),
-          cell({
-            scenario: 'initialize',
-            verdict: 'incomplete',
-            state: 'not-tried'
           })
         ],
         {
@@ -115,21 +137,95 @@ describe('reportMarkdown', () => {
         '',
         '- As of 2026-09-13 21:47 UTC: http://x/results/r',
         '- Client: VS Code 1.137 (protocol 2025-11-25)',
+        // The score and the counts are as they were.
         '- 2025-11-25: 1 of 18 scored cells pass (15 startable here). Reached: 1 pass, 1 fail; 12 not tried.',
         '',
         '**What went wrong, by cause**',
         '1. Client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> (2025-11-25/auth/token-endpoint-auth-basic)',
         '',
+        '**2025-11-25**',
+        '',
         '| Cell | Result | Pass / fail / warn | What happened |',
         '| --- | --- | --- | --- |',
-        '| [2025-11-25 tools_call](http://x/results/r/2025-11-25/tools_call) | pass | 17 / 0 / 0 | no failures or warnings |',
         '| [2025-11-25 auth/token-endpoint-auth-basic](http://x/results/r/2025-11-25/tools_call) | fail | 16 / 1 / 0 | ' +
           'client: `token-endpoint-auth-method` Client used client_secret_post \\| \\<b\\> |',
+        `| **Not tried yet (1): your client never connected to these** | | | ${NOT_TRIED_WHY} |`,
+        '| [2025-11-25 initialize](http://x/results/r/2025-11-25/initialize) | not tried | – | ' +
+          'MCP URL `http://x/s/r/2025-11-25/initialize/mcp`; the client must connect, then list the tools |',
+        '| **Passed (1)** | | | |',
+        '| [2025-11-25 tools_call](http://x/results/r/2025-11-25/tools_call) | pass | 17 / 0 / 0 | no failures or warnings |',
         '',
-        '"client" failures were seen in the client’s traffic; "not seen" ones are the scenario’s own expectations that nothing has met yet.',
+        LEGEND,
+        '',
+        '**Unavailable on this deployment (1)**',
+        UNAVAILABLE_WHY,
+        '- `sse-retry` (2025-11-25): needs a single-process host',
         ''
       ].join('\n')
     );
+    expect(NOT_TRIED_WHY).toMatch(/not given the cell’s URL/);
+    expect(NOT_TRIED_WHY).toMatch(/does not support/);
+    expect(NOT_TRIED_WHY).toMatch(/auth cell, which needs a URL of its own/);
+  });
+
+  it('says in one line that a revision had nothing reached, and names an unavailable scenario once for all its revisions', () => {
+    const later = (over: Partial<CellReport>) =>
+      cell({
+        revision: '2026-07-28',
+        resultsUrl: 'http://x/results/r/2026-07-28/tools_call',
+        ...over
+      });
+    const md = reportMarkdown(
+      {
+        ...report([
+          cell({}),
+          { ...unavailable, scenario: 'tools_x', startReason: 'excluded' }
+        ]),
+        columns: [
+          report([
+            cell({}),
+            { ...unavailable, scenario: 'tools_x', startReason: 'excluded' }
+          ]).columns[0],
+          {
+            revision: '2026-07-28',
+            scored: { passed: 0, total: 20, startable: 12 },
+            cells: [
+              later({ verdict: 'incomplete', state: 'not-tried' }),
+              later({
+                scenario: 'ping',
+                verdict: 'incomplete',
+                state: 'not-tried'
+              }),
+              later({
+                scenario: 'tools_x',
+                verdict: 'incomplete',
+                state: 'not-startable',
+                startable: false,
+                startReason: 'excluded'
+              })
+            ],
+            notScored: [],
+            counts: { 'not-tried': 2, 'not-startable': 1 },
+            identities: []
+          }
+        ]
+      },
+      { live: 'http://x/results/r' }
+    );
+    expect(md).toContain(
+      '- 2026-07-28: 0 of 20 scored cells pass (12 startable here). Reached: none; 2 not tried.'
+    );
+    expect(md).toContain(
+      '\n**2026-07-28** — Not tried yet (2): your client never connected to any cell at this revision.\n'
+    );
+    expect(md).not.toContain('2026-07-28 ping');
+    expect(md).toContain(
+      '**Unavailable on this deployment (1)**\n' +
+        `${UNAVAILABLE_WHY}\n` +
+        '- `tools_x` (2025-11-25, 2026-07-28): excluded\n'
+    );
+    // Only in the bottom section, never in a revision's table.
+    expect(md.match(/tools_x/g)).toHaveLength(1);
   });
 
   it('points a frozen copy at itself and at the live report', () => {
@@ -150,6 +246,8 @@ describe('reportText', () => {
       report(
         [
           cell({}),
+          notTried,
+          unavailable,
           cell({
             scenario: 'auth/metadata-default',
             verdict: 'fail',
@@ -204,13 +302,22 @@ describe('reportText', () => {
         'What went wrong, by cause',
         '1. Client: `c` a | <b> (2025-11-25/tools_call)',
         '',
-        'Cells the client reached (pass / fail / warn)',
-        '• 2025-11-25 tools_call: pass, – — http://x/results/r/2025-11-25/tools_call',
-        '    ◦ no failures or warnings',
+        '2025-11-25 (pass / fail / warn)',
         '• 2025-11-25 auth/metadata-default: waiting, 1 / 0 / 0 — http://x/results/r/2025-11-25/tools_call',
         '    ◦ waiting for the client or the person to finish the flow; not seen yet: the flow has not reached `client-registration`, `token-request`',
+        'Not tried yet (1): your client never connected to these',
+        NOT_TRIED_WHY,
+        '• 2025-11-25 initialize: not tried — http://x/results/r/2025-11-25/initialize',
+        '    ◦ MCP URL `http://x/s/r/2025-11-25/initialize/mcp`; the client must connect, then list the tools',
+        'Passed (1)',
+        '• 2025-11-25 tools_call: pass, – — http://x/results/r/2025-11-25/tools_call',
+        '    ◦ no failures or warnings',
         '',
-        '"client" failures were seen in the client’s traffic; "not seen" ones are the scenario’s own expectations that nothing has met yet.',
+        LEGEND,
+        '',
+        'Unavailable on this deployment (1)',
+        UNAVAILABLE_WHY,
+        '• `sse-retry` (2025-11-25): needs a single-process host',
         ''
       ].join('\n')
     );

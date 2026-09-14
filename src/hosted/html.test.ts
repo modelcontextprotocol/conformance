@@ -14,8 +14,9 @@ import {
   REPO_URL
 } from './html';
 import type { RunConfig } from './server';
-import { buildReport } from './report';
+import { buildReport, withNotTriedHints } from './report';
 import { cellId, DEFAULT_CELL_TTL_MS } from './session';
+import { describeStep } from '../steps';
 import { CLIENTS } from './client-config';
 import { identityCheck, identityOf } from './identity';
 import { hostedScenarios } from './catalog';
@@ -574,6 +575,115 @@ describe('hosted HTML', () => {
     });
     expect(html).not.toContain('<img');
     expect(html).toContain('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('groups the run report: problems, then not tried with a URL to copy, then passes; unavailable folded at the bottom', async () => {
+    const rev = '2025-11-25';
+    const logs = new Map<string, 'SUCCESS' | 'FAILURE'>([
+      [`r/${rev}/initialize`, 'SUCCESS'],
+      [`r/${rev}/tools_call`, 'FAILURE']
+    ]);
+    const judged = await buildReport(matrix, 'r', undefined, {
+      listCells: async () =>
+        Array.from(logs.keys()).map((id) => {
+          const [runId, revision, ...rest] = id.split('/');
+          return {
+            runId,
+            revision: revision as typeof rev,
+            scenarioName: rest.join('/')
+          };
+        }),
+      results: async (id) => {
+        const status = logs.get(id);
+        return status
+          ? {
+              checks: [
+                { id: 'c', name: 'c', description: '', status, timestamp: '' }
+              ],
+              recorded: 1
+            }
+          : undefined;
+      },
+      resultsUrl: (ref) => `http://x/results/${cellId(ref)}`
+    });
+    const report = withNotTriedHints(
+      judged,
+      matrix,
+      (ref) => `http://x/s/${cellId(ref)}`,
+      describeStep
+    );
+    const html = renderReport(matrix, report, {
+      markdown: '',
+      text: '',
+      liveUrl: 'http://x/results/r'
+    });
+    expect(html).toContain('<h2>Cells by revision</h2>');
+    expect(html).not.toContain('Cells the client reached');
+    // The scores stay as they were, startable subset alongside.
+    const col = report.columns[0];
+    expect(html).toContain(
+      `${col.scored.passed} of ${col.scored.total}</b> scored cells pass <span class=muted>(${col.scored.startable} startable here)</span>`
+    );
+
+    const table = html.slice(
+      html.indexOf('<table class=reached>'),
+      html.indexOf('</table>', html.indexOf('<table class=reached>'))
+    );
+    const at = (s: string) => {
+      const i = table.indexOf(s);
+      expect(i, s).toBeGreaterThanOrEqual(0);
+      return i;
+    };
+    // At the revision the client reached: fail, not tried, then passes.
+    const head = at(
+      `Not tried yet (${col.counts['not-tried']}): your client never connected to these`
+    );
+    expect(at(`/${rev}/tools_call"><code>tools_call</code>`)).toBeLessThan(
+      head
+    );
+    expect(head).toBeLessThan(at('Passed (1)'));
+    expect(at('Passed (1)')).toBeLessThan(
+      at(`/${rev}/initialize"><code>initialize</code>`)
+    );
+    expect(table).toContain('Common reasons: the client was not given');
+    // Each not-tried cell: what the client must do, and its URL to copy.
+    expect(table).toContain(
+      `data-copy-text="http://x/s/r/${rev}/elicitation-sep1034-client-defaults/mcp"`
+    );
+    expect(table).toContain(
+      'the client must connect, then list the tools, then call test_client_elicitation_defaults'
+    );
+    // A revision the client reached nothing at: its cells folded.
+    expect(table).toMatch(
+      /<details><summary>Not tried yet \(\d+\): your client never connected to any cell at this revision<\/summary>/
+    );
+    // Cells this deployment cannot start are in no list above.
+    expect(table).not.toContain('sse-retry');
+    expect(table).not.toContain('auth/metadata-default');
+
+    const every = html.slice(
+      html.indexOf('<h2>Every cell</h2>'),
+      html.indexOf('<details class=section')
+    );
+    expect(every).toContain('<code>tools_call</code>');
+    expect(every).not.toContain('<code>sse-retry</code>');
+    expect(every).not.toContain('<code>auth/metadata-default</code>');
+    expect(every).not.toContain('not startable');
+
+    // At the bottom, folded: one line per scenario with its reason.
+    const bottom = html.slice(html.indexOf('<details class=section'));
+    expect(html.indexOf('<details class=section')).toBeGreaterThan(
+      html.indexOf('<h2>Every cell</h2>')
+    );
+    expect(bottom).toMatch(
+      /^<details class=section id=unavailable><summary>Unavailable on this deployment \(\d+\)<\/summary>/
+    );
+    expect(bottom).toContain(
+      `<li><code>sse-retry</code> <span class=muted>${rev}</span> — excluded &lt;here&gt;</li>`
+    );
+    expect(bottom).toMatch(
+      /<li><code>auth\/metadata-default<\/code> <span class=muted>[^<]*<\/span> — needs relay origin\(s\) \[as\]<\/li>/
+    );
   });
 
   it('keeps a live report and a cell page current, never a frozen copy', async () => {

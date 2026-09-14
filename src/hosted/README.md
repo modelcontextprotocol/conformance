@@ -260,16 +260,37 @@ all: an expectation not yet met, such as "Tool was not called by client".
 The report's `causes` say each finding once with the cells it covers. A
 client that speaks only an older revision, and so is stopped by every
 `2026-07-28` cell it reaches, is one cause, with the era errors it drew
-there folded in. The HTML page shows the causes, then a row per reached
-cell with its failures inline, then the full matrix. None of this changes a
-check, a verdict or a score (`src/hosted/findings.ts`).
+there folded in. None of this changes a check, a verdict or a score
+(`src/hosted/findings.ts`).
 
-`?format=md` gives the same report as Markdown: the client, the score, the
-causes and a table of only the cells the client reached, each failure
-marked `client` or `not seen`. The page has a button that copies it.
-`?format=text` gives the same as plain lines, one bullet per reached cell,
-for a chat that shows a Markdown table as raw pipes (Slack); the page's
-"copy for Slack" button copies that.
+The HTML page shows the causes, then the cells by revision, each revision in
+the same order: what needs a look (`fail`, then `waiting`, `in-progress`,
+`incomplete`, failures inline), then "Not tried yet (N): your client never
+connected to these", then "Passed (N)". A not-tried cell gives its MCP URL
+with a copy button and what the client must do there (its steps, the sign-in
+for an auth cell, or what the scenario tests), under one line of common
+reasons: the client was not given the URL, it does not support the feature,
+or it is an auth cell, which needs a URL of its own. A revision the client
+reached nothing at folds its not-tried cells into one line. Then the full
+matrix, without the scenarios this deployment cannot start: those
+(`not-startable`: excluded by the deployment, not converted for hosting, or
+missing a relay origin) are listed once each, with their revisions and the
+reason, in a folded "Unavailable on this deployment" section at the bottom.
+`n/a` cells appear in no list. The summary's "X of N scored (M startable
+here)" still counts every scored cell, startable or not. The groups come
+from each cell's `state`, so a frozen copy taken before them reads the same
+way; each not-tried cell's URL and hint are added when a report is served,
+never stored.
+
+The JSON keeps every cell in each column's `cells`, and adds `notTried`
+(startable cells nothing reached, each with `mcpUrl` and `hint`) and
+`unavailable` (the column's `not-startable` cells). `?format=md` gives the
+same report as Markdown: the client, the score, the causes, then a table per
+revision in the page's order, each failure marked `client` or `not seen`,
+and the unavailable scenarios at the end. The page has a button that copies
+it. `?format=text` gives the same as plain lines, one bullet per cell, for a
+chat that shows a Markdown table as raw pipes (Slack); the page's "copy for
+Slack" button copies that.
 Anything taken from traffic is escaped so it cannot open a link, a tag or a
 new table cell.
 

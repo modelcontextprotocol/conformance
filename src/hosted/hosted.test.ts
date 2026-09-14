@@ -1296,7 +1296,7 @@ describe('hosted server', () => {
     type Report = {
       snapshotId?: string;
       frozenAt?: string;
-      columns: { revision: string; cells: Cell[] }[];
+      columns: { revision: string; cells: Cell[]; notTried: Cell[] }[];
       causes: { key: string; text: string; cells: string[] }[];
     };
     const cellOf = (report: Report, rev: string, name: string) =>
@@ -1385,7 +1385,7 @@ describe('hosted server', () => {
     // The page: failures inline with their reasons, causes once, states.
     const page = await html(`/results/${run}`);
     expect(page).toContain('What went wrong, by cause');
-    expect(page).toContain('Cells the client reached');
+    expect(page).toContain('Cells by revision');
     expect(page).toContain('<div>Tool was not called by client</div>');
     expect(page).toContain(
       metadata.findings![0].reason.replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1415,7 +1415,12 @@ describe('hosted server', () => {
     expect(md).toContain('waiting for: Tool was not called by client');
     expect(md).toContain('client: `');
     expect(md).toMatch(/1\. Client: The client spoke 2025-11-25 only/);
-    expect(md).not.toContain(`${REV_STATEFUL} elicitation`); // not tried
+    // Not tried: in its own group, with the URL to give the client.
+    const elicitation = `${base}/s/${run}/${REV_STATEFUL}/elicitation-sep1034-client-defaults/mcp`;
+    expect(md).toContain('your client never connected to these');
+    expect(md).toContain(
+      `| not tried | – | MCP URL \`${elicitation}\`; the client must connect, then list the tools`
+    );
     // Escaped: `\<img` renders as text, never as a tag.
     expect(md).not.toMatch(/(^|[^\\])<img/m);
     expect(md).toContain('\\<img src=x onerror=alert(1)\\>');
@@ -1457,6 +1462,15 @@ describe('hosted server', () => {
     const frozenMd = await fetch(`${url}?format=md`).then((r) => r.text());
     expect(frozenMd).toContain(`Frozen ${frozenAt.slice(0, 10)}`);
     expect(frozenMd).toContain(url);
+    // A frozen copy is grouped when it is read, from what it stored.
+    expect(frozenMd).toContain(`MCP URL \`${elicitation}\``);
+    expect(frozenPage).toContain('Cells by revision');
+    expect(frozenPage).toContain(`data-copy-text="${elicitation}"`);
+    const frozenCol = before.columns.find((c) => c.revision === REV_STATEFUL)!;
+    expect(frozenCol.notTried.find((c) => c.scenario === later)).toMatchObject({
+      state: 'not-tried',
+      mcpUrl: elicitation
+    });
     // The live page lists its frozen copies.
     expect(await html(`/results/${run}`)).toContain(
       `/results/${run}/snapshot/${snapshotId}`
