@@ -498,5 +498,6 @@ See `src/runner/DESIGN.md` for detailed architecture documentation.
 1. Create a new directory in `src/scenarios/<scenario-name>/`
 2. Implement the `Scenario` interface with `start()`, `stop()`, and `getChecks()`
 3. Register the scenario in `src/scenarios/index.ts`
+4. For a client scenario, add its loader to `src/hosted/catalog.ts` and run `npm run hosted:bundle-catalog`: the hosted server lists scenarios from that catalog without importing them, and `src/hosted/catalog.test.ts` fails until both are done
 
 See `src/scenarios/initialize/` for a reference implementation.

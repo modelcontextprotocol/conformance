@@ -66,6 +66,6 @@ See the [README](./README.md) for full CLI options and the [SDK Integration Guid
 
 ## Pull requests
 
-- Register your scenario in the right suite in `src/scenarios/index.ts`
+- Register your scenario in the right suite in `src/scenarios/index.ts`; a client scenario also needs a loader in `src/hosted/catalog.ts` and `npm run hosted:bundle-catalog`
 - Run against at least one real SDK (see above) before opening the PR — we'll ask what the output looked like
 - Keep PRs focused; one feature or scenario group at a time

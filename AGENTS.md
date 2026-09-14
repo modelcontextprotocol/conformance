@@ -46,6 +46,7 @@ Keep scenarios separate when they're genuinely independent features or when they
 - Start with **one end-to-end scenario** covering the happy path with many checks along the way.
 - Don't add "step 1 only" and "step 1+2" as separate scenarios — the second subsumes the first.
 - Register the scenario in the appropriate suite list in `src/scenarios/index.ts` (`core`, `extensions`, `backcompat`, etc.).
+- A client scenario also needs a loader in `src/hosted/catalog.ts` and a regenerated catalog (`npm run hosted:bundle-catalog`): the hosted server lists scenarios from it without importing them, and `src/hosted/catalog.test.ts` fails until both are in.
 
 ## Check conventions
 
@@ -122,5 +123,5 @@ Use the existing CLI runner (`npx @modelcontextprotocol/conformance client|serve
 - `npm run build` passes
 - `npm test` passes
 - For non-trivial scenario changes, run against at least one real SDK (typescript-sdk or python-sdk) to see actual output. For changes to shared infrastructure (runner, tier-check), test against go-sdk or csharp-sdk too.
-- Scenario is registered in the right suite in `src/scenarios/index.ts`
+- Scenario is registered in the right suite in `src/scenarios/index.ts`, and a client scenario in the hosted catalog too (loader in `src/hosted/catalog.ts`, `npm run hosted:bundle-catalog`)
 - If you changed a `sep-*.yaml` or scenario check IDs, `src/seps/traceability.json` will drift; the traceability workflow refreshes it via PR (or regenerate locally with `--results` from a suite run)
