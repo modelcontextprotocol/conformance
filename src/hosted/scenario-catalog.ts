@@ -35,7 +35,7 @@ export const SCENARIO_CATALOG: readonly ScenarioMeta[] = [
         "op": "tools/call",
         "name": "add_numbers",
         "arguments": {
-          "a": 5,
+          "a": 2,
           "b": 3
         }
       }

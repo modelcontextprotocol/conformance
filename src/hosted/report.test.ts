@@ -203,7 +203,7 @@ describe('grouping', () => {
   it('says what the client must do from the steps, the sign-in or the description', () => {
     const tools = matrix.cell('tools_call', rev)!;
     expect(notTriedHint(tools, '', describeStep)).toBe(
-      'connect, then list the tools, then call add_numbers with a=5 and b=3'
+      'connect, then list the tools, then call add_numbers with a=2 and b=3'
     );
     expect(
       notTriedHint(

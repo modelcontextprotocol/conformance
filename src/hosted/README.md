@@ -161,7 +161,7 @@ is the scenario's context (credentials, tool arguments such as
 `http-custom-headers`' `toolCalls`, `steps`) tagged with `name`, as a JSON
 string. The HTML pages have copy-to-clipboard buttons for the same data, and
 show each step as a plain line a person can make a hand-driven client follow
-("call add*numbers with a=5 and b=3"), with the JSON beside it. Every cell
+("call add*numbers with a=2 and b=3"), with the JSON beside it. Every cell
 and composite also has a button that copies the bare MCP URL, and ready-to-paste
 config for VS Code (`servers` in `.vscode/mcp.json`), Codex
 (`[mcp_servers.<name>]` with `url` in `~/.codex/config.toml`), Goose (entries

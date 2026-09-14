@@ -16,6 +16,13 @@ const SPEC_REF_2026_07_28 = {
 const TOOLS_LIST_EVENT_ID = 'tools-list-requested';
 const TOOLS_CALL_EVENT_ID = 'tools-call-requested';
 
+/**
+ * The arguments the steps tell a client to call add_numbers with: the ones
+ * the conformance clients send, so what a cell's page asks for and what its
+ * check shows agree. The check itself accepts any two numbers.
+ */
+export const ADD_NUMBERS_ARGUMENTS = { a: 2, b: 3 } as const;
+
 export class ToolsCallScenario extends HandlerScenario {
   name = 'tools_call';
   readonly source = { introducedIn: '2025-06-18' } as const;
@@ -87,9 +94,10 @@ export class ToolsCallScenario extends HandlerScenario {
     return this.mock.listener;
   }
 
+  /** What the steps tell a client to call, from ADD_NUMBERS_ARGUMENTS. */
   readonly steps = [
     { op: 'tools/list' },
-    { op: 'tools/call', name: 'add_numbers', arguments: { a: 5, b: 3 } }
+    { op: 'tools/call', name: 'add_numbers', arguments: ADD_NUMBERS_ARGUMENTS }
   ] as const;
 
   getChecks(): ConformanceCheck[] {

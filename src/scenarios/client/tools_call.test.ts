@@ -2,7 +2,8 @@ import { testScenarioContext } from '../../mock-server/testing';
 import { beforeAll, describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { ToolsCallScenario } from './tools_call';
+import { ADD_NUMBERS_ARGUMENTS, ToolsCallScenario } from './tools_call';
+import { describeStep } from '../../steps';
 import { DRAFT_PROTOCOL_VERSION, type ConformanceCheck } from '../../types';
 import { finalizeChecks, rawChecksOf } from '../../hosted/session';
 import { hostedScenarios } from '../../hosted/catalog';
@@ -139,6 +140,32 @@ describe('tools_call scenario', () => {
       status: 'SUCCESS',
       details: { a: 2, b: 3, result: 5 }
     });
+  });
+
+  it('the steps ask for the arguments the check shows for a client that follows them', async () => {
+    const scenario = new ToolsCallScenario();
+    const call = scenario.steps.find((s) => s.op === 'tools/call')!;
+    expect(call.arguments).toEqual(ADD_NUMBERS_ARGUMENTS);
+    const { a, b } = ADD_NUMBERS_ARGUMENTS;
+    expect(describeStep(call)).toBe(`call add_numbers with a=${a} and b=${b}`);
+
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      const client = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} }
+      );
+      const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+      await client.connect(transport);
+      await client.callTool({ name: call.name, arguments: call.arguments });
+      await transport.close();
+      expect(scenario.getChecks()[0]).toMatchObject({
+        status: 'SUCCESS',
+        details: { a, b, result: a + b }
+      });
+    } finally {
+      await scenario.stop();
+    }
   });
 
   it('judges every call: a call without numbers fails, before or after a good one', () => {

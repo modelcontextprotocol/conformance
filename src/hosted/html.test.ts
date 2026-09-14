@@ -289,7 +289,7 @@ describe('hosted HTML', () => {
   it('shows each step as a plain line next to the JSON', () => {
     const landing = renderLanding('http://x', matrix, IN_MEMORY);
     expect(landing).toContain(
-      '<ol class=steps><li>list the tools</li><li>call add_numbers with a=5 and b=3</li></ol>'
+      '<ol class=steps><li>list the tools</li><li>call add_numbers with a=2 and b=3</li></ol>'
     );
 
     const html = renderConfig(
