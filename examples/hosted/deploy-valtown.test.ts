@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
+import { gitBuild } from '../../src/hosted/git-build';
 
 // Stage-only run of the deploy script (no --push, no token needed). Guards
 // the val.town per-file cap and the generated JSON/spec-type modules so a
@@ -54,5 +55,16 @@ describe('deploy-valtown staging', () => {
     const draft = await import(join(STAGE, 'src/spec-types/draft.ts'));
     expect(draft.HEADER_MISMATCH).toBeDefined();
     expect(draft.MISSING_REQUIRED_CLIENT_CAPABILITY).toBeDefined();
+
+    // The staged copy carries this checkout's build and the deploy time.
+    const { BUILD_STAMP } = await import(
+      join(STAGE, 'src/hosted/build-stamp.ts')
+    );
+    expect(BUILD_STAMP.build).toBe(gitBuild(REPO_ROOT) ?? 'unknown');
+    expect(Date.parse(BUILD_STAMP.deployedAt)).toBeGreaterThan(
+      Date.now() - 150_000
+    );
+    const { buildInfo } = await import(join(STAGE, 'src/hosted/build.ts'));
+    expect(buildInfo().build).toBe(BUILD_STAMP.build);
   }, 150_000);
 });

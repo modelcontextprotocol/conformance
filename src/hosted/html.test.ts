@@ -15,6 +15,7 @@ import {
 } from './html';
 import type { RunConfig } from './server';
 import { buildReport, withNotTriedHints } from './report';
+import { scoreText } from './markdown';
 import { cellId, DEFAULT_CELL_TTL_MS } from './session';
 import { describeStep } from '../steps';
 import { CLIENTS } from './client-config';
@@ -118,7 +119,9 @@ describe('landing page for a newcomer', () => {
   });
 
   it('explains the score from the matrix and every state in one line', () => {
-    expect(said).toContain('“X of N scored (M startable here)”');
+    expect(said).toContain(
+      '“X of the M scored cells you can run here pass · N are scored for the revision”'
+    );
     for (const r of matrix.revisions) {
       const set = matrix
         .cells()
@@ -621,10 +624,12 @@ describe('hosted HTML', () => {
     });
     expect(html).toContain('<h2>Cells by revision</h2>');
     expect(html).not.toContain('Cells the client reached');
-    // The scores stay as they were, startable subset alongside.
+    // The score leads with what the person could run, scored total kept.
     const col = report.columns[0];
-    expect(html).toContain(
-      `${col.scored.passed} of ${col.scored.total}</b> scored cells pass <span class=muted>(${col.scored.startable} startable here)</span>`
+    expect(html).toContain(scoreText(col));
+    expect(scoreText(col)).toContain(
+      `${col.scored.passed} of the ${col.scored.startable} scored cells you can run here pass · ` +
+        `${col.scored.total} are scored for ${col.revision}`
     );
 
     const table = html.slice(

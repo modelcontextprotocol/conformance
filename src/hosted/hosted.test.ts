@@ -902,8 +902,12 @@ describe('hosted server', () => {
     });
     expect(html.headers.get('content-type')).toContain('text/html');
     const text = await html.text();
+    // Led by what the person could run, with the scored total kept.
+    expect(stateful.scored.startable).toBeLessThan(stateful.scored.total);
     expect(text).toContain(
-      `1 of ${stateful.scored.total} scored (${stateful.scored.startable} startable here)`
+      `1 of the ${stateful.scored.startable} scored cells you can run here pass · ` +
+        `${stateful.scored.total} are scored for ${stateful.revision}; ` +
+        `the other ${stateful.scored.total - stateful.scored.startable} cannot start on this deployment`
     );
     expect(text).toContain('no client seen yet'); // the 2026-07-28 column
     expect(text).toContain('<b>rep-client</b>');

@@ -135,6 +135,8 @@ export function describeRequest(
 export interface CapturedResponse {
   status: number;
   contentType?: string;
+  /** The WWW-Authenticate challenge, on a 401 or 403 that carries one. */
+  wwwAuthenticate?: string;
   /** Undefined when the body was over RESPONSE_CAP. */
   body?: string;
 }
@@ -187,9 +189,11 @@ export function tapResponse(
     if (!ended) {
       ended = true;
       const contentType = res.getHeader('content-type');
+      const wwwAuthenticate = res.getHeader('www-authenticate');
       onEnd({
         status: res.statusCode,
         ...(typeof contentType === 'string' && { contentType }),
+        ...(typeof wwwAuthenticate === 'string' && { wwwAuthenticate }),
         ...(!overflow && { body: Buffer.concat(chunks).toString('utf8') })
       });
     }
@@ -449,6 +453,72 @@ export function revisionReachedCheck(served: SpecVersion): ConformanceCheck {
     timestamp: new Date().toISOString(),
     details: { served }
   };
+}
+
+export const AUTH_STOP_CHECK_ID = 'hosted-auth-stop';
+
+/** The OAuth error a 401 or 403 carries, in its challenge or its body. */
+function oauthError(response: CapturedResponse): string | undefined {
+  const challenge = response.wwwAuthenticate?.match(/\berror="([^"]*)"/);
+  if (challenge) return challenge[1];
+  try {
+    const body = JSON.parse(response.body ?? '') as unknown;
+    const record = asRecord(body);
+    if (record && !('jsonrpc' in record)) return str(record.error);
+  } catch {
+    // Not JSON: no OAuth error body.
+  }
+  return undefined;
+}
+
+/**
+ * Whether the auth layer, not version negotiation, ended the exchange: the
+ * request presented an access token (Bearer or DPoP), and the cell answered
+ * 401 or 403 with an OAuth error (insufficient_scope, invalid_token) rather
+ * than a JSON-RPC one. With a token presented the auth layer answers before
+ * the version is looked at, so such a stop does not depend on the revision
+ * the request carried: a cell counts it as reached at its own revision once
+ * the client signed in there (signedInAuthStop()). A request with no token,
+ * or one turned away at version negotiation, is not one.
+ */
+export function authLayerStop(
+  authorization: string | undefined,
+  response: CapturedResponse
+): boolean {
+  if (response.status !== 401 && response.status !== 403) return false;
+  if (!authorization || !/^(Bearer|DPoP) +\S/i.test(authorization))
+    return false;
+  return oauthError(response) !== undefined;
+}
+
+/** The marker authLayerStop() leaves on a cell; never shown. */
+export function authStopCheck(served: SpecVersion): ConformanceCheck {
+  return {
+    id: AUTH_STOP_CHECK_ID,
+    name: 'AuthStop',
+    description: `The auth layer turned away a request that presented an access token`,
+    status: 'INFO',
+    timestamp: new Date().toISOString(),
+    details: { served }
+  };
+}
+
+/**
+ * Whether the client signed in at the cell and was then stopped by the
+ * auth layer (authLayerStop()): the marker, and a token request to the
+ * cell's own authorization server in the scenario's log. Such a cell was
+ * reached at its revision whatever revision the stopped request carried:
+ * a dual-era client that opens with `server/discover` and correctly stops
+ * after 403 insufficient_scope has done what the scenario tests.
+ */
+export function signedInAuthStop(
+  hostedLog: readonly ConformanceCheck[],
+  scenarioLog: readonly ConformanceCheck[]
+): boolean {
+  return (
+    hostedLog.some((c) => c.id === AUTH_STOP_CHECK_ID) &&
+    scenarioLog.some((c) => c.id === 'token-request')
+  );
 }
 
 export const REVISION_NOT_SPOKEN_CHECK_ID = 'hosted-revision-not-spoken';

@@ -38,11 +38,14 @@ import {
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { gitBuild } from '../../src/hosted/git-build';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '../..');
 const STAGE_ROOT = join(REPO_ROOT, '.valtown-stage');
 const MANIFEST_PATH = join(SCRIPT_DIR, 'valtown-manifest.json');
+/** The module the staged copy stamps with this deploy's build. */
+const BUILD_STAMP_PATH = 'src/hosted/build-stamp.ts';
 const API = 'https://api.val.town/v2';
 /** val.town rejects a file body over this many characters (HTTP 400). */
 const MAX_FILE_CHARS = 80_000;
@@ -302,6 +305,20 @@ function stageVal(key: string, entry: string): Map<string, string> {
         queue.push(dep);
       }
     }
+  }
+
+  // The build this deploy serves: the commit and the time, stamped into the
+  // staged copy of the stamp module (src/hosted/build.ts shows it).
+  if (staged.has(BUILD_STAMP_PATH)) {
+    const stamp = {
+      build: gitBuild(REPO_ROOT) ?? 'unknown',
+      deployedAt: new Date().toISOString()
+    };
+    staged.set(
+      BUILD_STAMP_PATH,
+      `export const BUILD_STAMP: { build?: string; deployedAt?: string } = ${JSON.stringify(stamp)};\n`
+    );
+    console.log(`  (stamped ${BUILD_STAMP_PATH}: build ${stamp.build})`);
   }
 
   // Entry point: val.town serves the root http.ts as the HTTP handler.

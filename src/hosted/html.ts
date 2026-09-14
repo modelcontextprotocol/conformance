@@ -6,6 +6,7 @@
 
 import { ConformanceCheck, CheckStatus } from '../types';
 import { MCP_PATH, type HostedMatrix, type MatrixCell } from './matrix';
+import { buildCommit, buildText, type BuildInfo } from './build';
 import type { CellConfig, CellStatus, RunConfig } from './server';
 import type { CellRef } from './session';
 import {
@@ -34,6 +35,7 @@ import {
   NOT_TRIED_WHY,
   notTriedHeading,
   passedHeading,
+  scoreText,
   showsCounts,
   UNAVAILABLE_HEADING,
   UNAVAILABLE_WHY,
@@ -234,10 +236,28 @@ function credentials(cell: CellConfig): string {
   );
 }
 
-function page(title: string, body: string): string {
+/**
+ * The page, with a footer naming the server build when `build` is given:
+ * the commit linked to its source, and when it was deployed. A report
+ * passes its own (a frozen copy's is the build that froze it); `null` says
+ * the report was stored before builds were recorded.
+ */
+function page(title: string, body: string, build?: BuildInfo | null): string {
   return `<!doctype html><meta charset=utf-8>
 <title>${esc(title)}</title><style>${css}</style>
-${body}`;
+${body}${build === undefined ? '' : buildFooter(build)}`;
+}
+
+function buildFooter(build: BuildInfo | null): string {
+  const text = buildText(build ?? undefined);
+  const commit = build ? buildCommit(build) : undefined;
+  const shown = commit
+    ? esc(text).replace(
+        esc(build!.build),
+        `<a href="${REPO_URL}/commit/${commit}"><code>${esc(build!.build)}</code></a>`
+      )
+    : esc(text);
+  return `\n<footer class=muted>Server ${shown}.</footer>`;
 }
 
 function scoringPill(cell: MatrixCell): string {
@@ -404,7 +424,7 @@ const STATE_MEANING: [CellState, string][] = [
   ],
   [
     'incomplete',
-    'the client reached the cell and stopped: it spoke only an older revision and did not retry'
+    'the client reached the cell and stopped: it spoke only another revision, was turned away, and did not retry'
   ],
   ['not-tried', 'nothing has reached the cell yet']
 ];
@@ -446,7 +466,8 @@ function retentionHtml(r: LandingRetention): string {
 export function renderLanding(
   origin: string,
   matrix: HostedMatrix,
-  retention: LandingRetention
+  retention: LandingRetention,
+  build?: BuildInfo
 ): string {
   const cells = matrix.cells();
   const startable = cells.filter((c) => c.startable).length;
@@ -494,10 +515,11 @@ an issue or a chat.</li>
 they start or open a new chat.</p>
 
 <h2 id=score>What the score means</h2>
-<p>A report column reads “X of N scored (M startable here)”: X of the N cells the
+<p>A report column reads “X of the M scored cells you can run here pass · N are scored
+for the revision”: X is how many have passed, M is how many of the N cells the
 revision’s frozen <a href="${REPO_URL}#conformance-requirements">requirement set</a>
-scores have passed, and M is how many of those N this deployment can start:
-${scored}. Cells marked <i>not scored</i> or <i>not in the requirement set</i> run and report
+scores this deployment can start, and N is the set’s count, whether or not each
+can start here: ${scored}. Cells marked <i>not scored</i> or <i>not in the requirement set</i> run and report
 but never count. Verdicts come only from what your client actually sent to this
 server, and a cell passes only once your client has spoken that cell’s revision
 there: a finished sign-in or an older handshake is not enough.</p>
@@ -528,7 +550,8 @@ ${startable} startable cells here. A cell’s MCP URL is
 its results sit at the same path under <code>/results</code>. Cells that show
 <i>steps</i> tell a generic client what to do
 (<code>MCP_CONFORMANCE_CONTEXT.steps</code>). <a href="/scenarios">JSON</a>.</p>
-${renderMatrixTable(matrix, { origin })}`
+${renderMatrixTable(matrix, { origin })}`,
+    build
   );
 }
 
@@ -625,7 +648,8 @@ function clientBlocks(
 export function renderConfig(
   origin: string,
   matrix: HostedMatrix,
-  config: RunConfig
+  config: RunConfig,
+  build?: BuildInfo
 ): string {
   const title = config.scenario
     ? `${config.scenario} @ ${config.revision} — run ${config.runId}`
@@ -688,7 +712,7 @@ ${renderMatrixTable(matrix, {
   revision: config.revision
 })}`;
   }
-  return page(title, `${body}\n${embedded}\n${copyScript}`);
+  return page(title, `${body}\n${embedded}\n${copyScript}`, build);
 }
 
 /** The run page's ready-made composites, per revision in scope. */
@@ -712,38 +736,61 @@ function readyComposites(
 const STARTER_AUTH = 'auth/metadata-default';
 
 /**
- * The run page's client blocks. The full one: the ready-made composites and
- * every auth cell, which cannot share a URL, switched off where the client
+ * The entries of the run page's client blocks. The full one covers every
+ * startable cell of the run once: the ready-made composites, then each cell
+ * no composite carries (one that cannot share a URL, such as
+ * `request-metadata`), then every auth cell, switched off where the client
  * can say so, since each starts a sign-in when the client connects (and
  * `codex mcp list` fetches the metadata of every one that is on). The
  * starter: the composites and one auth cell per revision, on.
  */
+export function runClientEntries(
+  origin: string,
+  matrix: HostedMatrix,
+  config: RunConfig
+): { starter: ServerEntry[]; all: ServerEntry[] } {
+  const ready = readyComposites(origin, matrix, config);
+  const composites = ready.map((c) => ({
+    name: compositeName(c.revision, c.children),
+    url: c.url
+  }));
+  const covered = new Set(
+    ready.flatMap((c) => c.children.map((child) => `${c.revision}/${child}`))
+  );
+  const isAuth = (c: CellConfig) => c.scenario.startsWith('auth/');
+  const entry = (c: CellConfig) => ({
+    name: serverName(c.revision, c.scenario),
+    url: c.url
+  });
+  const auth = config.cells.filter(isAuth);
+  const alone = config.cells.filter(
+    (c) => !isAuth(c) && !covered.has(`${c.revision}/${c.scenario}`)
+  );
+  return {
+    starter: [
+      ...composites,
+      ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
+    ],
+    all: [
+      ...composites,
+      ...alone.map(entry),
+      ...auth.map((c) => ({ ...entry(c), enabled: false }))
+    ]
+  };
+}
+
+/** The run page's client blocks (see runClientEntries()). */
 function runClientBlocks(
   origin: string,
   matrix: HostedMatrix,
   config: RunConfig
 ): string {
-  const composites = readyComposites(origin, matrix, config).map((c) => ({
-    name: compositeName(c.revision, c.children),
-    url: c.url
-  }));
-  const auth = config.cells.filter((c) => c.scenario.startsWith('auth/'));
-  const entry = (c: (typeof auth)[number]) => ({
-    name: serverName(c.revision, c.scenario),
-    url: c.url
-  });
-  const starter = [
-    ...composites,
-    ...auth.filter((c) => c.scenario === STARTER_AUTH).map(entry)
-  ];
-  const all = [
-    ...composites,
-    ...auth.map((c) => ({ ...entry(c), enabled: false }))
-  ];
+  const { starter, all } = runClientEntries(origin, matrix, config);
   return clientBlocks(
     all,
     `The starter block is the ready-made composites and <code>${STARTER_AUTH}</code> at each revision. ` +
-      'The full block adds every auth cell (they cannot share a URL), switched off where the client can say so: ' +
+      'The full block covers every startable cell once: the composites, each cell that cannot share a URL ' +
+      '(such as <code>request-metadata</code>), and every auth cell, switched off where the client can say so: ' +
       'switch on the ones you want to test.',
     starter
   );
@@ -893,7 +940,8 @@ function about(c: ConformanceCheck): string {
 export function renderResults(
   ref: CellRef,
   checks: ShownCheck[],
-  status?: CellStatus
+  status?: CellStatus,
+  build?: BuildInfo
 ): string {
   const items = checks
     .map((c) => {
@@ -951,7 +999,8 @@ ${liveNote}<div id=live>${status ? statusLine(status) : ''}<p>${esc(countsLine(c
       counts.skipped
         ? ` <span class=muted>· ${counts.skipped} skipped: the client did nothing they check</span>`
         : ''
-    }</p>${items}</div>${liveScript}`
+    }</p>${items}</div>${liveScript}`,
+    build
   );
 }
 
@@ -1283,7 +1332,7 @@ export function renderReport(
         (col) =>
           `<th><a href="/results/${esc(report.runId)}/${esc(col.revision)}">${esc(
             col.revision
-          )}</a><div class=muted>${col.scored.passed} of ${col.scored.total} scored (${col.scored.startable} startable here)</div>` +
+          )}</a><div class=muted>${esc(scoreText(col))}</div>` +
           `<div class=muted>${identityLine(col.identities)}</div></th>`
       )
       .join('') +
@@ -1342,9 +1391,8 @@ export function renderReport(
       const counts = countsText(col.counts, [...REACHED, 'not-tried']);
       return (
         `<li><a href="/results/${run}/${esc(col.revision)}">${esc(col.revision)}</a>: ` +
-        `<b>${col.scored.passed} of ${col.scored.total}</b> scored cells pass ` +
-        `<span class=muted>(${col.scored.startable} startable here)</span>` +
-        `${counts ? ` · ${esc(counts)}` : ''}</li>`
+        `${esc(scoreText(col))}` +
+        `${counts ? ` <span class=muted>· reached: ${esc(counts)}</span>` : ''}</li>`
       );
     })
     .join('');
@@ -1374,16 +1422,17 @@ A cell the client never reached reads <i>not tried</i>; one it reached where
 nothing its scenario tests has happened yet reads <i>in progress</i> and lists
 what it is waiting for; one whose only failures are steps it has not seen yet
 (a sign-in or a form still to finish) reads <i>waiting</i>, though its verdict
-is still a fail until they happen; one where the client stopped short (it spoke only an
-older revision and did not retry) reads <i>incomplete</i>.
-<i>X of N scored</i> counts passes among every cell the revision's requirement
-set scores (N is the set's count; the cells this deployment can start are
-given alongside). Not-scored and unlisted cells are listed below the table;
+is still a fail until they happen; one where the client stopped short (it spoke only
+another revision, was turned away, and did not retry) reads <i>incomplete</i>.
+The score leads with the scored cells you can run here (<i>X of the M scored
+cells you can run here pass</i>) and keeps the requirement set's count
+(<i>N are scored</i>); the other N−M cannot start on this deployment. Not-scored and unlisted cells are listed below the table;
 scenarios this deployment cannot start are left out of it.</p>
 <table>${head}${rows}</table>
 ${notScored}
 ${unavailableSection(report)}</div>
 ${report.frozenAt ? '' : liveScript}
-${copyScript}`
+${copyScript}`,
+    report.server ?? null
   );
 }

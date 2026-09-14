@@ -14,12 +14,18 @@
  * verdict; it only reads them.
  */
 
-import type { ConformanceCheck, SpecVersion } from '../types';
+import {
+  DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION,
+  type ConformanceCheck,
+  type SpecVersion
+} from '../types';
 import { finalizeChecks } from './session';
 import { IDENTITY_CHECK_ID } from './identity';
 import {
   GET_ON_MCP_CHECK_ID,
   LEGACY_PROBE_CHECK_ID,
+  MODERN_PROBE_CHECK_ID,
   WIRE_REJECTED_CHECK_ID,
   WRONG_REVISION_CHECK_ID
 } from './wire';
@@ -142,6 +148,110 @@ export function legacyStop(
     fellBack: checks.some((c) => c.id === GET_ON_MCP_CHECK_ID)
   };
 }
+
+/**
+ * A client whose requests at a dated cell carried another revision, and
+ * that stopped there without ever speaking the cell's: turned away at
+ * version negotiation, or at the sign-in step before it got that far.
+ */
+export interface EraStop {
+  /** The revision its requests carried, when it is one this suite knows. */
+  carried?: string;
+  served: string;
+  /** How the cell answered (see modernProbeCheck()). */
+  status: number;
+  /** The JSON-RPC code, when it was turned away at version negotiation. */
+  code?: number;
+}
+
+/**
+ * Revisions a cause may name. Anything else a client put in its version
+ * header is said as "another revision": the header is the client's own
+ * text, and a report is shared.
+ */
+const KNOWN_REVISIONS: ReadonlySet<string> = new Set([
+  ...DATED_SPEC_VERSIONS,
+  DRAFT_PROTOCOL_VERSION
+]);
+
+/**
+ * Whether a dated cell saw the client only as a modern probe that it
+ * turned away: the probe is there, and the client never spoke the cell's
+ * revision afterwards (the mirror of legacyStop()).
+ */
+export function eraStop(
+  checks: readonly ConformanceCheck[]
+): EraStop | undefined {
+  const probes = checks.filter((c) => c.id === MODERN_PROBE_CHECK_ID);
+  const probe =
+    probes.find(
+      (c) =>
+        typeof (c.details?.rejected as { code?: unknown } | undefined)?.code ===
+        'number'
+    ) ?? probes[0];
+  if (!probe) return undefined;
+  const served = String(probe.details?.served ?? '');
+  if (!KNOWN_REVISIONS.has(served)) return undefined;
+  const spoke = checks.some(
+    (c) =>
+      c.id === IDENTITY_CHECK_ID &&
+      Array.isArray(c.details?.protocolVersions) &&
+      c.details.protocolVersions.includes(served)
+  );
+  if (spoke) return undefined;
+  const rejected = probe.details?.rejected as
+    | { code?: unknown; status?: unknown }
+    | undefined;
+  if (typeof rejected?.status !== 'number') return undefined;
+  const carried = probe.details?.headerVersion;
+  return {
+    ...(typeof carried === 'string' &&
+      KNOWN_REVISIONS.has(carried) && { carried }),
+    served,
+    status: rejected.status,
+    ...(typeof rejected.code === 'number' && { code: rejected.code })
+  };
+}
+
+export const eraCauseKey = (stop: EraStop) =>
+  `era ${stop.carried ?? ''} ${stop.served} ${stop.status} ${stop.code ?? ''}`;
+
+/** Where the cell stopped the client's requests, for eraStopText(). */
+function eraAnswer({ status, code, served }: EraStop): string {
+  if (code !== undefined) {
+    return `were turned away at version negotiation (the cell answered ${code}; it serves ${served})`;
+  }
+  return status === 401
+    ? 'were stopped at the sign-in step (the cell answered HTTP 401, asking it to sign in)'
+    : `were stopped at the sign-in step (HTTP ${status})`;
+}
+
+/**
+ * Why a cell reads incomplete after an era stop, lower case and without a
+ * "; " (a report cuts a note there): what the requests carried, where they
+ * were stopped, and where the same behaviour is judged.
+ */
+export function eraStopText(stop: EraStop): string {
+  const carried = stop.carried ?? 'another revision';
+  const judged =
+    stop.carried && stop.carried !== stop.served
+      ? ` (the same behaviour is judged on the ${stop.carried} cell)`
+      : '';
+  return (
+    `the client's requests here carried ${carried} and ${eraAnswer(stop)}, ` +
+    `and it did not retry at ${stop.served}, so nothing it did counts for ${stop.served}${judged}`
+  );
+}
+
+/** The sentence for an era-stop cause over `stops` (one per cell). */
+export function eraCauseText(stops: readonly EraStop[]): string {
+  const text = eraStopText(stops[0]);
+  return `${text[0].toUpperCase()}${text.slice(1)}.`;
+}
+
+/** The cause key of a legacy or an era stop. */
+export const stopCauseKey = (stop: LegacyStop | EraStop) =>
+  'fellBack' in stop ? legacyCauseKey(stop) : eraCauseKey(stop);
 
 /**
  * Checks that only say the client spoke the wrong era: on a cell the client
@@ -270,7 +380,7 @@ export function findingsOf(
   scenario: string,
   revision: SpecVersion,
   checks: readonly ConformanceCheck[],
-  stop: LegacyStop | undefined,
+  stop: LegacyStop | EraStop | undefined,
   grouped: boolean
 ): Finding[] {
   const notSeen = notSeenIn(scenario, revision, checks);
@@ -289,7 +399,7 @@ export function findingsOf(
     if (grouped) {
       finding.cause =
         stop && (finding.by === 'scenario' || ERA_CHECKS.has(c.id))
-          ? legacyCauseKey(stop)
+          ? stopCauseKey(stop)
           : `check ${key}`;
     }
     out.set(key, finding);
@@ -326,10 +436,19 @@ export interface CellFindings {
   /** `<revision>/<scenario>`. */
   cell: string;
   findings: readonly Finding[];
-  /** The legacy stop, when the cell's cause key names it. */
-  stop?: LegacyStop;
+  /** The legacy or era stop, when the cell's cause key names it. */
+  stop?: LegacyStop | EraStop;
   /** The cell was stopped by `stop` even if it lists no finding. */
   stoppedBy?: string;
+}
+
+type Stop = LegacyStop | EraStop;
+
+/** The sentence for a stop cause over `stops`, all of one kind. */
+function stopCauseText(stops: readonly Stop[]): string {
+  return 'fellBack' in stops[0]
+    ? legacyCauseText(stops as LegacyStop[])
+    : eraCauseText(stops as EraStop[]);
 }
 
 /**
@@ -337,12 +456,12 @@ export interface CellFindings {
  * first, then those covering the most cells.
  */
 export function groupCauses(cells: readonly CellFindings[]): Cause[] {
-  const causes = new Map<string, Cause & { stops: LegacyStop[] }>();
+  const causes = new Map<string, Cause & { stops: Stop[] }>();
   const add = (
     key: string,
     cell: string,
     make: () => Omit<Cause, 'cells'>,
-    stop?: LegacyStop
+    stop?: Stop
   ) => {
     let cause = causes.get(key);
     if (!cause) causes.set(key, (cause = { ...make(), cells: [], stops: [] }));
@@ -362,7 +481,7 @@ export function groupCauses(cells: readonly CellFindings[]): Cause[] {
     }
     for (const f of c.findings) {
       if (!f.cause) continue;
-      if (c.stop && f.cause === legacyCauseKey(c.stop)) {
+      if (c.stop && f.cause === stopCauseKey(c.stop)) {
         add(
           f.cause,
           c.cell,
@@ -381,7 +500,7 @@ export function groupCauses(cells: readonly CellFindings[]): Cause[] {
   }
   return Array.from(causes.values())
     .map(({ stops, ...cause }) =>
-      stops.length ? { ...cause, text: legacyCauseText(stops) } : cause
+      stops.length ? { ...cause, text: stopCauseText(stops) } : cause
     )
     .sort(
       (a, b) =>

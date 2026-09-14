@@ -41,9 +41,11 @@ import {
   type IdentityObservation
 } from './identity';
 import {
+  AUTH_STOP_CHECK_ID,
   REVISION_REACHED_CHECK_ID,
   REVISION_SPOKEN_CHECK_ID,
-  revisionNotSpokenCheck
+  revisionNotSpokenCheck,
+  signedInAuthStop
 } from './wire';
 
 /**
@@ -932,14 +934,21 @@ function judgedAtRevision(
   hostedLog: ConformanceCheck[]
 ): RunResults {
   const spoke = hostedLog.some((c) => c.id === REVISION_SPOKEN_CHECK_ID);
+  // A client that signed in and was then stopped by the auth layer reached
+  // the cell too, whatever revision that request carried (see
+  // signedInAuthStop()).
   const reached =
-    spoke || hostedLog.some((c) => c.id === REVISION_REACHED_CHECK_ID);
+    spoke ||
+    hostedLog.some((c) => c.id === REVISION_REACHED_CHECK_ID) ||
+    signedInAuthStop(hostedLog, scenarioLog);
   const tested = hostedScenarios.meta(ref.scenarioName)?.allowClientError
     ? reached
     : spoke;
   const hosted = hostedLog.filter(
     (c) =>
-      c.id !== REVISION_SPOKEN_CHECK_ID && c.id !== REVISION_REACHED_CHECK_ID
+      c.id !== REVISION_SPOKEN_CHECK_ID &&
+      c.id !== REVISION_REACHED_CHECK_ID &&
+      c.id !== AUTH_STOP_CHECK_ID
   );
   const checks = [
     ...atCellRevision(

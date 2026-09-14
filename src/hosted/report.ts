@@ -13,7 +13,7 @@
  * its failures and warnings one line each; the run's are grouped by cause
  * (see ./findings.ts). The verdict itself is unchanged by either.
  *
- * Per column, "scored X of N" counts passes among every cell the revision's
+ * Per column, `scored` counts passes among every cell the revision's
  * requirement set scores — N is the yaml's count, whether or not this
  * deployment can start the cell — and says separately how many of those N
  * are startable here; not_scored and unlisted cells are reported next to the
@@ -27,11 +27,14 @@ import type { HostedMatrix, MatrixCell } from './matrix';
 import { cellId, type CellRef, type RunResults } from './session';
 import { identitiesIn, mergeIdentities, type ClientIdentity } from './identity';
 import { shownChecks, type ShownCheck } from './shown';
+import type { BuildInfo } from './build';
 import {
+  eraStop,
+  eraStopText,
   findingsOf,
   groupCauses,
-  legacyCauseKey,
   legacyStop,
+  stopCauseKey,
   type Cause,
   type CellFindings,
   type Finding
@@ -86,7 +89,7 @@ export function stateOf(
   if (verdict !== 'incomplete') return verdict;
   if (!cell.startable) return 'not-startable';
   if (!checks) return 'not-tried';
-  return legacyStop(checks) ? 'incomplete' : 'in-progress';
+  return legacyStop(checks) || eraStop(checks) ? 'incomplete' : 'in-progress';
 }
 
 function onlyNotSeen(checks: readonly ShownCheck[]): boolean {
@@ -207,6 +210,12 @@ export interface RunReport {
   /** On a frozen copy (POST /results/<run-id>/freeze): its id and time. */
   snapshotId?: string;
   frozenAt?: string;
+  /**
+   * The server build that produced the report (see ./build.ts): stored with
+   * a frozen copy, so it says which build it came from. Absent on a copy
+   * frozen before builds were recorded.
+   */
+  server?: BuildInfo;
 }
 
 /** A finding as the run report's JSON gives it (see reportJson()). */
@@ -463,10 +472,16 @@ export function incompleteNote(checks: readonly ConformanceCheck[]): string {
     : `${lead}; the ${waiting} failures listed are what it is still waiting for`;
 }
 
-/** Said when a legacy initialize is all the cell has seen of the client. */
+/**
+ * Said when a legacy initialize, or requests at another revision that the
+ * cell turned away (eraStop()), are all the cell has seen of the client.
+ */
 function legacyOnly(checks: readonly ConformanceCheck[]): string | undefined {
   const stop = legacyStop(checks);
-  if (!stop) return undefined;
+  if (!stop) {
+    const era = eraStop(checks);
+    return era && eraStopText(era);
+  }
   return stop.asked
     ? `the client spoke ${stop.asked} only (it opened with initialize) and did not retry at ${stop.served}`
     : `the client only sent initialize, the legacy handshake, and did not retry at ${stop.served}`;
@@ -479,6 +494,8 @@ export interface ReportSources {
     id: string
   ): Promise<Pick<RunResults, 'checks' | 'recorded'> | undefined>;
   resultsUrl(ref: CellRef): string;
+  /** The server build, recorded in the report (RunReport.server). */
+  build?: BuildInfo;
 }
 
 export async function buildReport(
@@ -514,7 +531,12 @@ export async function buildReport(
       mergeIdentities(identities, seen);
       mergeIdentities(allIdentities, seen);
       const { verdict, state, note, shown } = viewCell(cell, results);
-      const stop = results ? legacyStop(results.checks) : undefined;
+      // What stopped the client: a legacy handshake, or (on a cell that
+      // reads incomplete for it) requests at another revision turned away.
+      const stop = results
+        ? (legacyStop(results.checks) ??
+          (state === 'incomplete' ? eraStop(results.checks) : undefined))
+        : undefined;
       // An in-progress cell's findings, and a waiting cell's not-seen ones,
       // are only what it waits for: listed on its row, never grouped as
       // causes (nothing went wrong yet).
@@ -532,7 +554,7 @@ export async function buildReport(
           )
         : undefined;
       const stoppedBy =
-        state === 'incomplete' && stop ? legacyCauseKey(stop) : undefined;
+        state === 'incomplete' && stop ? stopCauseKey(stop) : undefined;
       if (results) {
         reached.push({
           cell: `${cell.revision}/${cell.scenario}`,
@@ -589,6 +611,7 @@ export async function buildReport(
     generatedAt: new Date().toISOString(),
     columns,
     identities: Array.from(allIdentities.values()),
-    causes: groupCauses(reached)
+    causes: groupCauses(reached),
+    ...(sources.build && { server: sources.build })
   };
 }
