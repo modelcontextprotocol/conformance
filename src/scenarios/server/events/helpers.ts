@@ -1,0 +1,391 @@
+/**
+ * Shared helpers for the MCP Events server-conformance scenarios under this
+ * directory.
+ *
+ * Extracted against the merged design sketch on `main` of
+ * modelcontextprotocol/experimental-ext-triggers-events (merged 2026-09-08).
+ * Each check's verbatim excerpt lives next to its check ID in
+ * src/seps/sep-9999.yaml, and 9999 is a placeholder SEP number — see that
+ * file's header before renaming anything here.
+ *
+ * Two things about Events differ from every other extension suite here and are
+ * worth knowing before reading the scenarios:
+ *
+ * 1. The capability is declared at the top level as `capabilities.events`, not
+ *    under `capabilities.extensions`. SEP-2133's extensions map does not come
+ *    into it. `EVENTS_EXTENSION_ID` exists only as a `ScenarioSource` key so
+ *    the runner keeps these scenarios off the `--spec-version` timeline; it is
+ *    never a path into the capability object.
+ *
+ * 2. No delivery mode is mandatory. A descriptor's `delivery` array is any
+ *    non-empty subset of poll/push/webhook, so a scenario for one mode has to
+ *    discover whether any event type offers it before it can probe anything.
+ *    Nothing is hardcoded to a fixture's event names.
+ */
+
+import type {
+  CheckStatus,
+  ConformanceCheck,
+  SpecReference
+} from '../../../types';
+import type { Connection } from '../../../connection';
+import { JsonRpcError } from '../../../connection';
+
+/**
+ * Suite-selection key for the Events scenarios.
+ *
+ * Events has no SEP-2133 extension identifier, because it declares its
+ * capability top-level rather than inside `capabilities.extensions`. This
+ * string exists so `ScenarioSource` can carry `{ extensionId }`, which is what
+ * keeps the scenarios out of `--spec-version` selection (see
+ * `matchesSpecVersion` in src/scenarios/index.ts). Do not read the capability
+ * at this key; read `capabilities.events`.
+ */
+export const EVENTS_EXTENSION_ID = 'io.modelcontextprotocol/events';
+
+/** The capability key, top-level under `capabilities`. */
+export const EVENTS_CAPABILITY = 'events';
+
+export const EVENTS_LIST_METHOD = 'events/list';
+export const EVENTS_POLL_METHOD = 'events/poll';
+export const EVENTS_STREAM_METHOD = 'events/stream';
+export const EVENTS_SUBSCRIBE_METHOD = 'events/subscribe';
+export const EVENTS_UNSUBSCRIBE_METHOD = 'events/unsubscribe';
+
+export const EVENTS_LIST_CHANGED_NOTIFICATION =
+  'notifications/events/list_changed';
+export const EVENTS_EVENT_NOTIFICATION = 'notifications/events/event';
+export const EVENTS_ACTIVE_NOTIFICATION = 'notifications/events/active';
+export const EVENTS_HEARTBEAT_NOTIFICATION = 'notifications/events/heartbeat';
+export const EVENTS_ERROR_NOTIFICATION = 'notifications/events/error';
+export const EVENTS_TERMINATED_NOTIFICATION = 'notifications/events/terminated';
+
+/**
+ * The `_meta` key carrying the parent `events/stream` request id on every
+ * `notifications/events/*` message, per SEP-2575's correlation convention.
+ */
+export const SUBSCRIPTION_ID_META = 'io.modelcontextprotocol/subscriptionId';
+
+/** The three delivery modes, as they appear in a descriptor's `delivery`. */
+export const DELIVERY_MODES = ['poll', 'push', 'webhook'] as const;
+export type DeliveryMode = (typeof DELIVERY_MODES)[number];
+
+/** Standard JSON-RPC. */
+export const JSONRPC_METHOD_NOT_FOUND = -32601;
+export const JSONRPC_INVALID_PARAMS = -32602;
+
+/**
+ * The general-purpose codes this document defines, carried in the JSON-RPC
+ * implementation-defined server range. Named for reuse across MCP rather than
+ * scoped to events, and each conveys its specifics through a typed `data`
+ * payload rather than by minting more numbers.
+ */
+export const EVENTS_NOT_FOUND = -32011;
+export const EVENTS_FORBIDDEN = -32012;
+export const EVENTS_RESOURCE_EXHAUSTED = -32013;
+export const EVENTS_UNSUPPORTED = -32014;
+export const EVENTS_CALLBACK_ENDPOINT_ERROR = -32015;
+
+/** Inclusive bounds of the JSON-RPC implementation-defined server range. */
+export const SERVER_ERROR_RANGE_MIN = -32099;
+export const SERVER_ERROR_RANGE_MAX = -32000;
+
+export const EVENTS_SPEC_REF: SpecReference = {
+  id: 'MCP-Events',
+  url: 'https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md'
+};
+
+/** One entry of the `events` array returned by `events/list`. */
+export interface EventDescriptor {
+  name?: unknown;
+  description?: unknown;
+  delivery?: unknown;
+  inputSchema?: unknown;
+  payloadSchema?: unknown;
+  _meta?: unknown;
+  [key: string]: unknown;
+}
+
+export interface EventsListResult {
+  events?: unknown;
+  nextCursor?: unknown;
+  [key: string]: unknown;
+}
+
+/** One entry of a poll response's `events` array, or a pushed notification. */
+export interface EventOccurrence {
+  eventId?: unknown;
+  name?: unknown;
+  timestamp?: unknown;
+  data?: unknown;
+  cursor?: unknown;
+  _meta?: unknown;
+  [key: string]: unknown;
+}
+
+export interface EventsPollResult {
+  events?: unknown;
+  cursor?: unknown;
+  truncated?: unknown;
+  hasMore?: unknown;
+  nextPollMs?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Build a check carrying the Events spec reference. Per AGENTS.md the same
+ * `id` flips `status` + `errorMessage` between SUCCESS and FAILURE rather than
+ * branching into distinct slugs.
+ */
+export function eventsCheck(
+  id: string,
+  description: string,
+  status: CheckStatus,
+  extras: Partial<ConformanceCheck> = {}
+): ConformanceCheck {
+  return {
+    id,
+    name: id,
+    description,
+    status,
+    timestamp: new Date().toISOString(),
+    specReferences: [EVENTS_SPEC_REF],
+    ...extras
+  };
+}
+
+/** A JSON object, as opposed to an array, `null`, or a primitive. */
+export function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * How to name an observed value in an error message.
+ *
+ * `absent` rather than `a undefined`, because a reader chasing a failure needs
+ * to know the field was missing, and the JavaScript spelling of that is noise.
+ */
+export function describeValue(value: unknown): string {
+  if (value === undefined) return 'absent';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return `a ${typeof value}`;
+}
+
+/**
+ * Whether the server declared the events capability at all, and the raw value
+ * it declared it with, before any shape coercion.
+ *
+ * Kept separate from `eventsCapability` so callers can tell "absent" from
+ * "declared with the wrong type" apart. Folding the two together would turn a
+ * server that declares `events: true` into a clean SKIP of the whole suite,
+ * which reads as a green run against a server that is plainly wrong.
+ */
+export async function declaredEventsCapability(
+  conn: Connection
+): Promise<{ declared: boolean; value: unknown }> {
+  const discovered = await conn.discover();
+  const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
+  if (!(EVENTS_CAPABILITY in caps))
+    return { declared: false, value: undefined };
+  return { declared: true, value: caps[EVENTS_CAPABILITY] };
+}
+
+/**
+ * The events capability object, or `undefined` when the server did not declare
+ * it — or declared it with something that is not an object, which callers
+ * treat the same way. An undeclared optional capability is a SKIP.
+ */
+export async function eventsCapability(
+  conn: Connection
+): Promise<Record<string, unknown> | undefined> {
+  const { value } = await declaredEventsCapability(conn);
+  return isObject(value) ? value : undefined;
+}
+
+/** A single `events/list` page, kept separate so pagination can be inspected. */
+export interface EventsListPage {
+  result: EventsListResult;
+  descriptors: EventDescriptor[];
+}
+
+/**
+ * Call `events/list` once, optionally with a cursor. Returns the `JsonRpcError`
+ * rather than throwing, so a scenario can grade the error instead of aborting.
+ */
+export async function eventsListPage(
+  conn: Connection,
+  cursor?: string
+): Promise<EventsListPage | { error: JsonRpcError }> {
+  try {
+    const result = await conn.request<EventsListResult>(
+      EVENTS_LIST_METHOD,
+      cursor ? { cursor } : undefined
+    );
+    const raw = result?.events;
+    return {
+      result: result ?? {},
+      descriptors: Array.isArray(raw) ? (raw as EventDescriptor[]) : []
+    };
+  } catch (err) {
+    if (err instanceof JsonRpcError) return { error: err };
+    throw err;
+  }
+}
+
+/**
+ * Every descriptor from `events/list`, paginating until `nextCursor` clears.
+ *
+ * Bounded at `maxPages` because a server that echoes the same `nextCursor`
+ * forever would otherwise hang the scenario rather than fail it. Hitting the
+ * bound is reported through `truncatedByBound` so the caller can say so instead
+ * of silently grading a partial catalog.
+ */
+export async function eventsListAll(
+  conn: Connection,
+  maxPages = 20
+): Promise<
+  | { descriptors: EventDescriptor[]; pages: number; truncatedByBound: boolean }
+  | { error: JsonRpcError }
+> {
+  const out: EventDescriptor[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+  let pages = 0;
+
+  do {
+    const page = await eventsListPage(conn, cursor);
+    if ('error' in page) return page;
+    pages += 1;
+    out.push(...page.descriptors);
+
+    const next = page.result.nextCursor;
+    if (typeof next !== 'string' || next.length === 0) break;
+    // A repeated cursor is a server bug; stop rather than loop forever. The
+    // pagination check grades it, this helper just refuses to hang.
+    if (seen.has(next)) break;
+    seen.add(next);
+    cursor = next;
+  } while (pages < maxPages);
+
+  return { descriptors: out, pages, truncatedByBound: pages >= maxPages };
+}
+
+/** The `delivery` array of a descriptor, or `[]` when it is missing/malformed. */
+export function deliveryModes(descriptor: EventDescriptor): string[] {
+  const d = descriptor.delivery;
+  return Array.isArray(d)
+    ? d.filter((m): m is string => typeof m === 'string')
+    : [];
+}
+
+/** The first descriptor advertising `mode`, or `undefined` when none does. */
+export function firstSupporting(
+  descriptors: EventDescriptor[],
+  mode: DeliveryMode
+): EventDescriptor | undefined {
+  return descriptors.find((d) => deliveryModes(d).includes(mode));
+}
+
+/** A descriptor's `name` when it is a usable string, else `undefined`. */
+export function descriptorName(
+  descriptor: EventDescriptor
+): string | undefined {
+  return typeof descriptor.name === 'string' && descriptor.name.length > 0
+    ? descriptor.name
+    : undefined;
+}
+
+/**
+ * How to refer to a descriptor in an error message without assuming it has a
+ * usable `name` — the checks that grade `name` itself run against descriptors
+ * that may not.
+ */
+export function descriptorLabel(
+  descriptor: EventDescriptor,
+  index: number
+): string {
+  const name = descriptorName(descriptor);
+  return name ? `\`${name}\`` : `events[${index}]`;
+}
+
+/**
+ * Arguments that satisfy a descriptor's `inputSchema` well enough to poll with.
+ *
+ * Deliberately minimal: an empty object. Every `inputSchema` in the document is
+ * an object schema whose properties are filters and transforms, none of them
+ * required, so `{}` means "no filtering" and is valid against all of them. A
+ * schema that does declare `required` is the one case this cannot satisfy, and
+ * the caller reports that as an unmet prerequisite rather than guessing values
+ * a server would then reject for the wrong reason.
+ */
+export function minimalArguments(
+  descriptor: EventDescriptor
+): Record<string, unknown> | undefined {
+  const schema = descriptor.inputSchema;
+  if (!isObject(schema)) return {};
+  const required = schema.required;
+  if (Array.isArray(required) && required.length > 0) return undefined;
+  return {};
+}
+
+/**
+ * Call `events/poll`, returning the `JsonRpcError` rather than throwing so the
+ * caller can grade error codes.
+ */
+export async function eventsPoll(
+  conn: Connection,
+  params: Record<string, unknown>
+): Promise<{ result: EventsPollResult } | { error: JsonRpcError }> {
+  try {
+    const result = await conn.request<EventsPollResult>(
+      EVENTS_POLL_METHOD,
+      params
+    );
+    return { result: result ?? {} };
+  } catch (err) {
+    if (err instanceof JsonRpcError) return { error: err };
+    throw err;
+  }
+}
+
+/** The `events` array of a poll result, or `[]` when missing/malformed. */
+export function occurrences(result: EventsPollResult): EventOccurrence[] {
+  return Array.isArray(result.events)
+    ? (result.events as EventOccurrence[])
+    : [];
+}
+
+/**
+ * Whether a value is an acceptable cursor: a string, `null`, or absent.
+ *
+ * "Absent means null" is normative in both directions, so a missing field is
+ * not a defect and callers must not treat it as one.
+ */
+export function isValidCursor(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
+/** Whether a value parses as an ISO 8601 instant. */
+export function isIso8601(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const t = Date.parse(value);
+  if (Number.isNaN(t)) return false;
+  // Date.parse accepts bare dates and a few non-ISO forms; require at least a
+  // date and a time separated by `T`, which every example in the document has.
+  return /^\d{4}-\d{2}-\d{2}T/.test(value);
+}
+
+/** Whether `code` sits in the JSON-RPC implementation-defined server range. */
+export function inServerErrorRange(code: number): boolean {
+  return code >= SERVER_ERROR_RANGE_MIN && code <= SERVER_ERROR_RANGE_MAX;
+}
+
+/**
+ * A name no conformant server should be serving, for probing the "unknown
+ * event name" error path. Randomised so a fixture cannot accidentally define
+ * it, and prefixed so a human reading server logs knows where it came from.
+ */
+export function unknownEventName(): string {
+  return `conformance.nonexistent.${Math.random().toString(36).slice(2, 10)}`;
+}

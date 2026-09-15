@@ -103,7 +103,13 @@ export const EXTENSION_IDS = [
   'io.modelcontextprotocol/auth/dpop',
   'io.modelcontextprotocol/auth/wif',
   'io.modelcontextprotocol/tasks',
-  'io.modelcontextprotocol/skills'
+  'io.modelcontextprotocol/skills',
+  // MCP Events declares its capability top-level as `capabilities.events`,
+  // not inside `capabilities.extensions`. This id is a suite-selection key
+  // only — it keeps the Events scenarios off the `--spec-version` timeline
+  // (see `matchesSpecVersion`), and is never a path into the capability
+  // object. See src/scenarios/server/events/helpers.ts.
+  'io.modelcontextprotocol/events'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
