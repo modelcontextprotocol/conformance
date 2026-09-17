@@ -74,7 +74,7 @@ describe('lookupBuiltinConfig', () => {
   });
 
   it('returns null for unknown SDKs', () => {
-    expect(lookupBuiltinConfig('swift-sdk')).toBeNull();
+    expect(lookupBuiltinConfig('kotlin-sdk')).toBeNull();
   });
 
   it('exposes python-sdk-v1 with repo + defaultRef + specVersion and both commands', () => {
@@ -152,6 +152,18 @@ describe('lookupBuiltinConfig', () => {
     expect(rb?.expectedFailures).toBe('conformance/expected_failures.yml');
     // One dual-era server serves every revision, so no per-spec overrides.
     expect(rb?.specOverrides).toBeUndefined();
+  });
+
+  it('exposes swift-sdk with the SwiftPM everything fixtures', () => {
+    const sw = lookupBuiltinConfig('swift-sdk');
+    expect(sw?.build).toContain('mcp-everything-client');
+    expect(sw?.build).toContain('mcp-everything-server');
+    // SwiftPM writes to a per-triple dir but keeps a .build/debug symlink to
+    // it, so these paths stay portable across host architectures.
+    expect(sw?.client?.command).toBe('./.build/debug/mcp-everything-client');
+    // The server defaults to 3001; --port pins it to the 3000 convention.
+    expect(sw?.server?.command).toContain('--port 3000');
+    expect(sw?.server?.url).toBe('http://localhost:3000/mcp');
   });
 
   it('every built-in entry validates against SdkConfigSchema', () => {
