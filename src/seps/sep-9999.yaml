@@ -127,10 +127,15 @@
 #       which localhost cannot satisfy: the SSRF rules declared below require a
 #       conformant server to refuse it.
 #
-# measured against mcpkit, 2026-09-15, examples/events/kitchen-sink at main:
-#   events-discovery 8/11, events-poll 18/28. Six divergences, each a real gap
-#   rather than something the suite should accommodate. Do not soften these
-#   rows to make mcpkit pass; catching them is the point.
+# measured against mcpkit, 2026-09-17, examples/events/kitchen-sink at
+#   `d2950655`: events-discovery 8/11, events-poll 26/29. The poll number was
+#   18/28 on 2026-09-15; the seven `sep-9999-occurrence-*` rows now pass
+#   because the scenario polls forward from the bootstrap cursor rather than
+#   grading them off the bootstrap response, and `sep-9999-poll-invalid-
+#   arguments` moved from a failure to untestable. Nothing in mcpkit changed
+#   between the two runs. Each divergence below is a real gap rather than
+#   something the suite should accommodate. Do not soften these rows to make
+#   mcpkit pass; catching them is the point.
 #
 #   sep-9999-capability-events-object — the server answers `events/list` but
 #     declares no `capabilities.events`, so a client that reads capabilities
@@ -145,9 +150,12 @@
 #     empty `delivery`, where the document requires a non-empty subset of
 #     poll/push/webhook. That source is the substitute for the missing
 #     `notifications/events/list_changed`. Gap G34.
-#   sep-9999-descriptor-input-schema — no descriptor carries `inputSchema`,
-#     which also makes `sep-9999-poll-invalid-arguments` untestable, since
-#     there is no declared constraint left to violate. Not previously tracked.
+#   sep-9999-descriptor-input-schema — `events.topology` carries no
+#     `inputSchema`. mcpkit 1381 added one to the three real sources, so this
+#     and the delivery row above now have the same single cause. The poll
+#     scenario picks `alert.fired`, which has an `inputSchema` with no typed
+#     property, so `sep-9999-poll-invalid-arguments` reports untestable: there
+#     is no constraint the harness can violate on purpose.
 #   sep-9999-poll-events-array — `events` is omitted rather than returned as
 #     an empty array when nothing happened. Not previously tracked.
 #   sep-9999-poll-mode-unsupported — `events/poll` answers for an event type
@@ -159,6 +167,79 @@
 #   `UnsupportedData` (errors.go:90) has no `reason` field, but driving that
 #   path needs a server that can drop an event type mid-run, which waits on
 #   the push scenario.
+#
+# measured against a second implementation, 2026-09-17: Peter Alexander's
+#   `https://metronome-mcp.fly.dev/mcp`, announced 2026-09-10 and written by
+#   the author of the design sketch. events-discovery 10/11, events-poll 27/29.
+#   It serves one event type, `metronome.tick`, which offers all three delivery
+#   modes.
+#
+#   Running it is not a one-liner. Three things differ from a local fixture:
+#
+#   Events are only on the 2026-07-28 stateless wire. Over 2025-11-25 the
+#     server answers `events/list` with -32601. The runner picks the wire from
+#     the spec version, and the default already lands on stateless, so no flag
+#     is needed — but a 2025-11-25 run reports the whole extension as absent.
+#   It is behind OAuth, and `server` has no way to send a token. Its
+#     authorization server is a demo that verifies no identity: register a
+#     client at /register, approve the consent form, exchange the code with
+#     PKCE. Then put a local proxy in front that adds the header and point
+#     --url at the proxy. An auth option on the runner would remove all of
+#     this, and the webhook scenarios will need one anyway, since a webhook
+#     subscription requires an authenticated principal.
+#   Its one event type has required `inputSchema` properties. See the
+#     `minimalArguments` note below.
+#
+#   Two divergences, neither previously known:
+#
+#   sep-9999-capability-events-object — metronome declares events under
+#     `capabilities.extensions["io.modelcontextprotocol/events"]`, the SEP-2133
+#     extensions map, where this document puts it top-level under
+#     `capabilities`. Ask before changing the row. The document says top-level
+#     and has not moved since `28ec35e9`, but metronome is the sketch author's
+#     own server, and every other extension in MCP declares itself through the
+#     extensions map. If the WG confirms the extensions map, this row and
+#     `EVENTS_CAPABILITY` in src/scenarios/server/events/helpers.ts both change,
+#     and mcpkit's failure on the same row means something different than it
+#     does today.
+#   sep-9999-poll-invalid-arguments — arguments that violate `inputSchema`
+#     answer -32603 Internal error, where the document requires -32602
+#     InvalidParams. The message ("Got JSON of type string, expected int_")
+#     reads like a deserialization failure surfacing rather than a validation
+#     step, so it is likely a framework default rather than a decision.
+#
+#   `sep-9999-poll-mode-unsupported` reports untestable here, for the opposite
+#   reason it fails against mcpkit: every event type metronome serves offers
+#   poll, so there is no type to probe the unsupported-mode path with. The two
+#   implementations cover each other's blind spot, which is the argument for
+#   keeping both targets rather than picking one.
+#
+# two suite bugs the second implementation found, both fixed here:
+#
+#   `minimalArguments` (helpers.ts) returned undefined for any `inputSchema`
+#     with a required property, on the reasoning that every schema in the
+#     document is filters and transforms with nothing required. That holds for
+#     the examples in the document, not for a real server: `metronome.tick`
+#     requires `periodSeconds` and `label`, and all 33 poll rows reported
+#     untestable, scoring 1/34. It now derives a value per required property
+#     from the schema — `default`, `const`, first `enum` or `examples` entry,
+#     then `minimum` for numbers or a fixed string — and still gives up, rather
+#     than guessing, when a required property offers nothing to go on.
+#   The `sep-9999-occurrence-*` rows were graded off the bootstrap poll, which
+#     passes `cursor: null`. `cursor: null` means start from now, so a
+#     conformant server returns no events and the seven shape rows could never
+#     pass: the suite required the server to violate
+#     `sep-9999-cursor-null-starts-from-now` to score them. They now poll
+#     forward from the returned cursor, waiting `nextPollMs` between attempts
+#     (clamped to 250ms-2s) up to a 6s ceiling, and still report untestable
+#     against a genuinely quiet server. This is why the mcpkit poll number
+#     moved without mcpkit changing.
+#
+#   Both bugs were invisible against kitchen-sink alone. The first needs a
+#   server whose schema requires something; the second needs one that does not
+#   replay on a null cursor. This is the same pattern as the SEP-2640 suite,
+#   where the two bugs that mattered came from running against something that
+#   was not ours.
 sep: 9999
 spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md
 requirements:

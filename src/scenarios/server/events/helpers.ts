@@ -312,21 +312,50 @@ export function descriptorLabel(
 /**
  * Arguments that satisfy a descriptor's `inputSchema` well enough to poll with.
  *
- * Deliberately minimal: an empty object. Every `inputSchema` in the document is
- * an object schema whose properties are filters and transforms, none of them
- * required, so `{}` means "no filtering" and is valid against all of them. A
- * schema that does declare `required` is the one case this cannot satisfy, and
- * the caller reports that as an unmet prerequisite rather than guessing values
- * a server would then reject for the wrong reason.
+ * Optional properties are left out, so `{}` means "no filtering". Required
+ * properties get a value derived from the schema itself: `default`, `const`,
+ * the first `enum` or `examples` entry, then a type-driven value (`minimum`
+ * for numbers, a fixed label for strings). A required property the schema
+ * gives nothing to go on for returns `undefined`, and the caller reports that
+ * as an unmet prerequisite rather than guessing values a server would then
+ * reject for the wrong reason.
  */
 export function minimalArguments(
   descriptor: EventDescriptor
 ): Record<string, unknown> | undefined {
   const schema = descriptor.inputSchema;
   if (!isObject(schema)) return {};
-  const required = schema.required;
-  if (Array.isArray(required) && required.length > 0) return undefined;
-  return {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const properties = isObject(schema.properties) ? schema.properties : {};
+  const args: Record<string, unknown> = {};
+  for (const key of required) {
+    if (typeof key !== 'string') return undefined;
+    const value = schemaValue(properties[key]);
+    if (value === undefined) return undefined;
+    args[key] = value;
+  }
+  return args;
+}
+
+function schemaValue(prop: unknown): unknown {
+  if (!isObject(prop)) return undefined;
+  if ('default' in prop) return prop.default;
+  if ('const' in prop) return prop.const;
+  if (Array.isArray(prop.enum) && prop.enum.length > 0) return prop.enum[0];
+  if (Array.isArray(prop.examples) && prop.examples.length > 0) {
+    return prop.examples[0];
+  }
+  switch (prop.type) {
+    case 'integer':
+    case 'number':
+      return typeof prop.minimum === 'number' ? prop.minimum : 1;
+    case 'string':
+      return 'mcp-conformance';
+    case 'boolean':
+      return false;
+    default:
+      return undefined;
+  }
 }
 
 /**

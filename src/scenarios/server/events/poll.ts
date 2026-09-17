@@ -70,6 +70,9 @@ const POLL_IDS = [
   'sep-9999-removal-poll-not-found'
 ] as const;
 
+/** How long to follow the bootstrap cursor waiting for a delivered event. */
+const OCCURRENCE_WAIT_MS = 6000;
+
 const OCCURRENCE_IDS = [
   'sep-9999-occurrence-event-id',
   'sep-9999-occurrence-name',
@@ -245,7 +248,10 @@ export class EventsPollScenario implements ClientScenario {
     checks.push(...(await this.replayChecks(conn, name, args, r1)));
 
     // --- EventOccurrence shape -------------------------------------------
-    checks.push(...this.occurrenceChecks(r1, target));
+    // Not graded off r1: `cursor: null` starts from now, so a conformant
+    // bootstrap poll is empty. Follow its cursor until something is delivered.
+    const delivered = await this.pollForOccurrences(conn, name, args, r1);
+    checks.push(...this.occurrenceChecks(delivered, target));
 
     // --- Error contract ---------------------------------------------------
     checks.push(...(await this.errorChecks(conn, descriptors, name, args)));
@@ -817,6 +823,35 @@ export class EventsPollScenario implements ClientScenario {
    * fixture reports the whole group as untestable rather than passing an empty
    * array through seven shape checks, which would read as green.
    */
+  /**
+   * Poll forward from the bootstrap cursor, waiting `nextPollMs` between
+   * attempts (clamped to 250ms-2s), until a batch carries events or
+   * OCCURRENCE_WAIT_MS elapses. Returns the last result either way, so a quiet
+   * server still reports the occurrence checks as untestable.
+   */
+  private async pollForOccurrences(
+    conn: Connection,
+    name: string,
+    args: Record<string, unknown>,
+    bootstrap: EventsPollResult
+  ): Promise<EventsPollResult> {
+    let last = bootstrap;
+    const deadline = Date.now() + OCCURRENCE_WAIT_MS;
+    while (occurrences(last).length === 0 && Date.now() < deadline) {
+      const hint = typeof last.nextPollMs === 'number' ? last.nextPollMs : 1000;
+      const wait = Math.min(Math.max(hint, 250), 2000, deadline - Date.now());
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      const next = await eventsPoll(conn, {
+        name,
+        arguments: args,
+        cursor: last.cursor ?? null
+      });
+      if ('error' in next) return last;
+      last = next.result;
+    }
+    return last;
+  }
+
   private occurrenceChecks(
     r: EventsPollResult,
     descriptor: EventDescriptor
