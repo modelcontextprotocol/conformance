@@ -44,6 +44,7 @@ import {
 } from './server/tools';
 
 import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
+import { ToolsCallProtocolErrorScenario } from './server/tools-call-protocol-error';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
@@ -189,6 +190,7 @@ const allClientScenariosList: ClientScenario[] = [
   new ToolsCallMultipleContentTypesScenario(),
   new ToolsCallWithLoggingScenario(),
   new ToolsCallErrorScenario(),
+  new ToolsCallProtocolErrorScenario(),
   new ToolsCallWithProgressScenario(),
   new ToolsCallSamplingScenario(),
   new ToolsCallElicitationScenario(),
