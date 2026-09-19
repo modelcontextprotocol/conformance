@@ -14,7 +14,8 @@ import {
   InputRequiredResultResultTypeScenario,
   InputRequiredResultUnsupportedMethodsScenario,
   InputRequiredResultTamperedStateScenario,
-  InputRequiredResultCapabilityCheckScenario
+  InputRequiredResultCapabilityCheckScenario,
+  InputRequiredResultRequestStateScenario
 } from './input-required-result';
 import {
   formatWireViolation,
@@ -156,5 +157,24 @@ describe('SEP-2322 MRTR negative tests', () => {
     // The requirement was not violated, it could not be exercised (#248).
     expect(capabilityCheck?.errorMessage).toContain('Not testable:');
     expect(capabilityCheck?.details?.untestable).toBe(true);
+  }, 10000);
+
+  it('reports sep-2322-request-state-complete as untestable when server returns no inputRequests in round 1', async () => {
+    const scenario = new InputRequiredResultRequestStateScenario();
+    const checks = await scenario.run(testContext(SERVER_URL));
+
+    const incompleteCheck = checks.find(
+      (c) => c.id === 'sep-2322-request-state-incomplete'
+    );
+    expect(incompleteCheck).toBeDefined();
+    expect(incompleteCheck?.status).toBe('SUCCESS');
+
+    const completeCheck = checks.find(
+      (c) => c.id === 'sep-2322-request-state-complete'
+    );
+    expect(completeCheck).toBeDefined();
+    expect(completeCheck?.status).toBe('FAILURE');
+    expect(completeCheck?.errorMessage).toContain('Not testable:');
+    expect(completeCheck?.details?.untestable).toBe(true);
   }, 10000);
 });
