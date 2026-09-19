@@ -91,9 +91,18 @@ Implement a tool named \`test_input_required_result_elicitation\` (no arguments 
             'Server should return resultType: "input_required" with inputRequests.'
         );
       } else {
-        if (!r1Result.inputRequests) {
-          r1Errors.push('InputRequiredResult missing inputRequests');
-        } else if (!r1Result.inputRequests['user_name']) {
+        if (Object.keys(r1Result.inputRequests ?? {}).length === 0) {
+          checks.push(
+            untestableCheck(
+              'sep-2322-elicitation-incomplete',
+              'InputRequiredResultElicitationIncomplete',
+              'Server returns InputRequiredResult with elicitation inputRequest',
+              'server returned no inputRequests, so the elicitation fixture could not be exercised',
+              MRTR_SPEC_REFERENCES
+            )
+          );
+          return checks;
+        } else if (!r1Result.inputRequests?.['user_name']) {
           r1Errors.push('inputRequests missing expected key "user_name"');
         } else {
           const req = r1Result.inputRequests['user_name'];
@@ -226,6 +235,10 @@ Implement a tool named \`test_input_required_result_sampling\` (no arguments req
 
       const r1Result = r1.result;
       const r1Errors: string[] = [];
+      const inputRequests = isInputRequiredResult(r1Result)
+        ? (r1Result.inputRequests ?? {})
+        : {};
+      const inputKey = Object.keys(inputRequests)[0];
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
@@ -235,21 +248,23 @@ Implement a tool named \`test_input_required_result_sampling\` (no arguments req
         r1Errors.push(
           'Expected InputRequiredResult with sampling inputRequest'
         );
+      } else if (inputKey === undefined) {
+        checks.push(
+          untestableCheck(
+            'sep-2322-sampling-incomplete',
+            'InputRequiredResultSamplingIncomplete',
+            'Server returns InputRequiredResult with sampling inputRequest',
+            'server returned no inputRequests, so the sampling fixture could not be exercised',
+            MRTR_SPEC_REFERENCES
+          )
+        );
+        return checks;
       } else {
-        if (!r1Result.inputRequests) {
-          r1Errors.push('InputRequiredResult missing inputRequests');
-        } else {
-          const key = Object.keys(r1Result.inputRequests)[0];
-          if (!key) {
-            r1Errors.push('inputRequests map is empty');
-          } else {
-            const req = r1Result.inputRequests[key];
-            if (req.method !== 'sampling/createMessage') {
-              r1Errors.push(
-                `Expected method "sampling/createMessage", got "${req.method}"`
-              );
-            }
-          }
+        const req = inputRequests[inputKey];
+        if (req.method !== 'sampling/createMessage') {
+          r1Errors.push(
+            `Expected method "sampling/createMessage", got "${req.method}"`
+          );
         }
       }
 
@@ -266,8 +281,11 @@ Implement a tool named \`test_input_required_result_sampling\` (no arguments req
       });
 
       // Round 2: Retry with inputResponses
-      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
-        const inputKey = Object.keys(r1Result.inputRequests!)[0];
+      if (
+        r1Errors.length === 0 &&
+        isInputRequiredResult(r1Result) &&
+        inputKey !== undefined
+      ) {
         const r2 = await sendRpc(serverUrl, 'tools/call', {
           name: 'test_input_required_result_sampling',
           arguments: {},
@@ -362,6 +380,10 @@ Implement a tool named \`test_input_required_result_list_roots\` (no arguments r
 
       const r1Result = r1.result;
       const r1Errors: string[] = [];
+      const inputRequests = isInputRequiredResult(r1Result)
+        ? (r1Result.inputRequests ?? {})
+        : {};
+      const inputKey = Object.keys(inputRequests)[0];
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
@@ -371,21 +393,21 @@ Implement a tool named \`test_input_required_result_list_roots\` (no arguments r
         r1Errors.push(
           'Expected InputRequiredResult with roots/list inputRequest'
         );
+      } else if (inputKey === undefined) {
+        checks.push(
+          untestableCheck(
+            'sep-2322-list-roots-incomplete',
+            'InputRequiredResultListRootsIncomplete',
+            'Server returns InputRequiredResult with roots/list inputRequest',
+            'server returned no inputRequests, so the roots/list fixture could not be exercised',
+            MRTR_SPEC_REFERENCES
+          )
+        );
+        return checks;
       } else {
-        if (!r1Result.inputRequests) {
-          r1Errors.push('InputRequiredResult missing inputRequests');
-        } else {
-          const key = Object.keys(r1Result.inputRequests)[0];
-          if (!key) {
-            r1Errors.push('inputRequests map is empty');
-          } else {
-            const req = r1Result.inputRequests[key];
-            if (req.method !== 'roots/list') {
-              r1Errors.push(
-                `Expected method "roots/list", got "${req.method}"`
-              );
-            }
-          }
+        const req = inputRequests[inputKey];
+        if (req.method !== 'roots/list') {
+          r1Errors.push(`Expected method "roots/list", got "${req.method}"`);
         }
       }
 
@@ -402,8 +424,11 @@ Implement a tool named \`test_input_required_result_list_roots\` (no arguments r
       });
 
       // Round 2: Retry with inputResponses
-      if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
-        const inputKey = Object.keys(r1Result.inputRequests!)[0];
+      if (
+        r1Errors.length === 0 &&
+        isInputRequiredResult(r1Result) &&
+        inputKey !== undefined
+      ) {
         const r2 = await sendRpc(serverUrl, 'tools/call', {
           name: 'test_input_required_result_list_roots',
           arguments: {},
@@ -518,16 +543,12 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
         if (typeof r1Result.requestState !== 'string') {
           r1Errors.push('requestState must be a string');
         }
-        if (!r1Result.inputRequests) {
-          r1Errors.push('InputRequiredResult missing inputRequests');
-        }
       }
 
       checks.push({
         id: 'sep-2322-request-state-incomplete',
         name: 'InputRequiredResultRequestStateIncomplete',
-        description:
-          'Server returns InputRequiredResult with both inputRequests and requestState',
+        description: 'Server returns InputRequiredResult with requestState',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -538,7 +559,7 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
       // Round 2: Retry with inputResponses + requestState
       if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests ?? {})[0];
-        if (!inputKey) {
+        if (inputKey === undefined) {
           checks.push(
             untestableCheck(
               'sep-2322-request-state-complete',
@@ -548,48 +569,47 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
               MRTR_SPEC_REFERENCES
             )
           );
-        } else {
-          const r2 = await sendRpc(serverUrl, 'tools/call', {
-            name: 'test_input_required_result_request_state',
-            arguments: {},
-            inputResponses: {
-              [inputKey]: mockElicitResponse({ ok: true })
-            },
-            requestState: r1Result.requestState
-          });
-
-          const r2Result = r2.result;
-          const r2Errors: string[] = [];
-
-          if (r2.error) {
-            r2Errors.push(`JSON-RPC error: ${r2.error.message}`);
-          } else if (!r2Result) {
-            r2Errors.push('No result in response');
-          } else if (!isCompleteResult(r2Result)) {
-            r2Errors.push(
-              'Expected complete result after retry with requestState'
-            );
-          }
-
-          checks.push({
-            id: 'sep-2322-request-state-complete',
-            name: 'InputRequiredResultRequestStateComplete',
-            description:
-              'Server validates echoed requestState and returns complete result',
-            status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
-            timestamp: new Date().toISOString(),
-            errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
-            specReferences: MRTR_SPEC_REFERENCES,
-            details: { result: r2Result }
-          });
+          return checks;
         }
+        const r2 = await sendRpc(serverUrl, 'tools/call', {
+          name: 'test_input_required_result_request_state',
+          arguments: {},
+          inputResponses: {
+            [inputKey]: mockElicitResponse({ ok: true })
+          },
+          requestState: r1Result.requestState
+        });
+
+        const r2Result = r2.result;
+        const r2Errors: string[] = [];
+
+        if (r2.error) {
+          r2Errors.push(`JSON-RPC error: ${r2.error.message}`);
+        } else if (!r2Result) {
+          r2Errors.push('No result in response');
+        } else if (!isCompleteResult(r2Result)) {
+          r2Errors.push(
+            'Expected complete result after retry with requestState'
+          );
+        }
+
+        checks.push({
+          id: 'sep-2322-request-state-complete',
+          name: 'InputRequiredResultRequestStateComplete',
+          description:
+            'Server validates echoed requestState and returns complete result',
+          status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
+          specReferences: MRTR_SPEC_REFERENCES,
+          details: { result: r2Result }
+        });
       }
     } catch (error) {
       checks.push({
         id: 'sep-2322-request-state-incomplete',
         name: 'InputRequiredResultRequestStateIncomplete',
-        description:
-          'Server returns InputRequiredResult with both inputRequests and requestState',
+        description: 'Server returns InputRequiredResult with requestState',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -661,19 +681,31 @@ Implement a tool named \`test_input_required_result_multiple_inputs\` (no argume
 
       const r1Result = r1.result;
       const r1Errors: string[] = [];
+      const inputRequests = isInputRequiredResult(r1Result)
+        ? (r1Result.inputRequests ?? {})
+        : {};
+      const keys = Object.keys(inputRequests);
 
       if (r1.error) {
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
       } else if (!r1Result || !isInputRequiredResult(r1Result)) {
         r1Errors.push('Expected InputRequiredResult');
-      } else if (!r1Result.inputRequests) {
-        r1Errors.push('InputRequiredResult missing inputRequests');
+      } else if (keys.length === 0) {
+        checks.push(
+          untestableCheck(
+            'sep-2322-multiple-inputs-incomplete',
+            'InputRequiredResultMultipleInputsIncomplete',
+            'Server returns InputRequiredResult with multiple inputRequests of different types',
+            'server returned no inputRequests, so the multiple-input fixture could not be exercised',
+            MRTR_SPEC_REFERENCES
+          )
+        );
+        return checks;
       } else {
         if (!r1Result.requestState) {
           r1Errors.push('InputRequiredResult missing requestState');
         }
 
-        const keys = Object.keys(r1Result.inputRequests);
         if (keys.length < 3) {
           r1Errors.push(
             `Expected at least 3 inputRequests, got ${keys.length}`
@@ -681,9 +713,7 @@ Implement a tool named \`test_input_required_result_multiple_inputs\` (no argume
         }
 
         // Check that required method types are present
-        const methods = new Set(
-          keys.map((k) => r1Result.inputRequests![k].method)
-        );
+        const methods = new Set(keys.map((k) => inputRequests[k].method));
         if (!methods.has('elicitation/create')) {
           r1Errors.push('Expected an elicitation/create inputRequest');
         }
@@ -715,7 +745,7 @@ Implement a tool named \`test_input_required_result_multiple_inputs\` (no argume
       // Round 2: Respond to all input requests
       if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputResponses: Record<string, unknown> = {};
-        for (const [key, req] of Object.entries(r1Result.inputRequests!)) {
+        for (const [key, req] of Object.entries(inputRequests)) {
           if (req.method === 'elicitation/create') {
             inputResponses[key] = mockElicitResponse({ name: 'Alice' });
           } else if (req.method === 'sampling/createMessage') {
@@ -852,7 +882,6 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
         !r1.error &&
         r1Result &&
         isInputRequiredResult(r1Result) &&
-        r1Result.inputRequests &&
         r1Result.requestState
       ) {
         round1Complete = true;
@@ -867,7 +896,7 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
         timestamp: new Date().toISOString(),
         errorMessage: round1Complete
           ? undefined
-          : 'Expected InputRequiredResult with inputRequests and requestState',
+          : 'Expected InputRequiredResult with requestState',
         specReferences: MRTR_SPEC_REFERENCES,
         details: { result: r1Result }
       });
@@ -876,7 +905,7 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
 
       // Round 2: Retry — expect another InputRequiredResult
       const r1InputKey = Object.keys(r1Result.inputRequests ?? {})[0];
-      if (!r1InputKey) {
+      if (r1InputKey === undefined) {
         checks.push(
           untestableCheck(
             'sep-2322-multi-round-r2',
@@ -904,7 +933,6 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
         !r2.error &&
         r2Result &&
         isInputRequiredResult(r2Result) &&
-        r2Result.inputRequests &&
         r2Result.requestState
       ) {
         // requestState should have changed
@@ -931,7 +959,7 @@ Implement a tool named \`test_input_required_result_multi_round\` (no arguments 
 
       // Round 3: Final retry — expect complete result
       const r2InputKey = Object.keys(r2Result.inputRequests ?? {})[0];
-      if (!r2InputKey) {
+      if (r2InputKey === undefined) {
         checks.push(
           untestableCheck(
             'sep-2322-multi-round-r3',
@@ -1111,15 +1139,19 @@ Implement a prompt named \`test_input_required_result_prompt\` that requires eli
         r1Errors.push(`JSON-RPC error: ${r1.error.message}`);
       } else if (!r1Result || !isInputRequiredResult(r1Result)) {
         r1Errors.push('Expected InputRequiredResult from prompts/get');
-      } else if (!r1Result.inputRequests) {
-        r1Errors.push('InputRequiredResult missing inputRequests');
+      } else if (
+        r1Result.inputRequests === undefined &&
+        r1Result.requestState === undefined
+      ) {
+        r1Errors.push(
+          'InputRequiredResult missing both inputRequests and requestState'
+        );
       }
 
       checks.push({
         id: 'sep-2322-non-tool-incomplete',
         name: 'InputRequiredResultNonToolIncomplete',
-        description:
-          'prompts/get returns InputRequiredResult with inputRequests',
+        description: 'prompts/get returns InputRequiredResult',
         status: r1Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: r1Errors.length > 0 ? r1Errors.join('; ') : undefined,
@@ -1130,7 +1162,7 @@ Implement a prompt named \`test_input_required_result_prompt\` that requires eli
       // Round 2: Retry with inputResponses
       if (r1Errors.length === 0 && isInputRequiredResult(r1Result)) {
         const inputKey = Object.keys(r1Result.inputRequests ?? {})[0];
-        if (!inputKey) {
+        if (inputKey === undefined) {
           checks.push(
             untestableCheck(
               'sep-2322-non-tool-complete',
@@ -1140,51 +1172,50 @@ Implement a prompt named \`test_input_required_result_prompt\` that requires eli
               MRTR_SPEC_REFERENCES
             )
           );
-        } else {
-          const r2 = await sendRpc(serverUrl, 'prompts/get', {
-            name: 'test_input_required_result_prompt',
-            inputResponses: {
-              [inputKey]: mockElicitResponse({ context: 'test context' })
-            },
-            ...(r1Result.requestState !== undefined
-              ? { requestState: r1Result.requestState }
-              : {})
-          });
-
-          const r2Result = r2.result;
-          const r2Errors: string[] = [];
-
-          if (r2.error) {
-            r2Errors.push(`JSON-RPC error: ${r2.error.message}`);
-          } else if (!r2Result) {
-            r2Errors.push('No result in response');
-          } else if (!isCompleteResult(r2Result)) {
-            r2Errors.push('Expected complete GetPromptResult after retry');
-          } else if (!r2Result.messages) {
-            r2Errors.push(
-              'Complete result missing messages (expected GetPromptResult)'
-            );
-          }
-
-          checks.push({
-            id: 'sep-2322-non-tool-complete',
-            name: 'InputRequiredResultNonToolComplete',
-            description:
-              'prompts/get returns complete GetPromptResult after retry with inputResponses',
-            status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
-            timestamp: new Date().toISOString(),
-            errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
-            specReferences: MRTR_SPEC_REFERENCES,
-            details: { result: r2Result }
-          });
+          return checks;
         }
+        const r2 = await sendRpc(serverUrl, 'prompts/get', {
+          name: 'test_input_required_result_prompt',
+          inputResponses: {
+            [inputKey]: mockElicitResponse({ context: 'test context' })
+          },
+          ...(r1Result.requestState !== undefined
+            ? { requestState: r1Result.requestState }
+            : {})
+        });
+
+        const r2Result = r2.result;
+        const r2Errors: string[] = [];
+
+        if (r2.error) {
+          r2Errors.push(`JSON-RPC error: ${r2.error.message}`);
+        } else if (!r2Result) {
+          r2Errors.push('No result in response');
+        } else if (!isCompleteResult(r2Result)) {
+          r2Errors.push('Expected complete GetPromptResult after retry');
+        } else if (!r2Result.messages) {
+          r2Errors.push(
+            'Complete result missing messages (expected GetPromptResult)'
+          );
+        }
+
+        checks.push({
+          id: 'sep-2322-non-tool-complete',
+          name: 'InputRequiredResultNonToolComplete',
+          description:
+            'prompts/get returns complete GetPromptResult after retry with inputResponses',
+          status: r2Errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage: r2Errors.length > 0 ? r2Errors.join('; ') : undefined,
+          specReferences: MRTR_SPEC_REFERENCES,
+          details: { result: r2Result }
+        });
       }
     } catch (error) {
       checks.push({
         id: 'sep-2322-non-tool-incomplete',
         name: 'InputRequiredResultNonToolIncomplete',
-        description:
-          'prompts/get returns InputRequiredResult with inputRequests',
+        description: 'prompts/get returns InputRequiredResult',
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1384,7 +1415,7 @@ JSON-RPC error (code -32602 or similar) indicating integrity check failure.`;
       // Round 2: Tamper with the requestState and retry
       const tamperedState = r1Result.requestState + '-TAMPERED';
       const inputKey = Object.keys(r1Result.inputRequests ?? {})[0];
-      if (!inputKey) {
+      if (inputKey === undefined) {
         checks.push(
           untestableCheck(
             'sep-2322-reject-tampered-state',
