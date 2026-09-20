@@ -295,17 +295,63 @@
 #     is the base64-decoded bytes after the prefix. No Standard Webhooks
 #     receiver verifies these signatures. Checked by hand against four candidate
 #     formulas before this was written down.
-#   sep-9999-ssrf-validate-callback-url / -reject-non-routable — kitchen-sink
-#     accepts and then delivers to `http://127.0.0.1`, so a caller can aim
-#     deliveries at any service the server can reach and the caller cannot.
-#   sep-9999-verification-required-before-delivery — kitchen-sink delivers
-#     without the challenge handshake, so an unverified third-party URL receives
-#     POSTs.
+#   sep-9999-ssrf-validate-callback-url / -reject-non-routable — the fixture
+#     accepts and then delivers to `http://127.0.0.1`. This one is fixture
+#     configuration rather than a library defect: kitchen-sink passes
+#     `events.WithWebhookAllowPrivateNetworks(true)` (main.go:151) so `make
+#     demo` can reach a local receiver, and that single flag disables both the
+#     subscribe-time hostname check and the dial-time IP check. mcpkit's
+#     default path rejects loopback, RFC1918, link-local, ULA and the rest
+#     (webhook.go isBlockedIP). The discord, telegram and whole-enchilada demos
+#     set the same flag.
 #
-#   the last three are the same shape of problem and worth reading together:
-#   nothing stops a subscriber from pointing a subscription at someone else's
-#   endpoint, and what arrives there cannot be authenticated by its signature.
-#   metronome fails none of them.
+#     The row still fails, and should: the suite grades the server it was
+#     pointed at, and the server it was pointed at delivered to loopback. But
+#     read it as "the conformance target runs with SSRF protection off", not as
+#     "mcpkit has no SSRF protection". Pointing testconf-events at a fixture
+#     built without that flag is the fix, and would also make the row mean
+#     something.
+#   sep-9999-verification-required-before-delivery — kitchen-sink delivers
+#     without the challenge handshake, because the handshake does not exist:
+#     control.go carries only the `gap` and `terminated` discriminators, and
+#     the `challenge_failed` error bucket is declared and never assigned.
+#     Tracked as mcpkit issue 490, with DEPLOYMENT.md calling the current state
+#     verification-stub-only.
+#
+#   the signature and verification findings are the same shape of problem and
+#   worth reading together: nothing yet proves a callback endpoint wanted the
+#   deliveries, and what arrives there cannot be authenticated by its signature.
+#   metronome fails neither.
+#
+#   root causes, read out of mcpkit at origin/main (5cfb7c51) rather than
+#   guessed, because "why" decides whether a row is worth arguing about:
+#
+#   The correlation-id, https and unsubscribe rows are all library-side in
+#     experimental/ext/events. The correlation id predates the convention it
+#     should follow: stream.go names the field `requestId`, mirroring the
+#     sketch's own push examples, while mcpkit implements the SEP-2575 `_meta`
+#     spelling elsewhere (core/stateless.go MetaKeySubscriptionID). The id it
+#     would carry already exists server-side and is simply never put on the
+#     wire. `ValidateWebhookURL` allows `http` deliberately for demo
+#     ergonomics, documented in DEPLOYMENT.md, and maps failures to -32015
+#     rather than -32602 besides. The unsubscribe row is an unfinished feature
+#     rather than a decision: the registry already computes whether the key was
+#     found and the handler discards it, and wire_shape_test.go describes the
+#     NotFound answer as future work.
+#   The signature row is a chronology accident and the widest to fix. Signing
+#     landed 2026-04-29, when the secret was an opaque server-minted token; the
+#     `whsec_` + base64 format arrived two days later, and key derivation was
+#     never revisited. The same literal-string key appears in both verifiers,
+#     the Go and Python clients, the whole-enchilada receiver and the telegram
+#     tests, so server and clients are mutually consistent and all five call
+#     sites are non-conformant together. That is exactly the failure mode a
+#     conformance suite exists to catch: the implementation's own tests cannot
+#     see it.
+#
+#   None of these six is in mcpkit issue 1380, which tracks a disjoint set from
+#   the earlier run. Only the verification gap has an issue (490). The package
+#   carries an EXPERIMENTAL banner and sits outside the per-PR CI matrix, which
+#   is a large part of why they survived.
 #
 # two harness bugs the second implementation found, both fixed:
 #
