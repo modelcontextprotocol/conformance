@@ -100,9 +100,8 @@
 #
 # backing_scenarios: server ClientScenarios under src/scenarios/server/events/
 #   emit the check IDs below (a row is "tested" once a scenario emits its ID;
-#   see src/traceability/). Phase 1 ships two of the five and emits 45 of the
-#   131 rows. The remaining 86 report as untested until the later scenarios
-#   land, which is the manifest working as intended rather than a gap here:
+#   see src/traceability/). All five now exist and together emit 117 of the 131
+#   rows:
 #     discovery.ts (events-discovery), 12 rows — the two capability rows, the
 #       two sep-9999-list-* rows, the six sep-9999-descriptor-* rows, and
 #       sep-9999-error-not-found plus sep-9999-error-server-range, both graded
@@ -110,22 +109,45 @@
 #     poll.ts (events-poll), 33 rows — the sep-9999-poll-* rows, the
 #       sep-9999-occurrence-* rows, the sep-9999-cursor-* /
 #       sep-9999-max-age-* / sep-9999-truncated-* rows reachable through poll,
-#       and sep-9999-removal-poll-not-found, which is the poll leg of the
-#       removal rules.
+#       and sep-9999-removal-poll-not-found, the poll leg of the removal rules.
+#     push.ts (events-push), 17 rows — the sep-9999-stream-* rows. It holds a
+#       real SSE stream open through stream.ts, because conn.request() resolves
+#       on the response for its id and a push stream withholds that until the
+#       subscription ends.
+#     webhook.ts (events-webhook), 26 rows — sep-9999-subscribe-*,
+#       sep-9999-ttl-*, sep-9999-unsubscribe-* and sep-9999-error-unsupported.
+#     webhook-delivery.ts (events-webhook-delivery), 28 rows —
+#       sep-9999-delivery-*, sep-9999-verification-*, sep-9999-ssrf-* and
+#       sep-9999-envelope-*, graded from an HTTP receiver the harness runs.
 #
-#   The other four sep-9999-removal-* rows and the remaining sep-9999-error-*
-#   codes need a server that can be made to remove an event type mid-run, or a
-#   delivery mode this phase does not drive, so they wait on the push and
-#   webhook scenarios.
-#   Still to come, and reported untested in the manifest until they land:
-#     push.ts (events-push) — the sep-9999-stream-* rows.
-#     webhook.ts (events-webhook) — the sep-9999-subscribe-*, sep-9999-ttl-*
-#       and sep-9999-unsubscribe-* rows.
-#     webhook-delivery.ts (events-webhook-delivery) — the sep-9999-delivery-*,
-#       sep-9999-verification-*, sep-9999-ssrf-* and sep-9999-envelope-* rows.
-#       These need a callback URL the server under test can reach over https,
-#       which localhost cannot satisfy: the SSRF rules declared below require a
-#       conformant server to refuse it.
+#   The 14 rows nothing emits yet, and what each needs:
+#     sep-9999-schema-evolution-additive, sep-9999-breaking-change-new-name,
+#     sep-9999-list-changed-notification and the four remaining
+#     sep-9999-removal-* rows need a server whose catalog can be made to change
+#     mid-run. Neither fixture can, so these wait on a driver that can tell the
+#     server under test to add, alter or drop an event type.
+#     sep-9999-error-invalid-params, -forbidden, -resource-exhausted and
+#     -callback-endpoint-error are the error-code table rows. Each is currently
+#     graded through the specific rule that provokes it rather than in its own
+#     right; kitchen-sink's -32013 subscription cap and the -32015 verification
+#     failure are both reachable and worth claiming in a follow-up.
+#     sep-9999-authz-subscribe-time and -delivery-time-reverify need two
+#     principals with different permissions.
+#     sep-9999-payload-minimality is a SHOULD about payload content, which
+#     sep-9999-delivery-body-size measures the observable half of.
+#
+# running them: events-push needs `--timeout 60000`, because it watches an idle
+#   stream for 35s and the document allows a 30s heartbeat cadence. A shorter
+#   window cannot tell a silent server from a slow one, so under 30s the
+#   heartbeat rows report untestable instead of failing. EVENTS_PUSH_WATCH_MS
+#   overrides it.
+#
+#   events-webhook-delivery needs a callback the server under test can reach:
+#   set EVENTS_WEBHOOK_CALLBACK_BASE to a public https base URL forwarding to
+#   the harness. Without one it points the server at a loopback receiver, which
+#   is the SSRF probe rather than a degraded run — a conformant server refuses
+#   it, and one that delivers there fails the SSRF rows and supplies real
+#   deliveries for everything else.
 #
 # measured against mcpkit, 2026-09-17, examples/events/kitchen-sink at
 #   `d2950655`: events-discovery 8/11, events-poll 26/29. The poll number was
@@ -240,6 +262,62 @@
 #   replay on a null cursor. This is the same pattern as the SEP-2640 suite,
 #   where the two bugs that mattered came from running against something that
 #   was not ours.
+# measured across all five scenarios, 2026-09-20:
+#
+#                        kitchen-sink (d2950655)   metronome-mcp.fly.dev
+#   events-discovery                     8/11              10/11
+#   events-poll                         26/29              27/29
+#   events-push                         11/15              13/15
+#   events-webhook                      17/23              20/23
+#   events-webhook-delivery             12/21               3/27
+#
+#   metronome's webhook-delivery number is not a result about metronome. It
+#   refuses the loopback callback, correctly, so 24 rows report untestable for
+#   want of a routable one. Point EVENTS_WEBHOOK_CALLBACK_BASE at a tunnel and
+#   that run becomes meaningful.
+#
+#   new divergences from the three later scenarios, none previously tracked,
+#   all in mcpkit rather than in the document:
+#
+#   sep-9999-stream-subscription-id-meta — kitchen-sink puts the correlation id
+#     in `params.requestId`, where the document requires
+#     `params._meta["io.modelcontextprotocol/subscriptionId"]`. A client holding
+#     two streams cannot route by what the document tells it to read. metronome
+#     carries it correctly, which is what identified this as a defect rather
+#     than an ambiguity in the sketch.
+#   sep-9999-subscribe-url-https-required / -url-non-https-rejected —
+#     kitchen-sink accepts an `http://` callback URL and subscribes to it.
+#   sep-9999-unsubscribe-unknown-not-found — kitchen-sink answers success for a
+#     subscription key it never held, so a client cannot tell teardown from a
+#     typo.
+#   sep-9999-delivery-signature-formula — kitchen-sink computes the HMAC with
+#     the literal `whsec_...` string as the key, where the document says the key
+#     is the base64-decoded bytes after the prefix. No Standard Webhooks
+#     receiver verifies these signatures. Checked by hand against four candidate
+#     formulas before this was written down.
+#   sep-9999-ssrf-validate-callback-url / -reject-non-routable — kitchen-sink
+#     accepts and then delivers to `http://127.0.0.1`, so a caller can aim
+#     deliveries at any service the server can reach and the caller cannot.
+#   sep-9999-verification-required-before-delivery — kitchen-sink delivers
+#     without the challenge handshake, so an unverified third-party URL receives
+#     POSTs.
+#
+#   the last three are the same shape of problem and worth reading together:
+#   nothing stops a subscriber from pointing a subscription at someone else's
+#   endpoint, and what arrives there cannot be authenticated by its signature.
+#   metronome fails none of them.
+#
+# two harness bugs the second implementation found, both fixed:
+#
+#   The `sep-9999-occurrence-*` rows were graded off the bootstrap poll, which
+#     passes `cursor: null` and therefore returns nothing on a conformant
+#     server. See the 2026-09-17 note below.
+#   `sep-9999-delivery-retry-regenerates-signature` folded signature validity
+#     into its freshness check, so a server with the wrong signature formula was
+#     reported as reusing timestamps it had not reused. Freshness is now graded
+#     on distinct timestamps and signatures alone, and validity belongs to
+#     sep-9999-delivery-signature-formula.
+#
 sep: 9999
 spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md
 requirements:
