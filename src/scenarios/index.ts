@@ -63,6 +63,7 @@ import {
 import { EventsDiscoveryScenario } from './server/events/discovery';
 import { EventsPollScenario } from './server/events/poll';
 import { EventsPushScenario } from './server/events/push';
+import { EventsWebhookScenario } from './server/events/webhook';
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
@@ -240,6 +241,7 @@ const allClientScenariosList: ClientScenario[] = [
   new EventsDiscoveryScenario(),
   new EventsPollScenario(),
   new EventsPushScenario(),
+  new EventsWebhookScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
