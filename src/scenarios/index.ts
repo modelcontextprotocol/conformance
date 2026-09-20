@@ -62,6 +62,7 @@ import {
 
 import { EventsDiscoveryScenario } from './server/events/discovery';
 import { EventsPollScenario } from './server/events/poll';
+import { EventsPushScenario } from './server/events/push';
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
@@ -238,6 +239,7 @@ const allClientScenariosList: ClientScenario[] = [
   // each scenario SKIPs cleanly when the capability is not declared.
   new EventsDiscoveryScenario(),
   new EventsPollScenario(),
+  new EventsPushScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
