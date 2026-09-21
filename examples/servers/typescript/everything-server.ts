@@ -1284,15 +1284,29 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  // A request that carries no `_meta` and names a legacy session-era revision
-  // in the header is legacy traffic; it is served by the session path below
-  // instead of being rejected for missing per-request metadata.
-  const isLegacySessionEraRequest =
-    meta === undefined &&
+  // Which wire is this? `_meta` cannot answer it: `_meta` belongs to the base
+  // request shape in EVERY revision (progress tokens, trace context, anything
+  // a client attaches), so its presence alone does not make a request
+  // 2026-07-28 traffic. Two things do identify that wire:
+  //
+  //  - a `MCP-Protocol-Version` header naming a post-session revision, and
+  //  - the per-request metadata envelope, whose own marker is
+  //    `io.modelcontextprotocol/protocolVersion` inside `_meta`.
+  //
+  // Keying on the presence of `_meta` rejected session-era traffic that
+  // legitimately carries it: a stateful `initialize` with `_meta` was answered
+  // -32020 (no header) or -32602 (session-era header) instead of being served.
+  // MCP Python SDK 2.x sends `_meta: {}` on `initialize`, which made this
+  // fixture unusable as its upstream server (#506).
+  const carriesRequestMetaEnvelope = metaVersion !== undefined;
+  const namesSessionEraRevision =
     reqVersion !== undefined &&
     LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
+  const isRequestMetaEraRequest =
+    (reqVersion !== undefined && !namesSessionEraRevision) ||
+    carriesRequestMetaEnvelope;
 
-  if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
+  if (!sessionId && isRequestMetaEraRequest) {
     // Missing Transport Header Validation Check
     if (!reqVersion) {
       return res.status(400).json({
