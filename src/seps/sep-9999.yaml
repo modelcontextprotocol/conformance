@@ -114,11 +114,24 @@
 #       real SSE stream open through stream.ts, because conn.request() resolves
 #       on the response for its id and a push stream withholds that until the
 #       subscription ends.
-#     webhook.ts (events-webhook), 26 rows — sep-9999-subscribe-*,
+#     webhook.ts (events-webhook), 27 rows — sep-9999-subscribe-*,
 #       sep-9999-ttl-*, sep-9999-unsubscribe-* and sep-9999-error-unsupported.
 #     webhook-delivery.ts (events-webhook-delivery), 28 rows —
 #       sep-9999-delivery-*, sep-9999-verification-*, sep-9999-ssrf-* and
 #       sep-9999-envelope-*, graded from an HTTP receiver the harness runs.
+#
+# negative controls: src/scenarios/server/events/negative*.test.ts, one file per
+#   scenario over a shared fixture in negative-fixture.ts. A green run against
+#   kitchen-sink proves a check does not false-positive; only a fixture broken in
+#   exactly one way proves it catches anything. Every divergence listed below has
+#   a case there, so a red run against a real server can be trusted rather than
+#   re-derived.
+#
+#   The fixture can also do the four things no client can ask a real server for
+#   (fail upstream, lose its replay window, terminate a subscription, close a
+#   stream itself) plus the gap and terminated control envelopes. Those rows
+#   report untestable against both implementations, so the controls are the only
+#   evidence those checks work at all.
 #
 #   The 14 rows nothing emits yet, and what each needs:
 #     sep-9999-schema-evolution-additive, sep-9999-breaking-change-new-name,

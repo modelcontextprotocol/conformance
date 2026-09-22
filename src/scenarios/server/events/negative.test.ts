@@ -1,12 +1,16 @@
 import { describe, test, expect } from 'vitest';
-import { createServer, type IncomingMessage, type Server } from 'http';
-import type { AddressInfo } from 'net';
 import { testContext } from '../../../connection/testing';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
-import { withRequiredDraftResultFields } from '../../../mock-server';
 import { takeWireViolations } from '../../../validation/wire-schema';
 import { EventsDiscoveryScenario } from './discovery';
 import { EventsPollScenario } from './poll';
+import {
+  descriptor,
+  occurrence,
+  pollResult,
+  startEventsFixture,
+  type EventsFixtureOptions
+} from './negative-fixture';
 
 /**
  * Negative controls for the MCP Events scenarios.
@@ -23,211 +27,26 @@ import { EventsPollScenario } from './poll';
  * removal (gap G30).
  *
  * The fixture is a minimal SEP-2575 stateless server built per test rather
- * than a checked-in example file, matching the SEP-2640 negative tests. An
- * events-capable example server is a larger piece of work and belongs with the
- * push and webhook scenarios, which genuinely need one.
+ * than a checked-in example file, matching the SEP-2640 negative tests. It
+ * lives in negative-fixture.ts, shared with the controls for the other three
+ * scenarios: negative-push.test.ts, negative-webhook.test.ts and
+ * negative-delivery.test.ts.
  */
-
-/** A descriptor that is well formed apart from whatever a test overrides. */
-function descriptor(overrides: Record<string, unknown> = {}) {
-  return {
-    name: 'test.event',
-    description: 'A negative-control fixture event type.',
-    delivery: ['poll'],
-    inputSchema: {
-      type: 'object',
-      properties: { channel: { type: 'string' } }
-    },
-    payloadSchema: { type: 'object', properties: { id: { type: 'string' } } },
-    ...overrides
-  };
-}
-
-/** A poll result that is well formed apart from whatever a test overrides. */
-function pollResult(overrides: Record<string, unknown> = {}) {
-  return {
-    events: [],
-    cursor: 'cursor_001',
-    truncated: false,
-    hasMore: false,
-    nextPollMs: 30000,
-    ...overrides
-  };
-}
-
-/** An occurrence that is well formed apart from whatever a test overrides. */
-function occurrence(overrides: Record<string, unknown> = {}) {
-  return {
-    eventId: 'evt_001',
-    name: 'test.event',
-    timestamp: '2026-09-15T12:00:00Z',
-    data: { id: 'x' },
-    ...overrides
-  };
-}
-
-interface FixtureOptions {
-  /** Raw value to declare at `capabilities.events`; omit for no declaration. */
-  capability?: unknown;
-  descriptors?: object[];
-  /** Answer `events/list` with this JSON-RPC error instead of a result. */
-  listError?: { code: number; message: string };
-  /**
-   * Poll responses, consumed in order; the last one repeats once exhausted.
-   * A `{ error }` entry makes that poll answer with a JSON-RPC error.
-   */
-  pollResponses?: Array<
-    Record<string, unknown> | { error: { code: number; message: string } }
-  >;
-  /** Overrides keyed by the polled event name, taking priority over the queue. */
-  pollByName?: Record<
-    string,
-    Record<string, unknown> | { error: { code: number; message: string } }
-  >;
-  /** Error code for a poll naming an event type the fixture does not serve. */
-  unknownNameCode?: number;
-  /** Error code for a poll whose arguments violate `inputSchema`. */
-  invalidArgsCode?: number;
-}
-
-function startFixture(opts: FixtureOptions): Promise<{
-  url: string;
-  server: Server;
-  polls: Array<Record<string, unknown>>;
-}> {
-  const polls: Array<Record<string, unknown>> = [];
-  const queue = [...(opts.pollResponses ?? [pollResult()])];
-  const descriptors = opts.descriptors ?? [descriptor()];
-  const names = new Set(
-    descriptors
-      .map((d) => (d as { name?: unknown }).name)
-      .filter((n): n is string => typeof n === 'string')
-  );
-
-  const server = createServer(async (req, res) => {
-    if (req.method !== 'POST') {
-      res.writeHead(405).end();
-      return;
-    }
-    const body = await readJsonBody(req);
-    const method = body.method as string;
-    const id = body.id;
-    const params = (body.params ?? {}) as Record<string, unknown>;
-
-    const send = (result: object) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          result: withRequiredDraftResultFields(method, result)
-        })
-      );
-    };
-    const fail = (code: number, message: string, data?: unknown) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } })
-      );
-    };
-
-    if (method === 'server/discover') {
-      send({
-        supportedVersions: [DRAFT_PROTOCOL_VERSION],
-        capabilities: 'capability' in opts ? { events: opts.capability } : {},
-        serverInfo: { name: 'events-negative', version: '1.0.0' }
-      });
-      return;
-    }
-
-    if (method === 'events/list') {
-      if (opts.listError) {
-        fail(opts.listError.code, opts.listError.message);
-        return;
-      }
-      send({ events: descriptors });
-      return;
-    }
-
-    if (method === 'events/poll') {
-      polls.push(params);
-      const name = params.name;
-
-      if (typeof name !== 'string') {
-        fail(-32602, 'InvalidParams: `name` is required');
-        return;
-      }
-      if (!names.has(name)) {
-        fail(opts.unknownNameCode ?? -32011, 'NotFound', { kind: 'event' });
-        return;
-      }
-
-      const byName = opts.pollByName?.[name];
-      const chosen =
-        byName ??
-        (queue.length > 1 ? queue.shift()! : (queue[0] ?? pollResult()));
-
-      // Argument validation against the fixture's own declared schema, so the
-      // invalid-arguments probe has something real to violate.
-      const args = (params.arguments ?? {}) as Record<string, unknown>;
-      const decl = descriptors.find(
-        (d) => (d as { name?: unknown }).name === name
-      ) as { inputSchema?: { properties?: Record<string, { type?: string }> } };
-      for (const [key, value] of Object.entries(args)) {
-        const declared = decl?.inputSchema?.properties?.[key];
-        if (declared?.type === 'string' && typeof value !== 'string') {
-          fail(opts.invalidArgsCode ?? -32602, 'InvalidParams');
-          return;
-        }
-      }
-
-      if ('error' in chosen) {
-        const e = (chosen as { error: { code: number; message: string } })
-          .error;
-        fail(e.code, e.message);
-        return;
-      }
-      send(chosen as Record<string, unknown>);
-      return;
-    }
-
-    fail(-32601, `Method not found: ${method}`);
-  });
-
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, () => {
-      const addr = server.address() as AddressInfo;
-      resolve({ url: `http://localhost:${addr.port}/mcp`, server, polls });
-    });
-  });
-}
-
-async function readJsonBody(
-  req: IncomingMessage
-): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
-    string,
-    unknown
-  >;
-}
 
 type Scenario = EventsDiscoveryScenario | EventsPollScenario;
 
-async function checksFor(scenario: Scenario, opts: FixtureOptions) {
-  const { url, server } = await startFixture(opts);
+async function checksFor(scenario: Scenario, opts: EventsFixtureOptions) {
+  const fixture = await startEventsFixture(opts);
   try {
-    const checks = await scenario.run(testContext(url, DRAFT_PROTOCOL_VERSION));
+    const checks = await scenario.run(
+      testContext(fixture.url, DRAFT_PROTOCOL_VERSION)
+    );
     // Drained so an intentionally malformed response does not trip the global
     // vitest hook; these tests assert on the check, not the wire validator.
     takeWireViolations();
     return new Map(checks.map((c) => [c.id, c]));
   } finally {
-    await new Promise<void>((r) => server.close(() => r()));
+    await fixture.close();
   }
 }
 
@@ -235,7 +54,7 @@ const discovery = () => new EventsDiscoveryScenario();
 const poll = () => new EventsPollScenario();
 
 /** The baseline every negative case is compared against. */
-const CONFORMANT: FixtureOptions = {
+const CONFORMANT: EventsFixtureOptions = {
   capability: { listChanged: true },
   descriptors: [descriptor()],
   pollResponses: [pollResult()]
