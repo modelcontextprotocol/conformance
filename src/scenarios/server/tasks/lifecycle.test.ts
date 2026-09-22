@@ -1,158 +1,220 @@
-import { describe, test, expect, afterEach } from 'vitest';
-import { testContext } from '../../../connection/testing';
-import { TasksLifecycleScenario } from './lifecycle';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { createServerStateless, type MockServer } from '../../../mock-server';
+import { runServerConformanceTest } from '../../../runner/server';
 import type { ConformanceCheck } from '../../../types';
-import type { RunContext } from '../../../connection';
 
-/**
- * Pins the untestable-failure policy (issue #248) for the SEP-2663 lifecycle
- * scenario: when no task is ever created, the downstream task checks must
- * fail with a "Not testable:" cause instead of reporting SKIPPED.
- */
+type CancellationBehavior =
+  | 'cancelled'
+  | 'completed'
+  | 'failed'
+  | 'working'
+  | 'taskless';
 
-const realFetch = global.fetch;
-afterEach(() => {
-  global.fetch = realFetch;
-});
-
-function mockServer() {
-  global.fetch = (async (_url: any, init: any) => {
-    const body = JSON.parse(init.body);
-    let result: any;
-    if (body.method === 'server/discover') {
-      result = {
-        supportedVersions: [DRAFT_PROTOCOL_VERSION],
-        capabilities: { tools: {} },
-        serverInfo: { name: 'taskless-server', version: '1.0.0' }
-      };
-    } else if (body.method === 'tools/list') {
-      result = { tools: [] };
-    } else if (body.method === 'tools/call') {
-      // Always answers synchronously: never creates a task.
-      result = {
-        resultType: 'complete',
-        content: [{ type: 'text', text: 'sync answer' }]
-      };
-    } else {
-      return {
-        status: 404,
-        headers: { get: () => 'application/json' },
-        json: async () => ({
-          jsonrpc: '2.0',
-          id: body.id ?? null,
-          error: { code: -32601, message: 'Method not found' }
-        }),
-        text: async () =>
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: body.id ?? null,
-            error: { code: -32601, message: 'Method not found' }
-          })
-      } as unknown as Response;
+async function startServer(
+  cancellation: CancellationBehavior
+): Promise<MockServer> {
+  const tasks = new Map<
+    string,
+    {
+      name: string;
+      createdAt: string;
+      completesAt: number;
+      status: 'working' | 'cancelled' | 'completed' | 'failed';
     }
-    const payload = { jsonrpc: '2.0', id: body.id, result };
-    return {
-      status: 200,
-      headers: { get: () => 'application/json' },
-      json: async () => payload,
-      text: async () => JSON.stringify(payload)
-    } as unknown as Response;
-  }) as typeof fetch;
-  return 'http://mock-taskless-server.local';
-}
+  >();
 
-function cancellationContext(): RunContext {
-  const request = async (method: string, params: any) => {
-    if (method === 'tools/call') {
-      if (params.name === 'greet') {
-        return {
-          resultType: 'complete',
-          content: [{ type: 'text', text: 'Hello, World!' }]
-        };
+  return createServerStateless({
+    'tools/call': (params) => {
+      if (params.name === 'greet' || cancellation === 'taskless') {
+        return { content: [{ type: 'text', text: 'Hello, World!' }] };
       }
+      if (typeof params.name !== 'string') {
+        throw new Error('Expected a tool name');
+      }
+      const args = params.arguments as Record<string, unknown> | undefined;
+      const taskId = typeof args?.label === 'string' ? args.label : params.name;
+      const seconds = typeof args?.seconds === 'number' ? args.seconds : 1;
+      const task = {
+        name: params.name,
+        createdAt: new Date().toISOString(),
+        completesAt: Date.now() + seconds * 1000,
+        status: 'working' as const
+      };
+      tasks.set(taskId, task);
       return {
         resultType: 'task',
-        taskId:
-          params.name === 'failing_job'
-            ? 'failing'
-            : params.name === 'protocol_error_job'
-              ? 'protocol-error'
-              : params.arguments.label,
-        status: 'working',
-        createdAt: '2026-09-02T00:00:00Z',
-        lastUpdatedAt: '2026-09-02T00:00:00Z',
+        taskId,
+        status: task.status,
+        createdAt: task.createdAt,
+        lastUpdatedAt: task.createdAt,
         ttlMs: 60_000
       };
-    }
-    if (method === 'tasks/cancel') return { resultType: 'complete' };
-    if (params.taskId === 'failing') {
+    },
+    'tasks/cancel': (params) => {
+      const task = tasks.get(String(params.taskId));
+      if (!task) throw new Error('Unknown task');
+      if (task.status === 'working' && cancellation !== 'taskless') {
+        task.status = cancellation;
+      }
+      return { resultType: 'complete' };
+    },
+    'tasks/get': (params) => {
+      const task = tasks.get(String(params.taskId));
+      if (!task) throw new Error('Unknown task');
+      if (task.status === 'working' && Date.now() >= task.completesAt) {
+        task.status =
+          task.name === 'protocol_error_job' ? 'failed' : 'completed';
+      }
       return {
-        resultType: 'complete',
         taskId: params.taskId,
-        status: 'completed',
-        result: { content: [], isError: true }
+        status: task.status,
+        createdAt: task.createdAt,
+        lastUpdatedAt: new Date().toISOString(),
+        ttlMs: 60_000,
+        ...(task.status === 'completed'
+          ? {
+              result: {
+                content: [{ type: 'text', text: 'done' }],
+                isError: task.name === 'failing_job'
+              }
+            }
+          : {}),
+        ...(task.status === 'failed'
+          ? { error: { code: -32603, message: 'Internal error' } }
+          : {})
       };
     }
-    if (params.taskId === 'protocol-error') {
-      return {
-        resultType: 'complete',
-        taskId: params.taskId,
-        status: 'failed',
-        error: { code: -32603, message: 'Internal error' }
-      };
-    }
-    return {
-      resultType: 'complete',
-      taskId: params.taskId,
-      status: 'completed',
-      result: { content: [{ type: 'text', text: 'done' }] }
-    };
-  };
-
-  return {
-    serverUrl: 'http://unused.local',
-    specVersion: DRAFT_PROTOCOL_VERSION,
-    connect: async () => ({ request, close: async () => {} }) as any
-  };
+  });
 }
 
-describe('tasks-lifecycle — no task created', () => {
-  test('downstream task checks fail as untestable instead of SKIPPED', async () => {
-    const mockUrl = mockServer();
-    const scenario = new TasksLifecycleScenario();
-    const checks: ConformanceCheck[] = await scenario.run(
-      testContext(mockUrl, DRAFT_PROTOCOL_VERSION)
-    );
+describe('tasks-lifecycle cancellation reports', () => {
+  let server: MockServer | undefined;
+  let outputDir: string;
 
-    const gated = checks.filter((c) =>
-      c.errorMessage?.startsWith('Not testable:')
+  beforeEach(async () => {
+    outputDir = await mkdtemp(path.join(tmpdir(), 'tasks-lifecycle-'));
+  });
+
+  afterEach(async () => {
+    await server?.close();
+    await rm(outputDir, { recursive: true, force: true });
+  });
+
+  async function runLifecycle(
+    cancellation: CancellationBehavior
+  ): Promise<ConformanceCheck[]> {
+    server = await startServer(cancellation);
+    const result = await runServerConformanceTest(
+      server.url,
+      'tasks-lifecycle',
+      outputDir
     );
-    expect(gated.length).toBeGreaterThan(0);
+    expect(result.resultDir).toBeDefined();
+    const checks: ConformanceCheck[] = JSON.parse(
+      await readFile(path.join(result.resultDir!, 'checks.json'), 'utf8')
+    );
+    expect(checks).toEqual(JSON.parse(JSON.stringify(result.checks)));
+    expect(checks.filter((check) => check.id === 'wire-schema-valid')).toEqual([
+      expect.objectContaining({ status: 'SUCCESS' })
+    ]);
+    return checks;
+  }
+
+  test.each(['cancelled', 'completed', 'failed'] as const)(
+    'reports the fixture contract when cancellation settles to %s',
+    async (status) => {
+      const checks = await runLifecycle(status);
+      expect(
+        checks.find((check) => check.id === 'sep-2663-cancel-ack-empty-result')
+      ).toMatchObject({
+        status: 'SUCCESS',
+        details: { statusAfterCancel: status }
+      });
+      expect(
+        checks.filter(
+          (check) => check.id === 'sep-2663-tasks-get-status-cancelled'
+        )
+      ).toEqual([
+        expect.objectContaining({
+          status: status === 'cancelled' ? 'SUCCESS' : 'FAILURE',
+          ...(status === 'cancelled'
+            ? {}
+            : {
+                errorMessage:
+                  `slow_compute fixture contract requires status:"cancelled" ` +
+                  `after cancellation while running; got "${status}"`
+              }),
+          details: { statusAfterCancel: status }
+        })
+      ]);
+      expect(checks.filter((check) => check.status !== 'SUCCESS')).toHaveLength(
+        status === 'cancelled' ? 0 : 1
+      );
+    },
+    20_000
+  );
+
+  test('reports cancelled status as untestable when no task is created', async () => {
+    const checks = await runLifecycle('taskless');
+
+    expect(
+      checks.filter(
+        (check) => check.id === 'sep-2663-tasks-get-status-cancelled'
+      )
+    ).toEqual([
+      expect.objectContaining({
+        status: 'FAILURE',
+        errorMessage: expect.stringMatching(
+          /^Not testable:.*did not create a task/
+        ),
+        details: expect.objectContaining({ untestable: true })
+      })
+    ]);
+    const gated = checks.filter((check) =>
+      check.errorMessage?.startsWith('Not testable:')
+    );
     for (const check of gated) {
       expect(check.status).toBe('FAILURE');
       expect(check.details).toMatchObject({ untestable: true });
     }
-    expect(checks.every((c) => c.status !== 'SKIPPED')).toBe(true);
+    expect(checks.every((check) => check.status !== 'SKIPPED')).toBe(true);
+    expect(
+      server?.recorded.some((request) => request.method === 'tasks/cancel')
+    ).toBe(false);
   });
-});
 
-describe('tasks-lifecycle — cancellation', () => {
-  test('fails when the cancellable fixture settles to completed', async () => {
-    const scenario = new TasksLifecycleScenario();
-    const checks = await scenario.run(cancellationContext());
+  test('reports cancelled status as untestable when terminal polling times out', async () => {
+    const checks = await runLifecycle('working');
 
     expect(
       checks.find((check) => check.id === 'sep-2663-cancel-ack-empty-result')
     ).toMatchObject({
-      status: 'SUCCESS',
-      details: { statusAfterCancel: 'completed' }
+      status: 'FAILURE',
+      errorMessage:
+        'Task lifecycle-cancel did not reach terminal state within 10000ms'
     });
     expect(
-      checks.find((check) => check.id === 'sep-2663-tasks-get-status-cancelled')
-    ).toMatchObject({
-      status: 'FAILURE',
-      details: { statusAfterCancel: 'completed' }
-    });
-  });
+      checks.filter(
+        (check) => check.id === 'sep-2663-tasks-get-status-cancelled'
+      )
+    ).toEqual([
+      expect.objectContaining({
+        status: 'FAILURE',
+        errorMessage: expect.stringMatching(
+          /^Not testable:.*Task lifecycle-cancel did not reach terminal state within 10000ms/
+        ),
+        details: expect.objectContaining({ untestable: true })
+      })
+    ]);
+    expect(
+      server?.recorded.filter(
+        (request) =>
+          request.method === 'tasks/get' &&
+          request.params?.taskId === 'lifecycle-cancel'
+      ).length
+    ).toBeGreaterThan(1);
+  }, 25_000);
 });

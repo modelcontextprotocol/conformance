@@ -424,6 +424,10 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
       const name = 'TasksCancelEmptyAck';
       const description =
         'tasks/cancel returns an empty {resultType:"complete"} acknowledgement';
+      const cancelledId = 'sep-2663-tasks-get-status-cancelled';
+      const cancelledName = 'TasksGetCancelledStatus';
+      const cancelledDescription =
+        'The cancellable slow_compute fixture settles to cancelled after tasks/cancel';
       let cancelTaskId: string | undefined;
       try {
         const created = (await conn.request('tools/call', {
@@ -441,6 +445,15 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
             errorMessage: 'slow_compute did not create a task',
             specReferences: [SEP_2663_REF, SEP_2322_REF]
           });
+          checks.push(
+            untestableCheck(
+              cancelledId,
+              cancelledName,
+              cancelledDescription,
+              'slow_compute did not create a task, so its cancelled status could not be observed',
+              [SEP_2663_REF]
+            )
+          );
         } else {
           const ack = (await conn.request('tasks/cancel', {
             taskId: cancelTaskId
@@ -473,22 +486,30 @@ The server MUST advertise \`io.modelcontextprotocol/tasks\` under
             details: { cancelAck: ack, statusAfterCancel: after.status }
           });
           checks.push({
-            id: 'sep-2663-tasks-get-status-cancelled',
-            name: 'TasksGetCancelledStatus',
-            description:
-              'The cancellable slow_compute fixture settles to cancelled after tasks/cancel',
+            id: cancelledId,
+            name: cancelledName,
+            description: cancelledDescription,
             status: after.status === 'cancelled' ? 'SUCCESS' : 'FAILURE',
             timestamp: new Date().toISOString(),
             errorMessage:
               after.status === 'cancelled'
                 ? undefined
-                : `expected status:"cancelled"; got ${JSON.stringify(after.status)}`,
+                : `slow_compute fixture contract requires status:"cancelled" after cancellation while running; got ${JSON.stringify(after.status)}`,
             specReferences: [SEP_2663_REF],
             details: { statusAfterCancel: after.status }
           });
         }
       } catch (error) {
         checks.push(failureCheck(id, name, description, error, [SEP_2663_REF]));
+        checks.push(
+          untestableCheck(
+            cancelledId,
+            cancelledName,
+            cancelledDescription,
+            `could not complete the slow_compute cancellation probe: ${errMsg(error)}`,
+            [SEP_2663_REF]
+          )
+        );
       }
     }
 
