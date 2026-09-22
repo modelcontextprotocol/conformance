@@ -57,6 +57,14 @@ import {
 /** How long to wait for the server to deliver something. */
 const DELIVERY_WAIT_MS = Number(process.env.EVENTS_DELIVERY_WAIT_MS ?? 20000);
 
+/**
+ * How long to let retries and the two non-retryable probes play out after the
+ * first attempt arrives. Retry backoff is the server's to choose, so this is a
+ * guess at "long enough to see a second attempt"; against a fast local fixture
+ * it is most of the scenario's wall time, which is why it is a knob.
+ */
+const SETTLE_MS = Number(process.env.EVENTS_DELIVERY_SETTLE_MS ?? 5000);
+
 /** A public base URL forwarding to this harness, when one exists. */
 const PUBLIC_BASE = process.env.EVENTS_WEBHOOK_CALLBACK_BASE;
 
@@ -320,7 +328,10 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       const first = await receiver.waitFor(path, () => true, DELIVERY_WAIT_MS);
       // One delivery is a thin sample for the header and signature rows, so
       // give a server emitting on a cadence a moment to send a few more.
-      if (first) await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (first)
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(3000, SETTLE_MS))
+        );
       const all = receiver.on(path);
 
       if (loopback) {
@@ -867,12 +878,56 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
     }
 
+    // A gap and a termination cannot be provoked from the client side, so these
+    // usually report untestable. They are still graded when a server sends one
+    // unasked, because the envelope is right here in what arrived.
+    const gap = all.find((d) => d.json?.type === 'gap');
     out.push(
-      ...untestableAll(
-        ['sep-9999-envelope-gap', 'sep-9999-envelope-terminated'],
-        'Neither a retention gap nor a termination occurred during the run, and the harness cannot provoke either from the client side.',
-        'WARNING'
-      )
+      !gap
+        ? untestableCheck(
+            'sep-9999-envelope-gap',
+            'sep-9999-envelope-gap',
+            'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes.',
+            'No retention gap occurred during the run, and the harness cannot force one from the client side. Needs a fixture that can expire its replay window on demand.',
+            [EVENTS_SPEC_REF],
+            'WARNING'
+          )
+        : eventsCheck(
+            'sep-9999-envelope-gap',
+            'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes. The client persists `cursor` and treats it as `truncated: true`.',
+            typeof gap.json?.cursor === 'string' ? 'SUCCESS' : 'WARNING',
+            {
+              errorMessage:
+                typeof gap.json?.cursor === 'string'
+                  ? undefined
+                  : `A \`gap\` envelope carried \`cursor\` ${describeValue(gap.json?.cursor)}; without a fresh position the client has nothing to persist.`,
+              details: { body: gap.json }
+            }
+          )
+    );
+
+    const terminated = all.find((d) => d.json?.type === 'terminated');
+    out.push(
+      !terminated
+        ? untestableCheck(
+            'sep-9999-envelope-terminated',
+            'sep-9999-envelope-terminated',
+            'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended.',
+            'The subscription was not terminated during the run. Needs a server that can revoke authorization or remove an event type mid-run.',
+            [EVENTS_SPEC_REF],
+            'WARNING'
+          )
+        : eventsCheck(
+            'sep-9999-envelope-terminated',
+            'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended (e.g., authorization revoked). The subscription no longer exists server-side.',
+            isObject(terminated.json?.error) ? 'SUCCESS' : 'WARNING',
+            {
+              errorMessage: isObject(terminated.json?.error)
+                ? undefined
+                : `A \`terminated\` envelope carried \`error\` ${describeValue(terminated.json?.error)}; without it the client cannot tell revocation from removal.`,
+              details: { body: terminated.json }
+            }
+          )
     );
     return out;
   }
@@ -925,7 +980,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         ];
       }
       // Give a server that does follow redirects time to arrive at the target.
-      const followed = await receiver.waitFor(to, () => true, 3000);
+      const followed = await receiver.waitFor(
+        to,
+        () => true,
+        Math.min(3000, SETTLE_MS)
+      );
       return [
         followed
           ? eventsCheck('sep-9999-ssrf-no-redirects', description, 'FAILURE', {
@@ -972,7 +1031,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       try {
         await receiver.waitFor(flaky, () => true, DELIVERY_WAIT_MS);
         // Let the retries play out.
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
         const attempts = receiver.on(flaky);
         const byId = new Map<string, ReceivedDelivery[]>();
         for (const a of attempts) {
@@ -1093,7 +1152,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           );
           continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
         const repeats = receiver
           .on(path)
           .filter(

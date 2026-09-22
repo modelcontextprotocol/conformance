@@ -93,7 +93,21 @@ const UNSUBSCRIBE_IDS = [
   'sep-9999-unsubscribe-unknown-not-found'
 ] as const;
 
-const ALL_IDS = [...SUBSCRIBE_IDS, ...TTL_IDS, ...UNSUBSCRIBE_IDS];
+/**
+ * The error-table row this scenario claims. It lives outside the three groups
+ * above because those name their own probes, and it has to be in `ALL_IDS` or a
+ * server this scenario bails on early emits 26 rows where a gradeable one emits
+ * 27 — which reads as a shorter suite rather than a prerequisite that was
+ * missing.
+ */
+const ERROR_IDS = ['sep-9999-error-unsupported'] as const;
+
+const ALL_IDS = [
+  ...SUBSCRIBE_IDS,
+  ...TTL_IDS,
+  ...UNSUBSCRIBE_IDS,
+  ...ERROR_IDS
+];
 
 interface SubscribeResult {
   id?: unknown;
