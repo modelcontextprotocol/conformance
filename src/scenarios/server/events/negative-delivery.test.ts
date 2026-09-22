@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, afterEach } from 'vitest';
+import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import {
   descriptor,
@@ -25,13 +25,27 @@ import {
  * Timings are stubbed down hard. `EVENTS_DELIVERY_WAIT_MS` bounds how long the
  * scenario waits for a first POST and `EVENTS_DELIVERY_SETTLE_MS` how long it
  * lets retries play out; at their defaults one run of this scenario is about
- * twenty seconds of mostly sleeping. As in the push controls, the run context
- * has to come from the same freshly-imported module graph as the scenario, or
- * `instanceof JsonRpcError` fails across two copies of the class.
+ * twenty seconds of mostly sleeping, and even stubbed down it is about ten.
+ *
+ * So the cases run concurrently. Each builds its own fixture on its own port and
+ * touches no shared state, and the scenario is imported once in `beforeAll`
+ * rather than per case, which is what makes that safe: `vi.resetModules()` in
+ * the middle of a concurrent run would pull the module graph out from under a
+ * case already using it. One graph also means one set of timings for the file.
+ *
+ * As in the push controls, the run context has to come from the same fresh
+ * import as the scenario, or `instanceof JsonRpcError` is false across two
+ * copies of the class.
  */
 
-async function deliveryChecks(opts: EventsFixtureOptions) {
-  vi.resetModules();
+type Imported = {
+  Scenario: typeof import('./webhook-delivery').EventsWebhookDeliveryScenario;
+  testContext: typeof import('../../../connection/testing').testContext;
+  takeWireViolations: typeof import('../../../validation/wire-schema').takeWireViolations;
+};
+let mod: Imported;
+
+beforeAll(async () => {
   vi.stubEnv('EVENTS_DELIVERY_WAIT_MS', '1500');
   // Comfortably over the fixture's 1.1s retry spacing, which is itself over a
   // second because `webhook-timestamp` is in whole seconds and two attempts
@@ -40,16 +54,32 @@ async function deliveryChecks(opts: EventsFixtureOptions) {
   // Never inherit a real tunnel from the environment: these tests are about the
   // loopback receiver, which is also the SSRF probe.
   vi.stubEnv('EVENTS_WEBHOOK_CALLBACK_BASE', '');
-  const { EventsWebhookDeliveryScenario } = await import('./webhook-delivery');
-  const { testContext } = await import('../../../connection/testing');
-  const { takeWireViolations } =
-    await import('../../../validation/wire-schema');
+  vi.resetModules();
+  const [scenario, testing, wire] = await Promise.all([
+    import('./webhook-delivery'),
+    import('../../../connection/testing'),
+    import('../../../validation/wire-schema')
+  ]);
+  mod = {
+    Scenario: scenario.EventsWebhookDeliveryScenario,
+    testContext: testing.testContext,
+    takeWireViolations: wire.takeWireViolations
+  };
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
+
+async function deliveryChecks(opts: EventsFixtureOptions) {
   const fixture = await startEventsFixture(opts);
   try {
-    const checks = await new EventsWebhookDeliveryScenario().run(
-      testContext(fixture.url, DRAFT_PROTOCOL_VERSION)
+    const checks = await new mod.Scenario().run(
+      mod.testContext(fixture.url, DRAFT_PROTOCOL_VERSION)
     );
-    takeWireViolations();
+    // Drained so an intentionally malformed delivery does not trip the global
+    // vitest hook; these tests assert on the check, not the wire validator.
+    mod.takeWireViolations();
     return new Map(checks.map((c) => [c.id, c]));
   } finally {
     await fixture.close();
@@ -71,13 +101,10 @@ function delivering(delivery: DeliveryBehaviour = {}): EventsFixtureOptions {
   };
 }
 
-const TIMEOUT = 40_000;
+/** Generous, because every case in the file is in flight at once. */
+const TIMEOUT = 60_000;
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe('a server that delivers to loopback', () => {
+describe.concurrent('a server that delivers to loopback', () => {
   test(
     'every row but the SSRF pair grades, and the SSRF pair fails',
     async () => {
@@ -162,7 +189,7 @@ describe('a server that delivers to loopback', () => {
   );
 });
 
-describe('the verification handshake', () => {
+describe.concurrent('the verification handshake', () => {
   // The divergence this row exists for: kitchen-sink delivers with no handshake
   // at all, because the handshake does not exist yet.
   test(
@@ -197,7 +224,7 @@ describe('the verification handshake', () => {
   );
 });
 
-describe('signing', () => {
+describe.concurrent('signing', () => {
   // The divergence this row exists for: kitchen-sink keys the HMAC on the
   // literal `whsec_…` string, where the document says the key is the
   // base64-decoded bytes after the prefix. No Standard Webhooks receiver
@@ -263,7 +290,7 @@ describe('signing', () => {
   );
 });
 
-describe('transport and body', () => {
+describe.concurrent('transport and body', () => {
   test(
     'delivering as text/plain fails the POST-and-JSON row',
     async () => {
@@ -289,7 +316,7 @@ describe('transport and body', () => {
   );
 });
 
-describe('retries and redirects', () => {
+describe.concurrent('retries and redirects', () => {
   test(
     'reusing the timestamp across retries fails the freshness row',
     async () => {
@@ -333,7 +360,7 @@ describe('retries and redirects', () => {
   );
 });
 
-describe('control envelopes', () => {
+describe.concurrent('control envelopes', () => {
   test(
     'an unsigned envelope fails, since a receiver cannot verify it',
     async () => {

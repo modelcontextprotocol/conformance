@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, afterEach } from 'vitest';
+import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import {
   descriptor,
@@ -21,37 +21,68 @@ import {
  * they are graded here rather than only declared — which is the only evidence
  * that those checks work at all.
  *
- * `EVENTS_PUSH_WATCH_MS` is stubbed down from 35s per case, since the scenario
- * reads it when the module is first evaluated. `vi.resetModules()` before each
- * dynamic import is what makes the stub land regardless of whether another test
- * file imported the scenario first. The catch is that a reset registry hands
- * back a *second* copy of the connection module, and `err instanceof
- * JsonRpcError` is false across two copies of the same class — so the run
- * context has to be built from the same fresh graph as the scenario, not from a
- * static import up here.
+ * `EVENTS_PUSH_WATCH_MS` is stubbed down from 35s, since the scenario reads it
+ * when the module is first evaluated, and `vi.resetModules()` before the dynamic
+ * import is what makes the stub land regardless of whether another test file
+ * imported the scenario first. Two catches follow from that. A reset registry
+ * hands back a second copy of the connection module, and `err instanceof
+ * JsonRpcError` is false across two copies of the same class, so the run context
+ * has to come from the same fresh graph as the scenario rather than a static
+ * import up here. And the window is fixed at import, so one graph means one
+ * window.
+ *
+ * The fast cases share one 900ms graph, imported once, and run concurrently:
+ * each builds its own fixture on its own port and touches nothing shared. The
+ * single case that has to outlast the 30s cadence the document permits takes its
+ * own graph, sequentially, at the foot of the file — a `resetModules()` while
+ * the concurrent cases were still running would pull their graph out from under
+ * them.
  */
 
 /** The window every case uses, except the one that needs to outlast 30s. */
 const FAST_WATCH_MS = 900;
 
-async function pushChecks(
-  opts: EventsFixtureOptions,
-  watchMs: number = FAST_WATCH_MS
-) {
-  vi.resetModules();
+type Imported = {
+  Scenario: typeof import('./push').EventsPushScenario;
+  testContext: typeof import('../../../connection/testing').testContext;
+  takeWireViolations: typeof import('../../../validation/wire-schema').takeWireViolations;
+};
+
+/** The scenario, with one watch window, in its own module registry. */
+async function importWith(watchMs: number): Promise<Imported> {
   vi.stubEnv('EVENTS_PUSH_WATCH_MS', String(watchMs));
-  const { EventsPushScenario } = await import('./push');
-  const { testContext } = await import('../../../connection/testing');
-  const { takeWireViolations } =
-    await import('../../../validation/wire-schema');
+  vi.resetModules();
+  const [scenario, testing, wire] = await Promise.all([
+    import('./push'),
+    import('../../../connection/testing'),
+    import('../../../validation/wire-schema')
+  ]);
+  return {
+    Scenario: scenario.EventsPushScenario,
+    testContext: testing.testContext,
+    takeWireViolations: wire.takeWireViolations
+  };
+}
+
+let fast: Imported;
+
+beforeAll(async () => {
+  fast = await importWith(FAST_WATCH_MS);
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
+
+async function pushChecks(opts: EventsFixtureOptions, using: Imported = fast) {
   const fixture = await startEventsFixture(opts);
   try {
-    const checks = await new EventsPushScenario().run(
-      testContext(fixture.url, DRAFT_PROTOCOL_VERSION)
+    const checks = await new using.Scenario().run(
+      using.testContext(fixture.url, DRAFT_PROTOCOL_VERSION)
     );
     // Drained so an intentionally malformed frame does not trip the global
     // vitest hook; these tests assert on the check, not the wire validator.
-    takeWireViolations();
+    using.takeWireViolations();
     return new Map(checks.map((c) => [c.id, c]));
   } finally {
     await fixture.close();
@@ -67,11 +98,7 @@ function pushFixture(stream: StreamBehaviour = {}): EventsFixtureOptions {
   };
 }
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
-
-describe('events/stream opening', () => {
+describe.concurrent('events/stream opening', () => {
   test('the conformant fixture passes every gradeable row', async () => {
     const checks = await pushChecks(pushFixture());
     for (const id of [
@@ -153,7 +180,7 @@ describe('events/stream opening', () => {
   });
 });
 
-describe('the active confirmation', () => {
+describe.concurrent('the active confirmation', () => {
   test('no confirmation at all fails', async () => {
     const checks = await pushChecks(pushFixture({ omitActive: true }));
     const check = checks.get('sep-9999-stream-active-confirmation');
@@ -180,7 +207,7 @@ describe('the active confirmation', () => {
   });
 });
 
-describe('the correlation id', () => {
+describe.concurrent('the correlation id', () => {
   // The divergence this row exists for: mcpkit puts the id in params.requestId,
   // mirroring the sketch's own push examples, where the document requires the
   // SEP-2575 `_meta` spelling. A client holding two streams cannot route by
@@ -202,7 +229,7 @@ describe('the correlation id', () => {
   });
 });
 
-describe('what rides the stream', () => {
+describe.concurrent('what rides the stream', () => {
   test('a non-events notification fails and names the method', async () => {
     const checks = await pushChecks(
       pushFixture({ foreignNotification: 'notifications/message' })
@@ -231,7 +258,7 @@ describe('what rides the stream', () => {
   });
 });
 
-describe('the heartbeat', () => {
+describe.concurrent('the heartbeat', () => {
   test('a numeric cursor on the heartbeat fails', async () => {
     const checks = await pushChecks(
       pushFixture({ heartbeatParams: { cursor: 42 } })
@@ -248,17 +275,6 @@ describe('the heartbeat', () => {
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('EVENTS_PUSH_WATCH_MS');
   });
-
-  // The one case that has to outlast the cadence the document permits. Under
-  // 30s a silent server and a slow one are indistinguishable, so this is the
-  // only window in which the MUST can actually fail.
-  test('silence past 30s fails the heartbeat MUST', async () => {
-    const checks = await pushChecks(pushFixture({ heartbeatMs: 0 }), 30_050);
-    const check = checks.get('sep-9999-stream-heartbeat-required');
-    expect(check?.status).toBe('FAILURE');
-    expect(check?.details?.untestable).toBeUndefined();
-    expect(check?.errorMessage).toContain('outlasts the 30s cadence');
-  }, 60_000);
 
   test('an SSE comment keepalive beside a data heartbeat warns', async () => {
     const checks = await pushChecks(pushFixture({ sseComments: true }));
@@ -277,7 +293,7 @@ describe('the heartbeat', () => {
   });
 });
 
-describe('concurrency and cancellation', () => {
+describe.concurrent('concurrency and cancellation', () => {
   // The cap kitchen-sink applies to streams, which the document exempts them
   // from: the first stream confirms and the other two are refused -32013.
   test('a per-principal cap that catches streams fails', async () => {
@@ -298,7 +314,7 @@ describe('concurrency and cancellation', () => {
   });
 });
 
-describe('rows that are untestable against a real server', () => {
+describe.concurrent('rows that are untestable against a real server', () => {
   test('a server-initiated close grades the final result instead of skipping it', async () => {
     const cancelled = await pushChecks(pushFixture());
     const untested = cancelled.get('sep-9999-stream-final-result-shape');
@@ -348,4 +364,21 @@ describe('rows that are untestable against a real server', () => {
       expect(busy.get(id)?.status, id).toBe('SUCCESS');
     }
   });
+});
+
+/**
+ * Under 30s a silent server and a slow one are indistinguishable, so this is the
+ * only window in which the heartbeat MUST can fail rather than report a window
+ * too short to judge. It costs half a minute, which is why it is one case and
+ * not a pair, and why it runs last on a graph of its own.
+ */
+describe('the heartbeat MUST, on a window that outlasts the cadence', () => {
+  test('silence past 30s fails instead of reporting untestable', async () => {
+    const slow = await importWith(30_050);
+    const checks = await pushChecks(pushFixture({ heartbeatMs: 0 }), slow);
+    const check = checks.get('sep-9999-stream-heartbeat-required');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.details?.untestable).toBeUndefined();
+    expect(check?.errorMessage).toContain('outlasts the 30s cadence');
+  }, 90_000);
 });
