@@ -57,6 +57,15 @@ export const AuthorizationServerOptionsSchema = z.object({
     .optional(),
   clientId: z.string().min(1, 'Client id cannot be empty').optional(),
   clientSecret: z.string().min(1, 'Client secret cannot be empty').optional(),
+  // RFC 8707 §2: the resource value is an absolute URI with no fragment.
+  resource: z
+    .string()
+    .refine((value) => URL.canParse(value), 'Resource must be an absolute URI')
+    .refine(
+      (value) => !URL.canParse(value) || !new URL(value).hash,
+      'Resource must not include a fragment'
+    )
+    .optional(),
   port: z
     .number()
     .int('Port must be an integer')

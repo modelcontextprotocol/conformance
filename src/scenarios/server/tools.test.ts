@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildToolsNameFormatCheck, validateToolNameFormat } from './tools.js';
+import {
+  buildToolsListDeterministicOrderCheck,
+  buildToolsNameFormatCheck,
+  toolNameFormatCheckApplies,
+  ToolsListScenario,
+  validateToolNameFormat
+} from './tools.js';
+import type { Connection, RunContext } from '../../connection';
 
 describe('validateToolNameFormat', () => {
   it('accepts a typical snake_case name', () => {
@@ -7,24 +14,30 @@ describe('validateToolNameFormat', () => {
   });
 
   it('accepts all allowed character classes', () => {
-    expect(validateToolNameFormat('Aa0_.-/')).toBeNull();
+    expect(validateToolNameFormat('Aa0_.-')).toBeNull();
   });
 
   it('accepts a single-character name (lower length boundary)', () => {
     expect(validateToolNameFormat('a')).toBeNull();
   });
 
-  it('accepts a 64-character name (upper length boundary)', () => {
-    expect(validateToolNameFormat('a'.repeat(64))).toBeNull();
+  it('accepts a 128-character name (upper length boundary)', () => {
+    expect(validateToolNameFormat('a'.repeat(128))).toBeNull();
   });
 
   it('rejects an empty name', () => {
     expect(validateToolNameFormat('')).toMatch(/length 0 is outside/);
   });
 
-  it('rejects a 65-character name', () => {
-    expect(validateToolNameFormat('a'.repeat(65))).toMatch(
-      /length 65 is outside/
+  it('rejects a 129-character name', () => {
+    expect(validateToolNameFormat('a'.repeat(129))).toMatch(
+      /length 129 is outside/
+    );
+  });
+
+  it('rejects forward slash (allowed in SEP-986 markdown but not spec prose)', () => {
+    expect(validateToolNameFormat('namespace/tool')).toMatch(
+      /contains characters outside/
     );
   });
 
@@ -57,7 +70,7 @@ describe('buildToolsNameFormatCheck', () => {
   it('returns SUCCESS when all tool names are valid', () => {
     const check = buildToolsNameFormatCheck([
       { name: 'test_simple_text' },
-      { name: 'namespace/tool-v1.2' }
+      { name: 'admin.tools.list' }
     ]);
     expect(check.status).toBe('SUCCESS');
     expect(check.errorMessage).toBeUndefined();
@@ -65,33 +78,33 @@ describe('buildToolsNameFormatCheck', () => {
       toolCount: 2,
       results: {
         test_simple_text: 'valid',
-        'namespace/tool-v1.2': 'valid'
+        'admin.tools.list': 'valid'
       }
     });
   });
 
-  it('returns FAILURE with per-tool details when some names are invalid', () => {
+  it('returns WARNING with per-tool details when some names are invalid', () => {
     const check = buildToolsNameFormatCheck([
       { name: 'good_tool' },
       { name: 'bad name with spaces' },
-      { name: 'a'.repeat(65) }
+      { name: 'a'.repeat(129) }
     ]);
 
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     expect(check.errorMessage).toContain(
-      '2 tool name(s) violate SEP-986 format'
+      '2 tool name(s) violate spec Tool Names SHOULD rules'
     );
 
     const results = (check.details as { results: Record<string, string> })
       .results;
     expect(results['good_tool']).toBe('valid');
     expect(results['bad name with spaces']).toMatch(/^invalid: /);
-    expect(results['a'.repeat(65)]).toMatch(/^invalid: length 65/);
+    expect(results['a'.repeat(129)]).toMatch(/^invalid: length 129/);
   });
 
   it('flags a tool whose name is not a string', () => {
     const check = buildToolsNameFormatCheck([{ name: 123 as unknown }]);
-    expect(check.status).toBe('FAILURE');
+    expect(check.status).toBe('WARNING');
     const results = (check.details as { results: Record<string, string> })
       .results;
     expect(results['<tool[0] missing name>']).toBe(
@@ -99,9 +112,225 @@ describe('buildToolsNameFormatCheck', () => {
     );
   });
 
-  it('includes both MCP-Tools-List and SEP-986 spec references', () => {
+  it('lists core spec Tool Names first, then SEP history for context', () => {
     const check = buildToolsNameFormatCheck([{ name: 'ok' }]);
     const ids = check.specReferences?.map((r) => r.id);
-    expect(ids).toEqual(['MCP-Tools-List', 'SEP-986']);
+    expect(ids).toEqual([
+      'MCP-Tool-Names',
+      'MCP-Tool-Names-Draft',
+      'SEP-986-History',
+      'SEP-986-Spec-Integration'
+    ]);
+    expect(check.specReferences?.[0]?.url).toContain(
+      '2025-11-25/server/tools#tool-names'
+    );
+    expect(check.specReferences?.[1]?.url).toContain(
+      'draft/server/tools#tool-names'
+    );
+    expect(check.specReferences?.[2]?.url).toContain('issues/986');
+    expect(check.specReferences?.[3]?.url).toContain('pull/1603');
+  });
+});
+
+describe('toolNameFormatCheckApplies', () => {
+  it('is false before 2025-11-25 and true from that version onward', () => {
+    expect(toolNameFormatCheckApplies('2025-03-26')).toBe(false);
+    expect(toolNameFormatCheckApplies('2025-06-18')).toBe(false);
+    expect(toolNameFormatCheckApplies('2025-11-25')).toBe(true);
+    expect(toolNameFormatCheckApplies('2026-07-28')).toBe(true);
+  });
+});
+
+describe('ToolsListScenario version gate', () => {
+  // Scenario-level gate: invalid names must not emit the check before 2025-11-25.
+  function mockContext(
+    specVersion: RunContext['specVersion'],
+    tools: Array<{ name: string; description: string; inputSchema: object }>
+  ): RunContext {
+    const connection: Connection = {
+      notifications: [],
+      request: (async () => ({ tools })) as Connection['request'],
+      discover: async () => ({}),
+      close: async () => {}
+    };
+
+    return {
+      serverUrl: 'http://example.test/mcp',
+      specVersion,
+      connect: async () => connection
+    };
+  }
+
+  it('does not emit tools-name-format on 2025-06-18 even when names violate 2025-11-25 rules', async () => {
+    const scenario = new ToolsListScenario();
+    const checks = await scenario.run(
+      mockContext('2025-06-18', [
+        {
+          name: 'bad name',
+          description: 'invalid under 2025-11-25 rules',
+          inputSchema: { type: 'object' }
+        }
+      ])
+    );
+
+    expect(checks.some((c) => c.id === 'tools-name-format')).toBe(false);
+    expect(checks.find((c) => c.id === 'tools-list')?.status).toBe('SUCCESS');
+  });
+
+  it('emits tools-name-format on 2025-11-25 when names violate spec prose', async () => {
+    const scenario = new ToolsListScenario();
+    const checks = await scenario.run(
+      mockContext('2025-11-25', [
+        {
+          name: 'bad name',
+          description: 'invalid under 2025-11-25 rules',
+          inputSchema: { type: 'object' }
+        }
+      ])
+    );
+
+    expect(checks.find((c) => c.id === 'tools-name-format')?.status).toBe(
+      'WARNING'
+    );
+  });
+});
+
+describe('buildToolsListDeterministicOrderCheck', () => {
+  const names = (...ns: string[]) => ns.map((name) => ({ name }));
+
+  it('returns SUCCESS when every probe lists the same tools in the same order', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b', 'c'),
+      names('a', 'b', 'c'),
+      names('a', 'b', 'c')
+    ]);
+    expect(check.id).toBe('tools-list-deterministic-order');
+    expect(check.status).toBe('SUCCESS');
+    expect(check.errorMessage).toBeUndefined();
+    expect(check.details).toEqual({
+      toolCount: 3,
+      probes: 3,
+      orders: [
+        ['a', 'b', 'c'],
+        ['a', 'b', 'c'],
+        ['a', 'b', 'c']
+      ]
+    });
+    expect(check.specReferences?.[0]?.url).toContain('2026-07-28/server/tools');
+  });
+
+  it('returns WARNING when the same tools come back in a different order', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b', 'c'),
+      names('b', 'c', 'a'),
+      names('c', 'a', 'b')
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/different order/);
+    expect(check.errorMessage).toMatch(/index 0/);
+    expect(check.details).toMatchObject({ toolCount: 3, probes: 3 });
+    expect(check.details?.untestable).toBeUndefined();
+    expect(check.details?.orders).toEqual([
+      ['a', 'b', 'c'],
+      ['b', 'c', 'a'],
+      ['c', 'a', 'b']
+    ]);
+  });
+
+  it('flags a divergence that only appears on the last probe', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b', 'c'),
+      names('a', 'b', 'c'),
+      names('a', 'c', 'b')
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/probe 3/);
+    expect(check.errorMessage).toMatch(/index 1/);
+  });
+
+  it('reports untestable (WARNING) when the set of tools changed between probes', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b', 'c'),
+      names('a', 'b', 'd')
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/^Not testable: /);
+    expect(check.errorMessage).toMatch(/added: d/);
+    expect(check.errorMessage).toMatch(/removed: c/);
+    expect(check.details).toMatchObject({ untestable: true });
+  });
+
+  it('reports untestable (WARNING) when a probe returned no tools array', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b'),
+      undefined
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/^Not testable: /);
+    expect(check.details).toMatchObject({ untestable: true });
+  });
+
+  it('reports untestable (WARNING) with fewer than two probes', () => {
+    const check = buildToolsListDeterministicOrderCheck([names('a', 'b')]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/^Not testable: /);
+  });
+
+  it('returns INFO when no probe saw two tools to order', () => {
+    const one = buildToolsListDeterministicOrderCheck([names('a'), names('a')]);
+    expect(one.status).toBe('INFO');
+    expect(one.errorMessage).toMatch(/nothing to compare/);
+    expect(one.details).toEqual({
+      toolCount: 1,
+      probes: 2,
+      orders: [['a'], ['a']]
+    });
+    const none = buildToolsListDeterministicOrderCheck([[], []]);
+    expect(none.status).toBe('INFO');
+  });
+
+  it('reports untestable when a probe grows from one tool to two', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a'),
+      names('a', 'b')
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/^Not testable: /);
+    expect(check.errorMessage).toMatch(/added: b/);
+  });
+
+  it('treats a tool without a string name as one placeholder entry', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      [{ name: 'a' }, { name: 42 }],
+      [{ name: 42 }, { name: 'a' }]
+    ]);
+    expect(check.status).toBe('WARNING');
+    expect(check.errorMessage).toMatch(/different order/);
+    expect(check.details?.orders).toEqual([
+      ['a', '<tool missing name>'],
+      ['<tool missing name>', 'a']
+    ]);
+  });
+
+  it('treats duplicate names as a set change only when their multiplicity changes', () => {
+    const stable = buildToolsListDeterministicOrderCheck([
+      names('a', 'a', 'b'),
+      names('a', 'a', 'b')
+    ]);
+    expect(stable.status).toBe('SUCCESS');
+    const changed = buildToolsListDeterministicOrderCheck([
+      names('a', 'a', 'b'),
+      names('a', 'b', 'b')
+    ]);
+    expect(changed.status).toBe('WARNING');
+    expect(changed.errorMessage).toMatch(/^Not testable: /);
+  });
+
+  it('gates itself to the 2026-07-28 wire', () => {
+    const check = buildToolsListDeterministicOrderCheck([
+      names('a', 'b'),
+      names('a', 'b')
+    ]);
+    expect(check.source).toEqual({ introducedIn: '2026-07-28' });
   });
 });

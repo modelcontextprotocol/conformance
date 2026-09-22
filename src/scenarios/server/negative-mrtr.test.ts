@@ -13,7 +13,8 @@ import path from 'path';
 import {
   InputRequiredResultResultTypeScenario,
   InputRequiredResultUnsupportedMethodsScenario,
-  InputRequiredResultTamperedStateScenario
+  InputRequiredResultTamperedStateScenario,
+  InputRequiredResultCapabilityCheckScenario
 } from './input-required-result';
 import {
   formatWireViolation,
@@ -141,5 +142,19 @@ describe('SEP-2322 MRTR negative tests', () => {
     );
     expect(tamperedCheck).toBeDefined();
     expect(tamperedCheck?.status).toBe('FAILURE');
+  }, 10000);
+
+  it('reports sep-2322-respect-client-capabilities as untestable against a server whose input_required result requests nothing', async () => {
+    const scenario = new InputRequiredResultCapabilityCheckScenario();
+    const checks = await scenario.run(testContext(SERVER_URL));
+
+    const capabilityCheck = checks.find(
+      (c) => c.id === 'sep-2322-respect-client-capabilities'
+    );
+    expect(capabilityCheck).toBeDefined();
+    expect(capabilityCheck?.status).toBe('FAILURE');
+    // The requirement was not violated, it could not be exercised (#248).
+    expect(capabilityCheck?.errorMessage).toContain('Not testable:');
+    expect(capabilityCheck?.details?.untestable).toBe(true);
   }, 10000);
 });
