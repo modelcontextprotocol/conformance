@@ -1,5 +1,5 @@
 import express, { Request, Response } from 'express';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import type { ConformanceCheck } from '../../../../types';
 import type { ScenarioContext } from '../../../../mock-server';
 import { isStatefulVersion } from '../../../../connection/select';
@@ -163,6 +163,32 @@ export interface DpopTokenRequestObservation {
    * key. Written only on an authorization_code exchange after a valid proof.
    */
   dpopJktMatched: boolean;
+  /**
+   * A later authorization_code exchange completed after an earlier one had
+   * already issued a token. The client recovered by re-authorizing rather
+   * than presenting the refresh token.
+   */
+  reauthorizedInsteadOfRefreshing?: boolean;
+}
+
+/**
+ * What the client presented on a `refresh_token` grant (RFC 9449 §5).
+ * Written for bound and unbound refreshes; a refresh never satisfies the
+ * authorization_code §8 nonce observation.
+ */
+export interface DpopRefreshObservation {
+  seen: boolean;
+  proofPresent: boolean;
+  proofValid: boolean;
+  jktMatched: boolean;
+  error?: string;
+}
+
+interface StoredRefreshToken {
+  jkt?: string;
+  scopes: string[];
+  resource?: string;
+  issuedAt: number;
 }
 
 export interface AuthServerOptions {
@@ -210,14 +236,28 @@ export interface AuthServerOptions {
    *  - 'empty-alg-values'  — advertise the field as an empty array
    *  - 'include-none'      — list `none` among the supported proof algs
    *  - 'unbound-token'     — issue a Bearer token ignoring a valid proof
+   *  - 'unbound-refresh'   — accept a refresh with no proof or any key, and
+   *    issue a token bound to the presented key, or none
+   *  - 'rebind-on-refresh' — bind the new access token to the presented key
+   *    even when it differs from the key bound to the refresh token
    */
   dpopMisbehavior?:
     | 'omit-alg-values'
     | 'empty-alg-values'
     | 'include-none'
-    | 'unbound-token';
+    | 'unbound-token'
+    | 'unbound-refresh'
+    | 'rebind-on-refresh';
   /** Sink for the DPoP token-request observation; see the interface docstring. */
   dpopTokenRequestObs?: DpopTokenRequestObservation;
+  /** Sink for refresh-grant observations; see DpopRefreshObservation. */
+  dpopRefreshObs?: DpopRefreshObservation;
+  /**
+   * `expires_in` (seconds) on token responses, and the DPoP access-token
+   * lifetime. Default 3600. The refresh posture sets this to 30 so a client
+   * must refresh during the run.
+   */
+  accessTokenExpiresIn?: number;
   /**
    * When true, the token endpoint requires a DPoP nonce (RFC 9449 §8): a
    * proof-bearing request without the correct `nonce` claim is answered with
@@ -275,7 +315,9 @@ export function createAuthServer(
     dpopSigningAlgValuesSupported,
     dpopMisbehavior,
     dpopTokenRequestObs,
+    dpopRefreshObs,
     dpopRequireNonce = false,
+    accessTokenExpiresIn = 3600,
     tokenVerifier,
     onTokenRequest,
     onAuthorizationRequest,
@@ -315,6 +357,270 @@ export function createAuthServer(
     dpopTokenRequestObs.recorded = true;
     dpopTokenRequestObs.validProof = valid;
     if (!valid && detail) dpopTokenRequestObs.error ??= detail;
+  };
+
+  const refreshTokens = new Map<string, StoredRefreshToken>();
+  let issuedAuthorizationCode = false;
+
+  const issueRefreshToken = (entry: StoredRefreshToken): string => {
+    const refreshToken = randomBytes(32).toString('base64url');
+    refreshTokens.set(refreshToken, entry);
+    return refreshToken;
+  };
+
+  const markAuthorizationCodeIssued = (grantType: string): void => {
+    if (grantType !== 'authorization_code') return;
+    if (issuedAuthorizationCode && dpopTokenRequestObs) {
+      dpopTokenRequestObs.reauthorizedInsteadOfRefreshing = true;
+    }
+    issuedAuthorizationCode = true;
+  };
+
+  const recordRefresh = (fields: {
+    proofPresent: boolean;
+    proofValid: boolean;
+    jktMatched: boolean;
+    error?: string;
+  }): void => {
+    if (!dpopRefreshObs) return;
+    dpopRefreshObs.seen = true;
+    dpopRefreshObs.proofPresent = fields.proofPresent;
+    dpopRefreshObs.proofValid = fields.proofValid;
+    dpopRefreshObs.jktMatched = fields.jktMatched;
+    if (fields.error) dpopRefreshObs.error ??= fields.error;
+  };
+
+  const readDpopHeader = (
+    req: Request
+  ): { multiple: true } | { multiple: false; proof?: string } => {
+    const proofHeader = req.headers['dpop'];
+    const proofValue = Array.isArray(proofHeader)
+      ? proofHeader.join(', ')
+      : proofHeader;
+    if (typeof proofValue === 'string' && proofValue.includes(',')) {
+      return { multiple: true };
+    }
+    return { multiple: false, proof: proofValue };
+  };
+
+  const sendTokenResponse = (
+    res: Response,
+    grantType: string,
+    body: {
+      accessToken: string;
+      tokenType: 'Bearer' | 'DPoP';
+      scopes: string[];
+      /** Exact `scope` string to echo. Omit to join `scopes` when non-empty. */
+      scope?: string;
+      omitScope?: boolean;
+      jkt?: string;
+      resource?: string;
+    }
+  ): void => {
+    markAuthorizationCodeIssued(grantType);
+    const refresh_token = issueRefreshToken({
+      ...(body.jkt !== undefined ? { jkt: body.jkt } : {}),
+      scopes: body.scopes,
+      ...(body.resource !== undefined ? { resource: body.resource } : {}),
+      issuedAt: Date.now()
+    });
+    const scope = body.omitScope
+      ? undefined
+      : body.scope !== undefined
+        ? body.scope
+        : body.scopes.length > 0
+          ? body.scopes.join(' ')
+          : undefined;
+    res.json({
+      access_token: body.accessToken,
+      token_type: body.tokenType,
+      expires_in: accessTokenExpiresIn,
+      refresh_token,
+      ...(scope !== undefined ? { scope } : {})
+    });
+  };
+
+  const handleRefreshGrant = async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    const presented = req.body.refresh_token as string | undefined;
+    const entry = presented ? refreshTokens.get(presented) : undefined;
+    if (!presented || !entry) {
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'unknown or already-rotated refresh token'
+      });
+      return;
+    }
+
+    const tokenEndpointUrl = `${getAuthBaseUrl()}${routePrefix}/token`;
+    const header = readDpopHeader(req);
+    const resource = entry.resource;
+
+    const rotateAndRespond = async (
+      jkt: string | undefined,
+      tokenType: 'Bearer' | 'DPoP'
+    ): Promise<void> => {
+      refreshTokens.delete(presented);
+      if (tokenType === 'DPoP' && jkt) {
+        if (!dpopIssuerKey) dpopIssuerKey = await generateIssuerKey();
+        const accessToken = await mintDpopBoundToken({
+          issuerKey: dpopIssuerKey,
+          issuer: resolveIssuer(),
+          audience: resource || 'urn:conformance-test-resource',
+          jkt,
+          expiresInSeconds: accessTokenExpiresIn,
+          ...(entry.scopes.length > 0 ? { scope: entry.scopes.join(' ') } : {})
+        });
+        sendTokenResponse(res, 'refresh_token', {
+          accessToken,
+          tokenType: 'DPoP',
+          scopes: entry.scopes,
+          jkt,
+          ...(resource !== undefined ? { resource } : {})
+        });
+        return;
+      }
+      const accessToken = `test-token-${Date.now()}`;
+      if (tokenVerifier) tokenVerifier.registerToken(accessToken, entry.scopes);
+      sendTokenResponse(res, 'refresh_token', {
+        accessToken,
+        tokenType: 'Bearer',
+        scopes: entry.scopes,
+        ...(resource !== undefined ? { resource } : {})
+      });
+    };
+
+    if (!entry.jkt) {
+      recordRefresh({
+        proofPresent: !header.multiple && Boolean(header.proof),
+        proofValid: false,
+        jktMatched: false
+      });
+      await rotateAndRespond(undefined, 'Bearer');
+      return;
+    }
+
+    if (dpopMisbehavior === 'unbound-refresh') {
+      let presentedJkt: string | undefined;
+      if (!header.multiple && header.proof) {
+        const result = await validateDpopProofAtTokenEndpoint(
+          header.proof,
+          tokenEndpointUrl
+        );
+        recordRefresh({
+          proofPresent: true,
+          proofValid: result.ok,
+          jktMatched: result.ok && result.jkt === entry.jkt,
+          ...(result.ok ? {} : { error: result.error })
+        });
+        if (result.ok) presentedJkt = result.jkt;
+      } else {
+        recordRefresh({
+          proofPresent: false,
+          proofValid: false,
+          jktMatched: false,
+          error: header.multiple
+            ? 'multiple DPoP proof headers'
+            : 'no DPoP proof in the refresh request'
+        });
+      }
+      if (presentedJkt) {
+        await rotateAndRespond(presentedJkt, 'DPoP');
+      } else {
+        await rotateAndRespond(undefined, 'Bearer');
+      }
+      return;
+    }
+
+    if (header.multiple) {
+      recordRefresh({
+        proofPresent: true,
+        proofValid: false,
+        jktMatched: false,
+        error: 'multiple DPoP proof headers'
+      });
+      res.status(400).json({
+        error: 'invalid_dpop_proof',
+        error_description: 'Multiple DPoP proof headers'
+      });
+      return;
+    }
+    if (!header.proof) {
+      recordRefresh({
+        proofPresent: false,
+        proofValid: false,
+        jktMatched: false,
+        error: 'no DPoP proof in the refresh request'
+      });
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description: 'DPoP proof required for a bound refresh token'
+      });
+      return;
+    }
+
+    const result = await validateDpopProofAtTokenEndpoint(
+      header.proof,
+      tokenEndpointUrl
+    );
+    if (!result.ok) {
+      recordRefresh({
+        proofPresent: true,
+        proofValid: false,
+        jktMatched: false,
+        error: result.error
+      });
+      res.status(400).json({
+        error: 'invalid_dpop_proof',
+        error_description: result.error
+      });
+      return;
+    }
+
+    const matched = result.jkt === entry.jkt;
+    recordRefresh({
+      proofPresent: true,
+      proofValid: true,
+      jktMatched: matched,
+      ...(matched
+        ? {}
+        : {
+            error: 'DPoP proof key does not match the refresh token binding'
+          })
+    });
+    if (!matched && dpopMisbehavior !== 'rebind-on-refresh') {
+      res.status(400).json({
+        error: 'invalid_grant',
+        error_description:
+          'DPoP proof key does not match the refresh token binding'
+      });
+      return;
+    }
+
+    // RFC 9449 §8 applies to the refresh grant too. Do not record it on the
+    // authorization_code nonce observation: honoring a challenge here must
+    // not satisfy §8.
+    if (dpopRequireNonce) {
+      let proofNonce: unknown;
+      try {
+        proofNonce = jose.decodeJwt(header.proof).nonce;
+      } catch {
+        proofNonce = undefined;
+      }
+      if (proofNonce !== AS_DPOP_NONCE) {
+        res.status(400).set('DPoP-Nonce', AS_DPOP_NONCE).json({
+          error: 'use_dpop_nonce',
+          error_description: 'Authorization server requires a DPoP nonce'
+        });
+        return;
+      }
+    }
+
+    const bindJkt =
+      dpopMisbehavior === 'rebind-on-refresh' ? result.jkt : entry.jkt;
+    await rotateAndRespond(bindJkt, 'DPoP');
   };
 
   const authRoutes = {
@@ -528,6 +834,11 @@ export function createAuthServer(
       }
     });
 
+    if (grantType === 'refresh_token') {
+      await handleRefreshGrant(req, res);
+      return;
+    }
+
     // PKCE: Check code_verifier is present (only for authorization_code grant)
     const codeVerifier = req.body.code_verifier as string | undefined;
     if (grantType === 'authorization_code') {
@@ -684,12 +995,18 @@ export function createAuthServer(
 
         if (dpopMisbehavior === 'unbound-token') {
           // Misbehaviour: ignore the binding and issue a plain Bearer token.
+          // The proof was valid, so the refresh token stays bound to that key.
           const bearer = `test-token-${Date.now()}`;
           if (tokenVerifier) tokenVerifier.registerToken(bearer, grantedScopes);
-          res.json({
-            access_token: bearer,
-            token_type: 'Bearer',
-            expires_in: 3600
+          sendTokenResponse(res, grantType, {
+            accessToken: bearer,
+            tokenType: 'Bearer',
+            scopes: grantedScopes,
+            omitScope: true,
+            jkt: result.jkt,
+            ...((req.body.resource as string | undefined)
+              ? { resource: req.body.resource as string }
+              : {})
           });
           return;
         }
@@ -697,19 +1014,22 @@ export function createAuthServer(
         if (!dpopIssuerKey) {
           dpopIssuerKey = await generateIssuerKey();
         }
+        const resource = req.body.resource as string | undefined;
         const boundToken = await mintDpopBoundToken({
           issuerKey: dpopIssuerKey,
           issuer: resolveIssuer(),
-          audience:
-            (req.body.resource as string) || 'urn:conformance-test-resource',
+          audience: resource || 'urn:conformance-test-resource',
           jkt: result.jkt,
+          expiresInSeconds: accessTokenExpiresIn,
           ...(requestedScope && { scope: requestedScope })
         });
-        res.json({
-          access_token: boundToken,
-          token_type: 'DPoP',
-          expires_in: 3600,
-          ...(requestedScope && { scope: requestedScope })
+        sendTokenResponse(res, grantType, {
+          accessToken: boundToken,
+          tokenType: 'DPoP',
+          scopes: grantedScopes,
+          ...(requestedScope ? { scope: requestedScope } : { omitScope: true }),
+          jkt: result.jkt,
+          ...(resource ? { resource } : {})
         });
         return;
       }
@@ -753,11 +1073,12 @@ export function createAuthServer(
       tokenVerifier.registerToken(token, scopes);
     }
 
-    res.json({
-      access_token: token,
-      token_type: 'Bearer',
-      expires_in: 3600,
-      ...(scopes.length > 0 && { scope: scopes.join(' ') })
+    const resource = req.body.resource as string | undefined;
+    sendTokenResponse(res, grantType, {
+      accessToken: token,
+      tokenType: 'Bearer',
+      scopes,
+      ...(resource ? { resource } : {})
     });
   });
 

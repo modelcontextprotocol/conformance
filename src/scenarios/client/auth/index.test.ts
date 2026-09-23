@@ -38,6 +38,10 @@ import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typ
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
 import { runClient as dpopNoJktClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-jkt';
 import { runClient as dpopWrongJktClient } from '../../../../examples/clients/typescript/auth-test-dpop-wrong-jkt';
+import { runClient as dpopRefreshClient } from '../../../../examples/clients/typescript/auth-test-dpop-refresh';
+import { runClient as dpopRefreshNoProofClient } from '../../../../examples/clients/typescript/auth-test-dpop-refresh-no-proof';
+import { runClient as dpopRefreshNewKeyClient } from '../../../../examples/clients/typescript/auth-test-dpop-refresh-new-key';
+import { runClient as dpopReauthClient } from '../../../../examples/clients/typescript/auth-test-dpop-reauth';
 import { runClient as resourceSlashClient } from '../../../../examples/clients/typescript/auth-test-resource-slash';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
@@ -346,14 +350,20 @@ describe('Negative tests', () => {
 
 describe('Client Extension Scenarios', () => {
   for (const scenario of extensionScenariosList) {
-    test(`${scenario.name} passes`, async () => {
-      const clientFn = getHandler(scenario.name);
-      if (!clientFn) {
-        throw new Error(`No handler registered for scenario: ${scenario.name}`);
-      }
-      const runner = new InlineClientRunner(clientFn);
-      await runClientAgainstScenario(runner, scenario.name);
-    });
+    test(
+      `${scenario.name} passes`,
+      async () => {
+        const clientFn = getHandler(scenario.name);
+        if (!clientFn) {
+          throw new Error(
+            `No handler registered for scenario: ${scenario.name}`
+          );
+        }
+        const runner = new InlineClientRunner(clientFn);
+        await runClientAgainstScenario(runner, scenario.name);
+      },
+      scenario.name === 'auth/dpop-refresh' ? 60_000 : 15_000
+    );
   }
 });
 
@@ -520,6 +530,91 @@ describe('DPoP client negative tests (SEP-1932)', () => {
       checks.find((c) => c.id === 'sep-1932-client-dpop-jkt')?.status
     ).toBe('FAILURE');
   });
+});
+
+const REFRESH_TEST_TIMEOUT = 60_000;
+
+describe('DPoP client refresh (SEP-1932)', () => {
+  test(
+    'auth/dpop-refresh: client proves the bound key',
+    async () => {
+      const runner = new InlineClientRunner(dpopRefreshClient);
+      const checks = await runClientAgainstScenario(
+        runner,
+        'auth/dpop-refresh',
+        { expectedSuccessSlugs: ['sep-1932-client-refresh-proof'] }
+      );
+      expect(
+        checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+      ).toBe('SUCCESS');
+    },
+    REFRESH_TEST_TIMEOUT
+  );
+
+  test(
+    'auth/dpop-refresh: client omits the DPoP proof on refresh',
+    async () => {
+      const runner = new InlineClientRunner(dpopRefreshNoProofClient);
+      const checks = await runClientAgainstScenario(
+        runner,
+        'auth/dpop-refresh',
+        {
+          allowClientError: true,
+          expectedFailureSlugs: ['sep-1932-client-refresh-proof'],
+          expectedSuccessSlugs: [
+            'sep-1932-client-token-request-proof',
+            'sep-1932-client-dpop-jkt',
+            'sep-1932-client-dpop-auth-scheme',
+            'sep-1932-client-fresh-proof'
+          ]
+        }
+      );
+      expect(
+        checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+      ).toBe('FAILURE');
+    },
+    REFRESH_TEST_TIMEOUT
+  );
+
+  test(
+    'auth/dpop-refresh: client refreshes with a different key',
+    async () => {
+      const runner = new InlineClientRunner(dpopRefreshNewKeyClient);
+      const checks = await runClientAgainstScenario(
+        runner,
+        'auth/dpop-refresh',
+        {
+          allowClientError: true,
+          expectedFailureSlugs: ['sep-1932-client-refresh-proof'],
+          expectedSuccessSlugs: [
+            'sep-1932-client-token-request-proof',
+            'sep-1932-client-dpop-jkt',
+            'sep-1932-client-dpop-auth-scheme',
+            'sep-1932-client-fresh-proof'
+          ]
+        }
+      );
+      expect(
+        checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+      ).toBe('FAILURE');
+    },
+    REFRESH_TEST_TIMEOUT
+  );
+
+  test(
+    'auth/dpop-refresh: client re-authorizes instead of refreshing',
+    async () => {
+      const runner = new InlineClientRunner(dpopReauthClient);
+      const checks = await runClientAgainstScenario(
+        runner,
+        'auth/dpop-refresh'
+      );
+      expect(
+        checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+      ).toBe('INFO');
+    },
+    REFRESH_TEST_TIMEOUT
+  );
 });
 
 // DPoP nonce-less baseline (SEP-1932): a client that implements NO nonce
