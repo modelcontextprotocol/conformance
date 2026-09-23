@@ -7,6 +7,10 @@ requirements:
     text: 'When making requests to protected MCP server resources, clients MUST include a fresh DPoP proof in the `DPoP` header'
   - check: sep-1932-client-token-request-proof
     text: 'To obtain a DPoP-bound access token, the client MUST include a DPoP proof in the `DPoP` header of its token request (RFC 9449 Section 5)'
+  # RFC 9449 §5. The SEP-1932 extension doc does not yet contain this sentence.
+  - check: sep-1932-client-refresh-proof
+    text: 'When an authorization server supporting DPoP issues a refresh token to a public client that presents a valid DPoP proof at the token endpoint, the refresh token MUST be bound to the respective public key.'
+    url: https://www.rfc-editor.org/rfc/rfc9449.html#section-5
   - check: sep-1932-client-as-nonce
     text: 'When the authorization server responds with `use_dpop_nonce`, the client MUST retry the token request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 8)'
   - check: sep-1932-client-rs-nonce
