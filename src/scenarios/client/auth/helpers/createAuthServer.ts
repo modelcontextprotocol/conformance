@@ -152,6 +152,17 @@ export interface DpopTokenRequestObservation {
   asNonceChallengeIssued: boolean;
   /** The client retried the token request carrying the correct nonce. */
   asNonceHonored: boolean;
+  /**
+   * `dpop_jkt` from the authorization request, if any (RFC 9449 §10).
+   * Written only on an authorization_code exchange after a valid proof,
+   * matching recordTokenRequestProof.
+   */
+  dpopJktSent?: string;
+  /**
+   * Whether `dpop_jkt` equals the JWK thumbprint of the token-request proof
+   * key. Written only on an authorization_code exchange after a valid proof.
+   */
+  dpopJktMatched: boolean;
 }
 
 export interface AuthServerOptions {
@@ -275,6 +286,8 @@ export function createAuthServer(
   let lastAuthorizationScopes: string[] = [];
   // Track PKCE code_challenge for verification in token request
   let storedCodeChallenge: string | undefined;
+  // RFC 9449 §10: dpop_jkt from the authorization request, if the client sent it.
+  let storedDpopJkt: string | undefined;
   // Lazily-created issuer key for minting DPoP-bound JWT access tokens.
   let dpopIssuerKey: TokenIssuerKey | undefined;
   // DPoP behaviour is active only when the caller opts in (any DPoP option).
@@ -426,6 +439,9 @@ export function createAuthServer(
       | string
       | undefined;
     storedCodeChallenge = codeChallenge;
+    // RFC 9449 §10: capture dpop_jkt so the token endpoint can bind the
+    // authorization code to the client's DPoP key.
+    storedDpopJkt = req.query.dpop_jkt as string | undefined;
 
     // PKCE: Check code_challenge is present
     checks.push({
@@ -618,6 +634,28 @@ export function createAuthServer(
         // request" (its proof was just verified). Sticky + gated on
         // authorization_code inside recordTokenRequestProof.
         recordTokenRequestProof(grantType, true);
+
+        // RFC 9449 §10: if the authorization request carried dpop_jkt, the
+        // token-request proof key MUST match it. RFC 9449 names no error
+        // code, so invalid_grant by analogy with PKCE failure. Only
+        // authorization_code grants count, same gating as
+        // recordTokenRequestProof.
+        if (grantType === 'authorization_code' && dpopTokenRequestObs) {
+          dpopTokenRequestObs.dpopJktSent = storedDpopJkt;
+          dpopTokenRequestObs.dpopJktMatched =
+            storedDpopJkt !== undefined && storedDpopJkt === result.jkt;
+        }
+        if (
+          grantType === 'authorization_code' &&
+          storedDpopJkt !== undefined &&
+          storedDpopJkt !== result.jkt
+        ) {
+          res.status(400).json({
+            error: 'invalid_grant',
+            error_description: 'dpop_jkt does not match the DPoP proof key'
+          });
+          return;
+        }
 
         // RFC 9449 §8: require a server-provided nonce. A proof without the
         // correct nonce is challenged (400 use_dpop_nonce + DPoP-Nonce); the
