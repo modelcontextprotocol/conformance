@@ -98,6 +98,7 @@ export type ScenarioSpecTag = SpecVersion | 'extension';
  * `capabilities.extensions`).
  */
 export const EXTENSION_IDS = [
+  'io.modelcontextprotocol/ui',
   'io.modelcontextprotocol/oauth-client-credentials',
   'io.modelcontextprotocol/enterprise-managed-authorization',
   'io.modelcontextprotocol/auth/dpop',

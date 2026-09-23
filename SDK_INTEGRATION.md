@@ -206,3 +206,70 @@ See [`src/conformance/everything-server.ts`](https://github.com/modelcontextprot
 - [Conformance README](./README.md)
 - [Design documentation](./src/runner/DESIGN.md)
 - [TypeScript SDK conformance examples](https://github.com/modelcontextprotocol/typescript-sdk/tree/main/src/conformance)
+
+## Legacy extension capability preservation (optional)
+
+`legacy-extensions` (client) and `server-legacy-extensions` (server) exercise
+`capabilities.extensions` in the **2025-11-25 initialize handshake**, following
+[SEP-2133](https://modelcontextprotocol.io/seps/2133-extensions#negotiation) and
+[spec PR #3364](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/3364).
+These are opt-in compatibility fixtures, outside core/Tier-1 and dated-spec
+selections. They use the Apps capability as an example; passing does **not**
+certify Apps behavior, other extensions, older protocol versions, or the newer
+per-request capability flow.
+
+Run without `--spec-version` (extensions are selected outside the core timeline):
+
+```sh
+node dist/index.js client --scenario legacy-extensions --command "npx tsx examples/clients/typescript/everything-client.ts"
+node dist/index.js server --scenario server-legacy-extensions --url http://localhost:3000/mcp
+```
+
+The client scenario is also in `client --suite extensions`; the server scenario
+is in `server --suite extensions`. Both appear in `--suite all`. The server
+scenario explicitly sends a 2025-11-25 handshake and checks the negotiated
+version, bypassing the runner's usual draft-transport default for extensions.
+
+Configure the **client** with this extension map:
+
+```json
+{
+  "io.modelcontextprotocol/ui": { "mimeTypes": ["text/html;profile=mcp-app"] },
+  "com.example/conformance": {
+    "nested": { "enabled": false, "limit": 0 },
+    "values": ["a", 2, null]
+  },
+  "com.example/empty": {}
+}
+```
+
+Configure the **server** with this distinct map:
+
+```json
+{
+  "io.modelcontextprotocol/ui": {},
+  "com.example/conformance": {
+    "nested": { "enabled": true, "limit": 3 },
+    "values": [null, "b", 4]
+  },
+  "com.example/empty": {}
+}
+```
+
+The `com.example/*` identifiers are test-only fixtures for arbitrary nested
+settings and empty objects. They require no implementation beyond this diagnostic
+contract. Extra extension identifiers are allowed; each listed settings object
+must survive unchanged.
+
+- **Client fixture:** After connecting, call `test_legacy_extension_capabilities`
+  with `{ "extensions": <server extensions obtained from the SDK accessor> }`.
+- **Server fixture:** Implement that tool with no required arguments. Return one
+  text content block containing JSON
+  `{ "extensions": <client extensions obtained from the SDK accessor> }`.
+
+Use the SDK's actual capability accessors (TypeScript: `getServerCapabilities()`
+and `getClientCapabilities()`), not raw HTTP input or hardcoded copies. This
+makes SDK deserialization loss observable as well as serialization loss. Missing
+advertisements fail these explicitly selected fixtures. A missing diagnostic
+report/tool is a failing untestable check, not a skip. An implementation that
+does not opt into extension support need not run these scenarios.

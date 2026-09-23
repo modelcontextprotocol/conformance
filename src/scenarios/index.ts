@@ -9,6 +9,8 @@ import {
   DATED_SPEC_VERSIONS,
   DRAFT_PROTOCOL_VERSION
 } from '../types';
+import { LegacyExtensionsScenario } from './client/legacy-extensions';
+import { ServerLegacyExtensionsScenario } from './server/legacy-extensions';
 import { InitializeScenario } from './client/initialize';
 import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { SkillsVerificationScenario } from './client/skills/verification';
@@ -113,7 +115,7 @@ import {
   authScenariosList,
   backcompatScenariosList,
   draftScenariosList,
-  extensionScenariosList
+  extensionScenariosList as authExtensionScenariosList
 } from './client/auth/index';
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
@@ -126,6 +128,19 @@ import {
 } from './client/http-custom-headers';
 import { JsonSchemaRefDerefScenario } from './client/json-schema-ref-deref';
 import { JsonSchema2020_12PreservationScenario } from './client/json-schema-2020-12-preservation';
+
+const extensionScenariosList: Scenario[] = [
+  ...authExtensionScenariosList,
+  new LegacyExtensionsScenario()
+];
+
+// Optional server extension fixtures are excluded from the default core suite.
+const extensionClientScenariosList: ClientScenario[] = [
+  new ServerLegacyExtensionsScenario()
+];
+export function listExtensionClientScenarios(): string[] {
+  return extensionClientScenariosList.map((s) => s.name);
+}
 
 // Pending client scenarios (not yet fully tested/implemented)
 const pendingClientScenariosList: ClientScenario[] = [
@@ -170,6 +185,7 @@ const pendingClientScenariosList: ClientScenario[] = [
 
 // All client scenarios
 const allClientScenariosList: ClientScenario[] = [
+  ...extensionClientScenariosList,
   // Lifecycle scenarios
   new ServerInitializeScenario(),
   new SessionLifecycleScenario(),
@@ -283,6 +299,9 @@ const draftClientScenariosList: ClientScenario[] =
 const activeClientScenariosList: ClientScenario[] =
   allClientScenariosList.filter(
     (scenario) =>
+      !extensionClientScenariosList.some(
+        (extension) => extension.name === scenario.name
+      ) &&
       !pendingClientScenariosList.some(
         (pending) => pending.name === scenario.name
       ) &&
