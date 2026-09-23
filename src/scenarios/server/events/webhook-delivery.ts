@@ -32,9 +32,9 @@ import type { Connection, RunContext } from '../../../connection';
 import { JsonRpcError } from '../../../connection';
 import { untestableCheck } from '../../untestable';
 import {
-  EVENTS_CAPABILITY,
   EVENTS_CALLBACK_ENDPOINT_ERROR,
   EVENTS_EXTENSION_ID,
+  extensionsOf,
   EVENTS_SPEC_REF,
   EVENTS_SUBSCRIBE_METHOD,
   EVENTS_UNSUBSCRIBE_METHOD,
@@ -193,7 +193,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       const caps = isObject(capabilities.capabilities)
         ? capabilities.capabilities
         : {};
-      const declared = caps[EVENTS_CAPABILITY] !== undefined;
+      const declared = extensionsOf(caps)[EVENTS_EXTENSION_ID] !== undefined;
 
       const listed = await eventsListAll(conn);
       if ('error' in listed) {

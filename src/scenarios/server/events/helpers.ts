@@ -8,16 +8,10 @@
  * src/seps/sep-9999.yaml, and 9999 is a placeholder SEP number — see that
  * file's header before renaming anything here.
  *
- * Two things about Events differ from every other extension suite here and are
+ * One thing about Events differs from every other extension suite here and is
  * worth knowing before reading the scenarios:
  *
- * 1. The capability is declared at the top level as `capabilities.events`, not
- *    under `capabilities.extensions`. SEP-2133's extensions map does not come
- *    into it. `EVENTS_EXTENSION_ID` exists only as a `ScenarioSource` key so
- *    the runner keeps these scenarios off the `--spec-version` timeline; it is
- *    never a path into the capability object.
- *
- * 2. No delivery mode is mandatory. A descriptor's `delivery` array is any
+ * 1. No delivery mode is mandatory. A descriptor's `delivery` array is any
  *    non-empty subset of poll/push/webhook, so a scenario for one mode has to
  *    discover whether any event type offers it before it can probe anything.
  *    Nothing is hardcoded to a fixture's event names.
@@ -32,19 +26,20 @@ import type { Connection } from '../../../connection';
 import { JsonRpcError } from '../../../connection';
 
 /**
- * Suite-selection key for the Events scenarios.
+ * The Events extension identifier, per SEP-2133 Extension Negotiation.
  *
- * Events has no SEP-2133 extension identifier, because it declares its
- * capability top-level rather than inside `capabilities.extensions`. This
- * string exists so `ScenarioSource` can carry `{ extensionId }`, which is what
- * keeps the scenarios out of `--spec-version` selection (see
- * `matchesSpecVersion` in src/scenarios/index.ts). Do not read the capability
- * at this key; read `capabilities.events`.
+ * It does double duty: `ScenarioSource` carries it as `{ extensionId }`, which
+ * keeps these scenarios out of `--spec-version` selection (see
+ * `matchesSpecVersion` in src/scenarios/index.ts), and it is the key the
+ * capability itself lives under in `capabilities.extensions`.
+ *
+ * Those were two different things until 2026-09-22. The design sketch put the
+ * capability at the top level as `capabilities.events`, and this file said in
+ * as many words not to read the capability at this key. Upstream PR 7 moved the
+ * sketch into the extensions map after mcpkit followed the document and the
+ * reference server did not, so the two uses collapsed into one.
  */
 export const EVENTS_EXTENSION_ID = 'io.modelcontextprotocol/events';
-
-/** The capability key, top-level under `capabilities`. */
-export const EVENTS_CAPABILITY = 'events';
 
 export const EVENTS_LIST_METHOD = 'events/list';
 export const EVENTS_POLL_METHOD = 'events/poll';
@@ -186,9 +181,23 @@ export async function declaredEventsCapability(
 ): Promise<{ declared: boolean; value: unknown }> {
   const discovered = await conn.discover();
   const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
-  if (!(EVENTS_CAPABILITY in caps))
+  const exts = (caps.extensions as Record<string, unknown>) ?? {};
+  if (!(EVENTS_EXTENSION_ID in exts))
     return { declared: false, value: undefined };
-  return { declared: true, value: caps[EVENTS_CAPABILITY] };
+  return { declared: true, value: exts[EVENTS_EXTENSION_ID] };
+}
+
+/**
+ * The `extensions` map from a capabilities object, or an empty map.
+ *
+ * Every scenario that probes the declaration goes through this rather than
+ * indexing `capabilities` directly, so the one place that knows where the
+ * capability lives is this file.
+ */
+export function extensionsOf(
+  caps: Record<string, unknown>
+): Record<string, unknown> {
+  return (caps.extensions as Record<string, unknown>) ?? {};
 }
 
 /**

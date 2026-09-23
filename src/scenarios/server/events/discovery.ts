@@ -31,7 +31,6 @@ import type { RunContext } from '../../../connection';
 import { untestableCheck } from '../../untestable';
 import {
   EVENTS_EXTENSION_ID,
-  EVENTS_CAPABILITY,
   EVENTS_LIST_METHOD,
   EVENTS_POLL_METHOD,
   EVENTS_SPEC_REF,
@@ -110,7 +109,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
 - \`sep-9999-error-not-found\` — an unknown event name answers \`-32011 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
 - \`sep-9999-error-server-range\` — the extension's codes sit in the JSON-RPC implementation-defined server range
 
-**Discovery is dynamic**: a server that neither declares the capability nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the capability is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
+**Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
@@ -148,8 +147,8 @@ export class EventsDiscoveryScenario implements ClientScenario {
           capDescription,
           'FAILURE',
           {
-            errorMessage: `Server answers \`${EVENTS_LIST_METHOD}\` but declares no \`capabilities.${EVENTS_CAPABILITY}\`. A client that follows the spec reads capabilities to decide whether to call it, so this surface is unreachable.`,
-            details: { capabilities: EVENTS_CAPABILITY, declared: false }
+            errorMessage: `Server answers \`${EVENTS_LIST_METHOD}\` but declares no \`capabilities.extensions["${EVENTS_EXTENSION_ID}"]\`. A client that follows the spec reads capabilities to decide whether to call it, so this surface is unreachable.`,
+            details: { extensionId: EVENTS_EXTENSION_ID, declared: false }
           }
         )
       );
@@ -168,7 +167,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
           capDescription,
           'FAILURE',
           {
-            errorMessage: `\`capabilities.${EVENTS_CAPABILITY}\` is ${describeValue(value)}, expected an object.`,
+            errorMessage: `\`capabilities.extensions["${EVENTS_EXTENSION_ID}"]\` is ${describeValue(value)}, expected an object.`,
             details: { declared: value }
           }
         )
@@ -225,7 +224,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
           'FAILURE',
           {
             errorMessage: unimplemented
-              ? `Server declares \`capabilities.events\` but \`${EVENTS_LIST_METHOD}\` is not implemented (-32601).`
+              ? `Server declares \`capabilities.extensions["${EVENTS_EXTENSION_ID}"]\` but \`${EVENTS_LIST_METHOD}\` is not implemented (-32601).`
               : `\`${EVENTS_LIST_METHOD}\` failed: ${err.code} ${err.message}`,
             details: { code: err.code, message: err.message, data: err.data }
           }

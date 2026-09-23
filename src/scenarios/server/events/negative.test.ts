@@ -92,7 +92,7 @@ describe('events capability declaration', () => {
     });
     const cap = checks.get('sep-9999-capability-events-object');
     expect(cap?.status).toBe('FAILURE');
-    expect(cap?.errorMessage).toContain('declares no `capabilities.events`');
+    expect(cap?.errorMessage).toContain('declares no `capabilities.extensions');
     expect(cap?.errorMessage).toContain('unreachable');
 
     // And the rest of the scenario is still graded, not abandoned.
@@ -183,7 +183,7 @@ describe('events/list descriptors', () => {
     });
     const check = checks.get('sep-9999-list-implemented');
     expect(check?.status).toBe('FAILURE');
-    expect(check?.errorMessage).toContain('declares `capabilities.events`');
+    expect(check?.errorMessage).toContain('declares `capabilities.extensions');
   });
 });
 

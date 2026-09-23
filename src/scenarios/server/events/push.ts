@@ -29,10 +29,10 @@ import type { RunContext } from '../../../connection';
 import { untestableCheck } from '../../untestable';
 import {
   EVENTS_ACTIVE_NOTIFICATION,
-  EVENTS_CAPABILITY,
+  EVENTS_EXTENSION_ID,
+  extensionsOf,
   EVENTS_ERROR_NOTIFICATION,
   EVENTS_EVENT_NOTIFICATION,
-  EVENTS_EXTENSION_ID,
   EVENTS_HEARTBEAT_NOTIFICATION,
   EVENTS_SPEC_REF,
   EVENTS_STREAM_METHOD,
@@ -125,7 +125,7 @@ export class EventsPushScenario implements ClientScenario {
       const caps = isObject(capabilities.capabilities)
         ? capabilities.capabilities
         : {};
-      declared = caps[EVENTS_CAPABILITY] !== undefined;
+      declared = extensionsOf(caps)[EVENTS_EXTENSION_ID] !== undefined;
 
       const listed = await eventsListAll(conn);
       if ('error' in listed) {

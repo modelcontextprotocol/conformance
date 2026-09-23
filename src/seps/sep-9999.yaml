@@ -173,10 +173,12 @@
 #   mcpkit pass; catching them is the point.
 #
 #   sep-9999-capability-events-object — the server answers `events/list` but
-#     declares no `capabilities.events`, so a client that reads capabilities
-#     before calling never finds the surface. Not previously tracked. This is
-#     also why the scenario asks before it skips: a plain "undeclared optional
-#     capability" SKIP reports this server as a clean run.
+#     declares nothing, so a client that reads capabilities before calling never
+#     finds the surface. Not previously tracked. This is also why the scenario
+#     asks before it skips: a plain "undeclared optional capability" SKIP
+#     reports this server as a clean run. Closed by mcpkit 1416 (declaring
+#     top-level, which the document then said) and corrected to the extensions
+#     map by mcpkit 1421 once upstream PR 7 moved it.
 #   sep-9999-poll-next-poll-ms — `nextPollSeconds` persists (events.go:504)
 #     after `197c32b4` renamed it, and `maxAge` is still in seconds
 #     (events.go:544). mcpkit's own wire_shape_test.go:44 asserts the
@@ -225,23 +227,23 @@
 #   Its one event type has required `inputSchema` properties. See the
 #     `minimalArguments` note below.
 #
-#   Two divergences, neither previously known:
+#   Two divergences, neither previously known. Both are now resolved, and the
+#   way they resolved is the argument for running a suite against more than one
+#   implementation:
 #
-#   sep-9999-capability-events-object — metronome declares events under
+#   sep-9999-capability-events-object — metronome declared events under
 #     `capabilities.extensions["io.modelcontextprotocol/events"]`, the SEP-2133
-#     extensions map, where this document puts it top-level under
-#     `capabilities`. Ask before changing the row. The document says top-level
-#     and has not moved since `28ec35e9`, but metronome is the sketch author's
-#     own server, and every other extension in MCP declares itself through the
-#     extensions map. If the WG confirms the extensions map, this row and
-#     `EVENTS_CAPABILITY` in src/scenarios/server/events/helpers.ts both change,
-#     and mcpkit's failure on the same row means something different than it
-#     does today.
+#     extensions map, where this document put it top-level under
+#     `capabilities`. Raised with the author 2026-09-22 rather than resolved by
+#     picking a side. **The document was wrong**: extension negotiation is where
+#     it belongs, and upstream PR 7 moves the sketch there. metronome was right
+#     all along and mcpkit's conformance was an artifact of following a document
+#     that did not yet say what its author meant. The rows above now track PR 7,
+#     which is unmerged; see the tracking note at the head of this file.
 #   sep-9999-poll-invalid-arguments — arguments that violate `inputSchema`
-#     answer -32603 Internal error, where the document requires -32602
-#     InvalidParams. The message ("Got JSON of type string, expected int_")
-#     reads like a deserialization failure surfacing rather than a validation
-#     step, so it is likely a framework default rather than a decision.
+#     answered -32603 Internal error, where the document requires -32602
+#     InvalidParams. Read as a framework default surfacing rather than a
+#     decision, which is what it was. Fixed by the author 2026-09-22.
 #
 #   `sep-9999-poll-mode-unsupported` reports untestable here, for the opposite
 #   reason it fails against mcpkit: every event type metronome serves offers
@@ -382,9 +384,17 @@ spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-even
 requirements:
   # === Capability Declaration ===
   - check: sep-9999-capability-events-object
-    text: 'Servers advertise event support in their capabilities: `{"capabilities": {"events": {"listChanged": true}}}`.'
+    text: "Events is an MCP extension, identified as `io.modelcontextprotocol/events`, and is declared through Extension Negotiation: the identifier appears as a key in the `extensions` field of capabilities, mapped to the extension's settings object."
   - check: sep-9999-capability-list-changed-flag
-    text: 'The `listChanged` flag under `capabilities.events` advertises that the server sends `notifications/events/list_changed`.'
+    text: "The server's settings object has one member: `listChanged` (boolean, optional, default `false`) — whether the server sends `notifications/events/list_changed`."
+  - check: sep-9999-capability-empty-settings
+    text: 'An empty settings object declares event support with no list-change notifications.'
+  - check: sep-9999-capability-client-declaration
+    text: 'A client MAY advertise the same identifier with an empty settings object to indicate that it understands the extension.'
+  - check: sep-9999-capability-list-changed-gated
+    text: 'Like `notifications/tools/list_changed` and `notifications/resources/list_changed`, `notifications/events/list_changed` is sent only by a server that declared `listChanged: true` in its extension settings.'
+  - check: sep-9999-fallback-method-not-found
+    text: 'A server that does not offer the extension answers any `events/*` request with `-32601 MethodNotFound` (standard JSON-RPC).'
 
   # === Listing Available Events ===
   - check: sep-9999-list-implemented

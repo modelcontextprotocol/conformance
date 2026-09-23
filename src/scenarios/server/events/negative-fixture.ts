@@ -13,6 +13,7 @@
  * cadence and the cancellation rows are about timing.
  */
 
+import { EVENTS_EXTENSION_ID } from './helpers';
 import { createHash, createHmac } from 'crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
@@ -225,7 +226,10 @@ export interface DeliveryBehaviour {
 }
 
 export interface EventsFixtureOptions {
-  /** Raw value to declare at `capabilities.events`; omit for no declaration. */
+  /**
+   * Raw value to declare at `capabilities.extensions["io.modelcontextprotocol/events"]`;
+   * omit for no declaration.
+   */
   capability?: unknown;
   descriptors?: object[];
   /** Answer `events/list` with this JSON-RPC error instead of a result. */
@@ -337,7 +341,10 @@ export async function startEventsFixture(
     if (method === 'server/discover') {
       send({
         supportedVersions: [DRAFT_PROTOCOL_VERSION],
-        capabilities: 'capability' in opts ? { events: opts.capability } : {},
+        capabilities:
+          'capability' in opts
+            ? { extensions: { [EVENTS_EXTENSION_ID]: opts.capability } }
+            : {},
         serverInfo: { name: 'events-negative', version: '1.0.0' }
       });
       return;
