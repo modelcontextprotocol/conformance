@@ -233,6 +233,18 @@ export const EVENTS_CONTROL_SUBSCRIBE_AS = 'events_conformance_subscribe_as';
 export const EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN =
   'events_conformance_allow_callback_origin';
 
+/**
+ * Reports one per-event-type subscription cap the server enforces, as JSON text
+ * `{"name": "<event type>", "max": <n>}`. Read-only.
+ *
+ * `-32013` is only reachable by exceeding a limit, and nothing in the protocol
+ * says where a server's limits are. The concurrency probe cannot find one for
+ * the suite: it opens three streams on one type and needs all three to stay
+ * open, so a server capped there fails the MUST beside it. Knowing the capped
+ * type lets the quota be probed on its own.
+ */
+export const EVENTS_CONTROL_QUOTA = 'events_conformance_quota';
+
 /** Reports whether a given principal's subscription is still registered. */
 export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
   'events_conformance_subscription_exists';

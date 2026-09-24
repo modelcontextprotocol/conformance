@@ -316,6 +316,64 @@ describe.concurrent('the -32013 error-table row', () => {
   });
 });
 
+describe.concurrent(
+  'the -32013 row, probed on the type a server says is capped',
+  () => {
+    // Two push types: the scenario's target, which the concurrency probe opens
+    // three streams on, and a capped one it must leave alone.
+    const withQuota = (
+      quota: EventsFixtureOptions['quota']
+    ): EventsFixtureOptions => ({
+      capability: { listChanged: true },
+      descriptors: [
+        descriptor({ name: 'push.event', delivery: ['push'] }),
+        descriptor({ name: 'capped.event', delivery: ['push'] })
+      ],
+      quota
+    });
+
+    test('an enforced cap that names its limit passes, beside a passing concurrency row', async () => {
+      const checks = await pushChecks(
+        withQuota({ name: 'capped.event', max: 2 })
+      );
+      const check = checks.get('sep-9999-error-resource-exhausted');
+      expect(check?.status).toBe('SUCCESS');
+      expect(check?.details?.limit).toBe('subscriptions');
+      expect(
+        checks.get('sep-9999-stream-exempt-from-concurrency-cap')?.status
+      ).toBe('SUCCESS');
+    });
+
+    test('a refusal without data.limit warns', async () => {
+      const checks = await pushChecks(
+        withQuota({ name: 'capped.event', max: 1, limitName: null })
+      );
+      const check = checks.get('sep-9999-error-resource-exhausted');
+      expect(check?.status).toBe('WARNING');
+      expect(check?.errorMessage).toContain('which quota it hit');
+    });
+
+    test('a reported cap that is never enforced is untestable, and says so', async () => {
+      const checks = await pushChecks(
+        withQuota({ name: 'capped.event', max: 2, enforce: false })
+      );
+      const check = checks.get('sep-9999-error-resource-exhausted');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.details?.untestable).toBe(true);
+      expect(check?.errorMessage).toContain('3 streams opened');
+    });
+
+    test('without the control the row stays untestable and names it', async () => {
+      const checks = await pushChecks(
+        withQuota({ name: 'capped.event', max: 2, control: false })
+      );
+      const check = checks.get('sep-9999-error-resource-exhausted');
+      expect(check?.details?.untestable).toBe(true);
+      expect(check?.errorMessage).toContain('events_conformance_quota');
+    });
+  }
+);
+
 describe.concurrent('concurrency and cancellation', () => {
   // The cap kitchen-sink applies to streams, which the document exempts them
   // from: the first stream confirms and the other two are refused -32013.

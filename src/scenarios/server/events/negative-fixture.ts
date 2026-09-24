@@ -284,9 +284,28 @@ export interface DurabilityBehaviour {
   restartNoop?: boolean;
 }
 
+/**
+ * A per-event-type subscription cap on streams, the shape kitchen-sink's
+ * `Quota` has, reported through `events_conformance_quota`.
+ */
+export interface QuotaBehaviour {
+  /** Event type the cap applies to. */
+  name: string;
+  /** Streams allowed at once on that type. */
+  max: number;
+  /** Refuse past `max`. Off stands for a server that reports a cap it does not enforce. */
+  enforce?: boolean;
+  /** `data.limit` on the refusal; null omits it. Defaults to `subscriptions`. */
+  limitName?: string | null;
+  /** Expose `events_conformance_quota`. Defaults to true. */
+  control?: boolean;
+}
+
 export interface EventsFixtureOptions {
   /** Expose the durability controls as tools. */
   durability?: DurabilityBehaviour;
+  /** A per-type cap on streams, and optionally the control that reports it. */
+  quota?: QuotaBehaviour;
   /**
    * Raw value to declare at `capabilities.extensions["io.modelcontextprotocol/events"]`;
    * omit for no declaration.
@@ -377,6 +396,7 @@ export async function startEventsFixture(
   /** Open streams, so close() can tear them down instead of hanging on them. */
   const openStreams = new Set<{ res: ServerResponse; stop: () => void }>();
   let liveStreams = 0;
+  const liveByName = new Map<string, number>();
 
   const server = createServer(async (req, res) => {
     if (req.method !== 'POST') {
@@ -421,12 +441,28 @@ export async function startEventsFixture(
           inputSchema: obj
         });
       }
+      if (opts.quota && opts.quota.control !== false) {
+        tools.push({ name: 'events_conformance_quota', inputSchema: obj });
+      }
       if (tools.length > 0 || opts.durability) {
         send({ tools });
         return;
       }
     }
 
+    if (
+      method === 'tools/call' &&
+      params.name === 'events_conformance_quota' &&
+      opts.quota &&
+      opts.quota.control !== false
+    ) {
+      const text = JSON.stringify({
+        name: opts.quota.name,
+        max: opts.quota.max
+      });
+      send({ content: [{ type: 'text', text }] });
+      return;
+    }
     if (
       method === 'tools/call' &&
       params.name === 'events_conformance_allow_callback_origin'
@@ -780,17 +816,36 @@ export async function startEventsFixture(
         );
         return;
       }
+      const quota = opts.quota;
+      const capped = quota !== undefined && quota.name === name;
+      if (
+        capped &&
+        quota.enforce !== false &&
+        (liveByName.get(quota.name) ?? 0) >= quota.max
+      ) {
+        const limit =
+          quota.limitName === undefined ? 'subscriptions' : quota.limitName;
+        fail(
+          -32013,
+          'ResourceExhausted: subscription quota reached',
+          limit === null ? undefined : { limit, max: quota.max }
+        );
+        return;
+      }
       if (behaviour.answerJson) {
         send({});
         return;
       }
 
       liveStreams += 1;
-      const entry = openStream(res, id, String(name), behaviour);
+      const key = String(name);
+      if (capped) liveByName.set(key, (liveByName.get(key) ?? 0) + 1);
+      const entry = openStream(res, id, key, behaviour);
       openStreams.add(entry);
       const done = () => {
         if (!openStreams.delete(entry)) return;
         liveStreams -= 1;
+        if (capped) liveByName.set(key, (liveByName.get(key) ?? 1) - 1);
         entry.stop();
       };
       req.on('close', done);

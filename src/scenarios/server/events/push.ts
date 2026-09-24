@@ -33,7 +33,7 @@
  */
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
-import type { RunContext } from '../../../connection';
+import type { Connection, RunContext } from '../../../connection';
 import { untestableCheck } from '../../untestable';
 import {
   EVENTS_ACTIVE_NOTIFICATION,
@@ -41,6 +41,8 @@ import {
   EVENTS_CONTROL_YIELD_ERROR,
   EVENTS_CONTROL_YIELD_GAP,
   EVENTS_CONTROL_TERMINATE,
+  EVENTS_CONTROL_QUOTA,
+  askControl,
   deliveryModes,
   type EventDescriptor,
   hasControl,
@@ -198,12 +200,14 @@ export class EventsPushScenario implements ClientScenario {
         );
       }
 
+      const quota = await this.readQuota(conn);
       return await this.streamChecks(
         ctx,
         name,
         args,
         controls,
-        listed.descriptors
+        listed.descriptors,
+        quota
       );
     } finally {
       await conn.close();
@@ -215,7 +219,8 @@ export class EventsPushScenario implements ClientScenario {
     name: string,
     args: Record<string, unknown>,
     controls: { error: boolean; gap: boolean; terminate: boolean },
-    descriptors: EventDescriptor[]
+    descriptors: EventDescriptor[],
+    quota?: QuotaReport
   ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const session = await openEventStream(
@@ -349,6 +354,9 @@ export class EventsPushScenario implements ClientScenario {
           controls.terminate
         ))
       );
+      // Ahead of the concurrency probe, whose own -32013 grading is the
+      // fallback for a server without the control; dedupe keeps the first.
+      if (quota) checks.push(await this.quotaCheck(ctx, quota, descriptors));
       checks.push(...(await this.concurrencyChecks(ctx, name, args)));
       checks.push(...(await this.errorBeforeOpenChecks(ctx, args)));
       return dedupe(checks);
@@ -959,6 +967,94 @@ export class EventsPushScenario implements ClientScenario {
   }
 
   /**
+   * What `events_conformance_quota` reported, or undefined when the server has
+   * no such control, which is the normal case.
+   */
+  private async readQuota(conn: Connection): Promise<QuotaReport | undefined> {
+    if (!(await hasControl(conn, EVENTS_CONTROL_QUOTA))) return undefined;
+    const text = await askControl(conn, EVENTS_CONTROL_QUOTA, {});
+    let parsed: unknown;
+    try {
+      parsed = text === undefined ? undefined : JSON.parse(text);
+    } catch {
+      parsed = undefined;
+    }
+    if (
+      isObject(parsed) &&
+      typeof parsed.name === 'string' &&
+      typeof parsed.max === 'number' &&
+      Number.isInteger(parsed.max) &&
+      parsed.max >= 0
+    ) {
+      return { name: parsed.name, max: parsed.max };
+    }
+    return { malformed: text ?? '(no text, or the call failed)' };
+  }
+
+  /**
+   * `-32013`, provoked on the type the server says is capped.
+   *
+   * Opens streams one at a time, up to one past the reported cap, and stops at
+   * the first refusal. Refused earlier than the cap still counts, since other
+   * scenarios in the run may hold subscriptions under the same principal.
+   */
+  private async quotaCheck(
+    ctx: RunContext,
+    quota: QuotaReport,
+    descriptors: EventDescriptor[]
+  ): Promise<ConformanceCheck> {
+    const id = 'sep-9999-error-resource-exhausted';
+    const description =
+      '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
+    const untestable = (reason: string) =>
+      untestableCheck(id, id, description, reason, [EVENTS_SPEC_REF]);
+
+    if ('malformed' in quota) {
+      return untestable(
+        `\`${EVENTS_CONTROL_QUOTA}\` answered ${quota.malformed}, where \`{"name": "<event type>", "max": <n>}\` was expected, so no capped type was known to probe.`
+      );
+    }
+    const target = descriptors.find((d) => descriptorName(d) === quota.name);
+    const args = target ? minimalArguments(target) : undefined;
+    if (!target || args === undefined) {
+      return untestable(
+        target
+          ? `\`${quota.name}\`, the type \`${EVENTS_CONTROL_QUOTA}\` reported as capped, declares required \`inputSchema\` properties the harness cannot satisfy.`
+          : `\`${EVENTS_CONTROL_QUOTA}\` reported \`${quota.name}\` as capped, but \`events/list\` does not serve it.`
+      );
+    }
+
+    const sessions: StreamSession[] = [];
+    try {
+      let refusal: StreamSession['error'];
+      for (let i = 0; i <= quota.max && !refusal; i++) {
+        const s = await openEventStream(
+          ctx.serverUrl,
+          ctx.specVersion,
+          { name: quota.name, arguments: args, cursor: null },
+          { openTimeoutMs: ACTIVE_MS }
+        );
+        sessions.push(s);
+        refusal = s.error;
+      }
+      if (!refusal) {
+        return untestable(
+          `\`${EVENTS_CONTROL_QUOTA}\` reported a cap of ${quota.max} on \`${quota.name}\`, and ${sessions.length} streams opened on it without a refusal, so the cap it reported was never reached.`
+        );
+      }
+      if (refusal.code !== EVENTS_RESOURCE_EXHAUSTED) {
+        return eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `Stream ${sessions.length} on \`${quota.name}\`, past its reported cap of ${quota.max}, was refused with ${refusal.code} ${refusal.message}. A refusal for a quota is \`${EVENTS_RESOURCE_EXHAUSTED}\`.`,
+          details: { code: refusal.code, message: refusal.message }
+        });
+      }
+      return this.resourceExhaustedCheck([refusal]);
+    } finally {
+      await Promise.all(sessions.map((s) => s.cancel()));
+    }
+  }
+
+  /**
    * The `-32013` row from the error table.
    *
    * A conformant server reaches no limit here, so this usually reports
@@ -978,7 +1074,7 @@ export class EventsPushScenario implements ClientScenario {
         id,
         id,
         description,
-        'No request in this run was refused for a server-imposed limit, so the code was never provoked. A server that caps concurrent subscriptions answers it for the third stream above.',
+        `No request in this run was refused for a server-imposed limit, so the code was never provoked. A server that caps concurrent subscriptions answers it for the third stream above, or can name a capped event type through the \`${EVENTS_CONTROL_QUOTA}\` control so the cap is probed on its own.`,
         [EVENTS_SPEC_REF]
       );
     }
@@ -1048,6 +1144,9 @@ export class EventsPushScenario implements ClientScenario {
 }
 
 /** Keep the first check emitted per id, so a fallback path cannot double-report. */
+/** What `events_conformance_quota` answered: a capped type, or garbage. */
+type QuotaReport = { name: string; max: number } | { malformed: string };
+
 function dedupe(checks: ConformanceCheck[]): ConformanceCheck[] {
   const seen = new Set<string>();
   return checks.filter((c) => {
