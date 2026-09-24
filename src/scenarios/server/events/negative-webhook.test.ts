@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest';
 import { testContext } from '../../../connection/testing';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { takeWireViolations } from '../../../validation/wire-schema';
@@ -26,6 +26,16 @@ import {
  */
 
 const ALL_ROWS = 27;
+
+// The durability rows poll for a restart and for a GC drop; the defaults are
+// sized for a real server and would make this file crawl.
+beforeAll(() => {
+  vi.stubEnv('EVENTS_RESTART_WAIT_MS', '1500');
+  vi.stubEnv('EVENTS_GC_WAIT_MS', '2000');
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 /** Rows every conformant run passes, which is the whole surface bar the seven
  * that need a second principal or a restart. */
@@ -409,5 +419,67 @@ describe('the unsupported delivery mode', () => {
     const check = checks.get('sep-9999-error-unsupported');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('no type to probe');
+  });
+});
+
+/**
+ * The durability rows, through a fixture exposing the restart, generation
+ * and subscription-state controls. The fixture is stateless, so a restart
+ * leaves the connection working; the generation control is what tells the
+ * scenario the restart happened.
+ */
+describe.concurrent('durability across a restart', () => {
+  const durable = (
+    durability: NonNullable<EventsFixtureOptions['durability']>
+  ): EventsFixtureOptions => ({ ...webhookFixture(), durability });
+
+  test('a store that keeps both grants and GCs the failing one passes all three', async () => {
+    const { checks, leaked } = await webhookChecks(durable({ gcAfterMs: 300 }));
+    for (const id of [
+      'sep-9999-ttl-long-grant-retained',
+      'sep-9999-ttl-no-expiry-persisted',
+      'sep-9999-ttl-no-expiry-gc-terminated'
+    ]) {
+      expect(
+        checks.get(id)?.status,
+        `${id}: ${checks.get(id)?.errorMessage}`
+      ).toBe('SUCCESS');
+    }
+    expect(leaked).toEqual([]);
+  });
+
+  test('losing the no-expiry subscription on restart fails the persisted row', async () => {
+    const { checks } = await webhookChecks(
+      durable({ dropNoExpiryOnRestart: true, gcAfterMs: 300 })
+    );
+    const check = checks.get('sep-9999-ttl-no-expiry-persisted');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('never refreshes');
+    expect(check?.errorMessage).toContain('`absent`');
+    const gc = checks.get('sep-9999-ttl-no-expiry-gc-terminated');
+    expect(gc?.details?.untestable, gc?.errorMessage).toBe(true);
+  });
+
+  test('losing a long finite grant on restart fails the retained row', async () => {
+    const { checks } = await webhookChecks(
+      durable({ dropFiniteOnRestart: true })
+    );
+    expect(checks.get('sep-9999-ttl-long-grant-retained')?.status).toBe(
+      'FAILURE'
+    );
+  });
+
+  test('never dropping a failing no-expiry subscription is a WARNING, since dropping is a MAY', async () => {
+    const { checks } = await webhookChecks(durable({}));
+    const check = checks.get('sep-9999-ttl-no-expiry-gc-terminated');
+    expect(check?.status).toBe('WARNING');
+    expect(check?.errorMessage).toContain('MAY');
+  });
+
+  test('a restart control that changes nothing leaves the rows untestable', async () => {
+    const { checks } = await webhookChecks(durable({ restartNoop: true }));
+    const check = checks.get('sep-9999-ttl-no-expiry-persisted');
+    expect(check?.details?.untestable).toBe(true);
+    expect(check?.errorMessage).toContain('no evidence a restart happened');
   });
 });

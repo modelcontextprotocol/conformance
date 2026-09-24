@@ -35,6 +35,9 @@ import {
   EVENTS_EXTENSION_ID,
   EVENTS_CONTROL_SUBSCRIBE_AS,
   EVENTS_CONTROL_SUBSCRIPTION_EXISTS,
+  EVENTS_CONTROL_RESTART,
+  EVENTS_CONTROL_GENERATION,
+  EVENTS_CONTROL_SUBSCRIPTION_STATE,
   hasControl,
   askControl,
   extensionsOf,
@@ -58,6 +61,16 @@ import {
 
 /** A callback URL that is syntactically valid and points nowhere in use. */
 const CALLBACK_BASE = 'https://conformance.invalid/mcp-events';
+const DURABILITY_IDS = [
+  'sep-9999-ttl-long-grant-retained',
+  'sep-9999-ttl-no-expiry-persisted',
+  'sep-9999-ttl-no-expiry-gc-terminated'
+] as const;
+/** How long a restart may take to show up in the generation control. */
+const restartWaitMs = (): number =>
+  Number(process.env.EVENTS_RESTART_WAIT_MS ?? 5000);
+/** How long to watch a failing no-expiry subscription for a GC drop. */
+const gcWaitMs = (): number => Number(process.env.EVENTS_GC_WAIT_MS ?? 30000);
 
 /** A suggestion the server can plausibly grant, for the TTL rows. */
 const TTL_SUGGESTION_MS = 3600_000;
@@ -119,6 +132,11 @@ interface SubscribeResult {
   cursor?: unknown;
   truncated?: unknown;
   deliveryStatus?: unknown;
+}
+
+/** How a subscription-state answer reads in a failure message. */
+function stateWord(state: string | undefined): string {
+  return state === undefined ? 'unreadable' : `reported \`${state}\``;
 }
 
 /** A Standard Webhooks secret: `whsec_` plus base64 of 32 random bytes. */
@@ -209,9 +227,227 @@ export class EventsWebhookScenario implements ClientScenario {
         );
       }
 
-      return await this.webhookChecks(conn, listed.descriptors, name, args);
+      const checks = await this.webhookChecks(
+        conn,
+        listed.descriptors,
+        name,
+        args
+      );
+      // Last, because the restart ends this connection.
+      const durable = await this.durabilityChecks(ctx, conn, name, args);
+      return checks.map((c) => durable.get(c.id) ?? c);
     } finally {
-      await conn.close();
+      await conn.close().catch(() => undefined);
+    }
+  }
+
+  /**
+   * The three TTL rows that need a restart. Only reachable through a fixture
+   * exposing the restart and subscription-state controls; without them the
+   * untestable rows from ttlChecks stand.
+   */
+  private async durabilityChecks(
+    ctx: RunContext,
+    conn: Connection,
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<Map<string, ConformanceCheck>> {
+    const out = new Map<string, ConformanceCheck>();
+    const canRestart = await hasControl(conn, EVENTS_CONTROL_RESTART);
+    const canAsk =
+      (await hasControl(conn, EVENTS_CONTROL_SUBSCRIPTION_STATE)) &&
+      (await hasControl(conn, EVENTS_CONTROL_GENERATION));
+    if (!canRestart || !canAsk) return out;
+
+    const stamp = Date.now();
+    const subscribeWith = async (
+      path: string,
+      ttlMs: number | null
+    ): Promise<{ id: string; url: string; grant: unknown } | undefined> => {
+      const url = `${CALLBACK_BASE}/${path}-${stamp}`;
+      try {
+        const result = await conn.request<SubscribeResult>(
+          EVENTS_SUBSCRIBE_METHOD,
+          {
+            name,
+            arguments: args,
+            delivery: { mode: 'webhook', url, secret: freshSecret() },
+            ttlMs
+          }
+        );
+        return typeof result?.id === 'string'
+          ? { id: result.id, url, grant: result.refreshBefore }
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+
+    const noExpiry = await subscribeWith('ttl-null', null);
+    const long = await subscribeWith('ttl-long', 24 * 3600 * 1000);
+    const granted = noExpiry !== undefined && noExpiry.grant === null;
+
+    const target = await askControl(conn, EVENTS_CONTROL_RESTART, {});
+    // A stateful server ends the old session, so the connection has to be
+    // replaced; a stateless one keeps answering on the same connection, from
+    // the old build and then the new. The generation settles both.
+    let live: Connection = conn;
+    let opened: Connection | undefined;
+    const deadline = Date.now() + restartWaitMs();
+    let restarted = false;
+    while (target !== undefined && Date.now() < deadline) {
+      const gen = await askControl(live, EVENTS_CONTROL_GENERATION, {});
+      if (gen === target) {
+        restarted = true;
+        break;
+      }
+      if (gen === undefined) {
+        try {
+          await opened?.close().catch(() => undefined);
+          opened = await ctx.connect();
+          await opened.discover();
+          live = opened;
+        } catch {
+          // The new build may not be up yet; try again next tick.
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!restarted) {
+      await opened?.close().catch(() => undefined);
+      for (const id of DURABILITY_IDS) {
+        out.set(
+          id,
+          untestableCheck(
+            id,
+            id,
+            id,
+            `The restart control answered ${describeValue(target)} but the generation control never reported it within ${restartWaitMs()}ms, so there is no evidence a restart happened.`,
+            [EVENTS_SPEC_REF],
+            'WARNING'
+          )
+        );
+      }
+      return out;
+    }
+
+    const fresh = live;
+    try {
+      const state = async (id: string): Promise<string | undefined> =>
+        askControl(fresh, EVENTS_CONTROL_SUBSCRIPTION_STATE, { id });
+
+      if (long) {
+        const s = await state(long.id);
+        out.set(
+          'sep-9999-ttl-long-grant-retained',
+          eventsCheck(
+            'sep-9999-ttl-long-grant-retained',
+            'A server granting long or no-expiry TTLs MUST retain subscriptions for the lifetime it granted, including across restarts.',
+            s === 'active' || s === 'suspended' ? 'SUCCESS' : 'FAILURE',
+            s === 'active' || s === 'suspended'
+              ? { details: { grant: long.grant, afterRestart: s } }
+              : {
+                  errorMessage: `A subscription granted until ${String(long.grant)} was ${stateWord(s)} after a restart.`
+                }
+          )
+        );
+      }
+
+      if (!granted) {
+        for (const id of [
+          'sep-9999-ttl-no-expiry-persisted',
+          'sep-9999-ttl-no-expiry-gc-terminated'
+        ]) {
+          out.set(
+            id,
+            untestableCheck(
+              id,
+              id,
+              id,
+              `\`ttlMs: null\` was answered with refreshBefore ${describeValue(noExpiry?.grant)}, not null, so the server did not grant a no-expiry subscription. That is allowed; it only means these rows have nothing to grade.`,
+              [EVENTS_SPEC_REF],
+              'WARNING'
+            )
+          );
+        }
+        return out;
+      }
+
+      const afterRestart = await state(noExpiry.id);
+      const persisted =
+        afterRestart === 'active' || afterRestart === 'suspended';
+      out.set(
+        'sep-9999-ttl-no-expiry-persisted',
+        eventsCheck(
+          'sep-9999-ttl-no-expiry-persisted',
+          'The server MUST persist no-expiry subscriptions across restarts, because a client that never refreshes will never detect (or repair) a silently dropped one.',
+          persisted ? 'SUCCESS' : 'FAILURE',
+          persisted
+            ? { details: { afterRestart } }
+            : {
+                errorMessage: `A no-expiry subscription was ${stateWord(afterRestart)} after a restart. A client that never refreshes has no way to find that out.`
+              }
+        )
+      );
+
+      // The callback origin never resolves, so every delivery fails; a server
+      // that GCs no-expiry subscriptions should drop this one.
+      const gcDescription =
+        'The server MAY drop a no-expiry subscription after sustained delivery failure (server-defined window), and SHOULD attempt a `terminated` envelope when it does.';
+      let dropped = false;
+      const gcDeadline = Date.now() + gcWaitMs();
+      while (persisted && Date.now() < gcDeadline) {
+        if ((await state(noExpiry.id)) === 'absent') {
+          dropped = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      out.set(
+        'sep-9999-ttl-no-expiry-gc-terminated',
+        !persisted
+          ? untestableCheck(
+              'sep-9999-ttl-no-expiry-gc-terminated',
+              'sep-9999-ttl-no-expiry-gc-terminated',
+              gcDescription,
+              'The no-expiry subscription was already gone after the restart, so there was nothing left for failure-based GC to drop.',
+              [EVENTS_SPEC_REF],
+              'WARNING'
+            )
+          : dropped
+            ? eventsCheck(
+                'sep-9999-ttl-no-expiry-gc-terminated',
+                gcDescription,
+                'SUCCESS',
+                {
+                  details: {
+                    note: 'Dropped after sustained delivery failure. The terminated envelope goes to the placeholder callback origin, which the harness cannot receive at, so only the drop is observed.'
+                  }
+                }
+              )
+            : eventsCheck(
+                'sep-9999-ttl-no-expiry-gc-terminated',
+                gcDescription,
+                'WARNING',
+                {
+                  errorMessage: `A no-expiry subscription whose every delivery failed was still registered after ${gcWaitMs()}ms. Dropping it is a MAY, so this is not a violation; a server with a long GC window reads the same way.`
+                }
+              )
+      );
+
+      for (const sub of [long, noExpiry]) {
+        if (!sub) continue;
+        await fresh
+          .request(EVENTS_UNSUBSCRIBE_METHOD, {
+            name,
+            arguments: args,
+            delivery: { mode: 'webhook', url: sub.url }
+          })
+          .catch(() => undefined);
+      }
+      return out;
+    } finally {
+      await opened?.close().catch(() => undefined);
     }
   }
 

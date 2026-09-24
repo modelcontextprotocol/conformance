@@ -218,6 +218,27 @@ export const EVENTS_CONTROL_SUBSCRIBE_AS = 'events_conformance_subscribe_as';
 /** Reports whether a given principal's subscription is still registered. */
 export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
   'events_conformance_subscription_exists';
+/**
+ * Rebuilds the server and its subscription registry over the same store, as a
+ * process restart would. Every session ends, so a scenario firing it must
+ * reconnect and must fire it last.
+ */
+export const EVENTS_CONTROL_RESTART = 'events_conformance_restart';
+/**
+ * Answers the fixture's current restart generation. The restart control
+ * answers the generation it is moving to, so a scenario can tell the restart
+ * happened whether the server keeps sessions (the old one dies) or is
+ * stateless (the same connection starts reaching the new build).
+ */
+export const EVENTS_CONTROL_GENERATION = 'events_conformance_generation';
+/**
+ * Takes `{ id }`, a derived subscription id, and answers `active`,
+ * `suspended` or `absent`. Unlike the exists control it sees a subscription
+ * the server has suspended after delivery failures, which is what separates
+ * "paused" from "dropped".
+ */
+export const EVENTS_CONTROL_SUBSCRIPTION_STATE =
+  'events_conformance_subscription_state';
 
 /**
  * Fire a control that answers with text, returning the text or undefined.

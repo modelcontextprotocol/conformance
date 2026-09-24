@@ -236,7 +236,25 @@ export interface DeliveryBehaviour {
   terminatedEnvelope?: boolean | { error?: unknown };
 }
 
+/**
+ * The restart, generation and subscription-state controls, for the TTL
+ * durability rows. Defaults are conformant: both grants survive a restart and
+ * nothing is garbage-collected.
+ */
+export interface DurabilityBehaviour {
+  /** Drop a no-expiry subscription this long after it was created. */
+  gcAfterMs?: number;
+  /** Lose no-expiry subscriptions across a restart. */
+  dropNoExpiryOnRestart?: boolean;
+  /** Lose finite subscriptions across a restart. */
+  dropFiniteOnRestart?: boolean;
+  /** Answer the restart control without restarting. */
+  restartNoop?: boolean;
+}
+
 export interface EventsFixtureOptions {
+  /** Expose the durability controls as tools. */
+  durability?: DurabilityBehaviour;
   /**
    * Raw value to declare at `capabilities.extensions["io.modelcontextprotocol/events"]`;
    * omit for no declaration.
@@ -306,7 +324,11 @@ export async function startEventsFixture(
   const streams: Array<Record<string, unknown>> = [];
   const subscribes: Array<Record<string, unknown>> = [];
   /** Live subscriptions, keyed the way the document keys them. */
-  const subscriptions = new Map<string, { id: string }>();
+  const subscriptions = new Map<
+    string,
+    { id: string; noExpiry?: boolean; at?: number }
+  >();
+  let generation = 1;
   /** Deliveries still in flight, so close() can settle rather than abandon. */
   const inFlight = new Set<Promise<void>>();
   let mintedIds = 0;
@@ -348,6 +370,66 @@ export async function startEventsFixture(
         JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } })
       );
     };
+
+    if (opts.durability && method === 'tools/list') {
+      const obj = { type: 'object', properties: {} };
+      send({
+        tools: [
+          { name: 'events_conformance_restart', inputSchema: obj },
+          { name: 'events_conformance_generation', inputSchema: obj },
+          { name: 'events_conformance_subscription_state', inputSchema: obj }
+        ]
+      });
+      return;
+    }
+    if (opts.durability && method === 'tools/call') {
+      const d = opts.durability;
+      const text = (t: string) =>
+        send({ content: [{ type: 'text', text: t }] });
+      const tool = params.name;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      if (tool === 'events_conformance_restart') {
+        if (d.restartNoop) {
+          text(String(generation + 1));
+          return;
+        }
+        generation++;
+        for (const [key, sub] of [...subscriptions.entries()]) {
+          if (sub.noExpiry ? d.dropNoExpiryOnRestart : d.dropFiniteOnRestart) {
+            subscriptions.delete(key);
+          }
+        }
+        text(String(generation));
+        return;
+      }
+      if (tool === 'events_conformance_generation') {
+        text(String(generation));
+        return;
+      }
+      if (tool === 'events_conformance_subscription_state') {
+        const entry = [...subscriptions.entries()].find(
+          ([, sub]) => sub.id === toolArgs.id
+        );
+        if (!entry) {
+          text('absent');
+          return;
+        }
+        const [key, sub] = entry;
+        if (
+          d.gcAfterMs !== undefined &&
+          sub.noExpiry &&
+          Date.now() - (sub.at ?? 0) > d.gcAfterMs
+        ) {
+          subscriptions.delete(key);
+          text('absent');
+          return;
+        }
+        text('active');
+        return;
+      }
+      fail(-32602, `unknown tool ${String(tool)}`);
+      return;
+    }
 
     if (method === 'server/discover') {
       send({
@@ -535,6 +617,11 @@ export async function startEventsFixture(
           ? Number(ttl) + 7 * 24 * 3600_000
           : Math.min(Number(ttl), cap);
         refreshBefore = new Date(Date.now() + granted).toISOString();
+      }
+      const held = subscriptions.get(effectiveKey);
+      if (held) {
+        held.noExpiry = refreshBefore === null;
+        held.at = held.at ?? Date.now();
       }
 
       if (opts.delivery?.synchronousVerification && typeof url === 'string') {
