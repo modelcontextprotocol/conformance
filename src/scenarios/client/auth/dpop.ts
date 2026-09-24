@@ -19,6 +19,7 @@ import {
 } from './helpers/dpopResourceAuth';
 import { SpecReferences } from './spec-references';
 import { collapseDuplicateChecks } from '../../../checks/collapse';
+import { notTestable } from '../../untestable';
 
 const PRM_PATH = '/.well-known/oauth-protected-resource/mcp';
 
@@ -76,8 +77,24 @@ const CHECK_DEFS: Record<
       SpecReferences.DPOP_EXTENSION,
       SpecReferences.RFC_9449_RS_NONCE
     ]
+  },
+  'sep-1932-client-dpop-jkt': {
+    name: 'DpopAuthCodeBinding',
+    description:
+      'Client binds the authorization code to its DPoP key via the dpop_jkt authorization request parameter (RFC 9449 §10)',
+    specReferences: [
+      SpecReferences.SEP_1932_DPOP,
+      SpecReferences.DPOP_EXTENSION,
+      SpecReferences.RFC_9449_DPOP_JKT
+    ]
   }
 };
+
+/**
+ * SEP-1932 requires the client to bind the authorization code to its DPoP key
+ * with `dpop_jkt` (RFC 9449 §10). Omission is a SHOULD miss.
+ */
+const DPOP_JKT_NOT_SENT_STATUS: CheckStatus = 'WARNING';
 
 /**
  * Scenario: DPoP sender-constrained tokens — MCP client (SEP-1932 / RFC 9449).
@@ -91,15 +108,16 @@ const CHECK_DEFS: Record<
  *
  *  - `auth/dpop` (`requireNonce = false`) — the common, nonce-less baseline.
  *    Neither the AS nor the MCP server issues a nonce challenge; the client
- *    completes the flow with plain proofs. Emits three checks:
+ *    completes the flow with plain proofs. Emits four checks:
  *      · token acquisition — a valid DPoP proof at the token request, obtaining
  *        a sender-constrained token (RFC 9449 §5);
+ *      · the authorization code is bound to the DPoP key via `dpop_jkt` (§10);
  *      · the token is presented with the `DPoP` Authorization scheme (§7.1);
  *      · a fresh, well-formed DPoP proof accompanies each request (unique `jti`).
  *
  *  - `auth/dpop-nonce` (`requireNonce = true`) — the AS and MCP server both
  *    require a server-provided nonce (§8/§9), exercising the client's nonce
- *    handling. Emits the three baseline checks plus two more:
+ *    handling. Emits the four baseline checks plus two more:
  *      · the client retries the token request with the AS-supplied nonce (§8);
  *      · the client retries the MCP request with the server-supplied nonce (§9).
  */
@@ -108,7 +126,8 @@ function newTokenReqObs(): DpopTokenRequestObservation {
     recorded: false,
     validProof: false,
     asNonceChallengeIssued: false,
-    asNonceHonored: false
+    asNonceHonored: false,
+    dpopJktMatched: false
   };
 }
 
@@ -185,6 +204,7 @@ export class DPoPClientScenario implements Scenario {
     const checks: ConformanceCheck[] = [
       ...shared,
       this.tokenRequestProofCheck(),
+      this.dpopJktCheck(),
       this.authSchemeCheck(),
       this.freshProofCheck()
     ];
@@ -242,6 +262,39 @@ export class DPoPClientScenario implements Scenario {
         }
       }
     );
+  }
+
+  private dpopJktCheck(): ConformanceCheck {
+    const sent = this.tokenReqObs.dpopJktSent;
+    const matched = this.tokenReqObs.dpopJktMatched;
+    let status: CheckStatus;
+    let errorMessage: string | undefined;
+    let untestable = false;
+    if (!this.tokenReqObs.recorded || !this.tokenReqObs.validProof) {
+      status = 'WARNING';
+      untestable = true;
+      errorMessage = notTestable(
+        'the client did not present a valid token-endpoint DPoP proof, so dpop_jkt key agreement could not be evaluated'
+      );
+    } else if (sent !== undefined && matched) {
+      status = 'SUCCESS';
+    } else if (sent !== undefined) {
+      status = 'FAILURE';
+      errorMessage =
+        'Client sent dpop_jkt but it does not match the DPoP proof key used at the token endpoint';
+    } else {
+      status = DPOP_JKT_NOT_SENT_STATUS;
+      errorMessage =
+        'Client did not send dpop_jkt on the authorization request to bind the authorization code to its DPoP key';
+    }
+    return this.build('sep-1932-client-dpop-jkt', status, {
+      errorMessage,
+      details: {
+        dpopJktSent: sent,
+        dpopJktMatched: matched,
+        ...(untestable ? { untestable: true } : {})
+      }
+    });
   }
 
   private tokenRequestProofCheck(): ConformanceCheck {
