@@ -103,7 +103,13 @@ export const EXTENSION_IDS = [
   'io.modelcontextprotocol/auth/dpop',
   'io.modelcontextprotocol/auth/wif',
   'io.modelcontextprotocol/tasks',
-  'io.modelcontextprotocol/skills'
+  'io.modelcontextprotocol/skills',
+  // MCP Events. This id does double duty: it keeps the Events scenarios off the
+  // `--spec-version` timeline (see `matchesSpecVersion`), and it is the key the
+  // capability lives under in `capabilities.extensions`. Extension negotiation
+  // arrived in 2026-07-28, so no earlier protocol version can declare it.
+  // See src/scenarios/server/events/helpers.ts.
+  'io.modelcontextprotocol/events'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
