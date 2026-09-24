@@ -237,7 +237,8 @@ const allClientScenariosList: ClientScenario[] = [
   new SkillsEnumerationScenario(),
   new SkillsManifestScenario(),
 
-  // MCP Events. Fixture-dependent (needs a server declaring `capabilities.events`);
+  // MCP Events. Fixture-dependent (needs a server declaring the extension under
+  // `capabilities.extensions`);
   // each scenario SKIPs cleanly when the capability is not declared.
   new EventsDiscoveryScenario(),
   new EventsPollScenario(),

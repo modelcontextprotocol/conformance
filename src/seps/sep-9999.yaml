@@ -1,5 +1,23 @@
-# spec_source: modelcontextprotocol/experimental-ext-triggers-events@main docs/design-sketch-proposal.md
-# extracted: 2026-09-15
+# spec_source: modelcontextprotocol/experimental-ext-triggers-events@refs/pull/7/head docs/design-sketch-proposal.md
+# extracted: 2026-09-15, capability rows re-extracted 2026-09-23
+#
+# ############################################################################
+# # SIX ROWS TRACK AN UNMERGED PR. Upstream PR 7 moves the capability          #
+# # declaration into Extension Negotiation, and `main` still says top-level.   #
+# ############################################################################
+#
+#   The rows are sep-9999-capability-events-object, -list-changed-flag,
+#   -empty-settings, -client-declaration, -list-changed-gated and
+#   sep-9999-fallback-method-not-found. `spec_source` therefore names PR 7's head
+#   rather than `main`, because a reader who fetches `main` finds text that
+#   contradicts them.
+#
+#   Why the suite is ahead of the document: mcpkit followed the sketch and
+#   declared top-level; metronome, written by the sketch's author, used the
+#   extensions map. Asked rather than guessed, 2026-09-22, and the document was
+#   the thing that was wrong. Same posture as the SEP-2350 scenarios against
+#   modelcontextprotocol#481: a red row here means the head moved, not that an
+#   implementation regressed. Re-point `spec_source` at `main` when PR 7 merges.
 #
 # ############################################################################
 # # 9999 IS A PLACEHOLDER. MCP Events has no SEP number yet.                 #
@@ -45,7 +63,7 @@
 #   `spec_url` names the document itself and rows carry no per-row `url`.
 #   Expect one more pass once the text becomes a spec PR and gains anchors.
 #
-# coverage: 131 declared checks plus 30 excluded rows.
+# coverage: 135 declared checks plus 30 excluded rows.
 #
 #   A keyword sweep of the source finds 144 RFC 2119 keyword occurrences across
 #   119 sentences: 34 MUST, 9 MUST NOT, 3 REQUIRED, 56 SHOULD, 7 SHOULD NOT
@@ -53,8 +71,8 @@
 #   and SHOULD NOT inside SHOULD, as the handoff table does, the same sweep
 #   reads as 43 / 3 / 63; the two counts agree.
 #
-#   Only 46 of the declared rows quote a sentence carrying a keyword. The other
-#   85 are shape requirements the document states declaratively — the
+#   Only 47 of the declared rows quote a sentence carrying a keyword. The other
+#   88 are shape requirements the document states declaratively — the
 #   `EventOccurrence` field table, the error-code table, the `events/list`
 #   descriptor fields, the response payloads. They are normative and directly
 #   testable, they are simply not written with a keyword, which is why the row
@@ -100,25 +118,34 @@
 #
 # backing_scenarios: server ClientScenarios under src/scenarios/server/events/
 #   emit the check IDs below (a row is "tested" once a scenario emits its ID;
-#   see src/traceability/). All five now exist and together emit 117 of the 131
+#   see src/traceability/). All five now exist and together emit 122 of the 135
 #   rows:
-#     discovery.ts (events-discovery), 12 rows — the two capability rows, the
-#       two sep-9999-list-* rows, the six sep-9999-descriptor-* rows, and
-#       sep-9999-error-not-found plus sep-9999-error-server-range, both graded
-#       off one unknown-name probe.
-#     poll.ts (events-poll), 33 rows — the sep-9999-poll-* rows, the
+#     discovery.ts (events-discovery), 14 rows — the three capability rows, the
+#       two sep-9999-list-* rows, the six sep-9999-descriptor-* rows,
+#       sep-9999-error-not-found plus sep-9999-error-server-range (both graded
+#       off one unknown-name probe), and sep-9999-fallback-method-not-found,
+#       which only a server that does not offer the extension can answer.
+#     poll.ts (events-poll), 35 rows — the sep-9999-poll-* rows, the
 #       sep-9999-occurrence-* rows, the sep-9999-cursor-* /
 #       sep-9999-max-age-* / sep-9999-truncated-* rows reachable through poll,
-#       and sep-9999-removal-poll-not-found, the poll leg of the removal rules.
-#     push.ts (events-push), 17 rows — the sep-9999-stream-* rows. It holds a
+#       sep-9999-removal-poll-not-found (the poll leg of the removal rules), and
+#       sep-9999-error-invalid-params, which rides the same probe as
+#       sep-9999-poll-invalid-arguments.
+#     push.ts (events-push), 18 rows — the sep-9999-stream-* rows plus
+#       sep-9999-error-resource-exhausted, graded when a server refuses one of
+#       the three concurrent streams for a quota. It holds a
 #       real SSE stream open through stream.ts, because conn.request() resolves
 #       on the response for its id and a push stream withholds that until the
 #       subscription ends.
 #     webhook.ts (events-webhook), 27 rows — sep-9999-subscribe-*,
 #       sep-9999-ttl-*, sep-9999-unsubscribe-* and sep-9999-error-unsupported.
-#     webhook-delivery.ts (events-webhook-delivery), 28 rows —
-#       sep-9999-delivery-*, sep-9999-verification-*, sep-9999-ssrf-* and
-#       sep-9999-envelope-*, graded from an HTTP receiver the harness runs.
+#     webhook-delivery.ts (events-webhook-delivery), 29 rows —
+#       sep-9999-delivery-*, sep-9999-verification-*, sep-9999-ssrf-*,
+#       sep-9999-envelope-* and sep-9999-error-callback-endpoint-error, graded
+#       from an HTTP receiver the harness runs. The receiver publishes
+#       /.well-known/mcp-webhook-receiver.json over one path prefix and no other,
+#       so a server that takes the document path and one that handshakes are both
+#       exercised in a single run; EVENTS_RECEIVER_WELL_KNOWN=0 withholds it.
 #
 # negative controls: src/scenarios/server/events/negative*.test.ts, one file per
 #   scenario over a shared fixture in negative-fixture.ts. A green run against
@@ -133,17 +160,23 @@
 #   report untestable against both implementations, so the controls are the only
 #   evidence those checks work at all.
 #
-#   The 14 rows nothing emits yet, and what each needs:
+#   The 13 rows nothing emits yet, and what each needs:
 #     sep-9999-schema-evolution-additive, sep-9999-breaking-change-new-name,
 #     sep-9999-list-changed-notification and the four remaining
 #     sep-9999-removal-* rows need a server whose catalog can be made to change
 #     mid-run. Neither fixture can, so these wait on a driver that can tell the
 #     server under test to add, alter or drop an event type.
-#     sep-9999-error-invalid-params, -forbidden, -resource-exhausted and
-#     -callback-endpoint-error are the error-code table rows. Each is currently
-#     graded through the specific rule that provokes it rather than in its own
-#     right; kitchen-sink's -32013 subscription cap and the -32015 verification
-#     failure are both reachable and worth claiming in a follow-up.
+#     sep-9999-error-forbidden is the last error-code table row with no probe:
+#     it needs a principal the harness can be refused as. The other three are
+#     claimed off the rule that provokes each, with details.gradedBy naming it:
+#     -32602 off the poll invalid-arguments probe, -32013 off the concurrent
+#     streams, -32015 off the wrong-challenge callback.
+#     sep-9999-capability-list-changed-gated needs a server that declares
+#     listChanged false and then sends the notification anyway; nothing in the
+#     suite watches for an unsolicited notification yet.
+#     sep-9999-capability-client-declaration is a MAY about what a client
+#     declares, so no server-side scenario can emit it. Declared for now; the
+#     honest place for it is `excluded:` beside the other MAY rows.
 #     sep-9999-authz-subscribe-time and -delivery-time-reverify need two
 #     principals with different permissions.
 #     sep-9999-payload-minimality is a SHOULD about payload content, which
@@ -238,8 +271,8 @@
 #     picking a side. **The document was wrong**: extension negotiation is where
 #     it belongs, and upstream PR 7 moves the sketch there. metronome was right
 #     all along and mcpkit's conformance was an artifact of following a document
-#     that did not yet say what its author meant. The rows above now track PR 7,
-#     which is unmerged; see the tracking note at the head of this file.
+#     that did not yet say what its author meant. The rows above track PR 7; the
+#     banner at the head of this file names them and says what to do on merge.
 #   sep-9999-poll-invalid-arguments — arguments that violate `inputSchema`
 #     answered -32603 Internal error, where the document requires -32602
 #     InvalidParams. Read as a framework default surfacing rather than a
@@ -380,7 +413,9 @@
 #     sep-9999-delivery-signature-formula.
 #
 sep: 9999
-spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md
+# Points at PR 7's head, not `main`: six capability rows quote text that only
+# exists there. See the banner at the head of this file.
+spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/refs/pull/7/head/docs/design-sketch-proposal.md
 requirements:
   # === Capability Declaration ===
   - check: sep-9999-capability-events-object

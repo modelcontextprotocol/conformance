@@ -181,7 +181,7 @@ export async function declaredEventsCapability(
 ): Promise<{ declared: boolean; value: unknown }> {
   const discovered = await conn.discover();
   const caps = (discovered.capabilities as Record<string, unknown>) ?? {};
-  const exts = (caps.extensions as Record<string, unknown>) ?? {};
+  const exts = extensionsOf(caps);
   if (!(EVENTS_EXTENSION_ID in exts))
     return { declared: false, value: undefined };
   return { declared: true, value: exts[EVENTS_EXTENSION_ID] };
