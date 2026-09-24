@@ -189,6 +189,15 @@ export interface SubscribeBehaviour {
 export interface DeliveryBehaviour {
   /** Send the verification envelope before any event. */
   verify?: boolean;
+  /**
+   * Run the handshake inside `events/subscribe`, before answering, and refuse
+   * with -32015 `challenge_failed` when the callback does not echo the nonce
+   * in a 2xx body. The default challenges after the response and ignores the
+   * answer.
+   */
+  synchronousVerification?: boolean;
+  /** With `synchronousVerification`, accept the subscription anyway. */
+  ignoreFailedEcho?: boolean;
   /** Deliver an event at all. */
   sendEvent?: boolean;
   /** Deliver the event before the verification envelope. */
@@ -211,6 +220,8 @@ export interface DeliveryBehaviour {
   followRedirects?: boolean;
   /** Total attempts for a delivery the callback rejects with 5xx. */
   attempts?: number;
+  /** Milliseconds between retry attempts; defaults to just over a second. */
+  retryGapMs?: number;
   /** Reuse the first attempt's timestamp and signature on every retry. */
   staleRetrySignature?: boolean;
   /** Retry after 410 and 413, which the document defines as non-retryable. */
@@ -526,6 +537,16 @@ export async function startEventsFixture(
         refreshBefore = new Date(Date.now() + granted).toISOString();
       }
 
+      if (opts.delivery?.synchronousVerification && typeof url === 'string') {
+        const echoed = await challengeCallback(url, delivery.secret, id);
+        if (!echoed && !opts.delivery.ignoreFailedEcho) {
+          fail(-32015, 'endpoint verification failed', {
+            reason: 'challenge_failed'
+          });
+          return;
+        }
+      }
+
       send({
         ...(behaviour.omitId ? {} : { id }),
         refreshBefore,
@@ -542,7 +563,9 @@ export async function startEventsFixture(
           delivery.secret,
           id,
           String(name),
-          opts.delivery
+          opts.delivery.synchronousVerification
+            ? { ...opts.delivery, verify: false }
+            : opts.delivery
         ).finally(() => inFlight.delete(run));
         inFlight.add(run);
       }
@@ -747,6 +770,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const RETRY_GAP_MS = 1100;
 
 /**
+ * The handshake as a server that verifies inside `events/subscribe` runs it:
+ * one signed `verification` POST, and true only for a 2xx whose body echoes the
+ * nonce. No retries and no redirects, the same as a delivery.
+ */
+async function challengeCallback(
+  url: string,
+  secret: unknown,
+  subscriptionId: string
+): Promise<boolean> {
+  const key =
+    typeof secret === 'string' && secret.startsWith('whsec_')
+      ? Buffer.from(secret.slice('whsec_'.length), 'base64')
+      : Buffer.from(String(secret ?? ''));
+  const challenge = `chal_${Math.random().toString(36).slice(2, 14)}`;
+  const body = JSON.stringify({ type: 'verification', challenge });
+  const webhookId = `msg_verification_${Math.random().toString(36).slice(2, 10)}`;
+  const stamp = String(Math.floor(Date.now() / 1000));
+  const signature = `v1,${createHmac('sha256', key).update(`${webhookId}.${stamp}.${body}`).digest('base64')}`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'webhook-id': webhookId,
+        'webhook-timestamp': stamp,
+        'webhook-signature': signature,
+        'x-mcp-subscription-id': subscriptionId
+      },
+      body,
+      redirect: 'manual'
+    });
+    const text = await res.text();
+    if (res.status < 200 || res.status >= 300) return false;
+    const reply: unknown = JSON.parse(text);
+    return isRecord(reply) && reply.challenge === challenge;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * POST the verification challenge and then the event, the way the document says
  * to, with whatever this behaviour breaks.
  *
@@ -830,7 +894,9 @@ async function deliverToCallback(
       }
       if (opts.retryable === false) return;
       if (attempt === attempts) return;
-      await new Promise((resolve) => setTimeout(resolve, RETRY_GAP_MS));
+      await new Promise((resolve) =>
+        setTimeout(resolve, behaviour.retryGapMs ?? RETRY_GAP_MS)
+      );
     }
   };
 

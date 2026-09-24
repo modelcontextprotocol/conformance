@@ -390,6 +390,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
 
       checks.push(...this.verificationChecks(all, subscriptionId));
+      if (all.some(isVerificationEnvelope)) {
+        checks.push(
+          await this.verificationFailureCheck(receiver, subscribe, release)
+        );
+      }
       checks.push(...this.transportChecks(all, subscriptionId));
       checks.push(...this.signatureChecks(all, secret.bytes));
       checks.push(...this.envelopeChecks(all));
@@ -470,10 +475,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     subscriptionId: unknown
   ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
-    const verification = all.find(
-      (d) =>
-        d.json?.type === 'verification' || typeof d.json?.challenge === 'string'
-    );
+    const verification = all.find(isVerificationEnvelope);
     const events = all.filter((d) => typeof d.json?.eventId === 'string');
 
     if (!verification) {
@@ -533,16 +535,6 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
                 : `The verification envelope carried \`challenge\` ${describeValue(verification.json?.challenge)}, expected a string nonce.`,
             details: { body: verification.json }
           }
-        )
-      );
-      out.push(
-        untestableCheck(
-          'sep-9999-verification-failure-error',
-          'sep-9999-verification-failure-error',
-          'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`.',
-          `Observing it needs the failure surfaced on a later subscribe, since the handshake is asynchronous. The harness echoes correctly here to reach the delivery rows; a dedicated probe against a non-echoing path belongs in a follow-up, and ${EVENTS_CALLBACK_ENDPOINT_ERROR} is the code to expect.`,
-          [EVENTS_SPEC_REF],
-          'WARNING'
         )
       );
     }
@@ -932,6 +924,65 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     return out;
   }
 
+  /**
+   * A callback that answers the challenge with the wrong nonce. The document
+   * has the failure come back from events/subscribe itself as -32015 with
+   * `data.reason: "challenge_failed"`. A server that accepts instead and then
+   * delivers there has sent events to an endpoint that never consented; one
+   * that accepts and withholds delivery verified asynchronously, which keeps
+   * the endpoint safe but reports nothing to the subscriber.
+   */
+  private async verificationFailureCheck(
+    receiver: Receiver,
+    subscribe: (
+      url: string
+    ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
+    release: (url: string) => Promise<void>
+  ): Promise<ConformanceCheck> {
+    const id = 'sep-9999-verification-failure-error';
+    const description =
+      'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`.';
+    const path = `/wrong-challenge-${Date.now()}`;
+    receiver.behave(path, { kind: 'wrong-challenge' });
+    const url = this.callbackFor(receiver, path);
+    const probe = await subscribe(url);
+
+    if ('error' in probe) {
+      const { code, message, data } = probe.error;
+      const reason = isObject(data) ? data.reason : undefined;
+      if (
+        code === EVENTS_CALLBACK_ENDPOINT_ERROR &&
+        reason === 'challenge_failed'
+      ) {
+        return eventsCheck(id, description, 'SUCCESS', {
+          details: { code, reason }
+        });
+      }
+      return eventsCheck(id, description, 'FAILURE', {
+        errorMessage: `Subscribing a callback that echoed the wrong nonce answered ${code} ${message} with data.reason ${describeValue(reason)}, expected ${EVENTS_CALLBACK_ENDPOINT_ERROR} with "challenge_failed".`,
+        details: { code, data }
+      });
+    }
+
+    try {
+      const delivered = await receiver.waitFor(
+        path,
+        (d) => typeof d.json?.eventId === 'string',
+        DELIVERY_WAIT_MS
+      );
+      if (delivered) {
+        return eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce, and an event was then delivered to it. The document has this refused with ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" from events/subscribe, and no delivery to an endpoint that did not consent.`
+        });
+      }
+      return eventsCheck(id, description, 'WARNING', {
+        errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce. Nothing was delivered to it, so the endpoint is safe, but the subscriber was never told: the document returns ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" synchronously from events/subscribe.`
+      });
+    } finally {
+      await release(url);
+    }
+  }
+
   /** A callback that redirects: the server must not follow it. */
   private async redirectChecks(
     receiver: Receiver,
@@ -965,7 +1016,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     try {
       const redirected = await receiver.waitFor(
         from,
-        () => true,
+        (d) => d.respondedStatus === 302,
         DELIVERY_WAIT_MS
       );
       if (!redirected) {
@@ -1029,7 +1080,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
     } else {
       try {
-        await receiver.waitFor(flaky, () => true, DELIVERY_WAIT_MS);
+        await receiver.waitFor(
+          flaky,
+          (d) => !isVerificationEnvelope(d),
+          DELIVERY_WAIT_MS
+        );
         // Let the retries play out.
         await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
         const attempts = receiver.on(flaky);
@@ -1055,31 +1110,64 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           const stamps = retried.map(
             (a) => a.headers['webhook-timestamp'] ?? ''
           );
-          const sigs = retried.map((a) => a.headers['webhook-signature'] ?? '');
           // Freshness only: whether the signature verifies at all belongs to
           // sep-9999-delivery-signature-formula, and folding the two together
           // reports a server with a wrong formula as reusing timestamps it
           // plainly did not reuse.
-          const freshened =
-            new Set(stamps).size === stamps.length &&
-            new Set(sigs).size === sigs.length;
-          out.push(
-            freshened
-              ? eventsCheck(
-                  'sep-9999-delivery-retry-regenerates-signature',
-                  "Each retry attempt MUST regenerate the timestamp and signature so retries are not rejected by the receiver's freshness window.",
-                  'SUCCESS',
-                  { details: { attempts: retried.length, stamps } }
-                )
-              : eventsCheck(
-                  'sep-9999-delivery-retry-regenerates-signature',
-                  "Each retry attempt MUST regenerate the timestamp and signature so retries are not rejected by the receiver's freshness window.",
-                  'FAILURE',
-                  {
-                    errorMessage: `Retries of the same \`webhook-id\` reused a timestamp or signature (timestamps ${stamps.join(', ')}), so a receiver enforcing the 5-minute freshness window would reject them.`
-                  }
-                )
+          //
+          // webhook-timestamp is whole seconds, so two attempts inside one
+          // second share a stamp whether or not it was regenerated. Only a
+          // stamp that stays put across attempts a second or more apart is
+          // provably reused.
+          const pairs = retried
+            .slice(1)
+            .map((a, i) => ({ prev: retried[i], next: a }));
+          const spaced = pairs.filter(
+            ({ prev, next }) => next.atMs - prev.atMs >= 1000
           );
+          const reused = spaced.filter(
+            ({ prev, next }) =>
+              (prev.headers['webhook-timestamp'] ?? '') ===
+              (next.headers['webhook-timestamp'] ?? '')
+          );
+          const description =
+            "Each retry attempt MUST regenerate the timestamp and signature so retries are not rejected by the receiver's freshness window.";
+          if (reused.length > 0) {
+            out.push(
+              eventsCheck(
+                'sep-9999-delivery-retry-regenerates-signature',
+                description,
+                'FAILURE',
+                {
+                  errorMessage: `Retries of the same \`webhook-id\` reused a timestamp or signature (timestamps ${stamps.join(', ')}, the repeat at least a second apart), so a receiver enforcing the 5-minute freshness window would reject them.`
+                }
+              )
+            );
+          } else if (
+            spaced.length > 0 ||
+            new Set(stamps).size === stamps.length
+          ) {
+            out.push(
+              eventsCheck(
+                'sep-9999-delivery-retry-regenerates-signature',
+                description,
+                'SUCCESS',
+                { details: { attempts: retried.length, stamps } }
+              )
+            );
+          } else {
+            out.push(
+              eventsCheck(
+                'sep-9999-delivery-retry-regenerates-signature',
+                description,
+                'WARNING',
+                {
+                  errorMessage: `Every retry arrived within a second of the one before (timestamps ${stamps.join(', ')}), and webhook-timestamp is in whole seconds, so a regenerated stamp and a reused one look the same.`,
+                  details: { attempts: retried.length, stamps }
+                }
+              )
+            );
+          }
           out.push(
             retried.length <= 6
               ? eventsCheck(
@@ -1135,9 +1223,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         continue;
       }
       try {
+        // The challenge on this path is answered 200 and never retried, so
+        // grading it would pass any server; the probe is about the event.
         const first = await receiver.waitFor(
           path,
-          () => true,
+          (d) => !isVerificationEnvelope(d),
           DELIVERY_WAIT_MS
         );
         if (!first) {
@@ -1174,6 +1264,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
     return out;
   }
+}
+
+function isVerificationEnvelope(d: ReceivedDelivery): boolean {
+  return (
+    d.json?.type === 'verification' || typeof d.json?.challenge === 'string'
+  );
 }
 
 /** Keep the first check emitted per id, so a fallback path cannot double-report. */

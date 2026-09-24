@@ -208,6 +208,84 @@ describe.concurrent('the verification handshake', () => {
     TIMEOUT
   );
 
+  // A server that verifies inside events/subscribe, the way the document's
+  // "returned synchronously from events/subscribe" reads, refuses a callback
+  // that echoes the wrong nonce with -32015 challenge_failed.
+  test(
+    'refusing a wrong echo with -32015 challenge_failed passes the failure row',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({ synchronousVerification: true })
+      );
+      const check = checks.get('sep-9999-verification-failure-error');
+      expect(check?.status).toBe('SUCCESS');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'accepting a subscription whose echo was wrong fails the failure row',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({ synchronousVerification: true, ignoreFailedEcho: true })
+      );
+      const check = checks.get('sep-9999-verification-failure-error');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('-32015');
+    },
+    TIMEOUT
+  );
+
+  // The default fixture challenges after subscribe returns and ignores the
+  // answer, so it delivers to an endpoint that never consented.
+  test(
+    'delivering after a wrong echo fails the failure row',
+    async () => {
+      const checks = await deliveryChecks(delivering());
+      const check = checks.get('sep-9999-verification-failure-error');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('delivered');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'with no challenge at all, the failure row stays untestable',
+    async () => {
+      const checks = await deliveryChecks(delivering({ verify: false }));
+      expect(
+        checks.get('sep-9999-verification-failure-error')?.details?.untestable
+      ).toBe(true);
+    },
+    TIMEOUT
+  );
+
+  // The probe callbacks used to answer every POST with their failure status,
+  // the challenge included, so a server that verifies synchronously could not
+  // subscribe them and every probe row went untestable.
+  test(
+    'a synchronous verifier still has its probe rows graded',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({ synchronousVerification: true })
+      );
+      for (const id of [
+        'sep-9999-delivery-410-non-retryable',
+        'sep-9999-delivery-413-non-retryable',
+        'sep-9999-delivery-retries-bounded',
+        'sep-9999-ssrf-no-redirects'
+      ]) {
+        const check = checks.get(id);
+        expect(
+          check?.details?.untestable,
+          `${id}: ${check?.errorMessage}`
+        ).not.toBe(true);
+        expect(check?.status, `${id}: ${check?.errorMessage}`).toBe('SUCCESS');
+      }
+    },
+    TIMEOUT
+  );
+
   test(
     'delivering an event before the challenge fails',
     async () => {
@@ -326,6 +404,19 @@ describe.concurrent('retries and redirects', () => {
       const check = checks.get('sep-9999-delivery-retry-regenerates-signature');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('freshness window');
+    },
+    TIMEOUT
+  );
+
+  // webhook-timestamp is in whole seconds, so two attempts inside one second
+  // carry the same stamp whether or not the server regenerated it. mcpkit's
+  // first retry is 500ms out, which made this row flap on it.
+  test(
+    'sub-second retries sharing a stamp do not fail the freshness row',
+    async () => {
+      const checks = await deliveryChecks(delivering({ retryGapMs: 300 }));
+      const check = checks.get('sep-9999-delivery-retry-regenerates-signature');
+      expect(check?.status, check?.errorMessage).not.toBe('FAILURE');
     },
     TIMEOUT
   );

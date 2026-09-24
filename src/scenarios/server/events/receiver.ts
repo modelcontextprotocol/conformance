@@ -11,6 +11,13 @@
  * Per-path behaviour lets one receiver serve every probe: a path that echoes
  * the challenge and accepts, one that redirects, one that refuses permanently,
  * and one that fails a few times before accepting.
+ *
+ * Every path answers the verification challenge first, whatever its behaviour,
+ * because a probe exists to misbehave on deliveries. A 410 probe that also
+ * refused the challenge would never get subscribed by a server that verifies
+ * inside events/subscribe, and its row would go untestable for a reason that
+ * has nothing to do with 410. `wrong-challenge` is the one path that fails the
+ * handshake, since that is its whole job.
  */
 
 import http from 'node:http';
@@ -97,6 +104,14 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
         res.end(body ?? '{}');
       };
 
+      const challenge = json?.challenge;
+      const isChallenge =
+        json?.type === 'verification' && typeof challenge === 'string';
+      if (isChallenge && behaviour.kind !== 'wrong-challenge') {
+        respond(200, JSON.stringify({ challenge }));
+        return;
+      }
+
       switch (behaviour.kind) {
         case 'redirect':
           res.writeHead(302, { location: behaviour.to });
@@ -133,8 +148,9 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
           break;
       }
 
-      // The verification handshake: prove intent by echoing the nonce.
-      const challenge = json?.challenge;
+      // A challenge without the `type` discriminator: still echo it, so a
+      // server that got the envelope shape slightly wrong is graded on the
+      // row about the shape rather than locked out of every other row.
       if (typeof challenge === 'string') {
         respond(200, JSON.stringify({ challenge }));
         return;
