@@ -44,6 +44,8 @@ import {
   eventsCheck,
   eventsListAll,
   EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN,
+  EVENTS_CONTROL_WEBHOOK_GAP,
+  EVENTS_CONTROL_WEBHOOK_TERMINATE,
   askControl,
   hasControl,
   firstSupporting,
@@ -77,6 +79,9 @@ const SETTLE_MS = Number(process.env.EVENTS_DELIVERY_SETTLE_MS ?? 5000);
  * answers; this covers one that verifies or delivers just after.
  */
 const CANARY_WAIT_MS = Math.min(DELIVERY_WAIT_MS, 3000);
+
+/** How long to wait for a gap or terminated envelope a control asked for. */
+const ENVELOPE_WAIT_MS = Math.min(DELIVERY_WAIT_MS, 5000);
 
 /** A public base URL forwarding to this harness, when one exists. */
 const PUBLIC_BASE = process.env.EVENTS_WEBHOOK_CALLBACK_BASE;
@@ -513,9 +518,19 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       checks.push(this.callbackEndpointErrorCheck(endpointFailure));
       checks.push(...this.transportChecks(all, subscriptionId));
       checks.push(...this.signatureChecks(all, secret.bytes));
-      checks.push(...this.envelopeChecks(all));
       checks.push(...(await this.redirectChecks(receiver, subscribe, release)));
       checks.push(...(await this.retryChecks(receiver, subscribe, release)));
+      // Last, because terminating ends the subscription everything above
+      // delivered to. The envelope rows grade from what arrived after, so the
+      // signalled gap and terminated envelopes count toward the discriminator,
+      // signing and id rows too.
+      const signalled = await this.signalEnvelopes(
+        conn,
+        receiver,
+        path,
+        subscriptionId
+      );
+      checks.push(...this.envelopeChecks(receiver.on(path), signalled));
       return dedupe(checks);
     } finally {
       await release(url);
@@ -1092,7 +1107,44 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   }
 
   /** Control envelopes versus event bodies. */
-  private envelopeChecks(all: ReceivedDelivery[]): ConformanceCheck[] {
+  /**
+   * Ask the server to send this subscription a gap, then to end it, and wait
+   * for each envelope. Absent controls are the normal case; the rows then fall
+   * back to whatever the server sent unasked.
+   */
+  private async signalEnvelopes(
+    conn: Connection,
+    receiver: Receiver,
+    path: string,
+    subscriptionId: unknown
+  ): Promise<SignalledEnvelopes> {
+    const signal = async (
+      tool: string,
+      type: string
+    ): Promise<SignalOutcome> => {
+      if (!(await hasControl(conn, tool))) return 'absent';
+      if (typeof subscriptionId !== 'string') return 'refused';
+      if ((await askControl(conn, tool, { id: subscriptionId })) === undefined)
+        return 'refused';
+      await receiver.waitFor(
+        path,
+        (d) => d.json?.type === type,
+        ENVELOPE_WAIT_MS
+      );
+      return 'sent';
+    };
+    const gap = await signal(EVENTS_CONTROL_WEBHOOK_GAP, 'gap');
+    const terminate = await signal(
+      EVENTS_CONTROL_WEBHOOK_TERMINATE,
+      'terminated'
+    );
+    return { gap, terminate };
+  }
+
+  private envelopeChecks(
+    all: ReceivedDelivery[],
+    signalled: SignalledEnvelopes
+  ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
     const envelopes = all.filter((d) => typeof d.json?.type === 'string');
     const events = all.filter(
@@ -1183,23 +1235,31 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
     }
 
-    // A gap and a termination cannot be provoked from the client side, so these
-    // usually report untestable. They are still graded when a server sends one
-    // unasked, because the envelope is right here in what arrived.
+    // A gap and a termination cannot be provoked from the client side. The
+    // webhook controls provoke one each on this subscription; without them the
+    // rows are still graded when a server sends one unasked.
+    const gapDesc =
+      'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes. The client persists `cursor` and treats it as `truncated: true`.';
     const gap = all.find((d) => d.json?.type === 'gap');
     out.push(
       !gap
-        ? untestableCheck(
-            'sep-9999-envelope-gap',
-            'sep-9999-envelope-gap',
-            'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes.',
-            'No retention gap occurred during the run, and the harness cannot force one from the client side. Needs a fixture that can expire its replay window on demand.',
-            [EVENTS_SPEC_REF],
-            'WARNING'
-          )
+        ? signalled.gap === 'sent'
+          ? eventsCheck('sep-9999-envelope-gap', gapDesc, 'WARNING', {
+              errorMessage: `\`${EVENTS_CONTROL_WEBHOOK_GAP}\` acknowledged, and no \`gap\` envelope arrived within ${ENVELOPE_WAIT_MS}ms.`
+            })
+          : untestableCheck(
+              'sep-9999-envelope-gap',
+              'sep-9999-envelope-gap',
+              gapDesc,
+              signalled.gap === 'refused'
+                ? `No retention gap occurred during the run, and \`${EVENTS_CONTROL_WEBHOOK_GAP}\` declined to signal one.`
+                : `No retention gap occurred during the run, and the harness cannot force one from the client side. Needs a fixture exposing the \`${EVENTS_CONTROL_WEBHOOK_GAP}\` control.`,
+              [EVENTS_SPEC_REF],
+              'WARNING'
+            )
         : eventsCheck(
             'sep-9999-envelope-gap',
-            'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes. The client persists `cursor` and treats it as `truncated: true`.',
+            gapDesc,
             typeof gap.json?.cursor === 'string' ? 'SUCCESS' : 'WARNING',
             {
               errorMessage:
@@ -1211,20 +1271,33 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           )
     );
 
+    const terminatedDesc =
+      'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended (e.g., authorization revoked). The subscription no longer exists server-side.';
     const terminated = all.find((d) => d.json?.type === 'terminated');
     out.push(
       !terminated
-        ? untestableCheck(
-            'sep-9999-envelope-terminated',
-            'sep-9999-envelope-terminated',
-            'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended.',
-            'The subscription was not terminated during the run. Needs a server that can revoke authorization or remove an event type mid-run.',
-            [EVENTS_SPEC_REF],
-            'WARNING'
-          )
+        ? signalled.terminate === 'sent'
+          ? eventsCheck(
+              'sep-9999-envelope-terminated',
+              terminatedDesc,
+              'FAILURE',
+              {
+                errorMessage: `\`${EVENTS_CONTROL_WEBHOOK_TERMINATE}\` acknowledged ending the subscription, and no \`terminated\` envelope arrived within ${ENVELOPE_WAIT_MS}ms, so the receiver was never told.`
+              }
+            )
+          : untestableCheck(
+              'sep-9999-envelope-terminated',
+              'sep-9999-envelope-terminated',
+              terminatedDesc,
+              signalled.terminate === 'refused'
+                ? `The subscription was not terminated during the run, and \`${EVENTS_CONTROL_WEBHOOK_TERMINATE}\` declined to end it.`
+                : `The subscription was not terminated during the run. Needs a server that can revoke authorization or remove an event type mid-run, or a fixture exposing the \`${EVENTS_CONTROL_WEBHOOK_TERMINATE}\` control.`,
+              [EVENTS_SPEC_REF],
+              'WARNING'
+            )
         : eventsCheck(
             'sep-9999-envelope-terminated',
-            'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended (e.g., authorization revoked). The subscription no longer exists server-side.',
+            terminatedDesc,
             isObject(terminated.json?.error) ? 'SUCCESS' : 'WARNING',
             {
               errorMessage: isObject(terminated.json?.error)
@@ -1596,6 +1669,13 @@ function isVerificationEnvelope(d: ReceivedDelivery): boolean {
 }
 
 /** Keep the first check emitted per id, so a fallback path cannot double-report. */
+/**
+ * What became of asking for each control envelope: no control, a control that
+ * declined, or a control that acknowledged (whether or not anything arrived).
+ */
+type SignalOutcome = 'absent' | 'refused' | 'sent';
+type SignalledEnvelopes = { gap: SignalOutcome; terminate: SignalOutcome };
+
 function dedupe(checks: ConformanceCheck[]): ConformanceCheck[] {
   const seen = new Set<string>();
   return checks.filter((c) => {

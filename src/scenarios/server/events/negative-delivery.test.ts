@@ -596,6 +596,89 @@ describe.concurrent('control envelopes', () => {
   );
 });
 
+describe.concurrent(
+  'envelopes a control asks for, on this subscription',
+  () => {
+    const withControls = (
+      controls: EventsFixtureOptions['webhookEnvelopeControls']
+    ): EventsFixtureOptions => ({
+      ...delivering(),
+      webhookEnvelopeControls: controls
+    });
+
+    test(
+      'a gap and a termination on request both grade, and count as signed envelopes',
+      async () => {
+        const checks = await deliveryChecks(
+          withControls({ gap: true, terminate: true })
+        );
+        expect(checks.get('sep-9999-envelope-gap')?.status).toBe('SUCCESS');
+        expect(checks.get('sep-9999-envelope-terminated')?.status).toBe(
+          'SUCCESS'
+        );
+        expect(
+          checks.get('sep-9999-envelope-signed-like-deliveries')?.status
+        ).toBe('SUCCESS');
+      },
+      TIMEOUT
+    );
+
+    test(
+      'envelopes missing their cursor or error warn',
+      async () => {
+        const checks = await deliveryChecks(
+          withControls({ gap: { cursor: null }, terminate: { error: null } })
+        );
+        // Graded from the envelope that arrived, not reported untestable, which
+        // is also a WARNING and would pass the status check on its own.
+        const gap = checks.get('sep-9999-envelope-gap');
+        expect(gap?.status).toBe('WARNING');
+        expect(gap?.details?.body).toMatchObject({ type: 'gap', cursor: null });
+        const terminated = checks.get('sep-9999-envelope-terminated');
+        expect(terminated?.status).toBe('WARNING');
+        expect(terminated?.details?.body).toMatchObject({
+          type: 'terminated',
+          error: null
+        });
+      },
+      TIMEOUT
+    );
+
+    test(
+      'a control that acknowledges and sends nothing is graded, not untestable',
+      async () => {
+        const checks = await deliveryChecks(
+          withControls({ gap: 'silent', terminate: 'silent' })
+        );
+        const gap = checks.get('sep-9999-envelope-gap');
+        expect(gap?.status).toBe('WARNING');
+        expect(gap?.details?.untestable).toBeUndefined();
+        const terminated = checks.get('sep-9999-envelope-terminated');
+        expect(terminated?.status).toBe('FAILURE');
+        expect(terminated?.details?.untestable).toBeUndefined();
+        expect(terminated?.errorMessage).toContain('never told');
+      },
+      TIMEOUT
+    );
+
+    test(
+      'without the controls both rows stay untestable and name them',
+      async () => {
+        const checks = await deliveryChecks(delivering());
+        const gap = checks.get('sep-9999-envelope-gap');
+        expect(gap?.details?.untestable).toBe(true);
+        expect(gap?.errorMessage).toContain('events_conformance_webhook_gap');
+        const terminated = checks.get('sep-9999-envelope-terminated');
+        expect(terminated?.details?.untestable).toBe(true);
+        expect(terminated?.errorMessage).toContain(
+          'events_conformance_webhook_terminate'
+        );
+      },
+      TIMEOUT
+    );
+  }
+);
+
 describe.concurrent('confirming intent without a handshake', () => {
   // The document allows four consent paths and the harness can only see two of
   // them. Before this, a server that read the receiver's well-known document and

@@ -301,9 +301,21 @@ export interface QuotaBehaviour {
   control?: boolean;
 }
 
+/**
+ * `events_conformance_webhook_gap` / `_terminate`, which signal one webhook
+ * subscription by id. `true` sends the conformant envelope, an object
+ * overrides its fields, and `'silent'` acknowledges and sends nothing.
+ */
+export interface WebhookEnvelopeControls {
+  gap?: true | { cursor?: unknown } | 'silent';
+  terminate?: true | { error?: unknown } | 'silent';
+}
+
 export interface EventsFixtureOptions {
   /** Expose the durability controls as tools. */
   durability?: DurabilityBehaviour;
+  /** Expose the per-subscription webhook envelope controls. */
+  webhookEnvelopeControls?: WebhookEnvelopeControls;
   /** A per-type cap on streams, and optionally the control that reports it. */
   quota?: QuotaBehaviour;
   /**
@@ -377,7 +389,14 @@ export async function startEventsFixture(
   /** Live subscriptions, keyed the way the document keys them. */
   const subscriptions = new Map<
     string,
-    { id: string; noExpiry?: boolean; at?: number }
+    {
+      id: string;
+      noExpiry?: boolean;
+      at?: number;
+      url?: string;
+      secret?: unknown;
+      name?: string;
+    }
   >();
   let generation = 1;
   /** Deliveries still in flight, so close() can settle rather than abandon. */
@@ -444,12 +463,66 @@ export async function startEventsFixture(
       if (opts.quota && opts.quota.control !== false) {
         tools.push({ name: 'events_conformance_quota', inputSchema: obj });
       }
+      if (opts.webhookEnvelopeControls?.gap) {
+        tools.push({
+          name: 'events_conformance_webhook_gap',
+          inputSchema: obj
+        });
+      }
+      if (opts.webhookEnvelopeControls?.terminate) {
+        tools.push({
+          name: 'events_conformance_webhook_terminate',
+          inputSchema: obj
+        });
+      }
       if (tools.length > 0 || opts.durability) {
         send({ tools });
         return;
       }
     }
 
+    if (
+      method === 'tools/call' &&
+      opts.webhookEnvelopeControls &&
+      (params.name === 'events_conformance_webhook_gap' ||
+        params.name === 'events_conformance_webhook_terminate')
+    ) {
+      const isGap = params.name === 'events_conformance_webhook_gap';
+      const mode = isGap
+        ? opts.webhookEnvelopeControls.gap
+        : opts.webhookEnvelopeControls.terminate;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      const entry = [...subscriptions.entries()].find(
+        ([, sub]) => sub.id === toolArgs.id
+      );
+      const sub = entry?.[1];
+      if (!mode || !entry || !sub?.url) {
+        send({
+          content: [{ type: 'text', text: 'no such webhook subscription' }],
+          isError: true
+        });
+        return;
+      }
+      if (!isGap) subscriptions.delete(entry[0]);
+      if (mode !== 'silent') {
+        const run = deliverToCallback(
+          sub.url,
+          sub.secret,
+          sub.id,
+          sub.name ?? '',
+          {
+            verify: false,
+            sendEvent: false,
+            ...(isGap ? { gapEnvelope: mode } : { terminatedEnvelope: mode })
+          } as DeliveryBehaviour
+        ).finally(() => inFlight.delete(run));
+        inFlight.add(run);
+      }
+      send({
+        content: [{ type: 'text', text: isGap ? 'cursor_after_gap' : 'ok' }]
+      });
+      return;
+    }
     if (
       method === 'tools/call' &&
       params.name === 'events_conformance_quota' &&
@@ -718,7 +791,12 @@ export async function startEventsFixture(
           : behaviour.nonIdempotentId
             ? `sub_${++mintedIds}_${hashKey(effectiveKey)}`
             : hashKey(effectiveKey);
-      subscriptions.set(effectiveKey, { id });
+      subscriptions.set(effectiveKey, {
+        id,
+        url: typeof url === 'string' ? url : undefined,
+        secret: delivery.secret,
+        name: String(name)
+      });
 
       // Clamp rather than reject, and never hand back no-expiry unasked.
       const cap = 7 * 24 * 3600_000;

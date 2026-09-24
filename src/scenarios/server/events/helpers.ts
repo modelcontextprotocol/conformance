@@ -245,6 +245,22 @@ export const EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN =
  */
 export const EVENTS_CONTROL_QUOTA = 'events_conformance_quota';
 
+/**
+ * Send a `{type:"gap"}` envelope to one webhook subscription, `{ id }`,
+ * answering the cursor it carried. Per subscription rather than per event type
+ * because a source's gap signal reaches push streams, and a webhook subscriber
+ * hears of one only when the server posts to it.
+ */
+export const EVENTS_CONTROL_WEBHOOK_GAP = 'events_conformance_webhook_gap';
+
+/**
+ * End one webhook subscription, `{ id }`, sending it `{type:"terminated"}`.
+ * Per subscription so the scenario ends only its own, where terminating an
+ * event type would end it for every scenario after.
+ */
+export const EVENTS_CONTROL_WEBHOOK_TERMINATE =
+  'events_conformance_webhook_terminate';
+
 /** Reports whether a given principal's subscription is still registered. */
 export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
   'events_conformance_subscription_exists';
