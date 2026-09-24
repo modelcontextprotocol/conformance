@@ -127,9 +127,10 @@ function withErrorCodeRow(ruleCheck: ConformanceCheck): ConformanceCheck[] {
 /**
  * The error-table row this scenario claims. `-32602` has three provoking cases
  * in the document and the suite already fires one of them here, so the row is
- * graded off that probe rather than a fourth request, the way
- * sep-9999-subscribe-url-https-required rides its enforcement probe in
- * events-webhook.
+ * graded off that probe rather than a fourth request, the way the
+ * https-required row rides its enforcement probe in events-webhook. That
+ * precedent is named in prose rather than by its slug, so grepping a check id
+ * still finds only the scenario that emits it.
  */
 const ERROR_IDS = ['sep-9999-error-invalid-params'] as const;
 

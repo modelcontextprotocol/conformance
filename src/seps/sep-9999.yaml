@@ -125,7 +125,7 @@
 #       sep-9999-error-not-found plus sep-9999-error-server-range (both graded
 #       off one unknown-name probe), and sep-9999-fallback-method-not-found,
 #       which only a server that does not offer the extension can answer.
-#     poll.ts (events-poll), 35 rows — the sep-9999-poll-* rows, the
+#     poll.ts (events-poll), 34 rows — the sep-9999-poll-* rows, the
 #       sep-9999-occurrence-* rows, the sep-9999-cursor-* /
 #       sep-9999-max-age-* / sep-9999-truncated-* rows reachable through poll,
 #       sep-9999-removal-poll-not-found (the poll leg of the removal rules), and
