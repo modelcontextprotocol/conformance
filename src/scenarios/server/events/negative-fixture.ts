@@ -109,6 +109,8 @@ export interface StreamBehaviour {
   maxConcurrent?: number;
   /** Open a stream for any name, including one the catalog does not serve. */
   acceptAnyName?: boolean;
+  /** Name the quota in `data.limit` when refusing past `maxConcurrent`. */
+  capLimitName?: string;
 }
 
 const CONFORMANT_STREAM: Required<
@@ -198,6 +200,20 @@ export interface DeliveryBehaviour {
   synchronousVerification?: boolean;
   /** With `synchronousVerification`, accept the subscription anyway. */
   ignoreFailedEcho?: boolean;
+  /**
+   * Confirm intent by fetching the callback origin's
+   * `/.well-known/mcp-webhook-receiver.json` instead of running the handshake,
+   * which is the fourth consent path the document allows. A document covering
+   * the callback path means no challenge POST; a 404 means no consent, and this
+   * fixture then delivers anyway, which is the case the rule exists to catch.
+   */
+  verifyViaWellKnown?: boolean;
+  /** Code to answer when the handshake fails, where the table says -32015. */
+  challengeFailureCode?: number;
+  /** `data.reason` for that failure, where the table wants a category. */
+  challengeFailureReason?: string;
+  /** Echo the endpoint's own response body back in the failure message. */
+  challengeFailureLeaksBody?: boolean;
   /** Deliver an event at all. */
   sendEvent?: boolean;
   /** Deliver the event before the verification envelope. */
@@ -624,12 +640,24 @@ export async function startEventsFixture(
         held.at = held.at ?? Date.now();
       }
 
-      if (opts.delivery?.synchronousVerification && typeof url === 'string') {
+      if (opts.delivery?.verifyViaWellKnown && typeof url === 'string') {
+        await fetchReceiverWellKnown(url);
+      } else if (
+        opts.delivery?.synchronousVerification &&
+        typeof url === 'string'
+      ) {
         const echoed = await challengeCallback(url, delivery.secret, id);
-        if (!echoed && !opts.delivery.ignoreFailedEcho) {
-          fail(-32015, 'endpoint verification failed', {
-            reason: 'challenge_failed'
-          });
+        if (!echoed.ok && !opts.delivery.ignoreFailedEcho) {
+          const leak = opts.delivery.challengeFailureLeaksBody
+            ? `: endpoint answered ${echoed.body}`
+            : '';
+          fail(
+            opts.delivery.challengeFailureCode ?? -32015,
+            `endpoint verification failed${leak}`,
+            {
+              reason: opts.delivery.challengeFailureReason ?? 'challenge_failed'
+            }
+          );
           return;
         }
       }
@@ -676,7 +704,11 @@ export async function startEventsFixture(
         return;
       }
       if (liveStreams >= behaviour.maxConcurrent) {
-        fail(-32013, 'ResourceExhausted: too many subscriptions');
+        fail(
+          -32013,
+          'ResourceExhausted: too many subscriptions',
+          behaviour.capLimitName ? { limit: behaviour.capLimitName } : undefined
+        );
         return;
       }
       if (behaviour.answerJson) {
@@ -861,11 +893,29 @@ const RETRY_GAP_MS = 1100;
  * one signed `verification` POST, and true only for a 2xx whose body echoes the
  * nonce. No retries and no redirects, the same as a delivery.
  */
+async function fetchReceiverWellKnown(callbackUrl: string): Promise<boolean> {
+  try {
+    const origin = new URL(callbackUrl).origin;
+    const res = await fetch(`${origin}/.well-known/mcp-webhook-receiver.json`);
+    if (!res.ok) {
+      await res.text();
+      return false;
+    }
+    const doc: unknown = await res.json();
+    const prefixes =
+      isRecord(doc) && Array.isArray(doc.receivers) ? doc.receivers : [];
+    const path = new URL(callbackUrl).pathname;
+    return prefixes.some((p) => typeof p === 'string' && path.startsWith(p));
+  } catch {
+    return false;
+  }
+}
+
 async function challengeCallback(
   url: string,
   secret: unknown,
   subscriptionId: string
-): Promise<boolean> {
+): Promise<{ ok: boolean; body: string }> {
   const key =
     typeof secret === 'string' && secret.startsWith('whsec_')
       ? Buffer.from(secret.slice('whsec_'.length), 'base64')
@@ -889,11 +939,14 @@ async function challengeCallback(
       redirect: 'manual'
     });
     const text = await res.text();
-    if (res.status < 200 || res.status >= 300) return false;
+    if (res.status < 200 || res.status >= 300) return { ok: false, body: text };
     const reply: unknown = JSON.parse(text);
-    return isRecord(reply) && reply.challenge === challenge;
-  } catch {
-    return false;
+    return {
+      ok: isRecord(reply) && reply.challenge === challenge,
+      body: text
+    };
+  } catch (err) {
+    return { ok: false, body: String(err) };
   }
 }
 

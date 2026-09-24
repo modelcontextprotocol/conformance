@@ -512,3 +512,136 @@ describe.concurrent('control envelopes', () => {
     TIMEOUT
   );
 });
+
+describe.concurrent('confirming intent without a handshake', () => {
+  // The document allows four consent paths and the harness can only see two of
+  // them. Before this, a server that read the receiver's well-known document and
+  // delivered without a challenge failed the rule it had just satisfied.
+  test(
+    'a server that reads the well-known document passes without challenging',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({ verifyViaWellKnown: true, verify: false })
+      );
+      const check = checks.get(
+        'sep-9999-verification-required-before-delivery'
+      );
+      expect(check?.status).toBe('SUCCESS');
+      expect(check?.details?.via).toBe(
+        '/.well-known/mcp-webhook-receiver.json'
+      );
+      // The challenge rows say why they were not exercised, and how to force it.
+      const echo = checks.get('sep-9999-verification-challenge-echo');
+      expect(echo?.details?.untestable).toBe(true);
+      expect(echo?.errorMessage).toContain('EVENTS_RECEIVER_WELL_KNOWN=0');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'delivering with neither a challenge nor a document read still fails',
+    async () => {
+      const checks = await deliveryChecks(delivering({ verify: false }));
+      const check = checks.get(
+        'sep-9999-verification-required-before-delivery'
+      );
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('third party');
+    },
+    TIMEOUT
+  );
+});
+
+describe.concurrent('the -32015 error-table row', () => {
+  test(
+    'a categorised challenge failure passes, and an uncategorised one warns',
+    async () => {
+      const ok = await deliveryChecks(
+        delivering({ synchronousVerification: true })
+      );
+      const good = ok.get('sep-9999-error-callback-endpoint-error');
+      expect(good?.status).toBe('SUCCESS');
+      expect(good?.details?.reason).toBe('challenge_failed');
+
+      const vague = await deliveryChecks(
+        delivering({
+          synchronousVerification: true,
+          challengeFailureReason: 'it did not work'
+        })
+      );
+      const check = vague.get('sep-9999-error-callback-endpoint-error');
+      expect(check?.status).toBe('WARNING');
+      expect(check?.errorMessage).toContain('not one of the documented');
+    },
+    TIMEOUT * 2
+  );
+
+  test(
+    'the wrong code for a failed callback fails the row',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({
+          synchronousVerification: true,
+          challengeFailureCode: -32603
+        })
+      );
+      const check = checks.get('sep-9999-error-callback-endpoint-error');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('-32015 CallbackEndpointError');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'a run where no callback ever fails reports the row untestable',
+    async () => {
+      const checks = await deliveryChecks(delivering());
+      const check = checks.get('sep-9999-error-callback-endpoint-error');
+      expect(check?.details?.untestable).toBe(true);
+      expect(check?.errorMessage).toContain('never provoked');
+    },
+    TIMEOUT
+  );
+});
+
+describe.concurrent('leaking the endpoint response', () => {
+  // Retires an unconditional SUCCESS: the row used to pass on a run where
+  // nothing had failed, so it could never have caught a leak.
+  test(
+    'echoing the endpoint body back in the error fails',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({
+          synchronousVerification: true,
+          challengeFailureLeaksBody: true
+        })
+      );
+      const check = checks.get(
+        'sep-9999-verification-no-raw-endpoint-responses'
+      );
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('reflection');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'reporting only the category passes, and a quiet run is untestable',
+    async () => {
+      const ok = await deliveryChecks(
+        delivering({ synchronousVerification: true })
+      );
+      expect(
+        ok.get('sep-9999-verification-no-raw-endpoint-responses')?.status
+      ).toBe('SUCCESS');
+
+      const quiet = await deliveryChecks(delivering());
+      const check = quiet.get(
+        'sep-9999-verification-no-raw-endpoint-responses'
+      );
+      expect(check?.details?.untestable).toBe(true);
+      expect(check?.status).toBe('WARNING');
+    },
+    TIMEOUT * 2
+  );
+});

@@ -12,6 +12,13 @@
  * the challenge and accepts, one that redirects, one that refuses permanently,
  * and one that fails a few times before accepting.
  *
+ * The receiver can also publish `/.well-known/mcp-webhook-receiver.json`, which
+ * is the fourth way the document lets a server confirm intent: an origin that
+ * serves it has declared consent for the path prefixes it names, and no
+ * challenge POST is needed. `publishWellKnown` turns it on and `wellKnownFetches`
+ * counts the GETs, which is how the scenario tells that path apart from a server
+ * that simply skipped verification.
+ *
  * Every path answers the verification challenge first, whatever its behaviour,
  * because a probe exists to misbehave on deliveries. A 410 probe that also
  * refused the challenge would never get subscribed by a server that verifies
@@ -45,6 +52,19 @@ export type PathBehaviour =
   | { kind: 'fail-then-accept'; failures: number; status: number }
   | { kind: 'wrong-challenge' };
 
+/**
+ * What the `wrong-challenge` path echoes instead of the nonce.
+ *
+ * Distinctive on purpose: the scenario looks for this string in whatever error
+ * the server reports afterwards, because the document says a failed handshake
+ * surfaces as a category and never as the endpoint's own response body.
+ */
+export const WRONG_CHALLENGE_ECHO = 'not-the-nonce';
+
+/** Where a receiver declares which of its paths accept MCP deliveries. */
+export const RECEIVER_WELL_KNOWN_PATH =
+  '/.well-known/mcp-webhook-receiver.json';
+
 export interface Receiver {
   /** Base URL of the receiver, e.g. `http://127.0.0.1:53211`. */
   readonly url: string;
@@ -53,6 +73,14 @@ export interface Receiver {
   on(path: string): ReceivedDelivery[];
   /** Set how a path answers. Unknown paths accept. */
   behave(path: string, behaviour: PathBehaviour): void;
+  /**
+   * Serve the well-known document, declaring `prefixes` as consenting paths.
+   * Until this is called the path answers 404, which is what a receiver that
+   * cannot publish same-origin content looks like.
+   */
+  publishWellKnown(prefixes: string[]): void;
+  /** How many times the well-known document has been fetched. */
+  wellKnownFetches(): number;
   /** Resolve once a delivery on `path` matches, or undefined at the deadline. */
   waitFor(
     path: string,
@@ -67,6 +95,8 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
   const behaviours = new Map<string, PathBehaviour>();
   const failureCounts = new Map<string, number>();
   const startedAt = Date.now();
+  let wellKnown: string[] | undefined;
+  let wellKnownGets = 0;
 
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -82,6 +112,20 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
         }
       } catch {
         // Not JSON, which is itself something the scenario grades.
+      }
+
+      // The well-known document is not a delivery, so it is answered before the
+      // per-path behaviours and recorded only as a fetch count.
+      if (path === RECEIVER_WELL_KNOWN_PATH) {
+        if (!wellKnown) {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end('{}');
+          return;
+        }
+        wellKnownGets += 1;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ receivers: wellKnown }));
+        return;
       }
 
       const behaviour = behaviours.get(path) ?? { kind: 'accept' };
@@ -133,7 +177,7 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
           respond(413);
           return;
         case 'wrong-challenge':
-          respond(200, JSON.stringify({ challenge: 'not-the-nonce' }));
+          respond(200, JSON.stringify({ challenge: WRONG_CHALLENGE_ECHO }));
           return;
         case 'fail-then-accept': {
           const seen = failureCounts.get(path) ?? 0;
@@ -170,6 +214,12 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
     },
     behave(path, behaviour) {
       behaviours.set(path, behaviour);
+    },
+    publishWellKnown(prefixes) {
+      wellKnown = prefixes;
+    },
+    wellKnownFetches() {
+      return wellKnownGets;
     },
     async waitFor(path, predicate, timeoutMs) {
       const deadline = Date.now() + timeoutMs;

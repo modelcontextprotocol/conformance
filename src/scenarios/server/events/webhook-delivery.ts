@@ -49,6 +49,8 @@ import {
   minimalArguments
 } from './helpers';
 import {
+  RECEIVER_WELL_KNOWN_PATH,
+  WRONG_CHALLENGE_ECHO,
   startReceiver,
   type ReceivedDelivery,
   type Receiver
@@ -67,6 +69,39 @@ const SETTLE_MS = Number(process.env.EVENTS_DELIVERY_SETTLE_MS ?? 5000);
 
 /** A public base URL forwarding to this harness, when one exists. */
 const PUBLIC_BASE = process.env.EVENTS_WEBHOOK_CALLBACK_BASE;
+
+/**
+ * Whether the receiver publishes `/.well-known/mcp-webhook-receiver.json`.
+ *
+ * The document is the fourth way the spec lets a server confirm a callback's
+ * intent, and an origin that serves it needs no challenge POST. Publishing it by
+ * default costs nothing against a server that only implements the handshake, and
+ * stops one that implements the document from failing a rule it satisfies. Set
+ * `EVENTS_RECEIVER_WELL_KNOWN=0` to withhold it and force the handshake path.
+ */
+const PUBLISH_WELL_KNOWN = process.env.EVENTS_RECEIVER_WELL_KNOWN !== '0';
+
+/**
+ * The one path prefix the well-known document declares.
+ *
+ * Deliberately not `/`: the probe paths sit outside it so they still take the
+ * handshake. The document is also honoured only on an `https` origin, so against
+ * a loopback receiver this path is never taken and the handshake decides
+ * everything, the same way the SSRF rows only mean something over a tunnel.
+ */
+const WELL_KNOWN_PREFIX = '/wk/';
+
+/**
+ * The `lastError` categories the document names for `-32015`. A server may have
+ * more, so an unlisted one warns rather than fails: the rule is that the reason
+ * is a category, not a raw response.
+ */
+const LAST_ERROR_CATEGORIES = [
+  'challenge_failed',
+  'connection_refused',
+  'timeout',
+  'tls_error'
+];
 
 /** 256 KiB, the body-size ceiling the document asks servers to respect. */
 const BODY_CEILING_BYTES = 256 * 1024;
@@ -111,11 +146,20 @@ const ENVELOPE_IDS = [
   'sep-9999-envelope-terminated'
 ] as const;
 
+/**
+ * The error-table row this scenario claims. `-32015` is webhook-only and the
+ * wrong-challenge probe is the only place the suite provokes it, so the row is
+ * graded there and listed here for the same reason the others are: a path that
+ * bails early must still report it, rather than emit one row fewer.
+ */
+const ERROR_IDS = ['sep-9999-error-callback-endpoint-error'] as const;
+
 const ALL_IDS = [
   ...DELIVERY_IDS,
   ...VERIFICATION_IDS,
   ...SSRF_IDS,
-  ...ENVELOPE_IDS
+  ...ENVELOPE_IDS,
+  ...ERROR_IDS
 ];
 
 function untestableAll(
@@ -225,6 +269,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
 
       receiver = await startReceiver(PUBLIC_BASE ? '0.0.0.0' : '127.0.0.1');
+      // Only the main delivery path is declared, never the probe paths. A
+      // server that reads the document verifies that one without a challenge,
+      // and still has to handshake for everything under a prefix the document
+      // does not name, so one run exercises both consent paths instead of
+      // whichever the server happens to prefer.
+      if (PUBLISH_WELL_KNOWN) receiver.publishWellKnown([WELL_KNOWN_PREFIX]);
       return await this.deliveryChecks(conn, receiver, name, args);
     } finally {
       await receiver?.close();
@@ -245,7 +295,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     args: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
-    const path = `/hook-${Date.now()}`;
+    const path = `${WELL_KNOWN_PREFIX}hook-${Date.now()}`;
     const url = this.callbackFor(receiver, path);
     const secret = freshSecret();
 
@@ -295,7 +345,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         checks.push(
           ...this.ssrfRefusedChecks(refused),
           ...untestableAll(
-            [...DELIVERY_IDS, ...VERIFICATION_IDS, ...ENVELOPE_IDS],
+            [
+              ...DELIVERY_IDS,
+              ...VERIFICATION_IDS,
+              ...ENVELOPE_IDS,
+              ...ERROR_IDS
+            ],
             `The server refused a loopback callback (${refused.code} ${refused.message}), which is what the SSRF rules ask of it. Grading delivery needs a routable callback: set EVENTS_WEBHOOK_CALLBACK_BASE to a public https URL forwarding to this harness.`
           )
         );
@@ -361,7 +416,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       if (!first) {
         checks.push(
           ...untestableAll(
-            [...DELIVERY_IDS, ...VERIFICATION_IDS, ...ENVELOPE_IDS].filter(
+            [
+              ...DELIVERY_IDS,
+              ...VERIFICATION_IDS,
+              ...ENVELOPE_IDS,
+              ...ERROR_IDS
+            ].filter(
               (id) => id !== 'sep-9999-delivery-status-last-error-category'
             ),
             `Nothing arrived at ${url} within ${DELIVERY_WAIT_MS}ms of subscribing, so no delivery could be graded.`
@@ -389,12 +449,29 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         return dedupe(checks);
       }
 
-      checks.push(...this.verificationChecks(all, subscriptionId));
+      checks.push(
+        ...this.verificationChecks(
+          all,
+          subscriptionId,
+          receiver.wellKnownFetches()
+        )
+      );
+      // The residual rows come last because one of them grades what the server
+      // said when the handshake failed, which only the probe below produces.
+      let endpointFailure: JsonRpcError | undefined;
       if (all.some(isVerificationEnvelope)) {
-        checks.push(
-          await this.verificationFailureCheck(receiver, subscribe, release)
+        const failed = await this.verificationFailureCheck(
+          receiver,
+          subscribe,
+          release
         );
+        checks.push(failed.check);
+        endpointFailure = failed.serverError;
       }
+      checks.push(
+        ...this.verificationResidualChecks(subscriptionId, endpointFailure)
+      );
+      checks.push(this.callbackEndpointErrorCheck(endpointFailure));
       checks.push(...this.transportChecks(all, subscriptionId));
       checks.push(...this.signatureChecks(all, secret.bytes));
       checks.push(...this.envelopeChecks(all));
@@ -472,11 +549,46 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   /** The challenge handshake that must precede any event delivery. */
   private verificationChecks(
     all: ReceivedDelivery[],
-    subscriptionId: unknown
+    subscriptionId: unknown,
+    wellKnownFetches: number
   ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
     const verification = all.find(isVerificationEnvelope);
     const events = all.filter((d) => typeof d.json?.eventId === 'string');
+
+    // The document names four ways to confirm intent, and two of them are
+    // invisible from here: a server-configured allowlist and prior out-of-band
+    // verification. Neither can apply to these callbacks, because the path is
+    // minted fresh for the run and no operator has ever seen it, so a server
+    // that delivers to it has either handshaken, read the well-known document,
+    // or skipped consent. That is what keeps the failure below honest.
+    if (!verification && wellKnownFetches > 0) {
+      out.push(
+        eventsCheck(
+          'sep-9999-verification-required-before-delivery',
+          "A server MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed, by one of: a verification handshake, a server-configured allowlist, prior out-of-band verification, or a receiver-published well-known document.",
+          'SUCCESS',
+          {
+            details: {
+              via: RECEIVER_WELL_KNOWN_PATH,
+              fetches: wellKnownFetches,
+              note: 'The origin published its consent, so no challenge POST is required.'
+            }
+          }
+        )
+      );
+      out.push(
+        ...untestableAll(
+          [
+            'sep-9999-verification-challenge-echo',
+            'sep-9999-verification-failure-error'
+          ],
+          `The server confirmed intent by fetching ${RECEIVER_WELL_KNOWN_PATH} and sent no challenge, so the echo path was not exercised. Re-run with EVENTS_RECEIVER_WELL_KNOWN=0 to withhold the document and force the handshake.`,
+          'WARNING'
+        )
+      );
+      return out;
+    }
 
     if (!verification) {
       out.push(
@@ -539,6 +651,20 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
     }
 
+    return out;
+  }
+
+  /**
+   * The verification rows that do not depend on which consent path the server
+   * took, kept in one place so every branch above emits the same row set. A
+   * branch that emitted fewer would read as a shorter suite rather than as a
+   * prerequisite that was missing.
+   */
+  private verificationResidualChecks(
+    subscriptionId: unknown,
+    endpointFailure?: JsonRpcError
+  ): ConformanceCheck[] {
+    const out: ConformanceCheck[] = [];
     out.push(
       untestableCheck(
         'sep-9999-verification-uses-ssrf-hardened-path',
@@ -560,20 +686,91 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         'WARNING'
       )
     );
-    out.push(
-      eventsCheck(
-        'sep-9999-verification-no-raw-endpoint-responses',
-        'Failures surface only via the `lastError` category `challenge_failed`, never raw endpoint responses.',
-        'SUCCESS',
-        {
-          details: {
-            note: 'No endpoint response body was echoed back in any server error observed during this run.',
-            subscriptionId
-          }
-        }
-      )
-    );
+    out.push(this.noRawEndpointResponsesCheck(subscriptionId, endpointFailure));
     return out;
+  }
+
+  /**
+   * The `-32015` row from the error table, graded off the same probe as
+   * sep-9999-verification-failure-error rather than a second failing callback.
+   * That row grades the rule; this one grades the code and the `data.reason`
+   * category the table requires of it.
+   */
+  private callbackEndpointErrorCheck(
+    endpointFailure?: JsonRpcError
+  ): ConformanceCheck {
+    const id = 'sep-9999-error-callback-endpoint-error';
+    const description =
+      '`-32015 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.';
+    if (!endpointFailure) {
+      return untestableCheck(
+        id,
+        id,
+        description,
+        'No callback failed verification or connection during this run, so the code was never provoked. A server that implements the verification handshake answers it for the wrong-challenge probe.',
+        [EVENTS_SPEC_REF]
+      );
+    }
+    const reason = isObject(endpointFailure.data)
+      ? endpointFailure.data.reason
+      : undefined;
+    if (endpointFailure.code !== EVENTS_CALLBACK_ENDPOINT_ERROR) {
+      return eventsCheck(id, description, 'FAILURE', {
+        errorMessage: `A callback that failed verification answered ${endpointFailure.code} ${endpointFailure.message}, where the table names ${EVENTS_CALLBACK_ENDPOINT_ERROR} CallbackEndpointError.`,
+        details: { code: endpointFailure.code, data: endpointFailure.data }
+      });
+    }
+    return LAST_ERROR_CATEGORIES.includes(String(reason))
+      ? eventsCheck(id, description, 'SUCCESS', {
+          details: {
+            code: endpointFailure.code,
+            reason,
+            gradedBy: 'sep-9999-verification-failure-error'
+          }
+        })
+      : eventsCheck(id, description, 'WARNING', {
+          errorMessage: `\`${EVENTS_CALLBACK_ENDPOINT_ERROR}\` carried \`data.reason\` ${describeValue(reason)}, which is not one of the documented \`lastError\` categories (${LAST_ERROR_CATEGORIES.join(', ')}).`,
+          details: { reason }
+        });
+  }
+
+  /**
+   * Whether a failed handshake leaked the endpoint's own response.
+   *
+   * Only gradeable when something actually failed, which is why it waits for the
+   * wrong-challenge probe rather than passing on the strength of a quiet run.
+   * The receiver echoes a distinctive string, so finding it in the server's
+   * error is proof the body was passed through to the subscriber.
+   */
+  private noRawEndpointResponsesCheck(
+    subscriptionId: unknown,
+    endpointFailure?: JsonRpcError
+  ): ConformanceCheck {
+    const id = 'sep-9999-verification-no-raw-endpoint-responses';
+    const description =
+      'Failures surface only via the `lastError` category `challenge_failed`, never raw endpoint responses.';
+    if (!endpointFailure) {
+      return untestableCheck(
+        id,
+        id,
+        description,
+        'No endpoint failed verification during this run, so nothing could have carried its response body back. The wrong-challenge probe supplies one against a server that implements the handshake.',
+        [EVENTS_SPEC_REF],
+        'WARNING'
+      );
+    }
+    const reported = JSON.stringify({
+      message: endpointFailure.message,
+      data: endpointFailure.data
+    });
+    return reported.includes(WRONG_CHALLENGE_ECHO)
+      ? eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `The error for a failed handshake carried the endpoint's own response (${JSON.stringify(WRONG_CHALLENGE_ECHO)}). A subscriber learns what an arbitrary third-party URL answered, which is the reflection the category exists to avoid.`,
+          details: { reported }
+        })
+      : eventsCheck(id, description, 'SUCCESS', {
+          details: { subscriptionId, code: endpointFailure.code }
+        });
   }
 
   /** POST, content type, and the headers every delivery must carry. */
@@ -938,7 +1135,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       url: string
     ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
     release: (url: string) => Promise<void>
-  ): Promise<ConformanceCheck> {
+  ): Promise<{ check: ConformanceCheck; serverError?: JsonRpcError }> {
     const id = 'sep-9999-verification-failure-error';
     const description =
       'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`.';
@@ -954,14 +1151,20 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         code === EVENTS_CALLBACK_ENDPOINT_ERROR &&
         reason === 'challenge_failed'
       ) {
-        return eventsCheck(id, description, 'SUCCESS', {
-          details: { code, reason }
-        });
+        return {
+          check: eventsCheck(id, description, 'SUCCESS', {
+            details: { code, reason }
+          }),
+          serverError: probe.error
+        };
       }
-      return eventsCheck(id, description, 'FAILURE', {
-        errorMessage: `Subscribing a callback that echoed the wrong nonce answered ${code} ${message} with data.reason ${describeValue(reason)}, expected ${EVENTS_CALLBACK_ENDPOINT_ERROR} with "challenge_failed".`,
-        details: { code, data }
-      });
+      return {
+        check: eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `Subscribing a callback that echoed the wrong nonce answered ${code} ${message} with data.reason ${describeValue(reason)}, expected ${EVENTS_CALLBACK_ENDPOINT_ERROR} with "challenge_failed".`,
+          details: { code, data }
+        }),
+        serverError: probe.error
+      };
     }
 
     try {
@@ -971,13 +1174,17 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         DELIVERY_WAIT_MS
       );
       if (delivered) {
-        return eventsCheck(id, description, 'FAILURE', {
-          errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce, and an event was then delivered to it. The document has this refused with ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" from events/subscribe, and no delivery to an endpoint that did not consent.`
-        });
+        return {
+          check: eventsCheck(id, description, 'FAILURE', {
+            errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce, and an event was then delivered to it. The document has this refused with ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" from events/subscribe, and no delivery to an endpoint that did not consent.`
+          })
+        };
       }
-      return eventsCheck(id, description, 'WARNING', {
-        errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce. Nothing was delivered to it, so the endpoint is safe, but the subscriber was never told: the document returns ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" synchronously from events/subscribe.`
-      });
+      return {
+        check: eventsCheck(id, description, 'WARNING', {
+          errorMessage: `The subscribe succeeded although the callback echoed the wrong nonce. Nothing was delivered to it, so the endpoint is safe, but the subscriber was never told: the document returns ${EVENTS_CALLBACK_ENDPOINT_ERROR} "challenge_failed" synchronously from events/subscribe.`
+        })
+      };
     } finally {
       await release(url);
     }
