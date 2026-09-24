@@ -188,6 +188,63 @@ export async function declaredEventsCapability(
 }
 
 /**
+ * Names of the optional diagnostic controls a fixture may expose so the harness
+ * can provoke conditions no protocol request can ask for.
+ *
+ * Several requirements describe what a server does when something goes wrong
+ * upstream, and a healthy server does none of those during a run. Without a way
+ * to trigger them the rows report untestable forever. A fixture that wants
+ * those rows graded registers these as ordinary tools; one that does not is
+ * unaffected and keeps reporting untestable with the prerequisite named.
+ *
+ * Each control takes `{ name: <event type> }`. mcpkit's
+ * examples/events/kitchen-sink registers them under --conformance-events; see
+ * that repo's examples/CONVENTIONS.md for the convention.
+ */
+export const EVENTS_CONTROL_YIELD_ERROR = 'events_conformance_yield_error';
+export const EVENTS_CONTROL_YIELD_GAP = 'events_conformance_yield_gap';
+
+/**
+ * Whether the server exposes a given diagnostic control.
+ *
+ * Absence is the normal case and never an error: the caller falls back to
+ * reporting untestable with the missing prerequisite named, per
+ * src/scenarios/untestable.ts.
+ */
+export async function hasControl(
+  conn: Connection,
+  tool: string
+): Promise<boolean> {
+  try {
+    const res = await conn.request<{ tools?: { name?: string }[] }>(
+      'tools/list'
+    );
+    return (res.tools ?? []).some((t) => t?.name === tool);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fire a diagnostic control, returning whether it ran. A server that lists the
+ * tool but rejects the call is treated as not having it, so a half-implemented
+ * control reports untestable rather than failing the requirement it was meant
+ * to exercise.
+ */
+export async function fireControl(
+  conn: Connection,
+  tool: string,
+  name: string
+): Promise<boolean> {
+  try {
+    await conn.request('tools/call', { name: tool, arguments: { name } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The `extensions` map from a capabilities object, or an empty map.
  *
  * Every scenario that probes the declaration goes through this rather than

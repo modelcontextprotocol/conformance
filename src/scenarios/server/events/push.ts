@@ -15,13 +15,21 @@
  * window would report a compliant slow-heartbeat server as broken, which is
  * worse than taking the time.
  *
- * Several rows need a server doing something the harness cannot ask for: an
- * upstream failure (`stream-error-is-recoverable`), a retention gap
+ * Several rows need a server doing something no protocol request can ask for:
+ * an upstream failure (`stream-error-is-recoverable`), a retention gap
  * (`stream-gap-resends-active`), a termination (`stream-terminated-*`), or a
- * server-initiated close (`stream-final-result-*`). Those report untestable
- * with the missing prerequisite named, per the untestable policy in
- * src/scenarios/untestable.ts, rather than passing vacuously against a server
- * that simply never did it.
+ * server-initiated close (`stream-final-result-*`).
+ *
+ * A fixture MAY expose diagnostic controls as ordinary tools, and this scenario
+ * calls the two that are safe to fire mid-stream: neither ends the
+ * subscription, so the rows below still see the heartbeats and deliveries they
+ * grade. Termination is not fired, because it is terminal for the source and
+ * these scenarios share one fixture process, so terminating here would poison
+ * whatever runs next.
+ *
+ * A server with no controls is unaffected and keeps reporting untestable with
+ * the missing prerequisite named, per src/scenarios/untestable.ts, rather than
+ * passing vacuously against a server that simply never did it.
  */
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
@@ -30,6 +38,10 @@ import { untestableCheck } from '../../untestable';
 import {
   EVENTS_ACTIVE_NOTIFICATION,
   EVENTS_EXTENSION_ID,
+  EVENTS_CONTROL_YIELD_ERROR,
+  EVENTS_CONTROL_YIELD_GAP,
+  hasControl,
+  fireControl,
   extensionsOf,
   EVENTS_ERROR_NOTIFICATION,
   EVENTS_EVENT_NOTIFICATION,
@@ -151,6 +163,16 @@ export class EventsPushScenario implements ClientScenario {
         );
       }
 
+      // Probe for the diagnostic controls here, on the connection that is
+      // already open. A server without them must pay nothing for the question:
+      // doing this later, around the stream, cost two round trips inside the
+      // observation window and was enough to miss a termination arriving at
+      // 250ms.
+      const controls = {
+        error: await hasControl(conn, EVENTS_CONTROL_YIELD_ERROR),
+        gap: await hasControl(conn, EVENTS_CONTROL_YIELD_GAP)
+      };
+
       const args = minimalArguments(target);
       if (args === undefined) {
         return untestableAll(
@@ -159,7 +181,7 @@ export class EventsPushScenario implements ClientScenario {
         );
       }
 
-      return await this.streamChecks(ctx, name, args);
+      return await this.streamChecks(ctx, name, args, controls);
     } finally {
       await conn.close();
     }
@@ -168,7 +190,8 @@ export class EventsPushScenario implements ClientScenario {
   private async streamChecks(
     ctx: RunContext,
     name: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    controls: { error: boolean; gap: boolean }
   ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const session = await openEventStream(
@@ -221,12 +244,43 @@ export class EventsPushScenario implements ClientScenario {
       );
       checks.push(this.activeCheck(active, session));
 
+      // --- Provoke the conditions a healthy server never produces ----------
+      // An upstream failure and a retention gap are both things the protocol
+      // gives a client no way to ask for, so against a server with no
+      // diagnostic controls these rows watch, see nothing, and report
+      // untestable. A fixture that registers the controls gets them graded.
+      // Fired inside the observation window so the frames land in this
+      // session's notification list alongside everything else.
+      //
+      // Neither control ends the subscription, which is what makes them safe
+      // to fire here: the stream stays open and the rows below still see the
+      // heartbeats and deliveries they grade.
+      //
+      // Fired over their own connection rather than the streaming one, which is
+      // also the more faithful simulation: an upstream failure does not arrive
+      // as a request from the subscriber watching for it. The signals fan out
+      // to every live subscriber of the event type, so they reach this session
+      // regardless. A server with no controls opens no connection here.
+      if (controls.error || controls.gap) {
+        const control = await ctx.connect();
+        try {
+          if (controls.error) {
+            await fireControl(control, EVENTS_CONTROL_YIELD_ERROR, name);
+          }
+          if (controls.gap) {
+            await fireControl(control, EVENTS_CONTROL_YIELD_GAP, name);
+          }
+        } finally {
+          await control.close();
+        }
+      }
+
       // --- Watch the stream ------------------------------------------------
       // One window serves every timing row: heartbeats, delivered events, and
       // whatever else the server chooses to put on the stream.
       await session.settle(WATCH_MS);
 
-      checks.push(...this.notificationChecks(session, name));
+      checks.push(...this.notificationChecks(session, name, controls));
       checks.push(...this.heartbeatChecks(session));
 
       // --- Cancellation ------------------------------------------------------
@@ -320,7 +374,8 @@ export class EventsPushScenario implements ClientScenario {
   /** What rode the stream, and whether every frame was routable. */
   private notificationChecks(
     session: StreamSession,
-    name: string
+    name: string,
+    controls: { error: boolean; gap: boolean }
   ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
     const notifications = session.notifications;
@@ -437,7 +492,9 @@ export class EventsPushScenario implements ClientScenario {
             'sep-9999-stream-error-is-recoverable',
             'sep-9999-stream-error-is-recoverable',
             '`notifications/events/error` reports a recoverable failure; the subscription remains active.',
-            'No upstream failure occurred during the run, and the harness cannot provoke one. Needs a fixture whose upstream can be made to fail on demand.',
+            controls.error
+              ? `The \`${EVENTS_CONTROL_YIELD_ERROR}\` control was called for \`${name}\` but no \`${EVENTS_ERROR_NOTIFICATION}\` arrived, so the recovery path could not be observed.`
+              : `No upstream failure occurred during the run, and the harness cannot provoke one over the protocol. Needs a fixture exposing the \`${EVENTS_CONTROL_YIELD_ERROR}\` control.`,
             [EVENTS_SPEC_REF]
           )
         : eventsCheck(
@@ -489,7 +546,9 @@ export class EventsPushScenario implements ClientScenario {
             'sep-9999-stream-gap-resends-active',
             'sep-9999-stream-gap-resends-active',
             'A gap is signalled by a fresh `notifications/events/active` with `truncated: true`, not an error.',
-            'No retention gap occurred during the run, and the harness cannot force one from the client side. Needs a fixture that can expire its replay window on demand.',
+            controls.gap
+              ? `The \`${EVENTS_CONTROL_YIELD_GAP}\` control was called for \`${name}\` but no second \`active\` carrying \`truncated: true\` arrived.`
+              : `No retention gap occurred during the run, and the harness cannot force one from the client side. Needs a fixture exposing the \`${EVENTS_CONTROL_YIELD_GAP}\` control.`,
             [EVENTS_SPEC_REF],
             'WARNING'
           )
