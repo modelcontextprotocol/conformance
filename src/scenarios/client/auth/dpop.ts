@@ -19,6 +19,7 @@ import {
 } from './helpers/dpopResourceAuth';
 import { SpecReferences } from './spec-references';
 import { collapseDuplicateChecks } from '../../../checks/collapse';
+import { notTestable } from '../../untestable';
 
 const PRM_PATH = '/.well-known/oauth-protected-resource/mcp';
 
@@ -268,7 +269,14 @@ export class DPoPClientScenario implements Scenario {
     const matched = this.tokenReqObs.dpopJktMatched;
     let status: CheckStatus;
     let errorMessage: string | undefined;
-    if (sent !== undefined && matched) {
+    let untestable = false;
+    if (!this.tokenReqObs.recorded || !this.tokenReqObs.validProof) {
+      status = 'WARNING';
+      untestable = true;
+      errorMessage = notTestable(
+        'the client did not present a valid token-endpoint DPoP proof, so dpop_jkt key agreement could not be evaluated'
+      );
+    } else if (sent !== undefined && matched) {
       status = 'SUCCESS';
     } else if (sent !== undefined) {
       status = 'FAILURE';
@@ -283,7 +291,8 @@ export class DPoPClientScenario implements Scenario {
       errorMessage,
       details: {
         dpopJktSent: sent,
-        dpopJktMatched: matched
+        dpopJktMatched: matched,
+        ...(untestable ? { untestable: true } : {})
       }
     });
   }
