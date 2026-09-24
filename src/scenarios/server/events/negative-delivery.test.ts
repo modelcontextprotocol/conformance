@@ -159,6 +159,16 @@ describe.concurrent('a server that delivers to loopback', () => {
       const signature = checks.get('sep-9999-delivery-signature-formula');
       expect(signature?.details?.untestable).toBe(true);
       expect(signature?.errorMessage).toContain('EVENTS_WEBHOOK_CALLBACK_BASE');
+      // The refusal answers two SSRF rows and not the other two, which still
+      // have to be reported: a row that appears only on the delivering path
+      // makes the two runs' counts incomparable.
+      for (const id of [
+        'sep-9999-ssrf-no-redirects',
+        'sep-9999-ssrf-validate-at-delivery-time'
+      ]) {
+        expect(checks.get(id), id).toBeDefined();
+        expect(checks.get(id)?.details?.untestable, id).toBe(true);
+      }
     },
     TIMEOUT
   );

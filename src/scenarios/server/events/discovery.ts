@@ -134,6 +134,9 @@ export class EventsDiscoveryScenario implements ClientScenario {
     const capDescription =
       "Events is declared through Extension Negotiation: the identifier appears as a key in the `extensions` field of capabilities, mapped to the extension's settings object.";
     const { declared, value } = await declaredEventsCapability(conn);
+    /** Set only when the server declared nothing, which is the one case the
+     * fallback rule applies to. */
+    let undeclaredProbe: Awaited<ReturnType<typeof eventsListPage>> | undefined;
 
     if (!declared) {
       // An undeclared optional capability is normally a SKIP. It is not one
@@ -159,7 +162,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
           )
         ];
       }
-      checks.push(this.fallbackCheck(probe));
+      undeclaredProbe = probe;
       checks.push(
         eventsCheck(
           'sep-9999-capability-events-object',
@@ -232,6 +235,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     }
 
     checks.push(this.emptySettingsCheck(declared, value));
+    checks.push(this.fallbackCheck(undeclaredProbe));
 
     // --- events/list -----------------------------------------------------
     const firstPage = await eventsListPage(conn);
@@ -313,9 +317,15 @@ export class EventsDiscoveryScenario implements ClientScenario {
    * leaves a client unable to tell "no such extension" from a real failure.
    */
   private fallbackCheck(
-    probe: Awaited<ReturnType<typeof eventsListPage>>
+    probe: Awaited<ReturnType<typeof eventsListPage>> | undefined
   ): ConformanceCheck {
     const id = 'sep-9999-fallback-method-not-found';
+    if (!probe) {
+      return eventsCheck(id, FALLBACK_DESCRIPTION, 'SKIPPED', {
+        errorMessage:
+          'The server declares the extension, so it is not a server that does not offer it and the fallback does not apply. Only a server declaring nothing can answer this rule.'
+      });
+    }
     if (!('error' in probe)) {
       return eventsCheck(id, FALLBACK_DESCRIPTION, 'SKIPPED', {
         errorMessage: `\`${EVENTS_LIST_METHOD}\` returned a catalog, so this server does offer the extension and the fallback does not apply to it.`

@@ -349,7 +349,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               ...DELIVERY_IDS,
               ...VERIFICATION_IDS,
               ...ENVELOPE_IDS,
-              ...ERROR_IDS
+              ...ERROR_IDS,
+              // The two SSRF rows the refusal does not answer by itself: one
+              // needs a delivery to revalidate, the other a redirect to refuse.
+              'sep-9999-ssrf-validate-at-delivery-time',
+              'sep-9999-ssrf-no-redirects'
             ],
             `The server refused a loopback callback (${refused.code} ${refused.message}), which is what the SSRF rules ask of it. Grading delivery needs a routable callback: set EVENTS_WEBHOOK_CALLBACK_BASE to a public https URL forwarding to this harness.`
           )

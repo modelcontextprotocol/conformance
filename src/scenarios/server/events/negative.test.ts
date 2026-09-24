@@ -89,6 +89,16 @@ describe('events capability declaration', () => {
     }
   });
 
+  test('the fallback row is emitted even when it cannot apply', async () => {
+    // A row that vanishes on some servers makes pass counts incomparable
+    // between them, which is why every path emits the whole set.
+    const checks = await checksFor(discovery(), CONFORMANT);
+    const check = checks.get('sep-9999-fallback-method-not-found');
+    expect(check).toBeDefined();
+    expect(check?.status).toBe('SKIPPED');
+    expect(check?.errorMessage).toContain('declares the extension');
+  });
+
   test('answering something other than -32601 fails the fallback row', async () => {
     const checks = await checksFor(discovery(), {
       listError: { code: -32000, message: 'nope' }
