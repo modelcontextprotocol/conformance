@@ -209,6 +209,37 @@ export const EVENTS_CONTROL_YIELD_GAP = 'events_conformance_yield_gap';
  * nothing else in the run depends on.
  */
 export const EVENTS_CONTROL_TERMINATE = 'events_conformance_terminate';
+/**
+ * Registers a subscription on another principal's behalf, returning its derived
+ * id. A run authenticates as one principal for its lifetime, so this is the
+ * only way to construct the two-tenant case the key-composition rule is about.
+ */
+export const EVENTS_CONTROL_SUBSCRIBE_AS = 'events_conformance_subscribe_as';
+/** Reports whether a given principal's subscription is still registered. */
+export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
+  'events_conformance_subscription_exists';
+
+/**
+ * Fire a control that answers with text, returning the text or undefined.
+ * Distinct from fireControl, which only cares that the call succeeded.
+ */
+export async function askControl(
+  conn: Connection,
+  tool: string,
+  args: Record<string, unknown>
+): Promise<string | undefined> {
+  try {
+    const res = await conn.request<{
+      content?: { type?: string; text?: string }[];
+      isError?: boolean;
+    }>('tools/call', { name: tool, arguments: args });
+    if (res.isError) return undefined;
+    const text = (res.content ?? []).find((c) => c?.type === 'text')?.text;
+    return typeof text === 'string' ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Whether the server exposes a given diagnostic control.

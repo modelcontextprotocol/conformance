@@ -33,6 +33,10 @@ import { JsonRpcError } from '../../../connection';
 import { untestableCheck } from '../../untestable';
 import {
   EVENTS_EXTENSION_ID,
+  EVENTS_CONTROL_SUBSCRIBE_AS,
+  EVENTS_CONTROL_SUBSCRIPTION_EXISTS,
+  hasControl,
+  askControl,
   extensionsOf,
   EVENTS_NOT_FOUND,
   EVENTS_SPEC_REF,
@@ -323,6 +327,7 @@ export class EventsWebhookScenario implements ClientScenario {
       );
       checks.push(
         ...(await this.identityChecks(
+          conn,
           subscribe,
           release,
           first.result,
@@ -793,7 +798,110 @@ export class EventsWebhookScenario implements ClientScenario {
   }
 
   /** The compound key, the derived id, and what a refresh does. */
+  /**
+   * Grade sep-9999-subscribe-cross-tenant-isolation, which asserts that two
+   * tenants subscribing to the same `(name, arguments)` with the same callback
+   * get distinct subscriptions, because the principal is part of the key.
+   *
+   * A run authenticates as one principal for its lifetime, so the harness can
+   * only ever supply one side of that comparison. The other side comes from a
+   * fixture control that registers on another principal's behalf, using the
+   * same identity function the subscribe handler uses.
+   *
+   * Two things are checked, and the second is the one that bites. Distinct ids
+   * show the principal reached the key at all. A surviving subscription after
+   * the other tenant unsubscribes shows the two are genuinely independent,
+   * which is what a tenant would actually notice.
+   */
+  private async crossTenantChecks(
+    conn: Connection,
+    name: string,
+    subscribe: (
+      params: Record<string, unknown>
+    ) => Promise<{ result: SubscribeResult } | { error: JsonRpcError }>
+  ): Promise<ConformanceCheck[]> {
+    const id = 'sep-9999-subscribe-cross-tenant-isolation';
+    const description =
+      'Because the key includes `principal` and `delivery.url`, two distinct tenants subscribing to the same `(name, arguments)` get distinct subscriptions.';
+
+    const canAct = await hasControl(conn, EVENTS_CONTROL_SUBSCRIBE_AS);
+    const canAsk = await hasControl(conn, EVENTS_CONTROL_SUBSCRIPTION_EXISTS);
+    if (!canAct || !canAsk) {
+      return [
+        untestableCheck(
+          id,
+          id,
+          description,
+          `A run holds one principal, so the two-tenant case cannot be constructed. Needs a fixture exposing the \`${EVENTS_CONTROL_SUBSCRIBE_AS}\` and \`${EVENTS_CONTROL_SUBSCRIPTION_EXISTS}\` controls. The \`delivery.url\` half of the same rule is graded by sep-9999-subscribe-key-composition.`,
+          [EVENTS_SPEC_REF]
+        )
+      ];
+    }
+
+    // Same event, same callback. The principal is the only thing that differs,
+    // which is what makes a shared id mean what it means.
+    const url = `${CALLBACK_BASE}/cross-tenant`;
+    const other = { principal: 'conformance-tenant-b', name, url };
+
+    const otherId = await askControl(conn, EVENTS_CONTROL_SUBSCRIBE_AS, other);
+    if (!otherId) {
+      return [
+        untestableCheck(
+          id,
+          id,
+          description,
+          `The \`${EVENTS_CONTROL_SUBSCRIBE_AS}\` control did not return a subscription id, so the second tenant could not be established.`,
+          [EVENTS_SPEC_REF]
+        )
+      ];
+    }
+
+    const mine = await subscribe({
+      name,
+      arguments: {},
+      delivery: { mode: 'webhook', url, secret: freshSecret() }
+    });
+    if ('error' in mine) {
+      return [
+        eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `Subscribing as this run's own principal to the same event and callback failed with ${mine.error.code} ${mine.error.message}, so the two subscriptions could not be compared.`
+        })
+      ];
+    }
+
+    const myId = mine.result.id;
+    if (myId === otherId) {
+      return [
+        eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `Two principals subscribing to \`${name}\` with the same callback received the same subscription id (${myId}), so the principal is not part of the key. One tenant can address, refresh or cancel another's subscription.`,
+          details: { id: myId }
+        })
+      ];
+    }
+
+    await conn
+      .request(EVENTS_UNSUBSCRIBE_METHOD, { id: myId })
+      .catch(() => undefined);
+    const survived = await askControl(
+      conn,
+      EVENTS_CONTROL_SUBSCRIPTION_EXISTS,
+      other
+    );
+
+    return [
+      survived === 'true'
+        ? eventsCheck(id, description, 'SUCCESS', {
+            details: { mine: myId, other: otherId }
+          })
+        : eventsCheck(id, description, 'FAILURE', {
+            errorMessage: `The two tenants received distinct ids, but unsubscribing \`${myId}\` also removed the other tenant's subscription, so they are not independent.`,
+            details: { mine: myId, other: otherId }
+          })
+    ];
+  }
+
   private async identityChecks(
+    conn: Connection,
     subscribe: (
       p: Record<string, unknown>
     ) => Promise<{ result: SubscribeResult } | { error: JsonRpcError }>,
@@ -993,15 +1101,7 @@ export class EventsWebhookScenario implements ClientScenario {
             )
     );
 
-    out.push(
-      untestableCheck(
-        'sep-9999-subscribe-cross-tenant-isolation',
-        'sep-9999-subscribe-cross-tenant-isolation',
-        'Because the key includes `principal` and `delivery.url`, two distinct tenants subscribing to the same `(name, arguments)` get distinct subscriptions.',
-        'A run holds one principal, so the two-tenant case cannot be constructed. The `delivery.url` half of the same rule is graded by sep-9999-subscribe-key-composition.',
-        [EVENTS_SPEC_REF]
-      )
-    );
+    out.push(...(await this.crossTenantChecks(conn, name, subscribe)));
 
     out.push(
       untestableCheck(
