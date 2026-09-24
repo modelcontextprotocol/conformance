@@ -29,14 +29,12 @@ import { logger } from './logger';
  *    challenge (RFC 9449 §8); fails sep-1932-client-as-nonce
  *  - `handleRsNonce:false`        → ignores the MCP server's `use_dpop_nonce`
  *    challenge (RFC 9449 §9); fails sep-1932-client-rs-nonce
- *  - `exerciseRefresh:true`       → after the token's expires_in, makes more
- *    MCP requests; refreshes (or re-authorizes) first
+ *  - `exerciseRefresh:true`       → uses the issued refresh token, then makes
+ *    more MCP requests with the replacement access token
  *  - `sendRefreshProof:false`     → refresh omits the DPoP proof; fails
  *    sep-1932-client-refresh-proof
  *  - `refreshWithNewKey:true`     → refresh proof uses a different key; fails
  *    sep-1932-client-refresh-proof
- *  - `onExpiry:'reauthorize'`     → runs a new authorization_code flow instead
- *    of refresh; sep-1932-client-refresh-proof is INFO
  */
 export interface DpopClientOptions {
   scheme: 'DPoP' | 'Bearer';
@@ -46,17 +44,12 @@ export interface DpopClientOptions {
   handleAsNonce: boolean;
   /** Retry an MCP request with the server-supplied nonce on a use_dpop_nonce challenge (RFC 9449 §9). */
   handleRsNonce: boolean;
-  /**
-   * Keep the session past access-token expiry and recover. Default false, so
-   * the nonce-less and nonce postures finish without waiting.
-   */
+  /** Use the issued refresh token and continue with the replacement token. */
   exerciseRefresh?: boolean;
   /** Include a DPoP proof on the refresh request. Default true. */
   sendRefreshProof?: boolean;
   /** Sign the refresh proof with a new key instead of the bound one. */
   refreshWithNewKey?: boolean;
-  /** How to recover once the access token expires. Default `refresh`. */
-  onExpiry?: 'refresh' | 'reauthorize';
 }
 
 const REDIRECT_URI = 'http://127.0.0.1:9876/callback';
@@ -104,7 +97,6 @@ export async function runDpopClient(
 
   let accessToken = '';
   let refreshToken: string | undefined;
-  let expiresAt = 0;
 
   const postToken = async (
     body: string,
@@ -142,7 +134,6 @@ export async function runDpopClient(
   }): void => {
     accessToken = body.access_token;
     refreshToken = body.refresh_token;
-    expiresAt = Date.now() + (body.expires_in ?? 3600) * 1000;
     logger.debug(`Obtained ${body.token_type} access token`);
   };
 
@@ -226,20 +217,11 @@ export async function runDpopClient(
     rememberTokens(await response.json());
   };
 
-  const recoverFromExpiry = async (): Promise<void> => {
-    if (options.onExpiry === 'reauthorize') {
-      await exchangeAuthorizationCode();
-      return;
-    }
-    await refreshAccessToken();
-  };
-
   await exchangeAuthorizationCode();
 
   // MCP session — present the token to the resource with a per-request proof.
   // On a `use_dpop_nonce` challenge (RFC 9449 §9) a conformant client retries
-  // with the server-supplied nonce embedded in the proof. On expiry it
-  // refreshes (or re-authorizes) and retries.
+  // with the server-supplied nonce embedded in the proof.
   const mcpUrl = `${serverUrl}`;
   let reusableProof: string | undefined;
   let rsNonce: string | undefined;
@@ -247,10 +229,6 @@ export async function runDpopClient(
     input: string | URL,
     init?: RequestInit
   ): Promise<Response> => {
-    if (options.exerciseRefresh && expiresAt > 0 && Date.now() >= expiresAt) {
-      await recoverFromExpiry();
-      reusableProof = undefined;
-    }
     const method = (init?.method ?? 'POST').toUpperCase();
     const htu = stripQuery(
       typeof input === 'string' ? input : input.toString()
@@ -286,14 +264,6 @@ export async function runDpopClient(
       rsNonce = nonce;
       reusableProof = undefined; // rebuild the proof carrying the nonce
       res = await attempt();
-    } else if (
-      res.status === 401 &&
-      options.exerciseRefresh &&
-      wwwAuthenticate.includes('invalid_token')
-    ) {
-      await recoverFromExpiry();
-      reusableProof = undefined;
-      res = await attempt();
     }
     return res;
   };
@@ -313,8 +283,8 @@ export async function runDpopClient(
   await client.callTool({ name: 'test-tool', arguments: {} });
   logger.debug('Called tool');
   if (options.exerciseRefresh) {
-    const waitMs = Math.max(0, expiresAt - Date.now()) + 500;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    await refreshAccessToken();
+    reusableProof = undefined;
     await client.callTool({ name: 'test-tool', arguments: {} });
     await client.listTools();
   }

@@ -55,6 +55,7 @@ async function startServer(options: AuthServerOptions = {}): Promise<{
       dpopSigningAlgValuesSupported: ['ES256'],
       dpopTokenRequestObs: tokenObs,
       dpopRefreshObs: refreshObs,
+      issueRefreshTokens: true,
       ...options
     }
   );
@@ -78,11 +79,7 @@ async function postToken(
   });
 }
 
-async function authorizationCode(
-  base: string,
-  keyPair: DpopKeyPair | undefined,
-  nonce?: string
-): Promise<{ refreshToken: string; accessToken: string; tokenType: string }> {
+async function requestAuthorizationCode(base: string): Promise<string> {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: 'test',
@@ -90,7 +87,18 @@ async function authorizationCode(
     code_challenge: 'x',
     code_challenge_method: 'S256'
   });
-  await fetch(`${base}/authorize?${params}`, { redirect: 'manual' });
+  const response = await fetch(`${base}/authorize?${params}`, {
+    redirect: 'manual'
+  });
+  return new URL(response.headers.get('location')!).searchParams.get('code')!;
+}
+
+async function authorizationCode(
+  base: string,
+  keyPair: DpopKeyPair | undefined,
+  nonce?: string
+): Promise<{ refreshToken: string; accessToken: string; tokenType: string }> {
+  const code = await requestAuthorizationCode(base);
   const proof = keyPair
     ? await buildDpopProof({
         keyPair,
@@ -103,7 +111,7 @@ async function authorizationCode(
     base,
     {
       grant_type: 'authorization_code',
-      code: 'test-auth-code',
+      code,
       redirect_uri: REDIRECT,
       code_verifier: 'x',
       client_id: 'test'
@@ -149,6 +157,36 @@ async function refresh(
 }
 
 describe('createAuthServer — refresh tokens (RFC 9449 §5)', () => {
+  it('does not issue refresh tokens unless enabled', async () => {
+    const server = await startServer({ issueRefreshTokens: false });
+    try {
+      const kp = await generateDpopKeyPair();
+      const code = await requestAuthorizationCode(server.base);
+      const proof = await buildDpopProof({
+        keyPair: kp,
+        htm: 'POST',
+        htu: `${server.base}/token`
+      });
+      const res = await postToken(
+        server.base,
+        {
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: REDIRECT,
+          code_verifier: 'x',
+          client_id: 'test'
+        },
+        proof
+      );
+      expect(res.status).toBe(200);
+      expect(
+        (await res.json()) as { refresh_token?: string }
+      ).not.toHaveProperty('refresh_token');
+    } finally {
+      await server.lifecycle.stop();
+    }
+  });
+
   it('rotates a bound refresh token when the same DPoP key is presented', async () => {
     const server = await startServer();
     try {
@@ -216,6 +254,29 @@ describe('createAuthServer — refresh tokens (RFC 9449 §5)', () => {
       expect(server.refreshObs).toMatchObject({
         proofPresent: true,
         proofValid: true,
+        jktMatched: false
+      });
+    } finally {
+      await server.lifecycle.stop();
+    }
+  });
+
+  it('keeps a failed refresh observation after a later valid retry', async () => {
+    const server = await startServer();
+    try {
+      const kp = await generateDpopKeyPair();
+      const issued = await authorizationCode(server.base, kp);
+      expect(await refresh(server.base, issued.refreshToken)).toHaveProperty(
+        'status',
+        400
+      );
+      expect(
+        await refresh(server.base, issued.refreshToken, kp)
+      ).toHaveProperty('status', 200);
+      expect(server.refreshObs).toMatchObject({
+        seen: true,
+        proofPresent: false,
+        proofValid: false,
         jktMatched: false
       });
     } finally {

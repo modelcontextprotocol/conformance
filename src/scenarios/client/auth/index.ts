@@ -69,7 +69,6 @@ export const extensionScenariosList: Scenario[] = [
   new EnterpriseManagedAuthorizationScenario(),
   new DPoPClientScenario('baseline'), // auth/dpop — nonce-less baseline (common case)
   new DPoPClientScenario('nonce'), // auth/dpop-nonce — server-required nonce (§8/§9)
-  new DPoPClientScenario('refresh'), // auth/dpop-refresh — refresh bound to the DPoP key (§5)
   new WifJwtBearerScenario()
 ];
 

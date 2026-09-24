@@ -152,12 +152,6 @@ export interface DpopTokenRequestObservation {
   asNonceChallengeIssued: boolean;
   /** The client retried the token request carrying the correct nonce. */
   asNonceHonored: boolean;
-  /**
-   * A later authorization_code exchange completed after an earlier one had
-   * already issued a token. The client recovered by re-authorizing rather
-   * than presenting the refresh token.
-   */
-  reauthorizedInsteadOfRefreshing?: boolean;
 }
 
 /**
@@ -241,6 +235,8 @@ export interface AuthServerOptions {
   dpopTokenRequestObs?: DpopTokenRequestObservation;
   /** Sink for refresh-grant observations; see DpopRefreshObservation. */
   dpopRefreshObs?: DpopRefreshObservation;
+  /** Issue refresh tokens from successful token responses. Default false. */
+  issueRefreshTokens?: boolean;
   /**
    * `expires_in` (seconds) on token responses, and the DPoP access-token
    * lifetime. Default 3600. The refresh posture sets this to 30 so a client
@@ -305,6 +301,7 @@ export function createAuthServer(
     dpopMisbehavior,
     dpopTokenRequestObs,
     dpopRefreshObs,
+    issueRefreshTokens = false,
     dpopRequireNonce = false,
     accessTokenExpiresIn = 3600,
     tokenVerifier,
@@ -347,20 +344,11 @@ export function createAuthServer(
   };
 
   const refreshTokens = new Map<string, StoredRefreshToken>();
-  let issuedAuthorizationCode = false;
 
   const issueRefreshToken = (entry: StoredRefreshToken): string => {
     const refreshToken = randomBytes(32).toString('base64url');
     refreshTokens.set(refreshToken, entry);
     return refreshToken;
-  };
-
-  const markAuthorizationCodeIssued = (grantType: string): void => {
-    if (grantType !== 'authorization_code') return;
-    if (issuedAuthorizationCode && dpopTokenRequestObs) {
-      dpopTokenRequestObs.reauthorizedInsteadOfRefreshing = true;
-    }
-    issuedAuthorizationCode = true;
   };
 
   const recordRefresh = (fields: {
@@ -370,10 +358,17 @@ export function createAuthServer(
     error?: string;
   }): void => {
     if (!dpopRefreshObs) return;
+    const firstObservation = !dpopRefreshObs.seen;
     dpopRefreshObs.seen = true;
-    dpopRefreshObs.proofPresent = fields.proofPresent;
-    dpopRefreshObs.proofValid = fields.proofValid;
-    dpopRefreshObs.jktMatched = fields.jktMatched;
+    dpopRefreshObs.proofPresent = firstObservation
+      ? fields.proofPresent
+      : dpopRefreshObs.proofPresent && fields.proofPresent;
+    dpopRefreshObs.proofValid = firstObservation
+      ? fields.proofValid
+      : dpopRefreshObs.proofValid && fields.proofValid;
+    dpopRefreshObs.jktMatched = firstObservation
+      ? fields.jktMatched
+      : dpopRefreshObs.jktMatched && fields.jktMatched;
     if (fields.error) dpopRefreshObs.error ??= fields.error;
   };
 
@@ -404,13 +399,15 @@ export function createAuthServer(
       resource?: string;
     }
   ): void => {
-    markAuthorizationCodeIssued(grantType);
-    const refresh_token = issueRefreshToken({
-      ...(body.jkt !== undefined ? { jkt: body.jkt } : {}),
-      scopes: body.scopes,
-      ...(body.resource !== undefined ? { resource: body.resource } : {}),
-      issuedAt: Date.now()
-    });
+    const refreshToken =
+      issueRefreshTokens || grantType === 'refresh_token'
+        ? issueRefreshToken({
+            ...(body.jkt !== undefined ? { jkt: body.jkt } : {}),
+            scopes: body.scopes,
+            ...(body.resource !== undefined ? { resource: body.resource } : {}),
+            issuedAt: Date.now()
+          })
+        : undefined;
     const scope = body.omitScope
       ? undefined
       : body.scope !== undefined
@@ -422,7 +419,7 @@ export function createAuthServer(
       access_token: body.accessToken,
       token_type: body.tokenType,
       expires_in: accessTokenExpiresIn,
-      refresh_token,
+      ...(refreshToken !== undefined ? { refresh_token: refreshToken } : {}),
       ...(scope !== undefined ? { scope } : {})
     });
   };
