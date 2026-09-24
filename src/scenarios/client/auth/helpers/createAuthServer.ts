@@ -184,6 +184,12 @@ export interface DpopRefreshObservation {
   error?: string;
 }
 
+interface StoredAuthorizationCode {
+  codeChallenge?: string;
+  dpopJkt?: string;
+  scopes: string[];
+}
+
 interface StoredRefreshToken {
   jkt?: string;
   scopes: string[];
@@ -324,12 +330,9 @@ export function createAuthServer(
     onRegistrationRequest
   } = options;
 
-  // Track scopes from the most recent authorization request
-  let lastAuthorizationScopes: string[] = [];
-  // Track PKCE code_challenge for verification in token request
-  let storedCodeChallenge: string | undefined;
-  // RFC 9449 §10: dpop_jkt from the authorization request, if the client sent it.
-  let storedDpopJkt: string | undefined;
+  // Authorization-request state is bound to the code it produced. Keeping this
+  // per-code prevents overlapping flows from overwriting PKCE or DPoP binding.
+  const authorizationCodes = new Map<string, StoredAuthorizationCode>();
   // Lazily-created issuer key for minting DPoP-bound JWT access tokens.
   let dpopIssuerKey: TokenIssuerKey | undefined;
   // DPoP behaviour is active only when the caller opts in (any DPoP option).
@@ -739,15 +742,10 @@ export function createAuthServer(
       }
     });
 
-    // PKCE: Store code_challenge for later verification
     const codeChallenge = req.query.code_challenge as string | undefined;
     const codeChallengeMethod = req.query.code_challenge_method as
       | string
       | undefined;
-    storedCodeChallenge = codeChallenge;
-    // RFC 9449 §10: capture dpop_jkt so the token endpoint can bind the
-    // authorization code to the client's DPoP key.
-    storedDpopJkt = req.query.dpop_jkt as string | undefined;
 
     // PKCE: Check code_challenge is present
     checks.push({
@@ -777,9 +775,13 @@ export function createAuthServer(
       }
     });
 
-    // Track scopes from authorization request for token issuance
     const scopeParam = req.query.scope as string | undefined;
-    lastAuthorizationScopes = scopeParam ? scopeParam.split(' ') : [];
+    const authorizationCode = randomBytes(32).toString('base64url');
+    authorizationCodes.set(authorizationCode, {
+      codeChallenge,
+      dpopJkt: req.query.dpop_jkt as string | undefined,
+      scopes: scopeParam ? scopeParam.split(' ') : []
+    });
 
     if (onAuthorizationRequest) {
       onAuthorizationRequest({
@@ -793,7 +795,7 @@ export function createAuthServer(
     const redirectUri = req.query.redirect_uri as string;
     const state = req.query.state as string;
     const redirectUrl = new URL(redirectUri);
-    redirectUrl.searchParams.set('code', 'test-auth-code');
+    redirectUrl.searchParams.set('code', authorizationCode);
     if (state) {
       redirectUrl.searchParams.set('state', state);
     }
@@ -820,6 +822,10 @@ export function createAuthServer(
     const timestamp = new Date().toISOString();
     const requestedScope = req.body.scope;
     const grantType = req.body.grant_type;
+    const authorizationCode = req.body.code as string | undefined;
+    const authorizationCodeState = authorizationCode
+      ? authorizationCodes.get(authorizationCode)
+      : undefined;
 
     checks.push({
       id: 'token-request',
@@ -842,6 +848,9 @@ export function createAuthServer(
     // PKCE: Check code_verifier is present (only for authorization_code grant)
     const codeVerifier = req.body.code_verifier as string | undefined;
     if (grantType === 'authorization_code') {
+      if (dpopTokenRequestObs) {
+        dpopTokenRequestObs.dpopJktSent = authorizationCodeState?.dpopJkt;
+      }
       checks.push({
         id: 'pkce-code-verifier-sent',
         name: 'PKCE Code Verifier',
@@ -855,6 +864,7 @@ export function createAuthServer(
 
       // PKCE: Validate code_verifier matches code_challenge (S256)
       // Fail if either is missing
+      const storedCodeChallenge = authorizationCodeState?.codeChallenge;
       const computedChallenge =
         codeVerifier && storedCodeChallenge
           ? computeS256Challenge(codeVerifier)
@@ -919,7 +929,7 @@ export function createAuthServer(
       const tokenEndpointUrl = `${getAuthBaseUrl()}${authRoutes.token_endpoint}`;
       const grantedScopes = requestedScope
         ? requestedScope.split(' ')
-        : lastAuthorizationScopes;
+        : (authorizationCodeState?.scopes ?? []);
 
       // No proof ⇒ DPoP is not being exercised here; fall through to a Bearer
       // token. (Requiring a proof is a per-client `dpop_bound_access_tokens`
@@ -951,8 +961,8 @@ export function createAuthServer(
         // code, so invalid_grant by analogy with PKCE failure. Only
         // authorization_code grants count, same gating as
         // recordTokenRequestProof.
+        const storedDpopJkt = authorizationCodeState?.dpopJkt;
         if (grantType === 'authorization_code' && dpopTokenRequestObs) {
-          dpopTokenRequestObs.dpopJktSent = storedDpopJkt;
           dpopTokenRequestObs.dpopJktMatched =
             storedDpopJkt !== undefined && storedDpopJkt === result.jkt;
         }
@@ -1042,7 +1052,7 @@ export function createAuthServer(
     }
 
     let token = `test-token-${Date.now()}`;
-    let scopes: string[] = lastAuthorizationScopes;
+    let scopes: string[] = authorizationCodeState?.scopes ?? [];
 
     if (onTokenRequest) {
       const result = await onTokenRequest({

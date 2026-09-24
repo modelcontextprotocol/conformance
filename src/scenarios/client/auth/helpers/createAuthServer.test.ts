@@ -54,7 +54,10 @@ describe('createAuthServer — RFC 9449 §10 dpop_jkt binding', () => {
           dpop_jkt: otherKp.thumbprint
         }
       ).toString()}`;
-      await fetch(authorizeUrl, { redirect: 'manual' });
+      const authorizeRes = await fetch(authorizeUrl, { redirect: 'manual' });
+      const code = new URL(
+        authorizeRes.headers.get('location')!
+      ).searchParams.get('code')!;
 
       const tokenEndpoint = `${lifecycle.getUrl()}/token`;
       const proof = await buildDpopProof({
@@ -70,7 +73,7 @@ describe('createAuthServer — RFC 9449 §10 dpop_jkt binding', () => {
         },
         body: new URLSearchParams({
           grant_type: 'authorization_code',
-          code: 'test-auth-code',
+          code,
           redirect_uri: 'http://127.0.0.1:9876/callback',
           code_verifier: 'x',
           client_id: 'test'
@@ -91,6 +94,44 @@ describe('createAuthServer — RFC 9449 §10 dpop_jkt binding', () => {
       expect(obs.validProof).toBe(true);
     } finally {
       await lifecycle.stop();
+    }
+  });
+
+  it('binds dpop_jkt to each authorization code across overlapping flows', async () => {
+    const server = await startServer();
+    try {
+      const first = await generateDpopKeyPair();
+      const second = await generateDpopKeyPair();
+      const firstCode = await requestAuthorizationCode(server.base, first);
+      const secondCode = await requestAuthorizationCode(server.base, second);
+      const tokenEndpoint = `${server.base}/token`;
+
+      for (const [code, keyPair] of [
+        [firstCode, first],
+        [secondCode, second]
+      ] as const) {
+        const proof = await buildDpopProof({
+          keyPair,
+          htm: 'POST',
+          htu: tokenEndpoint
+        });
+        const response = await postToken(
+          server.base,
+          {
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: REDIRECT,
+            code_verifier: 'x',
+            client_id: 'test'
+          },
+          proof
+        );
+        expect(response.status).toBe(200);
+        expect(server.tokenObs.dpopJktSent).toBe(keyPair.thumbprint);
+        expect(server.tokenObs.dpopJktMatched).toBe(true);
+      }
+    } finally {
+      await server.lifecycle.stop();
     }
   });
 });
@@ -153,16 +194,12 @@ async function authorizationCode(
   base: string,
   keyPair: DpopKeyPair | undefined,
   nonce?: string
-): Promise<{ refreshToken: string; accessToken: string; tokenType: string }> {
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: 'test',
-    redirect_uri: REDIRECT,
-    code_challenge: 'x',
-    code_challenge_method: 'S256'
-  });
-  if (keyPair) params.set('dpop_jkt', keyPair.thumbprint);
-  await fetch(`${base}/authorize?${params}`, { redirect: 'manual' });
+): Promise<{
+  refreshToken: string;
+  accessToken: string;
+  tokenType: string;
+}> {
+  const code = await requestAuthorizationCode(base, keyPair);
   const proof = keyPair
     ? await buildDpopProof({
         keyPair,
@@ -175,7 +212,7 @@ async function authorizationCode(
     base,
     {
       grant_type: 'authorization_code',
-      code: 'test-auth-code',
+      code,
       redirect_uri: REDIRECT,
       code_verifier: 'x',
       client_id: 'test'
@@ -193,6 +230,27 @@ async function authorizationCode(
     accessToken: body.access_token,
     tokenType: body.token_type
   };
+}
+
+async function requestAuthorizationCode(
+  base: string,
+  keyPair: DpopKeyPair | undefined
+): Promise<string> {
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: 'test',
+    redirect_uri: REDIRECT,
+    code_challenge: 'x',
+    code_challenge_method: 'S256'
+  });
+  if (keyPair) params.set('dpop_jkt', keyPair.thumbprint);
+  const authorizeRes = await fetch(`${base}/authorize?${params}`, {
+    redirect: 'manual'
+  });
+  const code = new URL(authorizeRes.headers.get('location')!).searchParams.get(
+    'code'
+  )!;
+  return code;
 }
 
 async function refresh(
