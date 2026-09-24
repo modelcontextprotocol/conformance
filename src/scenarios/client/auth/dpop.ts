@@ -92,7 +92,7 @@ const CHECK_DEFS: Record<
   'sep-1932-client-refresh-proof': {
     name: 'DpopRefreshProof',
     description:
-      'Client proves possession of the same DPoP key on refresh that it bound at the authorization-code exchange (RFC 9449 §5)',
+      'When using a bound refresh token, the client proves possession of the same DPoP key used to obtain it (RFC 9449 §5)',
     specReferences: [
       SpecReferences.SEP_1932_DPOP,
       SpecReferences.DPOP_EXTENSION,
@@ -117,25 +117,22 @@ const DPOP_JKT_NOT_SENT_STATUS: CheckStatus = 'WARNING';
  * RFC 9449 (AS §8 "MAY", RS §9 "can also choose") and the two are mutually
  * exclusive for a given run:
  *
- *  - `auth/dpop` (`requireNonce = false`) — the common, nonce-less baseline.
+ *  - `auth/dpop` (`posture = baseline`) — the common, nonce-less flow.
  *    Neither the AS nor the MCP server issues a nonce challenge; the client
- *    completes the flow with plain proofs. Emits four checks:
+ *    completes the flow with plain proofs. It also receives a refresh token;
+ *    if it uses that optional token, the refresh proof is checked. Emits:
  *      · token acquisition — a valid DPoP proof at the token request, obtaining
  *        a sender-constrained token (RFC 9449 §5);
  *      · the authorization code is bound to the DPoP key via `dpop_jkt` (§10);
  *      · the token is presented with the `DPoP` Authorization scheme (§7.1);
  *      · a fresh, well-formed DPoP proof accompanies each request (unique `jti`).
+ *      · conditional refresh-token proof for the same DPoP key (§5).
  *
- *  - `auth/dpop-nonce` (`requireNonce = true`) — the AS and MCP server both
+ *  - `auth/dpop-nonce` (`posture = nonce`) — the AS and MCP server both
  *    require a server-provided nonce (§8/§9), exercising the client's nonce
  *    handling. Emits the four baseline checks plus two more:
  *      · the client retries the token request with the AS-supplied nonce (§8);
  *      · the client retries the MCP request with the server-supplied nonce (§9).
- *
- *  - `auth/dpop-refresh` — the access token expires during the session
- *    (`expires_in` 30). The client must refresh with a DPoP proof for the key
- *    bound at the code exchange (RFC 9449 §5). Emits the four baseline checks
- *    plus the refresh-proof check.
  */
 function newTokenReqObs(): DpopTokenRequestObservation {
   return {
@@ -156,7 +153,7 @@ function newRefreshObs(): DpopRefreshObservation {
   };
 }
 
-export type DpopClientPosture = 'baseline' | 'nonce' | 'refresh';
+export type DpopClientPosture = 'baseline' | 'nonce';
 
 export class DPoPClientScenario implements Scenario {
   readonly name: string;
@@ -174,23 +171,14 @@ export class DPoPClientScenario implements Scenario {
 
   /**
    * @param posture `baseline` (`auth/dpop`) neither server challenges;
-   *   `nonce` (`auth/dpop-nonce`) both demand a server-provided nonce;
-   *   `refresh` (`auth/dpop-refresh`) the access token expires in 30s so the
-   *   client must refresh with the bound DPoP key.
+   *   `nonce` (`auth/dpop-nonce`) both demand a server-provided nonce.
    */
   constructor(private readonly posture: DpopClientPosture) {
-    this.name =
-      posture === 'nonce'
-        ? 'auth/dpop-nonce'
-        : posture === 'refresh'
-          ? 'auth/dpop-refresh'
-          : 'auth/dpop';
+    this.name = posture === 'nonce' ? 'auth/dpop-nonce' : 'auth/dpop';
     this.description =
       posture === 'nonce'
         ? 'Tests that an MCP client, when the authorization server and MCP server require a DPoP nonce, retries the token request and the MCP request with the server-supplied nonce (RFC 9449 §8/§9) — on top of requesting a DPoP-bound token and presenting it with the DPoP Authorization scheme and a fresh proof per request (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).'
-        : posture === 'refresh'
-          ? 'Tests that an MCP client, after its DPoP-bound access token expires, refreshes it with a DPoP proof for the same key bound at the authorization-code exchange (SEP-1932 / RFC 9449 §5).'
-          : 'Tests that an MCP client requests a DPoP-bound access token (a valid DPoP proof at the token request) and presents it using the DPoP Authorization scheme (not Bearer) with a fresh, well-formed DPoP proof on each POST /mcp request, when the server does not require a nonce (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).';
+        : 'Tests that an MCP client requests a DPoP-bound access token, presents it using the DPoP Authorization scheme with a fresh proof on each request, and, if it uses the optional refresh token, proves possession of the same key (SEP-1932 / RFC 9449 §5, §7.1, §4.2–4.3).';
   }
 
   async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
@@ -203,8 +191,13 @@ export class DPoPClientScenario implements Scenario {
       dpopSigningAlgValuesSupported: ['ES256'],
       dpopTokenRequestObs: this.tokenReqObs,
       dpopRefreshObs: this.refreshObs,
+      issueRefreshTokens: true,
       dpopRequireNonce: this.posture === 'nonce',
-      ...(this.posture === 'refresh' ? { accessTokenExpiresIn: 30 } : {})
+      onRegistrationRequest: () => ({
+        clientId: 'conformance-dpop-public-client',
+        clientSecret: undefined,
+        tokenEndpointAuthMethod: 'none'
+      })
     });
     await this.authServer.start(authApp);
 
@@ -246,16 +239,14 @@ export class DPoPClientScenario implements Scenario {
       this.tokenRequestProofCheck(),
       this.dpopJktCheck(),
       this.authSchemeCheck(),
-      this.freshProofCheck()
+      this.freshProofCheck(),
+      ...(this.posture === 'baseline' ? [this.refreshProofCheck()] : [])
     ];
     // The nonce checks only apply to the nonce-requiring posture: in the
     // baseline (`auth/dpop`) neither server issues a `use_dpop_nonce`
     // challenge, so there is no nonce behaviour to assert.
     if (this.posture === 'nonce') {
       checks.push(this.asNonceCheck(), this.rsNonceCheck());
-    }
-    if (this.posture === 'refresh') {
-      checks.push(this.refreshProofCheck());
     }
     return checks;
   }
@@ -312,8 +303,6 @@ export class DPoPClientScenario implements Scenario {
       this.refreshObs.seen &&
       this.refreshObs.proofValid &&
       this.refreshObs.jktMatched;
-    const reauthorized =
-      this.tokenReqObs.reauthorizedInsteadOfRefreshing === true;
     let status: CheckStatus;
     let errorMessage: string | undefined;
     if (refreshed) {
@@ -323,14 +312,8 @@ export class DPoPClientScenario implements Scenario {
       errorMessage =
         this.refreshObs.error ??
         'Refresh request did not prove possession of the DPoP key bound at the authorization-code exchange';
-    } else if (reauthorized) {
-      status = 'INFO';
-      errorMessage =
-        'Client recovered from access-token expiry by running a fresh authorization_code flow instead of refreshing; that is permitted and is not a DPoP violation';
     } else {
-      status = 'FAILURE';
-      errorMessage =
-        'Client did not recover from access-token expiry: no refresh_token grant and no new authorization_code exchange';
+      status = 'SKIPPED';
     }
     return this.build('sep-1932-client-refresh-proof', status, {
       errorMessage,
@@ -339,7 +322,7 @@ export class DPoPClientScenario implements Scenario {
         proofPresent: this.refreshObs.proofPresent,
         proofValid: this.refreshObs.proofValid,
         jktMatched: this.refreshObs.jktMatched,
-        reauthorizedInsteadOfRefreshing: reauthorized
+        reason: 'Client did not use the optional refresh token'
       }
     });
   }

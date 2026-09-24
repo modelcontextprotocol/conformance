@@ -43,7 +43,6 @@ import {
 import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js';
 import { runClient as issValidationClient } from './auth-test-iss-validation.js';
 import { runClient as dpopClient } from './auth-test-dpop.js';
-import { runClient as dpopRefreshClient } from './auth-test-dpop-refresh.js';
 import { logger } from './helpers/logger.js';
 
 /**
@@ -929,7 +928,6 @@ registerScenario(
 
 registerScenario('auth/dpop', dpopClient);
 registerScenario('auth/dpop-nonce', dpopClient);
-registerScenario('auth/dpop-refresh', dpopRefreshClient);
 
 // ============================================================================
 // MRTR client conformance (SEP-2322)

@@ -56,12 +56,7 @@ export class ConformanceOAuthProvider implements OAuthClientProvider {
   }
 
   saveTokens(tokens: OAuthTokens): void {
-    // Drop refresh_token. The SDK's auth() treats a stored refresh token as a
-    // reason to skip the authorization endpoint, which hides scope step-up and
-    // retry-limit. DPoP refresh is exercised by dpopClientFlow.
-    const stored = { ...tokens };
-    delete stored.refresh_token;
-    this._tokens = stored;
+    this._tokens = tokens;
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
