@@ -40,6 +40,9 @@ import {
   EVENTS_EXTENSION_ID,
   EVENTS_CONTROL_YIELD_ERROR,
   EVENTS_CONTROL_YIELD_GAP,
+  EVENTS_CONTROL_TERMINATE,
+  deliveryModes,
+  type EventDescriptor,
   hasControl,
   fireControl,
   extensionsOf,
@@ -69,6 +72,10 @@ const WATCH_MS = Number(process.env.EVENTS_PUSH_WATCH_MS ?? 35000);
 
 /** How long to wait for the subscription confirmation before grading it. */
 const ACTIVE_MS = 3000;
+// How long to wait for the terminated frame after firing the control. Generous
+// against ACTIVE_MS because the control travels on its own connection and the
+// fanout is asynchronous.
+const TERMINATE_MS = 5000;
 
 /** Slack on the 30s heartbeat SHOULD, for scheduling and network jitter. */
 const HEARTBEAT_TOLERANCE_MS = 2000;
@@ -170,7 +177,8 @@ export class EventsPushScenario implements ClientScenario {
       // 250ms.
       const controls = {
         error: await hasControl(conn, EVENTS_CONTROL_YIELD_ERROR),
-        gap: await hasControl(conn, EVENTS_CONTROL_YIELD_GAP)
+        gap: await hasControl(conn, EVENTS_CONTROL_YIELD_GAP),
+        terminate: await hasControl(conn, EVENTS_CONTROL_TERMINATE)
       };
 
       const args = minimalArguments(target);
@@ -181,7 +189,13 @@ export class EventsPushScenario implements ClientScenario {
         );
       }
 
-      return await this.streamChecks(ctx, name, args, controls);
+      return await this.streamChecks(
+        ctx,
+        name,
+        args,
+        controls,
+        listed.descriptors
+      );
     } finally {
       await conn.close();
     }
@@ -191,7 +205,8 @@ export class EventsPushScenario implements ClientScenario {
     ctx: RunContext,
     name: string,
     args: Record<string, unknown>,
-    controls: { error: boolean; gap: boolean }
+    controls: { error: boolean; gap: boolean; terminate: boolean },
+    descriptors: EventDescriptor[]
   ): Promise<ConformanceCheck[]> {
     const checks: ConformanceCheck[] = [];
     const session = await openEventStream(
@@ -310,7 +325,19 @@ export class EventsPushScenario implements ClientScenario {
             )
       );
 
-      checks.push(...this.finalResultChecks(session));
+      // Opportunistic, and pushed first so dedupe keeps it: a server that
+      // closed this stream itself has already answered the final-result rows,
+      // and does not need the control path to provoke a second close.
+      checks.push(...this.finalResultChecks(session, false));
+
+      checks.push(
+        ...(await this.terminateChecks(
+          ctx,
+          descriptors,
+          name,
+          controls.terminate
+        ))
+      );
       checks.push(...(await this.concurrencyChecks(ctx, name, args)));
       checks.push(...(await this.errorBeforeOpenChecks(ctx, args)));
       return dedupe(checks);
@@ -375,7 +402,7 @@ export class EventsPushScenario implements ClientScenario {
   private notificationChecks(
     session: StreamSession,
     name: string,
-    controls: { error: boolean; gap: boolean }
+    controls: { error: boolean; gap: boolean; terminate: boolean }
   ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
     const notifications = session.notifications;
@@ -510,25 +537,24 @@ export class EventsPushScenario implements ClientScenario {
           )
     );
 
+    // A server that terminates on its own during the main window is graded
+    // here and the control path below never runs for these ids, since dedupe
+    // is first-wins. Nothing is emitted when it does not: terminateChecks owns
+    // the untestable branch, because it is the one that knows whether a
+    // control existed and whether a spare event type was available.
     const terminated = notifications.filter(
       (n) => n.method === EVENTS_TERMINATED_NOTIFICATION
     );
-    out.push(
-      terminated.length === 0
-        ? untestableCheck(
-            'sep-9999-stream-terminated-ends-subscription',
-            'sep-9999-stream-terminated-ends-subscription',
-            'Only `notifications/events/terminated` ends the subscription.',
-            'The subscription was not terminated during the run. Needs a server that can revoke authorization or remove an event type mid-stream.',
-            [EVENTS_SPEC_REF]
-          )
-        : eventsCheck(
-            'sep-9999-stream-terminated-ends-subscription',
-            'Only `notifications/events/terminated` ends the subscription.',
-            'SUCCESS',
-            { details: { terminated: terminated.length } }
-          )
-    );
+    if (terminated.length > 0) {
+      out.push(
+        eventsCheck(
+          'sep-9999-stream-terminated-ends-subscription',
+          'Only `notifications/events/terminated` ends the subscription.',
+          'SUCCESS',
+          { details: { terminated: terminated.length } }
+        )
+      );
+    }
 
     const actives = notifications.filter(
       (n) => n.method === EVENTS_ACTIVE_NOTIFICATION
@@ -679,21 +705,155 @@ export class EventsPushScenario implements ClientScenario {
   }
 
   /** The `StreamEventsResult`, which only a server-initiated close produces. */
-  private finalResultChecks(session: StreamSession): ConformanceCheck[] {
+  /**
+   * Grade the three rows that need the *server* to end the stream:
+   * `stream-terminated-ends-subscription` and both `stream-final-result-*`.
+   *
+   * These cannot be graded on the main session. The harness cancels that one
+   * to test `stream-cancel-stops-delivery`, and on Streamable HTTP a
+   * client-side abort is terminal, so no final frame is ever sent. A
+   * server-ended stream is a different stream.
+   *
+   * Termination is one-shot for the event type and the events scenarios share
+   * a fixture process, so this deliberately refuses to terminate the type the
+   * rest of the run depends on. A fixture with only one push-capable type gets
+   * untestable rather than a poisoned suite.
+   */
+  private async terminateChecks(
+    ctx: RunContext,
+    descriptors: EventDescriptor[],
+    usedName: string,
+    hasTerminate: boolean
+  ): Promise<ConformanceCheck[]> {
+    // Severity follows each row's own keyword, not the reason they share.
+    // Terminating is a MUST; the final-result shape and timing are SHOULDs, and
+    // flattening all three to FAILURE overstates two of them.
+    const untestableHere = (reason: string): ConformanceCheck[] => [
+      ...untestableAll(
+        ['sep-9999-stream-terminated-ends-subscription'],
+        reason
+      ),
+      ...untestableAll(
+        [
+          'sep-9999-stream-final-result-shape',
+          'sep-9999-stream-final-result-timing'
+        ],
+        reason,
+        'WARNING'
+      )
+    ];
+
+    if (!hasTerminate) {
+      return untestableHere(
+        `The subscription was not terminated during the run, and the harness cannot revoke one over the protocol. Needs a fixture exposing the \`${EVENTS_CONTROL_TERMINATE}\` control.`
+      );
+    }
+
+    const spare = descriptors
+      .filter((d) => deliveryModes(d).includes('push'))
+      .map((d) => descriptorName(d))
+      .find((n): n is string => !!n && n !== usedName);
+    if (!spare) {
+      return untestableHere(
+        `Terminating an event type is one-shot for the life of the fixture, and \`${usedName}\` is the only push-capable type on offer, so terminating it would break every scenario after this one. Needs a second push-capable type the run does not otherwise depend on.`
+      );
+    }
+
+    const args = minimalArguments(
+      descriptors.find((d) => descriptorName(d) === spare)!
+    );
+    if (args === undefined) {
+      return untestableHere(
+        `Event type \`${spare}\` declares required \`inputSchema\` properties the harness cannot satisfy, so no stream could be opened to terminate.`
+      );
+    }
+
+    const session = await openEventStream(
+      ctx.serverUrl,
+      ctx.specVersion,
+      { name: spare, arguments: args, cursor: null },
+      { openTimeoutMs: ACTIVE_MS }
+    );
+    try {
+      if (!session.contentType?.includes('text/event-stream')) {
+        return untestableHere(
+          `\`${EVENTS_STREAM_METHOD}\` did not open a stream for \`${spare}\`, so there was nothing to terminate.`
+        );
+      }
+      await session.waitFor(
+        (n) => n.method === EVENTS_ACTIVE_NOTIFICATION,
+        ACTIVE_MS
+      );
+
+      const control = await ctx.connect();
+      try {
+        await fireControl(control, EVENTS_CONTROL_TERMINATE, spare);
+      } finally {
+        await control.close();
+      }
+
+      const terminated = await session.waitFor(
+        (n) => n.method === EVENTS_TERMINATED_NOTIFICATION,
+        TERMINATE_MS
+      );
+      await session.settle(500);
+
+      const out: ConformanceCheck[] = [];
+      out.push(
+        terminated
+          ? eventsCheck(
+              'sep-9999-stream-terminated-ends-subscription',
+              'Only `notifications/events/terminated` ends the subscription.',
+              session.open ? 'FAILURE' : 'SUCCESS',
+              {
+                errorMessage: session.open
+                  ? `\`${EVENTS_TERMINATED_NOTIFICATION}\` arrived for \`${spare}\` but the stream stayed open.`
+                  : undefined,
+                details: { name: spare }
+              }
+            )
+          : eventsCheck(
+              'sep-9999-stream-terminated-ends-subscription',
+              'Only `notifications/events/terminated` ends the subscription.',
+              'FAILURE',
+              {
+                errorMessage: `The \`${EVENTS_CONTROL_TERMINATE}\` control was called for \`${spare}\` but no \`${EVENTS_TERMINATED_NOTIFICATION}\` arrived within ${TERMINATE_MS}ms.`
+              }
+            )
+      );
+      out.push(...this.finalResultChecks(session));
+      return out;
+    } finally {
+      await session.cancel();
+    }
+  }
+
+  private finalResultChecks(
+    session: StreamSession,
+    emitUntestable = true
+  ): ConformanceCheck[] {
     const result = session.finalResult?.result;
     if (result === undefined) {
+      // The main session calls this opportunistically: a server that closed
+      // the stream itself has answered these rows, and one that did not leaves
+      // them to terminateChecks, which knows why they could not be exercised.
+      if (!emitUntestable) return [];
       return untestableAll(
         [
           'sep-9999-stream-final-result-shape',
           'sep-9999-stream-final-result-timing'
         ],
-        'The harness cancelled the stream, and on Streamable HTTP a client-side abort is terminal, so no final frame is sent. Grading this needs a server that closes the stream itself.',
+        'The server did not close the stream itself, so no final frame was sent.',
         'WARNING'
       );
     }
     const out: ConformanceCheck[] = [];
+    // `_meta` and `resultType` are base-protocol fields on the common `Result`
+    // interface, not information this extension's final frame carries. Servers
+    // MUST include `resultType`, so counting it as a payload field fails every
+    // conformant server; mcpkit is how that surfaced.
     const keys = isObject(result)
-      ? Object.keys(result).filter((k) => k !== '_meta')
+      ? Object.keys(result).filter((k) => k !== '_meta' && k !== 'resultType')
       : ['<not an object>'];
     out.push(
       keys.length === 0

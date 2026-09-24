@@ -203,6 +203,12 @@ export async function declaredEventsCapability(
  */
 export const EVENTS_CONTROL_YIELD_ERROR = 'events_conformance_yield_error';
 export const EVENTS_CONTROL_YIELD_GAP = 'events_conformance_yield_gap';
+/**
+ * Ends every live subscription to an event type. Terminal for that type for
+ * the life of the fixture process, so a scenario firing it must pick a type
+ * nothing else in the run depends on.
+ */
+export const EVENTS_CONTROL_TERMINATE = 'events_conformance_terminate';
 
 /**
  * Whether the server exposes a given diagnostic control.
