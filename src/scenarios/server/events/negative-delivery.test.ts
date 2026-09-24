@@ -148,7 +148,10 @@ describe.concurrent('a server that delivers to loopback', () => {
     async () => {
       const checks = await deliveryChecks({
         capability: { listChanged: true },
-        descriptors: [descriptor({ name: 'hook.event', delivery: ['webhook'] })]
+        descriptors: [
+          descriptor({ name: 'hook.event', delivery: ['webhook'] })
+        ],
+        subscribe: { rejectNonRoutableUrl: true }
       });
       expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
         'SUCCESS'
@@ -194,6 +197,76 @@ describe.concurrent('a server that delivers to loopback', () => {
       expect(
         checks.get('sep-9999-delivery-post-json')?.details?.untestable
       ).toBe(true);
+    },
+    TIMEOUT
+  );
+});
+
+describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
+  const hook = [descriptor({ name: 'hook.event', delivery: ['webhook'] })];
+
+  // The scheme rule refuses the http loopback receiver on its own, so that
+  // refusal used to pass this row for a server that never checks routability.
+  test(
+    'a server enforcing https alone fails when it dials the https loopback probe',
+    async () => {
+      const checks = await deliveryChecks({
+        capability: { listChanged: true },
+        descriptors: hook,
+        delivery: {}
+      });
+      expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+        'SUCCESS'
+      );
+      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('connected to it');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'an error returned after dialling the probe is not a refusal',
+    async () => {
+      const checks = await deliveryChecks({
+        capability: { listChanged: true },
+        descriptors: hook,
+        delivery: { synchronousVerification: true }
+      });
+      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('only after connecting');
+      expect(check?.details?.code).toBe(-32015);
+    },
+    TIMEOUT
+  );
+
+  test(
+    'accepting the probe without ever dialling it warns',
+    async () => {
+      const checks = await deliveryChecks({
+        capability: { listChanged: true },
+        descriptors: hook
+      });
+      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      expect(check?.status).toBe('WARNING');
+      expect(check?.errorMessage).toContain('delivery-time validation');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'refusing the probe without dialling it passes',
+    async () => {
+      const checks = await deliveryChecks({
+        capability: { listChanged: true },
+        descriptors: hook,
+        subscribe: { rejectNonRoutableUrl: true },
+        delivery: {}
+      });
+      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      expect(check?.status).toBe('SUCCESS');
+      expect(check?.details?.connections).toBe(0);
     },
     TIMEOUT
   );
@@ -671,7 +744,10 @@ describe.concurrent(
           descriptors: [
             descriptor({ name: 'hook.event', delivery: ['webhook'] })
           ],
-          subscribe: { allowCallbackOriginControl: true },
+          subscribe: {
+            allowCallbackOriginControl: true,
+            rejectNonRoutableUrl: true
+          },
           delivery: {}
         });
 

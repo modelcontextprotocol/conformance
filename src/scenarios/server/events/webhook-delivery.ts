@@ -54,6 +54,7 @@ import {
 import {
   RECEIVER_WELL_KNOWN_PATH,
   WRONG_CHALLENGE_ECHO,
+  startCanary,
   startReceiver,
   type ReceivedDelivery,
   type Receiver
@@ -69,6 +70,13 @@ const DELIVERY_WAIT_MS = Number(process.env.EVENTS_DELIVERY_WAIT_MS ?? 20000);
  * it is most of the scenario's wall time, which is why it is a knob.
  */
 const SETTLE_MS = Number(process.env.EVENTS_DELIVERY_SETTLE_MS ?? 5000);
+
+/**
+ * How long an accepted routability probe is watched for a connection. A server
+ * that verifies inside events/subscribe has already dialled by the time it
+ * answers; this covers one that verifies or delivers just after.
+ */
+const CANARY_WAIT_MS = Math.min(DELIVERY_WAIT_MS, 3000);
 
 /** A public base URL forwarding to this harness, when one exists. */
 const PUBLIC_BASE = process.env.EVENTS_WEBHOOK_CALLBACK_BASE;
@@ -230,7 +238,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
 **Needs a reachable callback**: set \`EVENTS_WEBHOOK_CALLBACK_BASE\` to a public https base URL that forwards to this harness.
 
-**Without one, the loopback receiver is the SSRF probe.** A server that refuses \`http://127.0.0.1\` passes the SSRF rows and reports the delivery rows untestable; a server that delivers there fails the SSRF rows and supplies real deliveries for everything else. Neither outcome is a false green.`;
+**Without one, the loopback receiver is the SSRF probe.** A server that refuses \`http://127.0.0.1\` passes \`validate-callback-url\` and reports the delivery rows untestable; a server that delivers there fails it and supplies real deliveries for everything else. \`reject-non-routable\` is graded separately in either mode, from an \`https://127.0.0.1\` callback aimed at a listener that records whether the server connected, since the scheme rule alone refuses the http probe.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
@@ -338,6 +346,10 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
     };
 
+    // Routability first, on its own probe, before anything below can lift a
+    // guard. dedupe keeps the first row per id, so this one is authoritative.
+    checks.push(await this.nonRoutableCheck(subscribe, release));
+
     let subscribed = await subscribe(url);
 
     // --- The SSRF rows, which a loopback callback answers directly ---------
@@ -424,10 +436,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       } else {
         checks.push(
           ...untestableAll(
-            [
-              'sep-9999-ssrf-validate-callback-url',
-              'sep-9999-ssrf-reject-non-routable'
-            ],
+            ['sep-9999-ssrf-validate-callback-url'],
             'The configured callback is routable, so the refusal path was not exercised. Run without EVENTS_WEBHOOK_CALLBACK_BASE to probe it with a loopback URL.',
             'WARNING'
           )
@@ -538,7 +547,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     return answer !== undefined;
   }
 
-  /** The server refused a non-routable callback, which is the rule. */
+  /**
+   * The server refused the loopback http callback. Either the scheme rule or
+   * routability can do that, so it answers "validates callback URLs" and
+   * nothing narrower; nonRoutableCheck grades routability on a URL the scheme
+   * rule cannot refuse.
+   */
   private ssrfRefusedChecks(error: JsonRpcError): ConformanceCheck[] {
     return [
       eventsCheck(
@@ -546,17 +560,80 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         'The server MUST validate callback URLs.',
         'SUCCESS',
         { details: { code: error.code, message: error.message } }
-      ),
-      eventsCheck(
-        'sep-9999-ssrf-reject-non-routable',
-        'Servers SHOULD reject URLs whose resolved IP is not globally routable per the IANA Special-Purpose Address Registries.',
-        'SUCCESS',
-        { details: { code: error.code, message: error.message } }
       )
     ];
   }
 
-  /** The server accepted a loopback callback. Did it also deliver there? */
+  /**
+   * `reject-non-routable`, graded from an `https://127.0.0.1` callback aimed at
+   * a canary listener. The https scheme takes the scheme rule out of the
+   * question, and the canary says whether the server dialled, which is what
+   * separates "refused because the address is not routable" from "tried it and
+   * the handshake failed".
+   */
+  private async nonRoutableCheck(
+    subscribe: (
+      callbackUrl: string
+    ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
+    release: (callbackUrl: string) => Promise<void>
+  ): Promise<ConformanceCheck> {
+    const id = 'sep-9999-ssrf-reject-non-routable';
+    const description =
+      'Servers SHOULD reject URLs whose resolved IP is not globally routable per the IANA Special-Purpose Address Registries.';
+    const canary = await startCanary();
+    const probe = `https://127.0.0.1:${canary.port}/ssrf-probe-${Date.now()}`;
+    try {
+      const answered = await subscribe(probe);
+      const refused = 'error' in answered ? answered.error : undefined;
+      if (!refused) {
+        const deadline = Date.now() + CANARY_WAIT_MS;
+        while (canary.connections() === 0 && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        await release(probe);
+      }
+      const dialled = canary.connections();
+
+      if (dialled > 0) {
+        return eventsCheck(id, description, 'FAILURE', {
+          errorMessage: refused
+            ? `The server answered ${refused.code} ${refused.message} for ${probe}, but only after connecting to it (${dialled} connection(s)). A callback on 127.0.0.0/8 was dialled rather than refused, so the error came from the connection failing, not from the address check.`
+            : `The server accepted ${probe} and connected to it (${dialled} connection(s)). 127.0.0.0/8 is not globally routable, so a caller can aim requests at services the server can reach and the caller cannot.`,
+          details: { url: probe, connections: dialled, code: refused?.code }
+        });
+      }
+      if (!refused) {
+        return eventsCheck(id, description, 'WARNING', {
+          errorMessage: `${probe} was accepted at subscribe time and nothing connected to it within ${CANARY_WAIT_MS}ms. That may be delivery-time validation rather than a missing check, and an idle event type looks the same.`,
+          details: { url: probe }
+        });
+      }
+      // Over a tunnel the server may not share this host, so its dial to
+      // 127.0.0.1 would never reach the canary. Only a parameter error is
+      // unambiguous then.
+      if (PUBLIC_BASE && refused.code !== -32602) {
+        return eventsCheck(id, description, 'WARNING', {
+          errorMessage: `${probe} was refused with ${refused.code} ${refused.message}. With EVENTS_WEBHOOK_CALLBACK_BASE set the server may be on another host, where a failed connection and an address refusal look the same from here; only -32602 settles it.`,
+          details: { url: probe, code: refused.code, message: refused.message }
+        });
+      }
+      return eventsCheck(id, description, 'SUCCESS', {
+        details: {
+          url: probe,
+          code: refused.code,
+          message: refused.message,
+          connections: 0
+        }
+      });
+    } finally {
+      await canary.close();
+    }
+  }
+
+  /**
+   * The server accepted a loopback callback. Did it also deliver there? Only
+   * `validate-callback-url` is graded here; routability has its own probe.
+   */
   private ssrfDeliveredChecks(
     delivered: boolean,
     url: string
@@ -570,14 +647,6 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           {
             errorMessage: `The subscribe for ${url} was accepted, but nothing was delivered, so the harness cannot tell delivery-time hardening from an idle event type.`
           }
-        ),
-        eventsCheck(
-          'sep-9999-ssrf-reject-non-routable',
-          'Servers SHOULD reject URLs whose resolved IP is not globally routable.',
-          'WARNING',
-          {
-            errorMessage: `A loopback \`delivery.url\` was accepted at subscribe time. Nothing was delivered to it, so this may be delivery-time validation rather than a missing check.`
-          }
         )
       ];
     }
@@ -588,14 +657,6 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         'FAILURE',
         {
           errorMessage: `The server POSTed to ${url}, a loopback address. A callback URL pointing inside the server's own network was neither refused at subscribe time nor at delivery time.`
-        }
-      ),
-      eventsCheck(
-        'sep-9999-ssrf-reject-non-routable',
-        'Servers SHOULD reject URLs whose resolved IP is not globally routable per the IANA Special-Purpose Address Registries.',
-        'FAILURE',
-        {
-          errorMessage: `Delivered to ${url}. 127.0.0.0/8 is not globally routable, so this is the SSRF case the rule exists to stop: a caller can aim deliveries at services the server can reach and the caller cannot.`
         }
       )
     ];

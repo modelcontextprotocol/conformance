@@ -142,6 +142,13 @@ export interface SubscribeBehaviour {
   acceptShortSecret?: boolean;
   /** Accept an `http://` callback URL. */
   acceptHttpUrl?: boolean;
+  /**
+   * Refuse a callback whose host is a loopback, private, link-local or
+   * unspecified literal, with the rejection code. Off by default so the
+   * default fixture enforces the scheme rule alone, which is the state that
+   * used to pass `reject-non-routable` on the scheme refusal.
+   */
+  rejectNonRoutableUrl?: boolean;
   /** Code for a rejected secret or URL, where the document says -32602. */
   rejectionCode?: number;
   /** Subscribe to a type whose `delivery` does not list `webhook`. */
@@ -609,6 +616,18 @@ export async function startEventsFixture(
         (typeof url !== 'string' || !url.startsWith('https://'))
       ) {
         fail(rejectionCode, 'InvalidParams: `delivery.url` must be https');
+        return;
+      }
+      if (
+        !permittedCallback &&
+        behaviour.rejectNonRoutableUrl &&
+        typeof url === 'string' &&
+        nonRoutableHost(url)
+      ) {
+        fail(
+          rejectionCode,
+          'InvalidParams: `delivery.url` is not globally routable'
+        );
         return;
       }
 
@@ -1186,4 +1205,26 @@ export async function readJsonBody(
     string,
     unknown
   >;
+}
+
+/** Literal hosts a hardened server refuses without resolving anything. */
+function nonRoutableHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || host === '::1' || host === '::') return true;
+  const v4 = host.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+  if (!v4) return /^f[cd]|^fe80:/.test(host);
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  return (
+    a === 127 ||
+    a === 10 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
 }

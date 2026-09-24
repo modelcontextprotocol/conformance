@@ -28,6 +28,7 @@
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 
 export interface ReceivedDelivery {
@@ -230,6 +231,40 @@ export async function startReceiver(host = '127.0.0.1'): Promise<Receiver> {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     },
+    async close() {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+}
+
+/**
+ * A bare TCP listener that records whether anything connected to it, and
+ * nothing else.
+ *
+ * The SSRF probe points an `https://127.0.0.1` callback here. The scheme is
+ * valid, so the only rule that can refuse it is routability, and a refusal is
+ * only evidence of that rule if the server never dialled: a server that skips
+ * the check and then fails its own verification POST answers with an error too,
+ * which reads as a refusal from the subscribe alone. The listener speaks no
+ * TLS and answers nothing, so every connection is dropped as soon as it lands.
+ */
+export interface Canary {
+  readonly port: number;
+  connections(): number;
+  close(): Promise<void>;
+}
+
+export async function startCanary(): Promise<Canary> {
+  let count = 0;
+  const server = net.createServer((socket) => {
+    count++;
+    socket.destroy();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    port,
+    connections: () => count,
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
