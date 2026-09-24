@@ -4,9 +4,8 @@ import { runDpopClient } from './helpers/dpopClientFlow';
 import { runAsCli } from './helpers/cliRunner';
 
 /**
- * Well-behaved DPoP client (SEP-1932 / RFC 9449): presents the DPoP-bound token
- * with the `DPoP` Authorization scheme and a fresh proof on every MCP request.
- * It also uses the optional refresh token with a proof for the same key (§5).
+ * Broken DPoP client: refreshes without a DPoP proof. Isolates a FAILURE of
+ * sep-1932-client-refresh-proof (RFC 9449 §5).
  */
 export async function runClient(serverUrl: string): Promise<void> {
   await runDpopClient(serverUrl, {
@@ -15,8 +14,13 @@ export async function runClient(serverUrl: string): Promise<void> {
     sendTokenRequestProof: true,
     handleAsNonce: true,
     handleRsNonce: true,
-    exerciseRefresh: true
+    exerciseRefresh: true,
+    sendRefreshProof: false
   });
 }
 
-runAsCli(runClient, import.meta.url, 'auth-test-dpop <server-url>');
+runAsCli(
+  runClient,
+  import.meta.url,
+  'auth-test-dpop-refresh-no-proof <server-url>'
+);
