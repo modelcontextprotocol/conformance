@@ -43,6 +43,9 @@ import {
   descriptorName,
   eventsCheck,
   eventsListAll,
+  EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN,
+  askControl,
+  hasControl,
   firstSupporting,
   isIso8601,
   isObject,
@@ -335,15 +338,22 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
     };
 
-    const subscribed = await subscribe(url);
+    let subscribed = await subscribe(url);
 
     // --- The SSRF rows, which a loopback callback answers directly ---------
     const loopback = !PUBLIC_BASE;
+    let guardLifted = false;
+    if ('error' in subscribed && loopback) {
+      // Graded here, before anything is lifted, so the verdict is about the
+      // server as configured rather than as persuaded.
+      checks.push(...this.ssrfRefusedChecks(subscribed.error));
+      guardLifted = await this.liftCallbackGuard(conn, receiver);
+      if (guardLifted) subscribed = await subscribe(url);
+    }
     if ('error' in subscribed) {
       const refused = subscribed.error;
       if (loopback) {
         checks.push(
-          ...this.ssrfRefusedChecks(refused),
           ...untestableAll(
             [
               ...DELIVERY_IDS,
@@ -355,7 +365,9 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               'sep-9999-ssrf-validate-at-delivery-time',
               'sep-9999-ssrf-no-redirects'
             ],
-            `The server refused a loopback callback (${refused.code} ${refused.message}), which is what the SSRF rules ask of it. Grading delivery needs a routable callback: set EVENTS_WEBHOOK_CALLBACK_BASE to a public https URL forwarding to this harness.`
+            guardLifted
+              ? `The server still refused ${url} after \`${EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN}\` was called for its origin (${refused.code} ${refused.message}), so nothing could be delivered.`
+              : `The server refused a loopback callback (${refused.code} ${refused.message}), which is what the SSRF rules ask of it. Grading delivery needs a callback it will accept: set EVENTS_WEBHOOK_CALLBACK_BASE to a public https URL forwarding to this harness, or expose the \`${EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN}\` control so this one origin is permitted after the SSRF rows are graded.`
           )
         );
         return dedupe(checks);
@@ -393,8 +405,22 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         );
       const all = receiver.on(path);
 
-      if (loopback) {
+      if (loopback && !guardLifted) {
         checks.push(...this.ssrfDeliveredChecks(all.length > 0, url));
+      } else if (loopback) {
+        // Already graded above, against the default configuration. Deliveries
+        // here happened because this origin was permitted on purpose, so they
+        // say nothing about the rule.
+        checks.push(
+          eventsCheck(
+            'sep-9999-ssrf-validate-at-delivery-time',
+            'To prevent DNS rebinding, validation MUST be performed at delivery time, not only at subscribe time.',
+            'SKIPPED',
+            {
+              errorMessage: `This origin was permitted through \`${EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN}\`, so a delivery to it is not evidence either way. Proving revalidation needs a hostname whose DNS answer changes between subscribe and delivery.`
+            }
+          )
+        );
       } else {
         checks.push(
           ...untestableAll(
@@ -485,6 +511,31 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     } finally {
       await release(url);
     }
+  }
+
+  /**
+   * Ask the server to permit this receiver's origin, after the SSRF rows have
+   * been graded against its default configuration.
+   *
+   * Absent control means no override, which is the normal case and never an
+   * error: the delivery rows then report untestable and name both ways out.
+   * Returns whether the server acknowledged, not whether the next subscribe will
+   * succeed, because a server may decline for its own reasons.
+   */
+  private async liftCallbackGuard(
+    conn: Connection,
+    receiver: Receiver
+  ): Promise<boolean> {
+    if (!(await hasControl(conn, EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN))) {
+      return false;
+    }
+    const origin = new URL(receiver.url).origin;
+    const answer = await askControl(
+      conn,
+      EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN,
+      { origin }
+    );
+    return answer !== undefined;
   }
 
   /** The server refused a non-routable callback, which is the rule. */

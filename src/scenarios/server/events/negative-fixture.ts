@@ -174,6 +174,15 @@ export interface SubscribeBehaviour {
   unsubscribeHeldCode?: number;
   /** Answer -32013 once this many subscriptions are live. */
   maxSubscriptions?: number;
+  /**
+   * Expose `events_conformance_allow_callback_origin` as a tool, which permits
+   * one origin past the callback guards for the rest of the process.
+   *
+   * There is no separate "harden" switch: leaving `acceptHttpUrl` unset already
+   * refuses the harness's loopback http callback, which is what a server with
+   * its SSRF guards on does.
+   */
+  allowCallbackOriginControl?: boolean;
 }
 
 /**
@@ -347,6 +356,8 @@ export async function startEventsFixture(
   let generation = 1;
   /** Deliveries still in flight, so close() can settle rather than abandon. */
   const inFlight = new Set<Promise<void>>();
+  /** Origins the callback guard has been asked to permit. */
+  const permittedOrigins = new Set<string>();
   let mintedIds = 0;
   const queue = [...(opts.pollResponses ?? [pollResult()])];
   const descriptors = opts.descriptors ?? [descriptor()];
@@ -387,15 +398,42 @@ export async function startEventsFixture(
       );
     };
 
-    if (opts.durability && method === 'tools/list') {
+    if (method === 'tools/list') {
       const obj = { type: 'object', properties: {} };
-      send({
-        tools: [
+      const tools = [];
+      if (opts.durability) {
+        tools.push(
           { name: 'events_conformance_restart', inputSchema: obj },
           { name: 'events_conformance_generation', inputSchema: obj },
           { name: 'events_conformance_subscription_state', inputSchema: obj }
-        ]
-      });
+        );
+      }
+      if (opts.subscribe?.allowCallbackOriginControl) {
+        tools.push({
+          name: 'events_conformance_allow_callback_origin',
+          inputSchema: obj
+        });
+      }
+      if (tools.length > 0 || opts.durability) {
+        send({ tools });
+        return;
+      }
+    }
+
+    if (
+      method === 'tools/call' &&
+      params.name === 'events_conformance_allow_callback_origin'
+    ) {
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      if (typeof toolArgs.origin !== 'string') {
+        send({
+          content: [{ type: 'text', text: 'origin required' }],
+          isError: true
+        });
+        return;
+      }
+      permittedOrigins.add(toolArgs.origin);
+      send({ content: [{ type: 'text', text: toolArgs.origin }] });
       return;
     }
     if (opts.durability && method === 'tools/call') {
@@ -554,7 +592,19 @@ export async function startEventsFixture(
         fail(rejectionCode, `InvalidParams: \`delivery.secret\` (${problem})`);
         return;
       }
+      // A permitted origin bypasses the callback guards, which is what the real
+      // control does: one origin, both guards, for the rest of the process.
+      let callbackOrigin = '';
+      try {
+        callbackOrigin = new URL(String(url)).origin;
+      } catch {
+        callbackOrigin = '';
+      }
+      const permittedCallback =
+        callbackOrigin !== '' && permittedOrigins.has(callbackOrigin);
+
       if (
+        !permittedCallback &&
         !behaviour.acceptHttpUrl &&
         (typeof url !== 'string' || !url.startsWith('https://'))
       ) {

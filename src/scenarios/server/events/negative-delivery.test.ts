@@ -655,3 +655,76 @@ describe.concurrent('leaking the endpoint response', () => {
     TIMEOUT * 2
   );
 });
+
+describe.concurrent(
+  'a hardened server the harness can still be delivered to',
+  () => {
+    // The harness listens on loopback and a hardened server refuses a loopback
+    // callback, correctly. Both facts cannot hold in one subscription, so without
+    // an override the delivery rows are unreachable on any server that enforces
+    // the rule the SSRF rows grade.
+    test(
+      'the SSRF rows are graded first, then the guard is lifted for one origin',
+      async () => {
+        const checks = await deliveryChecks({
+          capability: { listChanged: true },
+          descriptors: [
+            descriptor({ name: 'hook.event', delivery: ['webhook'] })
+          ],
+          subscribe: { allowCallbackOriginControl: true },
+          delivery: {}
+        });
+
+        // Graded against the default configuration, before anything was lifted.
+        expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+          'SUCCESS'
+        );
+        expect(checks.get('sep-9999-ssrf-reject-non-routable')?.status).toBe(
+          'SUCCESS'
+        );
+
+        // And the behavioural rows now grade, which is the whole point.
+        for (const id of [
+          'sep-9999-delivery-post-json',
+          'sep-9999-delivery-standard-webhooks-headers',
+          'sep-9999-delivery-signature-formula',
+          'sep-9999-verification-required-before-delivery',
+          'sep-9999-envelope-type-discriminator'
+        ]) {
+          expect(checks.get(id)?.status, id).toBe('SUCCESS');
+        }
+
+        // A delivery to a deliberately-permitted origin proves nothing about
+        // delivery-time revalidation, so that row says so rather than passing.
+        const rebind = checks.get('sep-9999-ssrf-validate-at-delivery-time');
+        expect(rebind?.status).toBe('SKIPPED');
+        expect(rebind?.errorMessage).toContain('permitted through');
+      },
+      TIMEOUT * 2
+    );
+
+    test(
+      'without the control the rows stay untestable and name both ways out',
+      async () => {
+        const checks = await deliveryChecks({
+          capability: { listChanged: true },
+          descriptors: [
+            descriptor({ name: 'hook.event', delivery: ['webhook'] })
+          ],
+          subscribe: {},
+          delivery: {}
+        });
+        expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+          'SUCCESS'
+        );
+        const check = checks.get('sep-9999-delivery-signature-formula');
+        expect(check?.details?.untestable).toBe(true);
+        expect(check?.errorMessage).toContain('EVENTS_WEBHOOK_CALLBACK_BASE');
+        expect(check?.errorMessage).toContain(
+          'events_conformance_allow_callback_origin'
+        );
+      },
+      TIMEOUT
+    );
+  }
+);

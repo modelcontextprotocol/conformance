@@ -215,6 +215,24 @@ export const EVENTS_CONTROL_TERMINATE = 'events_conformance_terminate';
  * only way to construct the two-tenant case the key-composition rule is about.
  */
 export const EVENTS_CONTROL_SUBSCRIBE_AS = 'events_conformance_subscribe_as';
+/**
+ * Permits callbacks under one origin past the scheme and routability guards for
+ * the rest of the fixture process, so the harness can be delivered to.
+ *
+ * The harness necessarily listens on loopback, and a hardened server refuses a
+ * loopback callback — correctly, which is what the SSRF rows grade. Those two
+ * facts cannot both hold in one subscription, so without this the delivery rows
+ * are unreachable unless EVENTS_WEBHOOK_CALLBACK_BASE points at a public tunnel.
+ *
+ * Takes `{ origin }` and names one origin, not a blanket "allow private
+ * networks": the fixture stays hardened for every other callback, which is what
+ * lets the SSRF rows be graded first and then the delivery rows after. mcpkit's
+ * `--conformance-events` build already allowlists one origin this way for the
+ * events-webhook scenario, which is spec path (b) doing the same job.
+ */
+export const EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN =
+  'events_conformance_allow_callback_origin';
+
 /** Reports whether a given principal's subscription is still registered. */
 export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
   'events_conformance_subscription_exists';
