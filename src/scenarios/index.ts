@@ -487,7 +487,8 @@ export function isScenarioApplicableAt(
 }
 
 export function listScenariosForSpec(version: SpecVersion): string[] {
-  return scenariosList
+  // From the map, not the list, so scenarios added at run time are included.
+  return Array.from(scenarios.values())
     .filter((s) => matchesSpecVersion(s.source, version))
     .map((s) => s.name);
 }
