@@ -111,6 +111,19 @@ const STREAM_IDS = [
  */
 const ERROR_IDS = ['sep-9999-error-resource-exhausted'] as const;
 
+/**
+ * Graded by poll too, where a replay-capable target makes it not applicable.
+ * Push can reach a type without replay whenever one offers push, so it grades
+ * the gap signal there: `truncated` SHOULD stay false with no position to have
+ * advanced past.
+ */
+const NO_REPLAY_ID = 'sep-9999-truncated-false-when-no-replay';
+const NO_REPLAY_DESCRIPTION =
+  'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.';
+
+/** How long to watch a no-replay stream after asking for a gap. */
+const NO_REPLAY_WATCH_MS = 1500;
+
 function untestableAll(
   ids: readonly string[],
   reason: string,
@@ -122,7 +135,7 @@ function untestableAll(
 }
 
 function skipAll(reason: string): ConformanceCheck[] {
-  return [...STREAM_IDS, ...ERROR_IDS].map((id) =>
+  return [...STREAM_IDS, ...ERROR_IDS, NO_REPLAY_ID].map((id) =>
     eventsCheck(id, id, 'SKIPPED', { errorMessage: reason })
   );
 }
@@ -148,6 +161,25 @@ export class EventsPushScenario implements ClientScenario {
 **Untestable rather than green**: an upstream failure, a retention gap, a termination and a server-initiated close cannot be provoked from the client side, so those rows name the missing prerequisite instead of passing against a server that simply never did it.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const checks = await this.runStreams(ctx);
+    // Every path reports the no-replay row, so runs stay comparable: the early
+    // returns above the stream never reach the probe that grades it.
+    if (!checks.some((c) => c.id === NO_REPLAY_ID)) {
+      checks.push(
+        untestableCheck(
+          NO_REPLAY_ID,
+          NO_REPLAY_ID,
+          NO_REPLAY_DESCRIPTION,
+          'No stream was opened, so no event type without replay was probed.',
+          [EVENTS_SPEC_REF],
+          'WARNING'
+        )
+      );
+    }
+    return checks;
+  }
+
+  private async runStreams(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     let declared = false;
     try {
@@ -358,8 +390,101 @@ export class EventsPushScenario implements ClientScenario {
       // fallback for a server without the control; dedupe keeps the first.
       if (quota) checks.push(await this.quotaCheck(ctx, quota, descriptors));
       checks.push(...(await this.concurrencyChecks(ctx, name, args)));
+      checks.push(await this.noReplayGapCheck(ctx, descriptors, controls.gap));
       checks.push(...(await this.errorBeforeOpenChecks(ctx, args)));
       return dedupe(checks);
+    } finally {
+      await session.cancel();
+    }
+  }
+
+  /**
+   * `truncated-false-when-no-replay` on push: ask for a gap on a type whose
+   * stream confirms with `cursor: null`, and check no `active` frame arrives
+   * with `truncated: true`.
+   *
+   * Replay support is read off the stream's own `active`, the push analogue
+   * of poll reading `cursor: null` off its result, since `events/list` has no
+   * field that declares it. Each push type is opened in turn until one
+   * confirms with a null cursor; a catalog where every type replays makes the
+   * rule not applicable, as it is on poll.
+   */
+  private async noReplayGapCheck(
+    ctx: RunContext,
+    descriptors: EventDescriptor[],
+    hasGap: boolean
+  ): Promise<ConformanceCheck> {
+    const untestable = (reason: string) =>
+      untestableCheck(
+        NO_REPLAY_ID,
+        NO_REPLAY_ID,
+        NO_REPLAY_DESCRIPTION,
+        reason,
+        [EVENTS_SPEC_REF],
+        'WARNING'
+      );
+    if (!hasGap) {
+      return untestable(
+        `A gap cannot be provoked from the client side. Needs a fixture exposing the \`${EVENTS_CONTROL_YIELD_GAP}\` control for an event type without replay.`
+      );
+    }
+
+    let chosen: { name: string; session: StreamSession } | undefined;
+    for (const d of descriptors) {
+      const name = descriptorName(d);
+      const args = minimalArguments(d);
+      if (!name || args === undefined || !deliveryModes(d).includes('push'))
+        continue;
+      const session = await openEventStream(
+        ctx.serverUrl,
+        ctx.specVersion,
+        { name, arguments: args, cursor: null },
+        { openTimeoutMs: ACTIVE_MS }
+      );
+      const active = await session.waitFor(
+        (n) => n.method === EVENTS_ACTIVE_NOTIFICATION,
+        ACTIVE_MS
+      );
+      if (active && active.params.cursor === null) {
+        chosen = { name, session };
+        break;
+      }
+      await session.cancel();
+    }
+    if (!chosen) {
+      return eventsCheck(NO_REPLAY_ID, NO_REPLAY_DESCRIPTION, 'SKIPPED', {
+        errorMessage:
+          'Every push-capable event type confirmed its stream with a non-null cursor, so each supports replay and this rule does not apply.'
+      });
+    }
+
+    const { name, session } = chosen;
+    try {
+      const control = await ctx.connect();
+      let fired: boolean;
+      try {
+        fired = await fireControl(control, EVENTS_CONTROL_YIELD_GAP, name);
+      } finally {
+        await control.close();
+      }
+      if (!fired) {
+        return untestable(
+          `\`${name}\` confirms with \`cursor: null\`, but \`${EVENTS_CONTROL_YIELD_GAP}\` declined to signal a gap on it.`
+        );
+      }
+      await session.settle(NO_REPLAY_WATCH_MS);
+      const truncated = session.notifications.find(
+        (n) =>
+          n.method === EVENTS_ACTIVE_NOTIFICATION && n.params.truncated === true
+      );
+      return truncated
+        ? eventsCheck(NO_REPLAY_ID, NO_REPLAY_DESCRIPTION, 'WARNING', {
+            errorMessage: `Event type \`${name}\` confirms its stream with \`cursor: null\` (no replay), and after a gap it sent \`${EVENTS_ACTIVE_NOTIFICATION}\` with \`truncated: true\`; there is no position to have advanced past.`,
+            details: { name, frame: truncated.params }
+          })
+        : eventsCheck(NO_REPLAY_ID, NO_REPLAY_DESCRIPTION, 'SUCCESS', {
+            details: { name, watchedMs: NO_REPLAY_WATCH_MS }
+          });
     } finally {
       await session.cancel();
     }

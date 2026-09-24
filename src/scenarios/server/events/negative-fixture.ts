@@ -316,6 +316,14 @@ export interface EventsFixtureOptions {
   durability?: DurabilityBehaviour;
   /** Expose the per-subscription webhook envelope controls. */
   webhookEnvelopeControls?: WebhookEnvelopeControls;
+  /**
+   * One event type without replay: its streams confirm with `cursor: null`,
+   * and `events_conformance_yield_gap` is exposed. For that type the control
+   * sends `active{cursor: null, truncated: true}` when `truncatedOnGap` is set
+   * (the defect) and nothing otherwise; for any other type it sends the
+   * conformant fresh `active{cursor, truncated: true}`.
+   */
+  noReplay?: { name: string; truncatedOnGap?: boolean };
   /** A per-type cap on streams, and optionally the control that reports it. */
   quota?: QuotaBehaviour;
   /**
@@ -413,7 +421,12 @@ export async function startEventsFixture(
   );
 
   /** Open streams, so close() can tear them down instead of hanging on them. */
-  const openStreams = new Set<{ res: ServerResponse; stop: () => void }>();
+  const openStreams = new Set<{
+    res: ServerResponse;
+    stop: () => void;
+    name: string;
+    notify: (method: string, params: Record<string, unknown>) => void;
+  }>();
   let liveStreams = 0;
   const liveByName = new Map<string, number>();
 
@@ -463,6 +476,9 @@ export async function startEventsFixture(
       if (opts.quota && opts.quota.control !== false) {
         tools.push({ name: 'events_conformance_quota', inputSchema: obj });
       }
+      if (opts.noReplay) {
+        tools.push({ name: 'events_conformance_yield_gap', inputSchema: obj });
+      }
       if (opts.webhookEnvelopeControls?.gap) {
         tools.push({
           name: 'events_conformance_webhook_gap',
@@ -481,6 +497,32 @@ export async function startEventsFixture(
       }
     }
 
+    if (
+      method === 'tools/call' &&
+      opts.noReplay &&
+      params.name === 'events_conformance_yield_gap'
+    ) {
+      const target = String(
+        ((params.arguments ?? {}) as Record<string, unknown>).name ?? ''
+      );
+      const isNoReplay = target === opts.noReplay.name;
+      for (const s of openStreams) {
+        if (s.name !== target) continue;
+        if (!isNoReplay) {
+          s.notify('notifications/events/active', {
+            cursor: 'cursor_after_gap',
+            truncated: true
+          });
+        } else if (opts.noReplay.truncatedOnGap) {
+          s.notify('notifications/events/active', {
+            cursor: null,
+            truncated: true
+          });
+        }
+      }
+      send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+      return;
+    }
     if (
       method === 'tools/call' &&
       opts.webhookEnvelopeControls &&
@@ -918,7 +960,13 @@ export async function startEventsFixture(
       liveStreams += 1;
       const key = String(name);
       if (capped) liveByName.set(key, (liveByName.get(key) ?? 0) + 1);
-      const entry = openStream(res, id, key, behaviour);
+      const entry = openStream(
+        res,
+        id,
+        key,
+        behaviour,
+        opts.noReplay?.name === key
+      );
       openStreams.add(entry);
       const done = () => {
         if (!openStreams.delete(entry)) return;
@@ -970,8 +1018,14 @@ function openStream(
   res: ServerResponse,
   requestId: unknown,
   name: string,
-  behaviour: StreamBehaviour & typeof CONFORMANT_STREAM
-): { res: ServerResponse; stop: () => void } {
+  behaviour: StreamBehaviour & typeof CONFORMANT_STREAM,
+  noReplay = false
+): {
+  res: ServerResponse;
+  stop: () => void;
+  name: string;
+  notify: (method: string, params: Record<string, unknown>) => void;
+} {
   const timers: NodeJS.Timeout[] = [];
   const stop = () => {
     for (const t of timers) clearInterval(t);
@@ -1007,7 +1061,7 @@ function openStream(
 
   if (!behaviour.omitActive) {
     notify('notifications/events/active', {
-      cursor: 'cursor_stream_001',
+      cursor: noReplay ? null : 'cursor_stream_001',
       truncated: false,
       ...(behaviour.activeParams ?? {})
     });
@@ -1079,7 +1133,7 @@ function openStream(
     });
   }
 
-  return { res, stop };
+  return { res, stop, name, notify };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

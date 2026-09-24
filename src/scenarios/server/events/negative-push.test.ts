@@ -374,6 +374,60 @@ describe.concurrent(
   }
 );
 
+describe.concurrent('truncated on a type without replay', () => {
+  const withNoReplay = (
+    noReplay: EventsFixtureOptions['noReplay']
+  ): EventsFixtureOptions => ({
+    capability: { listChanged: true },
+    descriptors: [
+      descriptor({ name: 'push.event', delivery: ['push'] }),
+      descriptor({ name: 'quiet.event', delivery: ['push'] })
+    ],
+    noReplay
+  });
+  const id = 'sep-9999-truncated-false-when-no-replay';
+
+  test('a gap that sends nothing on a null-cursor stream passes', async () => {
+    const checks = await pushChecks(withNoReplay({ name: 'quiet.event' }));
+    const check = checks.get(id);
+    expect(check?.status).toBe('SUCCESS');
+    expect(check?.details?.name).toBe('quiet.event');
+  });
+
+  test('a gap that sends truncated:true on a null-cursor stream warns', async () => {
+    const checks = await pushChecks(
+      withNoReplay({ name: 'quiet.event', truncatedOnGap: true })
+    );
+    const check = checks.get(id);
+    expect(check?.status).toBe('WARNING');
+    expect(check?.details?.untestable).toBeUndefined();
+    expect(check?.details?.frame).toMatchObject({
+      cursor: null,
+      truncated: true
+    });
+  });
+
+  test('a catalog where every type replays makes the rule not apply', async () => {
+    const checks = await pushChecks(withNoReplay({ name: 'absent.event' }));
+    expect(checks.get(id)?.status).toBe('SKIPPED');
+  });
+
+  test('without the gap control the row is untestable and names it', async () => {
+    const checks = await pushChecks(pushFixture());
+    const check = checks.get(id);
+    expect(check?.details?.untestable).toBe(true);
+    expect(check?.errorMessage).toContain('events_conformance_yield_gap');
+  });
+
+  test('an early return still reports the row', async () => {
+    const checks = await pushChecks({
+      capability: { listChanged: true },
+      listError: { code: -32603, message: 'boom' }
+    });
+    expect(checks.get(id)?.details?.untestable).toBe(true);
+  });
+});
+
 describe.concurrent('concurrency and cancellation', () => {
   // The cap kitchen-sink applies to streams, which the document exempts them
   // from: the first stream confirms and the other two are refused -32013.
