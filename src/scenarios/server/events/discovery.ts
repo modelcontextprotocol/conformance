@@ -56,7 +56,8 @@ import {
 
 const CAPABILITY_IDS = [
   'sep-9999-capability-events-object',
-  'sep-9999-capability-list-changed-flag'
+  'sep-9999-capability-list-changed-flag',
+  'sep-9999-capability-empty-settings'
 ] as const;
 
 const LIST_IDS = [
@@ -75,8 +76,12 @@ const DESCRIPTOR_IDS = [
 
 const ERROR_IDS = [
   'sep-9999-error-not-found',
-  'sep-9999-error-server-range'
+  'sep-9999-error-server-range',
+  'sep-9999-fallback-method-not-found'
 ] as const;
+
+const FALLBACK_DESCRIPTION =
+  'A server that does not offer the extension answers any `events/*` request with `-32601 MethodNotFound` (standard JSON-RPC).';
 
 const ALL_IDS = [
   ...CAPABILITY_IDS,
@@ -97,7 +102,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
   readonly source = { extensionId: EVENTS_EXTENSION_ID } as const;
   description = `MCP Events: capability declaration, \`events/list\` enumeration, and the error-code contract.
 
-**Methods**: \`events/list\` (mandatory for a server declaring \`capabilities.events\`), \`events/poll\` (probed only for its error path)
+**Methods**: \`events/list\` (mandatory for a server declaring the extension), \`events/poll\` (probed only for its error path)
 
 **Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
 
@@ -127,7 +132,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
 
     // --- Capability ------------------------------------------------------
     const capDescription =
-      'Servers advertise event support in their capabilities as an object under `capabilities.events`.';
+      "Events is declared through Extension Negotiation: the identifier appears as a key in the `extensions` field of capabilities, mapped to the extension's settings object.";
     const { declared, value } = await declaredEventsCapability(conn);
 
     if (!declared) {
@@ -137,10 +142,24 @@ export class EventsDiscoveryScenario implements ClientScenario {
       // report it as a clean run. Distinguish the two by asking.
       const probe = await eventsListPage(conn);
       if ('error' in probe && probe.error.code === JSONRPC_METHOD_NOT_FOUND) {
-        return skipAll(
+        // Not an events server, so every rule about events is inapplicable —
+        // except the one that says what such a server answers, which it just
+        // did. Grading it here is the only place the suite ever meets a server
+        // that does not offer the extension.
+        const skipped = skipAll(
           'Server does not declare the `events` capability and does not implement `events/list`; the extension is optional.'
-        );
+        ).filter((c) => c.id !== 'sep-9999-fallback-method-not-found');
+        return [
+          ...skipped,
+          eventsCheck(
+            'sep-9999-fallback-method-not-found',
+            FALLBACK_DESCRIPTION,
+            'SUCCESS',
+            { details: { code: probe.error.code } }
+          )
+        ];
       }
+      checks.push(this.fallbackCheck(probe));
       checks.push(
         eventsCheck(
           'sep-9999-capability-events-object',
@@ -185,7 +204,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
           {
             errorMessage: declared
               ? 'Server did not declare `listChanged`; the flag is optional and its absence means the notification is not advertised.'
-              : 'Server declared no `capabilities.events` object for the flag to sit in; see sep-9999-capability-events-object.'
+              : 'Server declared no settings object for the flag to sit in; see sep-9999-capability-events-object.'
           }
         )
       );
@@ -205,12 +224,14 @@ export class EventsDiscoveryScenario implements ClientScenario {
           'The `listChanged` flag advertises that the server sends `notifications/events/list_changed`.',
           'FAILURE',
           {
-            errorMessage: `\`capabilities.events.listChanged\` is ${describeValue(listChanged)}, expected a boolean.`,
+            errorMessage: `\`listChanged\` in the extension's settings object is ${describeValue(listChanged)}, expected a boolean.`,
             details: { listChanged }
           }
         )
       );
     }
+
+    checks.push(this.emptySettingsCheck(declared, value));
 
     // --- events/list -----------------------------------------------------
     const firstPage = await eventsListPage(conn);
@@ -283,6 +304,62 @@ export class EventsDiscoveryScenario implements ClientScenario {
    * base protocol, so the only thing this check can establish is that
    * `events/list` participates in the scheme at all.
    */
+  /**
+   * What a server that does not serve events answers to an `events/*` request.
+   *
+   * Only reachable on a server that declares nothing, since one that offers the
+   * extension has no business answering `-32601`. The skip path above grades the
+   * clean case; this one grades a server that answered something else, which
+   * leaves a client unable to tell "no such extension" from a real failure.
+   */
+  private fallbackCheck(
+    probe: Awaited<ReturnType<typeof eventsListPage>>
+  ): ConformanceCheck {
+    const id = 'sep-9999-fallback-method-not-found';
+    if (!('error' in probe)) {
+      return eventsCheck(id, FALLBACK_DESCRIPTION, 'SKIPPED', {
+        errorMessage: `\`${EVENTS_LIST_METHOD}\` returned a catalog, so this server does offer the extension and the fallback does not apply to it.`
+      });
+    }
+    return eventsCheck(id, FALLBACK_DESCRIPTION, 'FAILURE', {
+      errorMessage: `A server declaring no events capability answered \`${EVENTS_LIST_METHOD}\` with ${probe.error.code} ${probe.error.message}, where a server that does not offer the extension answers ${JSONRPC_METHOD_NOT_FOUND} MethodNotFound.`,
+      details: { code: probe.error.code }
+    });
+  }
+
+  /**
+   * `{}` as the settings object: support declared, no list-change notifications.
+   *
+   * Inapplicable rather than failed when the server declared settings of its
+   * own, because the rule describes what an empty object means and says nothing
+   * about a populated one.
+   */
+  private emptySettingsCheck(
+    declared: boolean,
+    value: unknown
+  ): ConformanceCheck {
+    const id = 'sep-9999-capability-empty-settings';
+    const description =
+      'An empty settings object declares event support with no list-change notifications.';
+    if (!declared || !isObject(value)) {
+      return eventsCheck(id, description, 'SKIPPED', {
+        errorMessage:
+          'No settings object was declared, so there is no empty-object case to grade; see sep-9999-capability-events-object.'
+      });
+    }
+    const keys = Object.keys(value);
+    if (keys.length > 0) {
+      return eventsCheck(id, description, 'SKIPPED', {
+        errorMessage: `The server declared settings (${keys.join(', ')}), so the empty-object case does not apply to it.`
+      });
+    }
+    return eventsCheck(id, description, 'SUCCESS', {
+      details: {
+        note: 'Empty settings, and the catalog is still served; sep-9999-list-implemented grades that half.'
+      }
+    });
+  }
+
   private async paginationCheck(
     conn: Awaited<ReturnType<RunContext['connect']>>,
     nextCursor: unknown

@@ -53,6 +53,7 @@ import {
   EVENTS_STREAM_METHOD,
   EVENTS_TERMINATED_NOTIFICATION,
   EVENTS_NOT_FOUND,
+  EVENTS_RESOURCE_EXHAUSTED,
   JSONRPC_METHOD_NOT_FOUND,
   SUBSCRIPTION_ID_META,
   describeValue,
@@ -100,6 +101,14 @@ const STREAM_IDS = [
   'sep-9999-stream-carries-only-event-notifications'
 ] as const;
 
+/**
+ * The error-table row this scenario claims. `-32013` is only reached when a
+ * server actually refuses for a quota, and the concurrency probe is the one
+ * place the suite asks for more than one of anything, so the row is graded there
+ * and reported untestable on a server that never hits a limit.
+ */
+const ERROR_IDS = ['sep-9999-error-resource-exhausted'] as const;
+
 function untestableAll(
   ids: readonly string[],
   reason: string,
@@ -111,7 +120,7 @@ function untestableAll(
 }
 
 function skipAll(reason: string): ConformanceCheck[] {
-  return STREAM_IDS.map((id) =>
+  return [...STREAM_IDS, ...ERROR_IDS].map((id) =>
     eventsCheck(id, id, 'SKIPPED', { errorMessage: reason })
   );
 }
@@ -154,7 +163,7 @@ export class EventsPushScenario implements ClientScenario {
           );
         }
         return untestableAll(
-          STREAM_IDS,
+          [...STREAM_IDS, ...ERROR_IDS],
           `\`events/list\` failed (${listed.error.code} ${listed.error.message}), so no push-capable event type could be discovered. See the events-discovery scenario.`
         );
       }
@@ -163,7 +172,7 @@ export class EventsPushScenario implements ClientScenario {
       const name = target ? descriptorName(target) : undefined;
       if (!target || !name) {
         return untestableAll(
-          STREAM_IDS,
+          [...STREAM_IDS, ...ERROR_IDS],
           listed.descriptors.length === 0
             ? '`events/list` returned an empty catalog, so no push-capable event type could be exercised.'
             : 'No event type advertises `push` delivery, so `events/stream` could not be exercised. Push is optional per event type.'
@@ -184,7 +193,7 @@ export class EventsPushScenario implements ClientScenario {
       const args = minimalArguments(target);
       if (args === undefined) {
         return untestableAll(
-          STREAM_IDS,
+          [...STREAM_IDS, ...ERROR_IDS],
           `Event type \`${name}\` declares required \`inputSchema\` properties the harness cannot satisfy from the schema, so no stream could be opened.`
         );
       }
@@ -235,7 +244,9 @@ export class EventsPushScenario implements ClientScenario {
         );
         checks.push(
           ...untestableAll(
-            STREAM_IDS.filter((id) => id !== 'sep-9999-stream-implemented'),
+            [...STREAM_IDS, ...ERROR_IDS].filter(
+              (id) => id !== 'sep-9999-stream-implemented'
+            ),
             `No stream was opened for \`${name}\`, so nothing on it could be observed.`
           )
         );
@@ -939,11 +950,47 @@ export class EventsPushScenario implements ClientScenario {
                   }))
                 }
               }
-            )
+            ),
+        this.resourceExhaustedCheck(sessions.map((s) => s.error))
       ];
     } finally {
       await Promise.all(sessions.map((s) => s.cancel()));
     }
+  }
+
+  /**
+   * The `-32013` row from the error table.
+   *
+   * A conformant server reaches no limit here, so this usually reports
+   * untestable. It grades when one refuses, which is worth claiming rather than
+   * leaving to the concurrency row: that row says streams are exempt from the
+   * cap, this one says a refusal for a quota names the quota.
+   */
+  private resourceExhaustedCheck(
+    errors: (StreamSession['error'] | undefined)[]
+  ): ConformanceCheck {
+    const id = 'sep-9999-error-resource-exhausted';
+    const description =
+      '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
+    const hit = errors.find((e) => e?.code === EVENTS_RESOURCE_EXHAUSTED);
+    if (!hit) {
+      return untestableCheck(
+        id,
+        id,
+        description,
+        'No request in this run was refused for a server-imposed limit, so the code was never provoked. A server that caps concurrent subscriptions answers it for the third stream above.',
+        [EVENTS_SPEC_REF]
+      );
+    }
+    const limit = isObject(hit.data) ? hit.data.limit : undefined;
+    return typeof limit === 'string' && limit.length > 0
+      ? eventsCheck(id, description, 'SUCCESS', {
+          details: { limit, message: hit.message }
+        })
+      : eventsCheck(id, description, 'WARNING', {
+          errorMessage: `\`${EVENTS_RESOURCE_EXHAUSTED}\` carried \`data.limit\` ${describeValue(limit)}. Without it a client cannot tell which quota it hit, so it cannot know what to stop doing.`,
+          details: { data: hit.data, message: hit.message }
+        });
   }
 
   /** An invalid subscription answers an error and opens no stream. */

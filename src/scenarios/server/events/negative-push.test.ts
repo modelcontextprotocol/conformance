@@ -293,6 +293,29 @@ describe.concurrent('the heartbeat', () => {
   });
 });
 
+describe.concurrent('the -32013 error-table row', () => {
+  test('a cap that names its limit passes, and one that does not warns', async () => {
+    const named = await pushChecks(
+      pushFixture({ maxConcurrent: 1, capLimitName: 'subscriptions' })
+    );
+    const ok = named.get('sep-9999-error-resource-exhausted');
+    expect(ok?.status).toBe('SUCCESS');
+    expect(ok?.details?.limit).toBe('subscriptions');
+
+    const vague = await pushChecks(pushFixture({ maxConcurrent: 1 }));
+    const check = vague.get('sep-9999-error-resource-exhausted');
+    expect(check?.status).toBe('WARNING');
+    expect(check?.errorMessage).toContain('which quota it hit');
+  });
+
+  test('a server that refuses nothing reports the row untestable', async () => {
+    const checks = await pushChecks(pushFixture());
+    const check = checks.get('sep-9999-error-resource-exhausted');
+    expect(check?.details?.untestable).toBe(true);
+    expect(check?.errorMessage).toContain('never provoked');
+  });
+});
+
 describe.concurrent('concurrency and cancellation', () => {
   // The cap kitchen-sink applies to streams, which the document exempts them
   // from: the first stream confirms and the other two are refused -32013.

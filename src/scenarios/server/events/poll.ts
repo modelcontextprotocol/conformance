@@ -98,7 +98,42 @@ const CURSOR_IDS = [
   'sep-9999-truncated-false-when-no-replay'
 ] as const;
 
-const ALL_IDS = [...POLL_IDS, ...OCCURRENCE_IDS, ...CURSOR_IDS];
+/**
+ * Pair the `-32602` rule row with the error-table row for the same code.
+ *
+ * One probe, two rows: the first says arguments that violate `inputSchema` are
+ * rejected, the second says the code for a statically invalid request is
+ * `-32602`. A server gets the same verdict on both because there is nothing to
+ * tell apart, and `details.gradedBy` says where it came from.
+ */
+function withErrorCodeRow(ruleCheck: ConformanceCheck): ConformanceCheck[] {
+  return [
+    ruleCheck,
+    eventsCheck(
+      'sep-9999-error-invalid-params',
+      "`-32602 InvalidParams` — request is statically invalid: arguments don't match the event's inputSchema, the callback `delivery.url` is malformed or non-`https`, or `delivery.secret` is not a valid `whsec_` value.",
+      ruleCheck.status,
+      {
+        errorMessage: ruleCheck.errorMessage,
+        details: {
+          gradedBy: 'sep-9999-poll-invalid-arguments',
+          untestable: ruleCheck.details?.untestable
+        }
+      }
+    )
+  ];
+}
+
+/**
+ * The error-table row this scenario claims. `-32602` has three provoking cases
+ * in the document and the suite already fires one of them here, so the row is
+ * graded off that probe rather than a fourth request, the way
+ * sep-9999-subscribe-url-https-required rides its enforcement probe in
+ * events-webhook.
+ */
+const ERROR_IDS = ['sep-9999-error-invalid-params'] as const;
+
+const ALL_IDS = [...POLL_IDS, ...OCCURRENCE_IDS, ...CURSOR_IDS, ...ERROR_IDS];
 
 /** Milliseconds of replay to request when probing the `maxAgeMs` floor. */
 const MAX_AGE_PROBE_MS = 300_000;
@@ -1101,7 +1136,9 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     // Invalid arguments. Only probeable when the schema constrains something.
-    out.push(await this.invalidArgumentsCheck(conn, descriptors, name, args));
+    out.push(
+      ...(await this.invalidArgumentsCheck(conn, descriptors, name, args))
+    );
 
     // A delivery mode the event type does not offer.
     out.push(await this.unsupportedModeCheck(conn, descriptors));
@@ -1121,7 +1158,7 @@ export class EventsPollScenario implements ClientScenario {
     descriptors: EventDescriptor[],
     name: string,
     _args: Record<string, unknown>
-  ): Promise<ConformanceCheck> {
+  ): Promise<ConformanceCheck[]> {
     const id = 'sep-9999-poll-invalid-arguments';
     const description =
       "A poll whose `arguments` do not match the event's `inputSchema` returns `-32602 InvalidParams`.";
@@ -1142,13 +1179,15 @@ export class EventsPollScenario implements ClientScenario {
       : undefined;
 
     if (!typed) {
-      return untestableCheck(
-        id,
-        id,
-        description,
-        `Event type \`${name}\` declares no typed \`inputSchema\` property, so no argument value can be known-invalid against it.`,
-        [EVENTS_SPEC_REF],
-        'FAILURE'
+      return withErrorCodeRow(
+        untestableCheck(
+          id,
+          id,
+          description,
+          `Event type \`${name}\` declares no typed \`inputSchema\` property, so no argument value can be known-invalid against it.`,
+          [EVENTS_SPEC_REF],
+          'FAILURE'
+        )
       );
     }
 
@@ -1164,25 +1203,29 @@ export class EventsPollScenario implements ClientScenario {
     });
 
     if (!('error' in probe)) {
-      return eventsCheck(id, description, 'FAILURE', {
-        errorMessage: `A poll sending \`${prop}: ${JSON.stringify(wrongValue)}\` against a declared \`${propType}\` returned a result instead of ${JSONRPC_INVALID_PARAMS} InvalidParams.`,
-        details: { property: prop, declaredType: propType, sent: wrongValue }
-      });
+      return withErrorCodeRow(
+        eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `A poll sending \`${prop}: ${JSON.stringify(wrongValue)}\` against a declared \`${propType}\` returned a result instead of ${JSONRPC_INVALID_PARAMS} InvalidParams.`,
+          details: { property: prop, declaredType: propType, sent: wrongValue }
+        })
+      );
     }
 
-    return probe.error.code === JSONRPC_INVALID_PARAMS
-      ? eventsCheck(id, description, 'SUCCESS', {
-          details: { property: prop, declaredType: propType }
-        })
-      : eventsCheck(id, description, 'FAILURE', {
-          errorMessage: `Arguments violating \`inputSchema\` answered ${probe.error.code}, expected ${JSONRPC_INVALID_PARAMS} InvalidParams.`,
-          details: {
-            property: prop,
-            declaredType: propType,
-            code: probe.error.code,
-            message: probe.error.message
-          }
-        });
+    return withErrorCodeRow(
+      probe.error.code === JSONRPC_INVALID_PARAMS
+        ? eventsCheck(id, description, 'SUCCESS', {
+            details: { property: prop, declaredType: propType }
+          })
+        : eventsCheck(id, description, 'FAILURE', {
+            errorMessage: `Arguments violating \`inputSchema\` answered ${probe.error.code}, expected ${JSONRPC_INVALID_PARAMS} InvalidParams.`,
+            details: {
+              property: prop,
+              declaredType: propType,
+              code: probe.error.code,
+              message: probe.error.message
+            }
+          })
+    );
   }
 
   /** Poll an event type whose `delivery` omits `poll`. */

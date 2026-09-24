@@ -74,13 +74,43 @@ describe('events capability declaration', () => {
     expect(check?.errorMessage).toContain('a boolean');
   });
 
-  test('a server that declares nothing and serves nothing skips the suite', async () => {
+  test('a server that declares nothing and serves nothing skips all but the fallback row', async () => {
     const checks = await checksFor(discovery(), {
       listError: { code: -32601, message: 'Method not found' }
     });
+    // Every events rule is inapplicable to a server that does not do events,
+    // except the one saying what such a server answers. It answered it.
+    expect(checks.get('sep-9999-fallback-method-not-found')?.status).toBe(
+      'SUCCESS'
+    );
     for (const check of checks.values()) {
-      expect(check.status).toBe('SKIPPED');
+      if (check.id === 'sep-9999-fallback-method-not-found') continue;
+      expect(check.status, check.id).toBe('SKIPPED');
     }
+  });
+
+  test('answering something other than -32601 fails the fallback row', async () => {
+    const checks = await checksFor(discovery(), {
+      listError: { code: -32000, message: 'nope' }
+    });
+    const check = checks.get('sep-9999-fallback-method-not-found');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('-32601 MethodNotFound');
+  });
+
+  test('empty settings pass, and declared settings make the rule inapplicable', async () => {
+    const empty = await checksFor(discovery(), {
+      ...CONFORMANT,
+      capability: {}
+    });
+    expect(empty.get('sep-9999-capability-empty-settings')?.status).toBe(
+      'SUCCESS'
+    );
+
+    const populated = await checksFor(discovery(), CONFORMANT);
+    const check = populated.get('sep-9999-capability-empty-settings');
+    expect(check?.status).toBe('SKIPPED');
+    expect(check?.errorMessage).toContain('listChanged');
   });
 
   // The case mcpkit is actually in: events/list answers, but nothing is
@@ -323,6 +353,19 @@ describe('events/poll error contract', () => {
     expect(ok.get('sep-9999-poll-one-subscription-per-request')?.status).toBe(
       'SUCCESS'
     );
+  });
+
+  test('the -32602 error-table row carries the same verdict as the rule', async () => {
+    const ok = await checksFor(poll(), CONFORMANT);
+    const row = ok.get('sep-9999-error-invalid-params');
+    expect(row?.status).toBe('SUCCESS');
+    expect(row?.details?.gradedBy).toBe('sep-9999-poll-invalid-arguments');
+
+    const broken = await checksFor(poll(), {
+      ...CONFORMANT,
+      invalidArgsCode: -32011
+    });
+    expect(broken.get('sep-9999-error-invalid-params')?.status).toBe('FAILURE');
   });
 
   test('wrong-typed arguments answering -32011 fails the invalid-params check', async () => {
