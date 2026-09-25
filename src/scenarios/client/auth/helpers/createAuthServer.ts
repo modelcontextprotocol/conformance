@@ -125,6 +125,29 @@ export async function validateDpopProofAtTokenEndpoint(
   return { ok: true, jkt };
 }
 
+/**
+ * `accept-any-proof` misbehaviour: skip {@link validateDpopProofAtTokenEndpoint}
+ * and bind to the JWK embedded in the presented header anyway.
+ */
+async function thumbprintOfPresentedProof(
+  proof: string
+): Promise<{ ok: true; jkt: string } | { ok: false; error: string }> {
+  try {
+    const header = jose.decodeProtectedHeader(proof);
+    const jwk = header.jwk;
+    if (!jwk || typeof jwk !== 'object') {
+      return { ok: false, error: 'presented proof has no jwk' };
+    }
+    if ((jwk as Record<string, unknown>).d !== undefined) {
+      return { ok: false, error: 'presented jwk contains a private key' };
+    }
+    const jkt = await jose.calculateJwkThumbprint(jwk, 'sha256');
+    return { ok: true, jkt };
+  } catch {
+    return { ok: false, error: 'presented proof is not a JWT' };
+  }
+}
+
 export interface TokenRequestResult {
   token: string;
   scopes: string[];
@@ -198,13 +221,19 @@ export interface AuthServerOptions {
    *  - 'omit-alg-values'   — drop `dpop_signing_alg_values_supported` entirely
    *  - 'empty-alg-values'  — advertise the field as an empty array
    *  - 'include-none'      — list `none` among the supported proof algs
-   *  - 'unbound-token'     — issue a Bearer token ignoring a valid proof
+   *  - 'unbound-token'         — issue a Bearer token ignoring a valid proof
+   *  - 'accept-any-proof'      — skip proof validation and bind to the presented jwk
+   *  - 'nonce-without-header'  — return use_dpop_nonce without a DPoP-Nonce header
+   *  - 'nonce-accept-any'      — challenge when no nonce is present, then accept any value
    */
   dpopMisbehavior?:
     | 'omit-alg-values'
     | 'empty-alg-values'
     | 'include-none'
-    | 'unbound-token';
+    | 'unbound-token'
+    | 'accept-any-proof'
+    | 'nonce-without-header'
+    | 'nonce-accept-any';
   /** Sink for the DPoP token-request observation; see the interface docstring. */
   dpopTokenRequestObs?: DpopTokenRequestObservation;
   /**
@@ -600,10 +629,10 @@ export function createAuthServer(
       // client-side check still records that the client failed to ask for a
       // bound token.
       if (proof) {
-        const result = await validateDpopProofAtTokenEndpoint(
-          proof,
-          tokenEndpointUrl
-        );
+        const result =
+          dpopMisbehavior === 'accept-any-proof'
+            ? await thumbprintOfPresentedProof(proof)
+            : await validateDpopProofAtTokenEndpoint(proof, tokenEndpointUrl);
         if (!result.ok) {
           recordTokenRequestProof(grantType, false, result.error);
           res.status(400).json({
@@ -624,17 +653,35 @@ export function createAuthServer(
         // client is expected to retry with it. The nonce observation is gated
         // on the authorization_code exchange, matching recordTokenRequestProof
         // (honoring a challenge on a refresh exchange must not satisfy §8).
-        if (dpopRequireNonce) {
+        const enforceNonce =
+          dpopRequireNonce ||
+          dpopMisbehavior === 'nonce-without-header' ||
+          dpopMisbehavior === 'nonce-accept-any';
+        if (enforceNonce) {
           let proofNonce: unknown;
           try {
             proofNonce = jose.decodeJwt(proof).nonce;
           } catch {
             proofNonce = undefined;
           }
-          if (proofNonce !== AS_DPOP_NONCE) {
+          const hasNonce =
+            typeof proofNonce === 'string' && proofNonce.length > 0;
+          // nonce-accept-any / nonce-without-header: any presented nonce is
+          // enough. The exact-match path is the compliant dpopRequireNonce mode.
+          const nonceAccepted =
+            dpopMisbehavior === 'nonce-accept-any' ||
+            dpopMisbehavior === 'nonce-without-header'
+              ? hasNonce
+              : proofNonce === AS_DPOP_NONCE;
+          if (!nonceAccepted) {
             if (grantType === 'authorization_code' && dpopTokenRequestObs)
               dpopTokenRequestObs.asNonceChallengeIssued = true;
-            res.status(400).set('DPoP-Nonce', AS_DPOP_NONCE).json({
+            // nonce-without-header: the defect under test is a challenge that
+            // omits DPoP-Nonce. Every other challenge carries the header.
+            if (dpopMisbehavior !== 'nonce-without-header') {
+              res.set('DPoP-Nonce', AS_DPOP_NONCE);
+            }
+            res.status(400).json({
               error: 'use_dpop_nonce',
               error_description: 'Authorization server requires a DPoP nonce'
             });

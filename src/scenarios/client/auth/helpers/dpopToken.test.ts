@@ -6,7 +6,11 @@ import {
   buildDpopProof,
   accessTokenHash
 } from './dpopProof';
-import { generateIssuerKey, mintDpopBoundToken } from './dpopToken';
+import {
+  generateIssuerKey,
+  mintDpopBoundToken,
+  readTokenBinding
+} from './dpopToken';
 
 /** Independent ES256 verification via Node WebCrypto (a different path from jose). */
 async function verifyEs256Independently(
@@ -154,5 +158,85 @@ describe('DPoP token minter — invalid variants', () => {
     });
     const claims = jose.decodeJwt(token);
     expect((claims.exp as number) < (claims.iat as number)).toBe(true);
+  });
+});
+
+describe('readTokenBinding — reads the sender-constraint back out', () => {
+  const base = { issuer: ISSUER, audience: AUDIENCE };
+
+  it('reads token_type=DPoP and cnf.jkt from a bound token-endpoint response', async () => {
+    const issuerKey = await generateIssuerKey();
+    const kp = await generateDpopKeyPair();
+    const access_token = await mintDpopBoundToken({
+      issuerKey,
+      ...base,
+      jkt: kp.thumbprint
+    });
+
+    const binding = readTokenBinding({ access_token, token_type: 'DPoP' });
+    expect(binding.isDpopTokenType).toBe(true);
+    expect(binding.tokenType).toBe('DPoP');
+    expect(binding.jkt).toBe(kp.thumbprint);
+    expect(binding.accessTokenIsJwt).toBe(true);
+  });
+
+  it('treats token_type as case-insensitive (RFC 6749 §7.1)', () => {
+    for (const token_type of ['dpop', 'DPoP', 'DPOP']) {
+      expect(readTokenBinding({ token_type }).isDpopTokenType).toBe(true);
+    }
+    expect(readTokenBinding({ token_type: 'Bearer' }).isDpopTokenType).toBe(
+      false
+    );
+  });
+
+  it('reports no jkt for an unbound Bearer response (cnf omitted)', async () => {
+    const issuerKey = await generateIssuerKey();
+    const kp = await generateDpopKeyPair();
+    const access_token = await mintDpopBoundToken({
+      issuerKey,
+      ...base,
+      jkt: kp.thumbprint,
+      omitCnf: true
+    });
+
+    const binding = readTokenBinding({ access_token, token_type: 'Bearer' });
+    expect(binding.isDpopTokenType).toBe(false);
+    expect(binding.jkt).toBeUndefined();
+  });
+
+  it('never throws on an opaque (non-JWT) access token', () => {
+    const binding = readTokenBinding({
+      access_token: 'test-token-1700000000000',
+      token_type: 'Bearer'
+    });
+    expect(binding.jkt).toBeUndefined();
+    expect(binding.isDpopTokenType).toBe(false);
+    // Opaque token → not a JWT, so a missing jkt is inconclusive, not a failure.
+    expect(binding.accessTokenIsJwt).toBe(false);
+  });
+
+  it('handles a response missing both fields', () => {
+    const binding = readTokenBinding({});
+    expect(binding.tokenType).toBeUndefined();
+    expect(binding.isDpopTokenType).toBe(false);
+    expect(binding.jkt).toBeUndefined();
+  });
+
+  it('surfaces the foreign thumbprint when the AS binds to the wrong key', async () => {
+    const issuerKey = await generateIssuerKey();
+    const kp = await generateDpopKeyPair();
+    const foreign = await generateDpopKeyPair();
+    const access_token = await mintDpopBoundToken({
+      issuerKey,
+      ...base,
+      jkt: kp.thumbprint,
+      jktOverride: foreign.thumbprint
+    });
+
+    // The scenario compares this against its own proof-key thumbprint (kp);
+    // a mismatch is exactly the failure it must catch.
+    const binding = readTokenBinding({ access_token, token_type: 'DPoP' });
+    expect(binding.jkt).toBe(foreign.thumbprint);
+    expect(binding.jkt).not.toBe(kp.thumbprint);
   });
 });

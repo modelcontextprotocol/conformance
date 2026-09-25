@@ -108,3 +108,54 @@ export async function mintDpopBoundToken(
     .setExpirationTime(exp)
     .sign(options.issuerKey.privateKey);
 }
+
+/** The two DPoP sender-constraint signals carried by a token-endpoint response. */
+export interface TokenBinding {
+  /** Raw `token_type` from the token-endpoint response, or undefined if absent. */
+  tokenType?: string;
+  /** True when `token_type` is `DPoP` (RFC 6749 §7.1 makes token_type case-insensitive). */
+  isDpopTokenType: boolean;
+  /** `cnf.jkt` bound into the access token (RFC 9449 §6), or undefined if the
+   *  token is opaque / not a JWT / carries no confirmation. */
+  jkt?: string;
+  /** True when the access token parsed as a JWT. When false the token is opaque,
+   *  so `cnf.jkt` cannot be inspected off the wire (the binding may still hold,
+   *  verifiable only via introspection) — a caller must not read a missing `jkt`
+   *  as a binding failure in that case. */
+  accessTokenIsJwt: boolean;
+}
+
+/**
+ * Read the DPoP binding back out of an OAuth token-endpoint response, from the
+ * perspective of an inspector (the #370 AS scenario). Combines the two signals
+ * RFC 9449 §5 requires an AS to emit when it issues a bound token:
+ *   1. `token_type: "DPoP"` in the JSON response, and
+ *   2. `cnf.jkt` inside the access token.
+ * Never throws — an opaque (non-JWT) access token yields `jkt: undefined` so a
+ * caller can distinguish "bound" from "unbound/bearer" without special-casing.
+ */
+export function readTokenBinding(response: {
+  access_token?: unknown;
+  token_type?: unknown;
+}): TokenBinding {
+  const tokenType =
+    typeof response.token_type === 'string' ? response.token_type : undefined;
+  const isDpopTokenType = tokenType?.toLowerCase() === 'dpop';
+
+  let jkt: string | undefined;
+  let accessTokenIsJwt = false;
+  if (typeof response.access_token === 'string') {
+    try {
+      const claims = jose.decodeJwt(response.access_token);
+      accessTokenIsJwt = true;
+      const cnf = claims.cnf as { jkt?: unknown } | undefined;
+      if (cnf && typeof cnf.jkt === 'string') {
+        jkt = cnf.jkt;
+      }
+    } catch {
+      // Opaque / non-JWT access token → no readable binding.
+    }
+  }
+
+  return { tokenType, isDpopTokenType, jkt, accessTokenIsJwt };
+}
