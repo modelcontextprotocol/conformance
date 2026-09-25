@@ -71,7 +71,13 @@ export const AuthorizationServerOptionsSchema = z.object({
     .int('Port must be an integer')
     .min(1, 'Port must be >= 1')
     .max(65535, 'Port must be <= 65535')
-    .default(3000)
+    .default(3000),
+  /**
+   * Spend extra authorization codes on DPoP negative probes. Headless
+   * authorization servers run those probes automatically; login-gated servers
+   * require this flag or MCP_CONFORMANCE_DPOP_NEGATIVE_PROBES=1.
+   */
+  dpopNegativeProbes: z.boolean().optional()
 });
 
 export type AuthorizationServerOptions = z.infer<

@@ -777,6 +777,10 @@ program
     (value) => Number(value),
     3000
   )
+  .option(
+    '--dpop-negative-probes',
+    'Spend extra authorization codes on DPoP negative probes (invalid proofs and a wrong nonce). Headless authorization servers run these automatically; login-gated servers require this flag or MCP_CONFORMANCE_DPOP_NEGATIVE_PROBES=1'
+  )
   .option('-o, --output-dir <path>', 'Save results to this directory')
   .option(
     '--spec-version <version>',
@@ -813,6 +817,11 @@ program
       if (!fileOptions && !options.url) {
         console.error('error: must provide --url or --file');
         process.exit(1);
+      }
+      // Absent boolean flags must not clobber a settings-file true. Commander
+      // may surface an omitted flag as false.
+      if (options.dpopNegativeProbes !== true) {
+        delete options.dpopNegativeProbes;
       }
       // CLI flags override file values; undefined CLI values must not clobber file values
       const merged = {

@@ -24,6 +24,19 @@ requirements:
   # Binding mechanics are defined in RFC 9449 (§6 cnf/jkt thumbprint, §5 token_type: DPoP), which the SEP builds on rather than restating.
   - check: sep-1932-as-token-binding
     text: "When issuing a DPoP-bound access token, the authorization server MUST bind it to the client's DPoP public key by including a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key (RFC 9449 Section 6) and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+  # RFC 9449 §5. The SEP does not restate this sentence; it requires conformance to RFC 9449.
+  # Graded MUST from "MUST contain a valid DPoP proof JWT". A 400 that names some other
+  # error is WARNING: the prescribed `invalid_dpop_proof` code is stated without its own keyword.
+  - check: sep-1932-as-rejects-invalid-proof
+    text: 'The `DPoP` HTTP header field MUST contain a valid DPoP proof JWT. If the DPoP proof is invalid, the authorization server issues an error response per Section 5.2 of [RFC6749] with `invalid_dpop_proof` as the value of the `error` parameter.'
+    url: https://www.rfc-editor.org/rfc/rfc9449.html#section-5
+  # RFC 9449 §4.3 step 10 and §8. The SEP does not restate these sentences.
+  # Supplying a nonce is MAY, so the check is emitted only after a use_dpop_nonce response.
+  # The header sentence has no RFC 2119 keyword; it is the specified content of that response.
+  # A mismatched nonce MUST be rejected (§8, and §4.3 step 10 under "MUST ensure").
+  - check: sep-1932-as-nonce
+    text: 'To validate a DPoP proof, the receiving server MUST ensure the following: If the server provided a nonce value to the client, the `nonce` claim matches the server-provided nonce value. / The authorization server includes a `DPoP-Nonce` HTTP header in the response supplying a nonce value to be used when sending the subsequent request. / If the `nonce` claim in the DPoP proof does not exactly match a nonce recently supplied by the authorization server to the client, the authorization server MUST reject the request.'
+    url: https://www.rfc-editor.org/rfc/rfc9449.html#section-8
   - check: sep-1932-asymmetric-alg-only
     text: 'Only asymmetric signature algorithms MUST be used for DPoP proofs. Symmetric algorithms and the `none` algorithm MUST NOT be permitted as specified in RFC 9449 Section 11.6'
   - check: sep-1932-server-nonce

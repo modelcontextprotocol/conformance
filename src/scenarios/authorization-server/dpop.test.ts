@@ -1,12 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   createAuthServer,
   type AuthServerOptions
 } from '../client/auth/helpers/createAuthServer';
 import { ServerLifecycle } from '../client/auth/helpers/serverLifecycle';
 import { testScenarioContext } from '../../mock-server/testing';
+import type { AuthorizationServerOptions } from '../../schemas';
 import type { CheckStatus, ConformanceCheck } from '../../types';
-import { DPoPAuthorizationServerScenario, negotiateProofAlg } from './dpop';
+import {
+  DPOP_NEGATIVE_PROBES_ENV,
+  DPoPAuthorizationServerScenario,
+  dpopNegativeProbesRequested,
+  judgeInvalidDpopProofResponse,
+  judgeWrongNonceRejection,
+  negotiateProofAlg
+} from './dpop';
+
+/** Pretend the authorize step was an interactive login, even against the fixture AS. */
+class LoginGatedDpopScenario extends DPoPAuthorizationServerScenario {
+  protected negativeProbesAllowed(
+    options: AuthorizationServerOptions
+  ): boolean {
+    return dpopNegativeProbesRequested(options);
+  }
+}
 
 const ALL_IDS = [
   'sep-1932-as-metadata-alg-values',
@@ -19,6 +36,9 @@ const statusOf = (
   id: string
 ): CheckStatus | undefined => checks.find((c) => c.id === id)?.status;
 
+const named = (checks: ConformanceCheck[], name: string) =>
+  checks.find((c) => c.name === name);
+
 /**
  * Start an in-process test AS (real Express app, no mocks) with the given DPoP
  * options, run the scenario against its live URL, and return the emitted checks.
@@ -28,7 +48,9 @@ async function runAgainst(
   dpopOptions: Partial<AuthServerOptions>,
   // `false` means "send no client_id" — a plain `undefined` would re-trigger the
   // default via JS default-parameter semantics.
-  clientId: string | false = 'test-client-id'
+  clientId: string | false = 'test-client-id',
+  scenario: DPoPAuthorizationServerScenario = new DPoPAuthorizationServerScenario(),
+  scenarioOptions: { dpopNegativeProbes?: boolean } = {}
 ): Promise<ConformanceCheck[]> {
   const lifecycle = new ServerLifecycle();
   const app = createAuthServer(testScenarioContext(), [], lifecycle.getUrl, {
@@ -38,8 +60,13 @@ async function runAgainst(
   });
   await lifecycle.start(app);
   try {
-    return await new DPoPAuthorizationServerScenario().run(
-      { url: lifecycle.getUrl(), port: 45678, clientId: clientId || undefined },
+    return await scenario.run(
+      {
+        url: lifecycle.getUrl(),
+        port: 45678,
+        clientId: clientId || undefined,
+        ...scenarioOptions
+      },
       {}
     );
   } finally {
@@ -55,11 +82,32 @@ const COMPLIANT: Partial<AuthServerOptions> = {
 };
 
 describe('DPoPAuthorizationServerScenario — compliant AS', () => {
-  it('emits all three sep-1932-as-* checks as SUCCESS', async () => {
+  it('emits the metadata, binding, and invalid-proof checks as SUCCESS', async () => {
     const checks = await runAgainst(COMPLIANT);
     for (const id of ALL_IDS) {
       expect(statusOf(checks, id)).toBe('SUCCESS');
     }
+    expect(named(checks, 'RejectsTamperedSignature')?.status).toBe('SUCCESS');
+    expect(named(checks, 'RejectsWrongHtu')?.status).toBe('SUCCESS');
+    // Nonce is optional (RFC 9449 §8 MAY). A server that does not challenge
+    // does not emit sep-1932-as-nonce.
+    expect(checks.filter((c) => c.id === 'sep-1932-as-nonce')).toHaveLength(0);
+    expect(checks.filter((c) => c.status === 'FAILURE')).toHaveLength(0);
+  });
+
+  it('records a nonce challenge, a successful retry, and a rejected wrong nonce', async () => {
+    const checks = await runAgainst({
+      ...COMPLIANT,
+      dpopRequireNonce: true
+    });
+    for (const id of ALL_IDS) {
+      expect(statusOf(checks, id)).toBe('SUCCESS');
+    }
+    expect(named(checks, 'RejectsTamperedSignature')?.status).toBe('SUCCESS');
+    expect(named(checks, 'RejectsWrongHtu')?.status).toBe('SUCCESS');
+    expect(named(checks, 'NonceChallengeHeader')?.status).toBe('SUCCESS');
+    expect(named(checks, 'NonceRetryAccepted')?.status).toBe('SUCCESS');
+    expect(named(checks, 'NonceRejectsWrongValue')?.status).toBe('SUCCESS');
     expect(checks.filter((c) => c.status === 'FAILURE')).toHaveLength(0);
   });
 
@@ -91,7 +139,7 @@ describe('DPoPAuthorizationServerScenario — one-defect isolation', () => {
   ] as const;
 
   for (const { misbehavior, target } of CASES) {
-    it(`misbehaving AS (${misbehavior}) fails only ${target}`, async () => {
+    it(`misbehaving AS (${misbehavior}) fails ${target} and leaves the other original checks SUCCESS`, async () => {
       const checks = await runAgainst({
         ...COMPLIANT,
         dpopMisbehavior: misbehavior
@@ -118,6 +166,9 @@ describe('DPoPAuthorizationServerScenario — skip conditions', () => {
     expect(statusOf(checks, 'sep-1932-as-metadata-alg-values')).toBe('SUCCESS');
     expect(statusOf(checks, 'sep-1932-as-no-none-alg')).toBe('SUCCESS');
     expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SKIPPED');
+    expect(statusOf(checks, 'sep-1932-as-rejects-invalid-proof')).toBe(
+      'SKIPPED'
+    );
   });
 
   it('skips token binding when no advertised proof alg is supported (no ES256 fallback)', async () => {
@@ -130,6 +181,9 @@ describe('DPoPAuthorizationServerScenario — skip conditions', () => {
     expect(statusOf(checks, 'sep-1932-as-metadata-alg-values')).toBe('SUCCESS');
     expect(statusOf(checks, 'sep-1932-as-no-none-alg')).toBe('SUCCESS');
     expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SKIPPED');
+    expect(statusOf(checks, 'sep-1932-as-rejects-invalid-proof')).toBe(
+      'SKIPPED'
+    );
   });
 
   it('skips the whole scenario when the AS does not advertise DPoP support', async () => {
@@ -139,7 +193,206 @@ describe('DPoPAuthorizationServerScenario — skip conditions', () => {
     for (const id of ALL_IDS) {
       expect(statusOf(checks, id)).toBe('SKIPPED');
     }
+    expect(statusOf(checks, 'sep-1932-as-rejects-invalid-proof')).toBe(
+      'SKIPPED'
+    );
+    expect(checks.filter((c) => c.id === 'sep-1932-as-nonce')).toHaveLength(0);
     expect(checks.filter((c) => c.status === 'FAILURE')).toHaveLength(0);
+  });
+});
+
+describe('DPoPAuthorizationServerScenario — negative probes', () => {
+  it('accept-any-proof fails both invalid-proof probes and leaves binding SUCCESS', async () => {
+    const checks = await runAgainst({
+      ...COMPLIANT,
+      dpopMisbehavior: 'accept-any-proof'
+    });
+    expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SUCCESS');
+    expect(statusOf(checks, 'sep-1932-as-metadata-alg-values')).toBe('SUCCESS');
+    for (const name of ['RejectsTamperedSignature', 'RejectsWrongHtu']) {
+      const check = named(checks, name);
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.details).not.toMatchObject({ untestable: true });
+      expect(check?.errorMessage).toContain('issued an access token');
+    }
+  });
+
+  it('does not run invalid-proof probes when binding did not succeed', async () => {
+    const checks = await runAgainst({
+      ...COMPLIANT,
+      dpopMisbehavior: 'unbound-token'
+    });
+    expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('FAILURE');
+    for (const name of ['RejectsTamperedSignature', 'RejectsWrongHtu']) {
+      const check = named(checks, name);
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.details).toMatchObject({ untestable: true });
+      expect(check?.errorMessage).toContain('Not testable:');
+      expect(check?.errorMessage).toContain('rejects everything');
+    }
+  });
+
+  it('nonce-without-header fails the header check and does not skip it onto binding', async () => {
+    const checks = await runAgainst({
+      ...COMPLIANT,
+      dpopMisbehavior: 'nonce-without-header'
+    });
+    const header = named(checks, 'NonceChallengeHeader');
+    expect(header?.id).toBe('sep-1932-as-nonce');
+    expect(header?.status).toBe('FAILURE');
+    expect(header?.errorMessage).toContain('without a DPoP-Nonce header');
+    // No nonce was supplied, so there is no retry and no wrong-nonce probe.
+    expect(named(checks, 'NonceRetryAccepted')).toBeUndefined();
+    expect(named(checks, 'NonceRejectsWrongValue')).toBeUndefined();
+    // Binding stays the existing inconclusive result: use_dpop_nonce is not
+    // invalid_dpop_proof. The header check is the failure.
+    expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SKIPPED');
+    expect(
+      checks.find((c) => c.id === 'sep-1932-as-token-binding')?.errorMessage
+    ).toContain('use_dpop_nonce');
+    for (const name of ['RejectsTamperedSignature', 'RejectsWrongHtu']) {
+      expect(named(checks, name)?.details).toMatchObject({ untestable: true });
+    }
+  });
+
+  it('nonce-accept-any accepts a wrong nonce and still rejects invalid proofs', async () => {
+    const checks = await runAgainst({
+      ...COMPLIANT,
+      dpopMisbehavior: 'nonce-accept-any'
+    });
+    expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SUCCESS');
+    expect(named(checks, 'NonceChallengeHeader')?.status).toBe('SUCCESS');
+    expect(named(checks, 'NonceRetryAccepted')?.status).toBe('SUCCESS');
+    expect(named(checks, 'NonceRejectsWrongValue')?.status).toBe('FAILURE');
+    expect(named(checks, 'NonceRejectsWrongValue')?.errorMessage).toContain(
+      'wrong nonce'
+    );
+    expect(named(checks, 'RejectsTamperedSignature')?.status).toBe('SUCCESS');
+    expect(named(checks, 'RejectsWrongHtu')?.status).toBe('SUCCESS');
+  });
+
+  it('withholds negative probes on a login-gated AS unless opted in', async () => {
+    const previous = process.env[DPOP_NEGATIVE_PROBES_ENV];
+    delete process.env[DPOP_NEGATIVE_PROBES_ENV];
+    try {
+      const checks = await runAgainst(
+        COMPLIANT,
+        'test-client-id',
+        new LoginGatedDpopScenario()
+      );
+      expect(statusOf(checks, 'sep-1932-as-token-binding')).toBe('SUCCESS');
+      for (const name of ['RejectsTamperedSignature', 'RejectsWrongHtu']) {
+        const check = named(checks, name);
+        expect(check?.status).toBe('FAILURE');
+        expect(check?.details).toMatchObject({ untestable: true });
+        expect(check?.errorMessage).toContain('--dpop-negative-probes');
+        expect(check?.errorMessage).toContain(DPOP_NEGATIVE_PROBES_ENV);
+      }
+    } finally {
+      if (previous === undefined) delete process.env[DPOP_NEGATIVE_PROBES_ENV];
+      else process.env[DPOP_NEGATIVE_PROBES_ENV] = previous;
+    }
+  });
+
+  it('runs negative probes on a login-gated AS when the flag or env opts in', async () => {
+    const previous = process.env[DPOP_NEGATIVE_PROBES_ENV];
+    delete process.env[DPOP_NEGATIVE_PROBES_ENV];
+    try {
+      const flagged = await runAgainst(
+        COMPLIANT,
+        'test-client-id',
+        new LoginGatedDpopScenario(),
+        { dpopNegativeProbes: true }
+      );
+      expect(named(flagged, 'RejectsTamperedSignature')?.status).toBe(
+        'SUCCESS'
+      );
+      expect(named(flagged, 'RejectsWrongHtu')?.status).toBe('SUCCESS');
+
+      process.env[DPOP_NEGATIVE_PROBES_ENV] = '1';
+      const fromEnv = await runAgainst(
+        COMPLIANT,
+        'test-client-id',
+        new LoginGatedDpopScenario()
+      );
+      expect(named(fromEnv, 'RejectsTamperedSignature')?.status).toBe(
+        'SUCCESS'
+      );
+    } finally {
+      if (previous === undefined) delete process.env[DPOP_NEGATIVE_PROBES_ENV];
+      else process.env[DPOP_NEGATIVE_PROBES_ENV] = previous;
+    }
+  });
+});
+
+describe('invalid-proof and wrong-nonce grading', () => {
+  it('grades invalid proofs by the RFC 9449 §5 response', () => {
+    expect(
+      judgeInvalidDpopProofResponse(
+        { statusCode: 400, body: { error: 'invalid_dpop_proof' } },
+        'tampered-signature'
+      ).status
+    ).toBe('SUCCESS');
+    expect(
+      judgeInvalidDpopProofResponse(
+        { statusCode: 200, body: { access_token: 'tok' } },
+        'tampered-signature'
+      ).status
+    ).toBe('FAILURE');
+    expect(
+      judgeInvalidDpopProofResponse(
+        { statusCode: 400, body: { error: 'invalid_request' } },
+        'wrong-htu'
+      ).status
+    ).toBe('WARNING');
+    expect(
+      judgeInvalidDpopProofResponse(
+        { statusCode: 401, body: { error: 'invalid_dpop_proof' } },
+        'wrong-htu'
+      ).status
+    ).toBe('SKIPPED');
+    expect(
+      judgeInvalidDpopProofResponse({ statusCode: 500 }, 'wrong-htu').status
+    ).toBe('SKIPPED');
+  });
+
+  it('treats any token-less 4xx as a wrong-nonce rejection', () => {
+    expect(
+      judgeWrongNonceRejection({
+        statusCode: 400,
+        body: { error: 'use_dpop_nonce' }
+      }).status
+    ).toBe('SUCCESS');
+    expect(
+      judgeWrongNonceRejection({
+        statusCode: 400,
+        body: { error: 'invalid_dpop_proof' }
+      }).status
+    ).toBe('SUCCESS');
+    expect(
+      judgeWrongNonceRejection({
+        statusCode: 200,
+        body: { access_token: 'tok' }
+      }).status
+    ).toBe('FAILURE');
+    expect(judgeWrongNonceRejection({ statusCode: 500 }).status).toBe(
+      'SKIPPED'
+    );
+  });
+
+  afterEach(() => {
+    delete process.env[DPOP_NEGATIVE_PROBES_ENV];
+  });
+
+  it('reads the negative-probe opt-in from the flag or the env var', () => {
+    expect(dpopNegativeProbesRequested({})).toBe(false);
+    expect(dpopNegativeProbesRequested({ dpopNegativeProbes: true })).toBe(
+      true
+    );
+    process.env[DPOP_NEGATIVE_PROBES_ENV] = 'true';
+    expect(dpopNegativeProbesRequested({})).toBe(true);
+    process.env[DPOP_NEGATIVE_PROBES_ENV] = '0';
+    expect(dpopNegativeProbesRequested({})).toBe(false);
   });
 });
 

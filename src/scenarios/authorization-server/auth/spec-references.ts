@@ -22,6 +22,18 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-9449-authorization-server-metadata',
     url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-5.1'
   },
+  RFC_9449_PROOF_CHECKS: {
+    id: 'RFC-9449-checking-dpop-proofs',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-4.3'
+  },
+  RFC_9449_TOKEN_REQUEST: {
+    id: 'RFC-9449-dpop-access-token-request',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-5'
+  },
+  RFC_9449_AS_NONCE: {
+    id: 'RFC-9449-authorization-server-provided-nonce',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-8'
+  },
   RFC_9449_PUBLIC_KEY_CONFIRMATION: {
     id: 'RFC-9449-public-key-confirmation',
     url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-6'
