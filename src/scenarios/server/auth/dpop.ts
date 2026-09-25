@@ -79,6 +79,20 @@ interface Response {
   dpopNonce: string | undefined;
   /** The server's `Date` header as epoch seconds, if present (RFC 9110 §6.6.1). */
   date: number | undefined;
+  /** `error` auth-param of the DPoP challenge, if that challenge carries one. */
+  dpopError: string | undefined;
+}
+
+// Proof defects (§4.3) vs token defects (RFC 6750 `invalid_token`). `either`
+// covers cases implementations reasonably report as either (key binding, and a
+// DPoP-bound token presented as Bearer).
+type ExpectedDpopError = 'invalid_dpop_proof' | 'invalid_token' | 'either';
+
+interface ErrorObservation {
+  case: string;
+  expected: ExpectedDpopError;
+  actual: string | undefined;
+  attributable: boolean;
 }
 
 function isAccepted(status: number): boolean {
@@ -102,6 +116,105 @@ function hasDpopChallenge(wwwAuthenticate: string): boolean {
 // failure or as a DPoP presentation error.
 function hasBearerOrDpopChallenge(wwwAuthenticate: string): boolean {
   return /(?:^|,)\s*(?:bearer|dpop)(?:\s|$|,)/i.test(wwwAuthenticate);
+}
+
+// RFC 9110 token. Auth-params are `token "=" ( token / quoted-string )`; a new
+// challenge is a token that is NOT followed by "=" (RFC 9110 §11.6.1).
+const AUTH_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+/;
+
+function splitChallenges(header: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let i = 0;
+  let quoted = false;
+  while (i < header.length) {
+    const ch = header[i];
+    if (quoted) {
+      if (ch === '\\') {
+        i += 2;
+        continue;
+      }
+      if (ch === '"') quoted = false;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      quoted = true;
+      i++;
+      continue;
+    }
+    if (ch === ',') {
+      const rest = header.slice(i + 1).trimStart();
+      const token = AUTH_TOKEN.exec(rest);
+      const after = token ? rest.slice(token[0].length).trimStart() : '';
+      if (token && !after.startsWith('=')) {
+        parts.push(header.slice(start, i));
+        start = i + 1;
+      }
+    }
+    i++;
+  }
+  parts.push(header.slice(start));
+  return parts.map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+function readAuthParam(params: string, name: string): string | undefined {
+  let i = 0;
+  while (i < params.length) {
+    while (i < params.length && /[\s,]/.test(params[i])) i++;
+    if (i >= params.length) break;
+    const token = AUTH_TOKEN.exec(params.slice(i));
+    if (!token) break;
+    i += token[0].length;
+    while (i < params.length && params[i] === ' ') i++;
+    if (params[i] !== '=') break;
+    i++;
+    while (i < params.length && params[i] === ' ') i++;
+    let value = '';
+    if (params[i] === '"') {
+      i++;
+      while (i < params.length && params[i] !== '"') {
+        if (params[i] === '\\' && i + 1 < params.length) {
+          value += params[i + 1];
+          i += 2;
+        } else {
+          value += params[i];
+          i++;
+        }
+      }
+      if (params[i] === '"') i++;
+    } else {
+      const raw = AUTH_TOKEN.exec(params.slice(i));
+      if (!raw) break;
+      value = raw[0];
+      i += value.length;
+    }
+    if (token[0].toLowerCase() === name.toLowerCase()) return value;
+  }
+  return undefined;
+}
+
+/** `error` auth-param of the DPoP challenge. Quoted and unquoted values. */
+export function dpopChallengeError(
+  wwwAuthenticate: string
+): string | undefined {
+  for (const challenge of splitChallenges(wwwAuthenticate)) {
+    const scheme = AUTH_TOKEN.exec(challenge);
+    if (!scheme || scheme[0].toLowerCase() !== 'dpop') continue;
+    return readAuthParam(challenge.slice(scheme[0].length), 'error');
+  }
+  return undefined;
+}
+
+function errorCodeMatches(
+  expected: ExpectedDpopError,
+  actual: string | undefined
+): boolean {
+  if (!actual) return false;
+  if (expected === 'either') {
+    return actual === 'invalid_dpop_proof' || actual === 'invalid_token';
+  }
+  return actual === expected;
 }
 
 function properlyRejected(res: Response): boolean {
@@ -256,9 +369,10 @@ and proof (which a conformant server MUST accept) and a series of deliberately
 malformed requests (which a conformant server MUST reject with HTTP 401 and a
 \`WWW-Authenticate: DPoP\` challenge), following RFC 9449 §4.3.
 
-Covers: proof validation per §4.3, the ±5-minute \`iat\` window, asymmetric-only
-algorithms, the 401 challenge format, token audience validation under DPoP, and
-(optionally) the server-provided nonce flow.`;
+Covers: proof validation per §4.3, the ±5-minute \`iat\` window,
+asymmetric-only algorithms, the 401 challenge format, the §7.1 \`error\` code
+(SHOULD), token audience validation under DPoP, and (optionally) the
+server-provided nonce flow.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl, specVersion } = ctx;
@@ -286,25 +400,28 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     // require) can still push alternate negatives to untestable — acceptable, as
     // those are correctly reported not-testable rather than mis-scored.
     let heldNonce: string | undefined;
+    let positiveAccepted = false;
 
-    const send = async (
-      authz: string,
-      dpop: string | string[] | undefined
+    const errorObservations: ErrorObservation[] = [];
+    // A nonce challenge or a probe that threw is not a validation result, so it
+    // is not scored. Absent and unexpected codes are scored later, once.
+    const observeError = (
+      caseName: string,
+      expected: ExpectedDpopError,
+      res: Response | undefined
+    ): void => {
+      errorObservations.push({
+        case: caseName,
+        expected,
+        actual: res?.dpopError,
+        attributable:
+          positiveAccepted && res !== undefined && !isNonceChallenge(res)
+      });
+    };
+
+    const readHttp = async (
+      res: Awaited<ReturnType<typeof request>>
     ): Promise<Response> => {
-      const probe = probeBody(specVersion);
-      const base = buildStandardHeaders(probe.method, probe.params, {
-        specVersion
-      });
-      const headers: Record<string, string | string[]> = {
-        ...base,
-        Authorization: authz
-      };
-      if (dpop !== undefined) headers['DPoP'] = dpop;
-      const res = await request(serverUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(probe)
-      });
       // Drain the body so the socket can be reused / freed.
       try {
         await res.body.text();
@@ -327,7 +444,34 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
         : Math.floor(parsedDate / 1000);
       // Newest-wins (RFC 9449 §8.2): carry the latest nonce into the next probe.
       if (dpopNonce) heldNonce = dpopNonce;
-      return { statusCode: res.statusCode, wwwAuthenticate, dpopNonce, date };
+      return {
+        statusCode: res.statusCode,
+        wwwAuthenticate,
+        dpopNonce,
+        date,
+        dpopError: dpopChallengeError(wwwAuthenticate)
+      };
+    };
+
+    const send = async (
+      authz: string,
+      dpop: string | string[] | undefined
+    ): Promise<Response> => {
+      const probe = probeBody(specVersion);
+      const base = buildStandardHeaders(probe.method, probe.params, {
+        specVersion
+      });
+      const headers: Record<string, string | string[]> = {
+        ...base,
+        Authorization: authz
+      };
+      if (dpop !== undefined) headers['DPoP'] = dpop;
+      const res = await request(serverUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(probe)
+      });
+      return readHttp(res);
     };
 
     const buildDpopProof = (
@@ -371,7 +515,6 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     // Also anchor iat probes to the server's own clock (its `Date` header) so
     // the ±5-minute boundary is measured against the clock the server validates
     // against, immune to framework↔server skew.
-    let positiveAccepted = false;
     let serverClockOffset = 0;
     try {
       const res = await acceptValid();
@@ -414,6 +557,8 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       buildDpop: () => Promise<string | string[]>;
       predicate?: (res: Response) => boolean;
       description?: string;
+      /** Defaults to invalid_dpop_proof (a §4.3 proof defect). */
+      expectedError?: ExpectedDpopError;
     }> = [
       {
         case: 'tampered-signature',
@@ -514,6 +659,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
         authz: `Bearer ${token}`,
         buildDpop: () => validProof(),
         predicate: bearerSchemeRejected,
+        expectedError: 'either',
         description:
           'Server does not accept a DPoP-bound token presented under the Bearer scheme'
       },
@@ -595,9 +741,10 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     for (const n of negatives) {
       const description =
         n.description ?? `Server rejects a DPoP request with defect: ${n.case}`;
+      let res: Response | undefined;
       try {
         const dpop = await n.buildDpop();
-        const res = await send(n.authz, dpop);
+        res = await send(n.authz, dpop);
         checks.push(
           rejectionCheck(
             positiveAccepted,
@@ -621,46 +768,53 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           )
         );
       }
+      observeError(n.case, n.expectedError ?? 'invalid_dpop_proof', res);
     }
 
     // ---- cnf.jkt mismatch (token bound to a foreign key) ----
-    try {
-      const foreign = await generateDpopKeyPair();
-      const mismatchToken = await mintDpopBoundToken({
-        issuerKey,
-        issuer,
-        audience,
-        jkt: kp.thumbprint,
-        jktOverride: foreign.thumbprint
-      });
-      const proof = await buildDpopProof({
-        keyPair: kp,
-        htm: 'POST',
-        htu: serverUrl,
-        accessToken: mismatchToken
-      });
-      const res = await send(`DPoP ${mismatchToken}`, proof);
-      checks.push(
-        rejectionCheck(
-          positiveAccepted,
-          'sep-1932-server-validate-proof',
-          'RejectsCnfJktMismatch',
-          'Server rejects a token whose cnf.jkt does not match the proof key',
-          res,
-          { case: 'cnf-jkt-mismatch' }
-        )
-      );
-    } catch (e) {
-      checks.push(
-        probeErrorCheck(
-          positiveAccepted,
-          'sep-1932-server-validate-proof',
-          'RejectsCnfJktMismatch',
-          'Server rejects a token whose cnf.jkt does not match the proof key',
-          'cnf-jkt-mismatch',
-          e
-        )
-      );
+    // Key binding is a §4.3 step, but implementations reasonably report it as a
+    // token problem, so either error code is accepted.
+    {
+      let res: Response | undefined;
+      try {
+        const foreign = await generateDpopKeyPair();
+        const mismatchToken = await mintDpopBoundToken({
+          issuerKey,
+          issuer,
+          audience,
+          jkt: kp.thumbprint,
+          jktOverride: foreign.thumbprint
+        });
+        const proof = await buildDpopProof({
+          keyPair: kp,
+          htm: 'POST',
+          htu: serverUrl,
+          accessToken: mismatchToken
+        });
+        res = await send(`DPoP ${mismatchToken}`, proof);
+        checks.push(
+          rejectionCheck(
+            positiveAccepted,
+            'sep-1932-server-validate-proof',
+            'RejectsCnfJktMismatch',
+            'Server rejects a token whose cnf.jkt does not match the proof key',
+            res,
+            { case: 'cnf-jkt-mismatch' }
+          )
+        );
+      } catch (e) {
+        checks.push(
+          probeErrorCheck(
+            positiveAccepted,
+            'sep-1932-server-validate-proof',
+            'RejectsCnfJktMismatch',
+            'Server rejects a token whose cnf.jkt does not match the proof key',
+            'cnf-jkt-mismatch',
+            e
+          )
+        );
+      }
+      observeError('cnf-jkt-mismatch', 'either', res);
     }
 
     // ---- iat acceptance window ----
@@ -676,6 +830,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       { label: 'future', name: 'RejectsFutureIat', iatDelta: 303 }
     ]) {
       const description = `Server rejects a proof whose iat is ${label} — just outside the ±5-minute window (RFC 9449 §4.3 / SEP-1932)`;
+      let res: Response | undefined;
       try {
         const iat =
           Math.floor(Date.now() / 1000) + serverClockOffset + iatDelta;
@@ -686,7 +841,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           accessToken: token,
           iat
         });
-        const res = await send(`DPoP ${token}`, proof);
+        res = await send(`DPoP ${token}`, proof);
         checks.push(
           rejectionCheck(
             positiveAccepted,
@@ -709,6 +864,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           )
         );
       }
+      observeError(`iat-${label}`, 'invalid_dpop_proof', res);
     }
 
     // ---- asymmetric-only algorithm ----
@@ -724,6 +880,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
         opt: { symmetric: true } as const
       }
     ]) {
+      let res: Response | undefined;
       try {
         const proof = await buildDpopProof({
           keyPair: kp,
@@ -732,7 +889,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           accessToken: token,
           ...opt
         });
-        const res = await send(`DPoP ${token}`, proof);
+        res = await send(`DPoP ${token}`, proof);
         checks.push(
           rejectionCheck(
             positiveAccepted,
@@ -755,44 +912,49 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           )
         );
       }
+      observeError(`alg-${label}`, 'invalid_dpop_proof', res);
     }
 
     // ---- token audience validation under DPoP ----
-    try {
-      const wrongAudToken = await mintDpopBoundToken({
-        issuerKey,
-        issuer,
-        audience: 'https://not-this-server.example.com/mcp',
-        jkt: kp.thumbprint
-      });
-      const proof = await buildDpopProof({
-        keyPair: kp,
-        htm: 'POST',
-        htu: serverUrl,
-        accessToken: wrongAudToken
-      });
-      const res = await send(`DPoP ${wrongAudToken}`, proof);
-      checks.push(
-        rejectionCheck(
-          positiveAccepted,
-          'sep-1932-server-audience-validation',
-          'RejectsWrongAudience',
-          'Server rejects an access token whose audience is not this server, even with a valid proof',
-          res,
-          { case: 'wrong-audience' }
-        )
-      );
-    } catch (e) {
-      checks.push(
-        probeErrorCheck(
-          positiveAccepted,
-          'sep-1932-server-audience-validation',
-          'RejectsWrongAudience',
-          'Server rejects an access token whose audience is not this server, even with a valid proof',
-          'wrong-audience',
-          e
-        )
-      );
+    {
+      let res: Response | undefined;
+      try {
+        const wrongAudToken = await mintDpopBoundToken({
+          issuerKey,
+          issuer,
+          audience: 'https://not-this-server.example.com/mcp',
+          jkt: kp.thumbprint
+        });
+        const proof = await buildDpopProof({
+          keyPair: kp,
+          htm: 'POST',
+          htu: serverUrl,
+          accessToken: wrongAudToken
+        });
+        res = await send(`DPoP ${wrongAudToken}`, proof);
+        checks.push(
+          rejectionCheck(
+            positiveAccepted,
+            'sep-1932-server-audience-validation',
+            'RejectsWrongAudience',
+            'Server rejects an access token whose audience is not this server, even with a valid proof',
+            res,
+            { case: 'wrong-audience' }
+          )
+        );
+      } catch (e) {
+        checks.push(
+          probeErrorCheck(
+            positiveAccepted,
+            'sep-1932-server-audience-validation',
+            'RejectsWrongAudience',
+            'Server rejects an access token whose audience is not this server, even with a valid proof',
+            'wrong-audience',
+            e
+          )
+        );
+      }
+      observeError('wrong-audience', 'invalid_token', res);
     }
 
     // ---- 401 + WWW-Authenticate challenge format (on a known-bad request) ----
@@ -951,6 +1113,62 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           String(e)
         )
       );
+    }
+
+    // ---- §7.1 error code (SHOULD): one aggregate, MUST checks unchanged ----
+    const errorCodeDesc =
+      'Declined DPoP requests include an error parameter on the DPoP challenge naming the reason (RFC 9449 §7.1)';
+    if (!positiveAccepted) {
+      checks.push(
+        untestableCheck(
+          'sep-1932-server-error-code',
+          'ReportsDpopErrorCode',
+          errorCodeDesc,
+          gateReason('error-code'),
+          SPEC_REFERENCES,
+          'WARNING'
+        )
+      );
+    } else {
+      const attributable = errorObservations.filter((o) => o.attributable);
+      if (attributable.length === 0) {
+        checks.push(
+          untestableCheck(
+            'sep-1932-server-error-code',
+            'ReportsDpopErrorCode',
+            errorCodeDesc,
+            'no declined DPoP request could be attributed to its defect, so the error code cannot be checked',
+            SPEC_REFERENCES,
+            'WARNING'
+          )
+        );
+      } else {
+        const mismatches = attributable
+          .filter((o) => !errorCodeMatches(o.expected, o.actual))
+          .map((o) => ({
+            case: o.case,
+            expected: o.expected,
+            actual: o.actual ?? null
+          }));
+        const ok = mismatches.length === 0;
+        checks.push(
+          dpopCheck(
+            'sep-1932-server-error-code',
+            'ReportsDpopErrorCode',
+            errorCodeDesc,
+            ok ? 'SUCCESS' : 'WARNING',
+            ok
+              ? undefined
+              : `DPoP error code missing or unexpected: ${mismatches
+                  .map(
+                    (m) =>
+                      `${m.case} expected ${m.expected} got ${m.actual ?? 'absent'}`
+                  )
+                  .join('; ')}`,
+            { mismatches }
+          )
+        );
+      }
     }
 
     return checks;

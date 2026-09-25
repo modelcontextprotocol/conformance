@@ -15,7 +15,8 @@
  * issuer private key):
  *   PORT, DPOP_ISSUER_JWK (public JWK JSON), DPOP_ISSUER, DPOP_AUDIENCE,
  *   DPOP_IAT_SKEW_SECONDS (default 300), DPOP_REQUIRE_NONCE ('1'), DPOP_NONCE,
- *   DPOP_BEARER_REJECT_STATUS (negative-test: Bearer-scheme status, no challenge).
+ *   DPOP_BEARER_REJECT_STATUS (negative-test: Bearer-scheme status, no challenge),
+ *   DPOP_ERROR_CODE_OVERRIDE (negative-test: that code on every 401).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -58,6 +59,9 @@ const CLOCK_OFFSET = intEnv('DPOP_CLOCK_OFFSET_SECONDS', 0);
 const BEARER_REJECT_STATUS = process.env.DPOP_BEARER_REJECT_STATUS
   ? intEnv('DPOP_BEARER_REJECT_STATUS', 0)
   : 0;
+// Wrong-error-code mode (negative-test fixture only): every 401 uses this
+// `error` value instead of the real one. Proves ReportsDpopErrorCode can WARNING.
+const ERROR_CODE_OVERRIDE = process.env.DPOP_ERROR_CODE_OVERRIDE || '';
 
 // Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 step 5).
 const ASYMMETRIC_ALGS = [
@@ -242,9 +246,10 @@ async function validateDpop(req: Request): Promise<Result> {
 
 function send401(res: Response, f: Failure): void {
   const algs = ASYMMETRIC_ALGS.join(' ');
+  const error = ERROR_CODE_OVERRIDE || f.error;
   res.setHeader(
     'WWW-Authenticate',
-    `DPoP error="${f.error}", error_description="${f.description}", algs="${algs}"`
+    `DPoP error="${error}", error_description="${f.description}", algs="${algs}"`
   );
   if (f.nonce) res.setHeader('DPoP-Nonce', NONCE);
   res.status(401).json({
