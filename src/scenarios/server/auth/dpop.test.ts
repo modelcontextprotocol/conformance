@@ -3,7 +3,7 @@ import { createServer } from 'node:net';
 import path from 'path';
 import * as jose from 'jose';
 import { testContext } from '../../../connection/testing';
-import { DPoPServerValidationScenario } from './dpop';
+import { DPoPServerValidationScenario, dpopChallengeError } from './dpop';
 import type { ConformanceCheck } from '../../../types';
 
 const WINDOWS = process.platform === 'win32';
@@ -112,6 +112,38 @@ function byId(checks: ConformanceCheck[], id: string): ConformanceCheck[] {
   return checks.filter((c) => c.id === id);
 }
 
+describe('dpopChallengeError', () => {
+  it('reads a quoted or unquoted error from the DPoP challenge', () => {
+    expect(
+      dpopChallengeError(
+        'DPoP error="invalid_dpop_proof", error_description="bad proof"'
+      )
+    ).toBe('invalid_dpop_proof');
+    expect(dpopChallengeError('DPoP error=invalid_token')).toBe(
+      'invalid_token'
+    );
+    expect(dpopChallengeError('dpop error="invalid_dpop_proof"')).toBe(
+      'invalid_dpop_proof'
+    );
+  });
+
+  it('ignores the error param of a sibling challenge', () => {
+    expect(
+      dpopChallengeError(
+        'Bearer error="invalid_token", error_description="nope", DPoP error="invalid_dpop_proof", algs="ES256"'
+      )
+    ).toBe('invalid_dpop_proof');
+    expect(
+      dpopChallengeError(
+        'DPoP error="invalid_dpop_proof", error_description="a, b", Bearer error="invalid_token"'
+      )
+    ).toBe('invalid_dpop_proof');
+    expect(
+      dpopChallengeError('Bearer error="invalid_token", DPoP algs="ES256"')
+    ).toBeUndefined();
+  });
+});
+
 describe('DPoP server validation scenario', () => {
   let compliant: ChildProcess | null = null;
   let broken: ChildProcess | null = null;
@@ -122,6 +154,7 @@ describe('DPoP server validation scenario', () => {
   let clockSkew: ChildProcess | null = null;
   let bearerReject: ChildProcess | null = null;
   let bearerChallenge: ChildProcess | null = null;
+  let errorOverride: ChildProcess | null = null;
   let ports: {
     compliant: number;
     broken: number;
@@ -132,6 +165,7 @@ describe('DPoP server validation scenario', () => {
     clockSkew: number;
     bearerReject: number;
     bearerChallenge: number;
+    errorOverride: number;
   };
   let savedEnv: { jwk?: string; issuer?: string };
 
@@ -151,7 +185,7 @@ describe('DPoP server validation scenario', () => {
     process.env.DPOP_ISSUER_PRIVATE_JWK = JSON.stringify(privateJwk);
     process.env.DPOP_ISSUER = ISSUER;
 
-    const [cp, bp, rp, sp, gp, nf, ck, br, bc] = await freePorts(9);
+    const [cp, bp, rp, sp, gp, nf, ck, br, bc, eo] = await freePorts(10);
     ports = {
       compliant: cp,
       broken: bp,
@@ -161,7 +195,8 @@ describe('DPoP server validation scenario', () => {
       nonceFirst: nf,
       clockSkew: ck,
       bearerReject: br,
-      bearerChallenge: bc
+      bearerChallenge: bc,
+      errorOverride: eo
     };
 
     const issuerEnv = (port: number, extra: Record<string, string> = {}) => ({
@@ -180,7 +215,8 @@ describe('DPoP server validation scenario', () => {
       nonceFirst,
       clockSkew,
       bearerReject,
-      bearerChallenge
+      bearerChallenge,
+      errorOverride
     ] = await Promise.all([
       startServer(COMPLIANT, cp, issuerEnv(cp)),
       startServer(BROKEN, bp, {}),
@@ -206,7 +242,12 @@ describe('DPoP server validation scenario', () => {
         br,
         issuerEnv(br, { DPOP_BEARER_REJECT_STATUS: '500' })
       ),
-      startServer(COMPLIANT, bc, issuerEnv(bc, { DPOP_BEARER_CHALLENGE: '1' }))
+      startServer(COMPLIANT, bc, issuerEnv(bc, { DPOP_BEARER_CHALLENGE: '1' })),
+      startServer(
+        COMPLIANT,
+        eo,
+        issuerEnv(eo, { DPOP_ERROR_CODE_OVERRIDE: 'invalid_request' })
+      )
     ]);
   }, 60000);
 
@@ -220,7 +261,8 @@ describe('DPoP server validation scenario', () => {
       stopServer(nonceFirst),
       stopServer(clockSkew),
       stopServer(bearerReject),
-      stopServer(bearerChallenge)
+      stopServer(bearerChallenge),
+      stopServer(errorOverride)
     ]);
     process.env.DPOP_ISSUER_PRIVATE_JWK = savedEnv.jwk;
     process.env.DPOP_ISSUER = savedEnv.issuer;
@@ -254,6 +296,9 @@ describe('DPoP server validation scenario', () => {
         c.status
       ])
     ).toEqual([['RejectsBearerScheme', 'SUCCESS']]);
+    expect(byId(checks, 'sep-1932-server-error-code')[0].status).toBe(
+      'SUCCESS'
+    );
     expect(
       byId(checks, 'sep-1932-server-iat-window').every(
         (c) => c.status === 'SUCCESS'
@@ -446,6 +491,32 @@ describe('DPoP server validation scenario', () => {
     const others = byId(checks, 'sep-1932-server-validate-proof');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
+  }, 30000);
+
+  it('reports WARNING when every rejection uses the wrong DPoP error code', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.errorOverride))
+    );
+
+    const errorCode = byId(checks, 'sep-1932-server-error-code')[0];
+    expect(errorCode.status).toBe('WARNING');
+    expect(errorCode.details?.untestable).toBeUndefined();
+    const mismatches = errorCode.details?.mismatches as Array<{
+      case: string;
+      expected: string;
+      actual: string | null;
+    }>;
+    expect(mismatches.length).toBeGreaterThan(0);
+    expect(mismatches.every((m) => m.actual === 'invalid_request')).toBe(true);
+
+    // The override only changes the error param. MUST checks still see 401 +
+    // a DPoP challenge.
+    const failures = checks.filter(
+      (c) => c.status === 'FAILURE' && !c.details?.untestable
+    );
+    expect(failures.map((c) => `${c.id}/${c.name}: ${c.errorMessage}`)).toEqual(
+      []
+    );
   }, 30000);
 
   it('anchors iat probes to the server clock (no false failure under skew)', async () => {
