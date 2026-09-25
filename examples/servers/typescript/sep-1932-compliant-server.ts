@@ -14,7 +14,8 @@
  * Trust config is supplied via env (the scenario mints tokens with the matching
  * issuer private key):
  *   PORT, DPOP_ISSUER_JWK (public JWK JSON), DPOP_ISSUER, DPOP_AUDIENCE,
- *   DPOP_IAT_SKEW_SECONDS (default 300), DPOP_REQUIRE_NONCE ('1'), DPOP_NONCE.
+ *   DPOP_IAT_SKEW_SECONDS (default 300), DPOP_REQUIRE_NONCE ('1'), DPOP_NONCE,
+ *   DPOP_BEARER_REJECT_STATUS (negative-test: Bearer-scheme status, no challenge).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -51,6 +52,12 @@ const NONCE_FIRST = process.env.DPOP_NONCE_FIRST === '1';
 // "now" — and its `Date` header — by N seconds to simulate a skewed server
 // clock. Used to prove the scenario anchors its iat probes to the server's Date.
 const CLOCK_OFFSET = intEnv('DPOP_CLOCK_OFFSET_SECONDS', 0);
+// Bearer-downgrade negative mode: answer a Bearer-scheme request with this
+// status and no WWW-Authenticate challenge. Used to prove RejectsBearerScheme
+// FAILs a server that crashes or 404s instead of authenticating.
+const BEARER_REJECT_STATUS = process.env.DPOP_BEARER_REJECT_STATUS
+  ? intEnv('DPOP_BEARER_REJECT_STATUS', 0)
+  : 0;
 
 // Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 step 5).
 const ASYMMETRIC_ALGS = [
@@ -281,6 +288,15 @@ if (CLOCK_OFFSET) {
 }
 
 app.post('/mcp', async (req: Request, res: Response) => {
+  const authz = req.headers.authorization ?? '';
+  if (BEARER_REJECT_STATUS && authz.startsWith('Bearer ')) {
+    res.status(BEARER_REJECT_STATUS).json({
+      jsonrpc: '2.0',
+      error: { code: -32603, message: 'Internal error' },
+      id: null
+    });
+    return;
+  }
   const result = await validateDpop(req);
   if (!result.ok) {
     send401(res, result);

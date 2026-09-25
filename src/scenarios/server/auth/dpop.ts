@@ -96,8 +96,22 @@ function hasDpopChallenge(wwwAuthenticate: string): boolean {
   return /(?:^|,)\s*dpop(?:\s|$|,)/i.test(wwwAuthenticate);
 }
 
+// RFC 6750 §3 (Bearer) / RFC 9449 §7.1 (DPoP): a scheme token at the start of
+// the header or after a comma. Used by the Bearer-downgrade probe, which
+// accepts either challenge — the server may treat the request as a Bearer
+// failure or as a DPoP presentation error.
+function hasBearerOrDpopChallenge(wwwAuthenticate: string): boolean {
+  return /(?:^|,)\s*(?:bearer|dpop)(?:\s|$|,)/i.test(wwwAuthenticate);
+}
+
 function properlyRejected(res: Response): boolean {
   return res.statusCode === 401 && hasDpopChallenge(res.wwwAuthenticate);
+}
+
+function bearerSchemeRejected(res: Response): boolean {
+  return (
+    res.statusCode === 401 && hasBearerOrDpopChallenge(res.wwwAuthenticate)
+  );
 }
 
 // A `use_dpop_nonce` challenge means the server is demanding a (different) nonce
@@ -168,9 +182,9 @@ function probeErrorCheck(
 // Gated on the positive baseline: a server that refuses even a valid DPoP
 // request would 401 every negative probe too, making these checks pass
 // vacuously — so when `positiveAccepted` is false we report them notTestable
-// (#248) rather than SUCCESS. `predicate` lets a case relax what counts as a
-// proper rejection (e.g. the Bearer-scheme case, where no DPoP challenge is
-// required).
+// (#248) rather than SUCCESS. `predicate` lets a case change what counts as a
+// proper rejection (e.g. the Bearer-scheme case, which accepts a Bearer or
+// DPoP challenge rather than requiring DPoP specifically).
 function rejectionCheck(
   positiveAccepted: boolean,
   id: string,
@@ -492,13 +506,14 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       },
       {
         // A DPoP-bound token presented under the Bearer scheme MUST NOT be
-        // accepted, but the server need not answer with a DPoP challenge (it may
-        // treat it as a Bearer failure) — so accept any non-2xx as a rejection.
+        // accepted. Count only a real authentication rejection: 401 plus a
+        // Bearer (RFC 6750 §3) or DPoP challenge. A 500/404 with no
+        // WWW-Authenticate is not a rejection of the scheme.
         case: 'bearer-scheme',
         name: 'RejectsBearerScheme',
         authz: `Bearer ${token}`,
         buildDpop: () => validProof(),
-        predicate: (res) => !isAccepted(res.statusCode),
+        predicate: bearerSchemeRejected,
         description:
           'Server does not accept a DPoP-bound token presented under the Bearer scheme'
       },
