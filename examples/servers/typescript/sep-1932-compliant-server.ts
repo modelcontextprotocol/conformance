@@ -16,7 +16,11 @@
  *   PORT, DPOP_ISSUER_JWK (public JWK JSON), DPOP_ISSUER, DPOP_AUDIENCE,
  *   DPOP_IAT_SKEW_SECONDS (default 300), DPOP_REQUIRE_NONCE ('1'), DPOP_NONCE,
  *   DPOP_BEARER_REJECT_STATUS (negative-test: Bearer-scheme status, no challenge),
- *   DPOP_ERROR_CODE_OVERRIDE (negative-test: that code on every 401).
+ *   DPOP_ERROR_CODE_OVERRIDE (negative-test: that code on every 401),
+ *   DPOP_PRM_OMIT_FIELDS (negative-test: PRM omits both DPoP fields),
+ *   DPOP_PRM_INCLUDE_NONE (negative-test: PRM algs include `none`),
+ *   DPOP_ACCEPT_UNBOUND_BEARER (negative-test: accept an unbound Bearer token),
+ *   DPOP_OMIT_CHALLENGE_ALGS (negative-test: DPoP challenge without `algs`).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -62,6 +66,15 @@ const BEARER_REJECT_STATUS = process.env.DPOP_BEARER_REJECT_STATUS
 // Wrong-error-code mode (negative-test fixture only): every 401 uses this
 // `error` value instead of the real one. Proves ReportsDpopErrorCode can WARNING.
 const ERROR_CODE_OVERRIDE = process.env.DPOP_ERROR_CODE_OVERRIDE || '';
+// PRM omits both DPoP fields. Proves PrmDpop and PrmConsistency can FAILURE.
+const PRM_OMIT_FIELDS = process.env.DPOP_PRM_OMIT_FIELDS === '1';
+// PRM lists `none` among its DPoP algs. Proves PrmDpop can FAILURE.
+const PRM_INCLUDE_NONE = process.env.DPOP_PRM_INCLUDE_NONE === '1';
+// Accept a valid unbound Bearer token (no cnf). A DPoP-bound token presented
+// as Bearer is still rejected. Proves PrmConsistency can FAILURE.
+const ACCEPT_UNBOUND_BEARER = process.env.DPOP_ACCEPT_UNBOUND_BEARER === '1';
+// DPoP challenge omits `algs`. Proves AdvertisesDpop can WARNING.
+const OMIT_CHALLENGE_ALGS = process.env.DPOP_OMIT_CHALLENGE_ALGS === '1';
 
 // Asymmetric JWS algorithms acceptable for a DPoP proof (RFC 9449 §4.3 step 5).
 const ASYMMETRIC_ALGS = [
@@ -244,19 +257,58 @@ async function validateDpop(req: Request): Promise<Result> {
   return { ok: true };
 }
 
+function metadataUrl(): string {
+  const origin = new URL(AUDIENCE).origin;
+  return `${origin}/.well-known/oauth-protected-resource/mcp`;
+}
+
+function prmDocument(): Record<string, unknown> {
+  const doc: Record<string, unknown> = { resource: AUDIENCE };
+  if (!PRM_OMIT_FIELDS) {
+    const algs = [...ASYMMETRIC_ALGS];
+    if (PRM_INCLUDE_NONE) algs.push('none');
+    doc.dpop_signing_alg_values_supported = algs;
+    doc.dpop_bound_access_tokens_required = true;
+  }
+  return doc;
+}
+
 function send401(res: Response, f: Failure): void {
-  const algs = ASYMMETRIC_ALGS.join(' ');
   const error = ERROR_CODE_OVERRIDE || f.error;
-  res.setHeader(
-    'WWW-Authenticate',
-    `DPoP error="${error}", error_description="${f.description}", algs="${algs}"`
-  );
+  const params = [`error="${error}"`, `error_description="${f.description}"`];
+  if (!OMIT_CHALLENGE_ALGS) {
+    params.push(`algs="${ASYMMETRIC_ALGS.join(' ')}"`);
+  }
+  params.push(`resource_metadata="${metadataUrl()}"`);
+  res.setHeader('WWW-Authenticate', `DPoP ${params.join(', ')}`);
   if (f.nonce) res.setHeader('DPoP-Nonce', NONCE);
   res.status(401).json({
     jsonrpc: '2.0',
     error: { code: -32001, message: 'Unauthorized' },
     id: null
   });
+}
+
+async function handleMcp(req: Request, res: Response): Promise<void> {
+  try {
+    const server = createMcpServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined
+    });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
+        },
+        id: null
+      });
+    }
+  }
 }
 
 function createMcpServer(): McpServer {
@@ -292,40 +344,55 @@ if (CLOCK_OFFSET) {
   });
 }
 
+app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+  res.json(prmDocument());
+});
+
 app.post('/mcp', async (req: Request, res: Response) => {
   const authz = req.headers.authorization ?? '';
   if (BEARER_REJECT_STATUS && authz.startsWith('Bearer ')) {
-    res.status(BEARER_REJECT_STATUS).json({
-      jsonrpc: '2.0',
-      error: { code: -32603, message: 'Internal error' },
-      id: null
-    });
-    return;
+    // Only the downgrade probe (a DPoP-bound token presented as Bearer). An
+    // unbound Bearer token is the consistency probe and must still be judged
+    // by validateDpop.
+    let bound = false;
+    try {
+      const claims = jose.decodeJwt(authz.slice('Bearer '.length).trim());
+      const cnf = claims.cnf as { jkt?: string } | undefined;
+      bound = typeof cnf?.jkt === 'string';
+    } catch {
+      bound = false;
+    }
+    if (bound) {
+      res.status(BEARER_REJECT_STATUS).json({
+        jsonrpc: '2.0',
+        error: { code: -32603, message: 'Internal error' },
+        id: null
+      });
+      return;
+    }
+  }
+  if (ACCEPT_UNBOUND_BEARER && authz.startsWith('Bearer ')) {
+    const raw = authz.slice('Bearer '.length).trim();
+    try {
+      const verified = await jose.jwtVerify(raw, issuerKey, {
+        issuer: ISSUER,
+        audience: AUDIENCE
+      });
+      const cnf = verified.payload.cnf as { jkt?: string } | undefined;
+      if (!cnf?.jkt) {
+        await handleMcp(req, res);
+        return;
+      }
+    } catch {
+      // Not a valid unbound token. Fall through and reject it as Bearer.
+    }
   }
   const result = await validateDpop(req);
   if (!result.ok) {
     send401(res, result);
     return;
   }
-  try {
-    const server = createMcpServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined
-    });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: '2.0',
-        error: {
-          code: -32603,
-          message: `Internal error: ${error instanceof Error ? error.message : String(error)}`
-        },
-        id: null
-      });
-    }
-  }
+  await handleMcp(req, res);
 });
 
 const PORT = parseInt(process.env.PORT || '3010', 10);

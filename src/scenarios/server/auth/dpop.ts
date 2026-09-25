@@ -16,7 +16,8 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  type SpecReference
 } from '../../../types';
 import {
   buildStandardHeaders,
@@ -44,6 +45,12 @@ const SPEC_REFERENCES = [
   SpecReferences.RFC_9449_AUTH_SCHEME,
   SpecReferences.RFC_9449_NONCE,
   SpecReferences.RFC_9449_ALGORITHMS
+];
+
+const DISCOVERY_REFERENCES: SpecReference[] = [
+  ...SPEC_REFERENCES,
+  SpecReferences.RFC_9728_METADATA,
+  SpecReferences.RFC_9728_WWW_AUTHENTICATE
 ];
 
 interface Probe {
@@ -246,14 +253,15 @@ function dpopCheck(
   description: string,
   status: ConformanceCheck['status'],
   errorMessage?: string,
-  details?: Record<string, unknown>
+  details?: Record<string, unknown>,
+  specReferences: SpecReference[] = SPEC_REFERENCES
 ): ConformanceCheck {
   return {
     id,
     name,
     description,
     timestamp: new Date().toISOString(),
-    specReferences: SPEC_REFERENCES,
+    specReferences,
     status,
     ...(errorMessage ? { errorMessage } : {}),
     ...(details ? { details } : {})
@@ -359,6 +367,329 @@ async function resolveIssuer(): Promise<{
   return { issuerKey: await generateIssuerKey(), issuer };
 }
 
+const ADVERTISES_ID = 'sep-1932-server-advertises-dpop';
+const ADVERTISES_NAME = 'AdvertisesDpop';
+const ADVERTISES_DESC =
+  'An unauthenticated request is answered with HTTP 401 and a DPoP challenge that includes an algs parameter (RFC 9449 §7.1)';
+
+const PRM_ID = 'sep-1932-server-prm-dpop';
+const PRM_NAME = 'PrmDpop';
+const PRM_DESC =
+  'Protected resource metadata advertises dpop_signing_alg_values_supported (asymmetric algorithms only) and dpop_bound_access_tokens_required (RFC 9728 §2)';
+
+const CONSISTENCY_ID = 'sep-1932-server-prm-consistency';
+const CONSISTENCY_NAME = 'PrmConsistency';
+const CONSISTENCY_DESC =
+  'The server rejects an unbound Bearer token when protected resource metadata says DPoP is required, and advertises that requirement when it enforces DPoP';
+
+type PrmSource = 'resource_metadata' | 'well-known-path' | 'well-known-root';
+
+interface PrmDocument {
+  doc: Record<string, unknown>;
+  source: PrmSource;
+  url: string;
+}
+
+/** Path-based well-known URL, then the root one (RFC 9728 §3.1, MCP discovery order). */
+export function protectedResourceMetadataFallbacks(resourceUrl: string): {
+  pathBased: string;
+  root: string;
+} {
+  const u = new URL(resourceUrl);
+  // A resource at the origin has no path to insert. `pathname` is `/` there;
+  // appending it would leave a trailing slash the well-known URL does not use.
+  const path = u.pathname === '/' ? '' : u.pathname;
+  return {
+    pathBased: `${u.origin}/.well-known/oauth-protected-resource${path}${u.search}`,
+    root: `${u.origin}/.well-known/oauth-protected-resource`
+  };
+}
+
+function dpopAuthParam(header: string, name: string): string | undefined {
+  for (const challenge of splitChallenges(header)) {
+    const scheme = AUTH_TOKEN.exec(challenge);
+    if (!scheme || scheme[0].toLowerCase() !== 'dpop') continue;
+    const value = readAuthParam(challenge.slice(scheme[0].length), name);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+/** `resource_metadata` from the DPoP challenge, else from any sibling challenge. */
+function resourceMetadataParam(header: string): string | undefined {
+  const fromDpop = dpopAuthParam(header, 'resource_metadata');
+  if (fromDpop !== undefined) return fromDpop;
+  for (const challenge of splitChallenges(header)) {
+    const scheme = AUTH_TOKEN.exec(challenge);
+    if (!scheme) continue;
+    const value = readAuthParam(
+      challenge.slice(scheme[0].length),
+      'resource_metadata'
+    );
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function forbiddenDpopAlgs(algs: unknown): string[] {
+  const list = Array.isArray(algs) ? algs : [];
+  return list.filter(
+    (alg): alg is string =>
+      typeof alg === 'string' &&
+      (alg.toLowerCase() === 'none' || alg.toUpperCase().startsWith('HS'))
+  );
+}
+
+async function fetchJsonDocument(
+  url: string
+): Promise<Record<string, unknown> | undefined> {
+  const res = await request(url, {
+    method: 'GET',
+    headers: { accept: 'application/json' }
+  });
+  let text = '';
+  try {
+    text = await res.body.text();
+  } catch {
+    return undefined;
+  }
+  if (res.statusCode < 200 || res.statusCode >= 300) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * RFC 9728 §5.1, then the MCP fallback order from the client discovery
+ * scenarios: the `resource_metadata` URL when the challenge carries one,
+ * otherwise the path-based well-known URL, otherwise the root one. A
+ * `resource_metadata` URL that does not yield a document is not replaced by
+ * a different well-known document.
+ */
+async function discoverProtectedResourceMetadata(
+  resourceUrl: string,
+  resourceMetadata: string | undefined
+): Promise<PrmDocument | { reason: string }> {
+  if (resourceMetadata !== undefined && resourceMetadata.length > 0) {
+    let absolute: string;
+    try {
+      absolute = new URL(resourceMetadata, resourceUrl).href;
+    } catch {
+      return {
+        reason: `resource_metadata parameter is not a URL (${resourceMetadata})`
+      };
+    }
+    const doc = await fetchJsonDocument(absolute);
+    if (!doc) {
+      return {
+        reason: `protected resource metadata advertised at ${absolute} was unreachable or was not a JSON object`
+      };
+    }
+    return { doc, source: 'resource_metadata', url: absolute };
+  }
+
+  const { pathBased, root } = protectedResourceMetadataFallbacks(resourceUrl);
+  const candidates: Array<{ source: PrmSource; url: string }> =
+    pathBased === root
+      ? [{ source: 'well-known-root', url: root }]
+      : [
+          { source: 'well-known-path', url: pathBased },
+          { source: 'well-known-root', url: root }
+        ];
+  for (const candidate of candidates) {
+    const doc = await fetchJsonDocument(candidate.url);
+    if (doc) return { doc, source: candidate.source, url: candidate.url };
+  }
+  return {
+    reason:
+      'protected resource metadata was not found at the path-based well-known URL or the root well-known URL'
+  };
+}
+
+function gradeAdvertises(res: Response): ConformanceCheck {
+  const challenged =
+    res.statusCode === 401 && hasDpopChallenge(res.wwwAuthenticate);
+  const algs = dpopAuthParam(res.wwwAuthenticate, 'algs');
+  const details = {
+    statusCode: res.statusCode,
+    algs: algs ?? null,
+    resourceMetadata: resourceMetadataParam(res.wwwAuthenticate) ?? null
+  };
+  if (!challenged) {
+    return dpopCheck(
+      ADVERTISES_ID,
+      ADVERTISES_NAME,
+      ADVERTISES_DESC,
+      'FAILURE',
+      `Unauthenticated request was not challenged with a DPoP scheme (HTTP ${res.statusCode})`,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (!algs || algs.trim().length === 0) {
+    return dpopCheck(
+      ADVERTISES_ID,
+      ADVERTISES_NAME,
+      ADVERTISES_DESC,
+      'WARNING',
+      'DPoP challenge is missing the algs parameter',
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  return dpopCheck(
+    ADVERTISES_ID,
+    ADVERTISES_NAME,
+    ADVERTISES_DESC,
+    'SUCCESS',
+    undefined,
+    details,
+    DISCOVERY_REFERENCES
+  );
+}
+
+function gradePrm(found: PrmDocument | { reason: string }): ConformanceCheck {
+  if (!('doc' in found)) {
+    return untestableCheck(
+      PRM_ID,
+      PRM_NAME,
+      PRM_DESC,
+      found.reason,
+      DISCOVERY_REFERENCES
+    );
+  }
+  const algs = found.doc.dpop_signing_alg_values_supported;
+  const required = found.doc.dpop_bound_access_tokens_required;
+  const forbidden = forbiddenDpopAlgs(algs);
+  const algsOk =
+    Array.isArray(algs) && algs.length > 0 && forbidden.length === 0;
+  const requiredPresent = typeof required === 'boolean';
+  const details: Record<string, unknown> = {
+    source: found.source,
+    url: found.url,
+    dpop_signing_alg_values_supported: algs ?? null,
+    dpop_bound_access_tokens_required: required ?? null,
+    ...(forbidden.length > 0 ? { forbidden } : {})
+  };
+  if (forbidden.length > 0) {
+    return dpopCheck(
+      PRM_ID,
+      PRM_NAME,
+      PRM_DESC,
+      'FAILURE',
+      `dpop_signing_alg_values_supported MUST list only asymmetric algorithms; found non-asymmetric: ${forbidden.join(', ')}`,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (!algsOk || !requiredPresent) {
+    const missing = [
+      ...(!algsOk ? ['dpop_signing_alg_values_supported'] : []),
+      ...(!requiredPresent ? ['dpop_bound_access_tokens_required'] : [])
+    ];
+    return dpopCheck(
+      PRM_ID,
+      PRM_NAME,
+      PRM_DESC,
+      'FAILURE',
+      `Protected resource metadata is missing ${missing.join(' and ')}`,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  return dpopCheck(
+    PRM_ID,
+    PRM_NAME,
+    PRM_DESC,
+    'SUCCESS',
+    undefined,
+    details,
+    DISCOVERY_REFERENCES
+  );
+}
+
+function gradeConsistency(
+  saysRequired: boolean,
+  res: Response
+): ConformanceCheck {
+  const accepted = isAccepted(res.statusCode);
+  const rejected = res.statusCode === 401;
+  const details = {
+    dpop_bound_access_tokens_required: saysRequired,
+    statusCode: res.statusCode
+  };
+  if (saysRequired && accepted) {
+    return dpopCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'FAILURE',
+      'Protected resource metadata says dpop_bound_access_tokens_required but the server accepted an unbound Bearer token',
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (saysRequired && rejected) {
+    return dpopCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'SUCCESS',
+      undefined,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (saysRequired) {
+    return dpopCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'FAILURE',
+      `Expected the server to reject an unbound Bearer token with HTTP 401, got ${res.statusCode}`,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (rejected) {
+    return dpopCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'FAILURE',
+      'server requires DPoP but does not advertise it',
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  if (accepted) {
+    return dpopCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'INFO',
+      undefined,
+      details,
+      DISCOVERY_REFERENCES
+    );
+  }
+  return dpopCheck(
+    CONSISTENCY_ID,
+    CONSISTENCY_NAME,
+    CONSISTENCY_DESC,
+    'WARNING',
+    `Unbound Bearer token was neither accepted nor rejected with HTTP 401 (got ${res.statusCode})`,
+    details,
+    DISCOVERY_REFERENCES
+  );
+}
+
 export class DPoPServerValidationScenario implements ClientScenario {
   name = 'auth/dpop-server-validation';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
@@ -371,8 +702,9 @@ malformed requests (which a conformant server MUST reject with HTTP 401 and a
 
 Covers: proof validation per §4.3, the ±5-minute \`iat\` window,
 asymmetric-only algorithms, the 401 challenge format, the §7.1 \`error\` code
-(SHOULD), token audience validation under DPoP, and (optionally) the
-server-provided nonce flow.`;
+(SHOULD), how an unauthenticated client learns that DPoP is required (the
+challenge \`algs\` parameter and Protected Resource Metadata), token audience
+validation under DPoP, and (optionally) the server-provided nonce flow.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl, specVersion } = ctx;
@@ -474,6 +806,18 @@ server-provided nonce flow.`;
       return readHttp(res);
     };
 
+    const sendUnauthenticated = async (): Promise<Response> => {
+      const probe = probeBody(specVersion);
+      const res = await request(serverUrl, {
+        method: 'POST',
+        headers: buildStandardHeaders(probe.method, probe.params, {
+          specVersion
+        }),
+        body: JSON.stringify(probe)
+      });
+      return readHttp(res);
+    };
+
     const buildDpopProof = (
       opts: Parameters<typeof baseBuildDpopProof>[0]
     ): Promise<string> =>
@@ -509,6 +853,56 @@ server-provided nonce flow.`;
       return first;
     };
 
+    // ---- Discovery: an unauthenticated client must be able to learn DPoP ----
+    // Runs before the positive probe and is not gated on it: a server that
+    // rejects a valid proof can still advertise DPoP on the 401.
+    let saysDpopRequired = false;
+    try {
+      const unauth = await sendUnauthenticated();
+      checks.push(gradeAdvertises(unauth));
+      try {
+        const found = await discoverProtectedResourceMetadata(
+          serverUrl,
+          resourceMetadataParam(unauth.wwwAuthenticate)
+        );
+        if ('doc' in found) {
+          saysDpopRequired =
+            found.doc.dpop_bound_access_tokens_required === true;
+        }
+        checks.push(gradePrm(found));
+      } catch (e) {
+        checks.push(
+          untestableCheck(
+            PRM_ID,
+            PRM_NAME,
+            PRM_DESC,
+            `protected resource metadata request failed: ${String(e)}`,
+            DISCOVERY_REFERENCES
+          )
+        );
+      }
+    } catch (e) {
+      const reason = `unauthenticated probe failed: ${String(e)}`;
+      checks.push(
+        untestableCheck(
+          ADVERTISES_ID,
+          ADVERTISES_NAME,
+          ADVERTISES_DESC,
+          reason,
+          DISCOVERY_REFERENCES
+        )
+      );
+      checks.push(
+        untestableCheck(
+          PRM_ID,
+          PRM_NAME,
+          PRM_DESC,
+          reason,
+          DISCOVERY_REFERENCES
+        )
+      );
+    }
+
     // ---- Positive: a valid DPoP-bound request is accepted ----
     // Whether this succeeds gates every rejection check below (#248): if the
     // server refuses a valid request, a 401 on a malformed one proves nothing.
@@ -543,6 +937,46 @@ server-provided nonce flow.`;
           { case: 'valid' }
         )
       );
+    }
+
+    // ---- Consistency: advertised DPoP requirement matches enforcement ----
+    // Gated on the positive baseline, same as the rejection battery: a server
+    // that 401s everything would otherwise look like it correctly refuses an
+    // unbound Bearer token.
+    if (!positiveAccepted) {
+      checks.push(
+        untestableCheck(
+          CONSISTENCY_ID,
+          CONSISTENCY_NAME,
+          CONSISTENCY_DESC,
+          gateReason('unbound-bearer'),
+          DISCOVERY_REFERENCES
+        )
+      );
+    } else {
+      try {
+        const unbound = await mintDpopBoundToken({
+          issuerKey,
+          issuer,
+          audience,
+          jkt: kp.thumbprint,
+          omitCnf: true
+        });
+        const unboundRes = await send(`Bearer ${unbound}`, undefined);
+        checks.push(gradeConsistency(saysDpopRequired, unboundRes));
+      } catch (e) {
+        checks.push(
+          dpopCheck(
+            CONSISTENCY_ID,
+            CONSISTENCY_NAME,
+            CONSISTENCY_DESC,
+            'FAILURE',
+            String(e),
+            { case: 'unbound-bearer' },
+            DISCOVERY_REFERENCES
+          )
+        );
+      }
     }
 
     // ---- Negative §4.3 variants: each malformed proof must be rejected ----

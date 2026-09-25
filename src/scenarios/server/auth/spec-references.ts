@@ -24,5 +24,13 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   RFC_9449_ALGORITHMS: {
     id: 'RFC-9449-dpop-proof-jwt-syntax',
     url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-11.6'
+  },
+  RFC_9728_METADATA: {
+    id: 'RFC-9728-protected-resource-metadata',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-2'
+  },
+  RFC_9728_WWW_AUTHENTICATE: {
+    id: 'RFC-9728-www-authenticate',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-5.1'
   }
 };

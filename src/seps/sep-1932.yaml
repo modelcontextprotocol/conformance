@@ -19,6 +19,18 @@ requirements:
     text: 'If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1'
   - check: sep-1932-server-error-code
     text: 'An `error` parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if the request included an access token but failed authentication. The error parameter values described in [RFC6750], Section 3.1 are suitable, as are any appropriate values defined by extension. The value `use_dpop_nonce` can be used as described in Section 9 to signal that a nonce is needed in the DPoP proof of a subsequent request(s). Additionally, `invalid_dpop_proof` is used to indicate that the DPoP proof itself was deemed invalid based on the criteria of Section 4.3.'
+  # Quoted from RFC 9449 §7.1. Missing `algs` is WARNING (SHOULD).
+  # No DPoP scheme is a failure: SEP-1932 requires the server to advertise DPoP.
+  - check: sep-1932-server-advertises-dpop
+    text: 'An `algs` parameter SHOULD be included to signal to the client the JWS algorithms that are acceptable for the DPoP proof JWT. The value of the parameter is a space-delimited list of JWS `alg` (Algorithm) header values ([RFC7515], Section 4.1.1).'
+  # Quoted from RFC 9728 §2, where both fields are OPTIONAL. SEP-1932 requires
+  # them, so a missing field is a failure. A listed `none` or `HS*` value is
+  # a failure per RFC 9449 §11.6, matching sep-1932-as-no-none-alg.
+  - check: sep-1932-server-prm-dpop
+    text: '`dpop_signing_alg_values_supported`: OPTIONAL. JSON array containing a list of the JWS `alg` values (from the "JSON Web Signature and Encryption Algorithms" registry [IANA.JOSE]) supported by the resource server for validating Demonstrating Proof of Possession (DPoP) proof JWTs [RFC9449]. / `dpop_bound_access_tokens_required`: OPTIONAL. Boolean value specifying whether the protected resource always requires the use of DPoP-bound access tokens [RFC9449]. If omitted, the default value is false.'
+  # The boolean's meaning is the RFC 9728 §2 sentence above. The SEP text does not contain it yet.
+  - check: sep-1932-server-prm-consistency
+    text: '`dpop_bound_access_tokens_required`: OPTIONAL. Boolean value specifying whether the protected resource always requires the use of DPoP-bound access tokens [RFC9449]. If omitted, the default value is false.'
   - check: sep-1932-as-metadata-alg-values
     text: 'Authorization servers supporting DPoP MUST include the `dpop_signing_alg_values_supported` field in their Authorization Server Metadata as defined in RFC 9449 Section 5.1. This field MUST contain a JSON array listing the JWS algorithm values supported for DPoP proof JWTs'
   - check: sep-1932-as-no-none-alg

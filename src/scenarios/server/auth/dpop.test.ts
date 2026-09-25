@@ -3,7 +3,11 @@ import { createServer } from 'node:net';
 import path from 'path';
 import * as jose from 'jose';
 import { testContext } from '../../../connection/testing';
-import { DPoPServerValidationScenario, dpopChallengeError } from './dpop';
+import {
+  DPoPServerValidationScenario,
+  dpopChallengeError,
+  protectedResourceMetadataFallbacks
+} from './dpop';
 import type { ConformanceCheck } from '../../../types';
 
 const WINDOWS = process.platform === 'win32';
@@ -112,6 +116,28 @@ function byId(checks: ConformanceCheck[], id: string): ConformanceCheck[] {
   return checks.filter((c) => c.id === id);
 }
 
+describe('protectedResourceMetadataFallbacks', () => {
+  it('tries the path-based well-known URL before the root one', () => {
+    expect(
+      protectedResourceMetadataFallbacks('http://localhost:9/mcp')
+    ).toEqual({
+      pathBased: 'http://localhost:9/.well-known/oauth-protected-resource/mcp',
+      root: 'http://localhost:9/.well-known/oauth-protected-resource'
+    });
+    expect(
+      protectedResourceMetadataFallbacks('http://localhost:9/public/mcp')
+    ).toEqual({
+      pathBased:
+        'http://localhost:9/.well-known/oauth-protected-resource/public/mcp',
+      root: 'http://localhost:9/.well-known/oauth-protected-resource'
+    });
+    expect(protectedResourceMetadataFallbacks('http://localhost:9')).toEqual({
+      pathBased: 'http://localhost:9/.well-known/oauth-protected-resource',
+      root: 'http://localhost:9/.well-known/oauth-protected-resource'
+    });
+  });
+});
+
 describe('dpopChallengeError', () => {
   it('reads a quoted or unquoted error from the DPoP challenge', () => {
     expect(
@@ -154,6 +180,10 @@ describe('DPoP server validation scenario', () => {
   let clockSkew: ChildProcess | null = null;
   let bearerReject: ChildProcess | null = null;
   let errorOverride: ChildProcess | null = null;
+  let prmOmit: ChildProcess | null = null;
+  let acceptUnbound: ChildProcess | null = null;
+  let prmNone: ChildProcess | null = null;
+  let omitAlgs: ChildProcess | null = null;
   let ports: {
     compliant: number;
     broken: number;
@@ -164,6 +194,10 @@ describe('DPoP server validation scenario', () => {
     clockSkew: number;
     bearerReject: number;
     errorOverride: number;
+    prmOmit: number;
+    acceptUnbound: number;
+    prmNone: number;
+    omitAlgs: number;
   };
   let savedEnv: { jwk?: string; issuer?: string };
 
@@ -183,7 +217,8 @@ describe('DPoP server validation scenario', () => {
     process.env.DPOP_ISSUER_PRIVATE_JWK = JSON.stringify(privateJwk);
     process.env.DPOP_ISSUER = ISSUER;
 
-    const [cp, bp, rp, sp, gp, nf, ck, br, eo] = await freePorts(9);
+    const [cp, bp, rp, sp, gp, nf, ck, br, eo, po, au, pn, oa] =
+      await freePorts(13);
     ports = {
       compliant: cp,
       broken: bp,
@@ -193,7 +228,11 @@ describe('DPoP server validation scenario', () => {
       nonceFirst: nf,
       clockSkew: ck,
       bearerReject: br,
-      errorOverride: eo
+      errorOverride: eo,
+      prmOmit: po,
+      acceptUnbound: au,
+      prmNone: pn,
+      omitAlgs: oa
     };
 
     const issuerEnv = (port: number, extra: Record<string, string> = {}) => ({
@@ -212,7 +251,11 @@ describe('DPoP server validation scenario', () => {
       nonceFirst,
       clockSkew,
       bearerReject,
-      errorOverride
+      errorOverride,
+      prmOmit,
+      acceptUnbound,
+      prmNone,
+      omitAlgs
     ] = await Promise.all([
       startServer(COMPLIANT, cp, issuerEnv(cp)),
       startServer(BROKEN, bp, {}),
@@ -242,9 +285,21 @@ describe('DPoP server validation scenario', () => {
         COMPLIANT,
         eo,
         issuerEnv(eo, { DPOP_ERROR_CODE_OVERRIDE: 'invalid_request' })
+      ),
+      startServer(COMPLIANT, po, issuerEnv(po, { DPOP_PRM_OMIT_FIELDS: '1' })),
+      startServer(
+        COMPLIANT,
+        au,
+        issuerEnv(au, { DPOP_ACCEPT_UNBOUND_BEARER: '1' })
+      ),
+      startServer(COMPLIANT, pn, issuerEnv(pn, { DPOP_PRM_INCLUDE_NONE: '1' })),
+      startServer(
+        COMPLIANT,
+        oa,
+        issuerEnv(oa, { DPOP_OMIT_CHALLENGE_ALGS: '1' })
       )
     ]);
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     await Promise.all([
@@ -256,7 +311,11 @@ describe('DPoP server validation scenario', () => {
       stopServer(nonceFirst),
       stopServer(clockSkew),
       stopServer(bearerReject),
-      stopServer(errorOverride)
+      stopServer(errorOverride),
+      stopServer(prmOmit),
+      stopServer(acceptUnbound),
+      stopServer(prmNone),
+      stopServer(omitAlgs)
     ]);
     process.env.DPOP_ISSUER_PRIVATE_JWK = savedEnv.jwk;
     process.env.DPOP_ISSUER = savedEnv.issuer;
@@ -285,6 +344,13 @@ describe('DPoP server validation scenario', () => {
       )?.status
     ).toBe('SUCCESS');
     expect(byId(checks, 'sep-1932-server-error-code')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(byId(checks, 'sep-1932-server-advertises-dpop')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-dpop')[0].status).toBe('SUCCESS');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
       'SUCCESS'
     );
     expect(
@@ -338,6 +404,19 @@ describe('DPoP server validation scenario', () => {
     expect(byId(checks, 'sep-1932-server-audience-validation')[0].status).toBe(
       'FAILURE'
     );
+
+    // No DPoP challenge at all.
+    expect(byId(checks, 'sep-1932-server-advertises-dpop')[0].status).toBe(
+      'FAILURE'
+    );
+    // Nothing serves protected resource metadata.
+    expect(
+      byId(checks, 'sep-1932-server-prm-dpop')[0].details?.untestable
+    ).toBe(true);
+    // Silent metadata and an accepted unbound Bearer token are consistent.
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'INFO'
+    );
   }, 30000);
 
   it('reports rejection checks notTestable (not vacuous SUCCESS) against a reject-everything server', async () => {
@@ -367,6 +446,16 @@ describe('DPoP server validation scenario', () => {
     expect(gated.length).toBeGreaterThan(0);
     expect(gated.every((c) => c.details?.untestable === true)).toBe(true);
     expect(gated.some((c) => c.status === 'SUCCESS')).toBe(false);
+
+    // Discovery is not gated on the positive probe: this server still 401s
+    // with a DPoP challenge and algs. Consistency is gated, because a 401
+    // here cannot be attributed to the unbound token.
+    expect(byId(checks, 'sep-1932-server-advertises-dpop')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(
+      byId(checks, 'sep-1932-server-prm-consistency')[0].details?.untestable
+    ).toBe(true);
   }, 30000);
 
   // The baseline completes the nonce handshake (acceptValid retries with the
@@ -478,6 +567,79 @@ describe('DPoP server validation scenario', () => {
     );
     expect(failures.map((c) => `${c.id}/${c.name}: ${c.errorMessage}`)).toEqual(
       []
+    );
+  }, 30000);
+
+  it('reports FAILURE when protected resource metadata omits both DPoP fields', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmOmit))
+    );
+
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.details?.untestable).toBeUndefined();
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.status).toBe('FAILURE');
+    expect(consistency.errorMessage).toBe(
+      'server requires DPoP but does not advertise it'
+    );
+
+    const positive = byId(checks, 'sep-1932-server-validate-proof').find(
+      (c) => c.name === 'AcceptsValidProof'
+    );
+    expect(positive?.status).toBe('SUCCESS');
+  }, 30000);
+
+  it('reports FAILURE when metadata requires DPoP but an unbound Bearer token is accepted', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.acceptUnbound))
+    );
+
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.status).toBe('FAILURE');
+    expect(consistency.details?.untestable).toBeUndefined();
+
+    const positive = byId(checks, 'sep-1932-server-validate-proof').find(
+      (c) => c.name === 'AcceptsValidProof'
+    );
+    expect(positive?.status).toBe('SUCCESS');
+    const bearer = byId(checks, 'sep-1932-server-validate-proof').find(
+      (c) => c.name === 'RejectsBearerScheme'
+    );
+    expect(bearer?.status).toBe('SUCCESS');
+  }, 30000);
+
+  it('reports FAILURE when protected resource metadata lists the none algorithm', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmNone))
+    );
+
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.details?.forbidden).toEqual(['none']);
+
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    const positive = byId(checks, 'sep-1932-server-validate-proof').find(
+      (c) => c.name === 'AcceptsValidProof'
+    );
+    expect(positive?.status).toBe('SUCCESS');
+  }, 30000);
+
+  it('reports WARNING when the DPoP challenge omits algs', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.omitAlgs))
+    );
+
+    const advertises = byId(checks, 'sep-1932-server-advertises-dpop')[0];
+    expect(advertises.status).toBe('WARNING');
+    expect(advertises.errorMessage).toBe(
+      'DPoP challenge is missing the algs parameter'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-dpop')[0].status).toBe('SUCCESS');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
     );
   }, 30000);
 
