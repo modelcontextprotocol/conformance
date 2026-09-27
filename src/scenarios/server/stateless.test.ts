@@ -1,12 +1,37 @@
 import { testContext } from '../../connection/testing';
+import { DEFAULT_STATELESS_REQUEST_TIMEOUT_MS } from '../../connection';
 import { ServerStatelessScenario } from './stateless';
-import { describe, test, expect } from 'vitest';
+import { afterEach, beforeEach, describe, test, expect, vi } from 'vitest';
 import { ConformanceCheck } from '../../types';
 
 const findCheck = (checks: ConformanceCheck[], id: string) =>
   checks.find((c) => c.id === id);
 
 describe('Stateless Server Scenario Negative Tests', () => {
+  // Model fetch/body cancellation, including a stream that stays open without
+  // sending frames. A delayed mock that ignores AbortSignal cannot reproduce
+  // the premature-abort regression.
+  function abortableDelay(ms: number | undefined, signal: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      signal.addEventListener('abort', abort, { once: true });
+      if (ms !== undefined) {
+        timer = setTimeout(() => {
+          signal.removeEventListener('abort', abort);
+          resolve();
+        }, ms);
+      }
+    });
+  }
+
   // Inline network mocking helper
   function mockFetchTarget(
     handler: (reqBody: any, reqHeaders: Record<string, string>) => any
@@ -16,6 +41,10 @@ describe('Stateless Server Scenario Negative Tests', () => {
       const headers = init.headers || {};
 
       let responseConfig = await handler(body, headers);
+
+      if (responseConfig?.headerDelayMs) {
+        await abortableDelay(responseConfig.headerDelayMs, init.signal);
+      }
 
       // GLOBAL SPEC-COMPLIANT FALLBACKS: Provides successful data loops for downstream checks
       // if individual tests are focusing exclusively on separate fields (like discovery or meta checks).
@@ -61,8 +90,15 @@ describe('Stateless Server Scenario Negative Tests', () => {
 
         const mockReader = {
           read: async () => {
+            init.signal?.throwIfAborted();
             if (frameIndex >= streamData.length) {
+              if (responseConfig.keepOpen) {
+                await abortableDelay(undefined, init.signal);
+              }
               return { value: undefined, done: true };
+            }
+            if (responseConfig.frameDelayMs) {
+              await abortableDelay(responseConfig.frameDelayMs, init.signal);
             }
             const chunk = new TextEncoder().encode(streamData[frameIndex++]);
             return { value: chunk, done: false };
@@ -113,6 +149,145 @@ describe('Stateless Server Scenario Negative Tests', () => {
         serverInfo: { name: serverName, version: '1.0.0' }
       }
     }
+  });
+
+  describe.each([
+    {
+      tool: 'test_logging_tool',
+      checkId: 'sep-2575-server-no-log-without-loglevel',
+      timeoutMs: 500,
+      forbiddenFrame: {
+        jsonrpc: '2.0',
+        method: 'notifications/message',
+        params: { level: 'debug', data: 'Unrequested log' }
+      },
+      violation: 'Server dispatched a notifications/message payload'
+    },
+    {
+      tool: 'test_streaming_elicitation',
+      checkId: 'sep-2575-http-server-no-independent-requests-on-stream',
+      timeoutMs: 600,
+      forbiddenFrame: {
+        jsonrpc: '2.0',
+        id: 'server-request',
+        method: 'client/unrequested',
+        params: {}
+      },
+      violation: 'Server emitted an independent standard request'
+    }
+  ])('$tool stream collection', (probe) => {
+    const successFrame = {
+      jsonrpc: '2.0',
+      id: 1,
+      result: { content: [{ type: 'text', text: 'Complete' }] }
+    };
+    let originalFetch: typeof fetch;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      vi.useRealTimers();
+    });
+
+    function runProbe(config: {
+      frames: object[];
+      headerDelayMs?: number;
+      frameDelayMs?: number;
+    }) {
+      const url = mockFetchTarget((request) => {
+        if (
+          request.method === 'tools/call' &&
+          request.params?.name === probe.tool
+        ) {
+          return { isStream: true, keepOpen: true, ...config };
+        }
+      });
+      return new ServerStatelessScenario().run(testContext(url));
+    }
+
+    test('collects frames for the full window after delayed headers', async () => {
+      const checks = runProbe({
+        headerDelayMs: 1000,
+        frameDelayMs: probe.timeoutMs - 1,
+        frames: [successFrame]
+      });
+      await vi.advanceTimersByTimeAsync(1000 + probe.timeoutMs);
+      expect(findCheck(await checks, probe.checkId)?.status).toBe('SUCCESS');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    test('preserves a delayed diagnostic-tool rejection as untestable', async () => {
+      const checks = runProbe({
+        headerDelayMs: 1000,
+        frames: [
+          {
+            jsonrpc: '2.0',
+            id: 1,
+            error: { code: -32602, message: 'Unknown tool' }
+          }
+        ]
+      });
+      await vi.advanceTimersByTimeAsync(1000 + probe.timeoutMs);
+      const check = findCheck(await checks, probe.checkId);
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain('Not testable:');
+      expect(check?.details?.untestable).toBe(true);
+    });
+
+    test('still detects forbidden content after delayed headers', async () => {
+      const checks = runProbe({
+        headerDelayMs: 1000,
+        frameDelayMs: probe.timeoutMs - 1,
+        frames: [probe.forbiddenFrame]
+      });
+      await vi.advanceTimersByTimeAsync(1000 + probe.timeoutMs);
+      const check = findCheck(await checks, probe.checkId);
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain(probe.violation);
+    });
+
+    test.each([false, true])(
+      'bounds an open body with no frames inside the window (late frame: %s)',
+      async (lateFrame) => {
+        let settled = false;
+        const checks = runProbe({
+          frames: lateFrame ? [successFrame] : [],
+          frameDelayMs: probe.timeoutMs + 1
+        }).then((result) => {
+          settled = true;
+          return result;
+        });
+        await vi.advanceTimersByTimeAsync(probe.timeoutMs - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(settled).toBe(true);
+        expect(findCheck(await checks, probe.checkId)?.status).toBe('FAILURE');
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    );
+
+    test('bounds response headers independently of the collection window', async () => {
+      let settled = false;
+      const checks = runProbe({
+        headerDelayMs: DEFAULT_STATELESS_REQUEST_TIMEOUT_MS + 1,
+        frames: [successFrame]
+      }).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(
+        DEFAULT_STATELESS_REQUEST_TIMEOUT_MS - 1
+      );
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      expect(findCheck(await checks, probe.checkId)?.status).toBe('FAILURE');
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   test('Fails validation if missing required fields in _meta are allowed to pass', async () => {

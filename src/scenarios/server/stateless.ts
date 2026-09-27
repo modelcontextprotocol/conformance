@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import {
   buildStandardHeaders,
+  DEFAULT_STATELESS_REQUEST_TIMEOUT_MS,
   readSseJsonRpcResponse,
   type RunContext
 } from '../../connection';
@@ -187,9 +188,10 @@ export class ServerStatelessScenario implements ClientScenario {
       });
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, timeoutMs);
+      let timeoutId = setTimeout(
+        () => controller.abort(),
+        DEFAULT_STATELESS_REQUEST_TIMEOUT_MS
+      );
 
       try {
         const res = await fetch(serverUrl, {
@@ -198,6 +200,11 @@ export class ServerStatelessScenario implements ClientScenario {
           body,
           signal: controller.signal
         });
+
+        // Give the stream its full collection window after headers arrive.
+        // Opening the response has its own ordinary request timeout.
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         if (!res.body) {
           clearTimeout(timeoutId);

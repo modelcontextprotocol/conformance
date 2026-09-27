@@ -43,6 +43,8 @@ export const DEFAULT_CLIENT_CAPABILITIES = {
   roots: { listChanged: true }
 } as const;
 
+export const DEFAULT_STATELESS_REQUEST_TIMEOUT_MS = 10000;
+
 export interface StatelessResponse {
   status: number;
   headers: Headers;
@@ -288,7 +290,7 @@ export async function sendStatelessRequest(
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    options.timeoutMs ?? 10000
+    options.timeoutMs ?? DEFAULT_STATELESS_REQUEST_TIMEOUT_MS
   );
   try {
     const res = await fetch(serverUrl, {
