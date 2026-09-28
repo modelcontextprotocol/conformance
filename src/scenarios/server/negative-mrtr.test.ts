@@ -14,7 +14,8 @@ import {
   InputRequiredResultResultTypeScenario,
   InputRequiredResultUnsupportedMethodsScenario,
   InputRequiredResultTamperedStateScenario,
-  InputRequiredResultCapabilityCheckScenario
+  InputRequiredResultCapabilityCheckScenario,
+  InputRequiredResultRequestStateScenario
 } from './input-required-result';
 import {
   formatWireViolation,
@@ -47,11 +48,15 @@ function getFreePort(): Promise<number> {
   });
 }
 
-function startServer(scriptPath: string, port: number): Promise<ChildProcess> {
+function startServer(
+  scriptPath: string,
+  port: number,
+  extraEnv: NodeJS.ProcessEnv = {}
+): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
     const isWindows = process.platform === 'win32';
     const proc = spawn('npx', ['tsx', scriptPath], {
-      env: { ...process.env, PORT: port.toString() },
+      env: { ...process.env, ...extraEnv, PORT: port.toString() },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: isWindows
     });
@@ -157,4 +162,56 @@ describe('SEP-2322 MRTR negative tests', () => {
     expect(capabilityCheck?.errorMessage).toContain('Not testable:');
     expect(capabilityCheck?.details?.untestable).toBe(true);
   }, 10000);
+});
+
+// Issue #505: completion type alone does not establish fixture success.
+describe('SEP-2322 request-state completion semantics', () => {
+  it.each([
+    ['valid', 'SUCCESS'],
+    ['valid-second-text', 'SUCCESS'],
+    ['missing-marker', 'FAILURE'],
+    ['empty-content', 'FAILURE'],
+    ['tool-error', 'FAILURE'],
+    ['tool-error-with-marker', 'FAILURE'],
+    ['jsonrpc-error', 'FAILURE'],
+    ['input-required', 'FAILURE']
+  ])(
+    'request-state %s emits %s',
+    async (mode, expected) => {
+      const port = await getFreePort();
+      let proc: ChildProcess | null = null;
+      try {
+        proc = await startServer(
+          path.join(
+            process.cwd(),
+            'examples/servers/typescript/sep-2322-mrtr-broken-server.ts'
+          ),
+          port,
+          { MRTR_REQUEST_STATE_MODE: mode }
+        );
+        const checks = await new InputRequiredResultRequestStateScenario().run(
+          testContext(`http://localhost:${port}/mcp`)
+        );
+        // Prove the second check was reached with a valid round-1 prerequisite.
+        expect(
+          checks.find((c) => c.id === 'sep-2322-request-state-incomplete')
+            ?.status
+        ).toBe('SUCCESS');
+        const complete = checks.filter(
+          (c) => c.id === 'sep-2322-request-state-complete'
+        );
+        expect(complete).toHaveLength(1);
+        expect(complete[0].status).toBe(expected);
+        if (mode.startsWith('tool-error')) {
+          expect(complete[0].errorMessage).toContain('isError');
+        }
+        if (mode === 'missing-marker' || mode === 'empty-content') {
+          expect(complete[0].errorMessage).toContain('state-ok');
+        }
+      } finally {
+        await stopServer(proc);
+      }
+    },
+    20000
+  );
 });
