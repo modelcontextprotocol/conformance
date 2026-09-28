@@ -128,6 +128,16 @@ describe('Server scenario negative tests', () => {
         (c) => c.id === 'localhost-host-rebinding-rejected'
       );
       expect(rebindingCheck?.status).toBe('FAILURE');
+      // The forged request was served, not rejected for another reason.
+      expect(rebindingCheck?.details).toMatchObject({ statusCode: 200 });
+      expect(
+        checks.find((c) => c.id === 'localhost-host-only-rebinding-rejected')
+          ?.status
+      ).toBe('WARNING');
+      expect(
+        checks.find((c) => c.id === 'localhost-origin-only-rebinding-rejected')
+          ?.status
+      ).toBe('FAILURE');
     }, 10000);
 
     it('sends initialized notification after a successful dated initialize', async () => {
@@ -215,6 +225,15 @@ describe('Server scenario negative tests', () => {
             ?.status
         ).toBe('SUCCESS');
         expect(
+          checks.find((c) => c.id === 'localhost-host-only-rebinding-rejected')
+            ?.status
+        ).toBe('SUCCESS');
+        expect(
+          checks.find(
+            (c) => c.id === 'localhost-origin-only-rebinding-rejected'
+          )?.status
+        ).toBe('SUCCESS');
+        expect(
           checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
         ).toBe('SUCCESS');
 
@@ -223,6 +242,16 @@ describe('Server scenario negative tests', () => {
           expect.objectContaining({
             method: 'initialize',
             host: 'evil.example.com',
+            origin: 'http://evil.example.com'
+          }),
+          expect.objectContaining({
+            method: 'initialize',
+            host: 'evil.example.com',
+            origin: undefined
+          }),
+          expect.objectContaining({
+            method: 'initialize',
+            host: validHost,
             origin: 'http://evil.example.com'
           }),
           expect.objectContaining({
@@ -292,10 +321,99 @@ describe('Server scenario negative tests', () => {
         expect(
           checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
         ).toBe('SUCCESS');
-        expect(methods).toEqual(['server/discover', 'server/discover']);
+        expect(methods).toEqual([
+          'server/discover',
+          'server/discover',
+          'server/discover',
+          'server/discover'
+        ]);
       } finally {
         await closeHttpServer(server);
       }
+    }, 10000);
+  });
+
+  describe('dns-rebinding-protection (Host validation only)', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3010;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/dns-rebinding-host-only.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('passes the combined check but emits FAILURE for the Origin-only check', async () => {
+      const checks = await new DNSRebindingProtectionScenario().run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
+
+      expect(
+        checks.find((c) => c.id === 'localhost-host-rebinding-rejected')?.status
+      ).toBe('SUCCESS');
+      expect(
+        checks.find((c) => c.id === 'localhost-host-only-rebinding-rejected')
+          ?.status
+      ).toBe('SUCCESS');
+      const originOnly = checks.find(
+        (c) => c.id === 'localhost-origin-only-rebinding-rejected'
+      );
+      expect(originOnly?.status).toBe('FAILURE');
+      expect(originOnly?.errorMessage).toMatch(/Expected HTTP 403/);
+      expect(originOnly?.details).toMatchObject({ statusCode: 200 });
+      expect(
+        checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
+      ).toBe('SUCCESS');
+    }, 10000);
+  });
+
+  describe('dns-rebinding-protection (Origin validation only)', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3012;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/dns-rebinding-origin-only.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('passes the combined check but emits WARNING for the Host-only check', async () => {
+      const checks = await new DNSRebindingProtectionScenario().run(
+        testContext(`http://localhost:${PORT}/mcp`)
+      );
+
+      expect(
+        checks.find((c) => c.id === 'localhost-host-rebinding-rejected')?.status
+      ).toBe('SUCCESS');
+      const hostOnly = checks.find(
+        (c) => c.id === 'localhost-host-only-rebinding-rejected'
+      );
+      expect(hostOnly?.status).toBe('WARNING');
+      expect(hostOnly?.errorMessage).toMatch(/Expected HTTP 4xx/);
+      expect(hostOnly?.details).toMatchObject({ statusCode: 200 });
+      expect(
+        checks.find((c) => c.id === 'localhost-origin-only-rebinding-rejected')
+          ?.status
+      ).toBe('SUCCESS');
+      expect(
+        checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
+      ).toBe('SUCCESS');
     }, 10000);
   });
 

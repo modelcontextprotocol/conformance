@@ -187,4 +187,26 @@ npx @modelcontextprotocol/conformance server \
   --scenario dns-rebinding-protection
 ```
 
-**DO NOT** use this pattern in production servers. Always use `createMcpExpressApp()` or the `localhostHostValidation()` middleware for localhost servers.
+**DO NOT** use this pattern in production servers. Always use `createMcpExpressApp()` or the `localhostHostValidation()` middleware for localhost servers, and return 403 for a present, non-localhost `Origin` header.
+
+### dns-rebinding-host-only.ts
+
+Validates the `Host` header (via `createMcpExpressApp()`) but not the `Origin` header. It passes `localhost-host-rebinding-rejected` and `localhost-host-only-rebinding-rejected`, and is expected to **FAIL** `localhost-origin-only-rebinding-rejected`.
+
+```bash
+npx tsx dns-rebinding-host-only.ts
+npx @modelcontextprotocol/conformance server \
+  --url http://localhost:3010/mcp \
+  --scenario dns-rebinding-protection
+```
+
+### dns-rebinding-origin-only.ts
+
+Returns 403 for a non-localhost `Origin` header but accepts any `Host`. It passes `localhost-host-rebinding-rejected` and `localhost-origin-only-rebinding-rejected`, and is expected to get a **WARNING** on `localhost-host-only-rebinding-rejected`.
+
+```bash
+npx tsx dns-rebinding-origin-only.ts
+npx @modelcontextprotocol/conformance server \
+  --url http://localhost:3012/mcp \
+  --scenario dns-rebinding-protection
+```

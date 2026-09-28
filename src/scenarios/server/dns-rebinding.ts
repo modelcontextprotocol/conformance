@@ -1,11 +1,12 @@
 /**
  * DNS Rebinding Protection test scenarios for MCP servers
  *
- * Tests that localhost MCP servers properly validate Host or Origin headers
+ * Tests that localhost MCP servers properly validate Host and Origin headers
  * to prevent DNS rebinding attacks. See GHSA-w48q-cv73-mx4w for details.
  */
 
 import {
+  CheckStatus,
   ClientScenario,
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
@@ -21,6 +22,49 @@ const SPEC_REFERENCES = [
   {
     id: 'MCP-Transport-Security',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#security-warning'
+  }
+];
+
+/**
+ * Expectations for the Host-only and Origin-only checks. They depend on
+ * spec text that modelcontextprotocol/modelcontextprotocol#3370 proposes to
+ * change, so they live here and nowhere else.
+ *
+ * Origin: the Streamable HTTP transport ("Security Warning" in 2025-11-25,
+ * "Security & Endpoint" in the draft) says "Servers MUST validate the Origin
+ * header on all incoming connections to prevent DNS rebinding attacks. If the
+ * Origin header is present and invalid, servers MUST respond with HTTP 403
+ * Forbidden." MUST, so a miss is FAILURE, and the status must be exactly 403.
+ *
+ * Host: no spec text requires Host validation. The check follows the SDK
+ * advisories (GHSA-w48q-cv73-mx4w, GHSA-9h52-p55h-vw2f), whose fix is Host
+ * validation on localhost, and accepts any 4xx. With no MUST behind it, a
+ * miss is WARNING.
+ */
+const ORIGIN_ONLY_EXPECTED_STATUS = 403;
+const ORIGIN_ONLY_MISS_STATUS: CheckStatus = 'FAILURE';
+const HOST_ONLY_MISS_STATUS: CheckStatus = 'WARNING';
+
+const ORIGIN_ONLY_SPEC_REFERENCES = [
+  {
+    id: 'MCP-Transport-Security',
+    url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#security-warning'
+  },
+  {
+    id: 'MCP-Transport-Security-Draft',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/transports/streamable-http#security-%26-endpoint'
+  }
+];
+
+const HOST_ONLY_SPEC_REFERENCES = [
+  ...SPEC_REFERENCES,
+  {
+    id: 'GHSA-w48q-cv73-mx4w',
+    url: 'https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/GHSA-w48q-cv73-mx4w'
+  },
+  {
+    id: 'GHSA-9h52-p55h-vw2f',
+    url: 'https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-9h52-p55h-vw2f'
   }
 ];
 
@@ -106,6 +150,21 @@ async function sendRequestWithHostAndOrigin(
   hostOrOrigin: string,
   specVersion: string
 ): Promise<{ statusCode: number; body: unknown; sessionId?: string }> {
+  return sendProbe(serverUrl, specVersion, {
+    host: hostOrOrigin,
+    origin: `http://${hostOrOrigin}`
+  });
+}
+
+/**
+ * Send the probe request with the given Host header and, when set, the given
+ * Origin header. With `origin` unset no Origin header is sent.
+ */
+async function sendProbe(
+  serverUrl: string,
+  specVersion: string,
+  { host, origin }: { host: string; origin?: string }
+): Promise<{ statusCode: number; body: unknown; sessionId?: string }> {
   // Build the SEP-2243 standard headers (Mcp-Method, Accept, ...) for the
   // probe's JSON-RPC method so a strictly-conformant server only rejects the
   // request for the Host/Origin values under test, then layer the
@@ -115,8 +174,8 @@ async function sendRequestWithHostAndOrigin(
     method: 'POST',
     headers: buildStandardHeaders(probe.method, probe.params, {
       headers: {
-        Host: hostOrOrigin,
-        Origin: `http://${hostOrOrigin}`,
+        Host: host,
+        ...(origin !== undefined ? { Origin: origin } : {}),
         'MCP-Protocol-Version': specVersion
       }
     }),
@@ -188,10 +247,15 @@ website tricks a user's browser into making requests to the local server.
 3. Browser makes request to evil.com which actually goes to localhost
 4. Without Host/Origin header validation, the local MCP server processes the request
 
-**Requirements:**
-- Server **MUST** validate the Host or Origin header on incoming requests
-- Server **MUST** reject requests with non-localhost Host/Origin headers (HTTP 4xx)
-- Server **MUST** accept requests with valid localhost Host/Origin headers
+**Checks:**
+- \`localhost-host-rebinding-rejected\`: Host and Origin both non-localhost. Expects HTTP 4xx.
+  A server that validates either header passes.
+- \`localhost-host-only-rebinding-rejected\`: non-localhost Host, no Origin. Expects HTTP 4xx.
+  No spec text requires Host validation, so a miss is a WARNING.
+- \`localhost-origin-only-rebinding-rejected\`: localhost Host, non-localhost Origin. The
+  transport spec says: if the Origin header is present and invalid, servers **MUST** respond
+  with HTTP 403 Forbidden. Expects exactly 403.
+- \`localhost-host-valid-accepted\`: localhost Host and Origin. Expects HTTP 2xx.
 
 **Valid localhost values:** \`localhost\`, \`127.0.0.1\`, \`[::1]\` (with optional port)
 
@@ -214,6 +278,23 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       specReferences: SPEC_REFERENCES
     };
 
+    const hostOnlyCheckBase = {
+      id: 'localhost-host-only-rebinding-rejected',
+      name: 'DNSRebindingHostOnlyRejected',
+      description:
+        'Server rejects a request with a non-localhost Host header and no Origin header',
+      timestamp,
+      specReferences: HOST_ONLY_SPEC_REFERENCES
+    };
+
+    const originOnlyCheckBase = {
+      id: 'localhost-origin-only-rebinding-rejected',
+      name: 'DNSRebindingOriginOnlyRejected',
+      description: `Server responds ${ORIGIN_ONLY_EXPECTED_STATUS} to a request with a localhost Host header and a non-localhost Origin header`,
+      timestamp,
+      specReferences: ORIGIN_ONLY_SPEC_REFERENCES
+    };
+
     const acceptedCheckBase = {
       id: 'localhost-host-valid-accepted',
       name: 'LocalhostHostAccepted',
@@ -232,6 +313,18 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       checks.push({
         ...rejectedCheckBase,
         status: 'FAILURE',
+        errorMessage,
+        details
+      });
+      checks.push({
+        ...hostOnlyCheckBase,
+        status: HOST_ONLY_MISS_STATUS,
+        errorMessage,
+        details
+      });
+      checks.push({
+        ...originOnlyCheckBase,
+        status: ORIGIN_ONLY_MISS_STATUS,
         errorMessage,
         details
       });
@@ -290,7 +383,83 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       });
     }
 
-    // Check 2: Valid localhost Host/Origin headers should be accepted (2xx response)
+    // Check 2: A non-localhost Host with no Origin should be rejected with a 4xx
+    try {
+      const response = await sendProbe(serverUrl, specVersion, {
+        host: attackerHost
+      });
+      const isRejected =
+        response.statusCode >= 400 && response.statusCode < 500;
+
+      const details = {
+        hostHeader: attackerHost,
+        originHeader: null,
+        statusCode: response.statusCode,
+        body: response.body
+      };
+
+      if (isRejected) {
+        checks.push({
+          ...hostOnlyCheckBase,
+          status: 'SUCCESS',
+          details
+        });
+      } else {
+        checks.push({
+          ...hostOnlyCheckBase,
+          status: HOST_ONLY_MISS_STATUS,
+          errorMessage: `Expected HTTP 4xx for a non-localhost Host header with no Origin header, got ${response.statusCode}`,
+          details
+        });
+      }
+    } catch (error) {
+      checks.push({
+        ...hostOnlyCheckBase,
+        status: HOST_ONLY_MISS_STATUS,
+        errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { hostHeader: attackerHost, originHeader: null }
+      });
+    }
+
+    // Check 3: A localhost Host with a non-localhost Origin should get a 403
+    const attackerOrigin = `http://${attackerHost}`;
+    try {
+      const response = await sendProbe(serverUrl, specVersion, {
+        host: validHost,
+        origin: attackerOrigin
+      });
+
+      const details = {
+        hostHeader: validHost,
+        originHeader: attackerOrigin,
+        statusCode: response.statusCode,
+        body: response.body
+      };
+
+      if (response.statusCode === ORIGIN_ONLY_EXPECTED_STATUS) {
+        checks.push({
+          ...originOnlyCheckBase,
+          status: 'SUCCESS',
+          details
+        });
+      } else {
+        checks.push({
+          ...originOnlyCheckBase,
+          status: ORIGIN_ONLY_MISS_STATUS,
+          errorMessage: `Expected HTTP ${ORIGIN_ONLY_EXPECTED_STATUS} for a non-localhost Origin header, got ${response.statusCode}`,
+          details
+        });
+      }
+    } catch (error) {
+      checks.push({
+        ...originOnlyCheckBase,
+        status: ORIGIN_ONLY_MISS_STATUS,
+        errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+        details: { hostHeader: validHost, originHeader: attackerOrigin }
+      });
+    }
+
+    // Check 4: Valid localhost Host/Origin headers should be accepted (2xx response)
     try {
       const response = await sendRequestWithHostAndOrigin(
         serverUrl,

@@ -1184,6 +1184,32 @@ function isInitializeRequest(body: any): boolean {
 // Use createMcpExpressApp for DNS rebinding protection on localhost
 const app = createMcpExpressApp();
 
+// createMcpExpressApp validates Host only. The Streamable HTTP transport also
+// requires HTTP 403 when the Origin header is present and invalid; here a
+// valid Origin is a localhost one. A missing Origin (non-browser client) is
+// allowed.
+function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin === undefined || isLocalhostOrigin(origin)) {
+    next();
+    return;
+  }
+  res.status(403).json({
+    jsonrpc: '2.0',
+    error: { code: -32000, message: `Invalid Origin: ${origin}` },
+    id: null
+  });
+});
+
 // Open subscriptions/listen streams (SEP-2575). Notifications are delivered
 // to whichever streams are open *at the time of the change* and whose filter
 // requested that notification type.
