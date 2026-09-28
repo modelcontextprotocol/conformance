@@ -203,14 +203,23 @@ export async function runServerConformanceTest(
   );
 
   const openConnections = new Set<Connection>();
+  let scenarioFinished = false;
   const ctx: RunContext = {
     serverUrl,
     specVersion: resolvedSpecVersion,
-    connect: async (opts) =>
-      trackConnection(
-        openConnections,
-        await connectFor(resolvedSpecVersion)(serverUrl, opts)
-      )
+    connect: async (opts) => {
+      if (scenarioFinished) {
+        throw new Error(`Scenario '${scenarioName}' has already finished`);
+      }
+      const conn = await connectFor(resolvedSpecVersion)(serverUrl, opts);
+      // A handshake can finish after the timeout's cleanup sweep. Close it
+      // here and keep the abandoned scenario from issuing any more probes.
+      if (scenarioFinished) {
+        await conn.close();
+        throw new Error(`Scenario '${scenarioName}' has already finished`);
+      }
+      return trackConnection(openConnections, conn);
+    }
   };
   resetWireValidation();
   const checks = await runScenarioBounded(
@@ -218,6 +227,7 @@ export async function runServerConformanceTest(
     scenarioName,
     timeout
   );
+  scenarioFinished = true;
   await closeOpenConnections(openConnections);
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
