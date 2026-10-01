@@ -15,10 +15,13 @@
  */
 
 import http from 'http';
+import { createParser } from 'eventsource-parser';
+import { z } from 'zod';
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  DRAFT_PROTOCOL_VERSION,
+  type SpecVersion
 } from '../../types';
 import {
   withRequestMeta,
@@ -26,6 +29,7 @@ import {
   type RunContext
 } from '../../connection';
 import { HEADER_MISMATCH } from '../../spec-types/draft';
+import { validateWireMessage } from '../../validation/wire-schema';
 import { untestableCheck } from '../untestable';
 
 const SPEC_REFERENCE = {
@@ -131,15 +135,116 @@ function untestableMcpNameCases(checks: ConformanceCheck[], reason: string) {
  * Uses Node.js http.request to preserve exact header casing and values,
  * avoiding normalization that fetch()/Headers may apply.
  */
-async function sendRawRequest(
+interface RawJsonRpcRequest {
+  jsonrpc: string;
+  id: string | number;
+  method: string;
+  params?: any;
+}
+
+interface RawHttpResponse {
+  status: number;
+  body: any;
+  headers: http.IncomingHttpHeaders;
+}
+
+interface HeaderCheckDetails {
+  requestBodyMethod?: string;
+  mcpMethodHeader?: string;
+  requestBodyName?: string;
+  mcpNameHeader?: string;
+  headerNameUsed?: string;
+  headerValue?: string;
+  bodyValue?: string;
+  reason?: string;
+  toolName?: string;
+  paramName?: string;
+  headerSuffix?: string;
+  expectedHeader?: string;
+  mcpParamHeader?: string;
+}
+
+const TOOL_INPUT_PROPERTY_SCHEMA = z
+  .object({
+    type: z.string().optional(),
+    'x-mcp-header': z.string().optional()
+  })
+  .passthrough();
+
+const TOOL_INPUT_SCHEMA = z
+  .object({
+    properties: z.record(z.string(), z.json()).optional(),
+    required: z.array(z.string()).optional()
+  })
+  .passthrough();
+
+const TOOLS_RESULT_SCHEMA = z
+  .object({
+    tools: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            inputSchema: z.json().optional()
+          })
+          .passthrough()
+      )
+      .optional()
+  })
+  .passthrough();
+
+const RAW_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_SSE_EVENTS = 100;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+function isFinalResponseForRequest(
+  message: any,
+  requestId: string | number
+): boolean {
+  if (!message || Array.isArray(message)) return false;
+  const hasResult = Object.prototype.hasOwnProperty.call(message, 'result');
+  const hasError = Object.prototype.hasOwnProperty.call(message, 'error');
+  if (!hasResult && !hasError) return false;
+  return Object.prototype.hasOwnProperty.call(message, 'id')
+    ? message.id === requestId
+    : hasError;
+}
+
+export async function sendRawRequest(
   serverUrl: string,
-  body: object,
+  specVersion: SpecVersion,
+  body: RawJsonRpcRequest,
   headers: Record<string, string> = {}
-): Promise<{ status: number; body: any; headers: http.IncomingHttpHeaders }> {
+): Promise<RawHttpResponse> {
   const url = new URL(serverUrl);
   const bodyStr = JSON.stringify(body);
+  const serializedRequest = JSON.parse(bodyStr);
+  validateWireMessage(specVersion, serializedRequest, {
+    origin: 'harness',
+    context: 'raw HTTP request'
+  });
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let response: http.IncomingMessage | undefined;
+
+    const finish = (result: RawHttpResponse): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      response?.destroy();
+      resolve(result);
+    };
+
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      response?.destroy();
+      req.destroy();
+      reject(error);
+    };
+
     const req = http.request(
       {
         hostname: url.hostname,
@@ -154,33 +259,184 @@ async function sendRawRequest(
         }
       },
       (res) => {
+        response = res;
         res.setEncoding('utf8');
+        const status = res.statusCode ?? 0;
+        const responseHeaders = res.headers;
+        const contentType = responseHeaders['content-type'];
+
+        if (contentType?.includes('text/event-stream')) {
+          let eventCount = 0;
+          let messageCount = 0;
+          let receivedBytes = 0;
+          const parser = createParser({
+            onEvent(event) {
+              if (settled) return;
+              eventCount++;
+              if (eventCount > MAX_SSE_EVENTS) {
+                fail(
+                  new Error(
+                    `Raw SSE response exceeded the ${MAX_SSE_EVENTS}-event observation limit`
+                  )
+                );
+                return;
+              }
+              if (event.data === '') return;
+              messageCount++;
+
+              let message: any;
+              try {
+                message = JSON.parse(event.data);
+              } catch {
+                fail(new Error('Raw SSE response contained malformed JSON'));
+                return;
+              }
+
+              const isFinal = isFinalResponseForRequest(message, body.id);
+              validateWireMessage(specVersion, message, {
+                origin: 'implementation',
+                context: 'raw HTTP SSE event',
+                requestMethod: isFinal ? body.method : undefined
+              });
+              if (isFinal) {
+                finish({
+                  status,
+                  body: message,
+                  headers: responseHeaders
+                });
+              }
+            }
+          });
+
+          res.on('data', (chunk: string) => {
+            if (settled) return;
+            receivedBytes += Buffer.byteLength(chunk);
+            if (receivedBytes > MAX_RESPONSE_BYTES) {
+              fail(
+                new Error(
+                  `Raw SSE response exceeded the ${MAX_RESPONSE_BYTES}-byte observation limit`
+                )
+              );
+              return;
+            }
+            parser.feed(chunk);
+          });
+          res.on('end', () => {
+            parser.reset({ consume: true });
+            if (settled) return;
+            if (status >= 400 && messageCount === 0) {
+              finish({
+                status,
+                body: undefined,
+                headers: responseHeaders
+              });
+              return;
+            }
+            fail(
+              new Error(
+                `Raw SSE response ended before the response to '${body.method}' was observed`
+              )
+            );
+          });
+          res.on('error', fail);
+          return;
+        }
+
         let data = '';
-        res.on('data', (chunk) => {
+        let receivedBytes = 0;
+        res.on('data', (chunk: string) => {
+          if (settled) return;
+          receivedBytes += Buffer.byteLength(chunk);
+          if (receivedBytes > MAX_RESPONSE_BYTES) {
+            fail(
+              new Error(
+                `Raw HTTP response exceeded the ${MAX_RESPONSE_BYTES}-byte observation limit`
+              )
+            );
+            return;
+          }
           data += chunk;
         });
         res.on('end', () => {
+          if (settled) return;
           let responseBody: any;
-          const contentType = res.headers['content-type'];
           if (contentType?.includes('application/json')) {
+            if (!data) {
+              if (status >= 400) {
+                finish({
+                  status,
+                  body: undefined,
+                  headers: responseHeaders
+                });
+                return;
+              }
+              fail(
+                new Error(
+                  `Raw HTTP response ended before the response to '${body.method}' was observed`
+                )
+              );
+              return;
+            }
             try {
               responseBody = JSON.parse(data);
             } catch {
-              responseBody = data;
+              fail(new Error('Raw HTTP response contained malformed JSON'));
+              return;
+            }
+            const isFinal = isFinalResponseForRequest(responseBody, body.id);
+            validateWireMessage(specVersion, responseBody, {
+              origin: 'implementation',
+              context: 'raw HTTP response',
+              requestMethod: isFinal ? body.method : undefined
+            });
+            if (!isFinal) {
+              fail(
+                new Error(
+                  `Raw HTTP response did not contain the response to '${body.method}'`
+                )
+              );
+              return;
             }
           } else {
             responseBody = data;
+            if (status < 400) {
+              fail(
+                new Error(
+                  `Raw HTTP response did not contain a JSON-RPC response to '${body.method}'`
+                )
+              );
+              return;
+            }
           }
-          resolve({
-            status: res.statusCode || 0,
+          if (status < 400 && !responseBody) {
+            fail(
+              new Error(
+                `Raw HTTP response ended before the response to '${body.method}' was observed`
+              )
+            );
+            return;
+          }
+          finish({
+            status,
             body: responseBody,
-            headers: res.headers
+            headers: responseHeaders
           });
         });
+        res.on('error', fail);
       }
     );
 
-    req.on('error', reject);
+    const deadline = setTimeout(() => {
+      fail(
+        new Error(
+          `Raw HTTP request exceeded the ${RAW_REQUEST_TIMEOUT_MS}ms observation deadline`
+        )
+      );
+    }, RAW_REQUEST_TIMEOUT_MS);
+
+    req.on('error', (error) => {
+      fail(error);
+    });
     req.write(bodyStr);
     req.end();
   });
@@ -207,7 +463,7 @@ function createRejectionChecks(
   description: string,
   response: { status: number; body: any },
   specRef: { id: string; url: string },
-  details: Record<string, unknown>,
+  details: HeaderCheckDetails,
   opts: { errorCodeSeverity: 'FAILURE' | 'WARNING' }
 ): ConformanceCheck[] {
   const fullDetails = {
@@ -254,7 +510,7 @@ function createAcceptanceCheck(
   description: string,
   response: { status: number; body: any },
   specRef: { id: string; url: string },
-  details: Record<string, unknown>
+  details: HeaderCheckDetails
 ): ConformanceCheck {
   const errors: string[] = [];
   if (response.status >= 400) {
@@ -264,11 +520,7 @@ function createAcceptanceCheck(
   }
   // A server can return HTTP 200 with a JSON-RPC error in the body. Without
   // this assertion that case would pass as "accepted".
-  if (
-    response.body &&
-    typeof response.body === 'object' &&
-    'error' in response.body
-  ) {
+  if (response.body?.error !== undefined) {
     errors.push(
       `Expected successful response, but body contains JSON-RPC error ${JSON.stringify(response.body.error)}.`
     );
@@ -314,7 +566,12 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     try {
       // Discover the server's tools with a fully-conformant stateless request
       // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      const toolsResponse = await sendStatelessRequest(
+        serverUrl,
+        'tools/list',
+        undefined,
+        { specVersion: ctx.specVersion }
+      );
       if (!toolsResponse.body?.result) {
         // The server under test could not even answer a conformant tools/list:
         // report a single explicit setup failure instead of misleading
@@ -340,12 +597,16 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         );
         return checks;
       }
-      const toolsResult = toolsResponse.body.result as {
-        tools?: Array<{ name: string; inputSchema?: unknown }>;
-      };
+      const parsedToolsResult = TOOLS_RESULT_SCHEMA.safeParse(
+        toolsResponse.body.result
+      );
+      if (!parsedToolsResult.success) {
+        throw new Error('tools/list returned malformed tool descriptors');
+      }
+      const toolsResult = parsedToolsResult.data;
 
-      const baseHeaders: Record<string, string> = {
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+      const baseHeaders = {
+        'MCP-Protocol-Version': ctx.specVersion
       };
 
       let idCounter = 100;
@@ -355,7 +616,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
       await this.testCase(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'reject',
@@ -370,7 +631,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
       await this.testCase(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'reject',
@@ -388,7 +649,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
         await this.testCase(
           checks,
-          serverUrl,
+          ctx,
           baseHeaders,
           nextId,
           'reject',
@@ -410,7 +671,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
         await this.testCase(
           checks,
-          serverUrl,
+          ctx,
           baseHeaders,
           nextId,
           'accept',
@@ -439,7 +700,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
         await this.testCase(
           checks,
-          serverUrl,
+          ctx,
           baseHeaders,
           nextId,
           'reject',
@@ -475,7 +736,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
       await this.testCase(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'accept',
@@ -490,7 +751,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
       await this.testCase(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'accept',
@@ -505,7 +766,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
       await this.testCase(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'reject',
@@ -534,7 +795,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
   private async testCase(
     checks: ConformanceCheck[],
-    serverUrl: string,
+    ctx: RunContext,
     baseHeaders: Record<string, string>,
     nextId: () => number,
     expectation: 'accept' | 'reject',
@@ -544,20 +805,26 @@ export class HttpHeaderValidationScenario implements ClientScenario {
     body: any,
     extraHeaders: Record<string, string>,
     specRef: { id: string; url: string },
-    details: Record<string, unknown>
+    details: HeaderCheckDetails
   ): Promise<void> {
     try {
+      const { serverUrl, specVersion } = ctx;
       // Issue #311: every raw request carries the SEP-2575 _meta fields — the
       // header-validation cases only mangle headers, never the body metadata.
       const requestBody = {
         ...body,
         id: body.id === 0 ? nextId() : body.id,
-        params: withRequestMeta(body.params)
+        params: withRequestMeta(body.params, specVersion)
       };
-      const response = await sendRawRequest(serverUrl, requestBody, {
-        ...baseHeaders,
-        ...extraHeaders
-      });
+      const response = await sendRawRequest(
+        serverUrl,
+        specVersion,
+        requestBody,
+        {
+          ...baseHeaders,
+          ...extraHeaders
+        }
+      );
       if (expectation === 'reject') {
         // Standard-header rejection: 400 is MUST, -32020 is SHOULD. All
         // standard-header rejection cases collapse onto the coarse requirement
@@ -622,7 +889,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     try {
       // Discover the server's tools with a fully-conformant stateless request
       // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      const toolsResponse = await sendStatelessRequest(
+        serverUrl,
+        'tools/list',
+        undefined,
+        { specVersion: ctx.specVersion }
+      );
       if (!toolsResponse.body?.result) {
         // The server under test could not even answer a conformant tools/list:
         // report a single explicit setup failure (and backfill the declared
@@ -646,20 +918,42 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         this.failDeclaredChecks(checks);
         return checks;
       }
-      const toolsResult = toolsResponse.body.result as {
-        tools?: Array<{ name: string; inputSchema?: unknown }>;
-      };
+      const parsedToolsResult = TOOLS_RESULT_SCHEMA.safeParse(
+        toolsResponse.body.result
+      );
+      if (!parsedToolsResult.success) {
+        throw new Error('tools/list returned malformed tool descriptors');
+      }
+      const toolsResult = parsedToolsResult.data;
 
-      // Find a tool with x-mcp-header annotations
-      const xMcpTool = toolsResult.tools?.find((tool) => {
-        const schema = tool.inputSchema as any;
-        if (!schema?.properties) return false;
-        return Object.values(schema.properties).some(
-          (prop: any) => prop['x-mcp-header'] !== undefined
-        );
-      });
+      // Find a tool with x-mcp-header annotations. Parse only each candidate
+      // property because JSON Schema also permits boolean property schemas.
+      let xMcpToolName: string | undefined;
+      let xMcpInputSchema: z.output<typeof TOOL_INPUT_SCHEMA> | undefined;
+      for (const tool of toolsResult.tools ?? []) {
+        const parsedInputSchema = TOOL_INPUT_SCHEMA.safeParse(tool.inputSchema);
+        if (!parsedInputSchema.success || !parsedInputSchema.data.properties) {
+          continue;
+        }
+        const hasHeaderProperty = Object.values(
+          parsedInputSchema.data.properties
+        ).some((propertyValue) => {
+          const parsedProperty =
+            TOOL_INPUT_PROPERTY_SCHEMA.safeParse(propertyValue);
+          return (
+            parsedProperty.success &&
+            parsedProperty.data['x-mcp-header'] !== undefined
+          );
+        });
+        if (hasHeaderProperty) {
+          xMcpToolName = tool.name;
+          xMcpInputSchema = parsedInputSchema.data;
+          break;
+        }
+      }
 
-      if (!xMcpTool) {
+      const schemaProperties = xMcpInputSchema?.properties;
+      if (!xMcpToolName || !xMcpInputSchema || !schemaProperties) {
         checks.push(
           untestableCheck(
             'sep-2243-server-no-xmcp-tool',
@@ -676,17 +970,26 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         return checks;
       }
 
-      const baseHeaders: Record<string, string> = {
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+      const baseHeaders = {
+        'MCP-Protocol-Version': ctx.specVersion
       };
 
       // Find the first x-mcp-header annotated STRING property
       // that is callable with minimal arguments to avoid schema validation failures
-      const schema = xMcpTool.inputSchema as any;
-      const annotatedEntry = Object.entries(schema.properties).find(
-        ([, def]: [string, any]) =>
-          def['x-mcp-header'] !== undefined && (def as any).type === 'string'
-      );
+      const annotatedEntry = Object.entries(schemaProperties)
+        .map(([name, propertyValue]) => {
+          const parsedProperty =
+            TOOL_INPUT_PROPERTY_SCHEMA.safeParse(propertyValue);
+          return parsedProperty.success
+            ? { name, property: parsedProperty.data }
+            : undefined;
+        })
+        .find(
+          (entry) =>
+            entry !== undefined &&
+            entry.property['x-mcp-header'] !== undefined &&
+            entry.property.type === 'string'
+        );
       if (!annotatedEntry) {
         checks.push(
           untestableCheck(
@@ -703,19 +1006,27 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         );
         return checks;
       }
-      const [paramName, paramDef] = annotatedEntry as [string, any];
+      const { name: paramName, property: paramDef } = annotatedEntry;
       const headerSuffix = paramDef['x-mcp-header'];
+      if (headerSuffix === undefined) {
+        throw new Error('x-mcp-header annotation is missing');
+      }
 
       // Build default arguments for all required params to avoid schema validation errors.
       // These go in the JSON body, so number/boolean must be the real types —
       // sending '0' or 'false' as strings makes the server reject on JSON-schema
       // grounds and the header-validation checks below would false-pass on that 400.
-      const requiredParams: string[] = schema.required || [];
+      const requiredParams = xMcpInputSchema.required ?? [];
       const defaultArgs: Record<string, string | number | boolean> = {};
       const defaultHeaders: Record<string, string> = {};
       for (const rp of requiredParams) {
         if (rp !== paramName) {
-          const rpDef = schema.properties[rp];
+          const propertyValue = schemaProperties[rp];
+          const parsedProperty =
+            TOOL_INPUT_PROPERTY_SCHEMA.safeParse(propertyValue);
+          const rpDef = parsedProperty.success
+            ? parsedProperty.data
+            : undefined;
           const rpType = rpDef?.type || 'string';
           if (rpType === 'number' || rpType === 'integer') {
             defaultArgs[rp] = 0;
@@ -743,14 +1054,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // Valid Base64 - server decodes and validates
       await this.testBase64Case(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'accept',
         'sep-2243-server-decode-base64',
         'ServerAcceptsValidBase64',
         'Server decodes valid Base64 header value and validates against body',
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         'Hello',
         headerSuffix,
@@ -767,14 +1078,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // that proves burdensome we'll revisit.
       await this.testBase64Case(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'reject',
         'sep-2243-server-reject-invalid-param-chars',
         'ServerRejectsInvalidBase64Padding',
         'Server MUST reject Mcp-Param header with invalid Base64 padding (per SEP-2243 test-case table)',
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         'Hello',
         headerSuffix,
@@ -786,14 +1097,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // Invalid Base64 characters — FAILURE for the same reason as padding.
       await this.testBase64Case(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'reject',
         'sep-2243-server-reject-invalid-param-chars',
         'ServerRejectsInvalidBase64Chars',
         'Server MUST reject Mcp-Param header with non-alphabet Base64 characters (per SEP-2243 test-case table)',
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         'Hello',
         headerSuffix,
@@ -805,14 +1116,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // Missing prefix - server treats as literal value
       await this.testBase64Case(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'accept',
         'sep-2243-server-validate-param-match',
         'ServerLiteralMissingBase64Prefix',
         'Server treats value without =?base64? prefix as literal (not Base64)',
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         validBase64Value,
         headerSuffix,
@@ -824,14 +1135,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // Missing suffix - server treats as literal value
       await this.testBase64Case(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
         'accept',
         'sep-2243-server-validate-param-match',
         'ServerLiteralMissingBase64Suffix',
         'Server treats value without ?= suffix as literal (not Base64)',
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         `=?base64?${validBase64Value}`,
         headerSuffix,
@@ -844,10 +1155,10 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
       await this.testMissingCustomHeader(
         checks,
-        serverUrl,
+        ctx,
         baseHeaders,
         nextId,
-        xMcpTool.name,
+        xMcpToolName,
         paramName,
         headerSuffix,
         defaultArgs,
@@ -920,7 +1231,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
   private async testBase64Case(
     checks: ConformanceCheck[],
-    serverUrl: string,
+    ctx: RunContext,
     baseHeaders: Record<string, string>,
     nextId: () => number,
     expectation: 'accept' | 'reject',
@@ -932,22 +1243,27 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     bodyValue: string,
     headerSuffix: string,
     headerValue: string,
-    defaultArgs: Record<string, any>,
+    defaultArgs: Record<string, string | number | boolean>,
     defaultHeaders: Record<string, string>
   ): Promise<void> {
     try {
+      const { serverUrl, specVersion } = ctx;
       const response = await sendRawRequest(
         serverUrl,
+        specVersion,
         {
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // these cases only vary the Mcp-Param header value.
-          params: withRequestMeta({
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: bodyValue }
-          })
+          params: withRequestMeta(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: bodyValue }
+            },
+            specVersion
+          )
         },
         {
           ...baseHeaders,
@@ -1011,29 +1327,34 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
   private async testMissingCustomHeader(
     checks: ConformanceCheck[],
-    serverUrl: string,
+    ctx: RunContext,
     baseHeaders: Record<string, string>,
     nextId: () => number,
     toolName: string,
     paramName: string,
     headerSuffix: string,
-    defaultArgs: Record<string, any>,
+    defaultArgs: Record<string, string | number | boolean>,
     defaultHeaders: Record<string, string>
   ): Promise<void> {
     try {
+      const { serverUrl, specVersion } = ctx;
       // Send tools/call with value in body but NO Mcp-Param header
       const response = await sendRawRequest(
         serverUrl,
+        specVersion,
         {
           jsonrpc: '2.0',
           id: nextId(),
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // this case only omits the Mcp-Param header.
-          params: withRequestMeta({
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: 'test-value' }
-          })
+          params: withRequestMeta(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: 'test-value' }
+            },
+            specVersion
+          )
         },
         {
           ...baseHeaders,
