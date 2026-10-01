@@ -219,8 +219,14 @@ async function runListToolsOnlyClient(serverUrl: string): Promise<void> {
   await client.connect(transport);
   logger.debug('Successfully connected to MCP server');
 
-  await client.listTools();
+  const list = await client.listTools();
   logger.debug('Successfully listed tools');
+
+  const tool = list.tools[0];
+  if (tool) {
+    await client.callTool({ name: tool.name, arguments: { a: 2, b: 3 } });
+    logger.debug('Successfully called tool');
+  }
 
   await transport.close();
   logger.debug('Connection closed successfully');

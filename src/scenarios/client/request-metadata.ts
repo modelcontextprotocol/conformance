@@ -1,11 +1,8 @@
-import {
-  withRequiredDraftResultFields,
-  type ScenarioContext
-} from '../../mock-server';
+import { withRequiredDraftResultFields } from '../../mock-server';
 import http from 'http';
 import {
-  Scenario,
-  ScenarioUrls,
+  HandlerScenario,
+  RequestListener,
   ConformanceCheck,
   CheckStatus,
   DRAFT_PROTOCOL_VERSION
@@ -40,48 +37,38 @@ export const DECLARED_CHECK_IDS = [
   'sep-2575-client-retry-supported-version'
 ] as const;
 
-export class RequestMetadataScenario implements Scenario {
+/**
+ * Recorded the moment the simulated version rejection is issued, and only
+ * then — so its presence in the log is the record that the rejection
+ * happened. Deriving that from the log rather than from an instance flag is
+ * what lets a run split across processes (the hosted server seeds a cold
+ * process with the persisted log) reject the client's first request once,
+ * not once per process.
+ */
+const RETRY_CHECK_ID = 'sep-2575-client-retry-supported-version';
+
+export class RequestMetadataScenario extends HandlerScenario {
   name = 'request-metadata';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
   description =
     'Per-request _meta and MCP-Protocol-Version header obligations (SEP-2575)';
 
-  private server: http.Server | null = null;
   private checks: ConformanceCheck[] = [];
-  private hasSimulatedRejection = false;
   private requestsObserved = 0;
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
-    this.hasSimulatedRejection = false;
+  handler(_getBaseUrl: () => string): RequestListener {
     this.checks = [];
     this.requestsObserved = 0;
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-      this.server.on('error', reject);
-      this.server.listen(0, () => {
-        const address = this.server!.address();
-        if (address && typeof address === 'object') {
-          resolve({ serverUrl: `http://localhost:${address.port}` });
-        }
-      });
-    });
+    return (req, res) => this.handleRequest(req, res);
   }
 
-  async stop(): Promise<void> {
-    return new Promise((resolve) => {
-      if (this.server) {
-        this.server.close(() => {
-          resolve();
-        });
-      } else {
-        resolve();
-      }
-    });
+  /** Whether this run has already issued its one simulated rejection. */
+  private hasSimulatedRejection(): boolean {
+    return this.checks.some((c) => c.id === RETRY_CHECK_ID);
   }
 
   getChecks(): ConformanceCheck[] {
+    this.collapseDuplicateIds();
     // Declared but never emitted -> FAILURE. A check that is legitimately not
     // applicable must be emitted as SKIPPED explicitly to avoid this.
     for (const id of DECLARED_CHECK_IDS) {
@@ -107,6 +94,30 @@ export class RequestMetadataScenario implements Scenario {
       }
     }
     return this.checks;
+  }
+
+  /**
+   * A log merged from several processes (see src/hosted/session.ts) can carry
+   * one id more than once, one per process that observed it. Collapse each
+   * id the way addOrUpdateCheck() would have as the requests arrived: the
+   * worst status wins. The retry check is the exception — it is rewritten by
+   * every retry the client makes, so its latest observation supersedes.
+   */
+  private collapseDuplicateIds(): void {
+    if (new Set(this.checks.map((c) => c.id)).size === this.checks.length)
+      return;
+    const byId = new Map<string, ConformanceCheck>();
+    for (const check of this.checks) {
+      const kept = byId.get(check.id);
+      if (
+        !kept ||
+        check.id === RETRY_CHECK_ID ||
+        STATUS_SEVERITY[check.status] >= STATUS_SEVERITY[kept.status]
+      ) {
+        byId.set(check.id, check);
+      }
+    }
+    this.checks = Array.from(byId.values());
   }
 
   private addOrUpdateCheck(check: ConformanceCheck): void {
@@ -303,12 +314,12 @@ export class RequestMetadataScenario implements Scenario {
         'ClientDeclaresElicitationCapability'
       );
 
-      // 5. Simulated Version Negotiation Retry Check
-      if (!this.hasSimulatedRejection) {
-        this.hasSimulatedRejection = true;
-
+      // 5. Simulated Version Negotiation Retry Check — issued once per run;
+      // the retry check recorded here is the record that it was (see
+      // RETRY_CHECK_ID).
+      if (!this.hasSimulatedRejection()) {
         this.addOrUpdateCheck({
-          id: 'sep-2575-client-retry-supported-version',
+          id: RETRY_CHECK_ID,
           name: 'ClientRetrySupportedVersion',
           description:
             'Client retries with a supported version when first choice is rejected',
@@ -342,9 +353,7 @@ export class RequestMetadataScenario implements Scenario {
         return;
       }
 
-      const retryCheck = this.checks.find(
-        (c) => c.id === 'sep-2575-client-retry-supported-version'
-      );
+      const retryCheck = this.checks.find((c) => c.id === RETRY_CHECK_ID);
       if (retryCheck) {
         if (
           headerVersion === DRAFT_PROTOCOL_VERSION &&
@@ -354,6 +363,9 @@ export class RequestMetadataScenario implements Scenario {
         } else {
           retryCheck.status = 'WARNING';
         }
+        // Re-stamped so that, in a log merged across processes, this
+        // observation is the latest one for the id.
+        retryCheck.timestamp = new Date().toISOString();
         retryCheck.details = {
           ...retryCheck.details,
           retryHeaderVersion: headerVersion,

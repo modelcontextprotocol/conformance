@@ -108,6 +108,15 @@ export function createServer(
 
   if (prmPath !== null) {
     app.get(prmPath, (req: Request, res: Response) => {
+      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
+      // the resource identifier is the root.
+      // Can be overridden via prmResourceOverride for testing resource mismatch.
+      const resource =
+        prmResourceOverride ??
+        (prmPath === '/.well-known/oauth-protected-resource'
+          ? getBaseUrl()
+          : `${getBaseUrl()}/mcp`);
+
       checks.push({
         id: 'prm-pathbased-requested',
         name: 'PRMPathBasedRequested',
@@ -120,18 +129,12 @@ export function createServer(
         ],
         details: {
           url: req.url,
-          path: req.path
+          path: req.path,
+          // Recorded so the RFC 8707 checks can be re-derived from the log
+          // (see observeResourceParameters).
+          resource
         }
       });
-
-      // Resource is usually $baseUrl/mcp, but if PRM is at the root,
-      // the resource identifier is the root.
-      // Can be overridden via prmResourceOverride for testing resource mismatch.
-      const resource =
-        prmResourceOverride ??
-        (prmPath === '/.well-known/oauth-protected-resource'
-          ? getBaseUrl()
-          : `${getBaseUrl()}/mcp`);
 
       onPrmRequest?.({ resource, timestamp: new Date().toISOString() });
 
@@ -208,7 +211,37 @@ export function createServer(
   // version-independent.
   function handleStateless(req: Request, res: Response) {
     const v = validateStatelessRequest(req, { tools: {} }, [ctx.specVersion]);
-    if (v.kind !== 'route') {
+    if (v.kind === 'reject') {
+      // The client never reached the tools handlers: a stateful initialize,
+      // a missing header or _meta. Recorded here, in the scenario's own log,
+      // so a cell where every request was turned away cannot read green on
+      // the strength of its OAuth checks alone.
+      const error = (v.body as { error?: { code?: number; message?: string } })
+        .error;
+      checks.push({
+        id: 'stateless-request-rejected',
+        name: 'StatelessRequestRejected',
+        description:
+          'The stateless MCP endpoint turned the request away before it reached the scenario',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: error?.message,
+        specReferences: [
+          {
+            id: 'SEP-2575',
+            url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#protocol-version-header'
+          }
+        ],
+        details: {
+          status: v.status,
+          code: error?.code,
+          method: (req.body as { method?: unknown } | undefined)?.method,
+          headerVersion: req.headers['mcp-protocol-version'] ?? null
+        }
+      });
+      return res.status(v.status).json(v.body);
+    }
+    if (v.kind === 'handled') {
       return res.status(v.status).json(v.body);
     }
     const { id, method } = v;

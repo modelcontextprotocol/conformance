@@ -1,5 +1,5 @@
 import { LATEST_SPEC_VERSION, type SpecVersion } from '../types';
-import { createServerFor } from './select';
+import { createServerFor, createHandlerFor } from './select';
 import type { ScenarioContext } from './index';
 
 /**
@@ -12,6 +12,7 @@ export function testScenarioContext(
 ): ScenarioContext {
   return {
     specVersion,
-    createServer: (handlers) => createServerFor(specVersion)(handlers)
+    createServer: (handlers) => createServerFor(specVersion)(handlers),
+    createHandler: (handlers) => createHandlerFor(specVersion)(handlers)
   };
 }
