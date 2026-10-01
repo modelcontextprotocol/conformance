@@ -1284,13 +1284,21 @@ app.post('/mcp', async (req, res) => {
   const meta = params._meta;
   const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  // A request that carries no `_meta` and names a legacy session-era revision
-  // in the header is legacy traffic; it is served by the session path below
-  // instead of being rejected for missing per-request metadata.
+  // An initialize request negotiates its version in params and may carry the
+  // optional RequestParams `_meta` field. Route session-era versions through
+  // the stateful transport even when that metadata is present.
+  const isLegacyInitializeRequest =
+    isInitializeRequest(body) &&
+    typeof params.protocolVersion === 'string' &&
+    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(params.protocolVersion);
+
+  // A non-initialize request that carries no `_meta` and names a legacy
+  // session-era revision in the header is also legacy traffic.
   const isLegacySessionEraRequest =
-    meta === undefined &&
-    reqVersion !== undefined &&
-    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
+    isLegacyInitializeRequest ||
+    (meta === undefined &&
+      reqVersion !== undefined &&
+      LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion));
 
   if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
     // Missing Transport Header Validation Check
