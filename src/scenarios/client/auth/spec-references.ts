@@ -112,7 +112,11 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   },
   SEP_990_ENTERPRISE_OAUTH: {
     id: 'SEP-990-Enterprise-Managed-OAuth',
-    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/draft/enterprise-managed-authorization.mdx'
+    url: 'https://github.com/modelcontextprotocol/ext-auth/blob/main/specification/stable/enterprise-managed-authorization.mdx'
+  },
+  ID_JAG_REFRESH_TOKEN: {
+    id: 'ID-JAG-Refresh-Token',
+    url: 'https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant-04#section-4.3.3'
   },
   SEP_2207_REFRESH_TOKEN_GUIDANCE: {
     id: 'SEP-2207-Refresh-Token-Guidance',

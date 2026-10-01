@@ -67,6 +67,7 @@ export const extensionScenariosList: Scenario[] = [
   new ClientCredentialsJwtScenario(),
   new ClientCredentialsBasicScenario(),
   new EnterpriseManagedAuthorizationScenario(),
+  new EnterpriseManagedAuthorizationScenario('refresh_token'),
   new DPoPClientScenario(false), // auth/dpop — nonce-less baseline (common case)
   new DPoPClientScenario(true), // auth/dpop-nonce — server-required nonce (§8/§9)
   new WifJwtBearerScenario()
