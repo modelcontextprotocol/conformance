@@ -20,6 +20,18 @@ const SPEC_REFERENCE = {
   url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#standard-mcp-request-headers'
 };
 
+const SPEC_REFERENCE_ENCODING = {
+  id: 'SEP-2243-Value-Encoding',
+  url: 'https://modelcontextprotocol.io/specification/draft/basic/transports#value-encoding'
+};
+
+/**
+ * Tool name containing non-ASCII characters. Tool/prompt names are only
+ * SHOULD-constrained to header-safe characters, so a name outside the safe
+ * set MUST be carried in `Mcp-Name` via the Base64 sentinel encoding.
+ */
+const UNICODE_TOOL_NAME = 'tööl_unicode';
+
 export class HttpStandardHeadersScenario extends BaseHttpScenario {
   name = 'http-standard-headers';
   description =
@@ -29,19 +41,21 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
   private methodHeaderChecks = new Map<string, boolean>();
   // Track which Mcp-Name checks have been recorded
   private nameHeaderChecks = new Map<string, boolean>();
+  // Track whether the non-header-safe tool was called (Base64 Mcp-Name check)
+  private unicodeToolCallReceived = false;
 
   getChecks(): ConformanceCheck[] {
     // Build a fresh array each call so getChecks() is idempotent — the runner
     // may call it more than once and we must not accumulate duplicates.
     const result = [...this.checks];
 
-    // SEP-2243 requires Mcp-Method on "all requests and notifications". A
-    // client that never sent prompts/list isn't violating SEP-2243 — it just
-    // didn't exercise that path. Emit SKIPPED (not FAILURE) so a prompts-less
-    // client doesn't show red, but the gap is still visible in the report.
+    // SEP-2243 requires Mcp-Method on "all requests". A client that never sent
+    // prompts/list isn't violating SEP-2243 — it just didn't exercise that
+    // path. Emit SKIPPED (not FAILURE) so a prompts-less client doesn't show
+    // red, but the gap is still visible in the report. Notifications are NOT
+    // listed: header rules for notification POSTs are explicitly undefined.
     const expectedMethods = [
       'initialize',
-      'notifications/initialized',
       'tools/list',
       'tools/call',
       'resources/list',
@@ -79,6 +93,19 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
       }
     }
 
+    if (!this.unicodeToolCallReceived) {
+      result.push({
+        id: 'sep-2243-client-base64-mcp-name',
+        name: 'ClientMcpNameHeaderBase64',
+        description:
+          'Client Base64-encodes Mcp-Name when the source value is not header-safe',
+        status: 'SKIPPED',
+        timestamp: new Date().toISOString(),
+        errorMessage: `Client did not call '${UNICODE_TOOL_NAME}'; Base64 Mcp-Name encoding was not exercised.`,
+        specReferences: [SPEC_REFERENCE_ENCODING]
+      });
+    }
+
     return result;
   }
 
@@ -87,7 +114,8 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     res: http.ServerResponse,
     request: any
   ): void {
-    // Check Mcp-Method header for every request
+    // Check Mcp-Method header for every request (notifications excluded —
+    // header rules for notification POSTs are explicitly undefined by the spec)
     this.checkMcpMethodHeader(req, request);
 
     // Route to handlers
@@ -96,7 +124,13 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     } else if (request.method === 'tools/list') {
       this.handleToolsList(res, request);
     } else if (request.method === 'tools/call') {
-      this.checkMcpNameHeader(req, request, 'params.name');
+      if (request.params?.name === UNICODE_TOOL_NAME) {
+        // Non-header-safe name → check Base64 sentinel encoding instead of
+        // the plain Mcp-Name comparison (which would mismatch by design).
+        this.checkMcpNameBase64Header(req, request);
+      } else {
+        this.checkMcpNameHeader(req, request, 'params.name');
+      }
       this.handleToolsCall(res, request);
     } else if (request.method === 'resources/list') {
       this.handleResourcesList(res, request);
@@ -109,7 +143,7 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
       this.checkMcpNameHeader(req, request, 'params.name');
       this.handlePromptsGet(res, request);
     } else if (request.id === undefined) {
-      // Notifications - return 202 (Mcp-Method already checked above)
+      // Notifications - return 202 (Mcp-Method not required on notifications)
       this.sendNotificationAck(res);
     } else {
       this.sendGenericResult(res, request);
@@ -119,6 +153,11 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
   private checkMcpMethodHeader(req: http.IncomingMessage, request: any): void {
     const method = request.method;
     if (!method) return;
+
+    // Mcp-Method is required on requests only; header rules for notification
+    // POSTs are explicitly undefined by the spec, so a missing Mcp-Method on
+    // a notification (no JSON-RPC id) is neither SUCCESS nor FAILURE.
+    if (request.id === undefined) return;
 
     // Already recorded a check for this method
     if (this.methodHeaderChecks.has(method)) return;
@@ -202,6 +241,57 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
     });
   }
 
+  private checkMcpNameBase64Header(
+    req: http.IncomingMessage,
+    request: any
+  ): void {
+    // Record once: subsequent calls to the same unicode tool are ignored so
+    // getChecks() stays idempotent.
+    if (this.unicodeToolCallReceived) return;
+    this.unicodeToolCallReceived = true;
+
+    const bodyName = request.params?.name as string;
+    const mcpNameHeader = req.headers['mcp-name'] as string | undefined;
+    const expectedHeader = `=?base64?${Buffer.from(bodyName, 'utf-8').toString('base64')}?=`;
+
+    const errors: string[] = [];
+    if (!mcpNameHeader) {
+      errors.push(
+        `Missing Mcp-Name header on tools/call for '${bodyName}'. Clients MUST include the Mcp-Name header for tools/call requests.`
+      );
+    } else {
+      const base64Match = mcpNameHeader.match(/^=\?base64\?(.*)\?=$/);
+      if (!base64Match) {
+        errors.push(
+          `Mcp-Name source value '${bodyName}' is not header-safe but header was sent unencoded as '${mcpNameHeader}'. Clients MUST encode it using the Base64 sentinel format =?base64?{encoded}?=.`
+        );
+      } else {
+        const decoded = Buffer.from(base64Match[1], 'base64').toString('utf-8');
+        if (decoded !== bodyName) {
+          errors.push(
+            `Base64-decoded Mcp-Name '${decoded}' (raw: '${mcpNameHeader}') does not match body params.name '${bodyName}'.`
+          );
+        }
+      }
+    }
+
+    this.checks.push({
+      id: 'sep-2243-client-base64-mcp-name',
+      name: 'ClientMcpNameHeaderBase64',
+      description:
+        'Client Base64-encodes Mcp-Name when the source value is not header-safe',
+      status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
+      specReferences: [SPEC_REFERENCE_ENCODING],
+      details: {
+        bodyName,
+        actualHeader: mcpNameHeader,
+        expectedHeader
+      }
+    });
+  }
+
   protected discoverCapabilities(): object {
     return { tools: {}, resources: {}, prompts: {} };
   }
@@ -239,6 +329,16 @@ export class HttpStandardHeadersScenario extends BaseHttpScenario {
               name: 'my-hyphenated-tool',
               description:
                 'Tool with hyphen in name to test special chars in Mcp-Name header',
+              inputSchema: {
+                type: 'object',
+                properties: {},
+                required: []
+              }
+            },
+            {
+              name: UNICODE_TOOL_NAME,
+              description:
+                'Tool with non-ASCII name to test Base64 sentinel encoding of Mcp-Name header',
               inputSchema: {
                 type: 'object',
                 properties: {},
