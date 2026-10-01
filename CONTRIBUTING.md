@@ -69,3 +69,4 @@ See the [README](./README.md) for full CLI options and the [SDK Integration Guid
 - Register your scenario in the right suite in `src/scenarios/index.ts`
 - Run against at least one real SDK (see above) before opening the PR — we'll ask what the output looked like
 - Keep PRs focused; one feature or scenario group at a time
+- Keep code comments short (the rule and the non-obvious why); put history and process notes in the PR description — `npm run lint` warns on long comment blocks

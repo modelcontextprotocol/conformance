@@ -63,6 +63,8 @@ Be precise about what's **required** vs **optional**. A scenario description tha
 
 When in doubt about spec details (OAuth parameters, audiences, grant types), check the actual spec in `modelcontextprotocol` rather than guessing.
 
+**Code comments are short and standalone.** A comment states the rule being enforced and the non-obvious "why" in a few lines: invariants, ordering constraints, why-not. Delete comments that restate what the name or code already says, and never reference review-time or PR-time context (a reviewer ask, an option that was discussed, the history of a SEP): that belongs in the PR description or an issue, and a comment must make sense to a reader who never saw the PR. `npm run lint` warns (`local/comment-length`) on comment blocks over 15 lines (25 for a file header); treat that warning as "move this to the PR description", not as an invitation to add an eslint-disable.
+
 ## Reviewing PRs
 
 ### SEP scenarios
@@ -121,6 +123,7 @@ Use the existing CLI runner (`npx @modelcontextprotocol/conformance client|serve
 
 - `npm run build` passes
 - `npm test` passes
+- `npm run lint` is clean, including warnings (a `local/comment-length` warning means a comment should be trimmed, see "Descriptions and wording")
 - For non-trivial scenario changes, run against at least one real SDK (typescript-sdk or python-sdk) to see actual output. For changes to shared infrastructure (runner, tier-check), test against go-sdk or csharp-sdk too.
 - Scenario is registered in the right suite in `src/scenarios/index.ts`
 - If you changed a `sep-*.yaml` or scenario check IDs, `src/seps/traceability.json` will drift; the traceability workflow refreshes it via PR (or regenerate locally with `--results` from a suite run)

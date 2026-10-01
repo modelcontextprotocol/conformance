@@ -8,6 +8,7 @@ import { SpecReferences } from './spec-references.js';
 import { MockTokenVerifier } from './helpers/mockTokenVerifier.js';
 import { untestableCheck } from '../../untestable.js';
 
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * Scenario: Resource Mismatch Detection
  *

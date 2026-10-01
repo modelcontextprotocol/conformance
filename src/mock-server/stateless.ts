@@ -77,6 +77,7 @@ export type StatelessValidation =
       params: Record<string, unknown>;
     };
 
+// eslint-disable-next-line local/comment-length -- pre-existing shared validation contract used by other mock servers
 /**
  * Shared SEP-2575 request validation: header presence, `_meta` 3-key check,
  * header/`_meta` version match, version-supported check, and `server/discover`

@@ -21,18 +21,11 @@ import {
 } from '../../types.js';
 
 /**
- * Schema-valid empty results for the standard list-shaped methods, keyed by
- * method. A Map, not an object literal, so a method name that collides with
- * Object.prototype ("constructor", "toString", ...) misses instead of
- * returning a function. Merged into the generic fallback so a list method a
- * scenario does not route still carries its required list member — a bare
- * `{}` fails schema validation and strict clients drop the connection before
- * the scenario's real checks run (#474). `tasks/list` exists only at
- * 2025-11-25 (the draft schema has no ListTasksResult); the empty member is
- * harmless on the draft wire. Non-list results (tools/call, resources/read,
- * prompts/get, ...) have no meaningful empty default and keep the bare
- * stamped fallback, so a route a scenario forgot surfaces instead of being
- * masked.
+ * Schema-valid empty results for the standard list methods, merged into the
+ * generic fallback so an unrouted list method still satisfies its result
+ * schema (a bare `{}` makes strict clients drop the connection, #474). A Map so
+ * names colliding with Object.prototype miss. Non-list methods keep the bare
+ * fallback so a route a scenario forgot still surfaces.
  */
 const EMPTY_LIST_RESULTS: ReadonlyMap<string, object> = new Map([
   ['tools/list', { tools: [] }],
