@@ -13,6 +13,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "test": "vitest run",
+    "test:client-smoke": "node dist/index.js client --command \"npx tsx examples/clients/typescript/everything-client.ts\" --suite core --timeout 60000",
     "test:watch": "vitest",
     "build": "tsdown src/index.ts --minify --clean --target node20 --no-fixed-extension",
     "lint": "eslint src/ examples/ && prettier --check .",
