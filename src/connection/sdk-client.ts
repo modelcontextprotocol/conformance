@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-import { type SpecVersion } from '../types';
+import { type ConformanceCheck, type SpecVersion } from '../types';
 import {
   validateWireMessage,
   type WireOrigin
@@ -112,6 +112,48 @@ function instrumentTransport(
       inner = handler;
     }
   });
+}
+
+/**
+ * Emit a single `<scenarioName>-setup` check as FAILURE for a scenario that
+ * could not get far enough to evaluate its real checks (connect failure,
+ * missing fixture, capability not advertised, etc.).
+ *
+ * See #248: previously each scenario hand-rolled a try/catch around connect
+ * and pinned the setup error onto whichever check ID happened to be first.
+ * That mislabels the failure — the error ends up under a check that has
+ * nothing to do with the actual problem, and any *other* checks the scenario
+ * would have emitted silently disappear. Routing setup failures through this
+ * helper gives them a dedicated, semantically honest ID and a consistent
+ * output shape across scenarios.
+ *
+ * The convention is that a scenario that cannot execute counts as a FAILURE;
+ * the escape hatches are scenario filtering (`--suite`/`--scenario`) and the
+ * expected-failures baseline, not in-scenario skipping or silent passes.
+ *
+ * @param scenarioName The scenario's `name`; the emitted check id is
+ *   `<scenarioName>-setup`.
+ * @param error The thrown setup error.
+ * @param specReferences Optional spec references to attach to the check.
+ * @returns A one-element array, so a scenario can `return reportSetupFailure(...)`.
+ */
+export function reportSetupFailure(
+  scenarioName: string,
+  error: unknown,
+  specReferences?: ConformanceCheck['specReferences']
+): ConformanceCheck[] {
+  const message = error instanceof Error ? error.message : String(error);
+  return [
+    {
+      id: `${scenarioName}-setup`,
+      name: `${scenarioName} setup`,
+      description: `Scenario "${scenarioName}" could not be set up (connect/fixture/capability)`,
+      status: 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: `Setup failed: ${message}`,
+      ...(specReferences ? { specReferences } : {})
+    }
+  ];
 }
 
 /**
