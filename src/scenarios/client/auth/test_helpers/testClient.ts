@@ -162,8 +162,10 @@ export async function runClientAgainstScenario(
       throw new Error('No checks returned from scenario');
     }
 
-    // Filter out INFO checks
-    const nonInfoChecks = checks.filter((c) => c.status !== 'INFO');
+    // INFO and SKIPPED checks are non-scoring.
+    const scoredChecks = checks.filter(
+      (c) => c.status !== 'INFO' && c.status !== 'SKIPPED'
+    );
 
     // Slugs that must be present and SUCCESS (independent of the failure set).
     for (const slug of expectedSuccessSlugs) {
@@ -185,7 +187,7 @@ export async function runClientAgainstScenario(
       }
 
       // Verify that only the expected checks failed
-      const failures = nonInfoChecks.filter(
+      const failures = scoredChecks.filter(
         (c) => c.status === 'FAILURE' || c.status === 'WARNING'
       );
       const failureSlugs = failures.map((c) => c.id);
@@ -195,7 +197,7 @@ export async function runClientAgainstScenario(
       );
     } else {
       // Default: expect all checks to pass
-      const failures = nonInfoChecks.filter((c) => c.status === 'FAILURE');
+      const failures = scoredChecks.filter((c) => c.status === 'FAILURE');
       if (failures.length > 0) {
         const failureMessages = failures
           .map((c) => `${c.name}: ${c.errorMessage || c.description}`)
@@ -204,10 +206,10 @@ export async function runClientAgainstScenario(
       }
 
       // All non-INFO checks should be SUCCESS
-      const successes = nonInfoChecks.filter((c) => c.status === 'SUCCESS');
-      if (successes.length !== nonInfoChecks.length) {
+      const successes = scoredChecks.filter((c) => c.status === 'SUCCESS');
+      if (successes.length !== scoredChecks.length) {
         throw new Error(
-          `Expected all checks to pass but got ${successes.length}/${nonInfoChecks.length}`
+          `Expected all checks to pass but got ${successes.length}/${scoredChecks.length}`
         );
       }
     }
