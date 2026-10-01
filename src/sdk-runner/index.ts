@@ -132,6 +132,7 @@ function passThrough(options: {
   scenario?: string;
   suite?: string;
   timeout?: string;
+  concurrency?: string;
   verbose?: boolean;
   output?: string;
   specVersion?: string;
@@ -148,6 +149,7 @@ function passThrough(options: {
     args.push('--suite', options.suite);
   }
   if (options.timeout) args.push('--timeout', options.timeout);
+  if (options.concurrency) args.push('--concurrency', options.concurrency);
   if (options.verbose) args.push('--verbose');
   if (options.output) args.push('-o', options.output);
   if (!options.requirements && options.specVersion)
@@ -191,6 +193,10 @@ export function createSdkCommand(): Command {
       'Override the expected-failures baseline file from config'
     )
     .option('--timeout <ms>', 'Per-scenario client timeout (passed through)')
+    .option(
+      '--concurrency <n>',
+      'Maximum number of client suite scenarios to run at once (passed through)'
+    )
     .option('-o, --output <dir>', 'Output directory (passed through)')
     .option(
       '--spec-version <version>',
@@ -305,6 +311,7 @@ export function createSdkCommand(): Command {
                 ? undefined
                 : (options.suite ?? 'all'),
               timeout: options.timeout,
+              concurrency: options.concurrency,
               verbose: options.verbose,
               output,
               specVersion,
