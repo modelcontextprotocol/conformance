@@ -9,6 +9,10 @@
  */
 
 import {
+  SERVER_EXTENSIONS,
+  EXTENSIONS_ECHO_TOOL
+} from '../../../src/scenarios/legacy-extensions.js';
+import {
   McpServer,
   ResourceTemplate
 } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -213,6 +217,7 @@ function createMcpServer() {
     },
     {
       capabilities: {
+        extensions: SERVER_EXTENSIONS,
         tools: {
           listChanged: true
         },
@@ -227,6 +232,25 @@ function createMcpServer() {
         completions: {}
       }
     }
+  );
+
+  mcpServer.registerTool(
+    EXTENSIONS_ECHO_TOOL,
+    {
+      description:
+        'Report SDK-visible client extension capabilities for legacy conformance',
+      inputSchema: {}
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            extensions: mcpServer.server.getClientCapabilities()?.extensions
+          })
+        }
+      ]
+    })
   );
 
   // SEP-2549: Wrap setRequestHandler so the SDK's own list handlers

@@ -21,6 +21,7 @@ import {
   listClientScenarios,
   listActiveClientScenarios,
   listPendingClientScenarios,
+  listExtensionClientScenarios,
   listAuthScenarios,
   listMetadataScenarios,
   listCoreScenarios,
@@ -535,7 +536,7 @@ program
   )
   .option(
     '--suite <suite>',
-    'Suite to run: "active" (default, excludes pending and draft), "all", "draft", or "pending"',
+    'Suite to run: "active" (default, excludes pending, draft and optional extension fixtures), "all", "draft", "pending", or "extensions"',
     'active'
   )
   .option(
@@ -638,6 +639,8 @@ program
         } else if (suite === 'active' || suite === 'core') {
           // 'core' is an alias for 'active' - tier 1 requirements
           scenarios = listActiveClientScenarios();
+        } else if (suite === 'extensions') {
+          scenarios = listExtensionClientScenarios();
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
         } else if (suite === 'draft') {
@@ -646,7 +649,9 @@ program
           scenarios = listDraftClientScenarios();
         } else {
           console.error(`Unknown suite: ${suite}`);
-          console.error('Available suites: active, all, core, draft, pending');
+          console.error(
+            'Available suites: active, all, core, draft, pending, extensions'
+          );
           process.exit(1);
         }
 
