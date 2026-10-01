@@ -154,5 +154,9 @@ export const SpecReferences: { [key: string]: SpecReference } = {
   RFC_9449_RS_NONCE: {
     id: 'RFC-9449-resource-server-provided-nonce',
     url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-9'
+  },
+  RFC_9449_DPOP_JKT: {
+    id: 'RFC-9449-authorization-code-binding-to-a-dpop-key',
+    url: 'https://www.rfc-editor.org/rfc/rfc9449.html#section-10'
   }
 };

@@ -4,10 +4,10 @@ import { runDpopClient } from './helpers/dpopClientFlow';
 import { runAsCli } from './helpers/cliRunner';
 
 /**
- * Well-behaved DPoP client (SEP-1932 / RFC 9449): binds the authorization code
- * to its DPoP key via `dpop_jkt` (RFC 9449 §10), then presents the DPoP-bound
- * token with the `DPoP` Authorization scheme and a fresh proof on every MCP
- * request.
+ * Broken DPoP client: sends a `dpop_jkt` that does not match the DPoP proof
+ * key used at the token endpoint. Isolates a FAILURE of
+ * sep-1932-client-dpop-jkt; the test AS rejects the token request with 400
+ * `invalid_grant` (RFC 9449 §10).
  */
 export async function runClient(serverUrl: string): Promise<void> {
   await runDpopClient(serverUrl, {
@@ -16,8 +16,8 @@ export async function runClient(serverUrl: string): Promise<void> {
     sendTokenRequestProof: true,
     handleAsNonce: true,
     handleRsNonce: true,
-    sendDpopJkt: true
+    wrongDpopJkt: true
   });
 }
 
-runAsCli(runClient, import.meta.url, 'auth-test-dpop <server-url>');
+runAsCli(runClient, import.meta.url, 'auth-test-dpop-wrong-jkt <server-url>');
