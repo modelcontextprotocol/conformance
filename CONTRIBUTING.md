@@ -68,4 +68,5 @@ See the [README](./README.md) for full CLI options and the [SDK Integration Guid
 
 - Register your scenario in the right suite in `src/scenarios/index.ts`
 - Run against at least one real SDK (see above) before opening the PR — we'll ask what the output looked like
+- If you add a check to an existing scenario or change a check's severity, include the SDK matrix table (see "Running a Scenario Across All SDKs" in the README) so the impact on each SDK is visible in review
 - Keep PRs focused; one feature or scenario group at a time
