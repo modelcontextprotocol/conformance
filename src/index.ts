@@ -36,6 +36,12 @@ import {
   resolveSpecVersion
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
+import {
+  applyScenarioFiles,
+  isCustomScenario,
+  listCustomScenarios,
+  type ScenarioFileOptions
+} from './scenarios/custom';
 import { ConformanceCheck } from './types';
 import {
   AuthorizationServerOptionsSchema,
@@ -206,6 +212,31 @@ function filterScenariosBySpecVersion(
   return allScenarios.filter((s) => allowed.has(s));
 }
 
+function collect(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
+}
+
+async function applyScenarioFilesOrExit(
+  options: ScenarioFileOptions
+): Promise<string[]> {
+  try {
+    const names = await applyScenarioFiles(options);
+    if (names.length > 0) {
+      console.error(
+        `Loaded custom scenarios, which are not part of MCP conformance: ${names.join(', ')}`
+      );
+    }
+    return names;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+function customLabel(name: string): string {
+  return isCustomScenario(name) ? ' (custom)' : '';
+}
+
 const program = new Command();
 
 program
@@ -222,6 +253,11 @@ program
   .option('--command <command>', 'Command to run the client')
   .option('--scenario <scenario>', 'Scenario to test')
   .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
+  .option(
+    '--scenario-file <path>',
+    'Load your own scenarios from a JavaScript module (repeatable). The module is executed.',
+    collect
+  )
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option(
     '--expected-failures <path>',
@@ -243,6 +279,8 @@ program
   .option('--verbose', 'Show verbose output')
   .action(async (options, cmd) => {
     try {
+      const suiteGiven = options.suite !== undefined;
+      await applyScenarioFilesOrExit(options);
       const timeout = parseInt(options.timeout, 10);
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
@@ -267,7 +305,11 @@ program
       // Handle suite mode
       if (options.suite || options.requirements !== undefined) {
         if (!options.command) {
-          console.error('--command is required when using --suite');
+          console.error(
+            suiteGiven || requirements
+              ? '--command is required when using --suite'
+              : '--command is required to run the loaded scenarios. To start one in interactive mode, name it with --scenario.'
+          );
           process.exit(1);
         }
 
@@ -279,6 +321,7 @@ program
           auth: listAuthScenarios,
           metadata: listMetadataScenarios,
           draft: listDraftScenarios,
+          custom: listCustomScenarios,
           'sep-835': () =>
             listAuthScenarios().filter((name) => name.startsWith('auth/scope-'))
         };
@@ -393,7 +436,7 @@ program
           const status = failed === 0 && warnings === 0 ? '✓' : '✗';
           const warningStr = warnings > 0 ? `, ${warnings} warnings` : '';
           console.log(
-            `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}`
+            `${status} ${result.scenario}${customLabel(result.scenario)}: ${passed} passed, ${failed} failed${warningStr}`
           );
 
           if (verbose && failed > 0) {
@@ -452,7 +495,7 @@ program
         console.error('\nAvailable client scenarios:');
         listScenarios().forEach((s) => console.error(`  - ${s}`));
         console.error(
-          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, draft, sep-835'
+          '\nAvailable suites: all, core, extensions, backcompat, auth, metadata, draft, custom, sep-835'
         );
         process.exit(1);
       }
@@ -939,6 +982,11 @@ program
   .option('--server', 'List server scenarios')
   .option('--authorization', 'List authorization server scenarios')
   .option(
+    '--scenario-file <path>',
+    'Also list the client scenarios a JavaScript module defines (repeatable). The module is executed.',
+    collect
+  )
+  .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
@@ -946,7 +994,8 @@ program
     '--requirements <revision>',
     'List exactly what a spec revision requires, frozen at its release'
   )
-  .action((options) => {
+  .action(async (options) => {
+    const custom = await applyScenarioFilesOrExit(options);
     const specVersionFilter = options.specVersion
       ? resolveSpecVersion(options.specVersion)
       : undefined;
@@ -995,7 +1044,7 @@ program
       }
       clientScenarioNames.forEach((s) => {
         const v = getScenarioSpecVersions(s);
-        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}${customLabel(s)}`);
       });
     }
 
@@ -1023,6 +1072,8 @@ program
         console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
       });
     }
+    // A loaded module may have left a timer or a socket open.
+    if (custom.length > 0) process.exit(0);
   });
 
 program.parse();
