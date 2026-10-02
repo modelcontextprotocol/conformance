@@ -1,0 +1,800 @@
+# spec_source: modelcontextprotocol/experimental-ext-triggers-events@refs/pull/7/head docs/design-sketch-proposal.md
+# extracted: 2026-09-15, capability rows re-extracted 2026-09-23
+#
+# ############################################################################
+# # SIX ROWS TRACK AN UNMERGED PR. Upstream PR 7 moves the capability          #
+# # declaration into Extension Negotiation, and `main` still says top-level.   #
+# ############################################################################
+#
+#   The rows are sep-9999-capability-events-object, -list-changed-flag,
+#   -empty-settings, -client-declaration, -list-changed-gated and
+#   sep-9999-fallback-method-not-found. `spec_source` therefore names PR 7's head
+#   rather than `main`, because a reader who fetches `main` finds text that
+#   contradicts them.
+#
+#   Why the suite is ahead of the document: mcpkit followed the sketch and
+#   declared top-level; metronome, written by the sketch's author, used the
+#   extensions map. Asked rather than guessed, 2026-09-22, and the document was
+#   the thing that was wrong. Same posture as the SEP-2350 scenarios against
+#   modelcontextprotocol#481: a red row here means the head moved, not that an
+#   implementation regressed. Re-point `spec_source` at `main` when PR 7 merges.
+#
+# ############################################################################
+# # 9999 IS A PLACEHOLDER. MCP Events has no SEP number yet.                 #
+# # Renaming it is a release blocker before this file is upstreamed.         #
+# ############################################################################
+#
+#   SEP numbers are PR numbers in modelcontextprotocol/modelcontextprotocol,
+#   and no events PR has been opened there — the work lives in the separate
+#   experimental-ext-triggers-events repository. Both ends enforce a number:
+#   src/traceability/index.ts:174 filters the directory on `/^sep-\d+\.yaml$/`
+#   and line 41 filters emitted check IDs on `/^sep-\d+-/`, so a file named
+#   `events.yaml` is silently dropped from the manifest rather than rejected;
+#   src/new-sep/index.ts:163 rejects any argument that is not a positive
+#   integer from the other side. There is no honest name that works.
+#
+#   9999 is far from the live range (~2663), so a collision is implausible.
+#   The rename is mechanical and wide: this filename, the `sep:` field below,
+#   every `sep-9999-` id here, and the same ids in
+#   src/scenarios/server/events/.
+#
+#   This must not merge under the placeholder. plan.modelcontextprotocol.io
+#   reads the manifest built from `main`, so a draft PR is invisible to it, but
+#   a merge would publish SEP 9999 as though it were real and a later rename
+#   would then have to retract it. The rename is therefore a merge blocker, not
+#   a follow-up.
+#
+#   The reservation question is open with the WG in #triggers-events-wg. Peter
+#   is the person to ask and is away the week of 2026-09-14 for AGNTCon, so the
+#   answer is not expected before the scenarios land.
+#
+# provenance: extracted against the merged design sketch on `main`, which
+#   landed 2026-09-08. Before that merge the document was a moving PR head and
+#   not worth scoring against. Two spec commits land inside this extraction:
+#   `197c32b4` (2026-05-10) renamed the duration fields to `nextPollMs` and
+#   `maxAgeMs`, and `28ec35e9` (2026-09-04) added event-type removal and
+#   breaking-change termination.
+#
+#   The sketch is a design document rather than a spec diff, so there is no
+#   `docs/specification/draft/*.mdx` to point `new-sep` at — `specPathToUrl`
+#   (src/new-sep/index.ts:19) hard-requires that prefix, so `--spec-path` does
+#   not help either. The file was scaffolded with `--spec-url`, which
+#   short-circuits the GitHub lookup. There are no section anchors to cite, so
+#   `spec_url` names the document itself and rows carry no per-row `url`.
+#   Expect one more pass once the text becomes a spec PR and gains anchors.
+#
+# coverage: 135 declared checks plus 30 excluded rows.
+#
+#   A keyword sweep of the source finds 144 RFC 2119 keyword occurrences across
+#   119 sentences: 34 MUST, 9 MUST NOT, 3 REQUIRED, 56 SHOULD, 7 SHOULD NOT
+#   (109 normative), plus 34 MAY and 1 OPTIONAL. Counting MUST NOT inside MUST
+#   and SHOULD NOT inside SHOULD, as the handoff table does, the same sweep
+#   reads as 43 / 3 / 63; the two counts agree.
+#
+#   Only 47 of the declared rows quote a sentence carrying a keyword. The other
+#   88 are shape requirements the document states declaratively — the
+#   `EventOccurrence` field table, the error-code table, the `events/list`
+#   descriptor fields, the response payloads. They are normative and directly
+#   testable, they are simply not written with a keyword, which is why the row
+#   count exceeds the sentence count in the sweep. One keyword sentence also
+#   frequently carries several distinct obligations (the Standard Webhooks
+#   signature sentence, the subscription-key sentence), which pushes the same
+#   way.
+#
+#   severity rule, since the usual "follow the keyword" mapping is undefined
+#   for a shape row: MUST / MUST NOT / REQUIRED -> FAILURE (30 rows), SHOULD /
+#   SHOULD NOT -> WARNING (16 rows). For a shape row, a field the document
+#   marks Required in a schema table, or a wire fact a client cannot work
+#   without (an error code, a method existing at all), is FAILURE; everything
+#   else drawn from an example payload is WARNING.
+#
+#   Pure MAY and OPTIONAL sentences get no row at all, per the handoff
+#   disposition table. The five that initially got one are demoted to
+#   `excluded:` at the foot of this file rather than deleted, so the sweep
+#   stays auditable against the document.
+#
+# excluded rather than declared: client-SDK and host obligations (poll floor,
+#   payload sanitization, policy evaluation), receiver obligations the harness
+#   implements rather than grades, server-SDK implementation guidance from the
+#   two "SDK Guidance" sections, and the WAF/deployment profile advisories.
+#   None is a server wire obligation, so declaring them would inflate the
+#   denominator with rows no server-side scenario could ever emit.
+#
+# deliberately not declared here: pagination semantics for `events/list`. The
+#   sketch defers them ("same semantics as tools/list etc."), so the obligation
+#   is the base protocol's and belongs to the core pagination scenarios.
+#   `sep-9999-list-pagination` declares only the part this document adds, which
+#   is that `events/list` participates in that scheme at all.
+#
+#   An `events/poll` against an unknown name is stated twice, once under Error
+#   Codes and once as the poll consequence of an event type having been
+#   removed. Only `sep-9999-removal-poll-not-found` is declared for it; a
+#   second row would double-count one probe.
+#
+#   `## Key Design Decisions`, `## Open Questions` and `## What Is NOT in v1`
+#   are rationale rather than requirements and produce no rows. The design
+#   table restates the webhook secret, TTL and TLS rules already declared above
+#   it.
+#
+# backing_scenarios: server ClientScenarios under src/scenarios/server/events/
+#   emit the check IDs below (a row is "tested" once a scenario emits its ID;
+#   see src/traceability/). All five now exist and together emit 122 of the 135
+#   rows:
+#     discovery.ts (events-discovery), 14 rows — the three capability rows, the
+#       two sep-9999-list-* rows, the six sep-9999-descriptor-* rows,
+#       sep-9999-error-not-found plus sep-9999-error-server-range (both graded
+#       off one unknown-name probe), and sep-9999-fallback-method-not-found,
+#       which only a server that does not offer the extension can answer.
+#     poll.ts (events-poll), 34 rows — the sep-9999-poll-* rows, the
+#       sep-9999-occurrence-* rows, the sep-9999-cursor-* /
+#       sep-9999-max-age-* / sep-9999-truncated-* rows reachable through poll,
+#       sep-9999-removal-poll-not-found (the poll leg of the removal rules), and
+#       sep-9999-error-invalid-params, which rides the same probe as
+#       sep-9999-poll-invalid-arguments.
+#     push.ts (events-push), 18 rows — the sep-9999-stream-* rows plus
+#       sep-9999-error-resource-exhausted, graded when a server refuses one of
+#       the three concurrent streams for a quota. It holds a
+#       real SSE stream open through stream.ts, because conn.request() resolves
+#       on the response for its id and a push stream withholds that until the
+#       subscription ends.
+#     webhook.ts (events-webhook), 27 rows — sep-9999-subscribe-*,
+#       sep-9999-ttl-*, sep-9999-unsubscribe-* and sep-9999-error-unsupported.
+#     webhook-delivery.ts (events-webhook-delivery), 29 rows —
+#       sep-9999-delivery-*, sep-9999-verification-*, sep-9999-ssrf-*,
+#       sep-9999-envelope-* and sep-9999-error-callback-endpoint-error, graded
+#       from an HTTP receiver the harness runs. The receiver publishes
+#       /.well-known/mcp-webhook-receiver.json over one path prefix and no other,
+#       so a server that takes the document path and one that handshakes are both
+#       exercised in a single run; EVENTS_RECEIVER_WELL_KNOWN=0 withholds it.
+#
+# negative controls: src/scenarios/server/events/negative*.test.ts, one file per
+#   scenario over a shared fixture in negative-fixture.ts. A green run against
+#   kitchen-sink proves a check does not false-positive; only a fixture broken in
+#   exactly one way proves it catches anything. Every divergence listed below has
+#   a case there, so a red run against a real server can be trusted rather than
+#   re-derived.
+#
+#   The fixture can also do the four things no client can ask a real server for
+#   (fail upstream, lose its replay window, terminate a subscription, close a
+#   stream itself) plus the gap and terminated control envelopes. Those rows
+#   report untestable against both implementations, so the controls are the only
+#   evidence those checks work at all.
+#
+#   The 13 rows nothing emits yet, and what each needs:
+#     sep-9999-schema-evolution-additive, sep-9999-breaking-change-new-name,
+#     sep-9999-list-changed-notification and the four remaining
+#     sep-9999-removal-* rows need a server whose catalog can be made to change
+#     mid-run. Neither fixture can, so these wait on a driver that can tell the
+#     server under test to add, alter or drop an event type.
+#     sep-9999-error-forbidden is the last error-code table row with no probe:
+#     it needs a principal the harness can be refused as. The other three are
+#     claimed off the rule that provokes each, with details.gradedBy naming it:
+#     -32602 off the poll invalid-arguments probe, -32013 off the concurrent
+#     streams, -32015 off the wrong-challenge callback.
+#     sep-9999-capability-list-changed-gated needs a server that declares
+#     listChanged false and then sends the notification anyway; nothing in the
+#     suite watches for an unsolicited notification yet.
+#     sep-9999-capability-client-declaration is a MAY about what a client
+#     declares, so no server-side scenario can emit it. Declared for now; the
+#     honest place for it is `excluded:` beside the other MAY rows.
+#     sep-9999-authz-subscribe-time and -delivery-time-reverify need two
+#     principals with different permissions.
+#     sep-9999-payload-minimality is a SHOULD about payload content, which
+#     sep-9999-delivery-body-size measures the observable half of.
+#
+# running them: events-push needs `--timeout 60000`, because it watches an idle
+#   stream for 35s and the document allows a 30s heartbeat cadence. A shorter
+#   window cannot tell a silent server from a slow one, so under 30s the
+#   heartbeat rows report untestable instead of failing. EVENTS_PUSH_WATCH_MS
+#   overrides it.
+#
+#   events-webhook-delivery needs a callback the server under test can reach:
+#   set EVENTS_WEBHOOK_CALLBACK_BASE to a public https base URL forwarding to
+#   the harness. Without one it points the server at a loopback receiver, which
+#   is the SSRF probe rather than a degraded run — a conformant server refuses
+#   it, and one that delivers there fails the SSRF rows and supplies real
+#   deliveries for everything else.
+#
+# measured against mcpkit, 2026-09-17, examples/events/kitchen-sink at
+#   `d2950655`: events-discovery 8/11, events-poll 26/29. The poll number was
+#   18/28 on 2026-09-15; the seven `sep-9999-occurrence-*` rows now pass
+#   because the scenario polls forward from the bootstrap cursor rather than
+#   grading them off the bootstrap response, and `sep-9999-poll-invalid-
+#   arguments` moved from a failure to untestable. Nothing in mcpkit changed
+#   between the two runs. Each divergence below is a real gap rather than
+#   something the suite should accommodate. Do not soften these rows to make
+#   mcpkit pass; catching them is the point.
+#
+#   sep-9999-capability-events-object — the server answers `events/list` but
+#     declares nothing, so a client that reads capabilities before calling never
+#     finds the surface. Not previously tracked. This is also why the scenario
+#     asks before it skips: a plain "undeclared optional capability" SKIP
+#     reports this server as a clean run. Closed by mcpkit 1416 (declaring
+#     top-level, which the document then said) and corrected to the extensions
+#     map by mcpkit 1421 once upstream PR 7 moved it.
+#   sep-9999-poll-next-poll-ms — `nextPollSeconds` persists (events.go:504)
+#     after `197c32b4` renamed it, and `maxAge` is still in seconds
+#     (events.go:544). mcpkit's own wire_shape_test.go:44 asserts the
+#     pre-rename name. Gap G31.
+#   sep-9999-descriptor-delivery-subset — `events.topology` advertises an
+#     empty `delivery`, where the document requires a non-empty subset of
+#     poll/push/webhook. That source is the substitute for the missing
+#     `notifications/events/list_changed`. Gap G34.
+#   sep-9999-descriptor-input-schema — `events.topology` carries no
+#     `inputSchema`. mcpkit 1381 added one to the three real sources, so this
+#     and the delivery row above now have the same single cause. The poll
+#     scenario picks `alert.fired`, which has an `inputSchema` with no typed
+#     property, so `sep-9999-poll-invalid-arguments` reports untestable: there
+#     is no constraint the harness can violate on purpose.
+#   sep-9999-poll-events-array — `events` is omitted rather than returned as
+#     an empty array when nothing happened. Not previously tracked.
+#   sep-9999-poll-mode-unsupported — `events/poll` answers for an event type
+#     whose `delivery` does not list `poll`, where the document requires
+#     `-32014 Unsupported`. Not previously tracked.
+#
+#   The removal and termination rules (gap G30) are declared here but not yet
+#   exercised: `RemoveSource` (registry.go:182) fires topology only and
+#   `UnsupportedData` (errors.go:90) has no `reason` field, but driving that
+#   path needs a server that can drop an event type mid-run, which waits on
+#   the push scenario.
+#
+# measured against a second implementation, 2026-09-17: Peter Alexander's
+#   `https://metronome-mcp.fly.dev/mcp`, announced 2026-09-10 and written by
+#   the author of the design sketch. events-discovery 10/11, events-poll 27/29.
+#   It serves one event type, `metronome.tick`, which offers all three delivery
+#   modes.
+#
+#   Running it is not a one-liner. Three things differ from a local fixture:
+#
+#   Events are only on the 2026-07-28 stateless wire. Over 2025-11-25 the
+#     server answers `events/list` with -32601. The runner picks the wire from
+#     the spec version, and the default already lands on stateless, so no flag
+#     is needed — but a 2025-11-25 run reports the whole extension as absent.
+#   It is behind OAuth, and `server` has no way to send a token. Its
+#     authorization server is a demo that verifies no identity: register a
+#     client at /register, approve the consent form, exchange the code with
+#     PKCE. Then put a local proxy in front that adds the header and point
+#     --url at the proxy. An auth option on the runner would remove all of
+#     this, and the webhook scenarios will need one anyway, since a webhook
+#     subscription requires an authenticated principal.
+#   Its one event type has required `inputSchema` properties. See the
+#     `minimalArguments` note below.
+#
+#   Two divergences, neither previously known. Both are now resolved, and the
+#   way they resolved is the argument for running a suite against more than one
+#   implementation:
+#
+#   sep-9999-capability-events-object — metronome declared events under
+#     `capabilities.extensions["io.modelcontextprotocol/events"]`, the SEP-2133
+#     extensions map, where this document put it top-level under
+#     `capabilities`. Raised with the author 2026-09-22 rather than resolved by
+#     picking a side. **The document was wrong**: extension negotiation is where
+#     it belongs, and upstream PR 7 moves the sketch there. metronome was right
+#     all along and mcpkit's conformance was an artifact of following a document
+#     that did not yet say what its author meant. The rows above track PR 7; the
+#     banner at the head of this file names them and says what to do on merge.
+#   sep-9999-poll-invalid-arguments — arguments that violate `inputSchema`
+#     answered -32603 Internal error, where the document requires -32602
+#     InvalidParams. Read as a framework default surfacing rather than a
+#     decision, which is what it was. Fixed by the author 2026-09-22.
+#
+#   `sep-9999-poll-mode-unsupported` reports untestable here, for the opposite
+#   reason it fails against mcpkit: every event type metronome serves offers
+#   poll, so there is no type to probe the unsupported-mode path with. The two
+#   implementations cover each other's blind spot, which is the argument for
+#   keeping both targets rather than picking one.
+#
+# two suite bugs the second implementation found, both fixed here:
+#
+#   `minimalArguments` (helpers.ts) returned undefined for any `inputSchema`
+#     with a required property, on the reasoning that every schema in the
+#     document is filters and transforms with nothing required. That holds for
+#     the examples in the document, not for a real server: `metronome.tick`
+#     requires `periodSeconds` and `label`, and all 33 poll rows reported
+#     untestable, scoring 1/34. It now derives a value per required property
+#     from the schema — `default`, `const`, first `enum` or `examples` entry,
+#     then `minimum` for numbers or a fixed string — and still gives up, rather
+#     than guessing, when a required property offers nothing to go on.
+#   The `sep-9999-occurrence-*` rows were graded off the bootstrap poll, which
+#     passes `cursor: null`. `cursor: null` means start from now, so a
+#     conformant server returns no events and the seven shape rows could never
+#     pass: the suite required the server to violate
+#     `sep-9999-cursor-null-starts-from-now` to score them. They now poll
+#     forward from the returned cursor, waiting `nextPollMs` between attempts
+#     (clamped to 250ms-2s) up to a 6s ceiling, and still report untestable
+#     against a genuinely quiet server. This is why the mcpkit poll number
+#     moved without mcpkit changing.
+#
+#   Both bugs were invisible against kitchen-sink alone. The first needs a
+#   server whose schema requires something; the second needs one that does not
+#   replay on a null cursor. This is the same pattern as the SEP-2640 suite,
+#   where the two bugs that mattered came from running against something that
+#   was not ours.
+# measured across all five scenarios, 2026-09-20:
+#
+#                        kitchen-sink (d2950655)   metronome-mcp.fly.dev
+#   events-discovery                     8/11              10/11
+#   events-poll                         26/29              27/29
+#   events-push                         11/15              13/15
+#   events-webhook                      17/23              20/23
+#   events-webhook-delivery             12/21               3/27
+#
+#   metronome's webhook-delivery number is not a result about metronome. It
+#   refuses the loopback callback, correctly, so 24 rows report untestable for
+#   want of a routable one. Point EVENTS_WEBHOOK_CALLBACK_BASE at a tunnel and
+#   that run becomes meaningful.
+#
+#   new divergences from the three later scenarios, none previously tracked,
+#   all in mcpkit rather than in the document:
+#
+#   sep-9999-stream-subscription-id-meta — kitchen-sink puts the correlation id
+#     in `params.requestId`, where the document requires
+#     `params._meta["io.modelcontextprotocol/subscriptionId"]`. A client holding
+#     two streams cannot route by what the document tells it to read. metronome
+#     carries it correctly, which is what identified this as a defect rather
+#     than an ambiguity in the sketch.
+#   sep-9999-subscribe-url-https-required / -url-non-https-rejected —
+#     kitchen-sink accepts an `http://` callback URL and subscribes to it.
+#   sep-9999-unsubscribe-unknown-not-found — kitchen-sink answers success for a
+#     subscription key it never held, so a client cannot tell teardown from a
+#     typo.
+#   sep-9999-delivery-signature-formula — kitchen-sink computes the HMAC with
+#     the literal `whsec_...` string as the key, where the document says the key
+#     is the base64-decoded bytes after the prefix. No Standard Webhooks
+#     receiver verifies these signatures. Checked by hand against four candidate
+#     formulas before this was written down.
+#   sep-9999-ssrf-validate-callback-url / -reject-non-routable — the fixture
+#     accepts and then delivers to `http://127.0.0.1`. This one is fixture
+#     configuration rather than a library defect: kitchen-sink passes
+#     `events.WithWebhookAllowPrivateNetworks(true)` (main.go:151) so `make
+#     demo` can reach a local receiver, and that single flag disables both the
+#     subscribe-time hostname check and the dial-time IP check. mcpkit's
+#     default path rejects loopback, RFC1918, link-local, ULA and the rest
+#     (webhook.go isBlockedIP). The discord, telegram and whole-enchilada demos
+#     set the same flag.
+#
+#     The row still fails, and should: the suite grades the server it was
+#     pointed at, and the server it was pointed at delivered to loopback. But
+#     read it as "the conformance target runs with SSRF protection off", not as
+#     "mcpkit has no SSRF protection". Pointing testconf-events at a fixture
+#     built without that flag is the fix, and would also make the row mean
+#     something.
+#   sep-9999-verification-required-before-delivery — kitchen-sink delivers
+#     without the challenge handshake, because the handshake does not exist:
+#     control.go carries only the `gap` and `terminated` discriminators, and
+#     the `challenge_failed` error bucket is declared and never assigned.
+#     Tracked as mcpkit issue 490, with DEPLOYMENT.md calling the current state
+#     verification-stub-only.
+#
+#   the signature and verification findings are the same shape of problem and
+#   worth reading together: nothing yet proves a callback endpoint wanted the
+#   deliveries, and what arrives there cannot be authenticated by its signature.
+#   metronome fails neither.
+#
+#   root causes, read out of mcpkit at origin/main (5cfb7c51) rather than
+#   guessed, because "why" decides whether a row is worth arguing about:
+#
+#   The correlation-id, https and unsubscribe rows are all library-side in
+#     experimental/ext/events. The correlation id predates the convention it
+#     should follow: stream.go names the field `requestId`, mirroring the
+#     sketch's own push examples, while mcpkit implements the SEP-2575 `_meta`
+#     spelling elsewhere (core/stateless.go MetaKeySubscriptionID). The id it
+#     would carry already exists server-side and is simply never put on the
+#     wire. `ValidateWebhookURL` allows `http` deliberately for demo
+#     ergonomics, documented in DEPLOYMENT.md, and maps failures to -32015
+#     rather than -32602 besides. The unsubscribe row is an unfinished feature
+#     rather than a decision: the registry already computes whether the key was
+#     found and the handler discards it, and wire_shape_test.go describes the
+#     NotFound answer as future work.
+#   The signature row is a chronology accident and the widest to fix. Signing
+#     landed 2026-04-29, when the secret was an opaque server-minted token; the
+#     `whsec_` + base64 format arrived two days later, and key derivation was
+#     never revisited. The same literal-string key appears in both verifiers,
+#     the Go and Python clients, the whole-enchilada receiver and the telegram
+#     tests, so server and clients are mutually consistent and all five call
+#     sites are non-conformant together. That is exactly the failure mode a
+#     conformance suite exists to catch: the implementation's own tests cannot
+#     see it.
+#
+#   None of these six is in mcpkit issue 1380, which tracks a disjoint set from
+#   the earlier run. Only the verification gap has an issue (490). The package
+#   carries an EXPERIMENTAL banner and sits outside the per-PR CI matrix, which
+#   is a large part of why they survived.
+#
+# two harness bugs the second implementation found, both fixed:
+#
+#   The `sep-9999-occurrence-*` rows were graded off the bootstrap poll, which
+#     passes `cursor: null` and therefore returns nothing on a conformant
+#     server. See the 2026-09-17 note below.
+#   `sep-9999-delivery-retry-regenerates-signature` folded signature validity
+#     into its freshness check, so a server with the wrong signature formula was
+#     reported as reusing timestamps it had not reused. Freshness is now graded
+#     on distinct timestamps and signatures alone, and validity belongs to
+#     sep-9999-delivery-signature-formula.
+#
+sep: 9999
+# Points at PR 7's head, not `main`: six capability rows quote text that only
+# exists there. See the banner at the head of this file.
+spec_url: https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/refs/pull/7/head/docs/design-sketch-proposal.md
+requirements:
+  # === Capability Declaration ===
+  - check: sep-9999-capability-events-object
+    text: "Events is an MCP extension, identified as `io.modelcontextprotocol/events`, and is declared through Extension Negotiation: the identifier appears as a key in the `extensions` field of capabilities, mapped to the extension's settings object."
+  - check: sep-9999-capability-list-changed-flag
+    text: "The server's settings object has one member: `listChanged` (boolean, optional, default `false`) — whether the server sends `notifications/events/list_changed`."
+  - check: sep-9999-capability-empty-settings
+    text: 'An empty settings object declares event support with no list-change notifications.'
+  - check: sep-9999-capability-client-declaration
+    text: 'A client MAY advertise the same identifier with an empty settings object to indicate that it understands the extension.'
+  - check: sep-9999-capability-list-changed-gated
+    text: 'Like `notifications/tools/list_changed` and `notifications/resources/list_changed`, `notifications/events/list_changed` is sent only by a server that declared `listChanged: true` in its extension settings.'
+  - check: sep-9999-fallback-method-not-found
+    text: 'A server that does not offer the extension answers any `events/*` request with `-32601 MethodNotFound` (standard JSON-RPC).'
+
+  # === Listing Available Events ===
+  - check: sep-9999-list-implemented
+    text: '`events/list` returns `{events: [...], nextCursor}`, where each entry describes one event type.'
+  - check: sep-9999-list-pagination
+    text: '`nextCursor` is "present when more pages are available; same semantics as tools/list etc."'
+  - check: sep-9999-descriptor-name
+    text: 'Each event descriptor carries a `name` identifying the event type.'
+  - check: sep-9999-descriptor-description
+    text: 'Each event descriptor carries a `description` of when the event fires.'
+  - check: sep-9999-descriptor-delivery-subset
+    text: '`delivery` lists the delivery modes this event type supports — any non-empty subset of `"poll"`, `"push"`, `"webhook"`. No mode is mandatory.'
+  - check: sep-9999-descriptor-input-schema
+    text: '`inputSchema` is a JSON Schema describing valid subscription arguments — these may include filters (which narrow the event stream), transforms (which modify payloads), or other server-defined configuration.'
+  - check: sep-9999-descriptor-payload-schema
+    text: '`payloadSchema` describes the shape of `data` in delivered events.'
+  - check: sep-9999-descriptor-meta
+    text: '`_meta` on an event descriptor is optional; same semantics as on Tool/Resource/Prompt.'
+  - check: sep-9999-schema-evolution-additive
+    text: "Servers SHOULD evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: new optional fields MAY be added; existing fields SHOULD NOT be removed, renamed, or retyped; enums SHOULD NOT be narrowed; and `inputSchema` SHOULD NOT be tightened such that previously accepted `arguments` become invalid."
+  - check: sep-9999-breaking-change-new-name
+    text: 'A breaking change SHOULD instead be published under a new event name, served alongside the old one for a migration period, after which the old name is removed.'
+
+  # === Dynamic Event Types ===
+  - check: sep-9999-list-changed-notification
+    text: 'If the set of available event types, or the descriptor of any of them (`description`, `delivery`, `inputSchema`, `payloadSchema`), changes at runtime, the server sends a `notifications/events/list_changed` notification.'
+
+  # === Event Type Removal and Breaking Changes (spec commit 28ec35e9) ===
+  - check: sep-9999-removal-terminates-subscriptions
+    text: "The server SHOULD end them using each mode's termination signal: `notifications/events/terminated` on push streams and a `terminated` envelope to webhook subscriptions."
+  - check: sep-9999-removal-error-not-found
+    text: 'The `error` is `-32011 NotFound` with `data: {"kind": "event"}` when the type was removed.'
+  - check: sep-9999-removal-error-schema-changed
+    text: 'The `error` is `-32014 Unsupported` with `data: {"feature": "payloadSchema" | "inputSchema", "reason": "schema_changed"}` when it was changed in place — not `-32012 Forbidden`, since the principal''s access is unchanged.'
+  - check: sep-9999-removal-additive-no-terminate
+    text: 'Purely additive changes MUST NOT terminate subscriptions.'
+  - check: sep-9999-removal-poll-not-found
+    text: 'Poll holds no server-side subscription to terminate: a poll against a removed name already returns `-32011 NotFound`.'
+
+  # === Error Codes ===
+  - check: sep-9999-error-invalid-params
+    text: "`-32602 InvalidParams` — request is statically invalid: arguments don't match the event's inputSchema, the callback `delivery.url` is malformed or non-`https`, or `delivery.secret` is not a valid `whsec_` value."
+  - check: sep-9999-error-not-found
+    text: '`-32011 NotFound` — a referenced entity does not exist: an unknown event name, or no subscription matching the key on `events/unsubscribe`.'
+  - check: sep-9999-error-forbidden
+    text: '`-32012 Forbidden` — the authenticated principal is not permitted for this event/arguments combination, or its access was revoked.'
+  - check: sep-9999-error-resource-exhausted
+    text: '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).'
+  - check: sep-9999-error-unsupported
+    text: '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here, e.g. a delivery mode the event type does not offer. `data` identifies it (e.g. `{"feature": "deliveryMode", "value": "push"}`).'
+  - check: sep-9999-error-callback-endpoint-error
+    text: '`-32015 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.'
+  - check: sep-9999-error-server-range
+    text: 'These are general-purpose codes carried in the JSON-RPC implementation-defined server range `[-32000, -32099]`.'
+
+  # === Poll-Based Delivery ===
+  - check: sep-9999-poll-implemented
+    text: 'Poll (`events/poll`) is request/response: client sends `{name, arguments, cursor}`, gets back `{events[], cursor, nextPollMs}`.'
+  - check: sep-9999-poll-one-subscription-per-request
+    text: 'Each `events/poll` request carries one subscription. A client with multiple subscriptions runs one poll loop per subscription.'
+  - check: sep-9999-poll-bootstraps-subscription
+    text: 'No separate subscribe step needed — the first poll with a null cursor bootstraps the subscription. Server holds no protocol-required state.'
+  - check: sep-9999-poll-events-array
+    text: 'The poll response carries an `events` array of `EventOccurrence` entries. Empty `events` array means nothing happened — this is the common case and should be cheap.'
+  - check: sep-9999-poll-response-cursor
+    text: 'The poll response carries `cursor` at the response level, the subscription position after this batch.'
+  - check: sep-9999-poll-next-poll-ms
+    text: '`nextPollMs` allows the server to dynamically adjust polling frequency (e.g., back off when rate-limited upstream, speed up when activity is detected).'
+  - check: sep-9999-poll-next-poll-ms-ignored-when-has-more
+    text: '`nextPollMs` is ignored when `hasMore` is `true`.'
+  - check: sep-9999-poll-has-more
+    text: '`hasMore` indicates whether additional events are available beyond the returned batch. When `true`, the client should poll again immediately with the updated cursor. When `false`, the client waits `nextPollMs` before the next poll.'
+  - check: sep-9999-poll-max-events-cap
+    text: '`maxEvents` is an optional cap on the number of events returned. If more events are available than the limit, the server returns a partial batch with an intermediate cursor and sets `hasMore: true`. If omitted, the server uses its own default limit.'
+  - check: sep-9999-poll-stateless-request
+    text: 'Each poll request is self-contained: the client provides the event name, arguments, and cursor. The server does not need to "remember" previous poll requests to answer them.'
+  - check: sep-9999-poll-errors-are-jsonrpc
+    text: 'Errors (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`) are returned as a standard JSON-RPC error response for the request — there is no partial-success model since each request carries one subscription.'
+  - check: sep-9999-poll-invalid-arguments
+    text: "A poll whose `arguments` do not match the event's `inputSchema` returns `-32602 InvalidParams`."
+  - check: sep-9999-poll-mode-unsupported
+    text: 'A poll against an event type whose `delivery` does not list `"poll"` returns `-32014 Unsupported` identifying the unsupported delivery mode.'
+
+  # === EventOccurrence schema ===
+  - check: sep-9999-occurrence-event-id
+    text: '`eventId` (string) is required on every `EventOccurrence`: a stable identifier for deduplication.'
+  - check: sep-9999-occurrence-name
+    text: '`name` (string) is required on every `EventOccurrence`: the event type name.'
+  - check: sep-9999-occurrence-timestamp
+    text: '`timestamp` (string, ISO 8601) is required on every `EventOccurrence`: when the event occurred.'
+  - check: sep-9999-occurrence-data
+    text: "`data` (object) is required on every `EventOccurrence`: payload conforming to the event type's `payloadSchema`."
+  - check: sep-9999-occurrence-cursor-optional
+    text: '`cursor` (string | null) is not required: subscription position after this event (push/webhook only; poll carries cursor at the response level).'
+  - check: sep-9999-occurrence-meta-ungoverned
+    text: '`_meta` is reserved for protocol/extension metadata, consistent with `_meta` on other MCP types. Not governed by `payloadSchema`.'
+  - check: sep-9999-occurrence-event-id-from-upstream
+    text: '`eventId` is server-assigned: when the upstream source provides a stable event identifier, the server SHOULD use that value as `eventId` so that the same upstream event surfaced via multiple paths carries the same `eventId` and dedup works.'
+
+  # === Cursor Lifecycle ===
+  - check: sep-9999-cursor-opaque
+    text: 'Cursors are opaque strings managed by the server. They represent a position in the event stream. `cursor` is opaque to the client.'
+  - check: sep-9999-cursor-null-starts-from-now
+    text: 'Passing `cursor: null` in any mode means "start from now." The server returns a fresh cursor representing the current position (or `null` if the event type does not support replay). No historical events are replayed.'
+  - check: sep-9999-cursor-absent-equals-null
+    text: 'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`: a sender MAY omit the field instead of writing `null`, and a receiver MUST NOT fail because it is missing.'
+  - check: sep-9999-cursor-consistency
+    text: 'Servers SHOULD be consistent: an event type that ever returns a non-null cursor SHOULD always do so, and one that returns `null` SHOULD always return `null`, so clients can branch once at subscribe time rather than per delivery.'
+  - check: sep-9999-cursor-advances-when-quiet
+    text: "The client's persisted cursor must advance during quiet periods. Poll covers this inherently (every response carries `cursor`, including when `events: []`)."
+  - check: sep-9999-max-age-ms-floor
+    text: 'All three modes accept an optional `maxAgeMs` (integer milliseconds) alongside `cursor`. When present, the server begins replay from whichever is later: the supplied `cursor`, or `now − maxAgeMs`.'
+  - check: sep-9999-max-age-ms-sets-truncated
+    text: 'If the floor advances past the cursor, the server SHOULD set `truncated: true` on the first response (poll result / `notifications/events/active` / webhook subscribe response) so the client knows older events were skipped.'
+  - check: sep-9999-max-age-ms-ignored-when-cursor-null
+    text: '`maxAgeMs` is ignored when `cursor` is `null` (null already means "now") and for event types that do not support replay.'
+  - check: sep-9999-replay-ceiling-sets-truncated
+    text: 'Servers MAY also apply their own replay ceiling independent of `maxAgeMs` and MUST signal it via `truncated: true` when they do.'
+  - check: sep-9999-truncated-returns-fresh-cursor
+    text: 'In all cases the server resets to a position it can serve from, returns that position as the fresh `cursor` alongside `truncated: true`, and continues — the client never reconnects or re-subscribes in response.'
+  - check: sep-9999-truncated-poll-never-an-error
+    text: 'For poll, `truncated` appears in the result body: `{events:[], cursor:<fresh>, truncated:true, hasMore, nextPollMs}`. Never a JSON-RPC error.'
+  - check: sep-9999-truncated-false-when-no-replay
+    text: 'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.'
+
+  # === Push-Based Delivery ===
+  - check: sep-9999-stream-implemented
+    text: 'Push delivery uses a long-lived `events/stream` request — one per subscription. The request is a standard JSON-RPC request with an `id`, which enables cancellation via `notifications/cancelled` and is echoed in every notification for routing.'
+  - check: sep-9999-stream-error-before-open
+    text: 'If the subscription is invalid (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`), the server responds immediately with a JSON-RPC error and no stream is opened.'
+  - check: sep-9999-stream-active-confirmation
+    text: 'Otherwise the server confirms the subscription with `notifications/events/active {cursor, truncated, _meta.subscriptionId}` and delivers events as notifications.'
+  - check: sep-9999-stream-subscription-id-meta
+    text: 'Every `notifications/events/*` message carries the JSON-RPC `id` of the parent `events/stream` request in `params._meta["io.modelcontextprotocol/subscriptionId"]` so a client with multiple concurrent streams can route notifications to the correct stream.'
+  - check: sep-9999-stream-event-notification
+    text: 'Events are delivered as `notifications/events/event` whose params are an `EventOccurrence`.'
+  - check: sep-9999-stream-error-is-recoverable
+    text: '`notifications/events/error` reports a recoverable failure (e.g., a single upstream fetch failed); the subscription remains active and the server retries and resumes.'
+  - check: sep-9999-stream-terminated-ends-subscription
+    text: 'Only `notifications/events/terminated` ends the subscription.'
+  - check: sep-9999-stream-gap-resends-active
+    text: "A gap (e.g., the cursor fell outside the upstream's retention window) is not an error — the server sends a fresh `notifications/events/active {cursor:<fresh>, truncated:true, _meta.subscriptionId}` and continues delivering."
+  - check: sep-9999-stream-heartbeat-required
+    text: 'The server MUST send periodic keepalive messages on the push stream so the client can distinguish "nothing to send" from "connection is dead."'
+  - check: sep-9999-stream-heartbeat-carries-cursor
+    text: "The heartbeat is `notifications/events/heartbeat` — `cursor` is the position the server has checked up to, so the client's persisted cursor advances even when no events match; it is `null` for event types that do not support replay."
+  - check: sep-9999-stream-heartbeat-interval
+    text: 'The server SHOULD send a heartbeat at least every 30 seconds.'
+  - check: sep-9999-stream-heartbeat-not-sse-comment
+    text: 'On Streamable HTTP this is sent as an SSE `data:` frame; the SSE comment form (`: keepalive`) is not used since it cannot carry cursor state.'
+  - check: sep-9999-stream-final-result-shape
+    text: 'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`). It carries no information — it satisfies JSON-RPC''s requirement that every request gets a response.'
+  - check: sep-9999-stream-final-result-timing
+    text: 'It is sent whenever the server can write a final frame: on Streamable HTTP only when the server initiates the close; on stdio the server MAY send it, and clients MUST NOT depend on receiving it.'
+  - check: sep-9999-stream-cancel-stops-delivery
+    text: 'In both cases, the server MUST stop delivering events and release any associated resources.'
+  - check: sep-9999-stream-exempt-from-concurrency-cap
+    text: 'Server SDKs MUST exempt `events/stream` from any general request-concurrency cap, since each push subscription is a long-lived request that never completes until cancelled.'
+  - check: sep-9999-stream-carries-only-event-notifications
+    text: "The `events/stream` response carries only `notifications/events/*` messages. This stream carries only this subscription's event notifications; it is not a general server-to-client channel."
+
+  # === Webhook: subscribing ===
+  - check: sep-9999-subscribe-webhook-only
+    text: '`events/subscribe` is ONLY used for webhook delivery. Poll and push do not need it.'
+  - check: sep-9999-subscribe-secret-required
+    text: '`delivery.secret` is REQUIRED. The client supplies the HMAC signing secret; the server never generates one.'
+  - check: sep-9999-subscribe-secret-format
+    text: 'The value MUST be a Standard Webhooks symmetric secret: the literal prefix `whsec_` followed by base64 of 24–64 random bytes.'
+  - check: sep-9999-subscribe-secret-rejected
+    text: 'Servers MUST reject a `delivery.secret` that is not `whsec_` followed by base64 decoding to 24–64 bytes (per Standard Webhooks) with `InvalidParams`.'
+  - check: sep-9999-subscribe-url-https-required
+    text: 'Callback URLs MUST use `https://`.'
+  - check: sep-9999-subscribe-url-non-https-rejected
+    text: 'Servers MUST reject `events/subscribe` with a non-`https` `delivery.url` (`-32602 InvalidParams`).'
+  - check: sep-9999-subscribe-auth-required
+    text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without an authorized principal with `-32012 Forbidden`.'
+  - check: sep-9999-subscribe-key-composition
+    text: "The subscription key is `(principal, delivery.url, name, arguments)`, where `principal` is the server's canonical identifier for the authenticated subject. `arguments` is compared by canonical-JSON equality. There is no client-generated `id`."
+  - check: sep-9999-subscribe-key-immutable
+    text: "All four components are immutable for the subscription's lifetime: a subscribe call with a different value for any of them addresses a different subscription."
+  - check: sep-9999-subscribe-idempotent-upsert
+    text: '`events/subscribe` is idempotent — calling it again with the same subscription key refreshes the TTL and updates mutable fields. If a subscription with the same scoped key exists, the server resets the TTL and updates mutable fields in place.'
+  - check: sep-9999-subscribe-id-derived
+    text: 'The server computes a deterministic `id` over the key (e.g., a truncated SHA-256 of the canonical key serialization) and returns it in the subscribe response. It is stable across refreshes and server restarts.'
+  - check: sep-9999-subscribe-id-not-an-input
+    text: "A caller who learns another tenant's derived `id` gains nothing — `id` is not accepted as input to any method."
+  - check: sep-9999-subscribe-refresh-replaces-secret
+    text: 'On an idempotent subscribe against an existing key, `delivery.secret` is replaced. To rotate, the client supplies a new value on refresh.'
+  - check: sep-9999-subscribe-refresh-reactivates
+    text: 'On an idempotent subscribe against an existing key, `active` is set to `true`. If delivery had been suspended due to repeated failures, the server resumes retrying pending events.'
+  - check: sep-9999-subscribe-response-cursor
+    text: "The subscribe response carries `cursor`, a safe-to-persist watermark that advances the client's cursor even if no events arrive before next refresh."
+  - check: sep-9999-subscribe-response-truncated
+    text: 'The subscribe response carries `truncated`, true if delivery started later than the supplied cursor (retention window, `maxAgeMs` floor, or server-side ceiling).'
+  - check: sep-9999-subscribe-cross-tenant-isolation
+    text: 'Because the key includes `principal` and `delivery.url`, two distinct tenants subscribing to the same `(name, arguments)` get distinct subscriptions.'
+
+  # === Webhook: TTL negotiation ===
+  - check: sep-9999-ttl-refresh-before-lte-suggestion
+    text: '`refreshBefore` (response) is the grant. It SHOULD be less than or equal to the suggestion.'
+  - check: sep-9999-ttl-no-rejection-path
+    text: 'Clamping in either direction is self-announcing — the client reads the granted `refreshBefore` and schedules its refresh loop from that, so a clamped grant is not an error and there is no rejection path for TTL values.'
+  - check: sep-9999-ttl-null-only-when-requested
+    text: 'A server MUST NOT return `null` unless the client suggested `ttlMs: null` — no expiry exceeds every finite suggestion.'
+  - check: sep-9999-ttl-omitted-means-default
+    text: 'Omitting `ttlMs` means "server default." An explicit `ttlMs: null` requests a subscription with no expiry.'
+  - check: sep-9999-ttl-long-grant-retained
+    text: 'A server granting long or no-expiry TTLs MUST retain subscriptions for the lifetime it granted, including across restarts.'
+  - check: sep-9999-ttl-no-expiry-persisted
+    text: 'The server MUST persist no-expiry subscriptions across restarts, because a client that never refreshes will never detect (or repair) a silently dropped one.'
+  - check: sep-9999-ttl-no-expiry-gc-terminated
+    text: 'The server MAY drop a no-expiry subscription after sustained delivery failure (server-defined window), and SHOULD attempt a `terminated` envelope when it does.'
+
+  # === Webhook: unsubscribing ===
+  - check: sep-9999-unsubscribe-by-key
+    text: '`events/unsubscribe` is eager cleanup; the server looks the subscription up by the same compound key used for idempotent upsert on subscribe.'
+  - check: sep-9999-unsubscribe-unknown-not-found
+    text: 'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.'
+
+  # === Webhook: delivery status ===
+  - check: sep-9999-delivery-status-last-error-category
+    text: '`lastError` MUST be a server-generated category string — one of `connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx`, `challenge_failed` — and MUST NOT include raw response bodies.'
+
+  # === Webhook: delivery mechanics ===
+  - check: sep-9999-delivery-post-json
+    text: 'Deliveries are HTTP `POST` only, with Content-Type `application/json`.'
+  - check: sep-9999-delivery-standard-webhooks-headers
+    text: 'Every delivery MUST include `webhook-id` (the `eventId` for event deliveries; `msg_<type>_<random>` for control envelopes), `webhook-timestamp` (Unix seconds), and `webhook-signature`.'
+  - check: sep-9999-delivery-subscription-id-header
+    text: 'In addition to the Standard Webhooks headers, deliveries MUST include `X-MCP-Subscription-Id` (the subscription `id`) so the receiver can select the correct secret without parsing the body. This is the only MCP-specific header.'
+  - check: sep-9999-delivery-signature-formula
+    text: 'The signature is `HMAC-SHA256(secret, webhook-id + "." + webhook-timestamp + "." + body)` encoded as base64 with a `v1,` prefix, where `body` is the raw HTTP request body bytes exactly as received and `secret` is the base64-decoded bytes of the value after the `whsec_` prefix.'
+  - check: sep-9999-delivery-retry-regenerates-signature
+    text: "Each retry attempt MUST regenerate the timestamp and signature so retries are not rejected by the receiver's freshness window."
+  - check: sep-9999-delivery-dual-sign-on-rotation
+    text: 'The server SHOULD dual-sign deliveries with both the old and new secrets for a short grace window so in-flight deliveries verify under either.'
+  - check: sep-9999-delivery-body-size
+    text: 'Servers SHOULD keep delivery bodies at or under 256 KiB, consistent with Payload Minimality.'
+  - check: sep-9999-delivery-413-non-retryable
+    text: 'Receivers and intermediaries MAY reject larger bodies with `413 Payload Too Large`; servers MUST treat `413` as a non-retryable failure for that event.'
+  - check: sep-9999-delivery-410-non-retryable
+    text: 'A receiver that intentionally rejects a delivery and does not want it retried responds `410 Gone`; the server MUST treat it as non-retryable.'
+  - check: sep-9999-delivery-retries-bounded
+    text: 'Retries are bounded: servers SHOULD cap both the attempt count and the elapsed retry window (for example, 3–5 attempts spread over no more than 10–15 minutes).'
+
+  # === Webhook: SSRF and endpoint verification ===
+  - check: sep-9999-ssrf-validate-callback-url
+    text: 'The server MUST validate callback URLs.'
+  - check: sep-9999-ssrf-reject-non-routable
+    text: 'Servers SHOULD reject URLs whose resolved IP is not globally routable per the IANA IPv4 and IPv6 Special-Purpose Address Registries unless explicitly configured to allow them.'
+  - check: sep-9999-ssrf-validate-at-delivery-time
+    text: 'To prevent DNS rebinding, this validation MUST be performed at delivery time, not only at subscribe time: the server resolves the hostname, checks the resolved IP against the blocklist, and connects directly to that validated IP.'
+  - check: sep-9999-ssrf-no-redirects
+    text: 'Webhook delivery requests MUST NOT follow HTTP redirects, since a redirect can target an internal address that bypasses the blocklist.'
+  - check: sep-9999-verification-required-before-delivery
+    text: "A server MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed, by one of: a verification handshake, a server-configured allowlist, prior out-of-band verification, or a receiver-published well-known document."
+  - check: sep-9999-verification-challenge-echo
+    text: 'Before activating, the server POSTs a `verification` control envelope carrying a single-use, short-lived `challenge` nonce (signed and headed like any delivery), and the endpoint proves intent by echoing the nonce in a `2xx` body (`{"challenge":"<nonce>"}`), which the server compares in constant time.'
+  - check: sep-9999-verification-failure-error
+    text: 'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`; an unreachable one yields the same code with the relevant connection-failure category.'
+  - check: sep-9999-verification-cached-per-principal-url
+    text: "Verification is cached per `(principal, url)`: a successful handshake, allowlist hit, or well-known match covers that principal's subscriptions to that URL across refreshes and `arguments`, so varying `arguments` cannot multiply verification POSTs at a victim and one principal's verification never waives the challenge for another."
+  - check: sep-9999-verification-persisted-for-no-expiry
+    text: 'A server that persists no-expiry subscriptions across restarts MUST persist their verification status alongside them.'
+  - check: sep-9999-verification-uses-ssrf-hardened-path
+    text: 'The verification POST MUST use the same SSRF-hardened path as deliveries (delivery-time IP validation, no redirects).'
+  - check: sep-9999-verification-no-raw-endpoint-responses
+    text: 'Failures surface only via the `lastError` category `challenge_failed`, never raw endpoint responses.'
+  - check: sep-9999-server-identity-key-discovery
+    text: 'The verifying public key MUST be discovered from an origin the client already authenticates, and never from the challenge or delivery body, which the attacker controls.'
+
+  # === Webhook: control envelopes ===
+  - check: sep-9999-envelope-type-discriminator
+    text: 'A body with a top-level `type` field is a control envelope; a body without one is an `EventOccurrence`.'
+  - check: sep-9999-envelope-signed-like-deliveries
+    text: 'Control envelopes are signed and headed exactly like event deliveries (Standard Webhooks headers + `X-MCP-Subscription-Id`); the body carries a `type` discriminator instead of `eventId`/`data`.'
+  - check: sep-9999-envelope-webhook-id-format
+    text: '`webhook-id` for control envelopes is a per-message identifier of the form `msg_<type>_<random>` so receivers can dedup retries.'
+  - check: sep-9999-envelope-gap
+    text: 'A `gap` envelope `{"type":"gap","cursor":"<fresh>"}` is sent when a gap is detected between refreshes. The client persists `cursor` and treats it as `truncated: true`.'
+  - check: sep-9999-envelope-terminated
+    text: 'A `terminated` envelope `{"type":"terminated","error":{...}}` is sent when the subscription has ended (e.g., authorization revoked). The subscription no longer exists server-side.'
+
+  # === Authorization ===
+  - check: sep-9999-authz-subscribe-time
+    text: 'When the caller is authenticated, the server MUST verify the principal has permission to subscribe to the requested event type with the given arguments.'
+  - check: sep-9999-authz-delivery-time-reverify
+    text: 'The server SHOULD periodically re-verify permissions.'
+
+  # === Payload handling (server side) ===
+  - check: sep-9999-payload-minimality
+    text: 'Servers SHOULD keep event payloads minimal — enough to identify and triage the event, not the full content.'
+
+  # ==========================================================================
+  # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a
+  # server wire obligation, so no server-side scenario can emit a check for it.
+  # Kept here so the keyword sweep stays auditable against the document.
+  # ==========================================================================
+
+  # --- Client / host obligations ---
+  - text: 'The client SHOULD re-call `events/list` to refresh its event type registry.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'The client SHOULD poll again immediately (ignoring `nextPollMs`) to drain the backlog.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'Clients SHOULD apply a configurable floor (default 1000 ms) to guard against a misbehaving server inducing a tight loop.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'Clients SHOULD NOT apply their default request timeout to `events/stream`; a client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'Unless granted no expiry, the client MUST re-call `events/subscribe` with the same subscription key before `refreshBefore` to keep the subscription alive.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'Even with no expiry, clients SHOULD still re-call `events/subscribe` (and `events/list`) occasionally.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null` (start from now).'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: '`truncated: true` always implies a possible gap; clients SHOULD treat it as such and persist the fresh cursor.'
+    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: "Client SDKs SHOULD generate the secret on the application's behalf rather than expose an interface that encourages hand-picked values, from a CSPRNG by default."
+    excluded: client-SDK guidance; not observable from the server under test
+  - text: 'Event payloads MUST be treated with the same caution as tool results. Clients SHOULD sanitize or sandbox event payloads before presenting them to an LLM.'
+    excluded: host obligation; not observable from the server under test
+  - text: 'Clients SHOULD support policy evaluation between event receipt and action execution, and SHOULD respect server-declared governance metadata.'
+    excluded: host obligation (Enterprise Governance); not observable from the server under test
+  - text: 'The client SDK SHOULD remove the subscription and notify the application when a termination signal arrives.'
+    excluded: client-SDK guidance; not observable from the server under test
+
+  # --- Receiver (callback endpoint) obligations ---
+  - text: 'The receiver MUST verify the signature before processing, SHOULD reject deliveries where `webhook-timestamp` is more than 5 minutes old, and SHOULD deduplicate on `webhook-id`.'
+    excluded: receiver obligation; the harness implements this rather than grading it
+  - text: 'Receivers MUST compute the HMAC over the raw body, never over a re-serialized JSON object.'
+    excluded: receiver obligation; the harness implements this rather than grading it
+  - text: 'The endpoint MUST make `cursor` and `eventId` available to the consuming client, and MUST forward control envelopes by the same channel it forwards events.'
+    excluded: receiver obligation; the harness implements this rather than grading it
+  - text: 'The endpoint SHOULD NOT return `2xx` until the event has been durably persisted or forwarded, and SHOULD respond quickly.'
+    excluded: receiver obligation; the harness implements this rather than grading it
+  - text: 'A receiver that gets a delivery for an `id` it has not yet been told to route SHOULD return a retryable status (`503` or `425 Too Early`).'
+    excluded: receiver obligation; the harness implements this rather than grading it
+
+  # --- Server-SDK implementation guidance (not wire-observable) ---
+  - text: "The SDK SHOULD enable poll by default so it's available unless the author opts out."
+    excluded: server-SDK guidance; indistinguishable on the wire from an author opting in
+  - text: 'SDKs SHOULD refuse a no-expiry cap unless the author has wired up durable storage.'
+    excluded: server-SDK guidance; a construction-time policy with no wire signal
+  - text: 'SDKs SHOULD provide an in-memory ring buffer that retains a bounded window of emitted events per event type.'
+    excluded: server-SDK guidance; an internal structure with no wire signal
+  - text: 'Servers SHOULD enforce the subscription limit (`ResourceExhausted`) before invoking `on_subscribe`, so a rejected subscription never provisions upstream resources.'
+    excluded: server-SDK ordering guidance; the harness cannot observe hook invocation order
+  - text: "The lease window is SDK-configurable and SHOULD default to a small multiple of the server's typical `nextPollMs`. Server authors SHOULD write `on_subscribe` to be idempotent."
+    excluded: server-SDK guidance; an internal lease table with no wire signal
+  - text: 'Authors SHOULD prefer a `check()` function that queries the upstream over emit-only for upstreams offering a durable cursor.'
+    excluded: server-authoring guidance; a design recommendation with no wire signal
+  - text: 'On HTTP/1.1 each stream is a TCP connection, so SDKs SHOULD prefer HTTP/2 when many subscriptions are active.'
+    excluded: transport guidance; not a protocol conformance obligation
+
+  # --- Deployment profile advisories ---
+  - text: 'A WAF MAY drop requests missing any required header as a cheap pre-filter; WAF rules SHOULD NOT rely on UA matching as a security control. Servers SHOULD document their egress ranges out-of-band.'
+    excluded: deployment advisory addressed to operators, not to an implementation
+
+  # --- Pure MAY / OPTIONAL (handoff disposition: no row) ---
+  - text: 'A server MAY return `cursor: null` in any delivery (poll result, push `notifications/events/event` and `notifications/events/active`, webhook payload) when the event type does not support replay.'
+    excluded: pure MAY; kept as context for sep-9999-cursor-consistency, which carries the testable half
+  - text: 'The one sanctioned exception is a server-side floor: a server MAY clamp an impractically short suggestion up to its minimum TTL to protect itself from refresh storms.'
+    excluded: pure MAY; the testable half is sep-9999-ttl-refresh-before-lte-suggestion, which this sentence excepts
+  - text: 'The header MAY contain multiple space-delimited signatures (`v1,<sigA> v1,<sigB>`) during secret rotation; the receiver accepts if any verifies.'
+    excluded: pure MAY, and the obligation it creates falls on the receiver
+  - text: 'After repeated failures (server-defined threshold), the server MAY suspend delivery (`deliveryStatus.active: false`).'
+    excluded: pure MAY; suspension is observable only through the OPTIONAL deliveryStatus object
+  - text: '`deliveryStatus` is OPTIONAL — servers MAY omit it entirely. The `events/subscribe` response MAY include a `deliveryStatus` object when refreshing an existing subscription.'
+    excluded: OPTIONAL by its own wording; a server omitting deliveryStatus entirely is conformant
