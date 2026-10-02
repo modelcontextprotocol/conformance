@@ -60,6 +60,15 @@ import {
   ResourcesNotFoundErrorScenario
 } from './server/resources';
 
+import { EventsDiscoveryScenario } from './server/events/discovery';
+import { EventsPollScenario } from './server/events/poll';
+import { EventsPushScenario } from './server/events/push';
+import { EventsWebhookScenario } from './server/events/webhook';
+import { EventsWebhookDeliveryScenario } from './server/events/webhook-delivery';
+import { EventsClientPollScenario } from './client/events/poll';
+import { EventsClientPushScenario } from './client/events/push';
+import { EventsClientWebhookScenario } from './client/events/webhook';
+import { EventsClientNoExtensionScenario } from './client/events/no-extension';
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
@@ -166,7 +175,16 @@ const pendingClientScenariosList: ClientScenario[] = [
   // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
-  new SkillsManifestScenario()
+  new SkillsManifestScenario(),
+
+  // MCP Events. Pending because the everything-server does not implement the
+  // events capability; targeted runs point at an events-capable fixture via
+  // `npm start -- server --scenario events-* --url <fixture>`. The suite
+  // scores against the merged design sketch in
+  // modelcontextprotocol/experimental-ext-triggers-events, which has no SEP
+  // number yet — see the header of src/seps/sep-9999.yaml.
+  new EventsDiscoveryScenario(),
+  new EventsPollScenario()
 ];
 
 // All client scenarios
@@ -223,6 +241,15 @@ const allClientScenariosList: ClientScenario[] = [
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
   new SkillsManifestScenario(),
+
+  // MCP Events. Fixture-dependent (needs a server declaring the extension under
+  // `capabilities.extensions`);
+  // each scenario SKIPs cleanly when the capability is not declared.
+  new EventsDiscoveryScenario(),
+  new EventsPollScenario(),
+  new EventsPushScenario(),
+  new EventsWebhookScenario(),
+  new EventsWebhookDeliveryScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
@@ -347,7 +374,15 @@ const scenariosList: Scenario[] = [
   new SkillsNoPrefetchScenario(),
   new SkillsVerificationScenario('digest'),
   new SkillsVerificationScenario('size'),
-  new SkillsVerificationScenario('frontmatter')
+  new SkillsVerificationScenario('frontmatter'),
+
+  // MCP Events, client side (#540). The harness is the events server and
+  // grades what the client sends; see src/scenarios/client/events/helpers.ts
+  // for the contract a client driver follows.
+  new EventsClientPollScenario(),
+  new EventsClientPushScenario(),
+  new EventsClientWebhookScenario(),
+  new EventsClientNoExtensionScenario()
 ];
 
 // Core scenarios (tier 1 requirements)

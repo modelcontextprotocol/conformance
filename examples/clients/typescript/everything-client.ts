@@ -44,6 +44,7 @@ import { ConformanceOAuthProvider } from './helpers/ConformanceOAuthProvider.js'
 import { runClient as issValidationClient } from './auth-test-iss-validation.js';
 import { runClient as dpopClient } from './auth-test-dpop.js';
 import { logger } from './helpers/logger.js';
+import { makeEventsClient } from './events-client.js';
 
 /**
  * Fixed client metadata URL for CIMD conformance tests.
@@ -1172,6 +1173,20 @@ export async function runWifJwtBearer(serverUrl: string): Promise<void> {
 }
 
 registerScenario('auth/wif-jwt-bearer', runWifJwtBearer);
+
+// ============================================================================
+// Events client conformance (modelcontextprotocol/conformance#540)
+// ============================================================================
+
+registerScenarios(
+  [
+    'events-client-poll',
+    'events-client-push',
+    'events-client-webhook',
+    'events-client-no-extension'
+  ],
+  makeEventsClient()
+);
 
 // ============================================================================
 // Main entry point
