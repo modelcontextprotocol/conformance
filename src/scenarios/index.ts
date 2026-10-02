@@ -65,6 +65,10 @@ import { EventsPollScenario } from './server/events/poll';
 import { EventsPushScenario } from './server/events/push';
 import { EventsWebhookScenario } from './server/events/webhook';
 import { EventsWebhookDeliveryScenario } from './server/events/webhook-delivery';
+import { EventsClientPollScenario } from './client/events/poll';
+import { EventsClientPushScenario } from './client/events/push';
+import { EventsClientWebhookScenario } from './client/events/webhook';
+import { EventsClientNoExtensionScenario } from './client/events/no-extension';
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
@@ -370,7 +374,15 @@ const scenariosList: Scenario[] = [
   new SkillsNoPrefetchScenario(),
   new SkillsVerificationScenario('digest'),
   new SkillsVerificationScenario('size'),
-  new SkillsVerificationScenario('frontmatter')
+  new SkillsVerificationScenario('frontmatter'),
+
+  // MCP Events, client side (#540). The harness is the events server and
+  // grades what the client sends; see src/scenarios/client/events/helpers.ts
+  // for the contract a client driver follows.
+  new EventsClientPollScenario(),
+  new EventsClientPushScenario(),
+  new EventsClientWebhookScenario(),
+  new EventsClientNoExtensionScenario()
 ];
 
 // Core scenarios (tier 1 requirements)

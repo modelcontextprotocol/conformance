@@ -63,7 +63,16 @@
 #   `spec_url` names the document itself and rows carry no per-row `url`.
 #   Expect one more pass once the text becomes a spec PR and gains anchors.
 #
-# coverage: 135 declared checks plus 30 excluded rows.
+# coverage: 145 declared checks plus 24 excluded rows.
+#
+#   135 server rows, plus 10 client rows added with the client scenarios in
+#   modelcontextprotocol/conformance#540. Seven of the ten were excluded here
+#   as client obligations before a client scenario set existed. The other
+#   three the first sweep missed: the client half of the Fallback sentence
+#   (no `events/*` to a server that did not advertise the extension), "Clients
+#   SHOULD respect" `nextPollMs` under Enterprise Governance, and the receiver
+#   half of "Absent means null", which binds a client reading a poll response
+#   as much as a server reading a request.
 #
 #   A keyword sweep of the source finds 144 RFC 2119 keyword occurrences across
 #   119 sentences: 34 MUST, 9 MUST NOT, 3 REQUIRED, 56 SHOULD, 7 SHOULD NOT
@@ -71,7 +80,7 @@
 #   and SHOULD NOT inside SHOULD, as the handoff table does, the same sweep
 #   reads as 43 / 3 / 63; the two counts agree.
 #
-#   Only 47 of the declared rows quote a sentence carrying a keyword. The other
+#   Only 57 of the declared rows quote a sentence carrying a keyword. The other
 #   88 are shape requirements the document states declaratively — the
 #   `EventOccurrence` field table, the error-code table, the `events/list`
 #   descriptor fields, the response payloads. They are normative and directly
@@ -82,8 +91,8 @@
 #   way.
 #
 #   severity rule, since the usual "follow the keyword" mapping is undefined
-#   for a shape row: MUST / MUST NOT / REQUIRED -> FAILURE (30 rows), SHOULD /
-#   SHOULD NOT -> WARNING (16 rows). For a shape row, a field the document
+#   for a shape row: MUST / MUST NOT / REQUIRED -> FAILURE (34 rows), SHOULD /
+#   SHOULD NOT -> WARNING (22 rows). For a shape row, a field the document
 #   marks Required in a schema table, or a wire fact a client cannot work
 #   without (an error code, a method existing at all), is FAILURE; everything
 #   else drawn from an example payload is WARNING.
@@ -93,12 +102,12 @@
 #   `excluded:` at the foot of this file rather than deleted, so the sweep
 #   stays auditable against the document.
 #
-# excluded rather than declared: client-SDK and host obligations (poll floor,
-#   payload sanitization, policy evaluation), receiver obligations the harness
-#   implements rather than grades, server-SDK implementation guidance from the
-#   two "SDK Guidance" sections, and the WAF/deployment profile advisories.
-#   None is a server wire obligation, so declaring them would inflate the
-#   denominator with rows no server-side scenario could ever emit.
+# excluded rather than declared: client-SDK and host obligations no wire
+#   shows (secret generation, payload sanitization, policy evaluation),
+#   receiver obligations the harness implements rather than grades, server-SDK
+#   implementation guidance from the two "SDK Guidance" sections, and the
+#   WAF/deployment profile advisories. Declaring them would inflate the
+#   denominator with rows no scenario, server or client, could ever emit.
 #
 # deliberately not declared here: pagination semantics for `events/list`. The
 #   sketch defers them ("same semantics as tools/list etc."), so the obligation
@@ -146,6 +155,21 @@
 #       /.well-known/mcp-webhook-receiver.json over one path prefix and no other,
 #       so a server that takes the document path and one that handshakes are both
 #       exercised in a single run; EVENTS_RECEIVER_WELL_KNOWN=0 withholds it.
+#
+#   Client scenarios under src/scenarios/client/events/ (#540) emit the ten
+#   sep-9999-client-* rows. The harness runs the events server there and grades
+#   what the client sends:
+#     poll.ts (events-client-poll), 7 rows — drain, nextPollMs, the floor, the
+#       fresh cursor after truncated, null and absent cursors, re-list.
+#     push.ts (events-client-push), 2 rows — reconnect with cursor after the
+#       stream goes silent, and the null cursor on reconnect.
+#     webhook.ts (events-client-webhook), 2 rows — refresh before expiry with
+#       the same key, and the null cursor on resubscribe.
+#     no-extension.ts (events-client-no-extension), 1 row — no events/* to a
+#       server that did not declare the extension.
+#   sep-9999-client-null-cursor-not-replayed is emitted in all three delivery
+#   modes, since each has its own resume path. Negative controls for these are
+#   src/scenarios/client/events/events.test.ts.
 #
 # negative controls: src/scenarios/server/events/negative*.test.ts, one file per
 #   scenario over a shared fixture in negative-fixture.ts. A green run against
@@ -723,6 +747,28 @@ requirements:
   - check: sep-9999-payload-minimality
     text: 'Servers SHOULD keep event payloads minimal — enough to identify and triage the event, not the full content.'
 
+  # === Client obligations (src/scenarios/client/events/, #540) ===
+  - check: sep-9999-client-no-events-without-extension
+    text: 'All `events/*` requests are client-initiated, so a client MUST NOT send them to a server that has not advertised the extension.'
+  - check: sep-9999-client-relist-on-list-changed
+    text: 'The client SHOULD re-call `events/list` to refresh its event type registry.'
+  - check: sep-9999-client-poll-drain-on-has-more
+    text: 'The client SHOULD poll again immediately (ignoring `nextPollMs`) to drain the backlog.'
+  - check: sep-9999-client-poll-respects-next-poll-ms
+    text: '`nextPollMs` allows servers to control polling frequency dynamically. Clients SHOULD respect it.'
+  - check: sep-9999-client-poll-floor
+    text: 'Clients SHOULD apply a configurable floor (default 1000 ms) to guard against a misbehaving server inducing a tight loop.'
+  - check: sep-9999-client-stream-reconnect-with-cursor
+    text: 'A client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.'
+  - check: sep-9999-client-refresh-before-expiry
+    text: 'Unless granted no expiry, the client MUST re-call `events/subscribe` with the same subscription key before `refreshBefore` to keep the subscription alive.'
+  - check: sep-9999-client-null-cursor-not-replayed
+    text: 'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null` (start from now).'
+  - check: sep-9999-client-cursor-absent-tolerated
+    text: 'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`: a receiver MUST NOT fail because it is missing.'
+  - check: sep-9999-client-truncated-persists-fresh-cursor
+    text: '`truncated: true` always implies a possible gap; clients SHOULD treat it as such and persist the fresh cursor.'
+
   # ==========================================================================
   # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a
   # server wire obligation, so no server-side scenario can emit a check for it.
@@ -730,22 +776,10 @@ requirements:
   # ==========================================================================
 
   # --- Client / host obligations ---
-  - text: 'The client SHOULD re-call `events/list` to refresh its event type registry.'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: 'The client SHOULD poll again immediately (ignoring `nextPollMs`) to drain the backlog.'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: 'Clients SHOULD apply a configurable floor (default 1000 ms) to guard against a misbehaving server inducing a tight loop.'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: 'Clients SHOULD NOT apply their default request timeout to `events/stream`; a client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: 'Unless granted no expiry, the client MUST re-call `events/subscribe` with the same subscription key before `refreshBefore` to keep the subscription alive.'
-    excluded: client-side obligation; needs a client-conformance scenario set
+  - text: 'Clients SHOULD NOT apply their default request timeout to `events/stream`; the heartbeat is the liveness signal.'
+    excluded: client-side obligation; observing it needs a window longer than any client's default request timeout (60s in the TypeScript SDK), and the reconnect half of the sentence is declared as sep-9999-client-stream-reconnect-with-cursor (modelcontextprotocol/conformance#540)
   - text: 'Even with no expiry, clients SHOULD still re-call `events/subscribe` (and `events/list`) occasionally.'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: 'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null` (start from now).'
-    excluded: client-side obligation; needs a client-conformance scenario set
-  - text: '`truncated: true` always implies a possible gap; clients SHOULD treat it as such and persist the fresh cursor.'
-    excluded: client-side obligation; needs a client-conformance scenario set
+    excluded: client-side obligation; "occasionally" has no window a finite run can observe
   - text: "Client SDKs SHOULD generate the secret on the application's behalf rather than expose an interface that encourages hand-picked values, from a CSPRNG by default."
     excluded: client-SDK guidance; not observable from the server under test
   - text: 'Event payloads MUST be treated with the same caution as tool results. Clients SHOULD sanitize or sandbox event payloads before presenting them to an LLM.'
