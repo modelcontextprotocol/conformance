@@ -12,6 +12,8 @@ import type { BaseHttpScenario } from './http-base';
 import { RequestMetadataScenario } from './request-metadata';
 import { MRTRClientScenario } from './mrtr-client';
 import { JsonSchemaRefDerefScenario } from './json-schema-ref-deref';
+import { SkillsNoPrefetchScenario } from './skills/no-prefetch';
+import { SkillsVerificationScenario } from './skills/verification';
 
 /**
  * Pins that the hand-rolled mock servers used by client-direction scenarios
@@ -527,4 +529,97 @@ describe('sep-2322-client-request-state mock results (2026-07-28)', () => {
       await scenario.stop();
     }
   });
+});
+
+describe('sep-2640 skills client mock results', () => {
+  const skillsScenarios: Array<{
+    name: string;
+    make: () => BaseHttpScenario;
+  }> = [
+    {
+      name: 'sep-2640-client-no-prefetch',
+      make: () => new SkillsNoPrefetchScenario()
+    },
+    {
+      name: 'sep-2640-client-verify-digest',
+      make: () => new SkillsVerificationScenario('digest')
+    },
+    {
+      name: 'sep-2640-client-verify-size',
+      make: () => new SkillsVerificationScenario('size')
+    },
+    {
+      name: 'sep-2640-client-verify-frontmatter',
+      make: () => new SkillsVerificationScenario('frontmatter')
+    }
+  ];
+
+  for (const s of skillsScenarios) {
+    it(`${s.name} carries the draft-required members on skills/list and resources/read`, async () => {
+      const scenario = s.make();
+      const { serverUrl } = await scenario.start(
+        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+      );
+      try {
+        let id = 1;
+        for (const [method, params] of [
+          ['skills/list', {}],
+          ['resources/read', { uri: 'skill://pdf-processing/SKILL.md' }]
+        ] as const) {
+          const { status, body } = await post(
+            serverUrl,
+            {
+              jsonrpc: '2.0',
+              id: id++,
+              method,
+              params: { ...params, _meta: meta }
+            },
+            {
+              'mcp-protocol-version': DRAFT_PROTOCOL_VERSION,
+              'Mcp-Method': method
+            }
+          );
+          expect(status, method).toBe(200);
+          expect(body.result, method).toMatchObject(CACHEABLE_FIELDS);
+          if (method === 'resources/read') {
+            expect(
+              wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
+              method
+            ).toEqual([]);
+          }
+        }
+      } finally {
+        await scenario.stop();
+      }
+    });
+
+    // The runner hands these scenarios' clients 2025-11-25 unless
+    // --spec-version says otherwise, and the extension has no 2026-07-28
+    // dependency, so the mock answers at the version the client asked for.
+    it(`${s.name} answers initialize at the requested protocol version`, async () => {
+      const scenario = s.make();
+      const { serverUrl } = await scenario.start(testScenarioContext());
+      try {
+        let id = 1;
+        for (const protocolVersion of ['2025-11-25', DRAFT_PROTOCOL_VERSION]) {
+          const { status, body } = await post(serverUrl, {
+            jsonrpc: '2.0',
+            id: id++,
+            method: 'initialize',
+            params: {
+              protocolVersion,
+              capabilities: {},
+              clientInfo: { name: 'test', version: '1.0' }
+            }
+          });
+          expect(status, protocolVersion).toBe(200);
+          expect(body.result.protocolVersion, protocolVersion).toBe(
+            protocolVersion
+          );
+        }
+      } finally {
+        await scenario.stop();
+      }
+    });
+  }
 });
