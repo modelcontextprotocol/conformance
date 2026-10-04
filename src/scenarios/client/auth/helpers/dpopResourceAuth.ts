@@ -89,6 +89,17 @@ export function createDpopResourceAuth(
       obs.nonDpopSchemeSeen = true;
     }
 
+    if (accessTokenExpired(token)) {
+      res
+        .status(401)
+        .set(
+          'WWW-Authenticate',
+          `DPoP error="invalid_token", resource_metadata="${getPrmUrl()}"`
+        )
+        .json({ error: 'invalid_token' });
+      return;
+    }
+
     const proofHeader = req.headers['dpop'];
     // Node collapses duplicate DPoP request headers into one comma-joined value;
     // validateResourceProof rejects a comma (RFC 9449 §4.2 — at most one proof).
@@ -162,6 +173,16 @@ function splitAuthorization(authorization: string): {
     scheme: authorization.slice(0, idx),
     token: authorization.slice(idx + 1).trim()
   };
+}
+
+/** True when the access token is a JWT whose `exp` is in the past. */
+function accessTokenExpired(token: string): boolean {
+  try {
+    const exp = jose.decodeJwt(token).exp;
+    return typeof exp === 'number' && exp <= Math.floor(Date.now() / 1000);
+  } catch {
+    return false;
+  }
 }
 
 /**
