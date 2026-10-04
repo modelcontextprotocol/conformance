@@ -121,6 +121,7 @@ describe('DPoP server validation scenario', () => {
   let nonceFirst: ChildProcess | null = null;
   let clockSkew: ChildProcess | null = null;
   let bearerReject: ChildProcess | null = null;
+  let bearerChallenge: ChildProcess | null = null;
   let ports: {
     compliant: number;
     broken: number;
@@ -130,6 +131,7 @@ describe('DPoP server validation scenario', () => {
     nonceFirst: number;
     clockSkew: number;
     bearerReject: number;
+    bearerChallenge: number;
   };
   let savedEnv: { jwk?: string; issuer?: string };
 
@@ -149,7 +151,7 @@ describe('DPoP server validation scenario', () => {
     process.env.DPOP_ISSUER_PRIVATE_JWK = JSON.stringify(privateJwk);
     process.env.DPOP_ISSUER = ISSUER;
 
-    const [cp, bp, rp, sp, gp, nf, ck, br] = await freePorts(8);
+    const [cp, bp, rp, sp, gp, nf, ck, br, bc] = await freePorts(9);
     ports = {
       compliant: cp,
       broken: bp,
@@ -158,7 +160,8 @@ describe('DPoP server validation scenario', () => {
       buggy: gp,
       nonceFirst: nf,
       clockSkew: ck,
-      bearerReject: br
+      bearerReject: br,
+      bearerChallenge: bc
     };
 
     const issuerEnv = (port: number, extra: Record<string, string> = {}) => ({
@@ -176,7 +179,8 @@ describe('DPoP server validation scenario', () => {
       nonceBuggy,
       nonceFirst,
       clockSkew,
-      bearerReject
+      bearerReject,
+      bearerChallenge
     ] = await Promise.all([
       startServer(COMPLIANT, cp, issuerEnv(cp)),
       startServer(BROKEN, bp, {}),
@@ -201,7 +205,8 @@ describe('DPoP server validation scenario', () => {
         COMPLIANT,
         br,
         issuerEnv(br, { DPOP_BEARER_REJECT_STATUS: '500' })
-      )
+      ),
+      startServer(COMPLIANT, bc, issuerEnv(bc, { DPOP_BEARER_CHALLENGE: '1' }))
     ]);
   }, 60000);
 
@@ -214,7 +219,8 @@ describe('DPoP server validation scenario', () => {
       stopServer(nonceBuggy),
       stopServer(nonceFirst),
       stopServer(clockSkew),
-      stopServer(bearerReject)
+      stopServer(bearerReject),
+      stopServer(bearerChallenge)
     ]);
     process.env.DPOP_ISSUER_PRIVATE_JWK = savedEnv.jwk;
     process.env.DPOP_ISSUER = savedEnv.issuer;
@@ -403,6 +409,28 @@ describe('DPoP server validation scenario', () => {
 
     // This fixture only mishandles Bearer-scheme presentation — every other
     // validate-proof probe still behaves as on the compliant server.
+    const others = byId(checks, 'sep-1932-server-validate-proof').filter(
+      (c) => c.name !== 'RejectsBearerScheme'
+    );
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
+  }, 30000);
+
+  it('reports SUCCESS when a Bearer-scheme request is answered with a Bearer challenge', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.bearerChallenge))
+    );
+
+    const bearer = byId(checks, 'sep-1932-server-validate-proof').find(
+      (c) => c.name === 'RejectsBearerScheme'
+    );
+    expect(bearer?.status).toBe('SUCCESS');
+    // The compliant server challenges with DPoP. This fixture must actually
+    // send a Bearer challenge, or SUCCESS would only re-prove the DPoP arm.
+    expect(bearer?.details?.wwwAuthenticate).toBe(
+      'Bearer error="invalid_token"'
+    );
+
     const others = byId(checks, 'sep-1932-server-validate-proof').filter(
       (c) => c.name !== 'RejectsBearerScheme'
     );
