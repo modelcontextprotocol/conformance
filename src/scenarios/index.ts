@@ -118,6 +118,7 @@ import {
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
 import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
+import { DPoPAuthorizationServerScenario } from './authorization-server/dpop';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
 import {
@@ -299,7 +300,8 @@ const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizati
   [
     // Authorization server scenarios
     new AuthorizationServerMetadataEndpointScenario(),
-    new AuthorizationCodeGrantScenario()
+    new AuthorizationCodeGrantScenario(),
+    new DPoPAuthorizationServerScenario()
   ];
 
 // Client scenarios map for authorization server - built from list
