@@ -414,6 +414,10 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
       buildDpop: () => Promise<string | string[]>;
       predicate?: (res: Response) => boolean;
       description?: string;
+      // Defaults to sep-1932-server-validate-proof. A case whose requirement
+      // is a separate yaml row sets its own id; the catch path uses the same
+      // id so a probe that throws is still attributed to that requirement.
+      id?: string;
     }> = [
       {
         case: 'tampered-signature',
@@ -505,12 +509,13 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
           })
       },
       {
-        // A DPoP-bound token presented under the Bearer scheme MUST NOT be
-        // accepted. Count only a real authentication rejection: 401 plus a
-        // Bearer (RFC 6750 §3) or DPoP challenge. A 500/404 with no
-        // WWW-Authenticate is not a rejection of the scheme.
+        // Not an RFC 9449 §4.3 step. SEP-1932 requires rejecting a DPoP-bound
+        // token presented as Bearer with 401 plus a Bearer (RFC 6750 §3) or
+        // DPoP challenge. A 500/404 with no WWW-Authenticate is not that
+        // rejection. Own check id: sep-1932-server-reject-bearer-downgrade.
         case: 'bearer-scheme',
         name: 'RejectsBearerScheme',
+        id: 'sep-1932-server-reject-bearer-downgrade',
         authz: `Bearer ${token}`,
         buildDpop: () => validProof(),
         predicate: bearerSchemeRejected,
@@ -595,13 +600,14 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
     for (const n of negatives) {
       const description =
         n.description ?? `Server rejects a DPoP request with defect: ${n.case}`;
+      const id = n.id ?? 'sep-1932-server-validate-proof';
       try {
         const dpop = await n.buildDpop();
         const res = await send(n.authz, dpop);
         checks.push(
           rejectionCheck(
             positiveAccepted,
-            'sep-1932-server-validate-proof',
+            id,
             n.name,
             description,
             res,
@@ -611,14 +617,7 @@ algorithms, the 401 challenge format, token audience validation under DPoP, and
         );
       } catch (e) {
         checks.push(
-          probeErrorCheck(
-            positiveAccepted,
-            'sep-1932-server-validate-proof',
-            n.name,
-            description,
-            n.case,
-            e
-          )
+          probeErrorCheck(positiveAccepted, id, n.name, description, n.case, e)
         );
       }
     }

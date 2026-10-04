@@ -244,10 +244,16 @@ describe('DPoP server validation scenario', () => {
       )
     ).toBe(true);
     expect(
-      byId(checks, 'sep-1932-server-validate-proof').find(
+      byId(checks, 'sep-1932-server-validate-proof').some(
         (c) => c.name === 'RejectsBearerScheme'
-      )?.status
-    ).toBe('SUCCESS');
+      )
+    ).toBe(false);
+    expect(
+      byId(checks, 'sep-1932-server-reject-bearer-downgrade').map((c) => [
+        c.name,
+        c.status
+      ])
+    ).toEqual([['RejectsBearerScheme', 'SUCCESS']]);
     expect(
       byId(checks, 'sep-1932-server-iat-window').every(
         (c) => c.status === 'SUCCESS'
@@ -282,6 +288,12 @@ describe('DPoP server validation scenario', () => {
     );
     expect(rejects.length).toBeGreaterThan(0);
     expect(rejects.every((c) => c.status === 'FAILURE')).toBe(true);
+    expect(
+      byId(checks, 'sep-1932-server-reject-bearer-downgrade').map((c) => [
+        c.name,
+        c.status
+      ])
+    ).toEqual([['RejectsBearerScheme', 'FAILURE']]);
 
     expect(byId(checks, 'sep-1932-server-reject-401')[0].status).toBe(
       'FAILURE'
@@ -319,6 +331,7 @@ describe('DPoP server validation scenario', () => {
       ...byId(checks, 'sep-1932-server-validate-proof').filter((c) =>
         c.name.startsWith('Rejects')
       ),
+      ...byId(checks, 'sep-1932-server-reject-bearer-downgrade'),
       ...byId(checks, 'sep-1932-server-iat-window'),
       ...byId(checks, 'sep-1932-asymmetric-alg-only'),
       ...byId(checks, 'sep-1932-server-audience-validation'),
@@ -365,6 +378,7 @@ describe('DPoP server validation scenario', () => {
       ...byId(checks, 'sep-1932-server-validate-proof').filter((c) =>
         c.name.startsWith('Rejects')
       ),
+      ...byId(checks, 'sep-1932-server-reject-bearer-downgrade'),
       ...byId(checks, 'sep-1932-server-iat-window'),
       ...byId(checks, 'sep-1932-asymmetric-alg-only'),
       ...byId(checks, 'sep-1932-server-audience-validation'),
@@ -402,16 +416,14 @@ describe('DPoP server validation scenario', () => {
       testContext(url(ports.bearerReject))
     );
 
-    const bearer = byId(checks, 'sep-1932-server-validate-proof').find(
-      (c) => c.name === 'RejectsBearerScheme'
-    );
-    expect(bearer?.status).toBe('FAILURE');
+    const bearer = byId(checks, 'sep-1932-server-reject-bearer-downgrade');
+    expect(bearer.map((c) => [c.name, c.status])).toEqual([
+      ['RejectsBearerScheme', 'FAILURE']
+    ]);
 
-    // This fixture only mishandles Bearer-scheme presentation — every other
+    // This fixture only mishandles Bearer-scheme presentation — every
     // validate-proof probe still behaves as on the compliant server.
-    const others = byId(checks, 'sep-1932-server-validate-proof').filter(
-      (c) => c.name !== 'RejectsBearerScheme'
-    );
+    const others = byId(checks, 'sep-1932-server-validate-proof');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
   }, 30000);
@@ -421,19 +433,17 @@ describe('DPoP server validation scenario', () => {
       testContext(url(ports.bearerChallenge))
     );
 
-    const bearer = byId(checks, 'sep-1932-server-validate-proof').find(
-      (c) => c.name === 'RejectsBearerScheme'
-    );
-    expect(bearer?.status).toBe('SUCCESS');
+    const bearer = byId(checks, 'sep-1932-server-reject-bearer-downgrade');
+    expect(bearer.map((c) => [c.name, c.status])).toEqual([
+      ['RejectsBearerScheme', 'SUCCESS']
+    ]);
     // The compliant server challenges with DPoP. This fixture must actually
     // send a Bearer challenge, or SUCCESS would only re-prove the DPoP arm.
-    expect(bearer?.details?.wwwAuthenticate).toBe(
+    expect(bearer[0]?.details?.wwwAuthenticate).toBe(
       'Bearer error="invalid_token"'
     );
 
-    const others = byId(checks, 'sep-1932-server-validate-proof').filter(
-      (c) => c.name !== 'RejectsBearerScheme'
-    );
+    const others = byId(checks, 'sep-1932-server-validate-proof');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
   }, 30000);
