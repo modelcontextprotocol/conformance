@@ -79,8 +79,6 @@ interface Response {
   dpopNonce: string | undefined;
   /** The server's `Date` header as epoch seconds, if present (RFC 9110 §6.6.1). */
   date: number | undefined;
-  /** `error` auth-param of the DPoP challenge, if that challenge carries one. */
-  dpopError: string | undefined;
 }
 
 // Proof defects (§4.3) vs token defects (RFC 6750 `invalid_token`). `either`
@@ -166,10 +164,12 @@ function readAuthParam(params: string, name: string): string | undefined {
     const token = AUTH_TOKEN.exec(params.slice(i));
     if (!token) break;
     i += token[0].length;
-    while (i < params.length && params[i] === ' ') i++;
+    // RFC 9110 BWS around "=" is *( SP / HTAB ). Senders should not emit it;
+    // receivers must accept it.
+    while (i < params.length && /[ \t]/.test(params[i])) i++;
     if (params[i] !== '=') break;
     i++;
-    while (i < params.length && params[i] === ' ') i++;
+    while (i < params.length && /[ \t]/.test(params[i])) i++;
     let value = '';
     if (params[i] === '"') {
       i++;
@@ -194,16 +194,44 @@ function readAuthParam(params: string, name: string): string | undefined {
   return undefined;
 }
 
+/** First `error` auth-param present on a challenge of `schemeName`.
+ *  A response may carry several challenges with the same scheme (RFC 9110
+ *  §11.1), including across repeated WWW-Authenticate headers joined by
+ *  readHttp. A challenge with no error param is skipped. */
+function challengeError(
+  wwwAuthenticate: string,
+  schemeName: string
+): string | undefined {
+  for (const challenge of splitChallenges(wwwAuthenticate)) {
+    const scheme = AUTH_TOKEN.exec(challenge);
+    if (!scheme || scheme[0].toLowerCase() !== schemeName) continue;
+    const err = readAuthParam(challenge.slice(scheme[0].length), 'error');
+    if (err !== undefined) return err;
+  }
+  return undefined;
+}
+
 /** `error` auth-param of the DPoP challenge. Quoted and unquoted values. */
 export function dpopChallengeError(
   wwwAuthenticate: string
 ): string | undefined {
-  for (const challenge of splitChallenges(wwwAuthenticate)) {
-    const scheme = AUTH_TOKEN.exec(challenge);
-    if (!scheme || scheme[0].toLowerCase() !== 'dpop') continue;
-    return readAuthParam(challenge.slice(scheme[0].length), 'error');
-  }
-  return undefined;
+  return challengeError(wwwAuthenticate, 'dpop');
+}
+
+/** Error code scored for one probe. Proof probes are read from the DPoP
+ *  challenge. A Bearer-scheme attempt used the Bearer scheme, so a code on
+ *  the Bearer challenge counts when the DPoP challenge carries none
+ *  (RFC 9449 §7.2). An empty `error=""` is absent. */
+export function scoredDpopError(
+  wwwAuthenticate: string,
+  attemptedScheme: 'DPoP' | 'Bearer'
+): string | undefined {
+  const dpop = dpopChallengeError(wwwAuthenticate);
+  const code =
+    attemptedScheme === 'Bearer'
+      ? dpop || challengeError(wwwAuthenticate, 'bearer')
+      : dpop;
+  return code || undefined;
 }
 
 function errorCodeMatches(
@@ -403,8 +431,11 @@ server-provided nonce flow.`;
     let positiveAccepted = false;
 
     const errorObservations: ErrorObservation[] = [];
-    // A nonce challenge or a probe that threw is not a validation result, so it
-    // is not scored. Absent and unexpected codes are scored later, once.
+    // The §7.1 SHOULD applies only to a request the server actually declined.
+    // A 2xx has no challenge to label — the MUST rejection checks already
+    // cover accepting a bad proof. A nonce challenge or a probe that threw is
+    // not a validation result either. Absent and unexpected codes are scored
+    // later, once.
     const observeError = (
       caseName: string,
       expected: ExpectedDpopError,
@@ -413,9 +444,17 @@ server-provided nonce flow.`;
       errorObservations.push({
         case: caseName,
         expected,
-        actual: res?.dpopError,
+        actual: res
+          ? scoredDpopError(
+              res.wwwAuthenticate,
+              caseName === 'bearer-scheme' ? 'Bearer' : 'DPoP'
+            )
+          : undefined,
         attributable:
-          positiveAccepted && res !== undefined && !isNonceChallenge(res)
+          positiveAccepted &&
+          res !== undefined &&
+          res.statusCode === 401 &&
+          !isNonceChallenge(res)
       });
     };
 
@@ -448,8 +487,7 @@ server-provided nonce flow.`;
         statusCode: res.statusCode,
         wwwAuthenticate,
         dpopNonce,
-        date,
-        dpopError: dpopChallengeError(wwwAuthenticate)
+        date
       };
     };
 
@@ -1116,7 +1154,7 @@ server-provided nonce flow.`;
 
     // ---- §7.1 error code (SHOULD): one aggregate, MUST checks unchanged ----
     const errorCodeDesc =
-      'Declined DPoP requests include an error parameter on the DPoP challenge naming the reason (RFC 9449 §7.1)';
+      'A declined request that included an access token names the reason with an error parameter (RFC 9449 §7.1). A Bearer-scheme attempt may carry that code on the Bearer challenge (RFC 9449 §7.2)';
     if (!positiveAccepted) {
       checks.push(
         untestableCheck(
@@ -1147,7 +1185,7 @@ server-provided nonce flow.`;
           .map((o) => ({
             case: o.case,
             expected: o.expected,
-            actual: o.actual ?? null
+            actual: o.actual || null
           }));
         const ok = mismatches.length === 0;
         checks.push(
@@ -1161,7 +1199,7 @@ server-provided nonce flow.`;
               : `DPoP error code missing or unexpected: ${mismatches
                   .map(
                     (m) =>
-                      `${m.case} expected ${m.expected} got ${m.actual ?? 'absent'}`
+                      `${m.case} expected ${m.expected} got ${m.actual || 'absent'}`
                   )
                   .join('; ')}`,
             { mismatches }

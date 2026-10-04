@@ -3,7 +3,11 @@ import { createServer } from 'node:net';
 import path from 'path';
 import * as jose from 'jose';
 import { testContext } from '../../../connection/testing';
-import { DPoPServerValidationScenario, dpopChallengeError } from './dpop';
+import {
+  DPoPServerValidationScenario,
+  dpopChallengeError,
+  scoredDpopError
+} from './dpop';
 import type { ConformanceCheck } from '../../../types';
 
 const WINDOWS = process.platform === 'win32';
@@ -141,6 +145,56 @@ describe('dpopChallengeError', () => {
     expect(
       dpopChallengeError('Bearer error="invalid_token", DPoP algs="ES256"')
     ).toBeUndefined();
+  });
+
+  it('reads the first DPoP challenge that carries an error', () => {
+    expect(
+      dpopChallengeError(
+        'DPoP algs="ES256", DPoP error="invalid_dpop_proof", algs="ES256"'
+      )
+    ).toBe('invalid_dpop_proof');
+  });
+
+  it('accepts tabs as bad whitespace around "="', () => {
+    expect(dpopChallengeError('DPoP error\t=\t"invalid_token"')).toBe(
+      'invalid_token'
+    );
+  });
+
+  it('returns an empty error param as the empty string', () => {
+    expect(dpopChallengeError('DPoP error=""')).toBe('');
+  });
+});
+
+describe('scoredDpopError', () => {
+  const figure18 = 'Bearer error="invalid_token", DPoP algs="ES256"';
+
+  it('accepts the Bearer challenge code for a Bearer-scheme attempt', () => {
+    // RFC 9449 §7.2 puts the error on the scheme the client attempted.
+    expect(scoredDpopError(figure18, 'Bearer')).toBe('invalid_token');
+    expect(scoredDpopError('Bearer error="invalid_token"', 'Bearer')).toBe(
+      'invalid_token'
+    );
+  });
+
+  it('still prefers a code carried on the DPoP challenge', () => {
+    expect(
+      scoredDpopError(
+        'Bearer error="invalid_token", DPoP error="invalid_dpop_proof"',
+        'Bearer'
+      )
+    ).toBe('invalid_dpop_proof');
+  });
+
+  it('does not read a Bearer challenge for a DPoP attempt', () => {
+    expect(scoredDpopError(figure18, 'DPoP')).toBeUndefined();
+  });
+
+  it('treats an empty error param as absent', () => {
+    expect(scoredDpopError('DPoP error=""', 'DPoP')).toBeUndefined();
+    expect(
+      scoredDpopError('DPoP error="", Bearer error="invalid_token"', 'Bearer')
+    ).toBe('invalid_token');
   });
 });
 
@@ -356,6 +410,13 @@ describe('DPoP server validation scenario', () => {
     expect(byId(checks, 'sep-1932-server-audience-validation')[0].status).toBe(
       'FAILURE'
     );
+
+    // Accepting a bad proof is already a MUST failure. With no 401, the
+    // error-code check is untestable: there is no declined request to label.
+    const errorCode = byId(checks, 'sep-1932-server-error-code')[0];
+    expect(errorCode.status).toBe('WARNING');
+    expect(errorCode.details?.untestable).toBe(true);
+    expect(errorCode.errorMessage).not.toContain('got absent');
   }, 30000);
 
   it('reports rejection checks notTestable (not vacuous SUCCESS) against a reject-everything server', async () => {
@@ -471,6 +532,12 @@ describe('DPoP server validation scenario', () => {
     const others = byId(checks, 'sep-1932-server-validate-proof');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
+
+    // The 500 is not a declined authentication, so it is not an error-code
+    // observation. The other probes still are, and they use the right code.
+    expect(byId(checks, 'sep-1932-server-error-code')[0].status).toBe(
+      'SUCCESS'
+    );
   }, 30000);
 
   it('reports SUCCESS when a Bearer-scheme request is answered with a Bearer challenge', async () => {
@@ -491,6 +558,13 @@ describe('DPoP server validation scenario', () => {
     const others = byId(checks, 'sep-1932-server-validate-proof');
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((c) => c.status === 'SUCCESS')).toBe(true);
+
+    // RFC 9449 §7.2 puts invalid_token on the Bearer challenge. That satisfies
+    // the error-code SHOULD for this probe; the other probes still challenge
+    // with DPoP.
+    expect(byId(checks, 'sep-1932-server-error-code')[0].status).toBe(
+      'SUCCESS'
+    );
   }, 30000);
 
   it('reports WARNING when every rejection uses the wrong DPoP error code', async () => {
