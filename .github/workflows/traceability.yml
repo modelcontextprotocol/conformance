@@ -124,7 +124,9 @@ jobs:
           git add src/seps/traceability.json
           git commit -m "chore: refresh SEP traceability manifest ($SDK_REF)"
           git push --force origin "$branch"
-          gh pr view "$branch" >/dev/null 2>&1 || gh pr create \
+          # Only an OPEN PR counts: `gh pr view <branch>` also matches merged/closed
+          # ones, which would skip creation forever after the first merge.
+          [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ] || gh pr create \
             --head "$branch" \
             --title 'chore: refresh SEP traceability manifest' \
             --body 'Automated refresh from a conformance run against the reference SDK. Review the coverage diff before merging.'
