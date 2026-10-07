@@ -147,12 +147,14 @@ describe('Server Scenarios', () => {
       throw new Error(`Scenario ${scenarioName} not found`);
     }
 
-    // Draft-only scenarios expect the draft (stateless) connection. Other
-    // scenarios normally use the latest stateful wire unless a test overrides it.
+    // Draft-only and extension scenarios expect the draft (stateless)
+    // connection. Other scenarios normally use the latest stateful wire unless
+    // a test overrides it, matching runServerConformanceTest's inference.
     const targetSpecVersion =
       specVersion ??
+      ('extensionId' in scenario.source ||
       ('introducedIn' in scenario.source &&
-      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
+        scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION)
         ? DRAFT_PROTOCOL_VERSION
         : LATEST_SPEC_VERSION);
 

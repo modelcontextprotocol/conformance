@@ -1246,6 +1246,173 @@ const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
   'resources/read'
 ]);
 
+const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
+
+type StatelessTaskStatus =
+  | 'working'
+  | 'completed'
+  | 'cancelled'
+  | 'failed'
+  | 'input_required';
+
+type StatelessTaskRecord = {
+  taskId: string;
+  status: StatelessTaskStatus;
+  createdAt: string;
+  lastUpdatedAt: string;
+  ttlMs: number | null;
+  pollIntervalMs?: number;
+  result?: Record<string, unknown>;
+  error?: { code: number; message: string; data?: unknown };
+  inputRequests?: Record<string, Record<string, unknown>>;
+  kind?: string;
+  context?: Record<string, unknown>;
+};
+
+const statelessTasks = new Map<string, StatelessTaskRecord>();
+const statelessTaskTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function hasTasksExtension(meta: Record<string, any> | undefined): boolean {
+  const clientCapabilities = meta?.[
+    'io.modelcontextprotocol/clientCapabilities'
+  ] as Record<string, unknown> | undefined;
+  const extensions = clientCapabilities?.extensions as
+    | Record<string, unknown>
+    | undefined;
+  return extensions?.[TASKS_EXTENSION_ID] !== undefined;
+}
+
+function slowComputeResult(
+  label: string,
+  seconds: number
+): Record<string, unknown> {
+  return {
+    resultType: 'complete',
+    content: [
+      {
+        type: 'text',
+        text: `Computed ${label} after ${seconds} second(s).`
+      }
+    ]
+  };
+}
+
+function taskSnapshot(task: StatelessTaskRecord): Record<string, unknown> {
+  return {
+    resultType: 'complete',
+    taskId: task.taskId,
+    status: task.status,
+    createdAt: task.createdAt,
+    lastUpdatedAt: task.lastUpdatedAt,
+    ttlMs: task.ttlMs,
+    ...(task.pollIntervalMs !== undefined
+      ? { pollIntervalMs: task.pollIntervalMs }
+      : {}),
+    ...(task.result !== undefined ? { result: task.result } : {}),
+    ...(task.error !== undefined ? { error: task.error } : {}),
+    ...(task.inputRequests !== undefined
+      ? { inputRequests: task.inputRequests }
+      : {})
+  };
+}
+
+function createSlowComputeTask(
+  seconds: number,
+  label: string
+): StatelessTaskRecord {
+  const now = new Date().toISOString();
+  const task: StatelessTaskRecord = {
+    taskId: randomUUID(),
+    status: 'working',
+    createdAt: now,
+    lastUpdatedAt: now,
+    ttlMs: 300_000,
+    pollIntervalMs: 100
+  };
+  statelessTasks.set(task.taskId, task);
+
+  const timer = setTimeout(() => {
+    const current = statelessTasks.get(task.taskId);
+    if (!current || current.status !== 'working') return;
+    current.status = 'completed';
+    current.lastUpdatedAt = new Date().toISOString();
+    current.result = slowComputeResult(label, seconds);
+    statelessTaskTimers.delete(task.taskId);
+  }, seconds * 1000);
+  statelessTaskTimers.set(task.taskId, timer);
+
+  return task;
+}
+
+function createStatelessTask(
+  kind: string,
+  status: StatelessTaskStatus = 'working',
+  inputRequests?: Record<string, Record<string, unknown>>,
+  context?: Record<string, unknown>
+): StatelessTaskRecord {
+  const now = new Date().toISOString();
+  const task: StatelessTaskRecord = {
+    taskId: randomUUID(),
+    status,
+    createdAt: now,
+    lastUpdatedAt: now,
+    ttlMs: 300_000,
+    pollIntervalMs: 100,
+    kind,
+    ...(inputRequests !== undefined ? { inputRequests } : {}),
+    ...(context !== undefined ? { context } : {})
+  };
+  statelessTasks.set(task.taskId, task);
+  return task;
+}
+
+function createTaskResult(task: StatelessTaskRecord): Record<string, unknown> {
+  return {
+    resultType: 'task',
+    taskId: task.taskId,
+    status: task.status,
+    createdAt: task.createdAt,
+    lastUpdatedAt: task.lastUpdatedAt,
+    ttlMs: task.ttlMs,
+    ...(task.pollIntervalMs !== undefined
+      ? { pollIntervalMs: task.pollIntervalMs }
+      : {})
+  };
+}
+
+function scheduleTask(
+  task: StatelessTaskRecord,
+  delayMs: number,
+  settle: (current: StatelessTaskRecord) => void
+): void {
+  const timer = setTimeout(() => {
+    const current = statelessTasks.get(task.taskId);
+    if (!current || current.status !== 'working') return;
+    settle(current);
+    current.lastUpdatedAt = new Date().toISOString();
+    statelessTaskTimers.delete(task.taskId);
+  }, delayMs);
+  statelessTaskTimers.set(task.taskId, timer);
+}
+
+function elicitationInputRequest(
+  message: string,
+  properties: Record<string, unknown>,
+  required: string[]
+): Record<string, unknown> {
+  return {
+    method: 'elicitation/create',
+    params: {
+      message,
+      requestedSchema: {
+        type: 'object',
+        properties,
+        required
+      }
+    }
+  };
+}
+
 /** Normalize a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
  * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
  * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
@@ -1349,6 +1516,31 @@ app.post('/mcp', async (req, res) => {
       });
     }
 
+    const mcpMethodHeader = req.get('Mcp-Method')?.trim();
+    let expectedMcpName: string | undefined;
+    if (method === 'tools/call' && typeof params.name === 'string') {
+      expectedMcpName = params.name;
+    } else if (
+      ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(method) &&
+      typeof params.taskId === 'string'
+    ) {
+      expectedMcpName = params.taskId;
+    }
+    const mcpNameHeader = req.get('Mcp-Name')?.trim();
+    if (
+      mcpMethodHeader !== method ||
+      (expectedMcpName !== undefined && mcpNameHeader !== expectedMcpName)
+    ) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32020,
+          message: 'HeaderMismatch'
+        }
+      });
+    }
+
     // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
     if (method === 'subscriptions/listen') {
       res.writeHead(200, {
@@ -1408,7 +1600,10 @@ app.post('/mcp', async (req, res) => {
             prompts: { listChanged: true },
             // resources/list, resources/templates/list and resources/read are
             // served on this path, so the capability must be declared too.
-            resources: {}
+            resources: {},
+            extensions: {
+              [TASKS_EXTENSION_ID]: {}
+            }
           },
           // Spec PR #3002: server identity lives in the result `_meta`.
           _meta: {
@@ -1435,6 +1630,62 @@ app.post('/mcp', async (req, res) => {
             ...fromServer,
             tools: [
               ...fromServer.tools,
+              {
+                name: 'greet',
+                description: 'Returns a greeting synchronously',
+                inputSchema: {
+                  type: 'object',
+                  properties: { name: { type: 'string' } },
+                  required: ['name']
+                }
+              },
+              {
+                name: 'slow_compute',
+                description: 'Completes a computation after a delay',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    seconds: { type: 'number', minimum: 0 },
+                    label: { type: 'string' }
+                  },
+                  required: ['seconds']
+                },
+                execution: { taskSupport: 'optional' }
+              },
+              {
+                name: 'failing_job',
+                description: 'Completes as a task with a tool execution error',
+                inputSchema: { type: 'object', properties: {} },
+                execution: { taskSupport: 'required' }
+              },
+              {
+                name: 'protocol_error_job',
+                description: 'Fails as a task with a protocol-level error',
+                inputSchema: { type: 'object', properties: {} },
+                execution: { taskSupport: 'required' }
+              },
+              {
+                name: 'confirm_delete',
+                description: 'Waits for elicitation before completing a task',
+                inputSchema: {
+                  type: 'object',
+                  properties: { filename: { type: 'string' } },
+                  required: ['filename']
+                },
+                execution: { taskSupport: 'required' }
+              },
+              {
+                name: 'multi_input',
+                description: 'Waits for two elicitation responses in a task',
+                inputSchema: { type: 'object', properties: {} },
+                execution: { taskSupport: 'required' }
+              },
+              {
+                name: 'test_tool_with_task',
+                description: 'Composes MRTR elicitation with task execution',
+                inputSchema: { type: 'object', properties: {} },
+                execution: { taskSupport: 'required' }
+              },
               {
                 name: 'test_missing_capability',
                 description: 'Test tool requiring sampling',
@@ -1689,12 +1940,374 @@ app.post('/mcp', async (req, res) => {
       // dispatch below, which serves the McpServer-registered resources.
     }
 
+    const isTasksMethod = [
+      'tasks/get',
+      'tasks/update',
+      'tasks/cancel'
+    ].includes(method);
+    if (isTasksMethod && !hasTasksExtension(meta)) {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32021,
+          message: 'MissingRequiredClientCapabilityError',
+          data: {
+            requiredCapabilities: {
+              extensions: { [TASKS_EXTENSION_ID]: {} }
+            }
+          }
+        }
+      });
+    }
+
+    if (method === 'tasks/get') {
+      const taskId = params.taskId;
+      const task =
+        typeof taskId === 'string' ? statelessTasks.get(taskId) : undefined;
+      if (!task) {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: 'Unknown taskId' }
+        });
+      }
+      return sendStatelessJson(res, method, {
+        jsonrpc: '2.0',
+        id,
+        result: taskSnapshot(task)
+      });
+    }
+
+    if (method === 'tasks/update') {
+      const taskId = params.taskId;
+      const task =
+        typeof taskId === 'string' ? statelessTasks.get(taskId) : undefined;
+      if (!task) {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: 'Unknown taskId' }
+        });
+      }
+
+      const responses = params.inputResponses as
+        | Record<string, unknown>
+        | undefined;
+      if (task.status === 'input_required' && task.inputRequests && responses) {
+        for (const key of Object.keys(responses)) {
+          if (key in task.inputRequests) {
+            delete task.inputRequests[key];
+          }
+        }
+        if (Object.keys(task.inputRequests).length === 0) {
+          task.inputRequests = undefined;
+          task.status = 'completed';
+          task.result = {
+            resultType: 'complete',
+            content: [
+              {
+                type: 'text',
+                text:
+                  task.kind === 'confirm_delete'
+                    ? `Confirmed deletion of ${String(task.context?.filename ?? 'file')}`
+                    : 'All requested inputs received'
+              }
+            ]
+          };
+        }
+        task.lastUpdatedAt = new Date().toISOString();
+      }
+
+      return sendStatelessJson(res, method, {
+        jsonrpc: '2.0',
+        id,
+        result: { resultType: 'complete' }
+      });
+    }
+
+    if (method === 'tasks/cancel') {
+      const taskId = params.taskId;
+      const task =
+        typeof taskId === 'string' ? statelessTasks.get(taskId) : undefined;
+      if (!task) {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: 'Unknown taskId' }
+        });
+      }
+      if (task.status === 'working' || task.status === 'input_required') {
+        const timer = statelessTaskTimers.get(task.taskId);
+        if (timer) clearTimeout(timer);
+        statelessTaskTimers.delete(task.taskId);
+        task.status = 'cancelled';
+        task.lastUpdatedAt = new Date().toISOString();
+      }
+      return sendStatelessJson(res, method, {
+        jsonrpc: '2.0',
+        id,
+        result: { resultType: 'complete' }
+      });
+    }
+
     if (method === 'tools/call') {
       const name = params.name;
       const inputResponses = params.inputResponses as
         | Record<string, unknown>
         | undefined;
       const requestState = params.requestState as string | undefined;
+
+      if (name === 'greet') {
+        const args = params.arguments as Record<string, unknown> | undefined;
+        const greetingName = typeof args?.name === 'string' ? args.name : '';
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: `Hello, ${greetingName}!` }]
+          }
+        });
+      }
+
+      if (name === 'slow_compute') {
+        const args = params.arguments as Record<string, unknown> | undefined;
+        const seconds = args?.seconds;
+        if (
+          typeof seconds !== 'number' ||
+          !Number.isFinite(seconds) ||
+          seconds < 0
+        ) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32602,
+              message: 'slow_compute requires a non-negative seconds value'
+            }
+          });
+        }
+        const label =
+          typeof args?.label === 'string' ? args.label : 'computation';
+
+        if (!hasTasksExtension(meta) || seconds === 0) {
+          if (seconds > 0) {
+            await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+          }
+          return sendStatelessJson(res, method, {
+            jsonrpc: '2.0',
+            id,
+            result: slowComputeResult(label, seconds)
+          });
+        }
+
+        const task = createSlowComputeTask(seconds, label);
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'task',
+            taskId: task.taskId,
+            status: task.status,
+            createdAt: task.createdAt,
+            lastUpdatedAt: task.lastUpdatedAt,
+            ttlMs: task.ttlMs,
+            pollIntervalMs: task.pollIntervalMs
+          }
+        });
+      }
+
+      if (name === 'failing_job') {
+        if (!hasTasksExtension(meta)) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: {
+                requiredCapabilities: {
+                  extensions: { [TASKS_EXTENSION_ID]: {} }
+                }
+              }
+            }
+          });
+        }
+        const task = createStatelessTask('failing_job');
+        scheduleTask(task, 25, (current) => {
+          current.status = 'completed';
+          current.result = {
+            resultType: 'complete',
+            isError: true,
+            content: [{ type: 'text', text: 'Intentional tool failure' }]
+          };
+        });
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: createTaskResult(task)
+        });
+      }
+
+      if (name === 'protocol_error_job') {
+        if (!hasTasksExtension(meta)) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: {
+                requiredCapabilities: {
+                  extensions: { [TASKS_EXTENSION_ID]: {} }
+                }
+              }
+            }
+          });
+        }
+        const task = createStatelessTask('protocol_error_job');
+        scheduleTask(task, 25, (current) => {
+          current.status = 'failed';
+          current.error = {
+            code: -32603,
+            message: 'Intentional protocol error'
+          };
+        });
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: createTaskResult(task)
+        });
+      }
+
+      if (name === 'confirm_delete') {
+        if (!hasTasksExtension(meta)) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: {
+                requiredCapabilities: {
+                  extensions: { [TASKS_EXTENSION_ID]: {} }
+                }
+              }
+            }
+          });
+        }
+        const args = params.arguments as Record<string, unknown> | undefined;
+        const filename =
+          typeof args?.filename === 'string' ? args.filename : 'file';
+        const key = `confirm-${randomUUID()}`;
+        const task = createStatelessTask(
+          'confirm_delete',
+          'input_required',
+          {
+            [key]: elicitationInputRequest(
+              `Delete ${filename}?`,
+              { confirm: { type: 'boolean' } },
+              ['confirm']
+            )
+          },
+          { filename }
+        );
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: createTaskResult(task)
+        });
+      }
+
+      if (name === 'multi_input') {
+        if (!hasTasksExtension(meta)) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: {
+                requiredCapabilities: {
+                  extensions: { [TASKS_EXTENSION_ID]: {} }
+                }
+              }
+            }
+          });
+        }
+        const firstKey = `first-${randomUUID()}`;
+        const secondKey = `second-${randomUUID()}`;
+        const task = createStatelessTask('multi_input', 'input_required', {
+          [firstKey]: elicitationInputRequest(
+            'Provide the first value',
+            { name: { type: 'string' } },
+            ['name']
+          ),
+          [secondKey]: elicitationInputRequest(
+            'Provide the second value',
+            { name: { type: 'string' } },
+            ['name']
+          )
+        });
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: createTaskResult(task)
+        });
+      }
+
+      if (name === 'test_tool_with_task') {
+        if (!hasTasksExtension(meta)) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: {
+                requiredCapabilities: {
+                  extensions: { [TASKS_EXTENSION_ID]: {} }
+                }
+              }
+            }
+          });
+        }
+        if (!inputResponses?.['user_name']) {
+          return sendStatelessJson(res, method, {
+            jsonrpc: '2.0',
+            id,
+            result: {
+              resultType: 'input_required',
+              inputRequests: {
+                user_name: elicitationInputRequest(
+                  'What is your name?',
+                  { name: { type: 'string' } },
+                  ['name']
+                )
+              }
+            }
+          });
+        }
+        const userName = getMrtInputText(inputResponses['user_name'], 'name');
+        const task = createStatelessTask('test_tool_with_task');
+        scheduleTask(task, 10, (current) => {
+          current.status = 'completed';
+          current.result = {
+            resultType: 'complete',
+            content: [
+              {
+                type: 'text',
+                text: `Task completed for ${userName}`
+              }
+            ]
+          };
+        });
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: createTaskResult(task)
+        });
+      }
 
       if (name === 'test_missing_capability') {
         const clientCaps = meta['io.modelcontextprotocol/clientCapabilities'];

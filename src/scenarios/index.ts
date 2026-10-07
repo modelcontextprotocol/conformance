@@ -145,20 +145,9 @@ const pendingClientScenariosList: ClientScenario[] = [
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario(),
 
-  // SEP-2663 Tasks extension. Pending because the everything-server
-  // does not implement io.modelcontextprotocol/tasks; targeted runs
-  // point at a SEP-2663-conformant fixture via
-  // `npm start -- server --scenario tasks-* --url <fixture>`.
-  new TasksLifecycleScenario(),
-  new TasksCapabilityNegotiationScenario(),
-  new TasksWireFieldsScenario(),
-  new TasksRequestStateRemovalScenario(),
-  new TasksMRTRInputScenario(),
-  new TasksRequestHeadersScenario(),
-  new TasksDispatchScenario(),
+  // SEP-2663 status notifications remain pending until the
+  // subscriptions/listen observation harness is implemented.
   new TasksStatusNotificationsScenario(),
-  new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario(),
 
   // SEP-2640 Skills extension. Pending because the everything-server does not
   // implement io.modelcontextprotocol/skills; targeted runs point at a
@@ -240,8 +229,7 @@ const allClientScenariosList: ClientScenario[] = [
   new HttpHeaderValidationScenario(),
   new HttpCustomHeaderServerValidationScenario(),
 
-  // SEP-2663 Tasks extension. Pending against the everything-server;
-  // targeted runs point at a SEP-2663-conformant fixture.
+  // SEP-2663 Tasks extension. The everything-server is the reference fixture.
   new TasksLifecycleScenario(),
   new TasksCapabilityNegotiationScenario(),
   new TasksWireFieldsScenario(),
