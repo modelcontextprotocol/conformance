@@ -134,52 +134,52 @@ not_scored:
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-capability-negotiation
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-wire-fields
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-request-state-removal
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-mrtr-input
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-request-headers
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-dispatch-and-envelope
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-status-notifications
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); scenario remains skipped pending the subscriptions/listen harness rewrite
   - scenario: tasks-required-task-error
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: tasks-mrtr-composition
     leg: server
     reason: extension
     note: >-
-      io.modelcontextprotocol/tasks (SEP-2663); pending against the reference fixture, run for visibility
+      io.modelcontextprotocol/tasks (SEP-2663); optional extension, run for visibility
   - scenario: json-schema-2020-12
     leg: server
     reason: pending
