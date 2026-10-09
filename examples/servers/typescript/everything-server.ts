@@ -20,7 +20,10 @@ import {
 } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import {
+  CallToolRequestSchema,
   ElicitResultSchema,
+  ErrorCode,
+  McpError,
   ResultSchema,
   ProgressNotificationSchema,
   LoggingMessageNotificationSchema,
@@ -241,6 +244,30 @@ function createMcpServer() {
     ListResourceTemplatesRequestSchema
   ]);
   mcpServer.server.setRequestHandler = ((schema: any, handler: any) => {
+    if (schema === CallToolRequestSchema) {
+      // The pinned 1.x McpServer folds its own "Tool X not found"
+      // InvalidParams error into an isError CallToolResult. The spec
+      // (Tools > Error Handling) and the 2.x SDK report an unknown tool as a
+      // JSON-RPC protocol error, which tools-call-protocol-error checks for,
+      // so throw it before the SDK's tool-result wrapper can catch it.
+      return originalSetRequestHandler(
+        schema,
+        async (request: any, ...rest: any[]) => {
+          // Access internal registered tools (this is internal SDK API but stable)
+          const registeredTools = (mcpServer as any)._registeredTools as Record<
+            string,
+            unknown
+          >;
+          if (!(request.params.name in registeredTools)) {
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Tool ${request.params.name} not found`
+            );
+          }
+          return handler(request, ...rest);
+        }
+      );
+    }
     if (listSchemasForCaching.has(schema)) {
       return originalSetRequestHandler(schema, async (...args: any[]) => {
         const result = await handler(...args);
