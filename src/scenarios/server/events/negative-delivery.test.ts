@@ -111,29 +111,29 @@ describe.concurrent('a server that delivers to loopback', () => {
       const checks = await deliveryChecks(delivering());
 
       // Delivered to 127.0.0.1, which is the whole point of the probe.
-      const validate = checks.get('sep-9999-ssrf-validate-callback-url');
+      const validate = checks.get('sep-3415-ssrf-validate-callback-url');
       expect(validate?.status).toBe('FAILURE');
       expect(validate?.errorMessage).toContain('loopback');
-      expect(checks.get('sep-9999-ssrf-reject-non-routable')?.status).toBe(
+      expect(checks.get('sep-3415-ssrf-reject-non-routable')?.status).toBe(
         'FAILURE'
       );
 
       for (const id of [
-        'sep-9999-verification-required-before-delivery',
-        'sep-9999-verification-challenge-echo',
-        'sep-9999-delivery-post-json',
-        'sep-9999-delivery-standard-webhooks-headers',
-        'sep-9999-delivery-subscription-id-header',
-        'sep-9999-delivery-signature-formula',
-        'sep-9999-delivery-body-size',
-        'sep-9999-delivery-410-non-retryable',
-        'sep-9999-delivery-413-non-retryable',
-        'sep-9999-delivery-retry-regenerates-signature',
-        'sep-9999-delivery-retries-bounded',
-        'sep-9999-envelope-type-discriminator',
-        'sep-9999-envelope-signed-like-deliveries',
-        'sep-9999-envelope-webhook-id-format',
-        'sep-9999-ssrf-no-redirects'
+        'sep-3415-verification-required-before-delivery',
+        'sep-3415-verification-challenge-echo',
+        'sep-3415-delivery-post-json',
+        'sep-3415-delivery-standard-webhooks-headers',
+        'sep-3415-delivery-subscription-id-header',
+        'sep-3415-delivery-signature-formula',
+        'sep-3415-delivery-body-size',
+        'sep-3415-delivery-410-non-retryable',
+        'sep-3415-delivery-413-non-retryable',
+        'sep-3415-delivery-retry-regenerates-signature',
+        'sep-3415-delivery-retries-bounded',
+        'sep-3415-envelope-type-discriminator',
+        'sep-3415-envelope-signed-like-deliveries',
+        'sep-3415-envelope-webhook-id-format',
+        'sep-3415-ssrf-no-redirects'
       ]) {
         expect(checks.get(id)?.status, id).toBe('SUCCESS');
       }
@@ -153,21 +153,21 @@ describe.concurrent('a server that delivers to loopback', () => {
         ],
         subscribe: { rejectNonRoutableUrl: true }
       });
-      expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+      expect(checks.get('sep-3415-ssrf-validate-callback-url')?.status).toBe(
         'SUCCESS'
       );
-      expect(checks.get('sep-9999-ssrf-reject-non-routable')?.status).toBe(
+      expect(checks.get('sep-3415-ssrf-reject-non-routable')?.status).toBe(
         'SUCCESS'
       );
-      const signature = checks.get('sep-9999-delivery-signature-formula');
+      const signature = checks.get('sep-3415-delivery-signature-formula');
       expect(signature?.details?.untestable).toBe(true);
       expect(signature?.errorMessage).toContain('EVENTS_WEBHOOK_CALLBACK_BASE');
       // The refusal answers two SSRF rows and not the other two, which still
       // have to be reported: a row that appears only on the delivering path
       // makes the two runs' counts incomparable.
       for (const id of [
-        'sep-9999-ssrf-no-redirects',
-        'sep-9999-ssrf-validate-at-delivery-time'
+        'sep-3415-ssrf-no-redirects',
+        'sep-3415-ssrf-validate-at-delivery-time'
       ]) {
         expect(checks.get(id), id).toBeDefined();
         expect(checks.get(id)?.details?.untestable, id).toBe(true);
@@ -188,14 +188,14 @@ describe.concurrent('a server that delivers to loopback', () => {
         ],
         subscribe: { acceptHttpUrl: true }
       });
-      const validate = checks.get('sep-9999-ssrf-validate-callback-url');
+      const validate = checks.get('sep-3415-ssrf-validate-callback-url');
       expect(validate?.status).toBe('WARNING');
       expect(validate?.errorMessage).toContain('nothing was delivered');
       expect(
-        checks.get('sep-9999-ssrf-reject-non-routable')?.errorMessage
+        checks.get('sep-3415-ssrf-reject-non-routable')?.errorMessage
       ).toContain('delivery-time validation');
       expect(
-        checks.get('sep-9999-delivery-post-json')?.details?.untestable
+        checks.get('sep-3415-delivery-post-json')?.details?.untestable
       ).toBe(true);
     },
     TIMEOUT
@@ -215,10 +215,10 @@ describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
         descriptors: hook,
         delivery: {}
       });
-      expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+      expect(checks.get('sep-3415-ssrf-validate-callback-url')?.status).toBe(
         'SUCCESS'
       );
-      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      const check = checks.get('sep-3415-ssrf-reject-non-routable');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('connected to it');
     },
@@ -233,7 +233,7 @@ describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
         descriptors: hook,
         delivery: { synchronousVerification: true }
       });
-      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      const check = checks.get('sep-3415-ssrf-reject-non-routable');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('only after connecting');
       expect(check?.details?.code).toBe(-32015);
@@ -248,7 +248,7 @@ describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
         capability: { listChanged: true },
         descriptors: hook
       });
-      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      const check = checks.get('sep-3415-ssrf-reject-non-routable');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('delivery-time validation');
     },
@@ -264,7 +264,7 @@ describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
         subscribe: { rejectNonRoutableUrl: true },
         delivery: {}
       });
-      const check = checks.get('sep-9999-ssrf-reject-non-routable');
+      const check = checks.get('sep-3415-ssrf-reject-non-routable');
       expect(check?.status).toBe('SUCCESS');
       expect(check?.details?.connections).toBe(0);
     },
@@ -280,12 +280,12 @@ describe.concurrent('the verification handshake', () => {
     async () => {
       const checks = await deliveryChecks(delivering({ verify: false }));
       const check = checks.get(
-        'sep-9999-verification-required-before-delivery'
+        'sep-3415-verification-required-before-delivery'
       );
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('third party');
       expect(
-        checks.get('sep-9999-verification-challenge-echo')?.details?.untestable
+        checks.get('sep-3415-verification-challenge-echo')?.details?.untestable
       ).toBe(true);
     },
     TIMEOUT
@@ -300,7 +300,7 @@ describe.concurrent('the verification handshake', () => {
       const checks = await deliveryChecks(
         delivering({ synchronousVerification: true })
       );
-      const check = checks.get('sep-9999-verification-failure-error');
+      const check = checks.get('sep-3415-verification-failure-error');
       expect(check?.status).toBe('SUCCESS');
     },
     TIMEOUT
@@ -312,7 +312,7 @@ describe.concurrent('the verification handshake', () => {
       const checks = await deliveryChecks(
         delivering({ synchronousVerification: true, ignoreFailedEcho: true })
       );
-      const check = checks.get('sep-9999-verification-failure-error');
+      const check = checks.get('sep-3415-verification-failure-error');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('-32015');
     },
@@ -325,7 +325,7 @@ describe.concurrent('the verification handshake', () => {
     'delivering after a wrong echo fails the failure row',
     async () => {
       const checks = await deliveryChecks(delivering());
-      const check = checks.get('sep-9999-verification-failure-error');
+      const check = checks.get('sep-3415-verification-failure-error');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('delivered');
     },
@@ -337,7 +337,7 @@ describe.concurrent('the verification handshake', () => {
     async () => {
       const checks = await deliveryChecks(delivering({ verify: false }));
       expect(
-        checks.get('sep-9999-verification-failure-error')?.details?.untestable
+        checks.get('sep-3415-verification-failure-error')?.details?.untestable
       ).toBe(true);
     },
     TIMEOUT
@@ -353,10 +353,10 @@ describe.concurrent('the verification handshake', () => {
         delivering({ synchronousVerification: true })
       );
       for (const id of [
-        'sep-9999-delivery-410-non-retryable',
-        'sep-9999-delivery-413-non-retryable',
-        'sep-9999-delivery-retries-bounded',
-        'sep-9999-ssrf-no-redirects'
+        'sep-3415-delivery-410-non-retryable',
+        'sep-3415-delivery-413-non-retryable',
+        'sep-3415-delivery-retries-bounded',
+        'sep-3415-ssrf-no-redirects'
       ]) {
         const check = checks.get(id);
         expect(
@@ -376,7 +376,7 @@ describe.concurrent('the verification handshake', () => {
         delivering({ eventBeforeVerification: true })
       );
       const check = checks.get(
-        'sep-9999-verification-required-before-delivery'
+        'sep-3415-verification-required-before-delivery'
       );
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('before the verification');
@@ -396,13 +396,13 @@ describe.concurrent('signing', () => {
       const checks = await deliveryChecks(
         delivering({ literalKeySignature: true })
       );
-      const check = checks.get('sep-9999-delivery-signature-formula');
+      const check = checks.get('sep-3415-delivery-signature-formula');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('did not verify over the raw body');
       // Freshness is graded separately, so a wrong formula must not be
       // reported as reusing timestamps it plainly did freshen.
       expect(
-        checks.get('sep-9999-delivery-retry-regenerates-signature')?.status
+        checks.get('sep-3415-delivery-retry-regenerates-signature')?.status
       ).toBe('SUCCESS');
     },
     TIMEOUT
@@ -414,11 +414,11 @@ describe.concurrent('signing', () => {
       const checks = await deliveryChecks(
         delivering({ omitHeaders: ['webhook-signature'] })
       );
-      const headers = checks.get('sep-9999-delivery-standard-webhooks-headers');
+      const headers = checks.get('sep-3415-delivery-standard-webhooks-headers');
       expect(headers?.status).toBe('FAILURE');
       expect(headers?.errorMessage).toContain('webhook-signature');
       expect(
-        checks.get('sep-9999-delivery-signature-formula')?.details?.untestable
+        checks.get('sep-3415-delivery-signature-formula')?.details?.untestable
       ).toBe(true);
     },
     TIMEOUT
@@ -430,7 +430,7 @@ describe.concurrent('signing', () => {
       const checks = await deliveryChecks(
         delivering({ omitSubscriptionIdHeader: true })
       );
-      const check = checks.get('sep-9999-delivery-subscription-id-header');
+      const check = checks.get('sep-3415-delivery-subscription-id-header');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('pick a secret');
     },
@@ -443,7 +443,7 @@ describe.concurrent('signing', () => {
       const checks = await deliveryChecks(
         delivering({ wrongSubscriptionIdHeader: true })
       );
-      const check = checks.get('sep-9999-delivery-subscription-id-header');
+      const check = checks.get('sep-3415-delivery-subscription-id-header');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('other than the subscribe');
     },
@@ -458,7 +458,7 @@ describe.concurrent('transport and body', () => {
       const checks = await deliveryChecks(
         delivering({ contentType: 'text/plain' })
       );
-      const check = checks.get('sep-9999-delivery-post-json');
+      const check = checks.get('sep-3415-delivery-post-json');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('text/plain');
     },
@@ -469,7 +469,7 @@ describe.concurrent('transport and body', () => {
     'a body past 256 KiB warns rather than fails',
     async () => {
       const checks = await deliveryChecks(delivering({ oversizedBody: true }));
-      const check = checks.get('sep-9999-delivery-body-size');
+      const check = checks.get('sep-3415-delivery-body-size');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('256 KiB');
     },
@@ -484,7 +484,7 @@ describe.concurrent('retries and redirects', () => {
       const checks = await deliveryChecks(
         delivering({ staleRetrySignature: true })
       );
-      const check = checks.get('sep-9999-delivery-retry-regenerates-signature');
+      const check = checks.get('sep-3415-delivery-retry-regenerates-signature');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('freshness window');
     },
@@ -498,7 +498,7 @@ describe.concurrent('retries and redirects', () => {
     'sub-second retries sharing a stamp do not fail the freshness row',
     async () => {
       const checks = await deliveryChecks(delivering({ retryGapMs: 300 }));
-      const check = checks.get('sep-9999-delivery-retry-regenerates-signature');
+      const check = checks.get('sep-3415-delivery-retry-regenerates-signature');
       expect(check?.status, check?.errorMessage).not.toBe('FAILURE');
     },
     TIMEOUT
@@ -510,10 +510,10 @@ describe.concurrent('retries and redirects', () => {
       const checks = await deliveryChecks(
         delivering({ retryNonRetryable: true, attempts: 3 })
       );
-      const gone = checks.get('sep-9999-delivery-410-non-retryable');
+      const gone = checks.get('sep-3415-delivery-410-non-retryable');
       expect(gone?.status).toBe('FAILURE');
       expect(gone?.errorMessage).toContain('non-retryable');
-      expect(checks.get('sep-9999-delivery-413-non-retryable')?.status).toBe(
+      expect(checks.get('sep-3415-delivery-413-non-retryable')?.status).toBe(
         'FAILURE'
       );
     },
@@ -526,7 +526,7 @@ describe.concurrent('retries and redirects', () => {
       const checks = await deliveryChecks(
         delivering({ followRedirects: true })
       );
-      const check = checks.get('sep-9999-ssrf-no-redirects');
+      const check = checks.get('sep-3415-ssrf-no-redirects');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('followed a 302');
     },
@@ -539,7 +539,7 @@ describe.concurrent('control envelopes', () => {
     'an unsigned envelope fails, since a receiver cannot verify it',
     async () => {
       const checks = await deliveryChecks(delivering({ signEnvelopes: false }));
-      const check = checks.get('sep-9999-envelope-signed-like-deliveries');
+      const check = checks.get('sep-3415-envelope-signed-like-deliveries');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('cannot verify it');
     },
@@ -552,7 +552,7 @@ describe.concurrent('control envelopes', () => {
       const checks = await deliveryChecks(
         delivering({ envelopeIdFormat: 'plain' })
       );
-      const check = checks.get('sep-9999-envelope-webhook-id-format');
+      const check = checks.get('sep-3415-envelope-webhook-id-format');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('outside the documented form');
     },
@@ -566,18 +566,18 @@ describe.concurrent('control envelopes', () => {
     'gap and terminated envelopes are graded when they arrive',
     async () => {
       const quiet = await deliveryChecks(delivering());
-      expect(quiet.get('sep-9999-envelope-gap')?.details?.untestable).toBe(
+      expect(quiet.get('sep-3415-envelope-gap')?.details?.untestable).toBe(
         true
       );
       expect(
-        quiet.get('sep-9999-envelope-terminated')?.details?.untestable
+        quiet.get('sep-3415-envelope-terminated')?.details?.untestable
       ).toBe(true);
 
       const sent = await deliveryChecks(
         delivering({ gapEnvelope: true, terminatedEnvelope: true })
       );
-      expect(sent.get('sep-9999-envelope-gap')?.status).toBe('SUCCESS');
-      expect(sent.get('sep-9999-envelope-terminated')?.status).toBe('SUCCESS');
+      expect(sent.get('sep-3415-envelope-gap')?.status).toBe('SUCCESS');
+      expect(sent.get('sep-3415-envelope-terminated')?.status).toBe('SUCCESS');
     },
     TIMEOUT * 2
   );
@@ -588,7 +588,7 @@ describe.concurrent('control envelopes', () => {
       const checks = await deliveryChecks(
         delivering({ gapEnvelope: { cursor: null } })
       );
-      const check = checks.get('sep-9999-envelope-gap');
+      const check = checks.get('sep-3415-envelope-gap');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('nothing to persist');
     },
@@ -612,12 +612,12 @@ describe.concurrent(
         const checks = await deliveryChecks(
           withControls({ gap: true, terminate: true })
         );
-        expect(checks.get('sep-9999-envelope-gap')?.status).toBe('SUCCESS');
-        expect(checks.get('sep-9999-envelope-terminated')?.status).toBe(
+        expect(checks.get('sep-3415-envelope-gap')?.status).toBe('SUCCESS');
+        expect(checks.get('sep-3415-envelope-terminated')?.status).toBe(
           'SUCCESS'
         );
         expect(
-          checks.get('sep-9999-envelope-signed-like-deliveries')?.status
+          checks.get('sep-3415-envelope-signed-like-deliveries')?.status
         ).toBe('SUCCESS');
       },
       TIMEOUT
@@ -631,10 +631,10 @@ describe.concurrent(
         );
         // Graded from the envelope that arrived, not reported untestable, which
         // is also a WARNING and would pass the status check on its own.
-        const gap = checks.get('sep-9999-envelope-gap');
+        const gap = checks.get('sep-3415-envelope-gap');
         expect(gap?.status).toBe('WARNING');
         expect(gap?.details?.body).toMatchObject({ type: 'gap', cursor: null });
-        const terminated = checks.get('sep-9999-envelope-terminated');
+        const terminated = checks.get('sep-3415-envelope-terminated');
         expect(terminated?.status).toBe('WARNING');
         expect(terminated?.details?.body).toMatchObject({
           type: 'terminated',
@@ -650,10 +650,10 @@ describe.concurrent(
         const checks = await deliveryChecks(
           withControls({ gap: 'silent', terminate: 'silent' })
         );
-        const gap = checks.get('sep-9999-envelope-gap');
+        const gap = checks.get('sep-3415-envelope-gap');
         expect(gap?.status).toBe('WARNING');
         expect(gap?.details?.untestable).toBeUndefined();
-        const terminated = checks.get('sep-9999-envelope-terminated');
+        const terminated = checks.get('sep-3415-envelope-terminated');
         expect(terminated?.status).toBe('FAILURE');
         expect(terminated?.details?.untestable).toBeUndefined();
         expect(terminated?.errorMessage).toContain('never told');
@@ -665,10 +665,10 @@ describe.concurrent(
       'without the controls both rows stay untestable and name them',
       async () => {
         const checks = await deliveryChecks(delivering());
-        const gap = checks.get('sep-9999-envelope-gap');
+        const gap = checks.get('sep-3415-envelope-gap');
         expect(gap?.details?.untestable).toBe(true);
         expect(gap?.errorMessage).toContain('events_conformance_webhook_gap');
-        const terminated = checks.get('sep-9999-envelope-terminated');
+        const terminated = checks.get('sep-3415-envelope-terminated');
         expect(terminated?.details?.untestable).toBe(true);
         expect(terminated?.errorMessage).toContain(
           'events_conformance_webhook_terminate'
@@ -690,14 +690,14 @@ describe.concurrent('confirming intent without a handshake', () => {
         delivering({ verifyViaWellKnown: true, verify: false })
       );
       const check = checks.get(
-        'sep-9999-verification-required-before-delivery'
+        'sep-3415-verification-required-before-delivery'
       );
       expect(check?.status).toBe('SUCCESS');
       expect(check?.details?.via).toBe(
         '/.well-known/mcp-webhook-receiver.json'
       );
       // The challenge rows say why they were not exercised, and how to force it.
-      const echo = checks.get('sep-9999-verification-challenge-echo');
+      const echo = checks.get('sep-3415-verification-challenge-echo');
       expect(echo?.details?.untestable).toBe(true);
       expect(echo?.errorMessage).toContain('EVENTS_RECEIVER_WELL_KNOWN=0');
     },
@@ -709,7 +709,7 @@ describe.concurrent('confirming intent without a handshake', () => {
     async () => {
       const checks = await deliveryChecks(delivering({ verify: false }));
       const check = checks.get(
-        'sep-9999-verification-required-before-delivery'
+        'sep-3415-verification-required-before-delivery'
       );
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('third party');
@@ -725,7 +725,7 @@ describe.concurrent('the -32015 error-table row', () => {
       const ok = await deliveryChecks(
         delivering({ synchronousVerification: true })
       );
-      const good = ok.get('sep-9999-error-callback-endpoint-error');
+      const good = ok.get('sep-3415-error-callback-endpoint-error');
       expect(good?.status).toBe('SUCCESS');
       expect(good?.details?.reason).toBe('challenge_failed');
 
@@ -735,7 +735,7 @@ describe.concurrent('the -32015 error-table row', () => {
           challengeFailureReason: 'it did not work'
         })
       );
-      const check = vague.get('sep-9999-error-callback-endpoint-error');
+      const check = vague.get('sep-3415-error-callback-endpoint-error');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('not one of the documented');
     },
@@ -751,7 +751,7 @@ describe.concurrent('the -32015 error-table row', () => {
           challengeFailureCode: -32603
         })
       );
-      const check = checks.get('sep-9999-error-callback-endpoint-error');
+      const check = checks.get('sep-3415-error-callback-endpoint-error');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('-32015 CallbackEndpointError');
     },
@@ -762,7 +762,7 @@ describe.concurrent('the -32015 error-table row', () => {
     'a run where no callback ever fails reports the row untestable',
     async () => {
       const checks = await deliveryChecks(delivering());
-      const check = checks.get('sep-9999-error-callback-endpoint-error');
+      const check = checks.get('sep-3415-error-callback-endpoint-error');
       expect(check?.details?.untestable).toBe(true);
       expect(check?.errorMessage).toContain('never provoked');
     },
@@ -783,7 +783,7 @@ describe.concurrent('leaking the endpoint response', () => {
         })
       );
       const check = checks.get(
-        'sep-9999-verification-no-raw-endpoint-responses'
+        'sep-3415-verification-no-raw-endpoint-responses'
       );
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('reflection');
@@ -798,12 +798,12 @@ describe.concurrent('leaking the endpoint response', () => {
         delivering({ synchronousVerification: true })
       );
       expect(
-        ok.get('sep-9999-verification-no-raw-endpoint-responses')?.status
+        ok.get('sep-3415-verification-no-raw-endpoint-responses')?.status
       ).toBe('SUCCESS');
 
       const quiet = await deliveryChecks(delivering());
       const check = quiet.get(
-        'sep-9999-verification-no-raw-endpoint-responses'
+        'sep-3415-verification-no-raw-endpoint-responses'
       );
       expect(check?.details?.untestable).toBe(true);
       expect(check?.status).toBe('WARNING');
@@ -835,27 +835,27 @@ describe.concurrent(
         });
 
         // Graded against the default configuration, before anything was lifted.
-        expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+        expect(checks.get('sep-3415-ssrf-validate-callback-url')?.status).toBe(
           'SUCCESS'
         );
-        expect(checks.get('sep-9999-ssrf-reject-non-routable')?.status).toBe(
+        expect(checks.get('sep-3415-ssrf-reject-non-routable')?.status).toBe(
           'SUCCESS'
         );
 
         // And the behavioural rows now grade, which is the whole point.
         for (const id of [
-          'sep-9999-delivery-post-json',
-          'sep-9999-delivery-standard-webhooks-headers',
-          'sep-9999-delivery-signature-formula',
-          'sep-9999-verification-required-before-delivery',
-          'sep-9999-envelope-type-discriminator'
+          'sep-3415-delivery-post-json',
+          'sep-3415-delivery-standard-webhooks-headers',
+          'sep-3415-delivery-signature-formula',
+          'sep-3415-verification-required-before-delivery',
+          'sep-3415-envelope-type-discriminator'
         ]) {
           expect(checks.get(id)?.status, id).toBe('SUCCESS');
         }
 
         // A delivery to a deliberately-permitted origin proves nothing about
         // delivery-time revalidation, so that row says so rather than passing.
-        const rebind = checks.get('sep-9999-ssrf-validate-at-delivery-time');
+        const rebind = checks.get('sep-3415-ssrf-validate-at-delivery-time');
         expect(rebind?.status).toBe('SKIPPED');
         expect(rebind?.errorMessage).toContain('permitted through');
       },
@@ -873,10 +873,10 @@ describe.concurrent(
           subscribe: {},
           delivery: {}
         });
-        expect(checks.get('sep-9999-ssrf-validate-callback-url')?.status).toBe(
+        expect(checks.get('sep-3415-ssrf-validate-callback-url')?.status).toBe(
           'SUCCESS'
         );
-        const check = checks.get('sep-9999-delivery-signature-formula');
+        const check = checks.get('sep-3415-delivery-signature-formula');
         expect(check?.details?.untestable).toBe(true);
         expect(check?.errorMessage).toContain('EVENTS_WEBHOOK_CALLBACK_BASE');
         expect(check?.errorMessage).toContain(

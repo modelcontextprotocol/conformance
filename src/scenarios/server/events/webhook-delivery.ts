@@ -5,8 +5,7 @@
  *
  * Scored against the merged design sketch on `main` of
  * modelcontextprotocol/experimental-ext-triggers-events. Each check's verbatim
- * excerpt lives beside its id in src/seps/sep-9999.yaml, where 9999 is a
- * placeholder SEP number.
+ * excerpt lives beside its id in src/seps/sep-3415.yaml.
  *
  * **This scenario needs a callback the server under test can reach.** Set
  * `EVENTS_WEBHOOK_CALLBACK_BASE` to a public https base URL forwarding to this
@@ -123,43 +122,43 @@ const LAST_ERROR_CATEGORIES = [
 const BODY_CEILING_BYTES = 256 * 1024;
 
 const DELIVERY_IDS = [
-  'sep-9999-delivery-post-json',
-  'sep-9999-delivery-standard-webhooks-headers',
-  'sep-9999-delivery-subscription-id-header',
-  'sep-9999-delivery-signature-formula',
-  'sep-9999-delivery-retry-regenerates-signature',
-  'sep-9999-delivery-dual-sign-on-rotation',
-  'sep-9999-delivery-body-size',
-  'sep-9999-delivery-413-non-retryable',
-  'sep-9999-delivery-410-non-retryable',
-  'sep-9999-delivery-retries-bounded',
-  'sep-9999-delivery-status-last-error-category'
+  'sep-3415-delivery-post-json',
+  'sep-3415-delivery-standard-webhooks-headers',
+  'sep-3415-delivery-subscription-id-header',
+  'sep-3415-delivery-signature-formula',
+  'sep-3415-delivery-retry-regenerates-signature',
+  'sep-3415-delivery-dual-sign-on-rotation',
+  'sep-3415-delivery-body-size',
+  'sep-3415-delivery-413-non-retryable',
+  'sep-3415-delivery-410-non-retryable',
+  'sep-3415-delivery-retries-bounded',
+  'sep-3415-delivery-status-last-error-category'
 ] as const;
 
 const VERIFICATION_IDS = [
-  'sep-9999-verification-required-before-delivery',
-  'sep-9999-verification-challenge-echo',
-  'sep-9999-verification-failure-error',
-  'sep-9999-verification-cached-per-principal-url',
-  'sep-9999-verification-persisted-for-no-expiry',
-  'sep-9999-verification-uses-ssrf-hardened-path',
-  'sep-9999-verification-no-raw-endpoint-responses',
-  'sep-9999-server-identity-key-discovery'
+  'sep-3415-verification-required-before-delivery',
+  'sep-3415-verification-challenge-echo',
+  'sep-3415-verification-failure-error',
+  'sep-3415-verification-cached-per-principal-url',
+  'sep-3415-verification-persisted-for-no-expiry',
+  'sep-3415-verification-uses-ssrf-hardened-path',
+  'sep-3415-verification-no-raw-endpoint-responses',
+  'sep-3415-server-identity-key-discovery'
 ] as const;
 
 const SSRF_IDS = [
-  'sep-9999-ssrf-validate-callback-url',
-  'sep-9999-ssrf-reject-non-routable',
-  'sep-9999-ssrf-validate-at-delivery-time',
-  'sep-9999-ssrf-no-redirects'
+  'sep-3415-ssrf-validate-callback-url',
+  'sep-3415-ssrf-reject-non-routable',
+  'sep-3415-ssrf-validate-at-delivery-time',
+  'sep-3415-ssrf-no-redirects'
 ] as const;
 
 const ENVELOPE_IDS = [
-  'sep-9999-envelope-type-discriminator',
-  'sep-9999-envelope-signed-like-deliveries',
-  'sep-9999-envelope-webhook-id-format',
-  'sep-9999-envelope-gap',
-  'sep-9999-envelope-terminated'
+  'sep-3415-envelope-type-discriminator',
+  'sep-3415-envelope-signed-like-deliveries',
+  'sep-3415-envelope-webhook-id-format',
+  'sep-3415-envelope-gap',
+  'sep-3415-envelope-terminated'
 ] as const;
 
 /**
@@ -168,7 +167,7 @@ const ENVELOPE_IDS = [
  * graded there and listed here for the same reason the others are: a path that
  * bails early must still report it, rather than emit one row fewer.
  */
-const ERROR_IDS = ['sep-9999-error-callback-endpoint-error'] as const;
+const ERROR_IDS = ['sep-3415-error-callback-endpoint-error'] as const;
 
 const ALL_IDS = [
   ...DELIVERY_IDS,
@@ -234,12 +233,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
 **Methods**: \`events/subscribe\` and \`events/unsubscribe\`, plus an HTTP receiver the harness runs and the server POSTs to
 
-**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
+**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-3415.yaml):
 
-- \`sep-9999-verification-*\` — the challenge handshake that must precede delivery, and what a failed one reports
-- \`sep-9999-delivery-*\` — POST with JSON, the Standard Webhooks headers plus \`X-MCP-Subscription-Id\`, the signature formula over the raw body, retries and their bounds
-- \`sep-9999-envelope-*\` — the \`type\` discriminator, \`msg_<type>_<random>\` ids, and the gap and terminated envelopes
-- \`sep-9999-ssrf-*\` — callback URLs are validated, non-routable addresses refused, and redirects not followed
+- \`sep-3415-verification-*\` — the challenge handshake that must precede delivery, and what a failed one reports
+- \`sep-3415-delivery-*\` — POST with JSON, the Standard Webhooks headers plus \`X-MCP-Subscription-Id\`, the signature formula over the raw body, retries and their bounds
+- \`sep-3415-envelope-*\` — the \`type\` discriminator, \`msg_<type>_<random>\` ids, and the gap and terminated envelopes
+- \`sep-3415-ssrf-*\` — callback URLs are validated, non-routable addresses refused, and redirects not followed
 
 **Needs a reachable callback**: set \`EVENTS_WEBHOOK_CALLBACK_BASE\` to a public https base URL that forwards to this harness.
 
@@ -379,8 +378,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               ...ERROR_IDS,
               // The two SSRF rows the refusal does not answer by itself: one
               // needs a delivery to revalidate, the other a redirect to refuse.
-              'sep-9999-ssrf-validate-at-delivery-time',
-              'sep-9999-ssrf-no-redirects'
+              'sep-3415-ssrf-validate-at-delivery-time',
+              'sep-3415-ssrf-no-redirects'
             ],
             guardLifted
               ? `The server still refused ${url} after \`${EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN}\` was called for its origin (${refused.code} ${refused.message}), so nothing could be delivered.`
@@ -391,7 +390,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
       checks.push(
         eventsCheck(
-          'sep-9999-delivery-post-json',
+          'sep-3415-delivery-post-json',
           'Deliveries are HTTP `POST` only, with Content-Type `application/json`.',
           'FAILURE',
           {
@@ -401,7 +400,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
       checks.push(
         ...untestableAll(
-          ALL_IDS.filter((id) => id !== 'sep-9999-delivery-post-json'),
+          ALL_IDS.filter((id) => id !== 'sep-3415-delivery-post-json'),
           `No subscription could be created against ${url}.`
         )
       );
@@ -430,7 +429,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         // say nothing about the rule.
         checks.push(
           eventsCheck(
-            'sep-9999-ssrf-validate-at-delivery-time',
+            'sep-3415-ssrf-validate-at-delivery-time',
             'To prevent DNS rebinding, validation MUST be performed at delivery time, not only at subscribe time.',
             'SKIPPED',
             {
@@ -441,7 +440,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       } else {
         checks.push(
           ...untestableAll(
-            ['sep-9999-ssrf-validate-callback-url'],
+            ['sep-3415-ssrf-validate-callback-url'],
             'The configured callback is routable, so the refusal path was not exercised. Run without EVENTS_WEBHOOK_CALLBACK_BASE to probe it with a loopback URL.',
             'WARNING'
           )
@@ -449,8 +448,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
       checks.push(
         untestableCheck(
-          'sep-9999-ssrf-validate-at-delivery-time',
-          'sep-9999-ssrf-validate-at-delivery-time',
+          'sep-3415-ssrf-validate-at-delivery-time',
+          'sep-3415-ssrf-validate-at-delivery-time',
           'To prevent DNS rebinding, validation MUST be performed at delivery time, not only at subscribe time.',
           'Proving delivery-time revalidation needs a hostname whose DNS answer changes between subscribe and delivery, which the harness cannot serve.',
           [EVENTS_SPEC_REF]
@@ -466,15 +465,15 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               ...ENVELOPE_IDS,
               ...ERROR_IDS
             ].filter(
-              (id) => id !== 'sep-9999-delivery-status-last-error-category'
+              (id) => id !== 'sep-3415-delivery-status-last-error-category'
             ),
             `Nothing arrived at ${url} within ${DELIVERY_WAIT_MS}ms of subscribing, so no delivery could be graded.`
           )
         );
         checks.push(
           untestableCheck(
-            'sep-9999-delivery-status-last-error-category',
-            'sep-9999-delivery-status-last-error-category',
+            'sep-3415-delivery-status-last-error-category',
+            'sep-3415-delivery-status-last-error-category',
             '`lastError` MUST be a server-generated category string and MUST NOT include raw response bodies.',
             'No delivery was attempted, so no `deliveryStatus.lastError` could be observed. The field is OPTIONAL in any case.',
             [EVENTS_SPEC_REF],
@@ -483,8 +482,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
         );
         checks.push(
           untestableCheck(
-            'sep-9999-ssrf-no-redirects',
-            'sep-9999-ssrf-no-redirects',
+            'sep-3415-ssrf-no-redirects',
+            'sep-3415-ssrf-no-redirects',
             'Webhook delivery requests MUST NOT follow HTTP redirects.',
             'No delivery was attempted, so the redirect probe had nothing to redirect.',
             [EVENTS_SPEC_REF]
@@ -571,7 +570,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   private ssrfRefusedChecks(error: JsonRpcError): ConformanceCheck[] {
     return [
       eventsCheck(
-        'sep-9999-ssrf-validate-callback-url',
+        'sep-3415-ssrf-validate-callback-url',
         'The server MUST validate callback URLs.',
         'SUCCESS',
         { details: { code: error.code, message: error.message } }
@@ -592,7 +591,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
     release: (callbackUrl: string) => Promise<void>
   ): Promise<ConformanceCheck> {
-    const id = 'sep-9999-ssrf-reject-non-routable';
+    const id = 'sep-3415-ssrf-reject-non-routable';
     const description =
       'Servers SHOULD reject URLs whose resolved IP is not globally routable per the IANA Special-Purpose Address Registries.';
     const canary = await startCanary();
@@ -656,7 +655,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     if (!delivered) {
       return [
         eventsCheck(
-          'sep-9999-ssrf-validate-callback-url',
+          'sep-3415-ssrf-validate-callback-url',
           'The server MUST validate callback URLs.',
           'WARNING',
           {
@@ -667,7 +666,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     }
     return [
       eventsCheck(
-        'sep-9999-ssrf-validate-callback-url',
+        'sep-3415-ssrf-validate-callback-url',
         'The server MUST validate callback URLs.',
         'FAILURE',
         {
@@ -696,7 +695,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     if (!verification && wellKnownFetches > 0) {
       out.push(
         eventsCheck(
-          'sep-9999-verification-required-before-delivery',
+          'sep-3415-verification-required-before-delivery',
           "A server MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed, by one of: a verification handshake, a server-configured allowlist, prior out-of-band verification, or a receiver-published well-known document.",
           'SUCCESS',
           {
@@ -711,8 +710,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-verification-challenge-echo',
-            'sep-9999-verification-failure-error'
+            'sep-3415-verification-challenge-echo',
+            'sep-3415-verification-failure-error'
           ],
           `The server confirmed intent by fetching ${RECEIVER_WELL_KNOWN_PATH} and sent no challenge, so the echo path was not exercised. Re-run with EVENTS_RECEIVER_WELL_KNOWN=0 to withhold the document and force the handshake.`,
           'WARNING'
@@ -724,7 +723,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     if (!verification) {
       out.push(
         eventsCheck(
-          'sep-9999-verification-required-before-delivery',
+          'sep-3415-verification-required-before-delivery',
           "A server MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed.",
           events.length > 0 ? 'FAILURE' : 'WARNING',
           {
@@ -739,8 +738,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-verification-challenge-echo',
-            'sep-9999-verification-failure-error'
+            'sep-3415-verification-challenge-echo',
+            'sep-3415-verification-failure-error'
           ],
           'The server sent no verification challenge, so the echo path could not be exercised.'
         )
@@ -748,7 +747,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     } else {
       out.push(
         eventsCheck(
-          'sep-9999-verification-required-before-delivery',
+          'sep-3415-verification-required-before-delivery',
           "A server MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed.",
           events.length === 0 ||
             verification.atMs <= (events[0]?.atMs ?? Infinity)
@@ -766,7 +765,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
       out.push(
         eventsCheck(
-          'sep-9999-verification-challenge-echo',
+          'sep-3415-verification-challenge-echo',
           'Before activating, the server POSTs a `verification` control envelope carrying a single-use, short-lived `challenge` nonce, and the endpoint proves intent by echoing it in a 2xx body.',
           typeof verification.json?.challenge === 'string'
             ? 'SUCCESS'
@@ -798,8 +797,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     const out: ConformanceCheck[] = [];
     out.push(
       untestableCheck(
-        'sep-9999-verification-uses-ssrf-hardened-path',
-        'sep-9999-verification-uses-ssrf-hardened-path',
+        'sep-3415-verification-uses-ssrf-hardened-path',
+        'sep-3415-verification-uses-ssrf-hardened-path',
         'The verification POST MUST use the same SSRF-hardened path as deliveries.',
         'Both the verification POST and the deliveries are observed from the receiver, so they cannot be distinguished as using the same internal code path. The SSRF rows grade the outcome the rule protects.',
         [EVENTS_SPEC_REF],
@@ -809,9 +808,9 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       ...untestableAll(
         [
-          'sep-9999-verification-cached-per-principal-url',
-          'sep-9999-verification-persisted-for-no-expiry',
-          'sep-9999-server-identity-key-discovery'
+          'sep-3415-verification-cached-per-principal-url',
+          'sep-3415-verification-persisted-for-no-expiry',
+          'sep-3415-server-identity-key-discovery'
         ],
         'Needs a second principal, a server restart, or a key-discovery origin the harness does not control.',
         'WARNING'
@@ -823,14 +822,14 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
   /**
    * The `-32015` row from the error table, graded off the same probe as
-   * sep-9999-verification-failure-error rather than a second failing callback.
+   * sep-3415-verification-failure-error rather than a second failing callback.
    * That row grades the rule; this one grades the code and the `data.reason`
    * category the table requires of it.
    */
   private callbackEndpointErrorCheck(
     endpointFailure?: JsonRpcError
   ): ConformanceCheck {
-    const id = 'sep-9999-error-callback-endpoint-error';
+    const id = 'sep-3415-error-callback-endpoint-error';
     const description =
       '`-32015 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.';
     if (!endpointFailure) {
@@ -856,7 +855,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           details: {
             code: endpointFailure.code,
             reason,
-            gradedBy: 'sep-9999-verification-failure-error'
+            gradedBy: 'sep-3415-verification-failure-error'
           }
         })
       : eventsCheck(id, description, 'WARNING', {
@@ -877,7 +876,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     subscriptionId: unknown,
     endpointFailure?: JsonRpcError
   ): ConformanceCheck {
-    const id = 'sep-9999-verification-no-raw-endpoint-responses';
+    const id = 'sep-3415-verification-no-raw-endpoint-responses';
     const description =
       'Failures surface only via the `lastError` category `challenge_failed`, never raw endpoint responses.';
     if (!endpointFailure) {
@@ -919,13 +918,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       badMethod.length === 0 && badType.length === 0
         ? eventsCheck(
-            'sep-9999-delivery-post-json',
+            'sep-3415-delivery-post-json',
             'Deliveries are HTTP `POST` only, with Content-Type `application/json`.',
             'SUCCESS',
             { details: { deliveries: graded.length } }
           )
         : eventsCheck(
-            'sep-9999-delivery-post-json',
+            'sep-3415-delivery-post-json',
             'Deliveries are HTTP `POST` only, with Content-Type `application/json`.',
             'FAILURE',
             {
@@ -956,13 +955,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       missingHeaders.length === 0
         ? eventsCheck(
-            'sep-9999-delivery-standard-webhooks-headers',
+            'sep-3415-delivery-standard-webhooks-headers',
             'Every delivery MUST include `webhook-id`, `webhook-timestamp` (Unix seconds), and `webhook-signature`.',
             'SUCCESS',
             { details: { deliveries: graded.length } }
           )
         : eventsCheck(
-            'sep-9999-delivery-standard-webhooks-headers',
+            'sep-3415-delivery-standard-webhooks-headers',
             'Every delivery MUST include `webhook-id`, `webhook-timestamp` (Unix seconds), and `webhook-signature`.',
             'FAILURE',
             {
@@ -985,13 +984,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       missingSubId.length === 0 && wrongSubId.length === 0
         ? eventsCheck(
-            'sep-9999-delivery-subscription-id-header',
+            'sep-3415-delivery-subscription-id-header',
             'Deliveries MUST include `X-MCP-Subscription-Id` so the receiver can select the correct secret without parsing the body.',
             'SUCCESS',
             { details: { subscriptionId } }
           )
         : eventsCheck(
-            'sep-9999-delivery-subscription-id-header',
+            'sep-3415-delivery-subscription-id-header',
             'Deliveries MUST include `X-MCP-Subscription-Id` so the receiver can select the correct secret without parsing the body.',
             'FAILURE',
             {
@@ -1009,7 +1008,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       oversized.length === 0
         ? eventsCheck(
-            'sep-9999-delivery-body-size',
+            'sep-3415-delivery-body-size',
             'Servers SHOULD keep delivery bodies at or under 256 KiB, consistent with Payload Minimality.',
             'SUCCESS',
             {
@@ -1022,7 +1021,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-delivery-body-size',
+            'sep-3415-delivery-body-size',
             'Servers SHOULD keep delivery bodies at or under 256 KiB, consistent with Payload Minimality.',
             'WARNING',
             {
@@ -1033,8 +1032,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
     out.push(
       untestableCheck(
-        'sep-9999-delivery-status-last-error-category',
-        'sep-9999-delivery-status-last-error-category',
+        'sep-3415-delivery-status-last-error-category',
+        'sep-3415-delivery-status-last-error-category',
         '`lastError` MUST be a server-generated category string and MUST NOT include raw response bodies.',
         '`deliveryStatus` is OPTIONAL and no refresh in this run carried one, so there was no `lastError` to inspect.',
         [EVENTS_SPEC_REF],
@@ -1043,8 +1042,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     );
     out.push(
       untestableCheck(
-        'sep-9999-delivery-dual-sign-on-rotation',
-        'sep-9999-delivery-dual-sign-on-rotation',
+        'sep-3415-delivery-dual-sign-on-rotation',
+        'sep-3415-delivery-dual-sign-on-rotation',
         'The server SHOULD dual-sign deliveries with both the old and new secrets for a short grace window.',
         'Observing it needs a secret rotated while a delivery is in flight, which the harness cannot time reliably.',
         [EVENTS_SPEC_REF],
@@ -1064,7 +1063,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     );
     if (signed.length === 0) {
       return untestableAll(
-        ['sep-9999-delivery-signature-formula'],
+        ['sep-3415-delivery-signature-formula'],
         'No delivery carried both `webhook-id` and `webhook-signature`, so the formula could not be checked.'
       );
     }
@@ -1085,13 +1084,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     return [
       bad.length === 0
         ? eventsCheck(
-            'sep-9999-delivery-signature-formula',
+            'sep-3415-delivery-signature-formula',
             description,
             'SUCCESS',
             { details: { verified: signed.length } }
           )
         : eventsCheck(
-            'sep-9999-delivery-signature-formula',
+            'sep-3415-delivery-signature-formula',
             description,
             'FAILURE',
             {
@@ -1157,7 +1156,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       envelopes.length > 0 || events.length > 0
         ? eventsCheck(
-            'sep-9999-envelope-type-discriminator',
+            'sep-3415-envelope-type-discriminator',
             'A body with a top-level `type` field is a control envelope; a body without one is an `EventOccurrence`.',
             events.every((d) => isIso8601(d.json?.timestamp))
               ? 'SUCCESS'
@@ -1170,8 +1169,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
             }
           )
         : untestableCheck(
-            'sep-9999-envelope-type-discriminator',
-            'sep-9999-envelope-type-discriminator',
+            'sep-3415-envelope-type-discriminator',
+            'sep-3415-envelope-type-discriminator',
             'A body with a top-level `type` field is a control envelope; a body without one is an `EventOccurrence`.',
             'Nothing with a JSON body arrived, so neither shape was seen.',
             [EVENTS_SPEC_REF]
@@ -1182,8 +1181,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-envelope-signed-like-deliveries',
-            'sep-9999-envelope-webhook-id-format'
+            'sep-3415-envelope-signed-like-deliveries',
+            'sep-3415-envelope-webhook-id-format'
           ],
           'No control envelope arrived during the run.'
         )
@@ -1195,13 +1194,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
             d.headers['webhook-signature'] && d.headers['x-mcp-subscription-id']
         )
           ? eventsCheck(
-              'sep-9999-envelope-signed-like-deliveries',
+              'sep-3415-envelope-signed-like-deliveries',
               'Control envelopes are signed and headed exactly like event deliveries.',
               'SUCCESS',
               { details: { envelopes: envelopes.length } }
             )
           : eventsCheck(
-              'sep-9999-envelope-signed-like-deliveries',
+              'sep-3415-envelope-signed-like-deliveries',
               'Control envelopes are signed and headed exactly like event deliveries.',
               'FAILURE',
               {
@@ -1217,7 +1216,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       out.push(
         badIds.length === 0
           ? eventsCheck(
-              'sep-9999-envelope-webhook-id-format',
+              'sep-3415-envelope-webhook-id-format',
               '`webhook-id` for control envelopes is a per-message identifier of the form `msg_<type>_<random>` so receivers can dedup retries.',
               'SUCCESS',
               {
@@ -1225,7 +1224,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-envelope-webhook-id-format',
+              'sep-3415-envelope-webhook-id-format',
               '`webhook-id` for control envelopes is a per-message identifier of the form `msg_<type>_<random>`.',
               'WARNING',
               {
@@ -1244,12 +1243,12 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     out.push(
       !gap
         ? signalled.gap === 'sent'
-          ? eventsCheck('sep-9999-envelope-gap', gapDesc, 'WARNING', {
+          ? eventsCheck('sep-3415-envelope-gap', gapDesc, 'WARNING', {
               errorMessage: `\`${EVENTS_CONTROL_WEBHOOK_GAP}\` acknowledged, and no \`gap\` envelope arrived within ${ENVELOPE_WAIT_MS}ms.`
             })
           : untestableCheck(
-              'sep-9999-envelope-gap',
-              'sep-9999-envelope-gap',
+              'sep-3415-envelope-gap',
+              'sep-3415-envelope-gap',
               gapDesc,
               signalled.gap === 'refused'
                 ? `No retention gap occurred during the run, and \`${EVENTS_CONTROL_WEBHOOK_GAP}\` declined to signal one.`
@@ -1258,7 +1257,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               'WARNING'
             )
         : eventsCheck(
-            'sep-9999-envelope-gap',
+            'sep-3415-envelope-gap',
             gapDesc,
             typeof gap.json?.cursor === 'string' ? 'SUCCESS' : 'WARNING',
             {
@@ -1278,7 +1277,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       !terminated
         ? signalled.terminate === 'sent'
           ? eventsCheck(
-              'sep-9999-envelope-terminated',
+              'sep-3415-envelope-terminated',
               terminatedDesc,
               'FAILURE',
               {
@@ -1286,8 +1285,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               }
             )
           : untestableCheck(
-              'sep-9999-envelope-terminated',
-              'sep-9999-envelope-terminated',
+              'sep-3415-envelope-terminated',
+              'sep-3415-envelope-terminated',
               terminatedDesc,
               signalled.terminate === 'refused'
                 ? `The subscription was not terminated during the run, and \`${EVENTS_CONTROL_WEBHOOK_TERMINATE}\` declined to end it.`
@@ -1296,7 +1295,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
               'WARNING'
             )
         : eventsCheck(
-            'sep-9999-envelope-terminated',
+            'sep-3415-envelope-terminated',
             terminatedDesc,
             isObject(terminated.json?.error) ? 'SUCCESS' : 'WARNING',
             {
@@ -1325,7 +1324,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
     release: (url: string) => Promise<void>
   ): Promise<{ check: ConformanceCheck; serverError?: JsonRpcError }> {
-    const id = 'sep-9999-verification-failure-error';
+    const id = 'sep-3415-verification-failure-error';
     const description =
       'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`.';
     const path = `/wrong-challenge-${Date.now()}`;
@@ -1401,8 +1400,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     if ('error' in sub) {
       return [
         untestableCheck(
-          'sep-9999-ssrf-no-redirects',
-          'sep-9999-ssrf-no-redirects',
+          'sep-3415-ssrf-no-redirects',
+          'sep-3415-ssrf-no-redirects',
           description,
           `The redirecting callback could not be subscribed (${sub.error.code} ${sub.error.message}).`,
           [EVENTS_SPEC_REF]
@@ -1418,8 +1417,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       if (!redirected) {
         return [
           untestableCheck(
-            'sep-9999-ssrf-no-redirects',
-            'sep-9999-ssrf-no-redirects',
+            'sep-3415-ssrf-no-redirects',
+            'sep-3415-ssrf-no-redirects',
             description,
             `Nothing was delivered to the redirecting callback within ${DELIVERY_WAIT_MS}ms, so no redirect was offered.`,
             [EVENTS_SPEC_REF]
@@ -1434,10 +1433,10 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       );
       return [
         followed
-          ? eventsCheck('sep-9999-ssrf-no-redirects', description, 'FAILURE', {
+          ? eventsCheck('sep-3415-ssrf-no-redirects', description, 'FAILURE', {
               errorMessage: `The server followed a 302 from ${from} to ${to}. A redirect can point at an internal address, which is exactly what the delivery-time IP check is meant to stop.`
             })
-          : eventsCheck('sep-9999-ssrf-no-redirects', description, 'SUCCESS', {
+          : eventsCheck('sep-3415-ssrf-no-redirects', description, 'SUCCESS', {
               details: { offered: from, notFollowed: to }
             })
       ];
@@ -1468,8 +1467,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-delivery-retry-regenerates-signature',
-            'sep-9999-delivery-retries-bounded'
+            'sep-3415-delivery-retry-regenerates-signature',
+            'sep-3415-delivery-retries-bounded'
           ],
           `The retry probe could not be subscribed (${sub.error.code} ${sub.error.message}).`
         )
@@ -1495,8 +1494,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           out.push(
             ...untestableAll(
               [
-                'sep-9999-delivery-retry-regenerates-signature',
-                'sep-9999-delivery-retries-bounded'
+                'sep-3415-delivery-retry-regenerates-signature',
+                'sep-3415-delivery-retries-bounded'
               ],
               `A callback answering 503 received ${attempts.length} attempt(s), none of them a retry of the same \`webhook-id\`, so retry behaviour could not be observed.`,
               'WARNING'
@@ -1507,7 +1506,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
             (a) => a.headers['webhook-timestamp'] ?? ''
           );
           // Freshness only: whether the signature verifies at all belongs to
-          // sep-9999-delivery-signature-formula, and folding the two together
+          // sep-3415-delivery-signature-formula, and folding the two together
           // reports a server with a wrong formula as reusing timestamps it
           // plainly did not reuse.
           //
@@ -1531,7 +1530,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           if (reused.length > 0) {
             out.push(
               eventsCheck(
-                'sep-9999-delivery-retry-regenerates-signature',
+                'sep-3415-delivery-retry-regenerates-signature',
                 description,
                 'FAILURE',
                 {
@@ -1545,7 +1544,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           ) {
             out.push(
               eventsCheck(
-                'sep-9999-delivery-retry-regenerates-signature',
+                'sep-3415-delivery-retry-regenerates-signature',
                 description,
                 'SUCCESS',
                 { details: { attempts: retried.length, stamps } }
@@ -1554,7 +1553,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           } else {
             out.push(
               eventsCheck(
-                'sep-9999-delivery-retry-regenerates-signature',
+                'sep-3415-delivery-retry-regenerates-signature',
                 description,
                 'WARNING',
                 {
@@ -1567,13 +1566,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           out.push(
             retried.length <= 6
               ? eventsCheck(
-                  'sep-9999-delivery-retries-bounded',
+                  'sep-3415-delivery-retries-bounded',
                   'Retries are bounded: servers SHOULD cap both the attempt count and the elapsed retry window.',
                   'SUCCESS',
                   { details: { attempts: retried.length } }
                 )
               : eventsCheck(
-                  'sep-9999-delivery-retries-bounded',
+                  'sep-3415-delivery-retries-bounded',
                   'Retries are bounded: servers SHOULD cap both the attempt count and the elapsed retry window (for example, 3–5 attempts over no more than 10–15 minutes).',
                   'WARNING',
                   {
@@ -1590,13 +1589,13 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     // 410 Gone and 413 Payload Too Large are both non-retryable.
     for (const [id, kind, status, description] of [
       [
-        'sep-9999-delivery-410-non-retryable',
+        'sep-3415-delivery-410-non-retryable',
         'gone' as const,
         410,
         'A receiver that intentionally rejects a delivery and does not want it retried responds `410 Gone`; the server MUST treat it as non-retryable.'
       ],
       [
-        'sep-9999-delivery-413-non-retryable',
+        'sep-3415-delivery-413-non-retryable',
         'too-large' as const,
         413,
         'Receivers and intermediaries MAY reject larger bodies with `413 Payload Too Large`; servers MUST treat `413` as a non-retryable failure for that event.'

@@ -180,9 +180,8 @@ const pendingClientScenariosList: ClientScenario[] = [
   // MCP Events. Pending because the everything-server does not implement the
   // events capability; targeted runs point at an events-capable fixture via
   // `npm start -- server --scenario events-* --url <fixture>`. The suite
-  // scores against the merged design sketch in
-  // modelcontextprotocol/experimental-ext-triggers-events, which has no SEP
-  // number yet — see the header of src/seps/sep-9999.yaml.
+  // scores against SEP-3415 (modelcontextprotocol/modelcontextprotocol#3415);
+  // see the header of src/seps/sep-3415.yaml.
   new EventsDiscoveryScenario(),
   new EventsPollScenario()
 ];

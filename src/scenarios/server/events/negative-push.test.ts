@@ -102,18 +102,18 @@ describe.concurrent('events/stream opening', () => {
   test('the conformant fixture passes every gradeable row', async () => {
     const checks = await pushChecks(pushFixture());
     for (const id of [
-      'sep-9999-stream-implemented',
-      'sep-9999-stream-active-confirmation',
-      'sep-9999-stream-subscription-id-meta',
-      'sep-9999-stream-event-notification',
-      'sep-9999-stream-carries-only-event-notifications',
-      'sep-9999-stream-heartbeat-required',
-      'sep-9999-stream-heartbeat-carries-cursor',
-      'sep-9999-stream-heartbeat-interval',
-      'sep-9999-stream-heartbeat-not-sse-comment',
-      'sep-9999-stream-cancel-stops-delivery',
-      'sep-9999-stream-exempt-from-concurrency-cap',
-      'sep-9999-stream-error-before-open'
+      'sep-3415-stream-implemented',
+      'sep-3415-stream-active-confirmation',
+      'sep-3415-stream-subscription-id-meta',
+      'sep-3415-stream-event-notification',
+      'sep-3415-stream-carries-only-event-notifications',
+      'sep-3415-stream-heartbeat-required',
+      'sep-3415-stream-heartbeat-carries-cursor',
+      'sep-3415-stream-heartbeat-interval',
+      'sep-3415-stream-heartbeat-not-sse-comment',
+      'sep-3415-stream-cancel-stops-delivery',
+      'sep-3415-stream-exempt-from-concurrency-cap',
+      'sep-3415-stream-error-before-open'
     ]) {
       expect(checks.get(id)?.status, id).toBe('SUCCESS');
     }
@@ -124,7 +124,7 @@ describe.concurrent('events/stream opening', () => {
       capability: { listChanged: true },
       descriptors: [descriptor()]
     });
-    const check = checks.get('sep-9999-stream-implemented');
+    const check = checks.get('sep-3415-stream-implemented');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('No event type advertises');
     expect(check?.details?.untestable).toBe(true);
@@ -141,15 +141,15 @@ describe.concurrent('events/stream opening', () => {
 
   test('answering events/stream with a JSON result rather than a stream fails', async () => {
     const checks = await pushChecks(pushFixture({ answerJson: true }));
-    const check = checks.get('sep-9999-stream-implemented');
+    const check = checks.get('sep-3415-stream-implemented');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('expected an SSE stream');
     // And nothing on the stream is reported green just because it was silent.
-    expect(checks.get('sep-9999-stream-heartbeat-required')?.status).toBe(
+    expect(checks.get('sep-3415-stream-heartbeat-required')?.status).toBe(
       'FAILURE'
     );
     expect(
-      checks.get('sep-9999-stream-heartbeat-required')?.details?.untestable
+      checks.get('sep-3415-stream-heartbeat-required')?.details?.untestable
     ).toBe(true);
   });
 
@@ -157,14 +157,14 @@ describe.concurrent('events/stream opening', () => {
     const checks = await pushChecks(
       pushFixture({ error: { code: -32013, message: 'ResourceExhausted' } })
     );
-    const check = checks.get('sep-9999-stream-implemented');
+    const check = checks.get('sep-3415-stream-implemented');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('-32013');
   });
 
   test('opening a stream for an unknown event type fails error-before-open', async () => {
     const checks = await pushChecks(pushFixture({ acceptAnyName: true }));
-    const check = checks.get('sep-9999-stream-error-before-open');
+    const check = checks.get('sep-3415-stream-error-before-open');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('did not answer a JSON-RPC error');
   });
@@ -174,7 +174,7 @@ describe.concurrent('events/stream opening', () => {
       ...pushFixture(),
       unknownNameCode: -32014
     });
-    const check = checks.get('sep-9999-stream-error-before-open');
+    const check = checks.get('sep-3415-stream-error-before-open');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('-32011 NotFound');
   });
@@ -183,7 +183,7 @@ describe.concurrent('events/stream opening', () => {
 describe.concurrent('the active confirmation', () => {
   test('no confirmation at all fails', async () => {
     const checks = await pushChecks(pushFixture({ omitActive: true }));
-    const check = checks.get('sep-9999-stream-active-confirmation');
+    const check = checks.get('sep-3415-stream-active-confirmation');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('notifications/events/active');
   });
@@ -192,7 +192,7 @@ describe.concurrent('the active confirmation', () => {
     const checks = await pushChecks(
       pushFixture({ activeParams: { cursor: 42 } })
     );
-    const check = checks.get('sep-9999-stream-active-confirmation');
+    const check = checks.get('sep-3415-stream-active-confirmation');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('`cursor` is');
   });
@@ -201,7 +201,7 @@ describe.concurrent('the active confirmation', () => {
     const checks = await pushChecks(
       pushFixture({ activeParams: { truncated: 'no' } })
     );
-    const check = checks.get('sep-9999-stream-active-confirmation');
+    const check = checks.get('sep-3415-stream-active-confirmation');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('`truncated` is');
   });
@@ -214,7 +214,7 @@ describe.concurrent('the correlation id', () => {
   // what the document tells it to read.
   test('params.requestId instead of _meta fails and names the key', async () => {
     const checks = await pushChecks(pushFixture({ correlation: 'requestId' }));
-    const check = checks.get('sep-9999-stream-subscription-id-meta');
+    const check = checks.get('sep-3415-stream-subscription-id-meta');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain(
       'io.modelcontextprotocol/subscriptionId'
@@ -223,7 +223,7 @@ describe.concurrent('the correlation id', () => {
 
   test('no correlation id at all fails', async () => {
     const checks = await pushChecks(pushFixture({ correlation: 'none' }));
-    expect(checks.get('sep-9999-stream-subscription-id-meta')?.status).toBe(
+    expect(checks.get('sep-3415-stream-subscription-id-meta')?.status).toBe(
       'FAILURE'
     );
   });
@@ -235,7 +235,7 @@ describe.concurrent('what rides the stream', () => {
       pushFixture({ foreignNotification: 'notifications/message' })
     );
     const check = checks.get(
-      'sep-9999-stream-carries-only-event-notifications'
+      'sep-3415-stream-carries-only-event-notifications'
     );
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('notifications/message');
@@ -245,14 +245,14 @@ describe.concurrent('what rides the stream', () => {
     const checks = await pushChecks(
       pushFixture({ eventParams: { timestamp: 'last tuesday' } })
     );
-    const check = checks.get('sep-9999-stream-event-notification');
+    const check = checks.get('sep-3415-stream-event-notification');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('EventOccurrence');
   });
 
   test('a stream that delivers nothing reports the event row untestable', async () => {
     const checks = await pushChecks(pushFixture({ eventAfterMs: 0 }));
-    const check = checks.get('sep-9999-stream-event-notification');
+    const check = checks.get('sep-3415-stream-event-notification');
     expect(check?.status).toBe('FAILURE');
     expect(check?.details?.untestable).toBe(true);
   });
@@ -263,14 +263,14 @@ describe.concurrent('the heartbeat', () => {
     const checks = await pushChecks(
       pushFixture({ heartbeatParams: { cursor: 42 } })
     );
-    const check = checks.get('sep-9999-stream-heartbeat-carries-cursor');
+    const check = checks.get('sep-3415-stream-heartbeat-carries-cursor');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('neither a string nor null');
   });
 
   test('silence inside a short window is untestable, not a failure', async () => {
     const checks = await pushChecks(pushFixture({ heartbeatMs: 0 }));
-    const check = checks.get('sep-9999-stream-heartbeat-required');
+    const check = checks.get('sep-3415-stream-heartbeat-required');
     expect(check?.status).toBe('FAILURE');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('EVENTS_PUSH_WATCH_MS');
@@ -278,7 +278,7 @@ describe.concurrent('the heartbeat', () => {
 
   test('an SSE comment keepalive beside a data heartbeat warns', async () => {
     const checks = await pushChecks(pushFixture({ sseComments: true }));
-    const check = checks.get('sep-9999-stream-heartbeat-not-sse-comment');
+    const check = checks.get('sep-3415-stream-heartbeat-not-sse-comment');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('keepalive');
   });
@@ -288,7 +288,7 @@ describe.concurrent('the heartbeat', () => {
       pushFixture({ heartbeatMs: 0, sseComments: true })
     );
     expect(
-      checks.get('sep-9999-stream-heartbeat-not-sse-comment')?.status
+      checks.get('sep-3415-stream-heartbeat-not-sse-comment')?.status
     ).toBe('FAILURE');
   });
 });
@@ -298,19 +298,19 @@ describe.concurrent('the -32013 error-table row', () => {
     const named = await pushChecks(
       pushFixture({ maxConcurrent: 1, capLimitName: 'subscriptions' })
     );
-    const ok = named.get('sep-9999-error-resource-exhausted');
+    const ok = named.get('sep-3415-error-resource-exhausted');
     expect(ok?.status).toBe('SUCCESS');
     expect(ok?.details?.limit).toBe('subscriptions');
 
     const vague = await pushChecks(pushFixture({ maxConcurrent: 1 }));
-    const check = vague.get('sep-9999-error-resource-exhausted');
+    const check = vague.get('sep-3415-error-resource-exhausted');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('which quota it hit');
   });
 
   test('a server that refuses nothing reports the row untestable', async () => {
     const checks = await pushChecks(pushFixture());
-    const check = checks.get('sep-9999-error-resource-exhausted');
+    const check = checks.get('sep-3415-error-resource-exhausted');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('never provoked');
   });
@@ -336,11 +336,11 @@ describe.concurrent(
       const checks = await pushChecks(
         withQuota({ name: 'capped.event', max: 2 })
       );
-      const check = checks.get('sep-9999-error-resource-exhausted');
+      const check = checks.get('sep-3415-error-resource-exhausted');
       expect(check?.status).toBe('SUCCESS');
       expect(check?.details?.limit).toBe('subscriptions');
       expect(
-        checks.get('sep-9999-stream-exempt-from-concurrency-cap')?.status
+        checks.get('sep-3415-stream-exempt-from-concurrency-cap')?.status
       ).toBe('SUCCESS');
     });
 
@@ -348,7 +348,7 @@ describe.concurrent(
       const checks = await pushChecks(
         withQuota({ name: 'capped.event', max: 1, limitName: null })
       );
-      const check = checks.get('sep-9999-error-resource-exhausted');
+      const check = checks.get('sep-3415-error-resource-exhausted');
       expect(check?.status).toBe('WARNING');
       expect(check?.errorMessage).toContain('which quota it hit');
     });
@@ -357,7 +357,7 @@ describe.concurrent(
       const checks = await pushChecks(
         withQuota({ name: 'capped.event', max: 2, enforce: false })
       );
-      const check = checks.get('sep-9999-error-resource-exhausted');
+      const check = checks.get('sep-3415-error-resource-exhausted');
       expect(check?.status).toBe('FAILURE');
       expect(check?.details?.untestable).toBe(true);
       expect(check?.errorMessage).toContain('3 streams opened');
@@ -367,7 +367,7 @@ describe.concurrent(
       const checks = await pushChecks(
         withQuota({ name: 'capped.event', max: 2, control: false })
       );
-      const check = checks.get('sep-9999-error-resource-exhausted');
+      const check = checks.get('sep-3415-error-resource-exhausted');
       expect(check?.details?.untestable).toBe(true);
       expect(check?.errorMessage).toContain('events_conformance_quota');
     });
@@ -385,7 +385,7 @@ describe.concurrent('truncated on a type without replay', () => {
     ],
     noReplay
   });
-  const id = 'sep-9999-truncated-false-when-no-replay';
+  const id = 'sep-3415-truncated-false-when-no-replay';
 
   test('a gap that sends nothing on a null-cursor stream passes', async () => {
     const checks = await pushChecks(withNoReplay({ name: 'quiet.event' }));
@@ -433,7 +433,7 @@ describe.concurrent('concurrency and cancellation', () => {
   // from: the first stream confirms and the other two are refused -32013.
   test('a per-principal cap that catches streams fails', async () => {
     const checks = await pushChecks(pushFixture({ maxConcurrent: 1 }));
-    const check = checks.get('sep-9999-stream-exempt-from-concurrency-cap');
+    const check = checks.get('sep-3415-stream-exempt-from-concurrency-cap');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('only 1 confirmed');
   });
@@ -443,7 +443,7 @@ describe.concurrent('concurrency and cancellation', () => {
     // proven the other way round: it passes here, and the failure branch is
     // reachable only by a server that holds the connection open after abort.
     const checks = await pushChecks(pushFixture());
-    expect(checks.get('sep-9999-stream-cancel-stops-delivery')?.status).toBe(
+    expect(checks.get('sep-3415-stream-cancel-stops-delivery')?.status).toBe(
       'SUCCESS'
     );
   });
@@ -452,15 +452,15 @@ describe.concurrent('concurrency and cancellation', () => {
 describe.concurrent('rows that are untestable against a real server', () => {
   test('a server-initiated close grades the final result instead of skipping it', async () => {
     const cancelled = await pushChecks(pushFixture());
-    const untested = cancelled.get('sep-9999-stream-final-result-shape');
+    const untested = cancelled.get('sep-3415-stream-final-result-shape');
     expect(untested?.status).toBe('WARNING');
     expect(untested?.details?.untestable).toBe(true);
 
     const closed = await pushChecks(pushFixture({ closeAfterMs: 400 }));
-    expect(closed.get('sep-9999-stream-final-result-shape')?.status).toBe(
+    expect(closed.get('sep-3415-stream-final-result-shape')?.status).toBe(
       'SUCCESS'
     );
-    expect(closed.get('sep-9999-stream-final-result-timing')?.status).toBe(
+    expect(closed.get('sep-3415-stream-final-result-timing')?.status).toBe(
       'SUCCESS'
     );
   });
@@ -469,7 +469,7 @@ describe.concurrent('rows that are untestable against a real server', () => {
     const checks = await pushChecks(
       pushFixture({ closeAfterMs: 400, finalResult: { events: [] } })
     );
-    const check = checks.get('sep-9999-stream-final-result-shape');
+    const check = checks.get('sep-3415-stream-final-result-shape');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('events');
   });
@@ -477,9 +477,9 @@ describe.concurrent('rows that are untestable against a real server', () => {
   test('an error notification, a termination and a gap are all graded when they happen', async () => {
     const quiet = await pushChecks(pushFixture());
     for (const id of [
-      'sep-9999-stream-error-is-recoverable',
-      'sep-9999-stream-terminated-ends-subscription',
-      'sep-9999-stream-gap-resends-active'
+      'sep-3415-stream-error-is-recoverable',
+      'sep-3415-stream-terminated-ends-subscription',
+      'sep-3415-stream-gap-resends-active'
     ]) {
       expect(quiet.get(id)?.details?.untestable, id).toBe(true);
     }
@@ -492,9 +492,9 @@ describe.concurrent('rows that are untestable against a real server', () => {
       })
     );
     for (const id of [
-      'sep-9999-stream-error-is-recoverable',
-      'sep-9999-stream-terminated-ends-subscription',
-      'sep-9999-stream-gap-resends-active'
+      'sep-3415-stream-error-is-recoverable',
+      'sep-3415-stream-terminated-ends-subscription',
+      'sep-3415-stream-gap-resends-active'
     ]) {
       expect(busy.get(id)?.status, id).toBe('SUCCESS');
     }
@@ -511,7 +511,7 @@ describe('the heartbeat MUST, on a window that outlasts the cadence', () => {
   test('silence past 30s fails instead of reporting untestable', async () => {
     const slow = await importWith(30_050);
     const checks = await pushChecks(pushFixture({ heartbeatMs: 0 }), slow);
-    const check = checks.get('sep-9999-stream-heartbeat-required');
+    const check = checks.get('sep-3415-stream-heartbeat-required');
     expect(check?.status).toBe('FAILURE');
     expect(check?.details?.untestable).toBeUndefined();
     expect(check?.errorMessage).toContain('outlasts the 30s cadence');

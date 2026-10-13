@@ -4,8 +4,7 @@
  *
  * Scored against the merged design sketch on `main` of
  * modelcontextprotocol/experimental-ext-triggers-events. Each check's verbatim
- * excerpt lives beside its id in src/seps/sep-9999.yaml, where 9999 is a
- * placeholder SEP number.
+ * excerpt lives beside its id in src/seps/sep-3415.yaml.
  *
  * This scenario deliberately stops at the subscription surface. Everything
  * about what the server then POSTs — signatures, headers, the verification
@@ -62,9 +61,9 @@ import {
 /** A callback URL that is syntactically valid and points nowhere in use. */
 const CALLBACK_BASE = 'https://conformance.invalid/mcp-events';
 const DURABILITY_IDS = [
-  'sep-9999-ttl-long-grant-retained',
-  'sep-9999-ttl-no-expiry-persisted',
-  'sep-9999-ttl-no-expiry-gc-terminated'
+  'sep-3415-ttl-long-grant-retained',
+  'sep-3415-ttl-no-expiry-persisted',
+  'sep-3415-ttl-no-expiry-gc-terminated'
 ] as const;
 /** How long a restart may take to show up in the generation control. */
 const restartWaitMs = (): number =>
@@ -76,38 +75,38 @@ const gcWaitMs = (): number => Number(process.env.EVENTS_GC_WAIT_MS ?? 30000);
 const TTL_SUGGESTION_MS = 3600_000;
 
 const SUBSCRIBE_IDS = [
-  'sep-9999-subscribe-webhook-only',
-  'sep-9999-subscribe-secret-required',
-  'sep-9999-subscribe-secret-format',
-  'sep-9999-subscribe-secret-rejected',
-  'sep-9999-subscribe-url-https-required',
-  'sep-9999-subscribe-url-non-https-rejected',
-  'sep-9999-subscribe-auth-required',
-  'sep-9999-subscribe-key-composition',
-  'sep-9999-subscribe-key-immutable',
-  'sep-9999-subscribe-idempotent-upsert',
-  'sep-9999-subscribe-id-derived',
-  'sep-9999-subscribe-id-not-an-input',
-  'sep-9999-subscribe-refresh-replaces-secret',
-  'sep-9999-subscribe-refresh-reactivates',
-  'sep-9999-subscribe-response-cursor',
-  'sep-9999-subscribe-response-truncated',
-  'sep-9999-subscribe-cross-tenant-isolation'
+  'sep-3415-subscribe-webhook-only',
+  'sep-3415-subscribe-secret-required',
+  'sep-3415-subscribe-secret-format',
+  'sep-3415-subscribe-secret-rejected',
+  'sep-3415-subscribe-url-https-required',
+  'sep-3415-subscribe-url-non-https-rejected',
+  'sep-3415-subscribe-auth-required',
+  'sep-3415-subscribe-key-composition',
+  'sep-3415-subscribe-key-immutable',
+  'sep-3415-subscribe-idempotent-upsert',
+  'sep-3415-subscribe-id-derived',
+  'sep-3415-subscribe-id-not-an-input',
+  'sep-3415-subscribe-refresh-replaces-secret',
+  'sep-3415-subscribe-refresh-reactivates',
+  'sep-3415-subscribe-response-cursor',
+  'sep-3415-subscribe-response-truncated',
+  'sep-3415-subscribe-cross-tenant-isolation'
 ] as const;
 
 const TTL_IDS = [
-  'sep-9999-ttl-refresh-before-lte-suggestion',
-  'sep-9999-ttl-no-rejection-path',
-  'sep-9999-ttl-null-only-when-requested',
-  'sep-9999-ttl-omitted-means-default',
-  'sep-9999-ttl-long-grant-retained',
-  'sep-9999-ttl-no-expiry-persisted',
-  'sep-9999-ttl-no-expiry-gc-terminated'
+  'sep-3415-ttl-refresh-before-lte-suggestion',
+  'sep-3415-ttl-no-rejection-path',
+  'sep-3415-ttl-null-only-when-requested',
+  'sep-3415-ttl-omitted-means-default',
+  'sep-3415-ttl-long-grant-retained',
+  'sep-3415-ttl-no-expiry-persisted',
+  'sep-3415-ttl-no-expiry-gc-terminated'
 ] as const;
 
 const UNSUBSCRIBE_IDS = [
-  'sep-9999-unsubscribe-by-key',
-  'sep-9999-unsubscribe-unknown-not-found'
+  'sep-3415-unsubscribe-by-key',
+  'sep-3415-unsubscribe-unknown-not-found'
 ] as const;
 
 /**
@@ -117,7 +116,7 @@ const UNSUBSCRIBE_IDS = [
  * 27 — which reads as a shorter suite rather than a prerequisite that was
  * missing.
  */
-const ERROR_IDS = ['sep-9999-error-unsupported'] as const;
+const ERROR_IDS = ['sep-3415-error-unsupported'] as const;
 
 const ALL_IDS = [
   ...SUBSCRIBE_IDS,
@@ -171,14 +170,14 @@ export class EventsWebhookScenario implements ClientScenario {
 
 **Methods**: \`events/subscribe\`, \`events/unsubscribe\`, plus \`events/list\` to discover an event type advertising \`webhook\` delivery
 
-**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
+**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-3415.yaml):
 
-- \`sep-9999-subscribe-secret-*\` — the \`whsec_\` Standard Webhooks secret is required, and a malformed one is rejected with \`InvalidParams\`
-- \`sep-9999-subscribe-url-*\` — callback URLs must be https, and a non-https one is rejected
-- \`sep-9999-subscribe-key-*\` / \`sep-9999-subscribe-id-*\` — the compound key, its immutability, the derived \`id\`, and that \`id\` is not an input
-- \`sep-9999-subscribe-idempotent-upsert\` / \`sep-9999-subscribe-response-*\` — a repeat subscribe refreshes in place and returns \`cursor\` and \`truncated\`
-- \`sep-9999-ttl-*\` — the grant is at or under the suggestion, there is no rejection path, and \`null\` comes back only when asked for
-- \`sep-9999-unsubscribe-*\` — teardown by key, and \`-32011 NotFound\` for a key the server does not hold
+- \`sep-3415-subscribe-secret-*\` — the \`whsec_\` Standard Webhooks secret is required, and a malformed one is rejected with \`InvalidParams\`
+- \`sep-3415-subscribe-url-*\` — callback URLs must be https, and a non-https one is rejected
+- \`sep-3415-subscribe-key-*\` / \`sep-3415-subscribe-id-*\` — the compound key, its immutability, the derived \`id\`, and that \`id\` is not an input
+- \`sep-3415-subscribe-idempotent-upsert\` / \`sep-3415-subscribe-response-*\` — a repeat subscribe refreshes in place and returns \`cursor\` and \`truncated\`
+- \`sep-3415-ttl-*\` — the grant is at or under the suggestion, there is no rejection path, and \`null\` comes back only when asked for
+- \`sep-3415-unsubscribe-*\` — teardown by key, and \`-32011 NotFound\` for a key the server does not hold
 
 **Scope**: subscription management only. Signatures, the verification handshake and control envelopes belong to events-webhook-delivery, which needs a reachable callback.
 
@@ -339,9 +338,9 @@ export class EventsWebhookScenario implements ClientScenario {
       if (long) {
         const s = await state(long.id);
         out.set(
-          'sep-9999-ttl-long-grant-retained',
+          'sep-3415-ttl-long-grant-retained',
           eventsCheck(
-            'sep-9999-ttl-long-grant-retained',
+            'sep-3415-ttl-long-grant-retained',
             'A server granting long or no-expiry TTLs MUST retain subscriptions for the lifetime it granted, including across restarts.',
             s === 'active' || s === 'suspended' ? 'SUCCESS' : 'FAILURE',
             s === 'active' || s === 'suspended'
@@ -355,8 +354,8 @@ export class EventsWebhookScenario implements ClientScenario {
 
       if (!granted) {
         for (const id of [
-          'sep-9999-ttl-no-expiry-persisted',
-          'sep-9999-ttl-no-expiry-gc-terminated'
+          'sep-3415-ttl-no-expiry-persisted',
+          'sep-3415-ttl-no-expiry-gc-terminated'
         ]) {
           out.set(
             id,
@@ -377,9 +376,9 @@ export class EventsWebhookScenario implements ClientScenario {
       const persisted =
         afterRestart === 'active' || afterRestart === 'suspended';
       out.set(
-        'sep-9999-ttl-no-expiry-persisted',
+        'sep-3415-ttl-no-expiry-persisted',
         eventsCheck(
-          'sep-9999-ttl-no-expiry-persisted',
+          'sep-3415-ttl-no-expiry-persisted',
           'The server MUST persist no-expiry subscriptions across restarts, because a client that never refreshes will never detect (or repair) a silently dropped one.',
           persisted ? 'SUCCESS' : 'FAILURE',
           persisted
@@ -404,11 +403,11 @@ export class EventsWebhookScenario implements ClientScenario {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
       out.set(
-        'sep-9999-ttl-no-expiry-gc-terminated',
+        'sep-3415-ttl-no-expiry-gc-terminated',
         !persisted
           ? untestableCheck(
-              'sep-9999-ttl-no-expiry-gc-terminated',
-              'sep-9999-ttl-no-expiry-gc-terminated',
+              'sep-3415-ttl-no-expiry-gc-terminated',
+              'sep-3415-ttl-no-expiry-gc-terminated',
               gcDescription,
               'The no-expiry subscription was already gone after the restart, so there was nothing left for failure-based GC to drop.',
               [EVENTS_SPEC_REF],
@@ -416,7 +415,7 @@ export class EventsWebhookScenario implements ClientScenario {
             )
           : dropped
             ? eventsCheck(
-                'sep-9999-ttl-no-expiry-gc-terminated',
+                'sep-3415-ttl-no-expiry-gc-terminated',
                 gcDescription,
                 'SUCCESS',
                 {
@@ -426,7 +425,7 @@ export class EventsWebhookScenario implements ClientScenario {
                 }
               )
             : eventsCheck(
-                'sep-9999-ttl-no-expiry-gc-terminated',
+                'sep-3415-ttl-no-expiry-gc-terminated',
                 gcDescription,
                 'WARNING',
                 {
@@ -514,7 +513,7 @@ export class EventsWebhookScenario implements ClientScenario {
         const err = first.error;
         checks.push(
           eventsCheck(
-            'sep-9999-subscribe-webhook-only',
+            'sep-3415-subscribe-webhook-only',
             '`events/subscribe` is ONLY used for webhook delivery. Poll and push do not need it.',
             err.code === JSONRPC_METHOD_NOT_FOUND ? 'FAILURE' : 'WARNING',
             {
@@ -525,7 +524,7 @@ export class EventsWebhookScenario implements ClientScenario {
         );
         checks.push(
           ...untestableAll(
-            ALL_IDS.filter((id) => id !== 'sep-9999-subscribe-webhook-only'),
+            ALL_IDS.filter((id) => id !== 'sep-3415-subscribe-webhook-only'),
             `No subscription could be created for \`${name}\` (${err.code} ${err.message}), so the subscription surface could not be exercised.`
           )
         );
@@ -534,7 +533,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
       checks.push(
         eventsCheck(
-          'sep-9999-subscribe-webhook-only',
+          'sep-3415-subscribe-webhook-only',
           '`events/subscribe` is ONLY used for webhook delivery. Poll and push do not need it.',
           'SUCCESS',
           { details: { name } }
@@ -598,13 +597,13 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       isValidCursor(result.cursor)
         ? eventsCheck(
-            'sep-9999-subscribe-response-cursor',
+            'sep-3415-subscribe-response-cursor',
             "The subscribe response carries `cursor`, a safe-to-persist watermark that advances the client's cursor even if no events arrive before next refresh.",
             'SUCCESS',
             { details: { cursor: result.cursor } }
           )
         : eventsCheck(
-            'sep-9999-subscribe-response-cursor',
+            'sep-3415-subscribe-response-cursor',
             "The subscribe response carries `cursor`, a safe-to-persist watermark that advances the client's cursor even if no events arrive before next refresh.",
             'FAILURE',
             {
@@ -615,13 +614,13 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       result.truncated === undefined || typeof result.truncated === 'boolean'
         ? eventsCheck(
-            'sep-9999-subscribe-response-truncated',
+            'sep-3415-subscribe-response-truncated',
             'The subscribe response carries `truncated`, true if delivery started later than the supplied cursor.',
             'SUCCESS',
             { details: { truncated: result.truncated ?? false } }
           )
         : eventsCheck(
-            'sep-9999-subscribe-response-truncated',
+            'sep-3415-subscribe-response-truncated',
             'The subscribe response carries `truncated`, true if delivery started later than the supplied cursor.',
             'FAILURE',
             {
@@ -642,7 +641,7 @@ export class EventsWebhookScenario implements ClientScenario {
     if (grant === null) {
       out.push(
         eventsCheck(
-          'sep-9999-ttl-null-only-when-requested',
+          'sep-3415-ttl-null-only-when-requested',
           'A server MUST NOT return `null` unless the client suggested `ttlMs: null` — no expiry exceeds every finite suggestion.',
           'FAILURE',
           {
@@ -652,8 +651,8 @@ export class EventsWebhookScenario implements ClientScenario {
       );
       out.push(
         untestableCheck(
-          'sep-9999-ttl-refresh-before-lte-suggestion',
-          'sep-9999-ttl-refresh-before-lte-suggestion',
+          'sep-3415-ttl-refresh-before-lte-suggestion',
+          'sep-3415-ttl-refresh-before-lte-suggestion',
           description,
           'The server granted no expiry, so there is no finite grant to compare against the suggestion.',
           [EVENTS_SPEC_REF],
@@ -665,7 +664,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
     out.push(
       eventsCheck(
-        'sep-9999-ttl-null-only-when-requested',
+        'sep-3415-ttl-null-only-when-requested',
         'A server MUST NOT return `null` unless the client suggested `ttlMs: null` — no expiry exceeds every finite suggestion.',
         'SUCCESS',
         { details: { refreshBefore: grant } }
@@ -676,7 +675,7 @@ export class EventsWebhookScenario implements ClientScenario {
     if (!Number.isFinite(grantedAt)) {
       out.push(
         eventsCheck(
-          'sep-9999-ttl-refresh-before-lte-suggestion',
+          'sep-3415-ttl-refresh-before-lte-suggestion',
           description,
           'FAILURE',
           {
@@ -693,7 +692,7 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       grantedAt <= ceiling
         ? eventsCheck(
-            'sep-9999-ttl-refresh-before-lte-suggestion',
+            'sep-3415-ttl-refresh-before-lte-suggestion',
             description,
             'SUCCESS',
             {
@@ -701,7 +700,7 @@ export class EventsWebhookScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-ttl-refresh-before-lte-suggestion',
+            'sep-3415-ttl-refresh-before-lte-suggestion',
             description,
             'WARNING',
             {
@@ -739,7 +738,7 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       'error' in omitted
         ? eventsCheck(
-            'sep-9999-ttl-omitted-means-default',
+            'sep-3415-ttl-omitted-means-default',
             'Omitting `ttlMs` means "server default."',
             'FAILURE',
             {
@@ -748,7 +747,7 @@ export class EventsWebhookScenario implements ClientScenario {
           )
         : omitted.result.refreshBefore === null
           ? eventsCheck(
-              'sep-9999-ttl-omitted-means-default',
+              'sep-3415-ttl-omitted-means-default',
               'Omitting `ttlMs` means "server default." An explicit `ttlMs: null` requests a subscription with no expiry.',
               'FAILURE',
               {
@@ -757,7 +756,7 @@ export class EventsWebhookScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-ttl-omitted-means-default',
+              'sep-3415-ttl-omitted-means-default',
               'Omitting `ttlMs` means "server default."',
               'SUCCESS',
               { details: { refreshBefore: omitted.result.refreshBefore } }
@@ -801,7 +800,7 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       rejected.length === 0
         ? eventsCheck(
-            'sep-9999-ttl-no-rejection-path',
+            'sep-3415-ttl-no-rejection-path',
             'Clamping in either direction is self-announcing, so a clamped grant is not an error and there is no rejection path for TTL values.',
             'SUCCESS',
             {
@@ -813,7 +812,7 @@ export class EventsWebhookScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-ttl-no-rejection-path',
+            'sep-3415-ttl-no-rejection-path',
             'Clamping in either direction is self-announcing, so a clamped grant is not an error and there is no rejection path for TTL values.',
             'FAILURE',
             {
@@ -831,9 +830,9 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       ...untestableAll(
         [
-          'sep-9999-ttl-long-grant-retained',
-          'sep-9999-ttl-no-expiry-persisted',
-          'sep-9999-ttl-no-expiry-gc-terminated'
+          'sep-3415-ttl-long-grant-retained',
+          'sep-3415-ttl-no-expiry-persisted',
+          'sep-3415-ttl-no-expiry-gc-terminated'
         ],
         'Grading retention across a restart needs the server under test to be restarted mid-run, which the harness cannot do over the wire.',
         'WARNING'
@@ -893,7 +892,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
     out.push(
       await expectInvalidParams(
-        'sep-9999-subscribe-secret-required',
+        'sep-3415-subscribe-secret-required',
         '`delivery.secret` is REQUIRED. The client supplies the HMAC signing secret; the server never generates one.',
         {
           ...base,
@@ -905,7 +904,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
     out.push(
       await expectInvalidParams(
-        'sep-9999-subscribe-secret-format',
+        'sep-3415-subscribe-secret-format',
         'The value MUST be a Standard Webhooks symmetric secret: the literal prefix `whsec_` followed by base64 of 24–64 random bytes.',
         {
           ...base,
@@ -922,7 +921,7 @@ export class EventsWebhookScenario implements ClientScenario {
     // Right prefix, too few bytes: 8 decoded, where the floor is 24.
     out.push(
       await expectInvalidParams(
-        'sep-9999-subscribe-secret-rejected',
+        'sep-3415-subscribe-secret-rejected',
         'Servers MUST reject a `delivery.secret` that is not `whsec_` followed by base64 decoding to 24–64 bytes with `InvalidParams`.',
         {
           ...base,
@@ -937,7 +936,7 @@ export class EventsWebhookScenario implements ClientScenario {
     );
 
     const nonHttps = await expectInvalidParams(
-      'sep-9999-subscribe-url-non-https-rejected',
+      'sep-3415-subscribe-url-non-https-rejected',
       'Servers MUST reject `events/subscribe` with a non-`https` `delivery.url` (`-32602 InvalidParams`).',
       {
         ...base,
@@ -954,12 +953,12 @@ export class EventsWebhookScenario implements ClientScenario {
     // manifest does not carry an untested row for the rule itself.
     out.push(
       eventsCheck(
-        'sep-9999-subscribe-url-https-required',
+        'sep-3415-subscribe-url-https-required',
         'Callback URLs MUST use `https://`.',
         nonHttps.status,
         {
           errorMessage: nonHttps.errorMessage,
-          details: { gradedBy: 'sep-9999-subscribe-url-non-https-rejected' }
+          details: { gradedBy: 'sep-3415-subscribe-url-non-https-rejected' }
         }
       )
     );
@@ -973,8 +972,8 @@ export class EventsWebhookScenario implements ClientScenario {
     if (!nonWebhookName) {
       out.push(
         untestableCheck(
-          'sep-9999-error-unsupported',
-          'sep-9999-error-unsupported',
+          'sep-3415-error-unsupported',
+          'sep-3415-error-unsupported',
           '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
           'Every event type the server offers advertises `webhook` delivery, so there is no type to probe the unsupported-mode path with.',
           [EVENTS_SPEC_REF]
@@ -994,7 +993,7 @@ export class EventsWebhookScenario implements ClientScenario {
       out.push(
         !('error' in res)
           ? eventsCheck(
-              'sep-9999-error-unsupported',
+              'sep-3415-error-unsupported',
               '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
               'FAILURE',
               {
@@ -1003,13 +1002,13 @@ export class EventsWebhookScenario implements ClientScenario {
             )
           : res.error.code === EVENTS_UNSUPPORTED
             ? eventsCheck(
-                'sep-9999-error-unsupported',
+                'sep-3415-error-unsupported',
                 '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
                 'SUCCESS',
                 { details: { code: res.error.code } }
               )
             : eventsCheck(
-                'sep-9999-error-unsupported',
+                'sep-3415-error-unsupported',
                 '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
                 'WARNING',
                 {
@@ -1022,8 +1021,8 @@ export class EventsWebhookScenario implements ClientScenario {
     // The principal half of the surface. One run, one credential.
     out.push(
       untestableCheck(
-        'sep-9999-subscribe-auth-required',
-        'sep-9999-subscribe-auth-required',
+        'sep-3415-subscribe-auth-required',
+        'sep-3415-subscribe-auth-required',
         '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without one with `-32012 Forbidden`.',
         'The harness sends whatever credential it was pointed at, on every request, and has no way to make the same call as an anonymous caller. Grading this needs a runner that can drop its own auth for one probe.',
         [EVENTS_SPEC_REF]
@@ -1035,7 +1034,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
   /** The compound key, the derived id, and what a refresh does. */
   /**
-   * Grade sep-9999-subscribe-cross-tenant-isolation, which asserts that two
+   * Grade sep-3415-subscribe-cross-tenant-isolation, which asserts that two
    * tenants subscribing to the same `(name, arguments)` with the same callback
    * get distinct subscriptions, because the principal is part of the key.
    *
@@ -1056,7 +1055,7 @@ export class EventsWebhookScenario implements ClientScenario {
       params: Record<string, unknown>
     ) => Promise<{ result: SubscribeResult } | { error: JsonRpcError }>
   ): Promise<ConformanceCheck[]> {
-    const id = 'sep-9999-subscribe-cross-tenant-isolation';
+    const id = 'sep-3415-subscribe-cross-tenant-isolation';
     const description =
       'Because the key includes `principal` and `delivery.url`, two distinct tenants subscribing to the same `(name, arguments)` get distinct subscriptions.';
 
@@ -1068,7 +1067,7 @@ export class EventsWebhookScenario implements ClientScenario {
           id,
           id,
           description,
-          `A run holds one principal, so the two-tenant case cannot be constructed. Needs a fixture exposing the \`${EVENTS_CONTROL_SUBSCRIBE_AS}\` and \`${EVENTS_CONTROL_SUBSCRIPTION_EXISTS}\` controls. The \`delivery.url\` half of the same rule is graded by sep-9999-subscribe-key-composition.`,
+          `A run holds one principal, so the two-tenant case cannot be constructed. Needs a fixture exposing the \`${EVENTS_CONTROL_SUBSCRIBE_AS}\` and \`${EVENTS_CONTROL_SUBSCRIPTION_EXISTS}\` controls. The \`delivery.url\` half of the same rule is graded by sep-3415-subscribe-key-composition.`,
           [EVENTS_SPEC_REF]
         )
       ];
@@ -1153,13 +1152,13 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       typeof firstId === 'string' && firstId.length > 0
         ? eventsCheck(
-            'sep-9999-subscribe-id-derived',
+            'sep-3415-subscribe-id-derived',
             'The server computes a deterministic `id` over the key and returns it in the subscribe response. It is stable across refreshes and server restarts.',
             'SUCCESS',
             { details: { id: firstId } }
           )
         : eventsCheck(
-            'sep-9999-subscribe-id-derived',
+            'sep-3415-subscribe-id-derived',
             'The server computes a deterministic `id` over the key and returns it in the subscribe response.',
             'FAILURE',
             {
@@ -1179,7 +1178,7 @@ export class EventsWebhookScenario implements ClientScenario {
     if ('error' in again) {
       out.push(
         eventsCheck(
-          'sep-9999-subscribe-idempotent-upsert',
+          'sep-3415-subscribe-idempotent-upsert',
           '`events/subscribe` is idempotent — calling it again with the same subscription key refreshes the TTL and updates mutable fields.',
           'FAILURE',
           {
@@ -1190,9 +1189,9 @@ export class EventsWebhookScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-subscribe-key-composition',
-            'sep-9999-subscribe-key-immutable',
-            'sep-9999-subscribe-refresh-replaces-secret'
+            'sep-3415-subscribe-key-composition',
+            'sep-3415-subscribe-key-immutable',
+            'sep-3415-subscribe-refresh-replaces-secret'
           ],
           'The repeat subscribe failed, so nothing about key identity could be compared.'
         )
@@ -1201,13 +1200,13 @@ export class EventsWebhookScenario implements ClientScenario {
       out.push(
         again.result.id === firstId
           ? eventsCheck(
-              'sep-9999-subscribe-idempotent-upsert',
+              'sep-3415-subscribe-idempotent-upsert',
               '`events/subscribe` is idempotent — calling it again with the same subscription key refreshes the TTL and updates mutable fields in place.',
               'SUCCESS',
               { details: { id: firstId } }
             )
           : eventsCheck(
-              'sep-9999-subscribe-idempotent-upsert',
+              'sep-3415-subscribe-idempotent-upsert',
               '`events/subscribe` is idempotent — calling it again with the same subscription key refreshes the TTL and updates mutable fields in place.',
               'FAILURE',
               {
@@ -1220,8 +1219,8 @@ export class EventsWebhookScenario implements ClientScenario {
       // is signed with it belongs to events-webhook-delivery.
       out.push(
         untestableCheck(
-          'sep-9999-subscribe-refresh-replaces-secret',
-          'sep-9999-subscribe-refresh-replaces-secret',
+          'sep-3415-subscribe-refresh-replaces-secret',
+          'sep-3415-subscribe-refresh-replaces-secret',
           'On an idempotent subscribe against an existing key, `delivery.secret` is replaced.',
           'The refresh carrying a new secret was accepted, but confirming the replacement needs a delivery signed with it, which events-webhook-delivery covers.',
           [EVENTS_SPEC_REF],
@@ -1245,15 +1244,15 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       'error' in otherUrl
         ? untestableCheck(
-            'sep-9999-subscribe-key-composition',
-            'sep-9999-subscribe-key-composition',
+            'sep-3415-subscribe-key-composition',
+            'sep-3415-subscribe-key-composition',
             'The subscription key is `(principal, delivery.url, name, arguments)`.',
             `A subscribe differing only in \`delivery.url\` answered ${otherUrl.error.code} ${otherUrl.error.message}, so the two keys could not be compared.`,
             [EVENTS_SPEC_REF]
           )
         : distinctIds
           ? eventsCheck(
-              'sep-9999-subscribe-key-composition',
+              'sep-3415-subscribe-key-composition',
               'The subscription key is `(principal, delivery.url, name, arguments)`; a call differing in any component addresses a different subscription.',
               'SUCCESS',
               {
@@ -1264,7 +1263,7 @@ export class EventsWebhookScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-subscribe-key-composition',
+              'sep-3415-subscribe-key-composition',
               'The subscription key is `(principal, delivery.url, name, arguments)`; a call differing in any component addresses a different subscription.',
               'FAILURE',
               {
@@ -1275,14 +1274,14 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       'error' in otherUrl
         ? untestableCheck(
-            'sep-9999-subscribe-key-immutable',
-            'sep-9999-subscribe-key-immutable',
+            'sep-3415-subscribe-key-immutable',
+            'sep-3415-subscribe-key-immutable',
             "All four key components are immutable for the subscription's lifetime.",
             'The second subscription could not be created, so immutability could not be observed.',
             [EVENTS_SPEC_REF]
           )
         : eventsCheck(
-            'sep-9999-subscribe-key-immutable',
+            'sep-3415-subscribe-key-immutable',
             "All four components are immutable for the subscription's lifetime: a subscribe call with a different value for any of them addresses a different subscription.",
             distinctIds ? 'SUCCESS' : 'FAILURE',
             {
@@ -1305,7 +1304,7 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       'error' in byId
         ? eventsCheck(
-            'sep-9999-subscribe-id-not-an-input',
+            'sep-3415-subscribe-id-not-an-input',
             "A caller who learns another tenant's derived `id` gains nothing — `id` is not accepted as input to any method.",
             'SUCCESS',
             {
@@ -1317,7 +1316,7 @@ export class EventsWebhookScenario implements ClientScenario {
           )
         : byId.result.id === firstId
           ? eventsCheck(
-              'sep-9999-subscribe-id-not-an-input',
+              'sep-3415-subscribe-id-not-an-input',
               "A caller who learns another tenant's derived `id` gains nothing — `id` is not accepted as input to any method.",
               'FAILURE',
               {
@@ -1325,7 +1324,7 @@ export class EventsWebhookScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-subscribe-id-not-an-input',
+              'sep-3415-subscribe-id-not-an-input',
               "A caller who learns another tenant's derived `id` gains nothing — `id` is not accepted as input to any method.",
               'SUCCESS',
               {
@@ -1341,8 +1340,8 @@ export class EventsWebhookScenario implements ClientScenario {
 
     out.push(
       untestableCheck(
-        'sep-9999-subscribe-refresh-reactivates',
-        'sep-9999-subscribe-refresh-reactivates',
+        'sep-3415-subscribe-refresh-reactivates',
+        'sep-3415-subscribe-refresh-reactivates',
         'On an idempotent subscribe against an existing key, `active` is set to `true` and suspended delivery resumes.',
         'Suspension is observable only through the OPTIONAL `deliveryStatus` object, and reaching it needs sustained delivery failure against a callback the harness controls.',
         [EVENTS_SPEC_REF],
@@ -1382,7 +1381,7 @@ export class EventsWebhookScenario implements ClientScenario {
     out.push(
       'error' in byKey
         ? eventsCheck(
-            'sep-9999-unsubscribe-by-key',
+            'sep-3415-unsubscribe-by-key',
             '`events/unsubscribe` is eager cleanup; the server looks the subscription up by the same compound key used for idempotent upsert on subscribe.',
             'FAILURE',
             {
@@ -1390,7 +1389,7 @@ export class EventsWebhookScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-unsubscribe-by-key',
+            'sep-3415-unsubscribe-by-key',
             '`events/unsubscribe` is eager cleanup; the server looks the subscription up by the same compound key used for idempotent upsert on subscribe.',
             'SUCCESS',
             { details: { id: first.id } }
@@ -1408,13 +1407,13 @@ export class EventsWebhookScenario implements ClientScenario {
       'error' in unknown
         ? unknown.error.code === EVENTS_NOT_FOUND
           ? eventsCheck(
-              'sep-9999-unsubscribe-unknown-not-found',
+              'sep-3415-unsubscribe-unknown-not-found',
               'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
               'SUCCESS',
               { details: { code: unknown.error.code } }
             )
           : eventsCheck(
-              'sep-9999-unsubscribe-unknown-not-found',
+              'sep-3415-unsubscribe-unknown-not-found',
               'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
               'WARNING',
               {
@@ -1422,7 +1421,7 @@ export class EventsWebhookScenario implements ClientScenario {
               }
             )
         : eventsCheck(
-            'sep-9999-unsubscribe-unknown-not-found',
+            'sep-3415-unsubscribe-unknown-not-found',
             'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
             'FAILURE',
             {

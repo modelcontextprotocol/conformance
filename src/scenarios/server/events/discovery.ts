@@ -4,8 +4,7 @@
  *
  * One scenario, many checks (per AGENTS.md "fewer scenarios, more checks").
  * Each check's verbatim spec excerpt lives next to its check ID in
- * src/seps/sep-9999.yaml, keeping the yaml and this scenario in lock-step.
- * 9999 is a placeholder SEP number; see that file's header.
+ * src/seps/sep-3415.yaml, keeping the yaml and this scenario in lock-step.
  *
  * This is the gate scenario for the suite: the delivery-mode scenarios all
  * start from a descriptor found here, so a server that fails `events/list`
@@ -55,29 +54,29 @@ import {
 } from './helpers';
 
 const CAPABILITY_IDS = [
-  'sep-9999-capability-events-object',
-  'sep-9999-capability-list-changed-flag',
-  'sep-9999-capability-empty-settings'
+  'sep-3415-capability-events-object',
+  'sep-3415-capability-list-changed-flag',
+  'sep-3415-capability-empty-settings'
 ] as const;
 
 const LIST_IDS = [
-  'sep-9999-list-implemented',
-  'sep-9999-list-pagination'
+  'sep-3415-list-implemented',
+  'sep-3415-list-pagination'
 ] as const;
 
 const DESCRIPTOR_IDS = [
-  'sep-9999-descriptor-name',
-  'sep-9999-descriptor-description',
-  'sep-9999-descriptor-delivery-subset',
-  'sep-9999-descriptor-input-schema',
-  'sep-9999-descriptor-payload-schema',
-  'sep-9999-descriptor-meta'
+  'sep-3415-descriptor-name',
+  'sep-3415-descriptor-description',
+  'sep-3415-descriptor-delivery-subset',
+  'sep-3415-descriptor-input-schema',
+  'sep-3415-descriptor-payload-schema',
+  'sep-3415-descriptor-meta'
 ] as const;
 
 const ERROR_IDS = [
-  'sep-9999-error-not-found',
-  'sep-9999-error-server-range',
-  'sep-9999-fallback-method-not-found'
+  'sep-3415-error-not-found',
+  'sep-3415-error-server-range',
+  'sep-3415-fallback-method-not-found'
 ] as const;
 
 const FALLBACK_DESCRIPTION =
@@ -104,15 +103,15 @@ export class EventsDiscoveryScenario implements ClientScenario {
 
 **Methods**: \`events/list\` (mandatory for a server declaring the extension), \`events/poll\` (probed only for its error path)
 
-**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
+**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-3415.yaml):
 
-- \`sep-9999-capability-events-object\` — \`events\` is declared top-level under \`capabilities\` as an object
-- \`sep-9999-capability-list-changed-flag\` — \`listChanged\`, when present, is a boolean
-- \`sep-9999-list-implemented\` — \`events/list\` is implemented and returns an \`events\` array
-- \`sep-9999-list-pagination\` — \`nextCursor\` is honoured as a cursor on the next request
-- \`sep-9999-descriptor-*\` — the descriptor fields: \`name\`, \`description\`, \`delivery\` as a non-empty subset of poll/push/webhook, \`inputSchema\`, \`payloadSchema\`, and \`_meta\` when present
-- \`sep-9999-error-not-found\` — an unknown event name answers \`-32011 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
-- \`sep-9999-error-server-range\` — the extension's codes sit in the JSON-RPC implementation-defined server range
+- \`sep-3415-capability-events-object\` — \`events\` is declared top-level under \`capabilities\` as an object
+- \`sep-3415-capability-list-changed-flag\` — \`listChanged\`, when present, is a boolean
+- \`sep-3415-list-implemented\` — \`events/list\` is implemented and returns an \`events\` array
+- \`sep-3415-list-pagination\` — \`nextCursor\` is honoured as a cursor on the next request
+- \`sep-3415-descriptor-*\` — the descriptor fields: \`name\`, \`description\`, \`delivery\` as a non-empty subset of poll/push/webhook, \`inputSchema\`, \`payloadSchema\`, and \`_meta\` when present
+- \`sep-3415-error-not-found\` — an unknown event name answers \`-32011 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
+- \`sep-3415-error-server-range\` — the extension's codes sit in the JSON-RPC implementation-defined server range
 
 **Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
@@ -151,11 +150,11 @@ export class EventsDiscoveryScenario implements ClientScenario {
         // that does not offer the extension.
         const skipped = skipAll(
           'Server does not declare the `events` capability and does not implement `events/list`; the extension is optional.'
-        ).filter((c) => c.id !== 'sep-9999-fallback-method-not-found');
+        ).filter((c) => c.id !== 'sep-3415-fallback-method-not-found');
         return [
           ...skipped,
           eventsCheck(
-            'sep-9999-fallback-method-not-found',
+            'sep-3415-fallback-method-not-found',
             FALLBACK_DESCRIPTION,
             'SUCCESS',
             { details: { code: probe.error.code } }
@@ -165,7 +164,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
       undeclaredProbe = probe;
       checks.push(
         eventsCheck(
-          'sep-9999-capability-events-object',
+          'sep-3415-capability-events-object',
           capDescription,
           'FAILURE',
           {
@@ -177,7 +176,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     } else if (isObject(value)) {
       checks.push(
         eventsCheck(
-          'sep-9999-capability-events-object',
+          'sep-3415-capability-events-object',
           capDescription,
           'SUCCESS'
         )
@@ -185,7 +184,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     } else {
       checks.push(
         eventsCheck(
-          'sep-9999-capability-events-object',
+          'sep-3415-capability-events-object',
           capDescription,
           'FAILURE',
           {
@@ -201,20 +200,20 @@ export class EventsDiscoveryScenario implements ClientScenario {
     if (listChanged === undefined) {
       checks.push(
         eventsCheck(
-          'sep-9999-capability-list-changed-flag',
+          'sep-3415-capability-list-changed-flag',
           'The `listChanged` flag advertises that the server sends `notifications/events/list_changed`.',
           'SKIPPED',
           {
             errorMessage: declared
               ? 'Server did not declare `listChanged`; the flag is optional and its absence means the notification is not advertised.'
-              : 'Server declared no settings object for the flag to sit in; see sep-9999-capability-events-object.'
+              : 'Server declared no settings object for the flag to sit in; see sep-3415-capability-events-object.'
           }
         )
       );
     } else if (typeof listChanged === 'boolean') {
       checks.push(
         eventsCheck(
-          'sep-9999-capability-list-changed-flag',
+          'sep-3415-capability-list-changed-flag',
           'The `listChanged` flag advertises that the server sends `notifications/events/list_changed`.',
           'SUCCESS',
           { details: { listChanged } }
@@ -223,7 +222,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     } else {
       checks.push(
         eventsCheck(
-          'sep-9999-capability-list-changed-flag',
+          'sep-3415-capability-list-changed-flag',
           'The `listChanged` flag advertises that the server sends `notifications/events/list_changed`.',
           'FAILURE',
           {
@@ -244,7 +243,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
       const unimplemented = err.code === JSONRPC_METHOD_NOT_FOUND;
       checks.push(
         eventsCheck(
-          'sep-9999-list-implemented',
+          'sep-3415-list-implemented',
           '`events/list` returns `{events: [...], nextCursor}`, where each entry describes one event type.',
           'FAILURE',
           {
@@ -270,7 +269,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     if (Array.isArray(eventsField)) {
       checks.push(
         eventsCheck(
-          'sep-9999-list-implemented',
+          'sep-3415-list-implemented',
           '`events/list` returns `{events: [...], nextCursor}`, where each entry describes one event type.',
           'SUCCESS',
           { details: { firstPageCount: firstPage.descriptors.length } }
@@ -279,7 +278,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     } else {
       checks.push(
         eventsCheck(
-          'sep-9999-list-implemented',
+          'sep-3415-list-implemented',
           '`events/list` returns `{events: [...], nextCursor}`, where each entry describes one event type.',
           'FAILURE',
           {
@@ -319,7 +318,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
   private fallbackCheck(
     probe: Awaited<ReturnType<typeof eventsListPage>> | undefined
   ): ConformanceCheck {
-    const id = 'sep-9999-fallback-method-not-found';
+    const id = 'sep-3415-fallback-method-not-found';
     if (!probe) {
       return eventsCheck(id, FALLBACK_DESCRIPTION, 'SKIPPED', {
         errorMessage:
@@ -348,13 +347,13 @@ export class EventsDiscoveryScenario implements ClientScenario {
     declared: boolean,
     value: unknown
   ): ConformanceCheck {
-    const id = 'sep-9999-capability-empty-settings';
+    const id = 'sep-3415-capability-empty-settings';
     const description =
       'An empty settings object declares event support with no list-change notifications.';
     if (!declared || !isObject(value)) {
       return eventsCheck(id, description, 'SKIPPED', {
         errorMessage:
-          'No settings object was declared, so there is no empty-object case to grade; see sep-9999-capability-events-object.'
+          'No settings object was declared, so there is no empty-object case to grade; see sep-3415-capability-events-object.'
       });
     }
     const keys = Object.keys(value);
@@ -365,7 +364,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     }
     return eventsCheck(id, description, 'SUCCESS', {
       details: {
-        note: 'Empty settings, and the catalog is still served; sep-9999-list-implemented grades that half.'
+        note: 'Empty settings, and the catalog is still served; sep-3415-list-implemented grades that half.'
       }
     });
   }
@@ -374,7 +373,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     conn: Awaited<ReturnType<RunContext['connect']>>,
     nextCursor: unknown
   ): Promise<ConformanceCheck> {
-    const id = 'sep-9999-list-pagination';
+    const id = 'sep-3415-list-pagination';
     const description =
       '`nextCursor` is present when more pages are available; same semantics as tools/list.';
 
@@ -458,7 +457,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     };
 
     field(
-      'sep-9999-descriptor-name',
+      'sep-3415-descriptor-name',
       'Each event descriptor carries a `name` identifying the event type.',
       'FAILURE',
       (d) =>
@@ -468,7 +467,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-descriptor-description',
+      'sep-3415-descriptor-description',
       'Each event descriptor carries a `description` of when the event fires.',
       'WARNING',
       (d) =>
@@ -478,7 +477,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-descriptor-delivery-subset',
+      'sep-3415-descriptor-delivery-subset',
       '`delivery` lists the delivery modes this event type supports — any non-empty subset of `poll`, `push`, `webhook`.',
       'FAILURE',
       (d) => {
@@ -502,7 +501,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-descriptor-input-schema',
+      'sep-3415-descriptor-input-schema',
       '`inputSchema` is a JSON Schema describing valid subscription arguments.',
       'FAILURE',
       (d) =>
@@ -512,7 +511,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-descriptor-payload-schema',
+      'sep-3415-descriptor-payload-schema',
       '`payloadSchema` describes the shape of `data` in delivered events.',
       'FAILURE',
       (d) =>
@@ -522,7 +521,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-descriptor-meta',
+      'sep-3415-descriptor-meta',
       '`_meta` on an event descriptor is optional; same semantics as on Tool/Resource/Prompt.',
       'WARNING',
       (d) =>
@@ -560,16 +559,16 @@ export class EventsDiscoveryScenario implements ClientScenario {
       const reason = `No event type advertises \`poll\` delivery, so \`${EVENTS_POLL_METHOD}\` could not be used to probe the unknown-name error path.`;
       return [
         untestableCheck(
-          'sep-9999-error-not-found',
-          'sep-9999-error-not-found',
+          'sep-3415-error-not-found',
+          'sep-3415-error-not-found',
           notFoundDesc,
           reason,
           [EVENTS_SPEC_REF],
           'FAILURE'
         ),
         untestableCheck(
-          'sep-9999-error-server-range',
-          'sep-9999-error-server-range',
+          'sep-3415-error-server-range',
+          'sep-3415-error-server-range',
           rangeDesc,
           reason,
           [EVENTS_SPEC_REF],
@@ -584,11 +583,11 @@ export class EventsDiscoveryScenario implements ClientScenario {
     if (!('error' in probe)) {
       const errorMessage = `\`${EVENTS_POLL_METHOD}\` for unknown event name \`${name}\` returned a result instead of an error.`;
       return [
-        eventsCheck('sep-9999-error-not-found', notFoundDesc, 'FAILURE', {
+        eventsCheck('sep-3415-error-not-found', notFoundDesc, 'FAILURE', {
           errorMessage,
           details: { result: probe.result }
         }),
-        eventsCheck('sep-9999-error-server-range', rangeDesc, 'FAILURE', {
+        eventsCheck('sep-3415-error-server-range', rangeDesc, 'FAILURE', {
           errorMessage
         })
       ];
@@ -602,10 +601,10 @@ export class EventsDiscoveryScenario implements ClientScenario {
 
     out.push(
       isNotFound
-        ? eventsCheck('sep-9999-error-not-found', notFoundDesc, 'SUCCESS', {
+        ? eventsCheck('sep-3415-error-not-found', notFoundDesc, 'SUCCESS', {
             details
           })
-        : eventsCheck('sep-9999-error-not-found', notFoundDesc, 'FAILURE', {
+        : eventsCheck('sep-3415-error-not-found', notFoundDesc, 'FAILURE', {
             errorMessage: `Unknown event name answered ${code}, expected ${EVENTS_NOT_FOUND} NotFound.${
               code === EVENTS_UNSUPPORTED
                 ? ' `-32014 Unsupported` is for a well-formed request naming an option the server does not offer, not for a name it does not have.'
@@ -617,10 +616,10 @@ export class EventsDiscoveryScenario implements ClientScenario {
 
     out.push(
       inServerErrorRange(code)
-        ? eventsCheck('sep-9999-error-server-range', rangeDesc, 'SUCCESS', {
+        ? eventsCheck('sep-3415-error-server-range', rangeDesc, 'SUCCESS', {
             details
           })
-        : eventsCheck('sep-9999-error-server-range', rangeDesc, 'FAILURE', {
+        : eventsCheck('sep-3415-error-server-range', rangeDesc, 'FAILURE', {
             errorMessage: `Error code ${code} is outside the implementation-defined server range [-32099, -32000].`,
             details
           })
