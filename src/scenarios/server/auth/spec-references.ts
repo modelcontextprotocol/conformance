@@ -29,6 +29,14 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'RFC-9728-protected-resource-metadata',
     url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-2'
   },
+  RFC_9728_RESPONSE: {
+    id: 'RFC-9728-protected-resource-metadata-response',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.2'
+  },
+  RFC_9728_VALIDATION: {
+    id: 'RFC-9728-protected-resource-metadata-validation',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3'
+  },
   RFC_9728_WWW_AUTHENTICATE: {
     id: 'RFC-9728-www-authenticate',
     url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-5.1'

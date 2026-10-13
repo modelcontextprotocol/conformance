@@ -50,6 +50,8 @@ const SPEC_REFERENCES = [
 const DISCOVERY_REFERENCES: SpecReference[] = [
   ...SPEC_REFERENCES,
   SpecReferences.RFC_9728_METADATA,
+  SpecReferences.RFC_9728_RESPONSE,
+  SpecReferences.RFC_9728_VALIDATION,
   SpecReferences.RFC_9728_WWW_AUTHENTICATE
 ];
 
@@ -370,12 +372,12 @@ async function resolveIssuer(): Promise<{
 const ADVERTISES_ID = 'sep-1932-server-advertises-dpop';
 const ADVERTISES_NAME = 'AdvertisesDpop';
 const ADVERTISES_DESC =
-  'An unauthenticated request is answered with HTTP 401 and a DPoP challenge that includes an algs parameter (RFC 9449 §7.1)';
+  'An unauthenticated HTTP 401 includes a DPoP challenge (MUST when dpop_bound_access_tokens_required is true, SHOULD otherwise), and that challenge SHOULD include algs';
 
 const PRM_ID = 'sep-1932-server-prm-dpop';
 const PRM_NAME = 'PrmDpop';
 const PRM_DESC =
-  'Protected resource metadata advertises dpop_signing_alg_values_supported (asymmetric algorithms only) and dpop_bound_access_tokens_required (RFC 9728 §2)';
+  'Protected resource metadata includes a non-empty, asymmetric-only dpop_signing_alg_values_supported array; dpop_bound_access_tokens_required is optional and defaults to false';
 
 const CONSISTENCY_ID = 'sep-1932-server-prm-consistency';
 const CONSISTENCY_NAME = 'PrmConsistency';
@@ -440,30 +442,124 @@ function forbiddenDpopAlgs(algs: unknown): string[] {
   );
 }
 
+function singleHeader(
+  value: string | string[] | undefined
+): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** RFC 9728 §3.2: application/json, parameters such as charset allowed. */
+function isJsonContentType(value: string | string[] | undefined): boolean {
+  const raw = singleHeader(value);
+  if (!raw) return false;
+  return raw.split(';')[0].trim().toLowerCase() === 'application/json';
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const MAX_METADATA_REDIRECTS = 2;
+
+interface FetchMiss {
+  reason: string;
+  /**
+   * A 200 that is not a metadata document. Stop; another well-known URL would
+   * hide the response the client actually received.
+   */
+  terminal: boolean;
+}
+
 async function fetchJsonDocument(
   url: string
-): Promise<Record<string, unknown> | undefined> {
-  const res = await request(url, {
-    method: 'GET',
-    headers: { accept: 'application/json' }
-  });
-  let text = '';
-  try {
-    text = await res.body.text();
-  } catch {
-    return undefined;
-  }
-  if (res.statusCode < 200 || res.statusCode >= 300) return undefined;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+): Promise<{ doc: Record<string, unknown> } | FetchMiss> {
+  let current = url;
+  for (let hop = 0; hop <= MAX_METADATA_REDIRECTS; hop++) {
+    let res: Awaited<ReturnType<typeof request>>;
+    try {
+      res = await request(current, {
+        method: 'GET',
+        headers: { accept: 'application/json' }
+      });
+    } catch (e) {
+      return {
+        reason: `request to ${current} failed: ${String(e)}`,
+        terminal: false
+      };
     }
-  } catch {
-    return undefined;
+    let text = '';
+    try {
+      text = await res.body.text();
+    } catch (e) {
+      return {
+        reason: `reading ${current} failed: ${String(e)}`,
+        terminal: false
+      };
+    }
+    const location = singleHeader(res.headers.location);
+    if (
+      REDIRECT_STATUSES.has(res.statusCode) &&
+      location &&
+      hop < MAX_METADATA_REDIRECTS
+    ) {
+      try {
+        current = new URL(location, current).href;
+      } catch {
+        return {
+          reason: `redirect Location is not a URL (${location})`,
+          terminal: true
+        };
+      }
+      continue;
+    }
+    if (res.statusCode !== 200) {
+      const redirecting =
+        REDIRECT_STATUSES.has(res.statusCode) && hop >= MAX_METADATA_REDIRECTS;
+      return {
+        reason: redirecting
+          ? `responded HTTP ${res.statusCode} and was still redirecting after ${MAX_METADATA_REDIRECTS} redirects`
+          : `responded HTTP ${res.statusCode}, not 200`,
+        terminal: false
+      };
+    }
+    if (!isJsonContentType(res.headers['content-type'])) {
+      const got = singleHeader(res.headers['content-type']) ?? 'none';
+      return {
+        reason: `Content-Type is ${got}, not application/json`,
+        terminal: true
+      };
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { doc: parsed as Record<string, unknown> };
+      }
+    } catch {
+      return { reason: 'body was not a JSON object', terminal: true };
+    }
+    return { reason: 'body was not a JSON object', terminal: true };
   }
-  return undefined;
+  return {
+    reason: `did not resolve within ${MAX_METADATA_REDIRECTS} redirects`,
+    terminal: false
+  };
 }
+
+/** RFC 9728 §3.3: the resource value MUST be identical, or the document is unusable. */
+function resourceMismatch(
+  doc: Record<string, unknown>,
+  resourceUrl: string
+): string | undefined {
+  if (doc.resource === resourceUrl) return undefined;
+  return `protected resource metadata resource ${JSON.stringify(doc.resource)} is not identical to the resource identifier ${resourceUrl}`;
+}
+
+type PrmDiscovery =
+  | PrmDocument
+  | { reason: string }
+  | {
+      mismatch: string;
+      source: PrmSource;
+      url: string;
+      resource: unknown;
+    };
 
 /**
  * RFC 9728 §5.1, then the MCP fallback order from the client discovery
@@ -475,7 +571,19 @@ async function fetchJsonDocument(
 async function discoverProtectedResourceMetadata(
   resourceUrl: string,
   resourceMetadata: string | undefined
-): Promise<PrmDocument | { reason: string }> {
+): Promise<PrmDiscovery> {
+  const accepted = (
+    doc: Record<string, unknown>,
+    source: PrmSource,
+    url: string
+  ): PrmDiscovery => {
+    const mismatch = resourceMismatch(doc, resourceUrl);
+    if (mismatch) {
+      return { mismatch, source, url, resource: doc.resource };
+    }
+    return { doc, source, url };
+  };
+
   if (resourceMetadata !== undefined && resourceMetadata.length > 0) {
     let absolute: string;
     try {
@@ -485,13 +593,13 @@ async function discoverProtectedResourceMetadata(
         reason: `resource_metadata parameter is not a URL (${resourceMetadata})`
       };
     }
-    const doc = await fetchJsonDocument(absolute);
-    if (!doc) {
+    const fetched = await fetchJsonDocument(absolute);
+    if (!('doc' in fetched)) {
       return {
-        reason: `protected resource metadata advertised at ${absolute} was unreachable or was not a JSON object`
+        reason: `protected resource metadata advertised at ${absolute} ${fetched.reason}`
       };
     }
-    return { doc, source: 'resource_metadata', url: absolute };
+    return accepted(fetched.doc, 'resource_metadata', absolute);
   }
 
   const { pathBased, root } = protectedResourceMetadataFallbacks(resourceUrl);
@@ -502,32 +610,74 @@ async function discoverProtectedResourceMetadata(
           { source: 'well-known-path', url: pathBased },
           { source: 'well-known-root', url: root }
         ];
+  const misses: string[] = [];
   for (const candidate of candidates) {
-    const doc = await fetchJsonDocument(candidate.url);
-    if (doc) return { doc, source: candidate.source, url: candidate.url };
+    const fetched = await fetchJsonDocument(candidate.url);
+    if ('doc' in fetched) {
+      return accepted(fetched.doc, candidate.source, candidate.url);
+    }
+    if (fetched.terminal) {
+      return {
+        reason: `protected resource metadata at ${candidate.url} ${fetched.reason}`
+      };
+    }
+    misses.push(`${candidate.url} (${fetched.reason})`);
   }
   return {
-    reason:
-      'protected resource metadata was not found at the path-based well-known URL or the root well-known URL'
+    reason: `protected resource metadata was not found at ${misses.join(' or ')}`
   };
 }
 
-function gradeAdvertises(res: Response): ConformanceCheck {
-  const challenged =
-    res.statusCode === 401 && hasDpopChallenge(res.wwwAuthenticate);
+/**
+ * `true` only when a usable document set the field to boolean true. Anything
+ * else (absent, false, malformed, or no document) is not the MUST tier.
+ */
+type RequiredTier = true | false | 'unknown';
+
+function gradeAdvertises(
+  res: Response,
+  required: RequiredTier
+): ConformanceCheck {
   const algs = dpopAuthParam(res.wwwAuthenticate, 'algs');
   const details = {
     statusCode: res.statusCode,
     algs: algs ?? null,
-    resourceMetadata: resourceMetadataParam(res.wwwAuthenticate) ?? null
+    resourceMetadata: resourceMetadataParam(res.wwwAuthenticate) ?? null,
+    dpopBoundAccessTokensRequired: required === 'unknown' ? null : required,
+    metadataRead: required !== 'unknown'
   };
+  // Both advertisement sentences are about an HTTP 401 (the SHOULD) or a
+  // WWW-Authenticate response (the MUST). A different status does not exercise
+  // them.
+  if (res.statusCode !== 401) {
+    return untestableCheck(
+      ADVERTISES_ID,
+      ADVERTISES_NAME,
+      ADVERTISES_DESC,
+      `unauthenticated probe was HTTP ${res.statusCode}, not 401, so the DPoP challenge requirement was not exercised`,
+      DISCOVERY_REFERENCES,
+      'WARNING'
+    );
+  }
+  const challenged = hasDpopChallenge(res.wwwAuthenticate);
   if (!challenged) {
+    if (required === true) {
+      return dpopCheck(
+        ADVERTISES_ID,
+        ADVERTISES_NAME,
+        ADVERTISES_DESC,
+        'FAILURE',
+        'Protected resource metadata sets dpop_bound_access_tokens_required to true, but the HTTP 401 did not include a DPoP challenge',
+        details,
+        DISCOVERY_REFERENCES
+      );
+    }
     return dpopCheck(
       ADVERTISES_ID,
       ADVERTISES_NAME,
       ADVERTISES_DESC,
-      'FAILURE',
-      `Unauthenticated request was not challenged with a DPoP scheme (HTTP ${res.statusCode})`,
+      'WARNING',
+      'HTTP 401 did not include a DPoP challenge',
       details,
       DISCOVERY_REFERENCES
     );
@@ -554,7 +704,38 @@ function gradeAdvertises(res: Response): ConformanceCheck {
   );
 }
 
-function gradePrm(found: PrmDocument | { reason: string }): ConformanceCheck {
+function algsProblem(algs: unknown): string | undefined {
+  if (algs === undefined) {
+    return 'Protected resource metadata is missing dpop_signing_alg_values_supported';
+  }
+  if (!Array.isArray(algs)) {
+    return 'dpop_signing_alg_values_supported is malformed: expected a JSON array';
+  }
+  if (algs.length === 0) {
+    return 'dpop_signing_alg_values_supported is empty';
+  }
+  if (algs.some((alg) => typeof alg !== 'string' || alg.trim().length === 0)) {
+    return 'dpop_signing_alg_values_supported is malformed: every entry must be a non-empty string';
+  }
+  return undefined;
+}
+
+function gradePrm(found: PrmDiscovery): ConformanceCheck {
+  if ('mismatch' in found) {
+    return dpopCheck(
+      PRM_ID,
+      PRM_NAME,
+      PRM_DESC,
+      'FAILURE',
+      found.mismatch,
+      {
+        source: found.source,
+        url: found.url,
+        resource: found.resource ?? null
+      },
+      DISCOVERY_REFERENCES
+    );
+  }
   if (!('doc' in found)) {
     return untestableCheck(
       PRM_ID,
@@ -565,11 +746,14 @@ function gradePrm(found: PrmDocument | { reason: string }): ConformanceCheck {
     );
   }
   const algs = found.doc.dpop_signing_alg_values_supported;
-  const required = found.doc.dpop_bound_access_tokens_required;
+  const hasRequired = Object.prototype.hasOwnProperty.call(
+    found.doc,
+    'dpop_bound_access_tokens_required'
+  );
+  const required = hasRequired
+    ? found.doc.dpop_bound_access_tokens_required
+    : undefined;
   const forbidden = forbiddenDpopAlgs(algs);
-  const algsOk =
-    Array.isArray(algs) && algs.length > 0 && forbidden.length === 0;
-  const requiredPresent = typeof required === 'boolean';
   const details: Record<string, unknown> = {
     source: found.source,
     url: found.url,
@@ -588,17 +772,19 @@ function gradePrm(found: PrmDocument | { reason: string }): ConformanceCheck {
       DISCOVERY_REFERENCES
     );
   }
-  if (!algsOk || !requiredPresent) {
-    const missing = [
-      ...(!algsOk ? ['dpop_signing_alg_values_supported'] : []),
-      ...(!requiredPresent ? ['dpop_bound_access_tokens_required'] : [])
-    ];
+  const problems = [
+    algsProblem(algs),
+    hasRequired && typeof required !== 'boolean'
+      ? 'dpop_bound_access_tokens_required is malformed: expected a boolean'
+      : undefined
+  ].filter((problem): problem is string => problem !== undefined);
+  if (problems.length > 0) {
     return dpopCheck(
       PRM_ID,
       PRM_NAME,
       PRM_DESC,
       'FAILURE',
-      `Protected resource metadata is missing ${missing.join(' and ')}`,
+      problems.join('; '),
       details,
       DISCOVERY_REFERENCES
     );
@@ -614,16 +800,28 @@ function gradePrm(found: PrmDocument | { reason: string }): ConformanceCheck {
   );
 }
 
+function consistencyDetails(
+  published: unknown,
+  res: Response
+): Record<string, unknown> {
+  return {
+    dpop_bound_access_tokens_required: published ?? null,
+    statusCode: res.statusCode,
+    wwwAuthenticate: res.wwwAuthenticate || null,
+    error: res.dpopError ?? null
+  };
+}
+
 function gradeConsistency(
   saysRequired: boolean,
+  published: unknown,
   res: Response
 ): ConformanceCheck {
   const accepted = isAccepted(res.statusCode);
-  const rejected = res.statusCode === 401;
-  const details = {
-    dpop_bound_access_tokens_required: saysRequired,
-    statusCode: res.statusCode
-  };
+  // The advertisement MUST says "reject", not "401". 401 and 403 are a
+  // refusal. 400, 404, and 5xx are not evidence the token was refused.
+  const rejected = res.statusCode === 401 || res.statusCode === 403;
+  const details = consistencyDetails(published, res);
   if (saysRequired && accepted) {
     return dpopCheck(
       CONSISTENCY_ID,
@@ -652,12 +850,14 @@ function gradeConsistency(
       CONSISTENCY_NAME,
       CONSISTENCY_DESC,
       'FAILURE',
-      `Expected the server to reject an unbound Bearer token with HTTP 401, got ${res.statusCode}`,
+      `The server did not reject an unbound Bearer token (HTTP ${res.statusCode})`,
       details,
       DISCOVERY_REFERENCES
     );
   }
-  if (rejected) {
+  // Inferring unadvertised enforcement needs a 401. A 403 can be an unrelated
+  // denial, so it stays on the "neither" arm below.
+  if (res.statusCode === 401) {
     return dpopCheck(
       CONSISTENCY_ID,
       CONSISTENCY_NAME,
@@ -673,7 +873,7 @@ function gradeConsistency(
       CONSISTENCY_ID,
       CONSISTENCY_NAME,
       CONSISTENCY_DESC,
-      'INFO',
+      'SUCCESS',
       undefined,
       details,
       DISCOVERY_REFERENCES
@@ -702,9 +902,11 @@ malformed requests (which a conformant server MUST reject with HTTP 401 and a
 
 Covers: proof validation per §4.3, the ±5-minute \`iat\` window,
 asymmetric-only algorithms, the 401 challenge format, the §7.1 \`error\` code
-(SHOULD), how an unauthenticated client learns that DPoP is required (the
-challenge \`algs\` parameter and Protected Resource Metadata), token audience
-validation under DPoP, and (optionally) the server-provided nonce flow.`;
+(SHOULD), how an unauthenticated client learns DPoP support (a DPoP challenge
+on HTTP 401, and \`dpop_signing_alg_values_supported\` in Protected Resource
+Metadata) and that a server which requires DPoP-bound tokens says so and
+enforces it, token audience validation under DPoP, and (optionally) the
+server-provided nonce flow.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl, specVersion } = ctx;
@@ -855,41 +1057,61 @@ validation under DPoP, and (optionally) the server-provided nonce flow.`;
 
     // ---- Discovery: an unauthenticated client must be able to learn DPoP ----
     // Runs before the positive probe and is not gated on it: a server that
-    // rejects a valid proof can still advertise DPoP on the 401.
-    let saysDpopRequired = false;
+    // rejects a valid proof can still advertise DPoP on the 401. The challenge
+    // grade waits until metadata is read, because a missing DPoP challenge is
+    // a MUST only when dpop_bound_access_tokens_required is true.
+    let requiredTier: RequiredTier = 'unknown';
+    let publishedRequired: unknown = null;
+    let metadataGap = 'protected resource metadata was not read';
     try {
       const unauth = await sendUnauthenticated();
-      checks.push(gradeAdvertises(unauth));
       try {
         const found = await discoverProtectedResourceMetadata(
           serverUrl,
           resourceMetadataParam(unauth.wwwAuthenticate)
         );
         if ('doc' in found) {
-          saysDpopRequired =
-            found.doc.dpop_bound_access_tokens_required === true;
+          const published = Object.prototype.hasOwnProperty.call(
+            found.doc,
+            'dpop_bound_access_tokens_required'
+          )
+            ? found.doc.dpop_bound_access_tokens_required
+            : undefined;
+          publishedRequired = published === undefined ? null : published;
+          requiredTier = published === true ? true : false;
+          metadataGap = '';
+        } else if ('mismatch' in found) {
+          metadataGap =
+            'protected resource metadata failed the RFC 9728 resource identifier check';
+        } else {
+          metadataGap = found.reason;
         }
+        checks.push(gradeAdvertises(unauth, requiredTier));
         checks.push(gradePrm(found));
       } catch (e) {
+        metadataGap = `protected resource metadata request failed: ${String(e)}`;
+        checks.push(gradeAdvertises(unauth, 'unknown'));
         checks.push(
           untestableCheck(
             PRM_ID,
             PRM_NAME,
             PRM_DESC,
-            `protected resource metadata request failed: ${String(e)}`,
+            metadataGap,
             DISCOVERY_REFERENCES
           )
         );
       }
     } catch (e) {
       const reason = `unauthenticated probe failed: ${String(e)}`;
+      metadataGap = reason;
       checks.push(
         untestableCheck(
           ADVERTISES_ID,
           ADVERTISES_NAME,
           ADVERTISES_DESC,
           reason,
-          DISCOVERY_REFERENCES
+          DISCOVERY_REFERENCES,
+          'WARNING'
         )
       );
       checks.push(
@@ -953,6 +1175,16 @@ validation under DPoP, and (optionally) the server-provided nonce flow.`;
           DISCOVERY_REFERENCES
         )
       );
+    } else if (metadataGap) {
+      checks.push(
+        untestableCheck(
+          CONSISTENCY_ID,
+          CONSISTENCY_NAME,
+          CONSISTENCY_DESC,
+          `cannot evaluate advertisement consistency: ${metadataGap}`,
+          DISCOVERY_REFERENCES
+        )
+      );
     } else {
       try {
         const unbound = await mintDpopBoundToken({
@@ -963,7 +1195,9 @@ validation under DPoP, and (optionally) the server-provided nonce flow.`;
           omitCnf: true
         });
         const unboundRes = await send(`Bearer ${unbound}`, undefined);
-        checks.push(gradeConsistency(saysDpopRequired, unboundRes));
+        checks.push(
+          gradeConsistency(requiredTier === true, publishedRequired, unboundRes)
+        );
       } catch (e) {
         checks.push(
           dpopCheck(

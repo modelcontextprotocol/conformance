@@ -170,35 +170,15 @@ describe('dpopChallengeError', () => {
   });
 });
 
+function genuineFailures(checks: ConformanceCheck[]): string[] {
+  return checks
+    .filter((c) => c.status === 'FAILURE' && !c.details?.untestable)
+    .map((c) => `${c.id}/${c.name}: ${c.errorMessage}`);
+}
+
 describe('DPoP server validation scenario', () => {
-  let compliant: ChildProcess | null = null;
-  let broken: ChildProcess | null = null;
-  let rejectAll: ChildProcess | null = null;
-  let nonceStrict: ChildProcess | null = null;
-  let nonceBuggy: ChildProcess | null = null;
-  let nonceFirst: ChildProcess | null = null;
-  let clockSkew: ChildProcess | null = null;
-  let bearerReject: ChildProcess | null = null;
-  let errorOverride: ChildProcess | null = null;
-  let prmOmit: ChildProcess | null = null;
-  let acceptUnbound: ChildProcess | null = null;
-  let prmNone: ChildProcess | null = null;
-  let omitAlgs: ChildProcess | null = null;
-  let ports: {
-    compliant: number;
-    broken: number;
-    rejectAll: number;
-    strict: number;
-    buggy: number;
-    nonceFirst: number;
-    clockSkew: number;
-    bearerReject: number;
-    errorOverride: number;
-    prmOmit: number;
-    acceptUnbound: number;
-    prmNone: number;
-    omitAlgs: number;
-  };
+  let procs: ChildProcess[] = [];
+  let ports: Record<string, number> = {};
   let savedEnv: { jwk?: string; issuer?: string };
 
   beforeAll(async () => {
@@ -217,24 +197,6 @@ describe('DPoP server validation scenario', () => {
     process.env.DPOP_ISSUER_PRIVATE_JWK = JSON.stringify(privateJwk);
     process.env.DPOP_ISSUER = ISSUER;
 
-    const [cp, bp, rp, sp, gp, nf, ck, br, eo, po, au, pn, oa] =
-      await freePorts(13);
-    ports = {
-      compliant: cp,
-      broken: bp,
-      rejectAll: rp,
-      strict: sp,
-      buggy: gp,
-      nonceFirst: nf,
-      clockSkew: ck,
-      bearerReject: br,
-      errorOverride: eo,
-      prmOmit: po,
-      acceptUnbound: au,
-      prmNone: pn,
-      omitAlgs: oa
-    };
-
     const issuerEnv = (port: number, extra: Record<string, string> = {}) => ({
       DPOP_ISSUER_JWK: JSON.stringify(publicJwk),
       DPOP_ISSUER: ISSUER,
@@ -242,81 +204,166 @@ describe('DPoP server validation scenario', () => {
       ...extra
     });
 
-    [
-      compliant,
-      broken,
-      rejectAll,
-      nonceStrict,
-      nonceBuggy,
-      nonceFirst,
-      clockSkew,
-      bearerReject,
-      errorOverride,
-      prmOmit,
-      acceptUnbound,
-      prmNone,
-      omitAlgs
-    ] = await Promise.all([
-      startServer(COMPLIANT, cp, issuerEnv(cp)),
-      startServer(BROKEN, bp, {}),
-      startServer(REJECT_ALL, rp, {}),
-      startServer(COMPLIANT, sp, issuerEnv(sp, { DPOP_REQUIRE_NONCE: '1' })),
-      startServer(
-        COMPLIANT,
-        gp,
-        issuerEnv(gp, { DPOP_REQUIRE_NONCE: '1', DPOP_NONCE_ACCEPT_ANY: '1' })
-      ),
-      startServer(
-        COMPLIANT,
-        nf,
-        issuerEnv(nf, { DPOP_REQUIRE_NONCE: '1', DPOP_NONCE_FIRST: '1' })
-      ),
-      startServer(
-        COMPLIANT,
-        ck,
-        issuerEnv(ck, { DPOP_CLOCK_OFFSET_SECONDS: '-30' })
-      ),
-      startServer(
-        COMPLIANT,
-        br,
-        issuerEnv(br, { DPOP_BEARER_REJECT_STATUS: '500' })
-      ),
-      startServer(
-        COMPLIANT,
-        eo,
-        issuerEnv(eo, { DPOP_ERROR_CODE_OVERRIDE: 'invalid_request' })
-      ),
-      startServer(COMPLIANT, po, issuerEnv(po, { DPOP_PRM_OMIT_FIELDS: '1' })),
-      startServer(
-        COMPLIANT,
-        au,
-        issuerEnv(au, { DPOP_ACCEPT_UNBOUND_BEARER: '1' })
-      ),
-      startServer(COMPLIANT, pn, issuerEnv(pn, { DPOP_PRM_INCLUDE_NONE: '1' })),
-      startServer(
-        COMPLIANT,
-        oa,
-        issuerEnv(oa, { DPOP_OMIT_CHALLENGE_ALGS: '1' })
-      )
-    ]);
-  }, 120000);
+    const fixtures: Array<{
+      name: string;
+      script: string;
+      env: Record<string, string>;
+    }> = [
+      { name: 'compliant', script: COMPLIANT, env: {} },
+      { name: 'broken', script: BROKEN, env: {} },
+      { name: 'rejectAll', script: REJECT_ALL, env: {} },
+      { name: 'strict', script: COMPLIANT, env: { DPOP_REQUIRE_NONCE: '1' } },
+      {
+        name: 'buggy',
+        script: COMPLIANT,
+        env: { DPOP_REQUIRE_NONCE: '1', DPOP_NONCE_ACCEPT_ANY: '1' }
+      },
+      {
+        name: 'nonceFirst',
+        script: COMPLIANT,
+        env: { DPOP_REQUIRE_NONCE: '1', DPOP_NONCE_FIRST: '1' }
+      },
+      {
+        name: 'clockSkew',
+        script: COMPLIANT,
+        env: { DPOP_CLOCK_OFFSET_SECONDS: '-30' }
+      },
+      {
+        name: 'bearerReject',
+        script: COMPLIANT,
+        env: { DPOP_BEARER_REJECT_STATUS: '500' }
+      },
+      {
+        name: 'errorOverride',
+        script: COMPLIANT,
+        env: { DPOP_ERROR_CODE_OVERRIDE: 'invalid_request' }
+      },
+      {
+        name: 'omitAlgsField',
+        script: COMPLIANT,
+        env: { DPOP_PRM_OMIT_ALGS: '1' }
+      },
+      {
+        name: 'omitRequired',
+        script: COMPLIANT,
+        env: { DPOP_PRM_OMIT_REQUIRED: '1' }
+      },
+      {
+        name: 'optionalDpop',
+        script: COMPLIANT,
+        env: {
+          DPOP_PRM_OMIT_REQUIRED: '1',
+          DPOP_ACCEPT_UNBOUND_BEARER: '1'
+        }
+      },
+      {
+        name: 'acceptUnbound',
+        script: COMPLIANT,
+        env: { DPOP_ACCEPT_UNBOUND_BEARER: '1' }
+      },
+      {
+        name: 'prmNone',
+        script: COMPLIANT,
+        env: { DPOP_PRM_INCLUDE_NONE: '1' }
+      },
+      {
+        name: 'omitAlgs',
+        script: COMPLIANT,
+        env: { DPOP_OMIT_CHALLENGE_ALGS: '1' }
+      },
+      {
+        name: 'prmDisabled',
+        script: COMPLIANT,
+        env: { DPOP_PRM_DISABLED: '1' }
+      },
+      {
+        name: 'wrongResource',
+        script: COMPLIANT,
+        env: { DPOP_PRM_WRONG_RESOURCE: '1' }
+      },
+      {
+        name: 'bearerOnly',
+        script: COMPLIANT,
+        env: { DPOP_BEARER_ONLY_CHALLENGE: '1' }
+      },
+      {
+        name: 'bearerOnlyOptional',
+        script: COMPLIANT,
+        env: {
+          DPOP_BEARER_ONLY_CHALLENGE: '1',
+          DPOP_PRM_OMIT_REQUIRED: '1',
+          DPOP_ACCEPT_UNBOUND_BEARER: '1'
+        }
+      },
+      {
+        name: 'emptyAlgs',
+        script: COMPLIANT,
+        env: { DPOP_PRM_EMPTY_ALGS: '1' }
+      },
+      {
+        name: 'algsNotArray',
+        script: COMPLIANT,
+        env: { DPOP_PRM_ALGS_NOT_ARRAY: '1' }
+      },
+      {
+        name: 'algNonString',
+        script: COMPLIANT,
+        env: { DPOP_PRM_ALG_NON_STRING: '1' }
+      },
+      {
+        name: 'requiredNotBoolean',
+        script: COMPLIANT,
+        env: {
+          DPOP_PRM_REQUIRED_NOT_BOOLEAN: '1',
+          DPOP_ACCEPT_UNBOUND_BEARER: '1'
+        }
+      },
+      {
+        name: 'prmHs256',
+        script: COMPLIANT,
+        env: { DPOP_PRM_INCLUDE_HS256: '1' }
+      },
+      {
+        name: 'unbound403',
+        script: COMPLIANT,
+        env: { DPOP_UNBOUND_REJECT_STATUS: '403' }
+      },
+      {
+        name: 'unbound500',
+        script: COMPLIANT,
+        env: { DPOP_UNBOUND_REJECT_STATUS: '500' }
+      },
+      {
+        name: 'wellKnown',
+        script: COMPLIANT,
+        env: { DPOP_OMIT_RESOURCE_METADATA: '1' }
+      },
+      {
+        name: 'prmRedirect',
+        script: COMPLIANT,
+        env: { DPOP_PRM_REDIRECT: '1' }
+      },
+      { name: 'prmHtml', script: COMPLIANT, env: { DPOP_PRM_HTML: '1' } }
+    ];
+
+    const allocated = await freePorts(fixtures.length);
+    ports = Object.fromEntries(
+      fixtures.map((fixture, i) => [fixture.name, allocated[i]])
+    );
+    procs = await Promise.all(
+      fixtures.map((fixture, i) => {
+        const port = allocated[i];
+        const env =
+          fixture.script === COMPLIANT
+            ? issuerEnv(port, fixture.env)
+            : fixture.env;
+        return startServer(fixture.script, port, env);
+      })
+    );
+  }, 180000);
 
   afterAll(async () => {
-    await Promise.all([
-      stopServer(compliant),
-      stopServer(broken),
-      stopServer(rejectAll),
-      stopServer(nonceStrict),
-      stopServer(nonceBuggy),
-      stopServer(nonceFirst),
-      stopServer(clockSkew),
-      stopServer(bearerReject),
-      stopServer(errorOverride),
-      stopServer(prmOmit),
-      stopServer(acceptUnbound),
-      stopServer(prmNone),
-      stopServer(omitAlgs)
-    ]);
+    await Promise.all(procs.map((proc) => stopServer(proc)));
     process.env.DPOP_ISSUER_PRIVATE_JWK = savedEnv.jwk;
     process.env.DPOP_ISSUER = savedEnv.issuer;
     if (savedEnv.jwk === undefined) delete process.env.DPOP_ISSUER_PRIVATE_JWK;
@@ -405,17 +452,20 @@ describe('DPoP server validation scenario', () => {
       'FAILURE'
     );
 
-    // No DPoP challenge at all.
-    expect(byId(checks, 'sep-1932-server-advertises-dpop')[0].status).toBe(
-      'FAILURE'
-    );
-    // Nothing serves protected resource metadata.
+    // Not a 401, so the challenge sentences are not exercised. The unconditional
+    // obligation is a SHOULD, so the untestable result is a WARNING.
+    const advertises = byId(checks, 'sep-1932-server-advertises-dpop')[0];
+    expect(advertises.status).toBe('WARNING');
+    expect(advertises.details?.untestable).toBe(true);
+    // Nothing serves protected resource metadata, and consistency must not
+    // invent a document in order to accuse the server.
     expect(
       byId(checks, 'sep-1932-server-prm-dpop')[0].details?.untestable
     ).toBe(true);
-    // Silent metadata and an accepted unbound Bearer token are consistent.
-    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
-      'INFO'
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.details?.untestable).toBe(true);
+    expect(consistency.errorMessage).toContain(
+      'cannot evaluate advertisement consistency'
     );
   }, 30000);
 
@@ -570,24 +620,251 @@ describe('DPoP server validation scenario', () => {
     );
   }, 30000);
 
-  it('reports FAILURE when protected resource metadata omits both DPoP fields', async () => {
+  it('reports FAILURE when protected resource metadata omits the algorithms field', async () => {
     const checks = await new DPoPServerValidationScenario().run(
-      testContext(url(ports.prmOmit))
+      testContext(url(ports.omitAlgsField))
     );
 
     const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
     expect(prm.status).toBe('FAILURE');
-    expect(prm.details?.untestable).toBeUndefined();
+    expect(prm.errorMessage).toBe(
+      'Protected resource metadata is missing dpop_signing_alg_values_supported'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop: Protected resource metadata is missing dpop_signing_alg_values_supported'
+    ]);
+  }, 30000);
+
+  it('treats an absent dpop_bound_access_tokens_required as not required', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.omitRequired))
+    );
+
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('SUCCESS');
+    expect(prm.details?.dpop_bound_access_tokens_required).toBeNull();
     const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
     expect(consistency.status).toBe('FAILURE');
     expect(consistency.errorMessage).toBe(
       'server requires DPoP but does not advertise it'
     );
+    expect(consistency.details?.dpop_bound_access_tokens_required).toBeNull();
+    expect(consistency.details?.wwwAuthenticate).toEqual(expect.any(String));
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-consistency/PrmConsistency: server requires DPoP but does not advertise it'
+    ]);
+  }, 30000);
 
-    const positive = byId(checks, 'sep-1932-server-validate-proof').find(
-      (c) => c.name === 'AcceptsValidProof'
+  it('passes when DPoP is supported but not required and bearer tokens are accepted', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.optionalDpop))
     );
-    expect(positive?.status).toBe('SUCCESS');
+
+    expect(byId(checks, 'sep-1932-server-prm-dpop')[0].status).toBe('SUCCESS');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('does not grade DPoP fields or consistency when metadata is unreachable', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmDisabled))
+    );
+
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.details?.untestable).toBe(true);
+    expect(prm.errorMessage).toContain('not 200');
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.details?.untestable).toBe(true);
+    expect(consistency.errorMessage).toContain(
+      'cannot evaluate advertisement consistency'
+    );
+    expect(consistency.errorMessage).not.toContain('does not advertise');
+    expect(byId(checks, 'sep-1932-server-advertises-dpop')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('rejects protected resource metadata whose resource identifier does not match', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.wrongResource))
+    );
+
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.details?.untestable).toBeUndefined();
+    expect(prm.errorMessage).toContain('https://attacker.example/mcp');
+    expect(prm.errorMessage).toContain(url(ports.wrongResource));
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.details?.untestable).toBe(true);
+    expect(consistency.errorMessage).toContain('resource identifier check');
+    expect(genuineFailures(checks)).toEqual([
+      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
+    ]);
+  }, 30000);
+
+  it('fails a required-DPoP server whose 401 has no DPoP challenge', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.bearerOnly))
+    );
+
+    const advertises = byId(checks, 'sep-1932-server-advertises-dpop')[0];
+    expect(advertises.status).toBe('FAILURE');
+    expect(advertises.errorMessage).toBe(
+      'Protected resource metadata sets dpop_bound_access_tokens_required to true, but the HTTP 401 did not include a DPoP challenge'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-dpop')[0].status).toBe('SUCCESS');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-advertises-dpop/AdvertisesDpop: Protected resource metadata sets dpop_bound_access_tokens_required to true, but the HTTP 401 did not include a DPoP challenge'
+    ]);
+  }, 30000);
+
+  it('warns when an optional-DPoP server answers 401 with only a Bearer challenge', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.bearerOnlyOptional))
+    );
+
+    const advertises = byId(checks, 'sep-1932-server-advertises-dpop')[0];
+    expect(advertises.status).toBe('WARNING');
+    expect(advertises.errorMessage).toBe(
+      'HTTP 401 did not include a DPoP challenge'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-dpop')[0].status).toBe('SUCCESS');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('reports an empty algorithms array separately from a missing field', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.emptyAlgs))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.errorMessage).toBe('dpop_signing_alg_values_supported is empty');
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop: dpop_signing_alg_values_supported is empty'
+    ]);
+  }, 30000);
+
+  it('reports a non-array algorithms value as malformed', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.algsNotArray))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.errorMessage).toBe(
+      'dpop_signing_alg_values_supported is malformed: expected a JSON array'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop: dpop_signing_alg_values_supported is malformed: expected a JSON array'
+    ]);
+  }, 30000);
+
+  it('reports a non-string algorithms entry as malformed', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.algNonString))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.errorMessage).toBe(
+      'dpop_signing_alg_values_supported is malformed: every entry must be a non-empty string'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop: dpop_signing_alg_values_supported is malformed: every entry must be a non-empty string'
+    ]);
+  }, 30000);
+
+  it('reports a non-boolean dpop_bound_access_tokens_required as malformed', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.requiredNotBoolean))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.errorMessage).toBe(
+      'dpop_bound_access_tokens_required is malformed: expected a boolean'
+    );
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop: dpop_bound_access_tokens_required is malformed: expected a boolean'
+    ]);
+  }, 30000);
+
+  it('reports FAILURE when protected resource metadata lists HS256', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmHs256))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.details?.forbidden).toEqual(['HS256']);
+    expect(genuineFailures(checks).map((line) => line.split(':')[0])).toEqual([
+      'sep-1932-server-prm-dpop/PrmDpop'
+    ]);
+  }, 30000);
+
+  it('counts HTTP 403 as rejection when metadata says DPoP is required', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.unbound403))
+    );
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.status).toBe('SUCCESS');
+    expect(consistency.details?.statusCode).toBe(403);
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('does not count HTTP 500 as rejection of an unbound Bearer token', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.unbound500))
+    );
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.status).toBe('FAILURE');
+    expect(consistency.errorMessage).toBe(
+      'The server did not reject an unbound Bearer token (HTTP 500)'
+    );
+    expect(genuineFailures(checks)).toEqual([
+      'sep-1932-server-prm-consistency/PrmConsistency: The server did not reject an unbound Bearer token (HTTP 500)'
+    ]);
+  }, 30000);
+
+  it('loads protected resource metadata from the well-known URL when the challenge omits resource_metadata', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.wellKnown))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('SUCCESS');
+    expect(prm.details?.source).toBe('well-known-path');
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('follows a redirect to protected resource metadata', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmRedirect))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('SUCCESS');
+    expect(prm.details?.source).toBe('resource_metadata');
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('does not grade a metadata response whose Content-Type is not application/json', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmHtml))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.details?.untestable).toBe(true);
+    expect(prm.errorMessage).toContain('Content-Type');
+    expect(prm.errorMessage).toContain('text/html');
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.details?.untestable).toBe(true);
+    expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
   it('reports FAILURE when metadata requires DPoP but an unbound Bearer token is accepted', async () => {
