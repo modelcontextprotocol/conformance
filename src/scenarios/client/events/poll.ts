@@ -146,7 +146,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
       `the client sent ${ticks.length} poll(s) for ${REPLAY_TYPE}, and this check needs poll ${n + 1}`;
     const checks: ConformanceCheck[] = [];
 
-    const DRAIN_ID = 'sep-9999-client-poll-drain-on-has-more';
+    const DRAIN_ID = 'sep-3415-client-poll-drain-on-has-more';
     const DRAIN_DESC =
       'When `hasMore` is true the client SHOULD poll again immediately, ignoring `nextPollMs`.';
     checks.push(
@@ -162,7 +162,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const RESPECT_ID = 'sep-9999-client-poll-respects-next-poll-ms';
+    const RESPECT_ID = 'sep-3415-client-poll-respects-next-poll-ms';
     const RESPECT_DESC =
       '`nextPollMs` lets the server control polling frequency. Clients SHOULD respect it.';
     checks.push(
@@ -178,7 +178,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const FLOOR_ID = 'sep-9999-client-poll-floor';
+    const FLOOR_ID = 'sep-3415-client-poll-floor';
     const FLOOR_DESC =
       'Clients SHOULD apply a configurable floor (default 1000 ms) to guard against a misbehaving server inducing a tight loop.';
     checks.push(
@@ -194,7 +194,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const TRUNC_ID = 'sep-9999-client-truncated-persists-fresh-cursor';
+    const TRUNC_ID = 'sep-3415-client-truncated-persists-fresh-cursor';
     const TRUNC_DESC =
       '`truncated: true` always implies a possible gap; clients SHOULD treat it as such and persist the fresh cursor.';
     checks.push(
@@ -209,7 +209,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const RELIST_ID = 'sep-9999-client-relist-on-list-changed';
+    const RELIST_ID = 'sep-3415-client-relist-on-list-changed';
     const RELIST_DESC =
       'On `notifications/events/list_changed` the client SHOULD re-call `events/list` to refresh its event type registry.';
     const sentAt = this.listChangedSentAt;
@@ -230,7 +230,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const NULL_ID = 'sep-9999-client-null-cursor-not-replayed';
+    const NULL_ID = 'sep-3415-client-null-cursor-not-replayed';
     const NULL_DESC =
       'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null`.';
     const later = cursorless.slice(1);
@@ -252,7 +252,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
-    const ABSENT_ID = 'sep-9999-client-cursor-absent-tolerated';
+    const ABSENT_ID = 'sep-3415-client-cursor-absent-tolerated';
     const ABSENT_DESC =
       'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`; a receiver MUST NOT fail because it is missing.';
     checks.push(

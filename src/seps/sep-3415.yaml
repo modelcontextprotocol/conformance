@@ -138,7 +138,7 @@
 #       exercised in a single run; EVENTS_RECEIVER_WELL_KNOWN=0 withholds it.
 #
 #   Client scenarios under src/scenarios/client/events/ (#540) emit the ten
-#   sep-9999-client-* rows. The harness runs the events server there and grades
+#   sep-3415-client-* rows. The harness runs the events server there and grades
 #   what the client sends:
 #     poll.ts (events-client-poll), 7 rows — drain, nextPollMs, the floor, the
 #       fresh cursor after truncated, null and absent cursors, re-list.
@@ -148,7 +148,7 @@
 #       the same key, and the null cursor on resubscribe.
 #     no-extension.ts (events-client-no-extension), 1 row — no events/* to a
 #       server that did not declare the extension.
-#   sep-9999-client-null-cursor-not-replayed is emitted in all three delivery
+#   sep-3415-client-null-cursor-not-replayed is emitted in all three delivery
 #   modes, since each has its own resume path. Negative controls for these are
 #   src/scenarios/client/events/events.test.ts.
 #
@@ -729,25 +729,25 @@ requirements:
     text: 'Servers SHOULD keep event payloads minimal — enough to identify and triage the event, not the full content.'
 
   # === Client obligations (src/scenarios/client/events/, #540) ===
-  - check: sep-9999-client-no-events-without-extension
+  - check: sep-3415-client-no-events-without-extension
     text: 'All `events/*` requests are client-initiated, so a client MUST NOT send them to a server that has not advertised the extension.'
-  - check: sep-9999-client-relist-on-list-changed
+  - check: sep-3415-client-relist-on-list-changed
     text: 'The client SHOULD re-call `events/list` to refresh its event type registry.'
-  - check: sep-9999-client-poll-drain-on-has-more
+  - check: sep-3415-client-poll-drain-on-has-more
     text: 'The client SHOULD poll again immediately (ignoring `nextPollMs`) to drain the backlog.'
-  - check: sep-9999-client-poll-respects-next-poll-ms
+  - check: sep-3415-client-poll-respects-next-poll-ms
     text: '`nextPollMs` allows servers to control polling frequency dynamically. Clients SHOULD respect it.'
-  - check: sep-9999-client-poll-floor
+  - check: sep-3415-client-poll-floor
     text: 'Clients SHOULD apply a configurable floor (default 1000 ms) to guard against a misbehaving server inducing a tight loop.'
-  - check: sep-9999-client-stream-reconnect-with-cursor
+  - check: sep-3415-client-stream-reconnect-with-cursor
     text: 'A client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.'
-  - check: sep-9999-client-refresh-before-expiry
+  - check: sep-3415-client-refresh-before-expiry
     text: 'Unless granted no expiry, the client MUST re-call `events/subscribe` with the same subscription key before `refreshBefore` to keep the subscription alive.'
-  - check: sep-9999-client-null-cursor-not-replayed
+  - check: sep-3415-client-null-cursor-not-replayed
     text: 'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null` (start from now).'
-  - check: sep-9999-client-cursor-absent-tolerated
+  - check: sep-3415-client-cursor-absent-tolerated
     text: 'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`: a receiver MUST NOT fail because it is missing.'
-  - check: sep-9999-client-truncated-persists-fresh-cursor
+  - check: sep-3415-client-truncated-persists-fresh-cursor
     text: '`truncated: true` always implies a possible gap; clients SHOULD treat it as such and persist the fresh cursor.'
 
   # ==========================================================================
@@ -758,7 +758,7 @@ requirements:
 
   # --- Client / host obligations ---
   - text: 'Clients SHOULD NOT apply their default request timeout to `events/stream`; the heartbeat is the liveness signal.'
-    excluded: client-side obligation; observing it needs a window longer than any client's default request timeout (60s in the TypeScript SDK), and the reconnect half of the sentence is declared as sep-9999-client-stream-reconnect-with-cursor (modelcontextprotocol/conformance#540)
+    excluded: client-side obligation; observing it needs a window longer than any client's default request timeout (60s in the TypeScript SDK), and the reconnect half of the sentence is declared as sep-3415-client-stream-reconnect-with-cursor (modelcontextprotocol/conformance#540)
   - text: 'Even with no expiry, clients SHOULD still re-call `events/subscribe` (and `events/list`) occasionally.'
     excluded: client-side obligation; "occasionally" has no window a finite run can observe
   - text: "Client SDKs SHOULD generate the secret on the application's behalf rather than expose an interface that encourages hand-picked values, from a CSPRNG by default."

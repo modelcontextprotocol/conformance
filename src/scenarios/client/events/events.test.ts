@@ -90,48 +90,48 @@ describe.concurrent('events client scenarios', () => {
     [
       'noDrainOnHasMore',
       'events-client-poll',
-      ['sep-9999-client-poll-drain-on-has-more']
+      ['sep-3415-client-poll-drain-on-has-more']
     ],
     [
       'ignoresNextPollMs',
       'events-client-poll',
-      ['sep-9999-client-poll-respects-next-poll-ms']
+      ['sep-3415-client-poll-respects-next-poll-ms']
     ],
-    ['noPollFloor', 'events-client-poll', ['sep-9999-client-poll-floor']],
+    ['noPollFloor', 'events-client-poll', ['sep-3415-client-poll-floor']],
     [
       'dropsTruncatedCursor',
       'events-client-poll',
-      ['sep-9999-client-truncated-persists-fresh-cursor']
+      ['sep-3415-client-truncated-persists-fresh-cursor']
     ],
     [
       'replaysNullCursor',
       'events-client-poll',
-      ['sep-9999-client-null-cursor-not-replayed']
+      ['sep-3415-client-null-cursor-not-replayed']
     ],
     [
       'failsOnAbsentCursor',
       'events-client-poll',
-      ['sep-9999-client-cursor-absent-tolerated']
+      ['sep-3415-client-cursor-absent-tolerated']
     ],
     [
       'ignoresListChanged',
       'events-client-poll',
-      ['sep-9999-client-relist-on-list-changed']
+      ['sep-3415-client-relist-on-list-changed']
     ],
     [
       'refreshesAfterExpiry',
       'events-client-webhook',
-      ['sep-9999-client-refresh-before-expiry']
+      ['sep-3415-client-refresh-before-expiry']
     ],
     [
       'replaysNullCursor',
       'events-client-webhook',
-      ['sep-9999-client-null-cursor-not-replayed']
+      ['sep-3415-client-null-cursor-not-replayed']
     ],
     [
       'replaysNullCursor',
       'events-client-push',
-      ['sep-9999-client-null-cursor-not-replayed']
+      ['sep-3415-client-null-cursor-not-replayed']
     ],
     // A client that never reconnects also never sends a reconnect cursor, so
     // the null-cursor row reports untestable alongside the reconnect row.
@@ -139,14 +139,14 @@ describe.concurrent('events client scenarios', () => {
       'neverReconnects',
       'events-client-push',
       [
-        'sep-9999-client-null-cursor-not-replayed',
-        'sep-9999-client-stream-reconnect-with-cursor'
+        'sep-3415-client-null-cursor-not-replayed',
+        'sep-3415-client-stream-reconnect-with-cursor'
       ]
     ],
     [
       'ignoresExtensionGate',
       'events-client-no-extension',
-      ['sep-9999-client-no-events-without-extension']
+      ['sep-3415-client-no-events-without-extension']
     ]
   ] as const)(
     '%s against %s turns exactly %j red',

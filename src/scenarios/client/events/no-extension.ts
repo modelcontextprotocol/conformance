@@ -42,7 +42,7 @@ export class EventsClientNoExtensionScenario extends EventsClientScenarioBase {
   }
 
   getChecks(): ConformanceCheck[] {
-    const ID = 'sep-9999-client-no-events-without-extension';
+    const ID = 'sep-3415-client-no-events-without-extension';
     const DESC =
       'All `events/*` requests are client-initiated, so a client MUST NOT send them to a server that has not advertised the extension.';
     if (!this.clientConnected()) {

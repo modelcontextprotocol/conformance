@@ -72,7 +72,7 @@ export class EventsClientWebhookScenario extends EventsClientScenarioBase {
     const subs = this.requestsFor(EVENTS_SUBSCRIBE_METHOD, REPLAY_TYPE);
     const grants = this.grants.get(REPLAY_TYPE) ?? [];
 
-    const REFRESH_ID = 'sep-9999-client-refresh-before-expiry';
+    const REFRESH_ID = 'sep-3415-client-refresh-before-expiry';
     const REFRESH_DESC =
       'Unless granted no expiry, the client MUST re-call `events/subscribe` with the same subscription key before `refreshBefore` to keep the subscription alive.';
     if (subs.length < 2) {
@@ -114,7 +114,7 @@ export class EventsClientWebhookScenario extends EventsClientScenarioBase {
       );
     }
 
-    const NULL_ID = 'sep-9999-client-null-cursor-not-replayed';
+    const NULL_ID = 'sep-3415-client-null-cursor-not-replayed';
     const NULL_DESC =
       'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null`.';
     const later = this.requestsFor(

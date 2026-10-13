@@ -11,7 +11,7 @@
  * reconnect inside the run window only, as a WARNING. A client that assumes
  * the 30s maximum would need over a minute to notice. "Do not apply the
  * default request timeout to events/stream" needs a window longer than any
- * client's default timeout, and stays excluded in sep-9999.yaml for now
+ * client's default timeout, and stays excluded in sep-3415.yaml for now
  * (modelcontextprotocol/conformance#540).
  */
 
@@ -120,7 +120,7 @@ export class EventsClientPushScenario extends EventsClientScenarioBase {
     const checks: ConformanceCheck[] = [];
     const ticks = this.requestsFor(EVENTS_STREAM_METHOD, REPLAY_TYPE);
 
-    const RECONNECT_ID = 'sep-9999-client-stream-reconnect-with-cursor';
+    const RECONNECT_ID = 'sep-3415-client-stream-reconnect-with-cursor';
     const RECONNECT_DESC =
       'A client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.';
     const expected = this.lastCursor.get(REPLAY_TYPE);
@@ -156,7 +156,7 @@ export class EventsClientPushScenario extends EventsClientScenarioBase {
       );
     }
 
-    const NULL_ID = 'sep-9999-client-null-cursor-not-replayed';
+    const NULL_ID = 'sep-3415-client-null-cursor-not-replayed';
     const NULL_DESC =
       'A client receiving `cursor: null` MUST NOT attempt to persist or replay from it; on reconnect/resubscribe it sends `cursor: null`.';
     const later = this.requestsFor(EVENTS_STREAM_METHOD, CURSORLESS_TYPE).slice(
