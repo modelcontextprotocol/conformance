@@ -63,13 +63,13 @@ const CONFORMANT: EventsFixtureOptions = {
 describe('events capability declaration', () => {
   test('an object declaration passes; a boolean one fails rather than skipping', async () => {
     const ok = await checksFor(discovery(), CONFORMANT);
-    expect(ok.get('sep-9999-capability-events-object')?.status).toBe('SUCCESS');
+    expect(ok.get('sep-3415-capability-events-object')?.status).toBe('SUCCESS');
 
     const broken = await checksFor(discovery(), {
       ...CONFORMANT,
       capability: true
     });
-    const check = broken.get('sep-9999-capability-events-object');
+    const check = broken.get('sep-3415-capability-events-object');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('a boolean');
   });
@@ -80,11 +80,11 @@ describe('events capability declaration', () => {
     });
     // Every events rule is inapplicable to a server that does not do events,
     // except the one saying what such a server answers. It answered it.
-    expect(checks.get('sep-9999-fallback-method-not-found')?.status).toBe(
+    expect(checks.get('sep-3415-fallback-method-not-found')?.status).toBe(
       'SUCCESS'
     );
     for (const check of checks.values()) {
-      if (check.id === 'sep-9999-fallback-method-not-found') continue;
+      if (check.id === 'sep-3415-fallback-method-not-found') continue;
       expect(check.status, check.id).toBe('SKIPPED');
     }
   });
@@ -93,7 +93,7 @@ describe('events capability declaration', () => {
     // A row that vanishes on some servers makes pass counts incomparable
     // between them, which is why every path emits the whole set.
     const checks = await checksFor(discovery(), CONFORMANT);
-    const check = checks.get('sep-9999-fallback-method-not-found');
+    const check = checks.get('sep-3415-fallback-method-not-found');
     expect(check).toBeDefined();
     expect(check?.status).toBe('SKIPPED');
     expect(check?.errorMessage).toContain('declares the extension');
@@ -103,7 +103,7 @@ describe('events capability declaration', () => {
     const checks = await checksFor(discovery(), {
       listError: { code: -32000, message: 'nope' }
     });
-    const check = checks.get('sep-9999-fallback-method-not-found');
+    const check = checks.get('sep-3415-fallback-method-not-found');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('-32601 MethodNotFound');
   });
@@ -113,12 +113,12 @@ describe('events capability declaration', () => {
       ...CONFORMANT,
       capability: {}
     });
-    expect(empty.get('sep-9999-capability-empty-settings')?.status).toBe(
+    expect(empty.get('sep-3415-capability-empty-settings')?.status).toBe(
       'SUCCESS'
     );
 
     const populated = await checksFor(discovery(), CONFORMANT);
-    const check = populated.get('sep-9999-capability-empty-settings');
+    const check = populated.get('sep-3415-capability-empty-settings');
     expect(check?.status).toBe('SKIPPED');
     expect(check?.errorMessage).toContain('listChanged');
   });
@@ -130,24 +130,24 @@ describe('events capability declaration', () => {
     const checks = await checksFor(discovery(), {
       descriptors: [descriptor()]
     });
-    const cap = checks.get('sep-9999-capability-events-object');
+    const cap = checks.get('sep-3415-capability-events-object');
     expect(cap?.status).toBe('FAILURE');
     expect(cap?.errorMessage).toContain('declares no `capabilities.extensions');
     expect(cap?.errorMessage).toContain('unreachable');
 
     // And the rest of the scenario is still graded, not abandoned.
-    expect(checks.get('sep-9999-list-implemented')?.status).toBe('SUCCESS');
-    expect(checks.get('sep-9999-descriptor-name')?.status).toBe('SUCCESS');
+    expect(checks.get('sep-3415-list-implemented')?.status).toBe('SUCCESS');
+    expect(checks.get('sep-3415-descriptor-name')?.status).toBe('SUCCESS');
   });
 
   test('the poll scenario likewise grades an undeclared-but-serving server', async () => {
     const checks = await checksFor(poll(), { descriptors: [descriptor()] });
-    expect(checks.get('sep-9999-poll-implemented')?.status).toBe('SUCCESS');
+    expect(checks.get('sep-3415-poll-implemented')?.status).toBe('SUCCESS');
 
     const skipped = await checksFor(poll(), {
       listError: { code: -32601, message: 'Method not found' }
     });
-    expect(skipped.get('sep-9999-poll-implemented')?.status).toBe('SKIPPED');
+    expect(skipped.get('sep-3415-poll-implemented')?.status).toBe('SKIPPED');
   });
 
   test('a non-boolean listChanged fails', async () => {
@@ -155,7 +155,7 @@ describe('events capability declaration', () => {
       ...CONFORMANT,
       capability: { listChanged: 'yes' }
     });
-    const check = checks.get('sep-9999-capability-list-changed-flag');
+    const check = checks.get('sep-3415-capability-list-changed-flag');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('a string');
   });
@@ -167,12 +167,12 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       descriptors: [descriptor({ name: undefined })]
     });
-    expect(checks.get('sep-9999-descriptor-name')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-descriptor-name')?.status).toBe('FAILURE');
   });
 
   test('an empty delivery array fails; a valid subset passes', async () => {
     const ok = await checksFor(discovery(), CONFORMANT);
-    expect(ok.get('sep-9999-descriptor-delivery-subset')?.status).toBe(
+    expect(ok.get('sep-3415-descriptor-delivery-subset')?.status).toBe(
       'SUCCESS'
     );
 
@@ -180,7 +180,7 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       descriptors: [descriptor({ delivery: [] })]
     });
-    const check = broken.get('sep-9999-descriptor-delivery-subset');
+    const check = broken.get('sep-3415-descriptor-delivery-subset');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('non-empty');
   });
@@ -190,7 +190,7 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       descriptors: [descriptor({ delivery: ['poll', 'carrier-pigeon'] })]
     });
-    const check = checks.get('sep-9999-descriptor-delivery-subset');
+    const check = checks.get('sep-3415-descriptor-delivery-subset');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('carrier-pigeon');
   });
@@ -200,7 +200,7 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       descriptors: [descriptor({ payloadSchema: undefined })]
     });
-    expect(checks.get('sep-9999-descriptor-payload-schema')?.status).toBe(
+    expect(checks.get('sep-3415-descriptor-payload-schema')?.status).toBe(
       'FAILURE'
     );
   });
@@ -210,7 +210,7 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       descriptors: []
     });
-    const check = checks.get('sep-9999-descriptor-name');
+    const check = checks.get('sep-3415-descriptor-name');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('Not testable');
     expect(check?.details?.untestable).toBe(true);
@@ -221,7 +221,7 @@ describe('events/list descriptors', () => {
       ...CONFORMANT,
       listError: { code: -32601, message: 'Method not found' }
     });
-    const check = checks.get('sep-9999-list-implemented');
+    const check = checks.get('sep-3415-list-implemented');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('declares `capabilities.extensions');
   });
@@ -230,13 +230,13 @@ describe('events/list descriptors', () => {
 describe('events error codes', () => {
   test('an unknown event name answering -32011 passes, -32014 fails', async () => {
     const ok = await checksFor(discovery(), CONFORMANT);
-    expect(ok.get('sep-9999-error-not-found')?.status).toBe('SUCCESS');
+    expect(ok.get('sep-3415-error-not-found')?.status).toBe('SUCCESS');
 
     const broken = await checksFor(discovery(), {
       ...CONFORMANT,
       unknownNameCode: -32014
     });
-    const check = broken.get('sep-9999-error-not-found');
+    const check = broken.get('sep-3415-error-not-found');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('-32014 Unsupported` is for');
   });
@@ -246,7 +246,7 @@ describe('events error codes', () => {
       ...CONFORMANT,
       unknownNameCode: -1
     });
-    const check = checks.get('sep-9999-error-server-range');
+    const check = checks.get('sep-3415-error-server-range');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('outside');
   });
@@ -255,7 +255,7 @@ describe('events error codes', () => {
 describe('events/poll response shape', () => {
   test('nextPollSeconds is caught and named as the pre-rename field', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
-    expect(ok.get('sep-9999-poll-next-poll-ms')?.status).toBe('SUCCESS');
+    expect(ok.get('sep-3415-poll-next-poll-ms')?.status).toBe('SUCCESS');
 
     // Gap G31: mcpkit still ships this. The check has to name the rename, or a
     // reader of the red run cannot tell it from a server that omits the field.
@@ -265,7 +265,7 @@ describe('events/poll response shape', () => {
         pollResult({ nextPollMs: undefined, nextPollSeconds: 30 })
       ]
     });
-    const check = legacy.get('sep-9999-poll-next-poll-ms');
+    const check = legacy.get('sep-3415-poll-next-poll-ms');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('nextPollSeconds');
     expect(check?.errorMessage).toContain('197c32b4');
@@ -276,7 +276,7 @@ describe('events/poll response shape', () => {
       ...CONFORMANT,
       pollResponses: [pollResult({ events: null })]
     });
-    expect(checks.get('sep-9999-poll-events-array')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-poll-events-array')?.status).toBe('FAILURE');
   });
 
   test('a numeric cursor fails the opaque-string check', async () => {
@@ -284,8 +284,8 @@ describe('events/poll response shape', () => {
       ...CONFORMANT,
       pollResponses: [pollResult({ cursor: 42 })]
     });
-    expect(checks.get('sep-9999-poll-response-cursor')?.status).toBe('FAILURE');
-    expect(checks.get('sep-9999-cursor-opaque')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-poll-response-cursor')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-cursor-opaque')?.status).toBe('FAILURE');
   });
 
   test('replaying history for a null cursor fails start-from-now', async () => {
@@ -293,7 +293,7 @@ describe('events/poll response shape', () => {
       ...CONFORMANT,
       pollResponses: [pollResult({ events: [occurrence()] })]
     });
-    const check = checks.get('sep-9999-cursor-null-starts-from-now');
+    const check = checks.get('sep-3415-cursor-null-starts-from-now');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('start from now');
   });
@@ -302,7 +302,7 @@ describe('events/poll response shape', () => {
 describe('events/poll cursor lifecycle', () => {
   test('a quiet poll that drops the cursor fails advancement', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
-    expect(ok.get('sep-9999-cursor-advances-when-quiet')?.status).toBe(
+    expect(ok.get('sep-3415-cursor-advances-when-quiet')?.status).toBe(
       'SUCCESS'
     );
 
@@ -310,7 +310,7 @@ describe('events/poll cursor lifecycle', () => {
       ...CONFORMANT,
       pollResponses: [pollResult(), pollResult({ cursor: 7 })]
     });
-    expect(broken.get('sep-9999-cursor-advances-when-quiet')?.status).toBe(
+    expect(broken.get('sep-3415-cursor-advances-when-quiet')?.status).toBe(
       'FAILURE'
     );
   });
@@ -320,7 +320,7 @@ describe('events/poll cursor lifecycle', () => {
       ...CONFORMANT,
       pollResponses: [pollResult(), pollResult({ cursor: null })]
     });
-    const check = checks.get('sep-9999-cursor-consistency');
+    const check = checks.get('sep-3415-cursor-consistency');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('branch once');
   });
@@ -336,7 +336,7 @@ describe('events/poll cursor lifecycle', () => {
         { error: { code: -32602, message: 'InvalidParams: cursor required' } }
       ]
     });
-    const check = checks.get('sep-9999-cursor-absent-equals-null');
+    const check = checks.get('sep-3415-cursor-absent-equals-null');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('absent cursor means');
   });
@@ -351,7 +351,7 @@ describe('events/poll cursor lifecycle', () => {
         pollResult({ truncated: true, cursor: null })
       ]
     });
-    const check = checks.get('sep-9999-truncated-returns-fresh-cursor');
+    const check = checks.get('sep-3415-truncated-returns-fresh-cursor');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('no fresh position');
   });
@@ -360,33 +360,33 @@ describe('events/poll cursor lifecycle', () => {
 describe('events/poll error contract', () => {
   test('a poll omitting name must not return a result', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
-    expect(ok.get('sep-9999-poll-one-subscription-per-request')?.status).toBe(
+    expect(ok.get('sep-3415-poll-one-subscription-per-request')?.status).toBe(
       'SUCCESS'
     );
   });
 
   test('the -32602 error-table row carries the same verdict as the rule', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
-    const row = ok.get('sep-9999-error-invalid-params');
+    const row = ok.get('sep-3415-error-invalid-params');
     expect(row?.status).toBe('SUCCESS');
-    expect(row?.details?.gradedBy).toBe('sep-9999-poll-invalid-arguments');
+    expect(row?.details?.gradedBy).toBe('sep-3415-poll-invalid-arguments');
 
     const broken = await checksFor(poll(), {
       ...CONFORMANT,
       invalidArgsCode: -32011
     });
-    expect(broken.get('sep-9999-error-invalid-params')?.status).toBe('FAILURE');
+    expect(broken.get('sep-3415-error-invalid-params')?.status).toBe('FAILURE');
   });
 
   test('wrong-typed arguments answering -32011 fails the invalid-params check', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
-    expect(ok.get('sep-9999-poll-invalid-arguments')?.status).toBe('SUCCESS');
+    expect(ok.get('sep-3415-poll-invalid-arguments')?.status).toBe('SUCCESS');
 
     const broken = await checksFor(poll(), {
       ...CONFORMANT,
       invalidArgsCode: -32011
     });
-    const check = broken.get('sep-9999-poll-invalid-arguments');
+    const check = broken.get('sep-3415-poll-invalid-arguments');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('expected -32602');
   });
@@ -398,7 +398,7 @@ describe('events/poll error contract', () => {
       descriptors: [descriptor(), pushOnly],
       pollByName: { 'push.only': pollResult() }
     });
-    const check = broken.get('sep-9999-poll-mode-unsupported');
+    const check = broken.get('sep-3415-poll-mode-unsupported');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('does not advertise');
 
@@ -409,12 +409,12 @@ describe('events/poll error contract', () => {
         'push.only': { error: { code: -32014, message: 'Unsupported' } }
       }
     });
-    expect(ok.get('sep-9999-poll-mode-unsupported')?.status).toBe('SUCCESS');
+    expect(ok.get('sep-3415-poll-mode-unsupported')?.status).toBe('SUCCESS');
   });
 
   test('every type offering poll reports the unsupported-mode check untestable', async () => {
     const checks = await checksFor(poll(), CONFORMANT);
-    const check = checks.get('sep-9999-poll-mode-unsupported');
+    const check = checks.get('sep-3415-poll-mode-unsupported');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('Not testable');
   });
@@ -423,7 +423,7 @@ describe('events/poll error contract', () => {
 describe('EventOccurrence shape', () => {
   test('a quiet server reports the occurrence checks untestable, never green', async () => {
     const checks = await checksFor(poll(), CONFORMANT);
-    const check = checks.get('sep-9999-occurrence-event-id');
+    const check = checks.get('sep-3415-occurrence-event-id');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('Not testable');
   });
@@ -438,7 +438,7 @@ describe('EventOccurrence shape', () => {
         })
       ]
     });
-    expect(checks.get('sep-9999-occurrence-timestamp')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-occurrence-timestamp')?.status).toBe('FAILURE');
   });
 
   test('a repeated eventId within one batch warns', async () => {
@@ -451,7 +451,7 @@ describe('EventOccurrence shape', () => {
         })
       ]
     });
-    const check = checks.get('sep-9999-occurrence-event-id-from-upstream');
+    const check = checks.get('sep-3415-occurrence-event-id-from-upstream');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('dedup');
   });
@@ -466,6 +466,6 @@ describe('EventOccurrence shape', () => {
         })
       ]
     });
-    expect(checks.get('sep-9999-occurrence-data')?.status).toBe('FAILURE');
+    expect(checks.get('sep-3415-occurrence-data')?.status).toBe('FAILURE');
   });
 });

@@ -5,8 +5,8 @@
  * Extracted against the merged design sketch on `main` of
  * modelcontextprotocol/experimental-ext-triggers-events (merged 2026-09-08).
  * Each check's verbatim excerpt lives next to its check ID in
- * src/seps/sep-9999.yaml, and 9999 is a placeholder SEP number — see that
- * file's header before renaming anything here.
+ * src/seps/sep-3415.yaml. The rows still quote the sketch while they are
+ * re-extracted against SEP-3415; see that file's header.
  *
  * One thing about Events differs from every other extension suite here and is
  * worth knowing before reading the scenarios:

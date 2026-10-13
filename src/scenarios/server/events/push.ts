@@ -3,8 +3,7 @@
  *
  * Scored against the merged design sketch on `main` of
  * modelcontextprotocol/experimental-ext-triggers-events. Each check's verbatim
- * excerpt lives beside its id in src/seps/sep-9999.yaml, where 9999 is a
- * placeholder SEP number.
+ * excerpt lives beside its id in src/seps/sep-3415.yaml.
  *
  * Two things shape what this scenario can grade.
  *
@@ -84,23 +83,23 @@ const TERMINATE_MS = 5000;
 const HEARTBEAT_TOLERANCE_MS = 2000;
 
 const STREAM_IDS = [
-  'sep-9999-stream-implemented',
-  'sep-9999-stream-error-before-open',
-  'sep-9999-stream-active-confirmation',
-  'sep-9999-stream-subscription-id-meta',
-  'sep-9999-stream-event-notification',
-  'sep-9999-stream-error-is-recoverable',
-  'sep-9999-stream-terminated-ends-subscription',
-  'sep-9999-stream-gap-resends-active',
-  'sep-9999-stream-heartbeat-required',
-  'sep-9999-stream-heartbeat-carries-cursor',
-  'sep-9999-stream-heartbeat-interval',
-  'sep-9999-stream-heartbeat-not-sse-comment',
-  'sep-9999-stream-final-result-shape',
-  'sep-9999-stream-final-result-timing',
-  'sep-9999-stream-cancel-stops-delivery',
-  'sep-9999-stream-exempt-from-concurrency-cap',
-  'sep-9999-stream-carries-only-event-notifications'
+  'sep-3415-stream-implemented',
+  'sep-3415-stream-error-before-open',
+  'sep-3415-stream-active-confirmation',
+  'sep-3415-stream-subscription-id-meta',
+  'sep-3415-stream-event-notification',
+  'sep-3415-stream-error-is-recoverable',
+  'sep-3415-stream-terminated-ends-subscription',
+  'sep-3415-stream-gap-resends-active',
+  'sep-3415-stream-heartbeat-required',
+  'sep-3415-stream-heartbeat-carries-cursor',
+  'sep-3415-stream-heartbeat-interval',
+  'sep-3415-stream-heartbeat-not-sse-comment',
+  'sep-3415-stream-final-result-shape',
+  'sep-3415-stream-final-result-timing',
+  'sep-3415-stream-cancel-stops-delivery',
+  'sep-3415-stream-exempt-from-concurrency-cap',
+  'sep-3415-stream-carries-only-event-notifications'
 ] as const;
 
 /**
@@ -109,7 +108,7 @@ const STREAM_IDS = [
  * place the suite asks for more than one of anything, so the row is graded there
  * and reported untestable on a server that never hits a limit.
  */
-const ERROR_IDS = ['sep-9999-error-resource-exhausted'] as const;
+const ERROR_IDS = ['sep-3415-error-resource-exhausted'] as const;
 
 /**
  * Graded by poll too, where a replay-capable target makes it not applicable.
@@ -117,7 +116,7 @@ const ERROR_IDS = ['sep-9999-error-resource-exhausted'] as const;
  * the gap signal there: `truncated` SHOULD stay false with no position to have
  * advanced past.
  */
-const NO_REPLAY_ID = 'sep-9999-truncated-false-when-no-replay';
+const NO_REPLAY_ID = 'sep-3415-truncated-false-when-no-replay';
 const NO_REPLAY_DESCRIPTION =
   'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.';
 
@@ -147,14 +146,14 @@ export class EventsPushScenario implements ClientScenario {
 
 **Methods**: \`events/stream\`, plus \`events/list\` to discover an event type advertising \`push\` delivery
 
-**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
+**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-3415.yaml):
 
-- \`sep-9999-stream-implemented\` / \`sep-9999-stream-error-before-open\` — a valid subscription opens a stream; an invalid one answers a JSON-RPC error and opens nothing
-- \`sep-9999-stream-active-confirmation\` / \`sep-9999-stream-subscription-id-meta\` — the \`notifications/events/active\` confirmation, and the parent request id echoed on every notification
-- \`sep-9999-stream-event-notification\` / \`sep-9999-stream-carries-only-event-notifications\` — events arrive as \`notifications/events/event\`, and nothing else rides the stream
-- \`sep-9999-stream-heartbeat-*\` — the keepalive is required, carries a cursor, arrives at least every 30s, and is a \`data:\` frame rather than an SSE comment
-- \`sep-9999-stream-exempt-from-concurrency-cap\` — concurrent streams stay open together
-- \`sep-9999-stream-cancel-stops-delivery\` / \`sep-9999-stream-final-result-*\` — cancellation and the empty final result
+- \`sep-3415-stream-implemented\` / \`sep-3415-stream-error-before-open\` — a valid subscription opens a stream; an invalid one answers a JSON-RPC error and opens nothing
+- \`sep-3415-stream-active-confirmation\` / \`sep-3415-stream-subscription-id-meta\` — the \`notifications/events/active\` confirmation, and the parent request id echoed on every notification
+- \`sep-3415-stream-event-notification\` / \`sep-3415-stream-carries-only-event-notifications\` — events arrive as \`notifications/events/event\`, and nothing else rides the stream
+- \`sep-3415-stream-heartbeat-*\` — the keepalive is required, carries a cursor, arrives at least every 30s, and is a \`data:\` frame rather than an SSE comment
+- \`sep-3415-stream-exempt-from-concurrency-cap\` — concurrent streams stay open together
+- \`sep-3415-stream-cancel-stops-delivery\` / \`sep-3415-stream-final-result-*\` — cancellation and the empty final result
 
 **This scenario needs \`--timeout 60000\`.** It watches an idle stream for ${WATCH_MS / 1000}s, because a server may heartbeat as slowly as every 30s and still be conformant. Override the window with \`EVENTS_PUSH_WATCH_MS\`.
 
@@ -268,7 +267,7 @@ export class EventsPushScenario implements ClientScenario {
         const err = session.error;
         checks.push(
           eventsCheck(
-            'sep-9999-stream-implemented',
+            'sep-3415-stream-implemented',
             'Push delivery uses a long-lived `events/stream` request — one per subscription, a standard JSON-RPC request with an `id`.',
             'FAILURE',
             {
@@ -282,7 +281,7 @@ export class EventsPushScenario implements ClientScenario {
         checks.push(
           ...untestableAll(
             [...STREAM_IDS, ...ERROR_IDS].filter(
-              (id) => id !== 'sep-9999-stream-implemented'
+              (id) => id !== 'sep-3415-stream-implemented'
             ),
             `No stream was opened for \`${name}\`, so nothing on it could be observed.`
           )
@@ -293,7 +292,7 @@ export class EventsPushScenario implements ClientScenario {
 
       checks.push(
         eventsCheck(
-          'sep-9999-stream-implemented',
+          'sep-3415-stream-implemented',
           'Push delivery uses a long-lived `events/stream` request — one per subscription, a standard JSON-RPC request with an `id`.',
           'SUCCESS',
           { details: { name, status: session.status } }
@@ -353,7 +352,7 @@ export class EventsPushScenario implements ClientScenario {
       checks.push(
         session.notifications.length === beforeCancel
           ? eventsCheck(
-              'sep-9999-stream-cancel-stops-delivery',
+              'sep-3415-stream-cancel-stops-delivery',
               'On cancellation the server MUST stop delivering events and release any associated resources.',
               'SUCCESS',
               {
@@ -364,7 +363,7 @@ export class EventsPushScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-stream-cancel-stops-delivery',
+              'sep-3415-stream-cancel-stops-delivery',
               'On cancellation the server MUST stop delivering events and release any associated resources.',
               'FAILURE',
               {
@@ -499,7 +498,7 @@ export class EventsPushScenario implements ClientScenario {
       'The server confirms the subscription with `notifications/events/active {cursor, truncated, _meta.subscriptionId}`.';
     if (!active) {
       return eventsCheck(
-        'sep-9999-stream-active-confirmation',
+        'sep-3415-stream-active-confirmation',
         description,
         'FAILURE',
         {
@@ -526,13 +525,13 @@ export class EventsPushScenario implements ClientScenario {
     }
     return problems.length === 0
       ? eventsCheck(
-          'sep-9999-stream-active-confirmation',
+          'sep-3415-stream-active-confirmation',
           description,
           'SUCCESS',
           { details: { params: active.params } }
         )
       : eventsCheck(
-          'sep-9999-stream-active-confirmation',
+          'sep-3415-stream-active-confirmation',
           description,
           'FAILURE',
           {
@@ -559,21 +558,21 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       missingMeta.length === 0 && notifications.length > 0
         ? eventsCheck(
-            'sep-9999-stream-subscription-id-meta',
+            'sep-3415-stream-subscription-id-meta',
             'Every `notifications/events/*` message carries the JSON-RPC `id` of the parent `events/stream` request in `params._meta["io.modelcontextprotocol/subscriptionId"]`.',
             'SUCCESS',
             { details: { checked: notifications.length } }
           )
         : notifications.length === 0
           ? untestableCheck(
-              'sep-9999-stream-subscription-id-meta',
-              'sep-9999-stream-subscription-id-meta',
+              'sep-3415-stream-subscription-id-meta',
+              'sep-3415-stream-subscription-id-meta',
               'Every `notifications/events/*` message carries the parent request id in `_meta`.',
               'The stream delivered no notifications, so no message could be checked for the correlation id.',
               [EVENTS_SPEC_REF]
             )
           : eventsCheck(
-              'sep-9999-stream-subscription-id-meta',
+              'sep-3415-stream-subscription-id-meta',
               'Every `notifications/events/*` message carries the JSON-RPC `id` of the parent `events/stream` request in `params._meta["io.modelcontextprotocol/subscriptionId"]`.',
               'FAILURE',
               {
@@ -594,13 +593,13 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       foreign.length === 0
         ? eventsCheck(
-            'sep-9999-stream-carries-only-event-notifications',
+            'sep-3415-stream-carries-only-event-notifications',
             'The `events/stream` response carries only `notifications/events/*` messages; it is not a general server-to-client channel.',
             'SUCCESS',
             { details: { checked: notifications.length } }
           )
         : eventsCheck(
-            'sep-9999-stream-carries-only-event-notifications',
+            'sep-3415-stream-carries-only-event-notifications',
             'The `events/stream` response carries only `notifications/events/*` messages; it is not a general server-to-client channel.',
             'FAILURE',
             {
@@ -616,8 +615,8 @@ export class EventsPushScenario implements ClientScenario {
     if (events.length === 0) {
       out.push(
         untestableCheck(
-          'sep-9999-stream-event-notification',
-          'sep-9999-stream-event-notification',
+          'sep-3415-stream-event-notification',
+          'sep-3415-stream-event-notification',
           'Events are delivered as `notifications/events/event` whose params are an `EventOccurrence`.',
           `No event was delivered for \`${name}\` in ${WATCH_MS}ms. The fixture needs an event type that emits while the stream is open.`,
           [EVENTS_SPEC_REF]
@@ -636,13 +635,13 @@ export class EventsPushScenario implements ClientScenario {
       out.push(
         bad.length === 0
           ? eventsCheck(
-              'sep-9999-stream-event-notification',
+              'sep-3415-stream-event-notification',
               'Events are delivered as `notifications/events/event` whose params are an `EventOccurrence`.',
               'SUCCESS',
               { details: { delivered: events.length } }
             )
           : eventsCheck(
-              'sep-9999-stream-event-notification',
+              'sep-3415-stream-event-notification',
               'Events are delivered as `notifications/events/event` whose params are an `EventOccurrence`.',
               'FAILURE',
               {
@@ -660,8 +659,8 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       errorNotes.length === 0
         ? untestableCheck(
-            'sep-9999-stream-error-is-recoverable',
-            'sep-9999-stream-error-is-recoverable',
+            'sep-3415-stream-error-is-recoverable',
+            'sep-3415-stream-error-is-recoverable',
             '`notifications/events/error` reports a recoverable failure; the subscription remains active.',
             controls.error
               ? `The \`${EVENTS_CONTROL_YIELD_ERROR}\` control was called for \`${name}\` but no \`${EVENTS_ERROR_NOTIFICATION}\` arrived, so the recovery path could not be observed.`
@@ -669,7 +668,7 @@ export class EventsPushScenario implements ClientScenario {
             [EVENTS_SPEC_REF]
           )
         : eventsCheck(
-            'sep-9999-stream-error-is-recoverable',
+            'sep-3415-stream-error-is-recoverable',
             '`notifications/events/error` reports a recoverable failure; the subscription remains active and the server retries and resumes.',
             session.open ? 'SUCCESS' : 'FAILURE',
             {
@@ -692,7 +691,7 @@ export class EventsPushScenario implements ClientScenario {
     if (terminated.length > 0) {
       out.push(
         eventsCheck(
-          'sep-9999-stream-terminated-ends-subscription',
+          'sep-3415-stream-terminated-ends-subscription',
           'Only `notifications/events/terminated` ends the subscription.',
           'SUCCESS',
           { details: { terminated: terminated.length } }
@@ -707,14 +706,14 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       gapActive
         ? eventsCheck(
-            'sep-9999-stream-gap-resends-active',
+            'sep-3415-stream-gap-resends-active',
             'A gap is not an error — the server sends a fresh `notifications/events/active {cursor:<fresh>, truncated:true}` and continues delivering.',
             'SUCCESS',
             { details: { params: gapActive.params } }
           )
         : untestableCheck(
-            'sep-9999-stream-gap-resends-active',
-            'sep-9999-stream-gap-resends-active',
+            'sep-3415-stream-gap-resends-active',
+            'sep-3415-stream-gap-resends-active',
             'A gap is signalled by a fresh `notifications/events/active` with `truncated: true`, not an error.',
             controls.gap
               ? `The \`${EVENTS_CONTROL_YIELD_GAP}\` control was called for \`${name}\` but no second \`active\` carrying \`truncated: true\` arrived.`
@@ -741,14 +740,14 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       beats.length > 0
         ? eventsCheck(
-            'sep-9999-stream-heartbeat-required',
+            'sep-3415-stream-heartbeat-required',
             'The server MUST send periodic keepalive messages on the push stream so the client can distinguish "nothing to send" from "connection is dead."',
             'SUCCESS',
             { details: { beats: beats.length, windowMs: WATCH_MS } }
           )
         : windowCoversCadence
           ? eventsCheck(
-              'sep-9999-stream-heartbeat-required',
+              'sep-3415-stream-heartbeat-required',
               'The server MUST send periodic keepalive messages on the push stream so the client can distinguish "nothing to send" from "connection is dead."',
               'FAILURE',
               {
@@ -760,8 +759,8 @@ export class EventsPushScenario implements ClientScenario {
               }
             )
           : untestableCheck(
-              'sep-9999-stream-heartbeat-required',
-              'sep-9999-stream-heartbeat-required',
+              'sep-3415-stream-heartbeat-required',
+              'sep-3415-stream-heartbeat-required',
               'The server MUST send periodic keepalive messages on the push stream.',
               `No heartbeat arrived, but the watch window was ${WATCH_MS}ms and the document allows a 30s cadence, so a conformant server could look identical. Re-run with EVENTS_PUSH_WATCH_MS above 30000.`,
               [EVENTS_SPEC_REF]
@@ -772,8 +771,8 @@ export class EventsPushScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-stream-heartbeat-carries-cursor',
-            'sep-9999-stream-heartbeat-interval'
+            'sep-3415-stream-heartbeat-carries-cursor',
+            'sep-3415-stream-heartbeat-interval'
           ],
           `No heartbeat arrived in ${WATCH_MS}ms, so its contents and cadence could not be observed.`
         )
@@ -783,13 +782,13 @@ export class EventsPushScenario implements ClientScenario {
       out.push(
         badCursor.length === 0
           ? eventsCheck(
-              'sep-9999-stream-heartbeat-carries-cursor',
+              'sep-3415-stream-heartbeat-carries-cursor',
               'The heartbeat carries `cursor`, the position the server has checked up to; it is `null` for event types that do not support replay.',
               'SUCCESS',
               { details: { beats: beats.length } }
             )
           : eventsCheck(
-              'sep-9999-stream-heartbeat-carries-cursor',
+              'sep-3415-stream-heartbeat-carries-cursor',
               'The heartbeat carries `cursor`, the position the server has checked up to; it is `null` for event types that do not support replay.',
               'FAILURE',
               {
@@ -810,13 +809,13 @@ export class EventsPushScenario implements ClientScenario {
       out.push(
         worst <= 30000 + HEARTBEAT_TOLERANCE_MS
           ? eventsCheck(
-              'sep-9999-stream-heartbeat-interval',
+              'sep-3415-stream-heartbeat-interval',
               'The server SHOULD send a heartbeat at least every 30 seconds.',
               'SUCCESS',
               { details: { worstGapMs: worst, beats: beats.length } }
             )
           : eventsCheck(
-              'sep-9999-stream-heartbeat-interval',
+              'sep-3415-stream-heartbeat-interval',
               'The server SHOULD send a heartbeat at least every 30 seconds.',
               'WARNING',
               {
@@ -830,13 +829,13 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       session.sseComments.length === 0
         ? eventsCheck(
-            'sep-9999-stream-heartbeat-not-sse-comment',
+            'sep-3415-stream-heartbeat-not-sse-comment',
             'On Streamable HTTP the heartbeat is an SSE `data:` frame; the SSE comment form (`: keepalive`) is not used since it cannot carry cursor state.',
             'SUCCESS',
             { details: { comments: 0 } }
           )
         : eventsCheck(
-            'sep-9999-stream-heartbeat-not-sse-comment',
+            'sep-3415-stream-heartbeat-not-sse-comment',
             'On Streamable HTTP the heartbeat is an SSE `data:` frame; the SSE comment form (`: keepalive`) is not used since it cannot carry cursor state.',
             beats.length === 0 ? 'FAILURE' : 'WARNING',
             {
@@ -874,13 +873,13 @@ export class EventsPushScenario implements ClientScenario {
     // flattening all three to FAILURE overstates two of them.
     const untestableHere = (reason: string): ConformanceCheck[] => [
       ...untestableAll(
-        ['sep-9999-stream-terminated-ends-subscription'],
+        ['sep-3415-stream-terminated-ends-subscription'],
         reason
       ),
       ...untestableAll(
         [
-          'sep-9999-stream-final-result-shape',
-          'sep-9999-stream-final-result-timing'
+          'sep-3415-stream-final-result-shape',
+          'sep-3415-stream-final-result-timing'
         ],
         reason,
         'WARNING'
@@ -946,7 +945,7 @@ export class EventsPushScenario implements ClientScenario {
       out.push(
         terminated
           ? eventsCheck(
-              'sep-9999-stream-terminated-ends-subscription',
+              'sep-3415-stream-terminated-ends-subscription',
               'Only `notifications/events/terminated` ends the subscription.',
               session.open ? 'FAILURE' : 'SUCCESS',
               {
@@ -957,7 +956,7 @@ export class EventsPushScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-stream-terminated-ends-subscription',
+              'sep-3415-stream-terminated-ends-subscription',
               'Only `notifications/events/terminated` ends the subscription.',
               'FAILURE',
               {
@@ -984,8 +983,8 @@ export class EventsPushScenario implements ClientScenario {
       if (!emitUntestable) return [];
       return untestableAll(
         [
-          'sep-9999-stream-final-result-shape',
-          'sep-9999-stream-final-result-timing'
+          'sep-3415-stream-final-result-shape',
+          'sep-3415-stream-final-result-timing'
         ],
         'The server did not close the stream itself, so no final frame was sent.',
         'WARNING'
@@ -1002,13 +1001,13 @@ export class EventsPushScenario implements ClientScenario {
     out.push(
       keys.length === 0
         ? eventsCheck(
-            'sep-9999-stream-final-result-shape',
+            'sep-3415-stream-final-result-shape',
             'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`).',
             'SUCCESS',
             { details: { result } }
           )
         : eventsCheck(
-            'sep-9999-stream-final-result-shape',
+            'sep-3415-stream-final-result-shape',
             'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`).',
             'FAILURE',
             {
@@ -1019,7 +1018,7 @@ export class EventsPushScenario implements ClientScenario {
     );
     out.push(
       eventsCheck(
-        'sep-9999-stream-final-result-timing',
+        'sep-3415-stream-final-result-timing',
         'The final result is sent whenever the server can write a final frame; on Streamable HTTP only when the server initiates the close.',
         'SUCCESS',
         {
@@ -1064,13 +1063,13 @@ export class EventsPushScenario implements ClientScenario {
       return [
         live === sessions.length
           ? eventsCheck(
-              'sep-9999-stream-exempt-from-concurrency-cap',
+              'sep-3415-stream-exempt-from-concurrency-cap',
               description,
               'SUCCESS',
               { details: { concurrent: live } }
             )
           : eventsCheck(
-              'sep-9999-stream-exempt-from-concurrency-cap',
+              'sep-3415-stream-exempt-from-concurrency-cap',
               description,
               'FAILURE',
               {
@@ -1128,7 +1127,7 @@ export class EventsPushScenario implements ClientScenario {
     quota: QuotaReport,
     descriptors: EventDescriptor[]
   ): Promise<ConformanceCheck> {
-    const id = 'sep-9999-error-resource-exhausted';
+    const id = 'sep-3415-error-resource-exhausted';
     const description =
       '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
     const untestable = (reason: string) =>
@@ -1190,7 +1189,7 @@ export class EventsPushScenario implements ClientScenario {
   private resourceExhaustedCheck(
     errors: (StreamSession['error'] | undefined)[]
   ): ConformanceCheck {
-    const id = 'sep-9999-error-resource-exhausted';
+    const id = 'sep-3415-error-resource-exhausted';
     const description =
       '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
     const hit = errors.find((e) => e?.code === EVENTS_RESOURCE_EXHAUSTED);
@@ -1232,7 +1231,7 @@ export class EventsPushScenario implements ClientScenario {
       if (!session.error) {
         return [
           eventsCheck(
-            'sep-9999-stream-error-before-open',
+            'sep-3415-stream-error-before-open',
             description,
             'FAILURE',
             {
@@ -1247,13 +1246,13 @@ export class EventsPushScenario implements ClientScenario {
       return [
         session.error.code === EVENTS_NOT_FOUND
           ? eventsCheck(
-              'sep-9999-stream-error-before-open',
+              'sep-3415-stream-error-before-open',
               description,
               'SUCCESS',
               { details: { code: session.error.code } }
             )
           : eventsCheck(
-              'sep-9999-stream-error-before-open',
+              'sep-3415-stream-error-before-open',
               description,
               'WARNING',
               {

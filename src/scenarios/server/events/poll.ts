@@ -4,8 +4,7 @@
  *
  * One scenario, many checks (per AGENTS.md "fewer scenarios, more checks").
  * Each check's verbatim spec excerpt lives next to its check ID in
- * src/seps/sep-9999.yaml. 9999 is a placeholder SEP number; see that file's
- * header.
+ * src/seps/sep-3415.yaml.
  *
  * Poll is the mode a conformance harness can exercise completely. It is
  * request/response, it holds no server-side state, and every poll response
@@ -15,7 +14,7 @@
  *
  * The scenario drives a real quiet-period poll loop: two polls with the cursor
  * from the first fed into the second. That is what makes
- * `sep-9999-cursor-advances-when-quiet` gradeable against a server with no
+ * `sep-3415-cursor-advances-when-quiet` gradeable against a server with no
  * traffic, which is the state a conformance fixture is usually in.
  *
  * Nothing is hardcoded to a fixture's event names. The scenario picks the
@@ -54,48 +53,48 @@ import {
 } from './helpers';
 
 const POLL_IDS = [
-  'sep-9999-poll-implemented',
-  'sep-9999-poll-one-subscription-per-request',
-  'sep-9999-poll-bootstraps-subscription',
-  'sep-9999-poll-events-array',
-  'sep-9999-poll-response-cursor',
-  'sep-9999-poll-next-poll-ms',
-  'sep-9999-poll-next-poll-ms-ignored-when-has-more',
-  'sep-9999-poll-has-more',
-  'sep-9999-poll-max-events-cap',
-  'sep-9999-poll-stateless-request',
-  'sep-9999-poll-errors-are-jsonrpc',
-  'sep-9999-poll-invalid-arguments',
-  'sep-9999-poll-mode-unsupported',
-  'sep-9999-removal-poll-not-found'
+  'sep-3415-poll-implemented',
+  'sep-3415-poll-one-subscription-per-request',
+  'sep-3415-poll-bootstraps-subscription',
+  'sep-3415-poll-events-array',
+  'sep-3415-poll-response-cursor',
+  'sep-3415-poll-next-poll-ms',
+  'sep-3415-poll-next-poll-ms-ignored-when-has-more',
+  'sep-3415-poll-has-more',
+  'sep-3415-poll-max-events-cap',
+  'sep-3415-poll-stateless-request',
+  'sep-3415-poll-errors-are-jsonrpc',
+  'sep-3415-poll-invalid-arguments',
+  'sep-3415-poll-mode-unsupported',
+  'sep-3415-removal-poll-not-found'
 ] as const;
 
 /** How long to follow the bootstrap cursor waiting for a delivered event. */
 const OCCURRENCE_WAIT_MS = 6000;
 
 const OCCURRENCE_IDS = [
-  'sep-9999-occurrence-event-id',
-  'sep-9999-occurrence-name',
-  'sep-9999-occurrence-timestamp',
-  'sep-9999-occurrence-data',
-  'sep-9999-occurrence-cursor-optional',
-  'sep-9999-occurrence-meta-ungoverned',
-  'sep-9999-occurrence-event-id-from-upstream'
+  'sep-3415-occurrence-event-id',
+  'sep-3415-occurrence-name',
+  'sep-3415-occurrence-timestamp',
+  'sep-3415-occurrence-data',
+  'sep-3415-occurrence-cursor-optional',
+  'sep-3415-occurrence-meta-ungoverned',
+  'sep-3415-occurrence-event-id-from-upstream'
 ] as const;
 
 const CURSOR_IDS = [
-  'sep-9999-cursor-opaque',
-  'sep-9999-cursor-null-starts-from-now',
-  'sep-9999-cursor-absent-equals-null',
-  'sep-9999-cursor-consistency',
-  'sep-9999-cursor-advances-when-quiet',
-  'sep-9999-max-age-ms-floor',
-  'sep-9999-max-age-ms-sets-truncated',
-  'sep-9999-max-age-ms-ignored-when-cursor-null',
-  'sep-9999-replay-ceiling-sets-truncated',
-  'sep-9999-truncated-returns-fresh-cursor',
-  'sep-9999-truncated-poll-never-an-error',
-  'sep-9999-truncated-false-when-no-replay'
+  'sep-3415-cursor-opaque',
+  'sep-3415-cursor-null-starts-from-now',
+  'sep-3415-cursor-absent-equals-null',
+  'sep-3415-cursor-consistency',
+  'sep-3415-cursor-advances-when-quiet',
+  'sep-3415-max-age-ms-floor',
+  'sep-3415-max-age-ms-sets-truncated',
+  'sep-3415-max-age-ms-ignored-when-cursor-null',
+  'sep-3415-replay-ceiling-sets-truncated',
+  'sep-3415-truncated-returns-fresh-cursor',
+  'sep-3415-truncated-poll-never-an-error',
+  'sep-3415-truncated-false-when-no-replay'
 ] as const;
 
 /**
@@ -110,13 +109,13 @@ function withErrorCodeRow(ruleCheck: ConformanceCheck): ConformanceCheck[] {
   return [
     ruleCheck,
     eventsCheck(
-      'sep-9999-error-invalid-params',
+      'sep-3415-error-invalid-params',
       "`-32602 InvalidParams` — request is statically invalid: arguments don't match the event's inputSchema, the callback `delivery.url` is malformed or non-`https`, or `delivery.secret` is not a valid `whsec_` value.",
       ruleCheck.status,
       {
         errorMessage: ruleCheck.errorMessage,
         details: {
-          gradedBy: 'sep-9999-poll-invalid-arguments',
+          gradedBy: 'sep-3415-poll-invalid-arguments',
           untestable: ruleCheck.details?.untestable
         }
       }
@@ -132,7 +131,7 @@ function withErrorCodeRow(ruleCheck: ConformanceCheck): ConformanceCheck[] {
  * precedent is named in prose rather than by its slug, so grepping a check id
  * still finds only the scenario that emits it.
  */
-const ERROR_IDS = ['sep-9999-error-invalid-params'] as const;
+const ERROR_IDS = ['sep-3415-error-invalid-params'] as const;
 
 const ALL_IDS = [...POLL_IDS, ...OCCURRENCE_IDS, ...CURSOR_IDS, ...ERROR_IDS];
 
@@ -162,16 +161,16 @@ export class EventsPollScenario implements ClientScenario {
 
 **Methods**: \`events/poll\`, plus \`events/list\` to discover a poll-capable event type
 
-**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-9999.yaml):
+**Requirements covered** (each check carries a verbatim spec excerpt in src/seps/sep-3415.yaml):
 
-- \`sep-9999-poll-implemented\` / \`sep-9999-poll-bootstraps-subscription\` — a poll with \`cursor: null\` succeeds with no prior subscribe step
-- \`sep-9999-poll-events-array\` / \`sep-9999-poll-response-cursor\` / \`sep-9999-poll-next-poll-ms\` / \`sep-9999-poll-has-more\` — the four response fields
-- \`sep-9999-poll-max-events-cap\` — \`maxEvents\` caps the batch and sets \`hasMore\` when more remain
-- \`sep-9999-poll-stateless-request\` — two identical polls are answerable without server-side memory of the first
-- \`sep-9999-poll-errors-are-jsonrpc\` / \`sep-9999-removal-poll-not-found\` / \`sep-9999-poll-invalid-arguments\` / \`sep-9999-poll-mode-unsupported\` — the error contract
-- \`sep-9999-occurrence-*\` — \`eventId\`, \`name\`, \`timestamp\`, \`data\` required; \`cursor\` and \`_meta\` optional
-- \`sep-9999-cursor-*\` — opaqueness, \`null\` means start-from-now, absent means \`null\`, consistency, and advancement during quiet periods
-- \`sep-9999-max-age-ms-*\` / \`sep-9999-truncated-*\` — bounding replay and signalling a gap
+- \`sep-3415-poll-implemented\` / \`sep-3415-poll-bootstraps-subscription\` — a poll with \`cursor: null\` succeeds with no prior subscribe step
+- \`sep-3415-poll-events-array\` / \`sep-3415-poll-response-cursor\` / \`sep-3415-poll-next-poll-ms\` / \`sep-3415-poll-has-more\` — the four response fields
+- \`sep-3415-poll-max-events-cap\` — \`maxEvents\` caps the batch and sets \`hasMore\` when more remain
+- \`sep-3415-poll-stateless-request\` — two identical polls are answerable without server-side memory of the first
+- \`sep-3415-poll-errors-are-jsonrpc\` / \`sep-3415-removal-poll-not-found\` / \`sep-3415-poll-invalid-arguments\` / \`sep-3415-poll-mode-unsupported\` — the error contract
+- \`sep-3415-occurrence-*\` — \`eventId\`, \`name\`, \`timestamp\`, \`data\` required; \`cursor\` and \`_meta\` optional
+- \`sep-3415-cursor-*\` — opaqueness, \`null\` means start-from-now, absent means \`null\`, consistency, and advancement during quiet periods
+- \`sep-3415-max-age-ms-*\` / \`sep-3415-truncated-*\` — bounding replay and signalling a gap
 
 **Discovery is dynamic**: a server that neither declares the capability nor implements \`events/list\` SKIPs everything; no poll-capable event type reports the poll checks as untestable. Checks that need a delivered event (the \`EventOccurrence\` shape) are untestable against a quiet server rather than passing vacuously.`;
 
@@ -236,7 +235,7 @@ export class EventsPollScenario implements ClientScenario {
       const err = first.error;
       checks.push(
         eventsCheck(
-          'sep-9999-poll-implemented',
+          'sep-3415-poll-implemented',
           '`events/poll` is request/response: client sends `{name, arguments, cursor}`, gets back `{events[], cursor, nextPollMs}`.',
           'FAILURE',
           {
@@ -247,7 +246,7 @@ export class EventsPollScenario implements ClientScenario {
       );
       checks.push(
         ...untestableAll(
-          ALL_IDS.filter((id) => id !== 'sep-9999-poll-implemented'),
+          ALL_IDS.filter((id) => id !== 'sep-3415-poll-implemented'),
           `The bootstrap \`${EVENTS_POLL_METHOD}\` for \`${name}\` failed with ${err.code} ${err.message}.`
         )
       );
@@ -257,14 +256,14 @@ export class EventsPollScenario implements ClientScenario {
     const r1 = first.result;
     checks.push(
       eventsCheck(
-        'sep-9999-poll-implemented',
+        'sep-3415-poll-implemented',
         '`events/poll` is request/response: client sends `{name, arguments, cursor}`, gets back `{events[], cursor, nextPollMs}`.',
         'SUCCESS'
       )
     );
     checks.push(
       eventsCheck(
-        'sep-9999-poll-bootstraps-subscription',
+        'sep-3415-poll-bootstraps-subscription',
         'No separate subscribe step needed — the first poll with a null cursor bootstraps the subscription.',
         'SUCCESS',
         { details: { name } }
@@ -302,13 +301,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       Array.isArray(r.events)
         ? eventsCheck(
-            'sep-9999-poll-events-array',
+            'sep-3415-poll-events-array',
             'The poll response carries an `events` array. An empty array means nothing happened.',
             'SUCCESS',
             { details: { count: occurrences(r).length } }
           )
         : eventsCheck(
-            'sep-9999-poll-events-array',
+            'sep-3415-poll-events-array',
             'The poll response carries an `events` array. An empty array means nothing happened.',
             'FAILURE',
             {
@@ -321,13 +320,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       isValidCursor(r.cursor)
         ? eventsCheck(
-            'sep-9999-poll-response-cursor',
+            'sep-3415-poll-response-cursor',
             'The poll response carries `cursor` at the response level, the subscription position after this batch.',
             'SUCCESS',
             { details: { cursor: r.cursor ?? null } }
           )
         : eventsCheck(
-            'sep-9999-poll-response-cursor',
+            'sep-3415-poll-response-cursor',
             'The poll response carries `cursor` at the response level, the subscription position after this batch.',
             'FAILURE',
             {
@@ -344,7 +343,7 @@ export class EventsPollScenario implements ClientScenario {
     if (typeof r.nextPollMs === 'number' && Number.isFinite(r.nextPollMs)) {
       out.push(
         eventsCheck(
-          'sep-9999-poll-next-poll-ms',
+          'sep-3415-poll-next-poll-ms',
           '`nextPollMs` allows the server to dynamically adjust polling frequency.',
           'SUCCESS',
           { details: { nextPollMs: r.nextPollMs } }
@@ -353,7 +352,7 @@ export class EventsPollScenario implements ClientScenario {
     } else {
       out.push(
         eventsCheck(
-          'sep-9999-poll-next-poll-ms',
+          'sep-3415-poll-next-poll-ms',
           '`nextPollMs` allows the server to dynamically adjust polling frequency.',
           'WARNING',
           {
@@ -372,13 +371,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       r.hasMore === undefined || typeof r.hasMore === 'boolean'
         ? eventsCheck(
-            'sep-9999-poll-has-more',
+            'sep-3415-poll-has-more',
             '`hasMore` indicates whether additional events are available beyond the returned batch.',
             'SUCCESS',
             { details: { hasMore: r.hasMore ?? false } }
           )
         : eventsCheck(
-            'sep-9999-poll-has-more',
+            'sep-3415-poll-has-more',
             '`hasMore` indicates whether additional events are available beyond the returned batch.',
             'FAILURE',
             {
@@ -393,14 +392,14 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       r.hasMore === true
         ? eventsCheck(
-            'sep-9999-poll-next-poll-ms-ignored-when-has-more',
+            'sep-3415-poll-next-poll-ms-ignored-when-has-more',
             '`nextPollMs` is ignored when `hasMore` is `true`.',
             'SUCCESS',
             { details: { hasMore: true, nextPollMs: r.nextPollMs } }
           )
         : untestableCheck(
-            'sep-9999-poll-next-poll-ms-ignored-when-has-more',
-            'sep-9999-poll-next-poll-ms-ignored-when-has-more',
+            'sep-3415-poll-next-poll-ms-ignored-when-has-more',
+            'sep-3415-poll-next-poll-ms-ignored-when-has-more',
             '`nextPollMs` is ignored when `hasMore` is `true`.',
             'Server has no backlog, so no response set `hasMore: true` and the interaction between the two fields could not be observed.',
             [EVENTS_SPEC_REF],
@@ -419,13 +418,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       events.length === 0
         ? eventsCheck(
-            'sep-9999-cursor-null-starts-from-now',
+            'sep-3415-cursor-null-starts-from-now',
             'Passing `cursor: null` means "start from now." No historical events are replayed.',
             'SUCCESS',
             { details: { returned: 0 } }
           )
         : eventsCheck(
-            'sep-9999-cursor-null-starts-from-now',
+            'sep-3415-cursor-null-starts-from-now',
             'Passing `cursor: null` means "start from now." No historical events are replayed.',
             'FAILURE',
             {
@@ -438,7 +437,7 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       isValidCursor(r.cursor)
         ? eventsCheck(
-            'sep-9999-cursor-opaque',
+            'sep-3415-cursor-opaque',
             'Cursors are opaque strings managed by the server, representing a position in the event stream.',
             'SUCCESS',
             {
@@ -451,7 +450,7 @@ export class EventsPollScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-cursor-opaque',
+            'sep-3415-cursor-opaque',
             'Cursors are opaque strings managed by the server, representing a position in the event stream.',
             'FAILURE',
             {
@@ -493,7 +492,7 @@ export class EventsPollScenario implements ClientScenario {
       const reason = `A follow-up \`${EVENTS_POLL_METHOD}\` carrying the cursor from the first response failed: ${second.error.code} ${second.error.message}`;
       out.push(
         eventsCheck(
-          'sep-9999-poll-stateless-request',
+          'sep-3415-poll-stateless-request',
           'Each poll request is self-contained: the server does not need to remember previous poll requests to answer them.',
           'FAILURE',
           { errorMessage: reason, details: { code: second.error.code } }
@@ -502,15 +501,15 @@ export class EventsPollScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-cursor-advances-when-quiet',
-            'sep-9999-cursor-consistency'
+            'sep-3415-cursor-advances-when-quiet',
+            'sep-3415-cursor-consistency'
           ],
           reason
         )
       );
       out.push(
         ...untestableAll(
-          ['sep-9999-cursor-absent-equals-null'],
+          ['sep-3415-cursor-absent-equals-null'],
           reason,
           'FAILURE'
         )
@@ -522,7 +521,7 @@ export class EventsPollScenario implements ClientScenario {
 
     out.push(
       eventsCheck(
-        'sep-9999-poll-stateless-request',
+        'sep-3415-poll-stateless-request',
         'Each poll request is self-contained: the server does not need to remember previous poll requests to answer them.',
         'SUCCESS',
         { details: { secondPollAccepted: true } }
@@ -537,7 +536,7 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       isValidCursor(r2.cursor)
         ? eventsCheck(
-            'sep-9999-cursor-advances-when-quiet',
+            'sep-3415-cursor-advances-when-quiet',
             "Every poll response carries `cursor`, including when `events: []`, so the client's persisted cursor advances during quiet periods.",
             'SUCCESS',
             {
@@ -549,7 +548,7 @@ export class EventsPollScenario implements ClientScenario {
             }
           )
         : eventsCheck(
-            'sep-9999-cursor-advances-when-quiet',
+            'sep-3415-cursor-advances-when-quiet',
             "Every poll response carries `cursor`, including when `events: []`, so the client's persisted cursor advances during quiet periods.",
             'FAILURE',
             {
@@ -565,13 +564,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       firstNull === secondNull
         ? eventsCheck(
-            'sep-9999-cursor-consistency',
+            'sep-3415-cursor-consistency',
             'An event type that ever returns a non-null cursor SHOULD always do so, and one that returns `null` SHOULD always return `null`.',
             'SUCCESS',
             { details: { replaySupported: !firstNull } }
           )
         : eventsCheck(
-            'sep-9999-cursor-consistency',
+            'sep-3415-cursor-consistency',
             'An event type that ever returns a non-null cursor SHOULD always do so, and one that returns `null` SHOULD always return `null`.',
             'WARNING',
             {
@@ -586,7 +585,7 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       noReplay
         ? eventsCheck(
-            'sep-9999-cursor-absent-equals-null',
+            'sep-3415-cursor-absent-equals-null',
             'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`; a receiver MUST NOT fail because it is missing.',
             'SUCCESS',
             { details: { omittedCursorAccepted: true } }
@@ -603,7 +602,7 @@ export class EventsPollScenario implements ClientScenario {
     name: string,
     args: Record<string, unknown>
   ): Promise<ConformanceCheck> {
-    const id = 'sep-9999-cursor-absent-equals-null';
+    const id = 'sep-3415-cursor-absent-equals-null';
     const description =
       'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`; a receiver MUST NOT fail because it is missing.';
     const probe = await eventsPoll(conn, { name, arguments: args });
@@ -624,7 +623,7 @@ export class EventsPollScenario implements ClientScenario {
     name: string,
     args: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
-    const id = 'sep-9999-poll-max-events-cap';
+    const id = 'sep-3415-poll-max-events-cap';
     const description =
       '`maxEvents` is an optional cap on the number of events returned. If more are available, the server returns a partial batch with an intermediate cursor and sets `hasMore: true`.';
 
@@ -691,7 +690,7 @@ export class EventsPollScenario implements ClientScenario {
       const reason = `A poll carrying \`maxAgeMs\` was rejected with ${withMaxAge.error.code} ${withMaxAge.error.message}.`;
       out.push(
         eventsCheck(
-          'sep-9999-max-age-ms-floor',
+          'sep-3415-max-age-ms-floor',
           'All three modes accept an optional `maxAgeMs` alongside `cursor`; the server begins replay from whichever is later, the cursor or `now − maxAgeMs`.',
           'FAILURE',
           { errorMessage: reason, details: { code: withMaxAge.error.code } }
@@ -700,12 +699,12 @@ export class EventsPollScenario implements ClientScenario {
       out.push(
         ...untestableAll(
           [
-            'sep-9999-max-age-ms-sets-truncated',
-            'sep-9999-replay-ceiling-sets-truncated',
-            'sep-9999-truncated-returns-fresh-cursor',
-            'sep-9999-truncated-poll-never-an-error',
-            'sep-9999-truncated-false-when-no-replay',
-            'sep-9999-max-age-ms-ignored-when-cursor-null'
+            'sep-3415-max-age-ms-sets-truncated',
+            'sep-3415-replay-ceiling-sets-truncated',
+            'sep-3415-truncated-returns-fresh-cursor',
+            'sep-3415-truncated-poll-never-an-error',
+            'sep-3415-truncated-false-when-no-replay',
+            'sep-3415-max-age-ms-ignored-when-cursor-null'
           ],
           reason,
           'WARNING'
@@ -717,7 +716,7 @@ export class EventsPollScenario implements ClientScenario {
     const r = withMaxAge.result;
     out.push(
       eventsCheck(
-        'sep-9999-max-age-ms-floor',
+        'sep-3415-max-age-ms-floor',
         'All three modes accept an optional `maxAgeMs` alongside `cursor`; the server begins replay from whichever is later, the cursor or `now − maxAgeMs`.',
         'SUCCESS',
         { details: { maxAgeMs: MAX_AGE_PROBE_MS } }
@@ -730,13 +729,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       truncated === undefined || typeof truncated === 'boolean'
         ? eventsCheck(
-            'sep-9999-truncated-poll-never-an-error',
+            'sep-3415-truncated-poll-never-an-error',
             'For poll, `truncated` appears in the result body. Never a JSON-RPC error.',
             'SUCCESS',
             { details: { truncated: truncated ?? false } }
           )
         : eventsCheck(
-            'sep-9999-truncated-poll-never-an-error',
+            'sep-3415-truncated-poll-never-an-error',
             'For poll, `truncated` appears in the result body. Never a JSON-RPC error.',
             'FAILURE',
             {
@@ -751,13 +750,13 @@ export class EventsPollScenario implements ClientScenario {
       truncated === true
         ? isValidCursor(r.cursor) && r.cursor !== null && r.cursor !== undefined
           ? eventsCheck(
-              'sep-9999-truncated-returns-fresh-cursor',
+              'sep-3415-truncated-returns-fresh-cursor',
               'The server resets to a position it can serve from and returns that position as the fresh `cursor` alongside `truncated: true`.',
               'SUCCESS',
               { details: { cursor: r.cursor } }
             )
           : eventsCheck(
-              'sep-9999-truncated-returns-fresh-cursor',
+              'sep-3415-truncated-returns-fresh-cursor',
               'The server resets to a position it can serve from and returns that position as the fresh `cursor` alongside `truncated: true`.',
               'FAILURE',
               {
@@ -766,8 +765,8 @@ export class EventsPollScenario implements ClientScenario {
               }
             )
         : untestableCheck(
-            'sep-9999-truncated-returns-fresh-cursor',
-            'sep-9999-truncated-returns-fresh-cursor',
+            'sep-3415-truncated-returns-fresh-cursor',
+            'sep-3415-truncated-returns-fresh-cursor',
             'The server resets to a position it can serve from and returns that position as the fresh `cursor` alongside `truncated: true`.',
             'No probe produced `truncated: true`, so the fresh-cursor obligation could not be observed. Driving it requires a stale cursor the harness cannot mint against an opaque cursor space.',
             [EVENTS_SPEC_REF],
@@ -776,8 +775,8 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     for (const id of [
-      'sep-9999-max-age-ms-sets-truncated',
-      'sep-9999-replay-ceiling-sets-truncated'
+      'sep-3415-max-age-ms-sets-truncated',
+      'sep-3415-replay-ceiling-sets-truncated'
     ]) {
       out.push(
         untestableCheck(
@@ -795,7 +794,7 @@ export class EventsPollScenario implements ClientScenario {
       noReplay
         ? truncated === true
           ? eventsCheck(
-              'sep-9999-truncated-false-when-no-replay',
+              'sep-3415-truncated-false-when-no-replay',
               'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.',
               'WARNING',
               {
@@ -804,13 +803,13 @@ export class EventsPollScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-truncated-false-when-no-replay',
+              'sep-3415-truncated-false-when-no-replay',
               'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.',
               'SUCCESS',
               { details: { truncated: truncated ?? false } }
             )
         : eventsCheck(
-            'sep-9999-truncated-false-when-no-replay',
+            'sep-3415-truncated-false-when-no-replay',
             'For event types that do not support replay (`cursor` is always `null`), `truncated` SHOULD be `false`.',
             'SKIPPED',
             {
@@ -827,7 +826,7 @@ export class EventsPollScenario implements ClientScenario {
       cursor: null,
       maxAgeMs: MAX_AGE_PROBE_MS
     });
-    const id = 'sep-9999-max-age-ms-ignored-when-cursor-null';
+    const id = 'sep-3415-max-age-ms-ignored-when-cursor-null';
     const description =
       '`maxAgeMs` is ignored when `cursor` is `null` (null already means "now").';
     if ('error' in nullCursorMaxAge) {
@@ -930,7 +929,7 @@ export class EventsPollScenario implements ClientScenario {
     };
 
     field(
-      'sep-9999-occurrence-event-id',
+      'sep-3415-occurrence-event-id',
       '`eventId` (string) is required on every `EventOccurrence`: a stable identifier for deduplication.',
       'FAILURE',
       (e) =>
@@ -940,7 +939,7 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-occurrence-name',
+      'sep-3415-occurrence-name',
       '`name` (string) is required on every `EventOccurrence`: the event type name.',
       'FAILURE',
       (e) =>
@@ -950,7 +949,7 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-occurrence-timestamp',
+      'sep-3415-occurrence-timestamp',
       '`timestamp` (string, ISO 8601) is required on every `EventOccurrence`: when the event occurred.',
       'FAILURE',
       (e) =>
@@ -960,7 +959,7 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-occurrence-data',
+      'sep-3415-occurrence-data',
       "`data` (object) is required on every `EventOccurrence`: payload conforming to the event type's `payloadSchema`.",
       'FAILURE',
       (e) =>
@@ -970,7 +969,7 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-occurrence-cursor-optional',
+      'sep-3415-occurrence-cursor-optional',
       '`cursor` on an `EventOccurrence` is optional; poll carries the cursor at the response level.',
       'FAILURE',
       (e) =>
@@ -980,7 +979,7 @@ export class EventsPollScenario implements ClientScenario {
     );
 
     field(
-      'sep-9999-occurrence-meta-ungoverned',
+      'sep-3415-occurrence-meta-ungoverned',
       '`_meta` is reserved for protocol/extension metadata and is not governed by `payloadSchema`.',
       'WARNING',
       (e) =>
@@ -998,13 +997,13 @@ export class EventsPollScenario implements ClientScenario {
     out.push(
       new Set(ids).size === ids.length
         ? eventsCheck(
-            'sep-9999-occurrence-event-id-from-upstream',
+            'sep-3415-occurrence-event-id-from-upstream',
             "The server SHOULD use the upstream's stable event identifier as `eventId` so the same upstream event carries the same id across delivery paths.",
             'SUCCESS',
             { details: { distinct: new Set(ids).size, total: ids.length } }
           )
         : eventsCheck(
-            'sep-9999-occurrence-event-id-from-upstream',
+            'sep-3415-occurrence-event-id-from-upstream',
             "The server SHOULD use the upstream's stable event identifier as `eventId` so the same upstream event carries the same id across delivery paths.",
             'WARNING',
             {
@@ -1042,7 +1041,7 @@ export class EventsPollScenario implements ClientScenario {
     if ('error' in probe) {
       out.push(
         eventsCheck(
-          'sep-9999-poll-errors-are-jsonrpc',
+          'sep-3415-poll-errors-are-jsonrpc',
           jsonRpcDesc,
           'SUCCESS',
           {
@@ -1053,7 +1052,7 @@ export class EventsPollScenario implements ClientScenario {
       out.push(
         probe.error.code === EVENTS_NOT_FOUND
           ? eventsCheck(
-              'sep-9999-removal-poll-not-found',
+              'sep-3415-removal-poll-not-found',
               notFoundDesc,
               'SUCCESS',
               {
@@ -1061,7 +1060,7 @@ export class EventsPollScenario implements ClientScenario {
               }
             )
           : eventsCheck(
-              'sep-9999-removal-poll-not-found',
+              'sep-3415-removal-poll-not-found',
               notFoundDesc,
               'FAILURE',
               {
@@ -1077,7 +1076,7 @@ export class EventsPollScenario implements ClientScenario {
       const msg = `A poll for unknown event name \`${unknown}\` returned a result instead of an error.`;
       out.push(
         eventsCheck(
-          'sep-9999-poll-errors-are-jsonrpc',
+          'sep-3415-poll-errors-are-jsonrpc',
           jsonRpcDesc,
           'FAILURE',
           {
@@ -1088,7 +1087,7 @@ export class EventsPollScenario implements ClientScenario {
       );
       out.push(
         eventsCheck(
-          'sep-9999-removal-poll-not-found',
+          'sep-3415-removal-poll-not-found',
           notFoundDesc,
           'FAILURE',
           {
@@ -1107,13 +1106,13 @@ export class EventsPollScenario implements ClientScenario {
       'error' in noName
         ? noName.error.code === JSONRPC_INVALID_PARAMS
           ? eventsCheck(
-              'sep-9999-poll-one-subscription-per-request',
+              'sep-3415-poll-one-subscription-per-request',
               oneSubDesc,
               'SUCCESS',
               { details: { code: noName.error.code } }
             )
           : eventsCheck(
-              'sep-9999-poll-one-subscription-per-request',
+              'sep-3415-poll-one-subscription-per-request',
               oneSubDesc,
               'WARNING',
               {
@@ -1125,7 +1124,7 @@ export class EventsPollScenario implements ClientScenario {
               }
             )
         : eventsCheck(
-            'sep-9999-poll-one-subscription-per-request',
+            'sep-3415-poll-one-subscription-per-request',
             oneSubDesc,
             'FAILURE',
             {
@@ -1160,7 +1159,7 @@ export class EventsPollScenario implements ClientScenario {
     name: string,
     _args: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
-    const id = 'sep-9999-poll-invalid-arguments';
+    const id = 'sep-3415-poll-invalid-arguments';
     const description =
       "A poll whose `arguments` do not match the event's `inputSchema` returns `-32602 InvalidParams`.";
 
@@ -1234,7 +1233,7 @@ export class EventsPollScenario implements ClientScenario {
     conn: Connection,
     descriptors: EventDescriptor[]
   ): Promise<ConformanceCheck> {
-    const id = 'sep-9999-poll-mode-unsupported';
+    const id = 'sep-3415-poll-mode-unsupported';
     const description =
       'A poll against an event type whose `delivery` does not list `poll` returns `-32014 Unsupported`.';
 

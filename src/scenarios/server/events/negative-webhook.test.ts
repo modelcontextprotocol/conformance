@@ -40,37 +40,37 @@ afterAll(() => {
 /** Rows every conformant run passes, which is the whole surface bar the seven
  * that need a second principal or a restart. */
 const GRADEABLE = [
-  'sep-9999-subscribe-webhook-only',
-  'sep-9999-subscribe-secret-required',
-  'sep-9999-subscribe-secret-format',
-  'sep-9999-subscribe-secret-rejected',
-  'sep-9999-subscribe-url-https-required',
-  'sep-9999-subscribe-url-non-https-rejected',
-  'sep-9999-subscribe-key-composition',
-  'sep-9999-subscribe-key-immutable',
-  'sep-9999-subscribe-idempotent-upsert',
-  'sep-9999-subscribe-id-derived',
-  'sep-9999-subscribe-id-not-an-input',
-  'sep-9999-subscribe-response-cursor',
-  'sep-9999-subscribe-response-truncated',
-  'sep-9999-ttl-omitted-means-default',
-  'sep-9999-ttl-null-only-when-requested',
-  'sep-9999-ttl-refresh-before-lte-suggestion',
-  'sep-9999-ttl-no-rejection-path',
-  'sep-9999-unsubscribe-by-key',
-  'sep-9999-unsubscribe-unknown-not-found',
-  'sep-9999-error-unsupported'
+  'sep-3415-subscribe-webhook-only',
+  'sep-3415-subscribe-secret-required',
+  'sep-3415-subscribe-secret-format',
+  'sep-3415-subscribe-secret-rejected',
+  'sep-3415-subscribe-url-https-required',
+  'sep-3415-subscribe-url-non-https-rejected',
+  'sep-3415-subscribe-key-composition',
+  'sep-3415-subscribe-key-immutable',
+  'sep-3415-subscribe-idempotent-upsert',
+  'sep-3415-subscribe-id-derived',
+  'sep-3415-subscribe-id-not-an-input',
+  'sep-3415-subscribe-response-cursor',
+  'sep-3415-subscribe-response-truncated',
+  'sep-3415-ttl-omitted-means-default',
+  'sep-3415-ttl-null-only-when-requested',
+  'sep-3415-ttl-refresh-before-lte-suggestion',
+  'sep-3415-ttl-no-rejection-path',
+  'sep-3415-unsubscribe-by-key',
+  'sep-3415-unsubscribe-unknown-not-found',
+  'sep-3415-error-unsupported'
 ] as const;
 
 /** Rows no single-principal, single-process run can exercise. */
 const ALWAYS_UNTESTABLE = [
-  'sep-9999-subscribe-auth-required',
-  'sep-9999-subscribe-cross-tenant-isolation',
-  'sep-9999-subscribe-refresh-replaces-secret',
-  'sep-9999-subscribe-refresh-reactivates',
-  'sep-9999-ttl-long-grant-retained',
-  'sep-9999-ttl-no-expiry-persisted',
-  'sep-9999-ttl-no-expiry-gc-terminated'
+  'sep-3415-subscribe-auth-required',
+  'sep-3415-subscribe-cross-tenant-isolation',
+  'sep-3415-subscribe-refresh-replaces-secret',
+  'sep-3415-subscribe-refresh-reactivates',
+  'sep-3415-ttl-long-grant-retained',
+  'sep-3415-ttl-no-expiry-persisted',
+  'sep-3415-ttl-no-expiry-gc-terminated'
 ] as const;
 
 async function webhookChecks(opts: EventsFixtureOptions) {
@@ -94,7 +94,7 @@ async function webhookChecks(opts: EventsFixtureOptions) {
 
 /**
  * A catalog with one webhook type and one that only polls. The second is not
- * decoration: `sep-9999-error-unsupported` needs a type whose `delivery` omits
+ * decoration: `sep-3415-error-unsupported` needs a type whose `delivery` omits
  * webhook, and without one it reports untestable.
  */
 function webhookFixture(
@@ -143,7 +143,7 @@ describe('the conformant baseline', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ maxSubscriptions: 1 })
     );
-    const check = checks.get('sep-9999-subscribe-key-composition');
+    const check = checks.get('sep-3415-subscribe-key-composition');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('-32013');
   });
@@ -174,7 +174,7 @@ describe('the conformant baseline', () => {
         error: { code: -32601, message: 'Method not found' }
       })
     );
-    const check = checks.get('sep-9999-subscribe-webhook-only');
+    const check = checks.get('sep-3415-subscribe-webhook-only');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('advertises `webhook` delivery');
   });
@@ -183,10 +183,10 @@ describe('the conformant baseline', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ error: { code: -32012, message: 'Forbidden' } })
     );
-    expect(checks.get('sep-9999-subscribe-webhook-only')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-webhook-only')?.status).toBe(
       'WARNING'
     );
-    expect(checks.get('sep-9999-unsubscribe-by-key')?.details?.untestable).toBe(
+    expect(checks.get('sep-3415-unsubscribe-by-key')?.details?.untestable).toBe(
       true
     );
   });
@@ -197,7 +197,7 @@ describe('the delivery secret', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ acceptMissingSecret: true })
     );
-    const check = checks.get('sep-9999-subscribe-secret-required');
+    const check = checks.get('sep-3415-subscribe-secret-required');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('-32602 InvalidParams');
   });
@@ -206,7 +206,7 @@ describe('the delivery secret', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ acceptBadPrefix: true })
     );
-    expect(checks.get('sep-9999-subscribe-secret-format')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-secret-format')?.status).toBe(
       'FAILURE'
     );
   });
@@ -215,7 +215,7 @@ describe('the delivery secret', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ acceptShortSecret: true })
     );
-    const check = checks.get('sep-9999-subscribe-secret-rejected');
+    const check = checks.get('sep-3415-subscribe-secret-rejected');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('accepted');
   });
@@ -224,7 +224,7 @@ describe('the delivery secret', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ rejectionCode: -32602 + 1 })
     );
-    const check = checks.get('sep-9999-subscribe-secret-required');
+    const check = checks.get('sep-3415-subscribe-secret-required');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('-32602 InvalidParams');
   });
@@ -237,15 +237,15 @@ describe('the callback URL', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ acceptHttpUrl: true })
     );
-    const rejected = checks.get('sep-9999-subscribe-url-non-https-rejected');
+    const rejected = checks.get('sep-3415-subscribe-url-non-https-rejected');
     expect(rejected?.status).toBe('FAILURE');
     expect(rejected?.errorMessage).toContain('`http://`');
     // The requirement and its enforcement are one probe by design, so the
     // second row carries the first's verdict rather than a second probe's.
-    const required = checks.get('sep-9999-subscribe-url-https-required');
+    const required = checks.get('sep-3415-subscribe-url-https-required');
     expect(required?.status).toBe('FAILURE');
     expect(required?.details?.gradedBy).toBe(
-      'sep-9999-subscribe-url-non-https-rejected'
+      'sep-3415-subscribe-url-non-https-rejected'
     );
   });
 });
@@ -255,12 +255,12 @@ describe('TTL negotiation', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ nullRefreshAlways: true })
     );
-    const check = checks.get('sep-9999-ttl-null-only-when-requested');
+    const check = checks.get('sep-3415-ttl-null-only-when-requested');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('no expiry');
     // With no finite grant there is nothing to compare to the suggestion.
     expect(
-      checks.get('sep-9999-ttl-refresh-before-lte-suggestion')?.details
+      checks.get('sep-3415-ttl-refresh-before-lte-suggestion')?.details
         ?.untestable
     ).toBe(true);
   });
@@ -269,7 +269,7 @@ describe('TTL negotiation', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ nullRefreshOnOmitted: true })
     );
-    const check = checks.get('sep-9999-ttl-omitted-means-default');
+    const check = checks.get('sep-3415-ttl-omitted-means-default');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('explicit `ttlMs: null`');
   });
@@ -278,7 +278,7 @@ describe('TTL negotiation', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ grantBeyondSuggestion: true })
     );
-    const check = checks.get('sep-9999-ttl-refresh-before-lte-suggestion');
+    const check = checks.get('sep-3415-ttl-refresh-before-lte-suggestion');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('past the suggested');
   });
@@ -287,7 +287,7 @@ describe('TTL negotiation', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ refreshBefore: 'next tuesday' })
     );
-    const check = checks.get('sep-9999-ttl-refresh-before-lte-suggestion');
+    const check = checks.get('sep-3415-ttl-refresh-before-lte-suggestion');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('ISO 8601');
   });
@@ -296,7 +296,7 @@ describe('TTL negotiation', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ rejectTtl: 'long' })
     );
-    const check = checks.get('sep-9999-ttl-no-rejection-path');
+    const check = checks.get('sep-3415-ttl-no-rejection-path');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('30 days');
     expect(check?.errorMessage).not.toContain('1000ms');
@@ -308,7 +308,7 @@ describe('the subscription key and its id', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ nonIdempotentId: true })
     );
-    const check = checks.get('sep-9999-subscribe-idempotent-upsert');
+    const check = checks.get('sep-3415-subscribe-idempotent-upsert');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('created a second subscription');
   });
@@ -317,11 +317,11 @@ describe('the subscription key and its id', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ idIgnoresUrl: true })
     );
-    const composition = checks.get('sep-9999-subscribe-key-composition');
+    const composition = checks.get('sep-3415-subscribe-key-composition');
     expect(composition?.status).toBe('FAILURE');
     expect(composition?.errorMessage).toContain('not part of the key');
     // Same probe, so the immutability row moves with it.
-    expect(checks.get('sep-9999-subscribe-key-immutable')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-key-immutable')?.status).toBe(
       'FAILURE'
     );
   });
@@ -330,19 +330,19 @@ describe('the subscription key and its id', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ idIsAnInput: true })
     );
-    const check = checks.get('sep-9999-subscribe-id-not-an-input');
+    const check = checks.get('sep-3415-subscribe-id-not-an-input');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('addressed the subscription');
   });
 
   test('omitting id fails its own row, and costs the comparison rows too', async () => {
     const { checks } = await webhookChecks(webhookFixture({ omitId: true }));
-    const check = checks.get('sep-9999-subscribe-id-derived');
+    const check = checks.get('sep-3415-subscribe-id-derived');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('expected a string');
     // Not an independent defect: with no id there is nothing to compare, so
     // the key rows fail alongside it rather than reporting green.
-    expect(checks.get('sep-9999-subscribe-key-composition')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-key-composition')?.status).toBe(
       'FAILURE'
     );
   });
@@ -351,7 +351,7 @@ describe('the subscription key and its id', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ result: { cursor: 42 } })
     );
-    expect(checks.get('sep-9999-subscribe-response-cursor')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-response-cursor')?.status).toBe(
       'FAILURE'
     );
   });
@@ -360,7 +360,7 @@ describe('the subscription key and its id', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ result: { truncated: 'no' } })
     );
-    expect(checks.get('sep-9999-subscribe-response-truncated')?.status).toBe(
+    expect(checks.get('sep-3415-subscribe-response-truncated')?.status).toBe(
       'FAILURE'
     );
   });
@@ -371,11 +371,11 @@ describe('unsubscribe', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ unsubscribeHeldCode: -32603 })
     );
-    const check = checks.get('sep-9999-unsubscribe-by-key');
+    const check = checks.get('sep-3415-unsubscribe-by-key');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('-32603');
     // The unknown-key rule is a separate probe and still passes.
-    expect(checks.get('sep-9999-unsubscribe-unknown-not-found')?.status).toBe(
+    expect(checks.get('sep-3415-unsubscribe-unknown-not-found')?.status).toBe(
       'SUCCESS'
     );
   });
@@ -386,7 +386,7 @@ describe('unsubscribe', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ unsubscribeUnknownOk: true })
     );
-    const check = checks.get('sep-9999-unsubscribe-unknown-not-found');
+    const check = checks.get('sep-3415-unsubscribe-unknown-not-found');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('typo');
   });
@@ -395,7 +395,7 @@ describe('unsubscribe', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ unsubscribeUnknownCode: -32602 })
     );
-    const check = checks.get('sep-9999-unsubscribe-unknown-not-found');
+    const check = checks.get('sep-3415-unsubscribe-unknown-not-found');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('-32011 NotFound');
   });
@@ -406,7 +406,7 @@ describe('the unsupported delivery mode', () => {
     const { checks } = await webhookChecks(
       webhookFixture({ acceptNonWebhookType: true })
     );
-    const check = checks.get('sep-9999-error-unsupported');
+    const check = checks.get('sep-3415-error-unsupported');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('does not advertise');
   });
@@ -416,7 +416,7 @@ describe('the unsupported delivery mode', () => {
       capability: { listChanged: true },
       descriptors: [descriptor({ name: 'hook.event', delivery: ['webhook'] })]
     });
-    const check = checks.get('sep-9999-error-unsupported');
+    const check = checks.get('sep-3415-error-unsupported');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('no type to probe');
   });
@@ -436,9 +436,9 @@ describe.concurrent('durability across a restart', () => {
   test('a store that keeps both grants and GCs the failing one passes all three', async () => {
     const { checks, leaked } = await webhookChecks(durable({ gcAfterMs: 300 }));
     for (const id of [
-      'sep-9999-ttl-long-grant-retained',
-      'sep-9999-ttl-no-expiry-persisted',
-      'sep-9999-ttl-no-expiry-gc-terminated'
+      'sep-3415-ttl-long-grant-retained',
+      'sep-3415-ttl-no-expiry-persisted',
+      'sep-3415-ttl-no-expiry-gc-terminated'
     ]) {
       expect(
         checks.get(id)?.status,
@@ -452,11 +452,11 @@ describe.concurrent('durability across a restart', () => {
     const { checks } = await webhookChecks(
       durable({ dropNoExpiryOnRestart: true, gcAfterMs: 300 })
     );
-    const check = checks.get('sep-9999-ttl-no-expiry-persisted');
+    const check = checks.get('sep-3415-ttl-no-expiry-persisted');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('never refreshes');
     expect(check?.errorMessage).toContain('`absent`');
-    const gc = checks.get('sep-9999-ttl-no-expiry-gc-terminated');
+    const gc = checks.get('sep-3415-ttl-no-expiry-gc-terminated');
     expect(gc?.details?.untestable, gc?.errorMessage).toBe(true);
   });
 
@@ -464,21 +464,21 @@ describe.concurrent('durability across a restart', () => {
     const { checks } = await webhookChecks(
       durable({ dropFiniteOnRestart: true })
     );
-    expect(checks.get('sep-9999-ttl-long-grant-retained')?.status).toBe(
+    expect(checks.get('sep-3415-ttl-long-grant-retained')?.status).toBe(
       'FAILURE'
     );
   });
 
   test('never dropping a failing no-expiry subscription is a WARNING, since dropping is a MAY', async () => {
     const { checks } = await webhookChecks(durable({}));
-    const check = checks.get('sep-9999-ttl-no-expiry-gc-terminated');
+    const check = checks.get('sep-3415-ttl-no-expiry-gc-terminated');
     expect(check?.status).toBe('WARNING');
     expect(check?.errorMessage).toContain('MAY');
   });
 
   test('a restart control that changes nothing leaves the rows untestable', async () => {
     const { checks } = await webhookChecks(durable({ restartNoop: true }));
-    const check = checks.get('sep-9999-ttl-no-expiry-persisted');
+    const check = checks.get('sep-3415-ttl-no-expiry-persisted');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('no evidence a restart happened');
   });
