@@ -329,9 +329,41 @@ describe('DPoP server validation scenario', () => {
         env: { DPOP_UNBOUND_REJECT_STATUS: '403' }
       },
       {
+        name: 'unbound400',
+        script: COMPLIANT,
+        env: { DPOP_UNBOUND_REJECT_STATUS: '400' }
+      },
+      {
+        name: 'prmRoot',
+        script: COMPLIANT,
+        env: { DPOP_PRM_AT_ROOT: '1', DPOP_OMIT_RESOURCE_METADATA: '1' }
+      },
+      {
+        name: 'prmRootWrongResource',
+        script: COMPLIANT,
+        env: {
+          DPOP_PRM_AT_ROOT: '1',
+          DPOP_OMIT_RESOURCE_METADATA: '1',
+          DPOP_PRM_WRONG_RESOURCE: '1'
+        }
+      },
+      {
         name: 'unbound500',
         script: COMPLIANT,
         env: { DPOP_UNBOUND_REJECT_STATUS: '500' }
+      },
+      {
+        name: 'unboundNonce',
+        script: COMPLIANT,
+        env: {
+          DPOP_UNBOUND_NONCE_CHALLENGE: '1',
+          DPOP_PRM_OMIT_REQUIRED: '1'
+        }
+      },
+      {
+        name: 'omitResource',
+        script: COMPLIANT,
+        env: { DPOP_PRM_OMIT_RESOURCE: '1' }
       },
       {
         name: 'wellKnown',
@@ -820,6 +852,42 @@ describe('DPoP server validation scenario', () => {
     expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
+  it('counts HTTP 400 as rejection when metadata says DPoP is required', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.unbound400))
+    );
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.status).toBe('SUCCESS');
+    expect(consistency.details?.statusCode).toBe(400);
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('accepts the origin as resource for metadata at the root well-known URL', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmRoot))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('SUCCESS');
+    expect(prm.details?.source).toBe('well-known-root');
+    expect(byId(checks, 'sep-1932-server-prm-consistency')[0].status).toBe(
+      'SUCCESS'
+    );
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('still rejects a different origin as resource at the root well-known URL', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.prmRootWrongResource))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.details?.source).toBe('well-known-root');
+    expect(prm.errorMessage).toContain('https://attacker.example/mcp');
+    expect(genuineFailures(checks)).toEqual([
+      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
+    ]);
+  }, 30000);
+
   it('does not count HTTP 500 as rejection of an unbound Bearer token', async () => {
     const checks = await new DPoPServerValidationScenario().run(
       testContext(url(ports.unbound500))
@@ -851,7 +919,38 @@ describe('DPoP server validation scenario', () => {
     const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
     expect(prm.status).toBe('SUCCESS');
     expect(prm.details?.source).toBe('resource_metadata');
+    expect(prm.details?.url).toBe(
+      `http://localhost:${ports.prmRedirect}/.well-known/oauth-protected-resource/mcp`
+    );
+    expect(prm.details?.redirectedFrom).toBe(
+      `http://localhost:${ports.prmRedirect}/prm-redirect`
+    );
     expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('does not infer unadvertised enforcement from a nonce challenge to an unbound Bearer token', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.unboundNonce))
+    );
+    const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
+    expect(consistency.details?.untestable).toBe(true);
+    expect(consistency.errorMessage).toContain('use_dpop_nonce');
+    expect(consistency.errorMessage).not.toContain('does not advertise');
+    expect(genuineFailures(checks)).toEqual([]);
+  }, 30000);
+
+  it('names a missing resource field instead of printing undefined', async () => {
+    const checks = await new DPoPServerValidationScenario().run(
+      testContext(url(ports.omitResource))
+    );
+    const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
+    expect(prm.status).toBe('FAILURE');
+    expect(prm.errorMessage).toBe(
+      `protected resource metadata is missing the resource field (expected ${url(ports.omitResource)})`
+    );
+    expect(genuineFailures(checks)).toEqual([
+      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
+    ]);
   }, 30000);
 
   it('does not grade a metadata response whose Content-Type is not application/json', async () => {

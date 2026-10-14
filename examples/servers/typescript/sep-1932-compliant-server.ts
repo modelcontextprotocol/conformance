@@ -17,12 +17,15 @@
  *   DPOP_IAT_SKEW_SECONDS (default 300), DPOP_REQUIRE_NONCE ('1'), DPOP_NONCE,
  *   DPOP_BEARER_REJECT_STATUS (negative-test: Bearer-scheme status, no challenge),
  *   DPOP_UNBOUND_REJECT_STATUS (negative-test: unbound Bearer status),
+ *   DPOP_UNBOUND_NONCE_CHALLENGE (unbound Bearer gets a use_dpop_nonce 401),
  *   DPOP_ERROR_CODE_OVERRIDE (negative-test: that code on every 401),
  *   DPOP_PRM_OMIT_ALGS (negative-test: PRM omits dpop_signing_alg_values_supported),
  *   DPOP_PRM_OMIT_REQUIRED (negative-test: PRM omits dpop_bound_access_tokens_required),
  *   DPOP_PRM_EMPTY_ALGS, DPOP_PRM_ALGS_NOT_ARRAY, DPOP_PRM_ALG_NON_STRING,
  *   DPOP_PRM_REQUIRED_NOT_BOOLEAN, DPOP_PRM_INCLUDE_NONE, DPOP_PRM_INCLUDE_HS256,
- *   DPOP_PRM_DISABLED (no PRM route), DPOP_PRM_WRONG_RESOURCE, DPOP_PRM_HTML,
+ *   DPOP_PRM_DISABLED (no PRM route), DPOP_PRM_WRONG_RESOURCE,
+ *   DPOP_PRM_OMIT_RESOURCE, DPOP_PRM_HTML,
+ *   DPOP_PRM_AT_ROOT (PRM only at the root well-known URL, resource = origin),
  *   DPOP_PRM_REDIRECT (metadata URL 308s to the document),
  *   DPOP_ACCEPT_UNBOUND_BEARER (negative-test: accept an unbound Bearer token),
  *   DPOP_OMIT_CHALLENGE_ALGS (negative-test: DPoP challenge without `algs`),
@@ -88,18 +91,26 @@ const PRM_INCLUDE_HS256 = process.env.DPOP_PRM_INCLUDE_HS256 === '1';
 // No protected-resource-metadata route. Proves the unreachable paths.
 const PRM_DISABLED = process.env.DPOP_PRM_DISABLED === '1';
 const PRM_WRONG_RESOURCE = process.env.DPOP_PRM_WRONG_RESOURCE === '1';
+const PRM_OMIT_RESOURCE = process.env.DPOP_PRM_OMIT_RESOURCE === '1';
 // 200 whose body is JSON but whose Content-Type is not application/json.
 const PRM_HTML = process.env.DPOP_PRM_HTML === '1';
 // resource_metadata URL answers 308, then the real document.
 const PRM_REDIRECT = process.env.DPOP_PRM_REDIRECT === '1';
+// PRM is served only at the root well-known URL, naming the origin as its
+// resource (RFC 9728 §3.3 for that URL).
+const PRM_AT_ROOT = process.env.DPOP_PRM_AT_ROOT === '1';
 // Accept a valid unbound Bearer token (no cnf). A DPoP-bound token presented
 // as Bearer is still rejected. Proves PrmConsistency can FAILURE.
 const ACCEPT_UNBOUND_BEARER = process.env.DPOP_ACCEPT_UNBOUND_BEARER === '1';
-// Unbound Bearer token is answered with this status (403 counts as rejection;
-// 500 must not).
+// Unbound Bearer token is answered with this status (4xx counts as rejection;
+// 5xx must not).
 const UNBOUND_REJECT_STATUS = process.env.DPOP_UNBOUND_REJECT_STATUS
   ? intEnv('DPOP_UNBOUND_REJECT_STATUS', 0)
   : 0;
+// Unbound Bearer token is answered with a use_dpop_nonce 401 (no DPoP-Nonce
+// header, so later probes are unaffected).
+const UNBOUND_NONCE_CHALLENGE =
+  process.env.DPOP_UNBOUND_NONCE_CHALLENGE === '1';
 // DPoP challenge omits `algs`. Proves AdvertisesDpop can WARNING.
 const OMIT_CHALLENGE_ALGS = process.env.DPOP_OMIT_CHALLENGE_ALGS === '1';
 // Unauthenticated 401 carries only a Bearer challenge.
@@ -291,21 +302,33 @@ async function validateDpop(req: Request): Promise<Result> {
 function metadataUrl(): string {
   const origin = new URL(AUDIENCE).origin;
   if (PRM_REDIRECT) return `${origin}/prm-redirect`;
+  if (PRM_AT_ROOT) return `${origin}/.well-known/oauth-protected-resource`;
   return `${origin}/.well-known/oauth-protected-resource/mcp`;
 }
 
+function prmResource(): string {
+  if (PRM_WRONG_RESOURCE) return 'https://attacker.example/mcp';
+  if (PRM_AT_ROOT) return new URL(AUDIENCE).origin;
+  return AUDIENCE;
+}
+
 function prmDocument(): Record<string, unknown> {
-  const doc: Record<string, unknown> = {
-    resource: PRM_WRONG_RESOURCE ? 'https://attacker.example/mcp' : AUDIENCE
-  };
+  const doc: Record<string, unknown> = PRM_OMIT_RESOURCE
+    ? {}
+    : { resource: prmResource() };
   if (!PRM_OMIT_ALGS) {
-    let algs: unknown = [...ASYMMETRIC_ALGS];
-    if (PRM_INCLUDE_NONE) (algs as string[]).push('none');
-    if (PRM_INCLUDE_HS256) (algs as string[]).push('HS256');
-    if (PRM_EMPTY_ALGS) algs = [];
-    if (PRM_ALGS_NOT_ARRAY) algs = 'ES256';
-    if (PRM_ALG_NON_STRING) algs = [1];
-    doc.dpop_signing_alg_values_supported = algs;
+    const listed = [
+      ...ASYMMETRIC_ALGS,
+      ...(PRM_INCLUDE_NONE ? ['none'] : []),
+      ...(PRM_INCLUDE_HS256 ? ['HS256'] : [])
+    ];
+    doc.dpop_signing_alg_values_supported = PRM_EMPTY_ALGS
+      ? []
+      : PRM_ALGS_NOT_ARRAY
+        ? 'ES256'
+        : PRM_ALG_NON_STRING
+          ? [1]
+          : listed;
   }
   if (!PRM_OMIT_REQUIRED) {
     doc.dpop_bound_access_tokens_required = PRM_REQUIRED_NOT_BOOLEAN
@@ -413,7 +436,10 @@ if (PRM_REDIRECT) {
 }
 
 if (!PRM_DISABLED) {
-  app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+  const prmPath = PRM_AT_ROOT
+    ? '/.well-known/oauth-protected-resource'
+    : '/.well-known/oauth-protected-resource/mcp';
+  app.get(prmPath, (_req, res) => {
     if (PRM_HTML) {
       res.status(200).type('text/html').send(JSON.stringify(prmDocument()));
       return;
@@ -429,10 +455,19 @@ app.post('/mcp', async (req: Request, res: Response) => {
     if (bound && BEARER_REJECT_STATUS) {
       // Only the downgrade probe (a DPoP-bound token presented as Bearer). An
       // unbound Bearer token is the consistency probe and must still be judged
-      // by validateDpop, unless UNBOUND_REJECT_STATUS is set.
+      // by validateDpop, unless an UNBOUND_* mode below answers it first.
       res.status(BEARER_REJECT_STATUS).json({
         jsonrpc: '2.0',
         error: { code: -32603, message: 'Internal error' },
+        id: null
+      });
+      return;
+    }
+    if (!bound && UNBOUND_NONCE_CHALLENGE) {
+      res.setHeader('WWW-Authenticate', `DPoP error="use_dpop_nonce"`);
+      res.status(401).json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'Unauthorized' },
         id: null
       });
       return;

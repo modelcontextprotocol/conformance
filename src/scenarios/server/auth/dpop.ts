@@ -389,7 +389,10 @@ type PrmSource = 'resource_metadata' | 'well-known-path' | 'well-known-root';
 interface PrmDocument {
   doc: Record<string, unknown>;
   source: PrmSource;
+  /** The URL that served the document, after any redirects. */
   url: string;
+  /** The URL first requested, when a redirect led elsewhere. */
+  redirectedFrom?: string;
 }
 
 /** Path-based well-known URL, then the root one (RFC 9728 §3.1, MCP discovery order). */
@@ -469,9 +472,9 @@ interface FetchMiss {
 
 async function fetchJsonDocument(
   url: string
-): Promise<{ doc: Record<string, unknown> } | FetchMiss> {
+): Promise<{ doc: Record<string, unknown>; url: string } | FetchMiss> {
   let current = url;
-  for (let hop = 0; hop <= MAX_METADATA_REDIRECTS; hop++) {
+  for (let hop = 0; ; hop++) {
     let res: Awaited<ReturnType<typeof request>>;
     try {
       res = await request(current, {
@@ -504,7 +507,7 @@ async function fetchJsonDocument(
       } catch {
         return {
           reason: `redirect Location is not a URL (${location})`,
-          terminal: true
+          terminal: false
         };
       }
       continue;
@@ -526,29 +529,45 @@ async function fetchJsonDocument(
         terminal: true
       };
     }
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(text) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return { doc: parsed as Record<string, unknown> };
-      }
+      parsed = JSON.parse(text);
     } catch {
+      parsed = undefined;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { reason: 'body was not a JSON object', terminal: true };
     }
-    return { reason: 'body was not a JSON object', terminal: true };
+    return { doc: parsed as Record<string, unknown>, url: current };
   }
-  return {
-    reason: `did not resolve within ${MAX_METADATA_REDIRECTS} redirects`,
-    terminal: false
-  };
 }
 
-/** RFC 9728 §3.3: the resource value MUST be identical, or the document is unusable. */
+/**
+ * RFC 9728 §3.3: `resource` MUST be identical to the identifier the
+ * well-known suffix was inserted into, or the document is unusable. For the
+ * root URL that identifier is the origin. The MCP endpoint is also accepted
+ * there, matching what MCP clients (e.g. the TypeScript SDK) accept.
+ */
+function acceptedResources(resourceUrl: string, source: PrmSource): string[] {
+  if (source !== 'well-known-root') return [resourceUrl];
+  const { origin } = new URL(resourceUrl);
+  return [resourceUrl, origin, `${origin}/`];
+}
+
 function resourceMismatch(
   doc: Record<string, unknown>,
-  resourceUrl: string
+  resourceUrl: string,
+  source: PrmSource
 ): string | undefined {
-  if (doc.resource === resourceUrl) return undefined;
-  return `protected resource metadata resource ${JSON.stringify(doc.resource)} is not identical to the resource identifier ${resourceUrl}`;
+  const allowed = acceptedResources(resourceUrl, source);
+  if (typeof doc.resource === 'string' && allowed.includes(doc.resource)) {
+    return undefined;
+  }
+  const expected = allowed.join(' or ');
+  if (doc.resource === undefined) {
+    return `protected resource metadata is missing the resource field (expected ${expected})`;
+  }
+  return `protected resource metadata resource ${JSON.stringify(doc.resource)} is not identical to the resource identifier ${expected}`;
 }
 
 type PrmDiscovery =
@@ -558,6 +577,7 @@ type PrmDiscovery =
       mismatch: string;
       source: PrmSource;
       url: string;
+      redirectedFrom?: string;
       resource: unknown;
     };
 
@@ -573,15 +593,18 @@ async function discoverProtectedResourceMetadata(
   resourceMetadata: string | undefined
 ): Promise<PrmDiscovery> {
   const accepted = (
-    doc: Record<string, unknown>,
+    fetched: { doc: Record<string, unknown>; url: string },
     source: PrmSource,
-    url: string
+    requestedUrl: string
   ): PrmDiscovery => {
-    const mismatch = resourceMismatch(doc, resourceUrl);
+    const { doc, url } = fetched;
+    const redirect =
+      url === requestedUrl ? {} : { redirectedFrom: requestedUrl };
+    const mismatch = resourceMismatch(doc, resourceUrl, source);
     if (mismatch) {
-      return { mismatch, source, url, resource: doc.resource };
+      return { mismatch, source, url, ...redirect, resource: doc.resource };
     }
-    return { doc, source, url };
+    return { doc, source, url, ...redirect };
   };
 
   if (resourceMetadata !== undefined && resourceMetadata.length > 0) {
@@ -599,7 +622,7 @@ async function discoverProtectedResourceMetadata(
         reason: `protected resource metadata advertised at ${absolute} ${fetched.reason}`
       };
     }
-    return accepted(fetched.doc, 'resource_metadata', absolute);
+    return accepted(fetched, 'resource_metadata', absolute);
   }
 
   const { pathBased, root } = protectedResourceMetadataFallbacks(resourceUrl);
@@ -614,7 +637,7 @@ async function discoverProtectedResourceMetadata(
   for (const candidate of candidates) {
     const fetched = await fetchJsonDocument(candidate.url);
     if ('doc' in fetched) {
-      return accepted(fetched.doc, candidate.source, candidate.url);
+      return accepted(fetched, candidate.source, candidate.url);
     }
     if (fetched.terminal) {
       return {
@@ -632,18 +655,19 @@ async function discoverProtectedResourceMetadata(
  * `true` only when a usable document set the field to boolean true. Anything
  * else (absent, false, malformed, or no document) is not the MUST tier.
  */
-type RequiredTier = true | false | 'unknown';
+type RequiredTier = boolean | 'unknown';
 
 function gradeAdvertises(
   res: Response,
-  required: RequiredTier
+  required: RequiredTier,
+  published: unknown
 ): ConformanceCheck {
   const algs = dpopAuthParam(res.wwwAuthenticate, 'algs');
   const details = {
     statusCode: res.statusCode,
     algs: algs ?? null,
     resourceMetadata: resourceMetadataParam(res.wwwAuthenticate) ?? null,
-    dpopBoundAccessTokensRequired: required === 'unknown' ? null : required,
+    dpop_bound_access_tokens_required: published ?? null,
     metadataRead: required !== 'unknown'
   };
   // Both advertisement sentences are about an HTTP 401 (the SHOULD) or a
@@ -731,6 +755,9 @@ function gradePrm(found: PrmDiscovery): ConformanceCheck {
       {
         source: found.source,
         url: found.url,
+        ...(found.redirectedFrom
+          ? { redirectedFrom: found.redirectedFrom }
+          : {}),
         resource: found.resource ?? null
       },
       DISCOVERY_REFERENCES
@@ -746,17 +773,12 @@ function gradePrm(found: PrmDiscovery): ConformanceCheck {
     );
   }
   const algs = found.doc.dpop_signing_alg_values_supported;
-  const hasRequired = Object.prototype.hasOwnProperty.call(
-    found.doc,
-    'dpop_bound_access_tokens_required'
-  );
-  const required = hasRequired
-    ? found.doc.dpop_bound_access_tokens_required
-    : undefined;
+  const required = found.doc.dpop_bound_access_tokens_required;
   const forbidden = forbiddenDpopAlgs(algs);
   const details: Record<string, unknown> = {
     source: found.source,
     url: found.url,
+    ...(found.redirectedFrom ? { redirectedFrom: found.redirectedFrom } : {}),
     dpop_signing_alg_values_supported: algs ?? null,
     dpop_bound_access_tokens_required: required ?? null,
     ...(forbidden.length > 0 ? { forbidden } : {})
@@ -774,7 +796,7 @@ function gradePrm(found: PrmDiscovery): ConformanceCheck {
   }
   const problems = [
     algsProblem(algs),
-    hasRequired && typeof required !== 'boolean'
+    required !== undefined && typeof required !== 'boolean'
       ? 'dpop_bound_access_tokens_required is malformed: expected a boolean'
       : undefined
   ].filter((problem): problem is string => problem !== undefined);
@@ -818,9 +840,9 @@ function gradeConsistency(
   res: Response
 ): ConformanceCheck {
   const accepted = isAccepted(res.statusCode);
-  // The advertisement MUST says "reject", not "401". 401 and 403 are a
-  // refusal. 400, 404, and 5xx are not evidence the token was refused.
-  const rejected = res.statusCode === 401 || res.statusCode === 403;
+  // The SEP's MUST says "reject", not "401". A 4xx is a refusal of the request
+  // (RFC 6750 §3.1 uses 400, 401, and 403). A 5xx is a server failure.
+  const rejected = res.statusCode >= 400 && res.statusCode < 500;
   const details = consistencyDetails(published, res);
   if (saysRequired && accepted) {
     return dpopCheck(
@@ -828,7 +850,7 @@ function gradeConsistency(
       CONSISTENCY_NAME,
       CONSISTENCY_DESC,
       'FAILURE',
-      'Protected resource metadata says dpop_bound_access_tokens_required but the server accepted an unbound Bearer token',
+      'Protected resource metadata sets dpop_bound_access_tokens_required to true, but the server accepted an unbound Bearer token',
       details,
       DISCOVERY_REFERENCES
     );
@@ -855,8 +877,19 @@ function gradeConsistency(
       DISCOVERY_REFERENCES
     );
   }
-  // Inferring unadvertised enforcement needs a 401. A 403 can be an unrelated
-  // denial, so it stays on the "neither" arm below.
+  // A use_dpop_nonce 401 is about the nonce, not the Bearer token, so it is not
+  // evidence of unadvertised enforcement.
+  if (isNonceChallenge(res)) {
+    return untestableCheck(
+      CONSISTENCY_ID,
+      CONSISTENCY_NAME,
+      CONSISTENCY_DESC,
+      'server answered the unbound Bearer token with a DPoP nonce challenge (use_dpop_nonce), which does not show whether it accepts Bearer tokens',
+      DISCOVERY_REFERENCES
+    );
+  }
+  // Inferring unadvertised enforcement needs a 401. Another 4xx can be an
+  // unrelated denial, so it stays on the "neither" arm below.
   if (res.statusCode === 401) {
     return dpopCheck(
       CONSISTENCY_ID,
@@ -1061,7 +1094,7 @@ server-provided nonce flow.`;
     // grade waits until metadata is read, because a missing DPoP challenge is
     // a MUST only when dpop_bound_access_tokens_required is true.
     let requiredTier: RequiredTier = 'unknown';
-    let publishedRequired: unknown = null;
+    let publishedRequired: unknown;
     let metadataGap = 'protected resource metadata was not read';
     try {
       const unauth = await sendUnauthenticated();
@@ -1071,14 +1104,8 @@ server-provided nonce flow.`;
           resourceMetadataParam(unauth.wwwAuthenticate)
         );
         if ('doc' in found) {
-          const published = Object.prototype.hasOwnProperty.call(
-            found.doc,
-            'dpop_bound_access_tokens_required'
-          )
-            ? found.doc.dpop_bound_access_tokens_required
-            : undefined;
-          publishedRequired = published === undefined ? null : published;
-          requiredTier = published === true ? true : false;
+          publishedRequired = found.doc.dpop_bound_access_tokens_required;
+          requiredTier = publishedRequired === true;
           metadataGap = '';
         } else if ('mismatch' in found) {
           metadataGap =
@@ -1086,11 +1113,11 @@ server-provided nonce flow.`;
         } else {
           metadataGap = found.reason;
         }
-        checks.push(gradeAdvertises(unauth, requiredTier));
+        checks.push(gradeAdvertises(unauth, requiredTier, publishedRequired));
         checks.push(gradePrm(found));
       } catch (e) {
         metadataGap = `protected resource metadata request failed: ${String(e)}`;
-        checks.push(gradeAdvertises(unauth, 'unknown'));
+        checks.push(gradeAdvertises(unauth, 'unknown', undefined));
         checks.push(
           untestableCheck(
             PRM_ID,
