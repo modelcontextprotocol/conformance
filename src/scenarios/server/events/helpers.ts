@@ -24,6 +24,7 @@ import type {
 } from '../../../types';
 import type { Connection } from '../../../connection';
 import { JsonRpcError } from '../../../connection';
+import { untestableCheck } from '../../untestable';
 
 /**
  * The Events extension identifier, per SEP-2133 Extension Negotiation.
@@ -70,20 +71,31 @@ export const JSONRPC_METHOD_NOT_FOUND = -32601;
 export const JSONRPC_INVALID_PARAMS = -32602;
 
 /**
- * The general-purpose codes this document defines, carried in the JSON-RPC
- * implementation-defined server range. Named for reuse across MCP rather than
- * scoped to events, and each conveys its specifics through a typed `data`
- * payload rather than by minting more numbers.
+ * The five general-purpose codes SEP-3415 requests, named for reuse across MCP
+ * rather than scoped to events. Each conveys its specifics through a typed
+ * `data` payload rather than by minting more numbers.
+ *
+ * They are the next five in the range the core specification allocates
+ * sequentially (`-32020` to `-32099`), and provisional until the SEP is
+ * accepted. The design sketch numbered them `-32011` to `-32015`, inside
+ * `-32000` to `-32019`, which the specification leaves to implementations and
+ * never assigns, so a server still sending those is grading against the
+ * sketch rather than the SEP.
  */
-export const EVENTS_NOT_FOUND = -32011;
-export const EVENTS_FORBIDDEN = -32012;
-export const EVENTS_RESOURCE_EXHAUSTED = -32013;
-export const EVENTS_UNSUPPORTED = -32014;
-export const EVENTS_CALLBACK_ENDPOINT_ERROR = -32015;
+export const EVENTS_NOT_FOUND = -32023;
+export const EVENTS_FORBIDDEN = -32024;
+export const EVENTS_RESOURCE_EXHAUSTED = -32025;
+export const EVENTS_UNSUPPORTED = -32026;
+export const EVENTS_CALLBACK_ENDPOINT_ERROR = -32027;
 
-/** Inclusive bounds of the JSON-RPC implementation-defined server range. */
-export const SERVER_ERROR_RANGE_MIN = -32099;
-export const SERVER_ERROR_RANGE_MAX = -32000;
+/** Every code SEP-3415 defines, in its Error Handling table's order. */
+export const EVENTS_ERROR_CODES: readonly number[] = [
+  EVENTS_NOT_FOUND,
+  EVENTS_FORBIDDEN,
+  EVENTS_RESOURCE_EXHAUSTED,
+  EVENTS_UNSUPPORTED,
+  EVENTS_CALLBACK_ENDPOINT_ERROR
+];
 
 export const EVENTS_SPEC_REF: SpecReference = {
   id: 'MCP-Events',
@@ -237,7 +249,7 @@ export const EVENTS_CONTROL_ALLOW_CALLBACK_ORIGIN =
  * Reports one per-event-type subscription cap the server enforces, as JSON text
  * `{"name": "<event type>", "max": <n>}`. Read-only.
  *
- * `-32013` is only reachable by exceeding a limit, and nothing in the protocol
+ * `-32025` is only reachable by exceeding a limit, and nothing in the protocol
  * says where a server's limits are. The concurrency probe cannot find one for
  * the suite: it opens three streams on one type and needs all three to stay
  * open, so a server capped there fails the MUST beside it. Knowing the capped
@@ -575,9 +587,9 @@ export function isIso8601(value: unknown): boolean {
   return /^\d{4}-\d{2}-\d{2}T/.test(value);
 }
 
-/** Whether `code` sits in the JSON-RPC implementation-defined server range. */
-export function inServerErrorRange(code: number): boolean {
-  return code >= SERVER_ERROR_RANGE_MIN && code <= SERVER_ERROR_RANGE_MAX;
+/** Whether `code` is one of the five codes SEP-3415 allocates. */
+export function isEventsErrorCode(code: number): boolean {
+  return EVENTS_ERROR_CODES.includes(code);
 }
 
 /**
@@ -587,4 +599,51 @@ export function inServerErrorRange(code: number): boolean {
  */
 export function unknownEventName(): string {
   return `conformance.nonexistent.${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export const RESULT_TYPE_ID = 'sep-3415-result-type-complete';
+export const RESULT_TYPE_DESCRIPTION =
+  'Every result this extension defines is a standard `Result` and carries `resultType: "complete"`.';
+
+/** One result a scenario received, named by the method that returned it. */
+export interface ObservedResult {
+  method: string;
+  result: unknown;
+}
+
+/**
+ * Grade `resultType: "complete"` across the results one scenario received.
+ *
+ * Every scenario emits this one check over whatever results it already has in
+ * hand, so the row is graded on `events/list`, `events/poll`, the webhook
+ * methods and the stream's final frame without a probe of its own. Reports the
+ * first offender, since one missing field is enough to fail the rule. With no
+ * results at all it is untestable rather than passed, per AGENTS.md #248.
+ */
+export function resultTypeCheck(observed: ObservedResult[]): ConformanceCheck {
+  if (observed.length === 0) {
+    return untestableCheck(
+      RESULT_TYPE_ID,
+      RESULT_TYPE_ID,
+      RESULT_TYPE_DESCRIPTION,
+      'The scenario received no events/* result to inspect.',
+      [EVENTS_SPEC_REF],
+      'FAILURE'
+    );
+  }
+  const offender = observed.find(
+    (o) => !isObject(o.result) || o.result.resultType !== 'complete'
+  );
+  if (offender) {
+    const value = isObject(offender.result)
+      ? offender.result.resultType
+      : undefined;
+    return eventsCheck(RESULT_TYPE_ID, RESULT_TYPE_DESCRIPTION, 'FAILURE', {
+      errorMessage: `The \`${offender.method}\` result carried \`resultType\` ${describeValue(value)}, expected "complete".`,
+      details: { method: offender.method, resultType: value }
+    });
+  }
+  return eventsCheck(RESULT_TYPE_ID, RESULT_TYPE_DESCRIPTION, 'SUCCESS', {
+    details: { methods: [...new Set(observed.map((o) => o.method))] }
+  });
 }

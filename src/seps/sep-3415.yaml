@@ -3,7 +3,7 @@
 #
 # ############################################################################
 # # MCP Events is SEP-3415 (modelcontextprotocol/modelcontextprotocol#3415).  #
-# # The rows below still quote the design sketch. Re-extraction is pending.   #
+# # 15 rows quote the SEP; the rest still quote the design sketch.            #
 # ############################################################################
 #
 #   SEP numbers are PR numbers in modelcontextprotocol/modelcontextprotocol.
@@ -20,6 +20,22 @@
 #   `list_changed` delivered only on a `subscriptions/listen` stream. Until the
 #   rows are re-extracted, `spec_source` and `spec_url` keep naming the text the
 #   rows actually quote. Tracked in panyam/mcpkit#1502.
+#
+#   Re-quoted against SEP-3415 at c47fd245 (2026-10-14), each carrying a
+#   per-row `url` to its SEP section: every row that names an error code
+#   (sep-3415-removal-error-not-found, -removal-error-schema-changed,
+#   -removal-poll-not-found, -error-not-found, -error-forbidden,
+#   -error-resource-exhausted, -error-unsupported,
+#   -error-callback-endpoint-error, -error-server-range, -poll-mode-unsupported,
+#   -subscribe-auth-required, -unsubscribe-unknown-not-found,
+#   -verification-failure-error), sep-3415-stream-final-result-shape, and the
+#   new sep-3415-result-type-complete. The SEP names codes by name in prose and
+#   gives the numbers only in its Error Handling table, so the five code rows,
+#   -poll-mode-unsupported and -unsubscribe-unknown-not-found quote that
+#   table's row (name, code and meaning) rather than a sentence. The codes are
+#   -32023..-32027; the sketch's -32011..-32015 sat in the range the core
+#   specification leaves to implementations, and -error-server-range now fails
+#   them by name.
 #
 #   The six capability rows (sep-3415-capability-events-object,
 #   -list-changed-flag, -empty-settings, -client-declaration,
@@ -44,7 +60,8 @@
 #   `spec_url` names the document itself and rows carry no per-row `url`.
 #   Expect one more pass once the text becomes a spec PR and gains anchors.
 #
-# coverage: 135 declared checks plus 30 excluded rows.
+# coverage: 136 declared checks plus 30 excluded rows (135 until
+#   sep-3415-result-type-complete was added on 2026-10-14).
 #
 #   A keyword sweep of the source finds 144 RFC 2119 keyword occurrences across
 #   119 sentences: 34 MUST, 9 MUST NOT, 3 REQUIRED, 56 SHOULD, 7 SHOULD NOT
@@ -99,27 +116,34 @@
 #
 # backing_scenarios: server ClientScenarios under src/scenarios/server/events/
 #   emit the check IDs below (a row is "tested" once a scenario emits its ID;
-#   see src/traceability/). All five now exist and together emit 122 of the 135
-#   rows:
-#     discovery.ts (events-discovery), 14 rows — the three capability rows, the
+#   see src/traceability/). All five now exist and together emit 123 of the 136
+#   rows. sep-3415-result-type-complete is emitted by four of them (discovery,
+#   poll, push and webhook), each grading the results it already holds, so it
+#   counts once here and once in each scenario below:
+#     discovery.ts (events-discovery), 15 rows — the three capability rows, the
 #       two sep-3415-list-* rows, the six sep-3415-descriptor-* rows,
 #       sep-3415-error-not-found plus sep-3415-error-server-range (both graded
 #       off one unknown-name probe), and sep-3415-fallback-method-not-found,
-#       which only a server that does not offer the extension can answer.
-#     poll.ts (events-poll), 34 rows — the sep-3415-poll-* rows, the
+#       which only a server that does not offer the extension can answer, plus
+#       sep-3415-result-type-complete on the `events/list` result.
+#     poll.ts (events-poll), 35 rows — the sep-3415-poll-* rows, the
 #       sep-3415-occurrence-* rows, the sep-3415-cursor-* /
 #       sep-3415-max-age-* / sep-3415-truncated-* rows reachable through poll,
 #       sep-3415-removal-poll-not-found (the poll leg of the removal rules), and
 #       sep-3415-error-invalid-params, which rides the same probe as
-#       sep-3415-poll-invalid-arguments.
-#     push.ts (events-push), 18 rows — the sep-3415-stream-* rows plus
+#       sep-3415-poll-invalid-arguments, plus sep-3415-result-type-complete on
+#       the bootstrap poll.
+#     push.ts (events-push), 19 rows — the sep-3415-stream-* rows plus
 #       sep-3415-error-resource-exhausted, graded when a server refuses one of
 #       the three concurrent streams for a quota. It holds a
 #       real SSE stream open through stream.ts, because conn.request() resolves
 #       on the response for its id and a push stream withholds that until the
-#       subscription ends.
-#     webhook.ts (events-webhook), 27 rows — sep-3415-subscribe-*,
-#       sep-3415-ttl-*, sep-3415-unsubscribe-* and sep-3415-error-unsupported.
+#       subscription ends. sep-3415-result-type-complete is graded on the
+#       stream's final frame, and is a WARNING untestable when the server never
+#       closes the stream itself, since clients MUST NOT depend on that frame.
+#     webhook.ts (events-webhook), 28 rows — sep-3415-subscribe-*,
+#       sep-3415-ttl-*, sep-3415-unsubscribe-*, sep-3415-error-unsupported, and
+#       sep-3415-result-type-complete on the subscribe and unsubscribe results.
 #     webhook-delivery.ts (events-webhook-delivery), 29 rows —
 #       sep-3415-delivery-*, sep-3415-verification-*, sep-3415-ssrf-*,
 #       sep-3415-envelope-* and sep-3415-error-callback-endpoint-error, graded
@@ -442,29 +466,43 @@ requirements:
   - check: sep-3415-removal-terminates-subscriptions
     text: "The server SHOULD end them using each mode's termination signal: `notifications/events/terminated` on push streams and a `terminated` envelope to webhook subscriptions."
   - check: sep-3415-removal-error-not-found
-    text: 'The `error` is `-32011 NotFound` with `data: {"kind": "event"}` when the type was removed.'
+    text: '`NotFound` with `data: {"kind": "event"}` when the type was removed.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-error-schema-changed
-    text: 'The `error` is `-32014 Unsupported` with `data: {"feature": "payloadSchema" | "inputSchema", "reason": "schema_changed"}` when it was changed in place — not `-32012 Forbidden`, since the principal''s access is unchanged.'
+    text: '`Unsupported` with `data: {"feature": "payloadSchema" | "inputSchema", "reason": "schema_changed"}` when it was changed in place. It is not `Forbidden`, because the principal''s access is unchanged.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-additive-no-terminate
     text: 'Purely additive changes MUST NOT terminate subscriptions.'
   - check: sep-3415-removal-poll-not-found
-    text: 'Poll holds no server-side subscription to terminate: a poll against a removed name already returns `-32011 NotFound`.'
+    text: 'Poll holds no server-side subscription to terminate. A poll against a removed name already returns `NotFound`.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
 
   # === Error Codes ===
   - check: sep-3415-error-invalid-params
     text: "`-32602 InvalidParams` — request is statically invalid: arguments don't match the event's inputSchema, the callback `delivery.url` is malformed or non-`https`, or `delivery.secret` is not a valid `whsec_` value."
   - check: sep-3415-error-not-found
-    text: '`-32011 NotFound` — a referenced entity does not exist: an unknown event name, or no subscription matching the key on `events/unsubscribe`.'
+    text: '`NotFound` `-32023`: A referenced entity does not exist: an unknown event name, or no subscription that matches the key on `events/unsubscribe`. The method implies which. `data.kind` (`"event"` | `"subscription"`) MAY disambiguate.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-forbidden
-    text: '`-32012 Forbidden` — the authenticated principal is not permitted for this event/arguments combination, or its access was revoked.'
+    text: '`Forbidden` `-32024`: The authenticated principal is not permitted for this combination of event and arguments, or its access was revoked.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-resource-exhausted
-    text: '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).'
+    text: '`ResourceExhausted` `-32025`: A server-imposed limit or quota was reached. `data.limit` names it (for example `"subscriptions"`), and `data.max` MAY give the ceiling.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-unsupported
-    text: '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here, e.g. a delivery mode the event type does not offer. `data` identifies it (e.g. `{"feature": "deliveryMode", "value": "push"}`).'
+    text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-callback-endpoint-error
-    text: '`-32015 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.'
+    text: '`CallbackEndpointError` `-32027`: A client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories (`connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx`, `challenge_failed`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-server-range
-    text: 'These are general-purpose codes carried in the JSON-RPC implementation-defined server range `[-32000, -32099]`.'
+    text: 'The core specification partitions the JSON-RPC implementation-defined range: `-32000` to `-32019` is left to implementations and is never defined by the specification, and `-32020` to `-32099` is allocated sequentially by the specification. This SEP requests the next five codes in the allocated range.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+
+  # === Results (SEP-3415 conventions) ===
+  - check: sep-3415-result-type-complete
+    text: 'Every result this extension defines is a standard `Result` and carries `resultType: "complete"`.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#specification
 
   # === Poll-Based Delivery ===
   - check: sep-3415-poll-implemented
@@ -492,7 +530,8 @@ requirements:
   - check: sep-3415-poll-invalid-arguments
     text: "A poll whose `arguments` do not match the event's `inputSchema` returns `-32602 InvalidParams`."
   - check: sep-3415-poll-mode-unsupported
-    text: 'A poll against an event type whose `delivery` does not list `"poll"` returns `-32014 Unsupported` identifying the unsupported delivery mode.'
+    text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
 
   # === EventOccurrence schema ===
   - check: sep-3415-occurrence-event-id
@@ -562,7 +601,8 @@ requirements:
   - check: sep-3415-stream-heartbeat-not-sse-comment
     text: 'On Streamable HTTP this is sent as an SSE `data:` frame; the SSE comment form (`: keepalive`) is not used since it cannot carry cursor state.'
   - check: sep-3415-stream-final-result-shape
-    text: 'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`). It carries no information — it satisfies JSON-RPC''s requirement that every request gets a response.'
+    text: 'The `StreamEventsResult` is an empty result that carries only `resultType` and the subscription ID in `_meta`, mirroring `SubscriptionsListenResult`. It carries no information.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-final-result-timing
     text: 'It is sent whenever the server can write a final frame: on Streamable HTTP only when the server initiates the close; on stdio the server MAY send it, and clients MUST NOT depend on receiving it.'
   - check: sep-3415-stream-cancel-stops-delivery
@@ -586,7 +626,8 @@ requirements:
   - check: sep-3415-subscribe-url-non-https-rejected
     text: 'Servers MUST reject `events/subscribe` with a non-`https` `delivery.url` (`-32602 InvalidParams`).'
   - check: sep-3415-subscribe-auth-required
-    text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without an authorized principal with `-32012 Forbidden`.'
+    text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal. Servers MUST reject calls without an authorized principal with `Forbidden`.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-key-composition
     text: "The subscription key is `(principal, delivery.url, name, arguments)`, where `principal` is the server's canonical identifier for the authenticated subject. `arguments` is compared by canonical-JSON equality. There is no client-generated `id`."
   - check: sep-3415-subscribe-key-immutable
@@ -628,7 +669,8 @@ requirements:
   - check: sep-3415-unsubscribe-by-key
     text: '`events/unsubscribe` is eager cleanup; the server looks the subscription up by the same compound key used for idempotent upsert on subscribe.'
   - check: sep-3415-unsubscribe-unknown-not-found
-    text: 'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.'
+    text: '`NotFound` `-32023`: A referenced entity does not exist: an unknown event name, or no subscription that matches the key on `events/unsubscribe`. The method implies which. `data.kind` (`"event"` | `"subscription"`) MAY disambiguate.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
 
   # === Webhook: delivery status ===
   - check: sep-3415-delivery-status-last-error-category
@@ -670,7 +712,8 @@ requirements:
   - check: sep-3415-verification-challenge-echo
     text: 'Before activating, the server POSTs a `verification` control envelope carrying a single-use, short-lived `challenge` nonce (signed and headed like any delivery), and the endpoint proves intent by echoing the nonce in a `2xx` body (`{"challenge":"<nonce>"}`), which the server compares in constant time.'
   - check: sep-3415-verification-failure-error
-    text: 'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`; an unreachable one yields the same code with the relevant connection-failure category.'
+    text: 'A reachable endpoint that fails to echo the challenge yields `CallbackEndpointError` with `data.reason: "challenge_failed"`. An unreachable one yields the same error with the relevant connection-failure category (`connection_refused`, `timeout` or `tls_error`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-cached-per-principal-url
     text: "Verification is cached per `(principal, url)`: a successful handshake, allowlist hit, or well-known match covers that principal's subscriptions to that URL across refreshes and `arguments`, so varying `arguments` cannot multiply verification POSTs at a victim and one principal's verification never waives the challenge for another."
   - check: sep-3415-verification-persisted-for-no-expiry

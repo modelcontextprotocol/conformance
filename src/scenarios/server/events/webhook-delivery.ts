@@ -107,7 +107,7 @@ const PUBLISH_WELL_KNOWN = process.env.EVENTS_RECEIVER_WELL_KNOWN !== '0';
 const WELL_KNOWN_PREFIX = '/wk/';
 
 /**
- * The `lastError` categories the document names for `-32015`. A server may have
+ * The `lastError` categories the document names for `-32027`. A server may have
  * more, so an unlisted one warns rather than fails: the rule is that the reason
  * is a category, not a raw response.
  */
@@ -162,7 +162,7 @@ const ENVELOPE_IDS = [
 ] as const;
 
 /**
- * The error-table row this scenario claims. `-32015` is webhook-only and the
+ * The error-table row this scenario claims. `-32027` is webhook-only and the
  * wrong-challenge probe is the only place the suite provokes it, so the row is
  * graded there and listed here for the same reason the others are: a path that
  * bails early must still report it, rather than emit one row fewer.
@@ -821,7 +821,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   }
 
   /**
-   * The `-32015` row from the error table, graded off the same probe as
+   * The `-32027` row from the error table, graded off the same probe as
    * sep-3415-verification-failure-error rather than a second failing callback.
    * That row grades the rule; this one grades the code and the `data.reason`
    * category the table requires of it.
@@ -831,7 +831,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   ): ConformanceCheck {
     const id = 'sep-3415-error-callback-endpoint-error';
     const description =
-      '`-32015 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.';
+      '`-32027 CallbackEndpointError` — a client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories.';
     if (!endpointFailure) {
       return untestableCheck(
         id,
@@ -1311,7 +1311,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
   /**
    * A callback that answers the challenge with the wrong nonce. The document
-   * has the failure come back from events/subscribe itself as -32015 with
+   * has the failure come back from events/subscribe itself as -32027 with
    * `data.reason: "challenge_failed"`. A server that accepts instead and then
    * delivers there has sent events to an endpoint that never consented; one
    * that accepts and withholds delivery verified asynchronously, which keeps
@@ -1326,7 +1326,7 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
   ): Promise<{ check: ConformanceCheck; serverError?: JsonRpcError }> {
     const id = 'sep-3415-verification-failure-error';
     const description =
-      'A reachable endpoint that fails to echo yields `-32015 CallbackEndpointError` with `data.reason: "challenge_failed"`.';
+      'A reachable endpoint that fails to echo yields `-32027 CallbackEndpointError` with `data.reason: "challenge_failed"`.';
     const path = `/wrong-challenge-${Date.now()}`;
     receiver.behave(path, { kind: 'wrong-challenge' });
     const url = this.callbackFor(receiver, path);

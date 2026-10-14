@@ -155,11 +155,11 @@ describe.concurrent('events/stream opening', () => {
 
   test('refusing a valid subscription outright fails and names the code', async () => {
     const checks = await pushChecks(
-      pushFixture({ error: { code: -32013, message: 'ResourceExhausted' } })
+      pushFixture({ error: { code: -32025, message: 'ResourceExhausted' } })
     );
     const check = checks.get('sep-3415-stream-implemented');
     expect(check?.status).toBe('FAILURE');
-    expect(check?.errorMessage).toContain('-32013');
+    expect(check?.errorMessage).toContain('-32025');
   });
 
   test('opening a stream for an unknown event type fails error-before-open', async () => {
@@ -169,14 +169,14 @@ describe.concurrent('events/stream opening', () => {
     expect(check?.errorMessage).toContain('did not answer a JSON-RPC error');
   });
 
-  test('answering an unknown type with -32014 rather than NotFound warns', async () => {
+  test('answering an unknown type with -32026 rather than NotFound warns', async () => {
     const checks = await pushChecks({
       ...pushFixture(),
-      unknownNameCode: -32014
+      unknownNameCode: -32026
     });
     const check = checks.get('sep-3415-stream-error-before-open');
     expect(check?.status).toBe('WARNING');
-    expect(check?.errorMessage).toContain('-32011 NotFound');
+    expect(check?.errorMessage).toContain('-32023 NotFound');
   });
 });
 
@@ -293,7 +293,7 @@ describe.concurrent('the heartbeat', () => {
   });
 });
 
-describe.concurrent('the -32013 error-table row', () => {
+describe.concurrent('the -32025 error-table row', () => {
   test('a cap that names its limit passes, and one that does not warns', async () => {
     const named = await pushChecks(
       pushFixture({ maxConcurrent: 1, capLimitName: 'subscriptions' })
@@ -317,7 +317,7 @@ describe.concurrent('the -32013 error-table row', () => {
 });
 
 describe.concurrent(
-  'the -32013 row, probed on the type a server says is capped',
+  'the -32025 row, probed on the type a server says is capped',
   () => {
     // Two push types: the scenario's target, which the concurrency probe opens
     // three streams on, and a capped one it must leave alone.
@@ -430,7 +430,7 @@ describe.concurrent('truncated on a type without replay', () => {
 
 describe.concurrent('concurrency and cancellation', () => {
   // The cap kitchen-sink applies to streams, which the document exempts them
-  // from: the first stream confirms and the other two are refused -32013.
+  // from: the first stream confirms and the other two are refused -32025.
   test('a per-principal cap that catches streams fails', async () => {
     const checks = await pushChecks(pushFixture({ maxConcurrent: 1 }));
     const check = checks.get('sep-3415-stream-exempt-from-concurrency-cap');
@@ -472,6 +472,40 @@ describe.concurrent('rows that are untestable against a real server', () => {
     const check = checks.get('sep-3415-stream-final-result-shape');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('events');
+  });
+
+  test('a final result without the subscription ID in _meta fails only the shape row', async () => {
+    const ok = await pushChecks(pushFixture({ closeAfterMs: 400 }));
+    expect(ok.get('sep-3415-stream-final-result-shape')?.status).toBe(
+      'SUCCESS'
+    );
+    expect(ok.get('sep-3415-result-type-complete')?.status).toBe('SUCCESS');
+
+    const bare = await pushChecks(
+      pushFixture({
+        closeAfterMs: 400,
+        finalResult: { resultType: 'complete', _meta: {} }
+      })
+    );
+    const check = bare.get('sep-3415-stream-final-result-shape');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain(
+      'io.modelcontextprotocol/subscriptionId'
+    );
+    expect(bare.get('sep-3415-result-type-complete')?.status).toBe('SUCCESS');
+  });
+
+  test('a final result without resultType fails only the resultType row', async () => {
+    const checks = await pushChecks({
+      ...pushFixture({ closeAfterMs: 400 }),
+      omitResultType: true
+    });
+    const check = checks.get('sep-3415-result-type-complete');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('events/stream');
+    expect(checks.get('sep-3415-stream-final-result-shape')?.status).toBe(
+      'SUCCESS'
+    );
   });
 
   test('an error notification, a termination and a gap are all graded when they happen', async () => {

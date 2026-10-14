@@ -236,7 +236,7 @@ describe.concurrent('reject-non-routable, apart from the scheme rule', () => {
       const check = checks.get('sep-3415-ssrf-reject-non-routable');
       expect(check?.status).toBe('FAILURE');
       expect(check?.errorMessage).toContain('only after connecting');
-      expect(check?.details?.code).toBe(-32015);
+      expect(check?.details?.code).toBe(-32027);
     },
     TIMEOUT
   );
@@ -293,9 +293,9 @@ describe.concurrent('the verification handshake', () => {
 
   // A server that verifies inside events/subscribe, the way the document's
   // "returned synchronously from events/subscribe" reads, refuses a callback
-  // that echoes the wrong nonce with -32015 challenge_failed.
+  // that echoes the wrong nonce with -32027 challenge_failed.
   test(
-    'refusing a wrong echo with -32015 challenge_failed passes the failure row',
+    'refusing a wrong echo with -32027 challenge_failed passes the failure row',
     async () => {
       const checks = await deliveryChecks(
         delivering({ synchronousVerification: true })
@@ -314,7 +314,7 @@ describe.concurrent('the verification handshake', () => {
       );
       const check = checks.get('sep-3415-verification-failure-error');
       expect(check?.status).toBe('FAILURE');
-      expect(check?.errorMessage).toContain('-32015');
+      expect(check?.errorMessage).toContain('-32027');
     },
     TIMEOUT
   );
@@ -718,7 +718,7 @@ describe.concurrent('confirming intent without a handshake', () => {
   );
 });
 
-describe.concurrent('the -32015 error-table row', () => {
+describe.concurrent('the -32027 error-table row', () => {
   test(
     'a categorised challenge failure passes, and an uncategorised one warns',
     async () => {
@@ -753,7 +753,7 @@ describe.concurrent('the -32015 error-table row', () => {
       );
       const check = checks.get('sep-3415-error-callback-endpoint-error');
       expect(check?.status).toBe('FAILURE');
-      expect(check?.errorMessage).toContain('-32015 CallbackEndpointError');
+      expect(check?.errorMessage).toContain('-32027 CallbackEndpointError');
     },
     TIMEOUT
   );

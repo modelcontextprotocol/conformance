@@ -49,7 +49,9 @@ import {
   descriptorLabel,
   describeValue,
   isObject,
-  inServerErrorRange,
+  isEventsErrorCode,
+  resultTypeCheck,
+  RESULT_TYPE_ID,
   unknownEventName
 } from './helpers';
 
@@ -86,7 +88,8 @@ const ALL_IDS = [
   ...CAPABILITY_IDS,
   ...LIST_IDS,
   ...DESCRIPTOR_IDS,
-  ...ERROR_IDS
+  ...ERROR_IDS,
+  RESULT_TYPE_ID
 ];
 
 /** Every check this scenario can emit, as SKIPPED with one shared reason. */
@@ -110,8 +113,9 @@ export class EventsDiscoveryScenario implements ClientScenario {
 - \`sep-3415-list-implemented\` — \`events/list\` is implemented and returns an \`events\` array
 - \`sep-3415-list-pagination\` — \`nextCursor\` is honoured as a cursor on the next request
 - \`sep-3415-descriptor-*\` — the descriptor fields: \`name\`, \`description\`, \`delivery\` as a non-empty subset of poll/push/webhook, \`inputSchema\`, \`payloadSchema\`, and \`_meta\` when present
-- \`sep-3415-error-not-found\` — an unknown event name answers \`-32011 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
-- \`sep-3415-error-server-range\` — the extension's codes sit in the JSON-RPC implementation-defined server range
+- \`sep-3415-error-not-found\` — an unknown event name answers \`-32023 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
+- \`sep-3415-error-server-range\` — the code is one of the five SEP-3415 allocates (\`-32023\` to \`-32027\`), not the design sketch's \`-32011\` to \`-32015\`
+- \`sep-3415-result-type-complete\` — the \`events/list\` result carries \`resultType: "complete"\`
 
 **Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
@@ -261,6 +265,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
           untestableCheck(id, id, id, reason, [EVENTS_SPEC_REF], 'FAILURE')
         );
       }
+      checks.push(resultTypeCheck([]));
       checks.push(...(await this.errorChecks(conn, [])));
       return checks;
     }
@@ -289,6 +294,11 @@ export class EventsDiscoveryScenario implements ClientScenario {
       );
     }
 
+    checks.push(
+      resultTypeCheck([
+        { method: EVENTS_LIST_METHOD, result: firstPage.result }
+      ])
+    );
     checks.push(await this.paginationCheck(conn, firstPage.result.nextCursor));
 
     const all = await eventsListAll(conn);
@@ -538,7 +548,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
    *
    * Poll is the cheapest probe: it holds no server-side state, so a rejected
    * call leaves nothing behind. The document states the same obligation twice,
-   * once as the general `-32011 NotFound` code and once as the poll-specific
+   * once as the general `-32023 NotFound` code and once as the poll-specific
    * consequence of an event type having been removed, so both rows are graded
    * from this one exchange rather than by poking the server twice.
    */
@@ -547,9 +557,9 @@ export class EventsDiscoveryScenario implements ClientScenario {
     descriptors: EventDescriptor[]
   ): Promise<ConformanceCheck[]> {
     const notFoundDesc =
-      '`-32011 NotFound` — a referenced entity does not exist, such as an unknown event name.';
+      '`-32023 NotFound` — a referenced entity does not exist, such as an unknown event name.';
     const rangeDesc =
-      "The extension's codes are carried in the JSON-RPC implementation-defined server range `[-32000, -32099]`.";
+      'The core specification partitions the JSON-RPC implementation-defined range: `-32000` to `-32019` is left to implementations, and `-32020` to `-32099` is allocated sequentially by the specification. This SEP requests the next five codes in the allocated range.';
 
     // A server offering no poll-capable event type may legitimately not route
     // events/poll at all, which would make -32601 the honest answer and this
@@ -607,7 +617,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
         : eventsCheck('sep-3415-error-not-found', notFoundDesc, 'FAILURE', {
             errorMessage: `Unknown event name answered ${code}, expected ${EVENTS_NOT_FOUND} NotFound.${
               code === EVENTS_UNSUPPORTED
-                ? ' `-32014 Unsupported` is for a well-formed request naming an option the server does not offer, not for a name it does not have.'
+                ? ' `-32026 Unsupported` is for a well-formed request naming an option the server does not offer, not for a name it does not have.'
                 : ''
             }`,
             details
@@ -615,12 +625,15 @@ export class EventsDiscoveryScenario implements ClientScenario {
     );
 
     out.push(
-      inServerErrorRange(code)
+      isEventsErrorCode(code)
         ? eventsCheck('sep-3415-error-server-range', rangeDesc, 'SUCCESS', {
             details
           })
         : eventsCheck('sep-3415-error-server-range', rangeDesc, 'FAILURE', {
-            errorMessage: `Error code ${code} is outside the implementation-defined server range [-32099, -32000].`,
+            errorMessage:
+              code <= -32000 && code >= -32019
+                ? `Error code ${code} sits in \`-32000\` to \`-32019\`, which the specification leaves to implementations. SEP-3415 allocates \`-32023\` to \`-32027\`; \`-32011\` to \`-32015\` are the design sketch's numbers.`
+                : `Error code ${code} is not one of the five codes SEP-3415 allocates (\`-32023\` to \`-32027\`).`,
             details
           })
     );
