@@ -44,6 +44,9 @@ import {
   EVENTS_SPEC_REF,
   EVENTS_SUBSCRIBE_METHOD,
   EVENTS_UNSUBSCRIBE_METHOD,
+  resultTypeCheck,
+  RESULT_TYPE_ID,
+  type ObservedResult,
   EVENTS_UNSUPPORTED,
   JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
@@ -122,7 +125,8 @@ const ALL_IDS = [
   ...SUBSCRIBE_IDS,
   ...TTL_IDS,
   ...UNSUBSCRIBE_IDS,
-  ...ERROR_IDS
+  ...ERROR_IDS,
+  RESULT_TYPE_ID
 ];
 
 interface SubscribeResult {
@@ -177,7 +181,7 @@ export class EventsWebhookScenario implements ClientScenario {
 - \`sep-3415-subscribe-key-*\` / \`sep-3415-subscribe-id-*\` — the compound key, its immutability, the derived \`id\`, and that \`id\` is not an input
 - \`sep-3415-subscribe-idempotent-upsert\` / \`sep-3415-subscribe-response-*\` — a repeat subscribe refreshes in place and returns \`cursor\` and \`truncated\`
 - \`sep-3415-ttl-*\` — the grant is at or under the suggestion, there is no rejection path, and \`null\` comes back only when asked for
-- \`sep-3415-unsubscribe-*\` — teardown by key, and \`-32011 NotFound\` for a key the server does not hold
+- \`sep-3415-unsubscribe-*\` — teardown by key, and \`-32023 NotFound\` for a key the server does not hold
 
 **Scope**: subscription management only. Signatures, the verification handshake and control envelopes belong to events-webhook-delivery, which needs a reachable callback.
 
@@ -974,7 +978,7 @@ export class EventsWebhookScenario implements ClientScenario {
         untestableCheck(
           'sep-3415-error-unsupported',
           'sep-3415-error-unsupported',
-          '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
+          '`-32026 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
           'Every event type the server offers advertises `webhook` delivery, so there is no type to probe the unsupported-mode path with.',
           [EVENTS_SPEC_REF]
         )
@@ -994,7 +998,7 @@ export class EventsWebhookScenario implements ClientScenario {
         !('error' in res)
           ? eventsCheck(
               'sep-3415-error-unsupported',
-              '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
+              '`-32026 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
               'FAILURE',
               {
                 errorMessage: `Event type \`${nonWebhookName}\` does not advertise \`webhook\` delivery but \`${EVENTS_SUBSCRIBE_METHOD}\` returned a subscription.`
@@ -1003,16 +1007,16 @@ export class EventsWebhookScenario implements ClientScenario {
           : res.error.code === EVENTS_UNSUPPORTED
             ? eventsCheck(
                 'sep-3415-error-unsupported',
-                '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
+                '`-32026 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
                 'SUCCESS',
                 { details: { code: res.error.code } }
               )
             : eventsCheck(
                 'sep-3415-error-unsupported',
-                '`-32014 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
+                '`-32026 Unsupported` — the request is well-formed but a requested capability or option is not supported here.',
                 'WARNING',
                 {
-                  errorMessage: `Subscribing to \`${nonWebhookName}\`, which offers ${JSON.stringify(nonWebhook?.delivery)}, answered ${res.error.code} ${res.error.message} rather than \`-32014 Unsupported\`.`
+                  errorMessage: `Subscribing to \`${nonWebhookName}\`, which offers ${JSON.stringify(nonWebhook?.delivery)}, answered ${res.error.code} ${res.error.message} rather than \`-32026 Unsupported\`.`
                 }
               )
       );
@@ -1023,7 +1027,7 @@ export class EventsWebhookScenario implements ClientScenario {
       untestableCheck(
         'sep-3415-subscribe-auth-required',
         'sep-3415-subscribe-auth-required',
-        '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without one with `-32012 Forbidden`.',
+        '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without one with `-32024 Forbidden`.',
         'The harness sends whatever credential it was pointed at, on every request, and has no way to make the same call as an anonymous caller. Grading this needs a runner that can drop its own auth for one probe.',
         [EVENTS_SPEC_REF]
       )
@@ -1363,10 +1367,10 @@ export class EventsWebhookScenario implements ClientScenario {
     const out: ConformanceCheck[] = [];
     const unsubscribe = async (
       params: Record<string, unknown>
-    ): Promise<{ ok: true } | { error: JsonRpcError }> => {
+    ): Promise<{ result: unknown } | { error: JsonRpcError }> => {
       try {
-        await conn.request(EVENTS_UNSUBSCRIBE_METHOD, params);
-        return { ok: true };
+        const result = await conn.request(EVENTS_UNSUBSCRIBE_METHOD, params);
+        return { result };
       } catch (err) {
         if (err instanceof JsonRpcError) return { error: err };
         throw err;
@@ -1396,6 +1400,19 @@ export class EventsWebhookScenario implements ClientScenario {
           )
     );
 
+    // Both results this scenario holds: the subscribe that started it and the
+    // unsubscribe that just ended it.
+    const observed: ObservedResult[] = [
+      { method: EVENTS_SUBSCRIBE_METHOD, result: first }
+    ];
+    if (!('error' in byKey)) {
+      observed.push({
+        method: EVENTS_UNSUBSCRIBE_METHOD,
+        result: byKey.result
+      });
+    }
+    out.push(resultTypeCheck(observed));
+
     // A key the server cannot hold: never subscribed, and now also the key
     // that was just torn down.
     const unknown = await unsubscribe({
@@ -1408,21 +1425,21 @@ export class EventsWebhookScenario implements ClientScenario {
         ? unknown.error.code === EVENTS_NOT_FOUND
           ? eventsCheck(
               'sep-3415-unsubscribe-unknown-not-found',
-              'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
+              'No subscription matching the key on `events/unsubscribe` returns `-32023 NotFound`.',
               'SUCCESS',
               { details: { code: unknown.error.code } }
             )
           : eventsCheck(
               'sep-3415-unsubscribe-unknown-not-found',
-              'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
+              'No subscription matching the key on `events/unsubscribe` returns `-32023 NotFound`.',
               'WARNING',
               {
-                errorMessage: `An unknown subscription key answered ${unknown.error.code} ${unknown.error.message}, where the document names \`-32011 NotFound\`.`
+                errorMessage: `An unknown subscription key answered ${unknown.error.code} ${unknown.error.message}, where the document names \`-32023 NotFound\`.`
               }
             )
         : eventsCheck(
             'sep-3415-unsubscribe-unknown-not-found',
-            'No subscription matching the key on `events/unsubscribe` returns `-32011 NotFound`.',
+            'No subscription matching the key on `events/unsubscribe` returns `-32023 NotFound`.',
             'FAILURE',
             {
               errorMessage:

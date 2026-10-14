@@ -25,7 +25,7 @@ import {
  * success.
  */
 
-const ALL_ROWS = 27;
+const ALL_ROWS = 28;
 
 // The durability rows poll for a restart and for a GC drop; the defaults are
 // sized for a real server and would make this file crawl.
@@ -40,6 +40,7 @@ afterAll(() => {
 /** Rows every conformant run passes, which is the whole surface bar the seven
  * that need a second principal or a restart. */
 const GRADEABLE = [
+  'sep-3415-result-type-complete',
   'sep-3415-subscribe-webhook-only',
   'sep-3415-subscribe-secret-required',
   'sep-3415-subscribe-secret-format',
@@ -127,7 +128,7 @@ describe('the conformant baseline', () => {
   });
 
   // kitchen-sink allows two subscriptions per principal per event type, and a
-  // scenario that held every probe open would grade -32013 instead of the rule
+  // scenario that held every probe open would grade -32025 instead of the rule
   // it was probing. The release-as-you-go discipline is what prevents that, and
   // this is the regression test for it.
   test('a two-subscription cap changes nothing, because probes are released', async () => {
@@ -145,7 +146,7 @@ describe('the conformant baseline', () => {
     );
     const check = checks.get('sep-3415-subscribe-key-composition');
     expect(check?.details?.untestable).toBe(true);
-    expect(check?.errorMessage).toContain('-32013');
+    expect(check?.errorMessage).toContain('-32025');
   });
 
   test('a server with no webhook-capable type reports every row untestable', async () => {
@@ -181,7 +182,7 @@ describe('the conformant baseline', () => {
 
   test('a refused subscribe warns and takes the rest with it as untestable', async () => {
     const { checks } = await webhookChecks(
-      webhookFixture({ error: { code: -32012, message: 'Forbidden' } })
+      webhookFixture({ error: { code: -32024, message: 'Forbidden' } })
     );
     expect(checks.get('sep-3415-subscribe-webhook-only')?.status).toBe(
       'WARNING'
@@ -391,13 +392,39 @@ describe('unsubscribe', () => {
     expect(check?.errorMessage).toContain('typo');
   });
 
-  test('the wrong code for an unknown key warns and names -32011', async () => {
+  test('the wrong code for an unknown key warns and names -32023', async () => {
     const { checks } = await webhookChecks(
       webhookFixture({ unsubscribeUnknownCode: -32602 })
     );
     const check = checks.get('sep-3415-unsubscribe-unknown-not-found');
     expect(check?.status).toBe('WARNING');
-    expect(check?.errorMessage).toContain('-32011 NotFound');
+    expect(check?.errorMessage).toContain('-32023 NotFound');
+  });
+});
+
+describe('SEP-3415 codes and resultType', () => {
+  test('subscribe and unsubscribe without resultType fail only the resultType row', async () => {
+    const { checks: ok } = await webhookChecks(webhookFixture());
+    const { checks: bare } = await webhookChecks({
+      ...webhookFixture(),
+      omitResultType: true
+    });
+    const check = bare.get('sep-3415-result-type-complete');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('events/subscribe');
+    for (const [id, c] of ok) {
+      if (id === 'sep-3415-result-type-complete') continue;
+      expect(bare.get(id)?.status, id).toBe(c.status);
+    }
+  });
+
+  test("an unknown unsubscribe key answered with the sketch's -32011 is not NotFound", async () => {
+    const { checks } = await webhookChecks(
+      webhookFixture({ unsubscribeUnknownCode: -32011 })
+    );
+    const check = checks.get('sep-3415-unsubscribe-unknown-not-found');
+    expect(check?.status).not.toBe('SUCCESS');
+    expect(check?.errorMessage).toContain('-32023 NotFound');
   });
 });
 

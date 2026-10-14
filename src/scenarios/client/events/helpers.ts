@@ -121,6 +121,7 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
         jsonrpc: '2.0',
         id: request.id,
         result: {
+          resultType: 'complete',
           events: [
             descriptor(REPLAY_TYPE, this.mode),
             descriptor(CURSORLESS_TYPE, this.mode)

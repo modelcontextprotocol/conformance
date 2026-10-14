@@ -128,7 +128,7 @@ const CONFORMANT_STREAM: Required<
 /**
  * How `events/subscribe` and `events/unsubscribe` behave. The defaults are
  * conformant: an https-only callback, a validated `whsec_` secret, an id
- * derived from the whole key, an idempotent upsert, and `-32011 NotFound` for
+ * derived from the whole key, an idempotent upsert, and `-32023 NotFound` for
  * a key the server does not hold.
  */
 export interface SubscribeBehaviour {
@@ -175,11 +175,11 @@ export interface SubscribeBehaviour {
   idIsAnInput?: boolean;
   /** Answer success for an unsubscribe of a key never held. */
   unsubscribeUnknownOk?: boolean;
-  /** Code for an unsubscribe of an unknown key, where the document says -32011. */
+  /** Code for an unsubscribe of an unknown key, where the document says -32023. */
   unsubscribeUnknownCode?: number;
   /** Code for an unsubscribe of a key the server does hold. */
   unsubscribeHeldCode?: number;
-  /** Answer -32013 once this many subscriptions are live. */
+  /** Answer -32025 once this many subscriptions are live. */
   maxSubscriptions?: number;
   /**
    * Expose `events_conformance_allow_callback_origin` as a tool, which permits
@@ -209,7 +209,7 @@ export interface DeliveryBehaviour {
   verify?: boolean;
   /**
    * Run the handshake inside `events/subscribe`, before answering, and refuse
-   * with -32015 `challenge_failed` when the callback does not echo the nonce
+   * with -32027 `challenge_failed` when the callback does not echo the nonce
    * in a 2xx body. The default challenges after the response and ignores the
    * answer.
    */
@@ -224,7 +224,7 @@ export interface DeliveryBehaviour {
    * fixture then delivers anyway, which is the case the rule exists to catch.
    */
   verifyViaWellKnown?: boolean;
-  /** Code to answer when the handshake fails, where the table says -32015. */
+  /** Code to answer when the handshake fails, where the table says -32027. */
   challengeFailureCode?: number;
   /** `data.reason` for that failure, where the table wants a category. */
   challengeFailureReason?: string;
@@ -345,6 +345,11 @@ export interface EventsFixtureOptions {
   unknownNameCode?: number;
   /** Error code for a poll whose arguments violate `inputSchema`. */
   invalidArgsCode?: number;
+  /**
+   * Leave `resultType` off every `events/*` result, including the stream's
+   * final frame. Breaks only sep-3415-result-type-complete.
+   */
+  omitResultType?: boolean;
   /** How `events/stream` behaves. */
   stream?: StreamBehaviour;
   /** How `events/subscribe` and `events/unsubscribe` behave. */
@@ -446,7 +451,10 @@ export async function startEventsFixture(
         JSON.stringify({
           jsonrpc: '2.0',
           id,
-          result: withRequiredDraftResultFields(method, result)
+          result:
+            opts.omitResultType && method.startsWith('events/')
+              ? result
+              : withRequiredDraftResultFields(method, result)
         })
       );
     };
@@ -673,7 +681,7 @@ export async function startEventsFixture(
         return;
       }
       if (!names.has(name)) {
-        fail(opts.unknownNameCode ?? -32011, 'NotFound', { kind: 'event' });
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
         return;
       }
 
@@ -732,7 +740,7 @@ export async function startEventsFixture(
           send({});
           return;
         }
-        fail(behaviour.unsubscribeUnknownCode ?? -32011, 'NotFound', {
+        fail(behaviour.unsubscribeUnknownCode ?? -32023, 'NotFound', {
           kind: 'subscription'
         });
         return;
@@ -786,12 +794,12 @@ export async function startEventsFixture(
         (d) => (d as { name?: unknown }).name === name
       ) as { delivery?: unknown } | undefined;
       if (!served) {
-        fail(opts.unknownNameCode ?? -32011, 'NotFound', { kind: 'event' });
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
         return;
       }
       const modes = Array.isArray(served.delivery) ? served.delivery : [];
       if (!modes.includes('webhook') && !behaviour.acceptNonWebhookType) {
-        fail(-32014, 'Unsupported: event type does not offer webhook delivery');
+        fail(-32026, 'Unsupported: event type does not offer webhook delivery');
         return;
       }
 
@@ -824,7 +832,7 @@ export async function startEventsFixture(
         behaviour.maxSubscriptions !== undefined &&
         subscriptions.size >= behaviour.maxSubscriptions
       ) {
-        fail(-32013, 'ResourceExhausted: subscription cap reached');
+        fail(-32025, 'ResourceExhausted: subscription cap reached');
         return;
       }
       const id =
@@ -877,7 +885,7 @@ export async function startEventsFixture(
             ? `: endpoint answered ${echoed.body}`
             : '';
           fail(
-            opts.delivery.challengeFailureCode ?? -32015,
+            opts.delivery.challengeFailureCode ?? -32027,
             `endpoint verification failed${leak}`,
             {
               reason: opts.delivery.challengeFailureReason ?? 'challenge_failed'
@@ -925,12 +933,12 @@ export async function startEventsFixture(
         !behaviour.acceptAnyName &&
         (typeof name !== 'string' || !names.has(name))
       ) {
-        fail(opts.unknownNameCode ?? -32011, 'NotFound', { kind: 'event' });
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
         return;
       }
       if (liveStreams >= behaviour.maxConcurrent) {
         fail(
-          -32013,
+          -32025,
           'ResourceExhausted: too many subscriptions',
           behaviour.capLimitName ? { limit: behaviour.capLimitName } : undefined
         );
@@ -946,7 +954,7 @@ export async function startEventsFixture(
         const limit =
           quota.limitName === undefined ? 'subscriptions' : quota.limitName;
         fail(
-          -32013,
+          -32025,
           'ResourceExhausted: subscription quota reached',
           limit === null ? undefined : { limit, max: quota.max }
         );
@@ -965,7 +973,8 @@ export async function startEventsFixture(
         id,
         key,
         behaviour,
-        opts.noReplay?.name === key
+        opts.noReplay?.name === key,
+        opts.omitResultType === true
       );
       openStreams.add(entry);
       const done = () => {
@@ -1019,7 +1028,8 @@ function openStream(
   requestId: unknown,
   name: string,
   behaviour: StreamBehaviour & typeof CONFORMANT_STREAM,
-  noReplay = false
+  noReplay = false,
+  omitResultType = false
 ): {
   res: ServerResponse;
   stop: () => void;
@@ -1125,7 +1135,10 @@ function openStream(
         `data: ${JSON.stringify({
           jsonrpc: '2.0',
           id: requestId,
-          result: behaviour.finalResult ?? { _meta: {} }
+          result: behaviour.finalResult ?? {
+            ...(omitResultType ? {} : { resultType: 'complete' }),
+            _meta: { [SUBSCRIPTION_ID_META]: requestId }
+          }
         })}\n\n`
       );
       stop();
@@ -1370,7 +1383,7 @@ async function deliverToCallback(
       ? behaviour.terminatedEnvelope
       : {};
     await postEnvelope('terminated', {
-      error: { code: -32012, message: 'authorization revoked' },
+      error: { code: -32024, message: 'authorization revoked' },
       ...override
     });
   }

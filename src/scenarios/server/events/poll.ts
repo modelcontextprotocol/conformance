@@ -31,6 +31,8 @@ import {
   EVENTS_SPEC_REF,
   EVENTS_NOT_FOUND,
   EVENTS_UNSUPPORTED,
+  resultTypeCheck,
+  RESULT_TYPE_ID,
   JSONRPC_INVALID_PARAMS,
   JSONRPC_METHOD_NOT_FOUND,
   type EventDescriptor,
@@ -133,7 +135,13 @@ function withErrorCodeRow(ruleCheck: ConformanceCheck): ConformanceCheck[] {
  */
 const ERROR_IDS = ['sep-3415-error-invalid-params'] as const;
 
-const ALL_IDS = [...POLL_IDS, ...OCCURRENCE_IDS, ...CURSOR_IDS, ...ERROR_IDS];
+const ALL_IDS = [
+  ...POLL_IDS,
+  ...OCCURRENCE_IDS,
+  ...CURSOR_IDS,
+  ...ERROR_IDS,
+  RESULT_TYPE_ID
+];
 
 /** Milliseconds of replay to request when probing the `maxAgeMs` floor. */
 const MAX_AGE_PROBE_MS = 300_000;
@@ -254,6 +262,7 @@ export class EventsPollScenario implements ClientScenario {
     }
 
     const r1 = first.result;
+    checks.push(resultTypeCheck([{ method: EVENTS_POLL_METHOD, result: r1 }]));
     checks.push(
       eventsCheck(
         'sep-3415-poll-implemented',
@@ -1034,7 +1043,7 @@ export class EventsPollScenario implements ClientScenario {
       cursor: null
     });
     const notFoundDesc =
-      'A poll against a name the server does not serve returns `-32011 NotFound`.';
+      'A poll against a name the server does not serve returns `-32023 NotFound`.';
     const jsonRpcDesc =
       'Errors are returned as a standard JSON-RPC error response for the request; there is no partial-success model.';
 
@@ -1235,7 +1244,7 @@ export class EventsPollScenario implements ClientScenario {
   ): Promise<ConformanceCheck> {
     const id = 'sep-3415-poll-mode-unsupported';
     const description =
-      'A poll against an event type whose `delivery` does not list `poll` returns `-32014 Unsupported`.';
+      'A poll against an event type whose `delivery` does not list `poll` returns `-32026 Unsupported`.';
 
     const nonPoll = descriptors.find(
       (d) =>

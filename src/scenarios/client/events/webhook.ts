@@ -59,6 +59,7 @@ export class EventsClientWebhookScenario extends EventsClientScenarioBase {
       jsonrpc: '2.0',
       id: request.id,
       result: {
+        resultType: 'complete',
         id: `sub-${name}`,
         cursor: name === REPLAY_TYPE ? `w-${n}` : null,
         refreshBefore: new Date(refreshBefore).toISOString()

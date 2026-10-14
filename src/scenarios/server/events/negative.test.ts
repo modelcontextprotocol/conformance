@@ -228,28 +228,71 @@ describe('events/list descriptors', () => {
 });
 
 describe('events error codes', () => {
-  test('an unknown event name answering -32011 passes, -32014 fails', async () => {
+  test('an unknown event name answering -32023 passes, -32026 fails', async () => {
     const ok = await checksFor(discovery(), CONFORMANT);
     expect(ok.get('sep-3415-error-not-found')?.status).toBe('SUCCESS');
 
     const broken = await checksFor(discovery(), {
       ...CONFORMANT,
-      unknownNameCode: -32014
+      unknownNameCode: -32026
     });
     const check = broken.get('sep-3415-error-not-found');
     expect(check?.status).toBe('FAILURE');
-    expect(check?.errorMessage).toContain('-32014 Unsupported` is for');
+    expect(check?.errorMessage).toContain('-32026 Unsupported` is for');
   });
 
-  test('a code outside the server range fails the range check', async () => {
+  test('a code SEP-3415 does not allocate fails the allocation check', async () => {
     const checks = await checksFor(discovery(), {
       ...CONFORMANT,
       unknownNameCode: -1
     });
     const check = checks.get('sep-3415-error-server-range');
     expect(check?.status).toBe('FAILURE');
-    expect(check?.errorMessage).toContain('outside');
+    expect(check?.errorMessage).toContain('not one of the five codes');
   });
+
+  test("the design sketch's -32011 fails NotFound and the allocation check, and nothing else", async () => {
+    const ok = await checksFor(discovery(), CONFORMANT);
+    const legacy = await checksFor(discovery(), {
+      ...CONFORMANT,
+      unknownNameCode: -32011
+    });
+    const notFound = legacy.get('sep-3415-error-not-found');
+    expect(notFound?.status).toBe('FAILURE');
+    expect(notFound?.errorMessage).toContain('expected -32023 NotFound');
+    const range = legacy.get('sep-3415-error-server-range');
+    expect(range?.status).toBe('FAILURE');
+    expect(range?.errorMessage).toContain("design sketch's numbers");
+    for (const [id, check] of ok) {
+      if (id === 'sep-3415-error-not-found') continue;
+      if (id === 'sep-3415-error-server-range') continue;
+      expect(legacy.get(id)?.status, id).toBe(check.status);
+    }
+  });
+});
+
+describe('resultType on events results', () => {
+  for (const [label, make] of [
+    ['events/list', discovery],
+    ['events/poll', poll]
+  ] as const) {
+    test(`${label} without resultType fails only the resultType row`, async () => {
+      const ok = await checksFor(make(), CONFORMANT);
+      expect(ok.get('sep-3415-result-type-complete')?.status).toBe('SUCCESS');
+
+      const bare = await checksFor(make(), {
+        ...CONFORMANT,
+        omitResultType: true
+      });
+      const check = bare.get('sep-3415-result-type-complete');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain(label);
+      for (const [id, c] of ok) {
+        if (id === 'sep-3415-result-type-complete') continue;
+        expect(bare.get(id)?.status, id).toBe(c.status);
+      }
+    });
+  }
 });
 
 describe('events/poll response shape', () => {
@@ -373,25 +416,25 @@ describe('events/poll error contract', () => {
 
     const broken = await checksFor(poll(), {
       ...CONFORMANT,
-      invalidArgsCode: -32011
+      invalidArgsCode: -32023
     });
     expect(broken.get('sep-3415-error-invalid-params')?.status).toBe('FAILURE');
   });
 
-  test('wrong-typed arguments answering -32011 fails the invalid-params check', async () => {
+  test('wrong-typed arguments answering -32023 fails the invalid-params check', async () => {
     const ok = await checksFor(poll(), CONFORMANT);
     expect(ok.get('sep-3415-poll-invalid-arguments')?.status).toBe('SUCCESS');
 
     const broken = await checksFor(poll(), {
       ...CONFORMANT,
-      invalidArgsCode: -32011
+      invalidArgsCode: -32023
     });
     const check = broken.get('sep-3415-poll-invalid-arguments');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('expected -32602');
   });
 
-  test('polling a push-only type must answer -32014, not a result', async () => {
+  test('polling a push-only type must answer -32026, not a result', async () => {
     const pushOnly = descriptor({ name: 'push.only', delivery: ['push'] });
     const broken = await checksFor(poll(), {
       ...CONFORMANT,
@@ -406,7 +449,7 @@ describe('events/poll error contract', () => {
       ...CONFORMANT,
       descriptors: [descriptor(), pushOnly],
       pollByName: {
-        'push.only': { error: { code: -32014, message: 'Unsupported' } }
+        'push.only': { error: { code: -32026, message: 'Unsupported' } }
       }
     });
     expect(ok.get('sep-3415-poll-mode-unsupported')?.status).toBe('SUCCESS');

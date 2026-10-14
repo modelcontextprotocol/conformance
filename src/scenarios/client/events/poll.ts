@@ -67,7 +67,11 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
     const name = request.params?.name;
     const step = this.requestsFor(EVENTS_POLL_METHOD, name).length - 1;
     const reply = (result: object) =>
-      this.sendJson(res, { jsonrpc: '2.0', id: request.id, result });
+      this.sendJson(res, {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: { resultType: 'complete', ...result }
+      });
 
     if (name === CURSORLESS_TYPE) {
       const result: Record<string, unknown> = {
@@ -118,6 +122,7 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           jsonrpc: '2.0',
           id: request.id,
           result: {
+            resultType: 'complete',
             events: [],
             cursor: 'tick-5',
             hasMore: false,

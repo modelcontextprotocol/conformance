@@ -52,6 +52,8 @@ import {
   EVENTS_HEARTBEAT_NOTIFICATION,
   EVENTS_SPEC_REF,
   EVENTS_STREAM_METHOD,
+  resultTypeCheck,
+  RESULT_TYPE_ID,
   EVENTS_TERMINATED_NOTIFICATION,
   EVENTS_NOT_FOUND,
   EVENTS_RESOURCE_EXHAUSTED,
@@ -97,13 +99,14 @@ const STREAM_IDS = [
   'sep-3415-stream-heartbeat-not-sse-comment',
   'sep-3415-stream-final-result-shape',
   'sep-3415-stream-final-result-timing',
+  RESULT_TYPE_ID,
   'sep-3415-stream-cancel-stops-delivery',
   'sep-3415-stream-exempt-from-concurrency-cap',
   'sep-3415-stream-carries-only-event-notifications'
 ] as const;
 
 /**
- * The error-table row this scenario claims. `-32013` is only reached when a
+ * The error-table row this scenario claims. `-32025` is only reached when a
  * server actually refuses for a quota, and the concurrency probe is the one
  * place the suite asks for more than one of anything, so the row is graded there
  * and reported untestable on a server that never hits a limit.
@@ -385,7 +388,7 @@ export class EventsPushScenario implements ClientScenario {
           controls.terminate
         ))
       );
-      // Ahead of the concurrency probe, whose own -32013 grading is the
+      // Ahead of the concurrency probe, whose own -32025 grading is the
       // fallback for a server without the control; dedupe keeps the first.
       if (quota) checks.push(await this.quotaCheck(ctx, quota, descriptors));
       checks.push(...(await this.concurrencyChecks(ctx, name, args)));
@@ -879,7 +882,8 @@ export class EventsPushScenario implements ClientScenario {
       ...untestableAll(
         [
           'sep-3415-stream-final-result-shape',
-          'sep-3415-stream-final-result-timing'
+          'sep-3415-stream-final-result-timing',
+          RESULT_TYPE_ID
         ],
         reason,
         'WARNING'
@@ -984,7 +988,8 @@ export class EventsPushScenario implements ClientScenario {
       return untestableAll(
         [
           'sep-3415-stream-final-result-shape',
-          'sep-3415-stream-final-result-timing'
+          'sep-3415-stream-final-result-timing',
+          RESULT_TYPE_ID
         ],
         'The server did not close the stream itself, so no final frame was sent.',
         'WARNING'
@@ -998,24 +1003,42 @@ export class EventsPushScenario implements ClientScenario {
     const keys = isObject(result)
       ? Object.keys(result).filter((k) => k !== '_meta' && k !== 'resultType')
       : ['<not an object>'];
+    const meta =
+      isObject(result) && isObject(result._meta) ? result._meta : undefined;
+    const subscriptionId = meta?.[SUBSCRIPTION_ID_META];
+    const shapeDesc =
+      'The `StreamEventsResult` is an empty result that carries only `resultType` and the subscription ID in `_meta`, mirroring `SubscriptionsListenResult`. It carries no information.';
     out.push(
-      keys.length === 0
+      keys.length > 0
         ? eventsCheck(
             'sep-3415-stream-final-result-shape',
-            'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`).',
-            'SUCCESS',
-            { details: { result } }
-          )
-        : eventsCheck(
-            'sep-3415-stream-final-result-shape',
-            'The `StreamEventsResult` is an empty typed result (`{"_meta": {}}`).',
+            shapeDesc,
             'FAILURE',
             {
-              errorMessage: `The final result carried ${keys.join(', ')}; it is defined to carry no information.`,
+              errorMessage: `The final result carried ${keys.join(', ')}; it is defined to carry only \`resultType\` and the subscription ID in \`_meta\`.`,
               details: { result }
             }
           )
+        : subscriptionId === undefined || subscriptionId === null
+          ? eventsCheck(
+              'sep-3415-stream-final-result-shape',
+              shapeDesc,
+              'FAILURE',
+              {
+                errorMessage: `The final result's \`_meta\` carried no \`${SUBSCRIPTION_ID_META}\`, which SEP-3415 puts there.`,
+                details: { result }
+              }
+            )
+          : eventsCheck(
+              'sep-3415-stream-final-result-shape',
+              shapeDesc,
+              'SUCCESS',
+              {
+                details: { result }
+              }
+            )
     );
+    out.push(resultTypeCheck([{ method: EVENTS_STREAM_METHOD, result }]));
     out.push(
       eventsCheck(
         'sep-3415-stream-final-result-timing',
@@ -1116,7 +1139,7 @@ export class EventsPushScenario implements ClientScenario {
   }
 
   /**
-   * `-32013`, provoked on the type the server says is capped.
+   * `-32025`, provoked on the type the server says is capped.
    *
    * Opens streams one at a time, up to one past the reported cap, and stops at
    * the first refusal. Refused earlier than the cap still counts, since other
@@ -1129,7 +1152,7 @@ export class EventsPushScenario implements ClientScenario {
   ): Promise<ConformanceCheck> {
     const id = 'sep-3415-error-resource-exhausted';
     const description =
-      '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
+      '`-32025 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
     const untestable = (reason: string) =>
       untestableCheck(id, id, description, reason, [EVENTS_SPEC_REF]);
 
@@ -1179,7 +1202,7 @@ export class EventsPushScenario implements ClientScenario {
   }
 
   /**
-   * The `-32013` row from the error table.
+   * The `-32025` row from the error table.
    *
    * A conformant server reaches no limit here, so this usually reports
    * untestable. It grades when one refuses, which is worth claiming rather than
@@ -1191,7 +1214,7 @@ export class EventsPushScenario implements ClientScenario {
   ): ConformanceCheck {
     const id = 'sep-3415-error-resource-exhausted';
     const description =
-      '`-32013 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
+      '`-32025 ResourceExhausted` — a server-imposed limit or quota was reached. `data.limit` names it (e.g. `"subscriptions"`).';
     const hit = errors.find((e) => e?.code === EVENTS_RESOURCE_EXHAUSTED);
     if (!hit) {
       return untestableCheck(
@@ -1256,7 +1279,7 @@ export class EventsPushScenario implements ClientScenario {
               description,
               'WARNING',
               {
-                errorMessage: `Unknown event type answered ${session.error.code} ${session.error.message}; the document names \`-32011 NotFound\` for a referenced entity that does not exist.`,
+                errorMessage: `Unknown event type answered ${session.error.code} ${session.error.message}; the document names \`-32023 NotFound\` for a referenced entity that does not exist.`,
                 details: { error: session.error }
               }
             )

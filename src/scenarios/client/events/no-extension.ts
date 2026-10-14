@@ -36,7 +36,13 @@ export class EventsClientNoExtensionScenario extends EventsClientScenarioBase {
     this.sendJson(res, {
       jsonrpc: '2.0',
       id: request.id,
-      result: { events: [], cursor: null, hasMore: false, nextPollMs: 1000 }
+      result: {
+        resultType: 'complete',
+        events: [],
+        cursor: null,
+        hasMore: false,
+        nextPollMs: 1000
+      }
     });
     return true;
   }
