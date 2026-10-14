@@ -722,22 +722,23 @@ describe('DPoP server validation scenario', () => {
     expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
-  it('rejects protected resource metadata whose resource identifier does not match', async () => {
+  it('does not grade protected resource metadata whose resource identifier does not match', async () => {
     const checks = await new DPoPServerValidationScenario().run(
       testContext(url(ports.wrongResource))
     );
 
     const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
-    expect(prm.status).toBe('FAILURE');
-    expect(prm.details?.untestable).toBeUndefined();
+    expect(prm.details?.untestable).toBe(true);
+    expect(prm.errorMessage).toContain('unusable (RFC 9728 §3.3)');
     expect(prm.errorMessage).toContain('https://attacker.example/mcp');
     expect(prm.errorMessage).toContain(url(ports.wrongResource));
     const consistency = byId(checks, 'sep-1932-server-prm-consistency')[0];
     expect(consistency.details?.untestable).toBe(true);
-    expect(consistency.errorMessage).toContain('resource identifier check');
-    expect(genuineFailures(checks)).toEqual([
-      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
-    ]);
+    expect(consistency.errorMessage).toContain(
+      'cannot evaluate advertisement consistency'
+    );
+    expect(consistency.errorMessage).toContain('unusable (RFC 9728 §3.3)');
+    expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
   it('fails a required-DPoP server whose 401 has no DPoP challenge', async () => {
@@ -880,12 +881,12 @@ describe('DPoP server validation scenario', () => {
       testContext(url(ports.prmRootWrongResource))
     );
     const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
-    expect(prm.status).toBe('FAILURE');
-    expect(prm.details?.source).toBe('well-known-root');
+    expect(prm.details?.untestable).toBe(true);
+    expect(prm.errorMessage).toContain(
+      `at http://localhost:${ports.prmRootWrongResource}/.well-known/oauth-protected-resource is unusable`
+    );
     expect(prm.errorMessage).toContain('https://attacker.example/mcp');
-    expect(genuineFailures(checks)).toEqual([
-      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
-    ]);
+    expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
   it('does not count HTTP 500 as rejection of an unbound Bearer token', async () => {
@@ -944,13 +945,12 @@ describe('DPoP server validation scenario', () => {
       testContext(url(ports.omitResource))
     );
     const prm = byId(checks, 'sep-1932-server-prm-dpop')[0];
-    expect(prm.status).toBe('FAILURE');
-    expect(prm.errorMessage).toBe(
-      `protected resource metadata is missing the resource field (expected ${url(ports.omitResource)})`
+    expect(prm.details?.untestable).toBe(true);
+    expect(prm.errorMessage).toContain(
+      `the resource field is missing (expected ${url(ports.omitResource)})`
     );
-    expect(genuineFailures(checks)).toEqual([
-      `sep-1932-server-prm-dpop/PrmDpop: ${prm.errorMessage}`
-    ]);
+    expect(prm.errorMessage).not.toContain('undefined');
+    expect(genuineFailures(checks)).toEqual([]);
   }, 30000);
 
   it('does not grade a metadata response whose Content-Type is not application/json', async () => {

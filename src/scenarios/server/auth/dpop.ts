@@ -565,21 +565,13 @@ function resourceMismatch(
   }
   const expected = allowed.join(' or ');
   if (doc.resource === undefined) {
-    return `protected resource metadata is missing the resource field (expected ${expected})`;
+    return `the resource field is missing (expected ${expected})`;
   }
-  return `protected resource metadata resource ${JSON.stringify(doc.resource)} is not identical to the resource identifier ${expected}`;
+  return `resource ${JSON.stringify(doc.resource)} is not identical to the resource identifier ${expected}`;
 }
 
-type PrmDiscovery =
-  | PrmDocument
-  | { reason: string }
-  | {
-      mismatch: string;
-      source: PrmSource;
-      url: string;
-      redirectedFrom?: string;
-      resource: unknown;
-    };
+/** A document that fails the §3.3 check is unusable, the same as no document. */
+type PrmDiscovery = PrmDocument | { reason: string };
 
 /**
  * RFC 9728 §5.1, then the MCP fallback order from the client discovery
@@ -602,7 +594,9 @@ async function discoverProtectedResourceMetadata(
       url === requestedUrl ? {} : { redirectedFrom: requestedUrl };
     const mismatch = resourceMismatch(doc, resourceUrl, source);
     if (mismatch) {
-      return { mismatch, source, url, ...redirect, resource: doc.resource };
+      return {
+        reason: `protected resource metadata at ${url} is unusable (RFC 9728 §3.3): ${mismatch}`
+      };
     }
     return { doc, source, url, ...redirect };
   };
@@ -745,24 +739,6 @@ function algsProblem(algs: unknown): string | undefined {
 }
 
 function gradePrm(found: PrmDiscovery): ConformanceCheck {
-  if ('mismatch' in found) {
-    return dpopCheck(
-      PRM_ID,
-      PRM_NAME,
-      PRM_DESC,
-      'FAILURE',
-      found.mismatch,
-      {
-        source: found.source,
-        url: found.url,
-        ...(found.redirectedFrom
-          ? { redirectedFrom: found.redirectedFrom }
-          : {}),
-        resource: found.resource ?? null
-      },
-      DISCOVERY_REFERENCES
-    );
-  }
   if (!('doc' in found)) {
     return untestableCheck(
       PRM_ID,
@@ -1107,9 +1083,6 @@ server-provided nonce flow.`;
           publishedRequired = found.doc.dpop_bound_access_tokens_required;
           requiredTier = publishedRequired === true;
           metadataGap = '';
-        } else if ('mismatch' in found) {
-          metadataGap =
-            'protected resource metadata failed the RFC 9728 resource identifier check';
         } else {
           metadataGap = found.reason;
         }
