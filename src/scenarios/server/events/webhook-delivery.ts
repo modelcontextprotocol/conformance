@@ -50,7 +50,8 @@ import {
   firstSupporting,
   isIso8601,
   isObject,
-  minimalArguments
+  minimalArguments,
+  guardScenario
 } from './helpers';
 import {
   RECEIVER_WELL_KNOWN_PATH,
@@ -248,6 +249,10 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 **Without one, the loopback receiver is the SSRF probe.** A server that refuses \`http://127.0.0.1\` passes \`validate-callback-url\` and reports the delivery rows untestable; a server that delivers there fails it and supplies real deliveries for everything else. \`reject-non-routable\` is graded separately in either mode, from an \`https://127.0.0.1\` callback aimed at a listener that records whether the server connected, since the scheme rule alone refuses the http probe.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    return guardScenario(ALL_IDS, () => this.runUnguarded(ctx));
+  }
+
+  private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     let receiver: Receiver | undefined;
     try {

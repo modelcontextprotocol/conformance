@@ -383,6 +383,12 @@ export interface CatalogBehaviour {
 }
 
 export interface EventsFixtureOptions {
+  /**
+   * Methods that "crash" when called with empty `arguments` on a served type: the fixture
+   * answers HTTP 502 with no body, the way a proxy does when the server behind
+   * it dies mid-request. metronome-mcp did exactly this on `{}` (#1535).
+   */
+  crashOnEmptyArguments?: string[];
   /** Serve `subscriptions/listen` and expose `events_conformance_catalog`. */
   listen?: ListenBehaviour;
   /** Expose `events_conformance_catalog` and set what its changes do to streams. */
@@ -561,6 +567,19 @@ export async function startEventsFixture(
     const method = body.method as string;
     const id = body.id;
     const params = (body.params ?? {}) as Record<string, unknown>;
+
+    // Only for a type the fixture serves: metronome answered an unknown or
+    // missing name with the right error, and died only on its own type.
+    if (
+      opts.crashOnEmptyArguments?.includes(method) &&
+      typeof params.name === 'string' &&
+      names.has(params.name) &&
+      Object.keys(isRecord(params.arguments) ? params.arguments : {}).length ===
+        0
+    ) {
+      res.writeHead(502).end();
+      return;
+    }
 
     const send = (result: object) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });

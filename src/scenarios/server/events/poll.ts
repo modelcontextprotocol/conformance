@@ -51,7 +51,8 @@ import {
   isIso8601,
   minimalArguments,
   firstSupporting,
-  unknownEventName
+  unknownEventName,
+  guardScenario
 } from './helpers';
 
 const POLL_IDS = [
@@ -183,6 +184,10 @@ export class EventsPollScenario implements ClientScenario {
 **Discovery is dynamic**: a server that neither declares the capability nor implements \`events/list\` SKIPs everything; no poll-capable event type reports the poll checks as untestable. Checks that need a delivered event (the \`EventOccurrence\` shape) are untestable against a quiet server rather than passing vacuously.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    return guardScenario(ALL_IDS, () => this.runUnguarded(ctx));
+  }
+
+  private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
       return await this.checks(conn);

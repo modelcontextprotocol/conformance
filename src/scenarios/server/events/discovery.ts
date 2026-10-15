@@ -60,7 +60,8 @@ import {
   isEventsErrorCode,
   resultTypeCheck,
   RESULT_TYPE_ID,
-  unknownEventName
+  unknownEventName,
+  guardScenario
 } from './helpers';
 
 const CAPABILITY_IDS = [
@@ -144,6 +145,10 @@ export class EventsDiscoveryScenario implements ClientScenario {
 **Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    return guardScenario(ALL_IDS, () => this.runUnguarded(ctx));
+  }
+
+  private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
       const checks = await this.checks(conn);

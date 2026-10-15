@@ -457,6 +457,44 @@
 #     on distinct timestamps and signatures alone, and validity belongs to
 #     sep-3415-delivery-signature-formula.
 #
+# measured against metronome-mcp.fly.dev again, 2026-10-15, after the rows
+#   moved to SEP-3415 (`make conf-events-remote` in mcpkit, which logs in
+#   through an OAuth proxy; events-webhook-delivery is left out because a
+#   hosted server cannot reach the loopback receiver):
+#
+#                        first pass (`{}`)   second pass (periodSeconds: 1)
+#   events-discovery           10/13                10/13
+#   events-poll                 1/36                29/31
+#   events-push                 1/24                12/19
+#   events-webhook              1/31                22/25
+#
+#   Three metronome divergences account for every violated row:
+#
+#   It crashes on `events/poll`, `events/stream` and `events/subscribe` for
+#     `metronome.tick` when `arguments` omits `periodSeconds`, which its
+#     `inputSchema` does not require. The proxy sees a 502, the server
+#     restarts and forgets every OAuth client, and the proxy logs in again. An
+#     unknown or missing `name` with `{}` is answered correctly, so the crash
+#     is in the tick handler. The first pass is that crash, reported as red
+#     rows; the second sets EVENTS_ARGUMENTS to grade everything else.
+#   It still answers with the sketch's error codes: -32011 where SEP-3415 says
+#     -32023 NotFound. sep-3415-error-not-found, -error-server-range and
+#     -removal-poll-not-found fail on it, and -stream-error-before-open and
+#     -unsubscribe-unknown-not-found warn.
+#   It declares `listChanged: true` and does not honor `eventsListChanged` on
+#     `subscriptions/listen`, the only channel SEP-3415 gives the
+#     notification, so sep-3415-list-changed-notification fails.
+#
+#   The rest of the gap is untestable rather than wrong: rows that need the
+#   `events_conformance_*` controls only kitchen-sink exposes, the
+#   unsupported-mode rows (its one type offers all three modes), the restart
+#   rows, and subscribe-auth-required.
+#
+#   One harness bug, fixed here: a scenario that met a transport error (the
+#   502) threw out of run() and reported nothing, so the runner printed
+#   "exited 1" where a red report belonged. guardScenario now turns it into
+#   every row untestable at FAILURE, naming the error.
+#
 sep: 3415
 # SEP-3415 pinned at the commit every row quotes. See the header.
 spec_url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md

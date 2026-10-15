@@ -58,7 +58,8 @@ import {
   isObject,
   isValidCursor,
   minimalArguments,
-  type EventDescriptor
+  type EventDescriptor,
+  guardScenario
 } from './helpers';
 
 /** A callback URL that is syntactically valid and points nowhere in use. */
@@ -192,6 +193,10 @@ export class EventsWebhookScenario implements ClientScenario {
 **Cleanup**: every subscription created here is unsubscribed before the scenario returns.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    return guardScenario(ALL_IDS, () => this.runUnguarded(ctx));
+  }
+
+  private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
       const capabilities = await conn.discover();
