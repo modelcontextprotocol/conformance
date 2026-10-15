@@ -97,7 +97,9 @@ function delivering(delivery: DeliveryBehaviour = {}): EventsFixtureOptions {
     capability: { listChanged: true },
     descriptors: [descriptor({ name: 'hook.event', delivery: ['webhook'] })],
     subscribe: { acceptHttpUrl: true },
-    delivery
+    // A source that fires more than once, like any real one, so the 410 probe
+    // can tell a suspended subscription from a quiet event.
+    delivery: { followUpEvents: 2, ...delivery }
   };
 }
 
@@ -516,6 +518,69 @@ describe.concurrent('retries and redirects', () => {
       expect(checks.get('sep-3415-delivery-413-non-retryable')?.status).toBe(
         'FAILURE'
       );
+    },
+    TIMEOUT
+  );
+
+  test(
+    'suspending the subscription after a 410 fails the 410 row alone',
+    async () => {
+      const checks = await deliveryChecks(delivering({ stopAfterGone: true }));
+      const gone = checks.get('sep-3415-delivery-410-non-retryable');
+      expect(gone?.status).toBe('FAILURE');
+      expect(gone?.errorMessage).toContain('must not suspend');
+      expect(checks.get('sep-3415-delivery-413-non-retryable')?.status).toBe(
+        'SUCCESS'
+      );
+    },
+    TIMEOUT
+  );
+
+  test(
+    'a source that fires once leaves 410 survival untestable, not green',
+    async () => {
+      const checks = await deliveryChecks(delivering({ followUpEvents: 0 }));
+      const gone = checks.get('sep-3415-delivery-410-non-retryable');
+      expect(gone?.details?.untestable).toBe(true);
+      expect(gone?.status).toBe('WARNING');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'a categorical lastError on the refresh after a 413 passes',
+    async () => {
+      const checks = await deliveryChecks(delivering({ deliveryStatus: true }));
+      const row = checks.get('sep-3415-delivery-status-last-error-category');
+      expect(row?.status, row?.errorMessage).toBe('SUCCESS');
+      expect(row?.details?.lastError).toBe('http_4xx');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'a lastError carrying the endpoint response fails',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({
+          deliveryStatus: {
+            lastError: '413 Payload Too Large: <html>nope</html>'
+          }
+        })
+      );
+      const row = checks.get('sep-3415-delivery-status-last-error-category');
+      expect(row?.status).toBe('FAILURE');
+      expect(row?.errorMessage).toContain('not one of');
+    },
+    TIMEOUT
+  );
+
+  test(
+    'no deliveryStatus leaves lastError untestable',
+    async () => {
+      const checks = await deliveryChecks(delivering());
+      const row = checks.get('sep-3415-delivery-status-last-error-category');
+      expect(row?.details?.untestable).toBe(true);
     },
     TIMEOUT
   );

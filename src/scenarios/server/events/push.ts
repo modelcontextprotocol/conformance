@@ -871,9 +871,12 @@ export class EventsPushScenario implements ClientScenario {
     usedName: string,
     hasTerminate: boolean
   ): Promise<ConformanceCheck[]> {
-    // Severity follows each row's own keyword, not the reason they share.
-    // Terminating is a MUST; the final-result shape and timing are SHOULDs, and
-    // flattening all three to FAILURE overstates two of them.
+    // Severity follows each row's own wording, not the reason they share.
+    // Terminating is a MUST. The final-result shape is a shape the SEP states
+    // without a keyword, and the timing sentence has none either, so when
+    // neither can be observed they report untestable at WARNING; flattening
+    // all three to FAILURE overstates two of them. A shape that is observed
+    // and wrong still fails, per the header's shape-row rule.
     const untestableHere = (reason: string): ConformanceCheck[] => [
       ...untestableAll(
         ['sep-3415-stream-terminated-ends-subscription'],

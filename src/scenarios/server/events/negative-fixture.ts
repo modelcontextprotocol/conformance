@@ -209,6 +209,16 @@ export interface SubscribeBehaviour {
  * guard disabled, which is the state the demo fixtures ship in.
  */
 export interface DeliveryBehaviour {
+  /** Events to send after the first, each with a fresh `webhook-id`. */
+  followUpEvents?: number;
+  /** Stop sending to a callback once it has answered `410`, as a server that suspends on it would. */
+  stopAfterGone?: boolean;
+  /**
+   * Report `deliveryStatus` on a refresh, `lastError` being the category of the
+   * callback's last failed response. A string replaces the category, for the
+   * defect where raw endpoint detail leaks into it.
+   */
+  deliveryStatus?: true | { lastError: string };
   /** Send the verification envelope before any event. */
   verify?: boolean;
   /**
@@ -316,6 +326,19 @@ export interface WebhookEnvelopeControls {
 }
 
 /**
+ * A second principal, through `events_conformance_subscribe_as` and
+ * `events_conformance_subscription_exists`, for the cross-tenant row. Defaults
+ * are conformant: the principal is part of the key, and unsubscribing one
+ * tenant's subscription leaves the other's alone.
+ */
+export interface TenantBehaviour {
+  /** Leave the principal out of the key, so both tenants share one subscription. */
+  keyIgnoresPrincipal?: boolean;
+  /** Unsubscribing a key removes every tenant's subscription with that key. */
+  unsubscribeIgnoresPrincipal?: boolean;
+}
+
+/**
  * `subscriptions/listen` and the catalog control. The conformant fixture
  * echoes `eventsListChanged` exactly when the client asked and the declared
  * capability says `listChanged: true`, and sends `notifications/events/list_changed`
@@ -343,6 +366,8 @@ export interface EventsFixtureOptions {
   listen?: ListenBehaviour;
   /** Expose the durability controls as tools. */
   durability?: DurabilityBehaviour;
+  /** Expose the two-tenant controls. */
+  tenants?: TenantBehaviour;
   /** Expose the per-subscription webhook envelope controls. */
   webhookEnvelopeControls?: WebhookEnvelopeControls;
   /**
@@ -441,6 +466,25 @@ export async function startEventsFixture(
     }
   >();
   let generation = 1;
+  /** The last non-2xx status each callback URL answered, cleared by a 2xx. */
+  const lastFailureByUrl = new Map<string, number>();
+  /** `deliveryStatus` for a refresh, when the fixture reports it at all. */
+  const deliveryStatusFor = (
+    refreshing: boolean,
+    url: unknown
+  ): { deliveryStatus?: object } => {
+    const report = opts.delivery?.deliveryStatus;
+    const failed =
+      typeof url === 'string' ? lastFailureByUrl.get(url) : undefined;
+    if (!report || !refreshing || failed === undefined) return {};
+    const lastError =
+      typeof report === 'object'
+        ? report.lastError
+        : failed >= 500
+          ? 'http_5xx'
+          : 'http_4xx';
+    return { deliveryStatus: { active: true, lastError } };
+  };
   /** Deliveries still in flight, so close() can settle rather than abandon. */
   const inFlight = new Set<Promise<void>>();
   /** Origins the callback guard has been asked to permit. */
@@ -539,6 +583,12 @@ export async function startEventsFixture(
       }
       if (opts.listen) {
         tools.push({ name: 'events_conformance_catalog', inputSchema: obj });
+      }
+      if (opts.tenants) {
+        tools.push(
+          { name: 'events_conformance_subscribe_as', inputSchema: obj },
+          { name: 'events_conformance_subscription_exists', inputSchema: obj }
+        );
       }
       if (opts.webhookEnvelopeControls?.gap) {
         tools.push({
@@ -682,6 +732,37 @@ export async function startEventsFixture(
       send({
         content: [{ type: 'text', text: isGap ? 'cursor_after_gap' : 'ok' }]
       });
+      return;
+    }
+    if (
+      method === 'tools/call' &&
+      opts.tenants &&
+      (params.name === 'events_conformance_subscribe_as' ||
+        params.name === 'events_conformance_subscription_exists')
+    ) {
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      // The run's own principal holds the bare key; another tenant's carries
+      // its principal in front, unless the key is the defect under test.
+      const bare = [String(toolArgs.url), String(toolArgs.name), '{}'].join(
+        '|'
+      );
+      const key = opts.tenants.keyIgnoresPrincipal
+        ? bare
+        : `${String(toolArgs.principal)}#${bare}`;
+      if (params.name === 'events_conformance_subscribe_as') {
+        const held = subscriptions.get(key);
+        const subId = held?.id ?? hashKey(key);
+        subscriptions.set(key, {
+          id: subId,
+          url: String(toolArgs.url),
+          name: String(toolArgs.name)
+        });
+        send({ content: [{ type: 'text', text: subId }] });
+      } else {
+        send({
+          content: [{ type: 'text', text: String(subscriptions.has(key)) }]
+        });
+      }
       return;
     }
     if (
@@ -844,6 +925,11 @@ export async function startEventsFixture(
         }
         if (held) {
           subscriptions.delete(key);
+          if (opts.tenants?.unsubscribeIgnoresPrincipal) {
+            for (const k of [...subscriptions.keys()]) {
+              if (k.endsWith(`#${key}`)) subscriptions.delete(k);
+            }
+          }
           send({ ...(behaviour.unsubscribeResult ?? {}) });
           return;
         }
@@ -1011,6 +1097,7 @@ export async function startEventsFixture(
         ...(behaviour.omitRefreshBefore ? {} : { refreshBefore }),
         cursor: 'cursor_sub_001',
         truncated: false,
+        ...deliveryStatusFor(existing !== undefined, url),
         ...(behaviour.result ?? {})
       });
 
@@ -1024,7 +1111,11 @@ export async function startEventsFixture(
           String(name),
           opts.delivery.synchronousVerification
             ? { ...opts.delivery, verify: false }
-            : opts.delivery
+            : opts.delivery,
+          (status) => {
+            if (status >= 200 && status < 300) lastFailureByUrl.delete(url);
+            else lastFailureByUrl.set(url, status);
+          }
         ).finally(() => inFlight.delete(run));
         inFlight.add(run);
       }
@@ -1272,6 +1363,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * two attempts inside one second would share a stamp the fixture did freshen. */
 const RETRY_GAP_MS = 1100;
 
+/** Spacing between follow-up events, so they read as a cadence rather than a burst. */
+const FOLLOW_UP_GAP_MS = 300;
+
 /**
  * The handshake as a server that verifies inside `events/subscribe` runs it:
  * one signed `verification` POST, and true only for a 2xx whose body echoes the
@@ -1347,8 +1441,10 @@ async function deliverToCallback(
   secret: unknown,
   subscriptionId: string,
   eventName: string,
-  behaviour: DeliveryBehaviour
+  behaviour: DeliveryBehaviour,
+  onStatus?: (status: number) => void
 ): Promise<void> {
+  let gone = false;
   const key =
     typeof secret === 'string' && secret.startsWith('whsec_')
       ? behaviour.literalKeySignature
@@ -1401,6 +1497,8 @@ async function deliverToCallback(
         status = res.status;
         location = res.headers.get('location');
         await res.text();
+        onStatus?.(status);
+        if (status === 410) gone = true;
       } catch {
         return;
       }
@@ -1483,6 +1581,11 @@ async function deliverToCallback(
   }
   if (behaviour.sendEvent !== false && !behaviour.eventBeforeVerification) {
     await postEvent();
+    for (let i = 0; i < (behaviour.followUpEvents ?? 0); i++) {
+      await new Promise((resolve) => setTimeout(resolve, FOLLOW_UP_GAP_MS));
+      if (behaviour.stopAfterGone && gone) break;
+      await postEvent();
+    }
   }
   if (behaviour.gapEnvelope) {
     const override = isRecord(behaviour.gapEnvelope)
