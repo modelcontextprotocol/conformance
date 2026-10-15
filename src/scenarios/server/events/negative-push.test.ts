@@ -130,6 +130,45 @@ describe.concurrent('events/stream opening', () => {
     expect(check?.details?.untestable).toBe(true);
   });
 
+  const ROW = 'sep-3415-stream-mode-unsupported';
+  const withPollOnly = (
+    stream: StreamBehaviour = {}
+  ): EventsFixtureOptions => ({
+    ...pushFixture(stream),
+    descriptors: [
+      descriptor({ name: 'push.event', delivery: ['push'] }),
+      descriptor({ name: 'poll.only', delivery: ['poll'] })
+    ]
+  });
+
+  test('a type that declines push is refused with -32026', async () => {
+    const checks = await pushChecks(withPollOnly());
+    expect(checks.get(ROW)?.status, checks.get(ROW)?.errorMessage).toBe(
+      'SUCCESS'
+    );
+  });
+
+  // The defect in #1417: the stream handler gated on whether the source could
+  // stream, not on what its descriptor declared.
+  test('streaming a type that declines push fails the row', async () => {
+    const checks = await pushChecks(withPollOnly({ acceptNonPushType: true }));
+    expect(checks.get(ROW)?.status).toBe('FAILURE');
+    expect(checks.get(ROW)?.errorMessage).toContain('opened a stream');
+  });
+
+  test('a poll-only server still grades the unsupported-mode row', async () => {
+    const checks = await pushChecks({
+      capability: { listChanged: true },
+      descriptors: [descriptor({ name: 'poll.only', delivery: ['poll'] })]
+    });
+    expect(checks.get(ROW)?.status).toBe('SUCCESS');
+  });
+
+  test('with every type offering push, the row is untestable', async () => {
+    const checks = await pushChecks(pushFixture());
+    expect(checks.get(ROW)?.details?.untestable).toBe(true);
+  });
+
   test('a server that declares nothing and serves nothing skips the suite', async () => {
     const checks = await pushChecks({
       listError: { code: -32601, message: 'Method not found' }

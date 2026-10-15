@@ -72,6 +72,8 @@ export type PollAnswer = Record<string, unknown> | { error: JsonRpcErrorShape };
 export interface StreamBehaviour {
   /** Answer the POST with this JSON-RPC error instead of opening a stream. */
   error?: JsonRpcErrorShape;
+  /** Stream a type whose `delivery` omits `push`, instead of refusing it. */
+  acceptNonPushType?: boolean;
   /** Answer the POST with a plain JSON result, which is not a stream at all. */
   answerJson?: boolean;
   /** Send no `notifications/events/active`. */
@@ -1136,6 +1138,22 @@ export async function startEventsFixture(
         (typeof name !== 'string' || !names.has(name))
       ) {
         fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
+        return;
+      }
+      const servedModes = (
+        descriptors.find((d) => (d as { name?: unknown }).name === name) as
+          | { delivery?: unknown }
+          | undefined
+      )?.delivery;
+      if (
+        !behaviour.acceptNonPushType &&
+        Array.isArray(servedModes) &&
+        !servedModes.includes('push')
+      ) {
+        fail(-32026, 'Unsupported: event type does not offer push delivery', {
+          feature: 'deliveryMode',
+          value: 'push'
+        });
         return;
       }
       if (liveStreams >= behaviour.maxConcurrent) {

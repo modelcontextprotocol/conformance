@@ -646,6 +646,9 @@ requirements:
   - check: sep-3415-stream-error-before-open
     text: 'If the subscription is invalid (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`), the server responds immediately with a JSON-RPC error and no stream is opened.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+  - check: sep-3415-stream-mode-unsupported
+    text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-stream-active-confirmation
     text: 'Otherwise the server confirms the subscription with `notifications/events/active`, and then delivers events as notifications.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery

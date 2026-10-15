@@ -57,6 +57,7 @@ import {
   EVENTS_TERMINATED_NOTIFICATION,
   EVENTS_NOT_FOUND,
   EVENTS_RESOURCE_EXHAUSTED,
+  EVENTS_UNSUPPORTED,
   JSONRPC_METHOD_NOT_FOUND,
   SUBSCRIPTION_ID_META,
   describeValue,
@@ -87,6 +88,7 @@ const HEARTBEAT_TOLERANCE_MS = 2000;
 const STREAM_IDS = [
   'sep-3415-stream-implemented',
   'sep-3415-stream-error-before-open',
+  'sep-3415-stream-mode-unsupported',
   'sep-3415-stream-active-confirmation',
   'sep-3415-stream-subscription-id-meta',
   'sep-3415-stream-event-notification',
@@ -207,12 +209,17 @@ export class EventsPushScenario implements ClientScenario {
       const target = firstSupporting(listed.descriptors, 'push');
       const name = target ? descriptorName(target) : undefined;
       if (!target || !name) {
-        return untestableAll(
-          [...STREAM_IDS, ...ERROR_IDS],
-          listed.descriptors.length === 0
-            ? '`events/list` returned an empty catalog, so no push-capable event type could be exercised.'
-            : 'No event type advertises `push` delivery, so `events/stream` could not be exercised. Push is optional per event type.'
-        );
+        // A server whose types decline push is exactly where the
+        // unsupported-mode row has something to grade.
+        return dedupe([
+          await this.unsupportedModeCheck(ctx, listed.descriptors),
+          ...untestableAll(
+            [...STREAM_IDS, ...ERROR_IDS],
+            listed.descriptors.length === 0
+              ? '`events/list` returned an empty catalog, so no push-capable event type could be exercised.'
+              : 'No event type advertises `push` delivery, so `events/stream` could not be exercised. Push is optional per event type.'
+          )
+        ]);
       }
 
       // Probe for the diagnostic controls here, on the connection that is
@@ -282,6 +289,9 @@ export class EventsPushScenario implements ClientScenario {
           )
         );
         checks.push(
+          // Independent of the target stream, so graded before the rest are
+          // stamped untestable; dedupe keeps the first per id.
+          await this.unsupportedModeCheck(ctx, descriptors),
           ...untestableAll(
             [...STREAM_IDS, ...ERROR_IDS].filter(
               (id) => id !== 'sep-3415-stream-implemented'
@@ -394,6 +404,7 @@ export class EventsPushScenario implements ClientScenario {
       checks.push(...(await this.concurrencyChecks(ctx, name, args)));
       checks.push(await this.noReplayGapCheck(ctx, descriptors, controls.gap));
       checks.push(...(await this.errorBeforeOpenChecks(ctx, args)));
+      checks.push(await this.unsupportedModeCheck(ctx, descriptors));
       return dedupe(checks);
     } finally {
       await session.cancel();
@@ -1287,6 +1298,68 @@ export class EventsPushScenario implements ClientScenario {
               }
             )
       ];
+    } finally {
+      await session.cancel();
+    }
+  }
+
+  /** Open a stream on an event type whose `delivery` omits `push`. */
+  private async unsupportedModeCheck(
+    ctx: RunContext,
+    descriptors: EventDescriptor[]
+  ): Promise<ConformanceCheck> {
+    const id = 'sep-3415-stream-mode-unsupported';
+    const description =
+      'A stream against an event type whose `delivery` does not list `push` returns `-32026 Unsupported`, and opens nothing.';
+    const nonPush = descriptors.find(
+      (d) =>
+        descriptorName(d) !== undefined &&
+        !deliveryModes(d).includes('push') &&
+        minimalArguments(d) !== undefined
+    );
+    if (!nonPush) {
+      return untestableCheck(
+        id,
+        id,
+        description,
+        'Every event type the server offers advertises `push` delivery, so there is no event type to probe the unsupported-mode path with.',
+        [EVENTS_SPEC_REF]
+      );
+    }
+    const name = descriptorName(nonPush)!;
+    const session = await openEventStream(
+      ctx.serverUrl,
+      ctx.specVersion,
+      { name, arguments: minimalArguments(nonPush)!, cursor: null },
+      { openTimeoutMs: 1000 }
+    );
+    try {
+      if (!session.error) {
+        return eventsCheck(id, description, 'FAILURE', {
+          errorMessage: `Event type \`${name}\` does not advertise \`push\` delivery (\`delivery\` is ${JSON.stringify(nonPush.delivery)}) but \`${EVENTS_STREAM_METHOD}\` opened a stream instead of answering an error.`,
+          details: {
+            name,
+            delivery: deliveryModes(nonPush),
+            notifications: session.notifications.map((n) => n.method)
+          }
+        });
+      }
+      return session.error.code === EVENTS_UNSUPPORTED
+        ? eventsCheck(id, description, 'SUCCESS', {
+            details: {
+              name,
+              code: session.error.code,
+              data: session.error.data
+            }
+          })
+        : eventsCheck(id, description, 'FAILURE', {
+            errorMessage: `Streaming \`${name}\`, which does not offer push delivery, answered ${session.error.code} ${session.error.message}, expected ${EVENTS_UNSUPPORTED} Unsupported.`,
+            details: {
+              name,
+              delivery: deliveryModes(nonPush),
+              error: session.error
+            }
+          });
     } finally {
       await session.cancel();
     }
