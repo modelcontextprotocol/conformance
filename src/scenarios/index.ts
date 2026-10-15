@@ -14,6 +14,7 @@ import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { SkillsVerificationScenario } from './client/skills/verification';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
+import { ElicitationClientUrlModeScenario } from './client/elicitation-url-mode';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
 import { MRTRClientScenario } from './client/mrtr-client';
@@ -47,6 +48,7 @@ import { JsonSchema2020_12Scenario } from './server/json-schema-2020-12';
 
 import { ElicitationDefaultsScenario } from './server/elicitation-defaults';
 import { ElicitationEnumsScenario } from './server/elicitation-enums';
+import { ElicitationUrlModeScenario } from './server/elicitation-url-mode';
 import { ServerSSEPollingScenario } from './server/sse-polling';
 import { ServerSSEMultipleStreamsScenario } from './server/sse-multiple-streams';
 
@@ -200,6 +202,9 @@ const allClientScenariosList: ClientScenario[] = [
   // Elicitation scenarios (SEP-1034)
   new ElicitationDefaultsScenario(),
 
+  // URL mode elicitation, server side (SEP-1036)
+  new ElicitationUrlModeScenario(),
+
   // SSE Polling scenarios (SEP-1699)
   new ServerSSEPollingScenario(),
   new ServerSSEMultipleStreamsScenario(),
@@ -329,6 +334,9 @@ const scenariosList: Scenario[] = [
 
   // MRTR client conformance (SEP-2322)
   new MRTRClientScenario(),
+
+  // URL mode elicitation, client side (SEP-1036)
+  new ElicitationClientUrlModeScenario(),
 
   // HTTP Standardization scenarios (SEP-2243)
   new HttpStandardHeadersScenario(),
