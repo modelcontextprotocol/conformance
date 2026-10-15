@@ -48,7 +48,9 @@
 #     to clients that opted in), sep-3415-delivery-410-non-retryable (the
 #     subscription itself MUST survive a 410) and
 #     sep-3415-delivery-status-last-error-category (the MUST NOT now covers raw
-#     headers and status lines too). The first three emit no check today.
+#     headers and status lines too). The first emits no check today. The two
+#     list_changed rows are graded over `subscriptions/listen` in
+#     events-discovery since panyam/mcpkit#1505.
 #
 #   The six capability rows quote SEP-3415's Capability Negotiation section,
 #   which put the declaration in Extension Negotiation. The sketch's `main`
@@ -134,16 +136,20 @@
 #
 # backing_scenarios: server ClientScenarios under src/scenarios/server/events/
 #   emit the check IDs below (a row is "tested" once a scenario emits its ID;
-#   see src/traceability/). All five now exist and together emit 123 of the 136
+#   see src/traceability/). All five now exist and together emit 126 of the 137
 #   rows. sep-3415-result-type-complete is emitted by four of them (discovery,
 #   poll, push and webhook), each grading the results it already holds, so it
 #   counts once here and once in each scenario below:
-#     discovery.ts (events-discovery), 15 rows — the three capability rows, the
+#     discovery.ts (events-discovery), 17 rows — the three capability rows, the
 #       two sep-3415-list-* rows, the six sep-3415-descriptor-* rows,
 #       sep-3415-error-not-found plus sep-3415-error-server-range (both graded
 #       off one unknown-name probe), and sep-3415-fallback-method-not-found,
 #       which only a server that does not offer the extension can answer, plus
-#       sep-3415-result-type-complete on the `events/list` result.
+#       sep-3415-result-type-complete on the `events/list` result, plus the
+#       two list_changed rows: sep-3415-capability-list-changed-gated off the
+#       `subscriptions/listen` acknowledgement, and
+#       sep-3415-list-changed-notification off a catalog change made through the
+#       fixture's events_conformance_catalog control.
 #     poll.ts (events-poll), 35 rows — the sep-3415-poll-* rows, the
 #       sep-3415-occurrence-* rows, the sep-3415-cursor-* /
 #       sep-3415-max-age-* / sep-3415-truncated-* rows reachable through poll,
@@ -198,20 +204,19 @@
 #   report untestable against both implementations, so the controls are the only
 #   evidence those checks work at all.
 #
-#   The 13 rows nothing emits yet, and what each needs:
-#     sep-3415-schema-evolution-additive, sep-3415-breaking-change-new-name,
-#     sep-3415-list-changed-notification and the four remaining
-#     sep-3415-removal-* rows need a server whose catalog can be made to change
-#     mid-run. Neither fixture can, so these wait on a driver that can tell the
-#     server under test to add, alter or drop an event type.
+#   The 11 rows nothing emits yet, and what each needs:
+#     sep-3415-schema-evolution-additive, sep-3415-breaking-change-new-name
+#     and the four sep-3415-removal-* rows need a catalog that changes mid-run.
+#     events_conformance_catalog adds and removes types now (it drives
+#     sep-3415-list-changed-notification), which is enough for the removal
+#     rows once a scenario subscribes before the remove. The two
+#     schema-evolution rows also need it to alter a type in place
+#     (panyam/mcpkit#1465).
 #     sep-3415-error-forbidden is the last error-code table row with no probe:
 #     it needs a principal the harness can be refused as. The other three are
 #     claimed off the rule that provokes each, with details.gradedBy naming it:
 #     -32602 off the poll invalid-arguments probe, -32013 off the concurrent
 #     streams, -32015 off the wrong-challenge callback.
-#     sep-3415-capability-list-changed-gated needs a server that declares
-#     listChanged false and then sends the notification anyway; nothing in the
-#     suite watches for an unsolicited notification yet.
 #     sep-3415-capability-client-declaration is a MAY about what a client
 #     declares, so no server-side scenario can emit it. Declared for now; the
 #     honest place for it is `excluded:` beside the other MAY rows.
