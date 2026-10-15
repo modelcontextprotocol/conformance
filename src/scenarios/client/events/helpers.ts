@@ -161,6 +161,12 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
       Connection: 'keep-alive',
       'mcp-session-id': this.sessionId
     });
+    // Node holds the headers until the first write. A stream that writes
+    // nothing for a while (the session GET stream, before list_changed) would
+    // then never answer at all, and a client that waits for the response
+    // headers before carrying on (mcpkit's Go client opens the GET stream
+    // inside Connect) blocks until the run times out.
+    res.flushHeaders();
     return (message: object) => {
       if (!res.writableEnded) res.write(`data: ${JSON.stringify(message)}\n\n`);
     };
