@@ -25,7 +25,7 @@ import {
  * success.
  */
 
-const ALL_ROWS = 28;
+const ALL_ROWS = 30;
 
 // The durability rows poll for a restart and for a GC drop; the defaults are
 // sized for a real server and would make this file crawl.
@@ -54,11 +54,13 @@ const GRADEABLE = [
   'sep-3415-subscribe-id-not-an-input',
   'sep-3415-subscribe-response-cursor',
   'sep-3415-subscribe-response-truncated',
+  'sep-3415-subscribe-refresh-before-present',
   'sep-3415-ttl-omitted-means-default',
   'sep-3415-ttl-null-only-when-requested',
   'sep-3415-ttl-refresh-before-lte-suggestion',
   'sep-3415-ttl-no-rejection-path',
   'sep-3415-unsubscribe-by-key',
+  'sep-3415-unsubscribe-empty-result',
   'sep-3415-unsubscribe-unknown-not-found',
   'sep-3415-error-unsupported'
 ] as const;
@@ -357,6 +359,31 @@ describe('the subscription key and its id', () => {
     );
   });
 
+  test('a subscribe response with no refreshBefore fails its own row', async () => {
+    const { checks } = await webhookChecks(
+      webhookFixture({ omitRefreshBefore: true })
+    );
+    const check = checks.get('sep-3415-subscribe-refresh-before-present');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('no `refreshBefore` member');
+    // The grant row fails too: an absent grant is not a timestamp. Nothing else
+    // moves.
+    const failed = GRADEABLE.filter(
+      (id) => checks.get(id)?.status !== 'SUCCESS'
+    );
+    expect(failed.sort()).toEqual([
+      'sep-3415-subscribe-refresh-before-present',
+      'sep-3415-ttl-refresh-before-lte-suggestion'
+    ]);
+    // An explicit null is a grant, not an omission.
+    const nulled = await webhookChecks(
+      webhookFixture({ nullRefreshAlways: true })
+    );
+    expect(
+      nulled.checks.get('sep-3415-subscribe-refresh-before-present')?.status
+    ).toBe('SUCCESS');
+  });
+
   test('a string truncated on the subscribe response fails', async () => {
     const { checks } = await webhookChecks(
       webhookFixture({ result: { truncated: 'no' } })
@@ -390,6 +417,27 @@ describe('unsubscribe', () => {
     const check = checks.get('sep-3415-unsubscribe-unknown-not-found');
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('typo');
+  });
+
+  test('an unsubscribe result with a stray member fails its own row', async () => {
+    const { checks } = await webhookChecks(
+      webhookFixture({ unsubscribeResult: { removed: true } })
+    );
+    const check = checks.get('sep-3415-unsubscribe-empty-result');
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('`removed`');
+    expect(
+      GRADEABLE.filter((id) => checks.get(id)?.status !== 'SUCCESS')
+    ).toEqual(['sep-3415-unsubscribe-empty-result']);
+    // resultType and _meta are allowed on an empty Result.
+    const meta = await webhookChecks(
+      webhookFixture({
+        unsubscribeResult: { resultType: 'complete', _meta: { x: 1 } }
+      })
+    );
+    expect(meta.checks.get('sep-3415-unsubscribe-empty-result')?.status).toBe(
+      'SUCCESS'
+    );
   });
 
   test('the wrong code for an unknown key warns and names -32023', async () => {

@@ -68,7 +68,6 @@ const LIST_IDS = [
 
 const DESCRIPTOR_IDS = [
   'sep-3415-descriptor-name',
-  'sep-3415-descriptor-description',
   'sep-3415-descriptor-delivery-subset',
   'sep-3415-descriptor-input-schema',
   'sep-3415-descriptor-payload-schema',
@@ -474,16 +473,6 @@ export class EventsDiscoveryScenario implements ClientScenario {
         descriptorName(d) === undefined
           ? `\`name\` is ${describeValue(d.name)}, expected a non-empty string.`
           : undefined
-    );
-
-    field(
-      'sep-3415-descriptor-description',
-      'Each event descriptor carries a `description` of when the event fires.',
-      'WARNING',
-      (d) =>
-        typeof d.description === 'string' && d.description.length > 0
-          ? undefined
-          : `\`description\` is ${describeValue(d.description)}, expected a non-empty string.`
     );
 
     field(
