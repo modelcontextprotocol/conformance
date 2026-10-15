@@ -3,6 +3,7 @@ import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import {
   descriptor,
   startEventsFixture,
+  type CatalogBehaviour,
   type EventsFixtureOptions,
   type StreamBehaviour
 } from './negative-fixture';
@@ -128,6 +129,45 @@ describe.concurrent('events/stream opening', () => {
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('No event type advertises');
     expect(check?.details?.untestable).toBe(true);
+  });
+
+  const ROW = 'sep-3415-stream-mode-unsupported';
+  const withPollOnly = (
+    stream: StreamBehaviour = {}
+  ): EventsFixtureOptions => ({
+    ...pushFixture(stream),
+    descriptors: [
+      descriptor({ name: 'push.event', delivery: ['push'] }),
+      descriptor({ name: 'poll.only', delivery: ['poll'] })
+    ]
+  });
+
+  test('a type that declines push is refused with -32026', async () => {
+    const checks = await pushChecks(withPollOnly());
+    expect(checks.get(ROW)?.status, checks.get(ROW)?.errorMessage).toBe(
+      'SUCCESS'
+    );
+  });
+
+  // The defect in #1417: the stream handler gated on whether the source could
+  // stream, not on what its descriptor declared.
+  test('streaming a type that declines push fails the row', async () => {
+    const checks = await pushChecks(withPollOnly({ acceptNonPushType: true }));
+    expect(checks.get(ROW)?.status).toBe('FAILURE');
+    expect(checks.get(ROW)?.errorMessage).toContain('opened a stream');
+  });
+
+  test('a poll-only server still grades the unsupported-mode row', async () => {
+    const checks = await pushChecks({
+      capability: { listChanged: true },
+      descriptors: [descriptor({ name: 'poll.only', delivery: ['poll'] })]
+    });
+    expect(checks.get(ROW)?.status).toBe('SUCCESS');
+  });
+
+  test('with every type offering push, the row is untestable', async () => {
+    const checks = await pushChecks(pushFixture());
+    expect(checks.get(ROW)?.details?.untestable).toBe(true);
   });
 
   test('a server that declares nothing and serves nothing skips the suite', async () => {
@@ -550,4 +590,79 @@ describe('the heartbeat MUST, on a window that outlasts the cadence', () => {
     expect(check?.details?.untestable).toBeUndefined();
     expect(check?.errorMessage).toContain('outlasts the 30s cadence');
   }, 90_000);
+});
+
+describe.concurrent('a catalog that changes under a live stream', () => {
+  const ROWS = {
+    terminates: 'sep-3415-removal-terminates-subscriptions',
+    notFound: 'sep-3415-removal-error-not-found',
+    schemaChanged: 'sep-3415-removal-error-schema-changed',
+    additive: 'sep-3415-removal-additive-no-terminate'
+  };
+  const all = Object.values(ROWS);
+  const withCatalog = (
+    catalog: CatalogBehaviour = {}
+  ): EventsFixtureOptions => ({
+    ...pushFixture(),
+    catalog
+  });
+  /** Every catalog row except `except` is SUCCESS. */
+  const othersPass = (
+    checks: Map<string, { status: string }>,
+    except: string[]
+  ) => {
+    for (const id of all.filter((r) => !except.includes(r))) {
+      expect(checks.get(id)?.status, id).toBe('SUCCESS');
+    }
+  };
+
+  test('the conformant catalog passes all four rows', async () => {
+    const checks = await pushChecks(withCatalog());
+    othersPass(checks, []);
+  });
+
+  test('without the control, all four are untestable', async () => {
+    const checks = await pushChecks(pushFixture());
+    for (const id of all) {
+      expect(checks.get(id)?.details?.untestable, id).toBe(true);
+    }
+  });
+
+  test('a removal that ends no stream warns, and leaves NotFound ungraded', async () => {
+    const checks = await pushChecks(withCatalog({ removeSilently: true }));
+    expect(checks.get(ROWS.terminates)?.status).toBe('WARNING');
+    expect(checks.get(ROWS.notFound)?.details?.untestable).toBe(true);
+    othersPass(checks, [ROWS.terminates, ROWS.notFound]);
+  });
+
+  test('ending a removed type with Forbidden fails NotFound', async () => {
+    const checks = await pushChecks(
+      withCatalog({ removeError: { code: -32024 } })
+    );
+    expect(checks.get(ROWS.notFound)?.status).toBe('FAILURE');
+    othersPass(checks, [ROWS.notFound]);
+  });
+
+  test('ending a retyped type with Forbidden fails schema_changed', async () => {
+    const checks = await pushChecks(
+      withCatalog({ retypeError: { code: -32024 } })
+    );
+    expect(checks.get(ROWS.schemaChanged)?.status).toBe('FAILURE');
+    expect(checks.get(ROWS.schemaChanged)?.errorMessage).toContain(
+      'Not Forbidden'
+    );
+    othersPass(checks, [ROWS.schemaChanged]);
+  });
+
+  test('a retype that ends nothing leaves schema_changed untestable', async () => {
+    const checks = await pushChecks(withCatalog({ retypeSilently: true }));
+    expect(checks.get(ROWS.schemaChanged)?.details?.untestable).toBe(true);
+    othersPass(checks, [ROWS.schemaChanged]);
+  });
+
+  test('an additive change that ends the stream fails', async () => {
+    const checks = await pushChecks(withCatalog({ extendTerminates: true }));
+    expect(checks.get(ROWS.additive)?.status).toBe('FAILURE');
+    othersPass(checks, [ROWS.additive]);
+  });
 });

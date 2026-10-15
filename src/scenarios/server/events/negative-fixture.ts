@@ -72,6 +72,8 @@ export type PollAnswer = Record<string, unknown> | { error: JsonRpcErrorShape };
 export interface StreamBehaviour {
   /** Answer the POST with this JSON-RPC error instead of opening a stream. */
   error?: JsonRpcErrorShape;
+  /** Stream a type whose `delivery` omits `push`, instead of refusing it. */
+  acceptNonPushType?: boolean;
   /** Answer the POST with a plain JSON result, which is not a stream at all. */
   answerJson?: boolean;
   /** Send no `notifications/events/active`. */
@@ -361,9 +363,30 @@ export interface ListenBehaviour {
   sendListChanged?: boolean;
 }
 
+/**
+ * What `events_conformance_catalog` does to streams on a type it changes. The
+ * defaults are conformant: remove ends them with -32023 {kind: "event"},
+ * retype with -32026 {feature: "inputSchema", reason: "schema_changed"}, and
+ * extend leaves them open.
+ */
+export interface CatalogBehaviour {
+  /** Remove without ending the streams on the type. */
+  removeSilently?: boolean;
+  /** Retype without ending the streams on the type. */
+  retypeSilently?: boolean;
+  /** End streams on a removed type with this error instead. */
+  removeError?: { code: number; data?: unknown };
+  /** End streams on a retyped type with this error instead. */
+  retypeError?: { code: number; data?: unknown };
+  /** End streams on an extended type, which an additive change must not do. */
+  extendTerminates?: boolean;
+}
+
 export interface EventsFixtureOptions {
   /** Serve `subscriptions/listen` and expose `events_conformance_catalog`. */
   listen?: ListenBehaviour;
+  /** Expose `events_conformance_catalog` and set what its changes do to streams. */
+  catalog?: CatalogBehaviour;
   /** Expose the durability controls as tools. */
   durability?: DurabilityBehaviour;
   /** Expose the two-tenant controls. */
@@ -581,7 +604,7 @@ export async function startEventsFixture(
       if (opts.noReplay) {
         tools.push({ name: 'events_conformance_yield_gap', inputSchema: obj });
       }
-      if (opts.listen) {
+      if (opts.listen || opts.catalog) {
         tools.push({ name: 'events_conformance_catalog', inputSchema: obj });
       }
       if (opts.tenants) {
@@ -610,10 +633,23 @@ export async function startEventsFixture(
 
     if (
       method === 'tools/call' &&
-      opts.listen &&
+      (opts.listen || opts.catalog) &&
       params.name === 'events_conformance_catalog'
     ) {
       const args = (params.arguments ?? {}) as Record<string, unknown>;
+      const catalog = opts.catalog ?? {};
+      /** End every open stream on name with error, as a server terminating them would. */
+      const terminateStreams = (
+        name: string,
+        error: { code: number; message: string; data?: unknown }
+      ) => {
+        for (const st of [...openStreams]) {
+          if (st.name !== name) continue;
+          st.notify('notifications/events/terminated', { error });
+          st.stop();
+          st.res.end();
+        }
+      };
       if (args.op === 'add') {
         catalogMinted += 1;
         const name = `catalog.${catalogMinted}`;
@@ -628,6 +664,40 @@ export async function startEventsFixture(
         target.startsWith('catalog.') &&
         names.delete(target)
       ) {
+        if (!catalog.removeSilently) {
+          terminateStreams(target, {
+            message: `event type ${target} was removed`,
+            ...(catalog.removeError ?? {
+              code: -32023,
+              data: { kind: 'event' }
+            })
+          });
+        }
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+        return;
+      }
+      if (
+        (args.op === 'retype' || args.op === 'extend') &&
+        target.startsWith('catalog.') &&
+        names.has(target)
+      ) {
+        if (args.op === 'retype' && !catalog.retypeSilently) {
+          terminateStreams(target, {
+            message: `event type ${target} changed its inputSchema in place`,
+            ...(catalog.retypeError ?? {
+              code: -32026,
+              data: { feature: 'inputSchema', reason: 'schema_changed' }
+            })
+          });
+        }
+        if (args.op === 'extend' && catalog.extendTerminates) {
+          terminateStreams(target, {
+            code: -32026,
+            message: 'changed',
+            data: { feature: 'inputSchema', reason: 'schema_changed' }
+          });
+        }
         notifyListChanged();
         send({ content: [{ type: 'text', text: `ok: ${target}` }] });
         return;
@@ -1136,6 +1206,22 @@ export async function startEventsFixture(
         (typeof name !== 'string' || !names.has(name))
       ) {
         fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
+        return;
+      }
+      const servedModes = (
+        descriptors.find((d) => (d as { name?: unknown }).name === name) as
+          | { delivery?: unknown }
+          | undefined
+      )?.delivery;
+      if (
+        !behaviour.acceptNonPushType &&
+        Array.isArray(servedModes) &&
+        !servedModes.includes('push')
+      ) {
+        fail(-32026, 'Unsupported: event type does not offer push delivery', {
+          feature: 'deliveryMode',
+          value: 'push'
+        });
         return;
       }
       if (liveStreams >= behaviour.maxConcurrent) {

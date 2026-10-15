@@ -70,12 +70,14 @@
 #   they keep resolving when the PR moves. Re-extract when the SEP's head
 #   moves past c47fd245.
 #
-# coverage: 147 declared checks plus 24 excluded rows.
+# coverage: 147 declared checks plus 26 excluded rows.
 #
-#   137 server rows (see the server branch's header for the 2026-10-14
-#   re-extraction, which dropped one and added two), plus 10 client rows added with the client scenarios in
-#   modelcontextprotocol/conformance#540. Seven of the ten were excluded here
-#   as client obligations before a client scenario set existed. The other
+#   136 server rows (see the server branch's header: the 2026-10-14
+#   re-extraction dropped one and added two, and on 2026-10-15 one more was
+#   added and two moved to excluded), plus 11 client rows: ten added with
+#   the client scenarios in modelcontextprotocol/conformance#540, and
+#   sep-3415-client-listen-opt-in with mcpkit #1505. Seven of the ten were
+#   excluded here as client obligations before a client scenario set existed. The other
 #   three the first sweep missed: the client half of the Fallback sentence
 #   (no `events/*` to a server that did not advertise the extension), "Clients
 #   SHOULD respect" `nextPollMs` under Enterprise Governance, and the receiver
@@ -501,12 +503,6 @@ requirements:
   - check: sep-3415-descriptor-meta
     text: '"_meta": { "...": "..." }, // optional; same semantics as on Tool/Resource/Prompt'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
-  - check: sep-3415-schema-evolution-additive
-    text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
-  - check: sep-3415-breaking-change-new-name
-    text: 'A breaking change SHOULD instead be published under a new event name and served alongside the old one for a migration period, after which the old name is removed'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
 
   # === Dynamic Event Types ===
   - check: sep-3415-list-changed-notification
@@ -667,6 +663,9 @@ requirements:
   - check: sep-3415-stream-error-before-open
     text: 'If the subscription is invalid (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`), the server responds immediately with a JSON-RPC error and no stream is opened.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+  - check: sep-3415-stream-mode-unsupported
+    text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-stream-active-confirmation
     text: 'Otherwise the server confirms the subscription with `notifications/events/active`, and then delivers events as notifications.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
@@ -1030,3 +1029,9 @@ requirements:
   - text: '`deliveryStatus` is OPTIONAL, and servers MAY omit it entirely.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-delivery-status
     excluded: OPTIONAL by its own wording; a server omitting deliveryStatus entirely is conformant
+  - text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-schema-evolution-additive, moved to excluded in panyam/mcpkit#1465)
+  - text: 'A breaking change SHOULD instead be published under a new event name and served alongside the old one for a migration period, after which the old name is removed'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-breaking-change-new-name, moved to excluded in panyam/mcpkit#1465)
