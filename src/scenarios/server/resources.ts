@@ -457,7 +457,7 @@ export class ResourcesNotFoundErrorScenario implements ClientScenario {
 When a client requests a URI that does not correspond to any resource, the server:
 
 - **MUST NOT** return a result with an empty \`contents\` array
-- **SHOULD** return a JSON-RPC error with code \`-32602\` (Invalid Params)
+- **MUST** return a JSON-RPC error with code \`-32602\` (Invalid Params)
 - **SHOULD** include the requested \`uri\` in the error \`data\` field
 
 Example error response:
@@ -540,20 +540,20 @@ This scenario does not require the server to register any specific resource — 
       }
     });
 
-    // Check 2: SHOULD return JSON-RPC error with code -32602
+    // Check 2: MUST return JSON-RPC error with code -32602
     const rpcError =
       caughtError instanceof JsonRpcError ? caughtError : undefined;
     const errorCode = rpcError?.code;
     let errorCodeMessage: string | undefined;
     if (result !== undefined) {
-      errorCodeMessage = `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers SHOULD return a JSON-RPC error for non-existent resources.`;
+      errorCodeMessage = `Server returned a result instead of an error (contents length: ${result.contents?.length ?? 'undefined'}). Servers MUST return a JSON-RPC error for non-existent resources.`;
     } else if (rpcError === undefined) {
       errorCodeMessage = `Expected a JSON-RPC error, got: ${caughtError instanceof Error ? caughtError.message : String(caughtError)}`;
     } else if (errorCode !== -32602) {
       errorCodeMessage =
         `Expected error code -32602 (Invalid Params), got ${errorCode}. ` +
         (errorCode === -32002
-          ? 'Code -32002 was used in earlier spec versions but SEP-2164 standardizes on -32602.'
+          ? 'Code -32002 is the pre-2026-07-28 resource-not-found code; implementations of 2026-07-28 MUST NOT emit it.'
           : '');
     }
 
@@ -561,8 +561,8 @@ This scenario does not require the server to register any specific resource — 
       id: 'sep-2164-error-code',
       name: 'ResourcesNotFoundErrorCode',
       description:
-        'Server returns -32602 (Invalid Params) for non-existent resource (SHOULD)',
-      status: errorCodeMessage === undefined ? 'SUCCESS' : 'WARNING',
+        'Server returns -32602 (Invalid Params) for non-existent resource',
+      status: errorCodeMessage === undefined ? 'SUCCESS' : 'FAILURE',
       timestamp: new Date().toISOString(),
       errorMessage: errorCodeMessage,
       specReferences,
