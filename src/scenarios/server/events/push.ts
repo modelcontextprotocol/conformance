@@ -41,6 +41,7 @@ import {
   EVENTS_CONTROL_YIELD_GAP,
   EVENTS_CONTROL_TERMINATE,
   EVENTS_CONTROL_QUOTA,
+  EVENTS_CONTROL_CATALOG,
   askControl,
   deliveryModes,
   type EventDescriptor,
@@ -70,7 +71,11 @@ import {
   isValidCursor,
   minimalArguments
 } from './helpers';
-import { openEventStream, type StreamSession } from './stream';
+import {
+  openEventStream,
+  type StreamNotification,
+  type StreamSession
+} from './stream';
 
 /** How long to watch an idle stream. Must outlast the document's 30s SHOULD. */
 const WATCH_MS = Number(process.env.EVENTS_PUSH_WATCH_MS ?? 35000);
@@ -114,6 +119,68 @@ const STREAM_IDS = [
  * and reported untestable on a server that never hits a limit.
  */
 const ERROR_IDS = ['sep-3415-error-resource-exhausted'] as const;
+
+/**
+ * The rows about a catalog that changes under a live stream (SEP-3415 § Event
+ * type removal and breaking changes). Reachable only through the
+ * `events_conformance_catalog` control, which mints a disposable type per probe
+ * so removing or retyping it poisons nothing another row relies on. Severity
+ * follows each row: the termination signal is a SHOULD, the two error shapes
+ * and the additive MUST NOT are FAILURE.
+ */
+const CATALOG_ROWS = {
+  terminates: {
+    id: 'sep-3415-removal-terminates-subscriptions',
+    severity: 'WARNING',
+    description:
+      "The server SHOULD end them with each mode's termination signal: `notifications/events/terminated` on push streams, and a `terminated` envelope to webhook subscriptions."
+  },
+  notFound: {
+    id: 'sep-3415-removal-error-not-found',
+    severity: 'FAILURE',
+    description:
+      '`NotFound` with `data: {"kind": "event"}` when the type was removed.'
+  },
+  schemaChanged: {
+    id: 'sep-3415-removal-error-schema-changed',
+    severity: 'FAILURE',
+    description:
+      '`Unsupported` with `data: {"feature": "payloadSchema" | "inputSchema", "reason": "schema_changed"}` when it was changed in place.'
+  },
+  additive: {
+    id: 'sep-3415-removal-additive-no-terminate',
+    severity: 'FAILURE',
+    description: 'Purely additive changes MUST NOT terminate subscriptions.'
+  }
+} as const;
+type CatalogRow = (typeof CATALOG_ROWS)[keyof typeof CATALOG_ROWS];
+const CATALOG_IDS = Object.values(CATALOG_ROWS).map((r) => r.id);
+
+/** How long an additive change gets to (wrongly) end a stream. */
+const ADDITIVE_WATCH_MS = 2000;
+
+/** The `error` of a `notifications/events/terminated`, if it carries one. */
+function terminatedError(
+  n: StreamNotification | undefined
+): { code?: unknown; data?: Record<string, unknown> } | undefined {
+  const err = n?.params?.error;
+  if (!isObject(err)) return undefined;
+  return {
+    code: err.code,
+    data: isObject(err.data) ? (err.data as Record<string, unknown>) : undefined
+  };
+}
+
+function catalogUntestable(row: CatalogRow, reason: string): ConformanceCheck {
+  return untestableCheck(
+    row.id,
+    row.id,
+    row.description,
+    reason,
+    [EVENTS_SPEC_REF],
+    row.severity
+  );
+}
 
 /**
  * Graded by poll too, where a replay-capable target makes it not applicable.
@@ -166,6 +233,17 @@ export class EventsPushScenario implements ClientScenario {
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks = await this.runStreams(ctx);
+    if (checks.length > 0 && checks.every((c) => c.status === 'SKIPPED')) {
+      for (const id of CATALOG_IDS) {
+        checks.push(
+          eventsCheck(id, id, 'SKIPPED', {
+            errorMessage: checks[0].errorMessage
+          })
+        );
+      }
+    } else {
+      checks.push(...(await this.catalogChecks(ctx)));
+    }
     // Every path reports the no-replay row, so runs stay comparable: the early
     // returns above the stream never reach the probe that grades it.
     if (!checks.some((c) => c.id === NO_REPLAY_ID)) {
@@ -1300,6 +1378,206 @@ export class EventsPushScenario implements ClientScenario {
       ];
     } finally {
       await session.cancel();
+    }
+  }
+
+  /**
+   * Remove, retype and extend a minted type under a live stream, one type per
+   * probe, and grade what the stream sees.
+   */
+  private async catalogChecks(ctx: RunContext): Promise<ConformanceCheck[]> {
+    const conn = await ctx.connect();
+    try {
+      if (!(await hasControl(conn, EVENTS_CONTROL_CATALOG))) {
+        return Object.values(CATALOG_ROWS).map((row) =>
+          catalogUntestable(
+            row,
+            `A healthy server never changes its catalog mid-run. Grading this needs the \`${EVENTS_CONTROL_CATALOG}\` control, which adds a type and then removes, retypes or extends it.`
+          )
+        );
+      }
+      const out: ConformanceCheck[] = [];
+
+      // Removal: the termination signal, and the NotFound it carries.
+      const removed = await this.watchCatalogOp(ctx, conn, 'remove');
+      if ('untestable' in removed) {
+        out.push(
+          catalogUntestable(CATALOG_ROWS.terminates, removed.untestable),
+          catalogUntestable(CATALOG_ROWS.notFound, removed.untestable)
+        );
+      } else {
+        out.push(
+          removed.terminated
+            ? eventsCheck(
+                CATALOG_ROWS.terminates.id,
+                CATALOG_ROWS.terminates.description,
+                'SUCCESS',
+                {
+                  details: {
+                    removed: removed.name,
+                    note: 'Push leg only; the minted type does not offer webhook.'
+                  }
+                }
+              )
+            : eventsCheck(
+                CATALOG_ROWS.terminates.id,
+                CATALOG_ROWS.terminates.description,
+                'WARNING',
+                {
+                  errorMessage: `Removed \`${removed.name}\` while a stream was open on it, and no \`${EVENTS_TERMINATED_NOTIFICATION}\` arrived within ${TERMINATE_MS}ms. The subscriber is left waiting on a name that is gone.`
+                }
+              )
+        );
+        const err = terminatedError(removed.terminated);
+        out.push(
+          !removed.terminated
+            ? catalogUntestable(
+                CATALOG_ROWS.notFound,
+                'The removal ended no stream, so there was no termination error to read.'
+              )
+            : err?.code === EVENTS_NOT_FOUND && err.data?.kind === 'event'
+              ? eventsCheck(
+                  CATALOG_ROWS.notFound.id,
+                  CATALOG_ROWS.notFound.description,
+                  'SUCCESS',
+                  { details: { error: removed.terminated.params.error } }
+                )
+              : eventsCheck(
+                  CATALOG_ROWS.notFound.id,
+                  CATALOG_ROWS.notFound.description,
+                  'FAILURE',
+                  {
+                    errorMessage: `The stream on removed type \`${removed.name}\` ended with ${describeValue(removed.terminated.params.error)}, expected ${EVENTS_NOT_FOUND} NotFound with \`data.kind: "event"\`, which tells a client the type is gone rather than its subscription.`
+                  }
+                )
+        );
+      }
+
+      // A breaking in-place change: Unsupported with schema_changed.
+      const retyped = await this.watchCatalogOp(ctx, conn, 'retype');
+      if ('untestable' in retyped) {
+        out.push(
+          catalogUntestable(CATALOG_ROWS.schemaChanged, retyped.untestable)
+        );
+      } else if (!retyped.terminated) {
+        out.push(
+          catalogUntestable(
+            CATALOG_ROWS.schemaChanged,
+            `Retyping \`${retyped.name}\` in place ended no stream within ${TERMINATE_MS}ms, so there was no error to read.`
+          )
+        );
+      } else {
+        const err = terminatedError(retyped.terminated);
+        const ok =
+          err?.code === EVENTS_UNSUPPORTED &&
+          err.data?.reason === 'schema_changed' &&
+          (err.data?.feature === 'inputSchema' ||
+            err.data?.feature === 'payloadSchema');
+        out.push(
+          ok
+            ? eventsCheck(
+                CATALOG_ROWS.schemaChanged.id,
+                CATALOG_ROWS.schemaChanged.description,
+                'SUCCESS',
+                { details: { error: retyped.terminated.params.error } }
+              )
+            : eventsCheck(
+                CATALOG_ROWS.schemaChanged.id,
+                CATALOG_ROWS.schemaChanged.description,
+                'FAILURE',
+                {
+                  errorMessage: `The stream on retyped \`${retyped.name}\` ended with ${describeValue(retyped.terminated.params.error)}, expected ${EVENTS_UNSUPPORTED} Unsupported with \`data: {feature, reason: "schema_changed"}\`. Not Forbidden: the principal's access did not change.`
+                }
+              )
+        );
+      }
+
+      // An additive change: the stream stays open.
+      const extended = await this.watchCatalogOp(ctx, conn, 'extend');
+      out.push(
+        'untestable' in extended
+          ? catalogUntestable(CATALOG_ROWS.additive, extended.untestable)
+          : extended.terminated
+            ? eventsCheck(
+                CATALOG_ROWS.additive.id,
+                CATALOG_ROWS.additive.description,
+                'FAILURE',
+                {
+                  errorMessage: `Extending \`${extended.name}\` with an optional property ended its stream (${describeValue(extended.terminated.params.error)}). An additive change MUST NOT terminate subscriptions.`
+                }
+              )
+            : eventsCheck(
+                CATALOG_ROWS.additive.id,
+                CATALOG_ROWS.additive.description,
+                'SUCCESS',
+                {
+                  details: {
+                    extended: extended.name,
+                    watchedMs: ADDITIVE_WATCH_MS
+                  }
+                }
+              )
+      );
+      return out;
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /**
+   * Mint a type, open a stream on it, apply op, and report the
+   * `notifications/events/terminated` it caused, if any. Cleans up the type
+   * unless op removed it.
+   */
+  private async watchCatalogOp(
+    ctx: RunContext,
+    conn: Connection,
+    op: 'remove' | 'retype' | 'extend'
+  ): Promise<
+    { untestable: string } | { name: string; terminated?: StreamNotification }
+  > {
+    const added = await askControl(conn, EVENTS_CONTROL_CATALOG, { op: 'add' });
+    const name = added?.match(/^ok:\s*(\S+)/)?.[1];
+    if (!name) {
+      return {
+        untestable: `\`${EVENTS_CONTROL_CATALOG}\` {op: "add"} did not add a type (answered ${JSON.stringify(added)}).`
+      };
+    }
+    const session = await openEventStream(
+      ctx.serverUrl,
+      ctx.specVersion,
+      { name, arguments: {}, cursor: null },
+      { openTimeoutMs: ACTIVE_MS }
+    );
+    try {
+      if (!session.contentType?.includes('text/event-stream')) {
+        return {
+          untestable: `\`${EVENTS_STREAM_METHOD}\` did not open a stream on minted type \`${name}\`, so there was nothing for the ${op} to act on.`
+        };
+      }
+      await session.waitFor(
+        (n) => n.method === EVENTS_ACTIVE_NOTIFICATION,
+        ACTIVE_MS
+      );
+      const answered = await askControl(conn, EVENTS_CONTROL_CATALOG, {
+        op,
+        name
+      });
+      if (!answered?.startsWith('ok')) {
+        return {
+          untestable: `\`${EVENTS_CONTROL_CATALOG}\` {op: "${op}"} was refused for \`${name}\` (answered ${JSON.stringify(answered)}).`
+        };
+      }
+      const terminated = await session.waitFor(
+        (n) => n.method === EVENTS_TERMINATED_NOTIFICATION,
+        op === 'extend' ? ADDITIVE_WATCH_MS : TERMINATE_MS
+      );
+      return { name, terminated };
+    } finally {
+      await session.cancel();
+      if (op !== 'remove') {
+        await askControl(conn, EVENTS_CONTROL_CATALOG, { op: 'remove', name });
+      }
     }
   }
 

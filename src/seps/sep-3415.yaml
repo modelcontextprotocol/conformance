@@ -70,11 +70,15 @@
 #   they keep resolving when the PR moves. Re-extract when the SEP's head
 #   moves past c47fd245.
 #
-# coverage: 137 declared checks plus 30 excluded rows. The 2026-10-14
-#   re-extraction dropped sep-3415-descriptor-description and added
+# coverage: 136 declared checks plus 32 excluded rows. On 2026-10-15
+#   sep-3415-stream-mode-unsupported was added (#1417), and
+#   sep-3415-schema-evolution-additive and sep-3415-breaking-change-new-name
+#   moved to excluded (#1465): both are SHOULDs about how a server chooses to
+#   evolve its catalog, which a harness forcing a change cannot observe. The
+#   2026-10-14 re-extraction before that dropped
+#   sep-3415-descriptor-description and added
 #   sep-3415-subscribe-refresh-before-present and
-#   sep-3415-unsubscribe-empty-result (136 before it, 135 before
-#   sep-3415-result-type-complete).
+#   sep-3415-unsubscribe-empty-result.
 #
 #   A keyword sweep of SEP-3415 at c47fd245, outside code blocks and before the
 #   non-normative Appendix A, finds 135 RFC 2119 keyword occurrences: 33 MUST,
@@ -479,12 +483,6 @@ requirements:
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
   - check: sep-3415-descriptor-meta
     text: '"_meta": { "...": "..." }, // optional; same semantics as on Tool/Resource/Prompt'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
-  - check: sep-3415-schema-evolution-additive
-    text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
-  - check: sep-3415-breaking-change-new-name
-    text: 'A breaking change SHOULD instead be published under a new event name and served alongside the old one for a migration period, after which the old name is removed'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
 
   # === Dynamic Event Types ===
@@ -995,3 +993,9 @@ requirements:
   - text: '`deliveryStatus` is OPTIONAL, and servers MAY omit it entirely.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-delivery-status
     excluded: OPTIONAL by its own wording; a server omitting deliveryStatus entirely is conformant
+  - text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-schema-evolution-additive, moved to excluded in panyam/mcpkit#1465)
+  - text: 'A breaking change SHOULD instead be published under a new event name and served alongside the old one for a migration period, after which the old name is removed'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-breaking-change-new-name, moved to excluded in panyam/mcpkit#1465)
