@@ -1,0 +1,215 @@
+# spec_source: modelcontextprotocol/agents-wg@9b16840e2f958b3dd9a418bb321189a0d1ab3493 proposals/0000-mcp-agent-discovery-extension.md
+# extracted: 2026-10-15
+#
+# ############################################################################
+# # 9998 is a placeholder, not a SEP number.                                 #
+# ############################################################################
+#
+#   The MCP Agent Discovery Extension is agents-wg PR 22, a draft Extensions
+#   Track proposal in the Agents Working Group's repository
+#   (modelcontextprotocol/agents-wg). SEP numbers are PR numbers in
+#   modelcontextprotocol/modelcontextprotocol, and this proposal has no PR
+#   there yet, so it has no number. Both traceability filters are numeric (the
+#   file name /^sep-\d+\.yaml$/ and the check ID /^sep-\d+-/), and a file that
+#   does not match is silently dropped from the manifest, so an honest name
+#   such as sep-agents-* would vanish. 9999 is not used because the MCP Events
+#   suite carried it before SEP-3415 existed, and reports from that period
+#   still mention it.
+#
+#   When the proposal gets a number, rename the file, every check ID and the
+#   two scenario names by script, as the Events suite did when it moved from
+#   9999 to 3415. Nothing else in a row depends on the number.
+#
+#   new-sep cannot scaffold this file: it looks the number up as a PR in
+#   modelcontextprotocol/modelcontextprotocol and derives the spec URL from a
+#   docs/specification/draft/*.mdx path, and the proposal has neither. The
+#   spec_url below points at the pinned proposal instead.
+#
+# quoting: every row's `text` is a span of the proposal at 9b16840e, and its
+#   `url` is the section that span sits under. The match ignores line
+#   wrapping (runs of whitespace compare equal), because the proposal wraps
+#   prose at a fixed width and a quote across a wrap point would otherwise need
+#   embedded newlines. Field-level rows quote the TypeScript definition they
+#   grade, since the proposal states field types only there.
+#
+# coverage: 31 graded rows across two server scenarios.
+#   sep-9998-agents-discovery emits the capability, roster, details, tool
+#     parity and error rows.
+#   sep-9998-agents-list-changed emits the four list-changed rows.
+#   Three rows need a diagnostic control on the server under test
+#   (agents_conformance_fixture names a hidden agent and a broken one), and
+#   two need agents_conformance_add_agent to change the roster mid-run. A
+#   server without them reports those rows untestable, naming the control.
+#   Excluded rows are client or host obligations, off-wire server behaviour,
+#   or rules that need two authorization contexts, which a harness holding one
+#   credential cannot compare.
+sep: 9998
+spec_url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#specification
+requirements:
+  # === Capability Negotiation ===
+  - check: sep-9998-capability-declared
+    text: 'Clients and servers explicitly declare support for the extension using the MCP extension negotiation mechanism.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#capability-negotiation
+  - check: sep-9998-capability-list-changed-boolean
+    text: 'The optional `listChanged` setting indicates that the server supports agent-roster change notifications.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#capability-negotiation
+  - check: sep-9998-core-without-extension
+    text: 'A server **MUST NOT** require clients to support this extension in order to use otherwise compatible core MCP functionality.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#capability-negotiation
+
+  # === Roster: agents/list ===
+  - check: sep-9998-list-implemented
+    text: '`agents/list` returns the agent roster visible to the requesting client.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#discovery-and-invocation-flow
+  - check: sep-9998-list-result-shape
+    text: 'interface ListAgentsResult extends PaginatedResult, CacheableResult { resultType: "complete"; agents: AgentCard[]; }'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-card-name
+    text: "/** Unique identifier for this agent within the server's visible roster. */ name: string;"
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-card-description-type
+    text: "/** Optional human-readable summary of the agent's purpose. */ description?: string;"
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-card-capabilities
+    text: '/** Concise routing labels; these are not MCP tool names. */ capabilities: string[];'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  # No RFC 2119 keyword, so graded as a WARNING. The card interface does not
+  # forbid extra members, but a card carrying instructions or tool schemas
+  # defeats the progressive disclosure the two levels exist for.
+  - check: sep-9998-list-cards-only
+    text: 'The server returns compact cards only:'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#listing-agents
+  - check: sep-9998-name-unique
+    text: 'Each agent name **MUST** be unique within the roster visible to the requesting client.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-list-pagination
+    text: 'Clients omit `cursor` for the first page and continue with the returned `nextCursor` until the response omits it.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#listing-agents
+  - check: sep-9998-list-cacheable
+    text: 'Both `agents/list` and `agents/get` results follow the MCP `CacheableResult` model defined'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#caching-and-freshness
+
+  # === Details: agents/get ===
+  - check: sep-9998-get-implemented
+    text: '`agents/get` returns instructions and scoped MCP tool schemas for one agent.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#discovery-and-invocation-flow
+  - check: sep-9998-get-result-shape
+    text: 'interface GetAgentResult extends CacheableResult { resultType: "complete";'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-get-agent-name
+    text: '/** Name of the agent to which these details belong. */ agent: string;'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-get-cacheable
+    text: 'Both `agents/list` and `agents/get` results follow the MCP `CacheableResult` model defined'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#caching-and-freshness
+  - check: sep-9998-hint-role
+    text: 'type ModelRole = "small" | "medium" | "large";'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-hint-vision
+    text: '/** Whether a vision-capable model is preferred for this agent. */ vision: boolean;'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+
+  # === Details: tool parity with tools/list ===
+  # The next three rows are graded by one probe (every tool from every
+  # agents/get, looked up in tools/list), since for a single caller they
+  # describe the same observation from three sides.
+  - check: sep-9998-get-tools-in-tools-list
+    text: 'Every returned tool **MUST** also be discoverable through `tools/list`'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-get-tools-intersection
+    text: "A server **MUST NOT** include a tool in `agents/get` that would be absent from that caller's `tools/list`."
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-tools-list-not-omitted
+    text: 'A server **MUST NOT** omit a tool from `tools/list` solely because that tool is associated with one or more agents.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#discovery-and-invocation-flow
+  - check: sep-9998-get-tools-fields-match
+    text: 'When a tool appears in both responses for the same request context, all fields of the corresponding `Tool` definitions **MUST** match.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-shared-tool-same-definition
+    text: 'If the same tool name appears under multiple agents, it **MUST** identify the same server-wide callable tool.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+
+  # === Errors and visibility ===
+  - check: sep-9998-agent-not-found
+    text: 'If the requested agent does not exist or is not visible to the requesting client, the server **MUST** return `-32602` (`Invalid params`) with `data.reason: "agent_not_found"`.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#error-handling
+  - check: sep-9998-hidden-indistinguishable
+    text: "When a server policy requires hiding an agent's existence from unauthorized callers, the server **MUST** use the same `agent_not_found` response as for a nonexistent agent name."
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#security-implications
+  - check: sep-9998-roster-filtered
+    text: "A server **MUST** filter both the roster and agent details according to the requesting client's effective permissions."
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - check: sep-9998-invalid-agent-definition
+    text: 'If an agent''s configured membership references a tool name that does not exist in the server catalog, or the server would return a tool through `agents/get` that would be absent from that caller''s `tools/list` under the same authorization context, the server **MUST** return `-32603` (`Internal error`) with `data.reason: "invalid_agent_definition"`.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#error-handling
+
+  # === Roster changes ===
+  - check: sep-9998-list-changed-not-declared
+    text: 'Omitting it or setting it to `false` indicates that such notifications are not supported.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#capability-negotiation
+  - check: sep-9998-list-changed-acknowledged
+    text: 'Clients opt in by adding `agentsListChanged: true` to the `notifications` filter of a `subscriptions/listen` request. The server acknowledges and delivers the notification using the standard MCP subscription mechanism.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-roster-changes
+  - check: sep-9998-list-changed-notification
+    text: 'A server that advertises `listChanged: true` for this extension supports `notifications/agents/list_changed`.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-roster-changes
+  # No RFC 2119 keyword, so graded as a WARNING.
+  - check: sep-9998-list-changed-roster-updated
+    text: 'The notification indicates that the visible roster or one or more agent cards may have changed.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-roster-changes
+
+  # === Excluded ===
+  - text: 'Servers **SHOULD** validate at registration time that every tool name referenced by an agent exists in the server catalog.'
+    excluded: 'Registration happens off the wire. Its observable consequence, an agents/get for such an agent, is graded by sep-9998-invalid-agent-definition.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - text: 'remain callable through the existing MCP tool-calling mechanism, subject to the same authorization context and server policy as any other tool call.'
+    excluded: "Calling an arbitrary server's tools has side effects the harness cannot justify, and it has no argument values to call them with. Core tools/call behaviour is graded by the core tools scenarios."
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - text: "For each `agents/get` request, the server **MUST** return only tools that would also appear in that caller's `tools/list` under the same authorization context (the intersection of agent membership with the authorized catalog)."
+    excluded: 'For the single authorization context a run has, this is the observation sep-9998-get-tools-intersection grades. Whether the intersection tracks the caller needs two credentials to compare, and the harness holds one.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - text: 'Servers **MUST NOT** use an agent card or agent membership to grant permissions that the requesting client does not otherwise possess.'
+    excluded: 'Needs a caller lacking a permission that membership could wrongly grant, compared against one holding it. The harness holds one credential.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#security-implications
+  - text: 'For both `agents/list` and `agents/get`, servers **SHOULD** use `private` unless they can guarantee that the particular response is identical and safe for every client.'
+    excluded: 'Whether a response is identical for every client is not observable from one client. A public scope is permitted when the guarantee holds, so grading the value alone would fail conformant servers.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#caching-and-freshness
+  - text: 'When a caller is permitted to know an agent exists but lacks authorization to retrieve it, the server **MAY** return an authorization error that enables'
+    excluded: 'Optional, and exercising it needs a credential that can be stepped up, which the harness does not hold.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#security-implications
+  - text: 'Servers **SHOULD** document which policy applies for their deployment.'
+    excluded: 'Documentation, not protocol behaviour.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#security-implications
+  - text: 'A server **MUST NOT** assume that a host honored the hint.'
+    excluded: 'Server-internal reasoning with no wire signature.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#retrieving-agent-details
+  - text: 'Servers **MAY** associate the same tool with more than one agent.'
+    excluded: 'A permission with nothing to grade. Its constraint is graded by sep-9998-shared-tool-same-definition.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-discovery-model
+  - text: 'A client **MUST NOT** assume agent discovery is available unless the server advertises the extension.'
+    excluded: 'Client obligation; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#capability-negotiation
+  - text: 'A client receiving it **SHOULD** invalidate all cached `agents/list` pages and re-list before making a new routing decision.'
+    excluded: 'Client obligation; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-roster-changes
+  - text: 'After re-listing, it **SHOULD** discard cached `agents/get` results for agents that are no longer visible.'
+    excluded: 'Client obligation; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#agent-roster-changes
+  - text: 'Clients **MAY** refresh `agents/list` and retry.'
+    excluded: 'Client permission; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#error-handling
+  - text: 'Clients **SHOULD NOT** automatically retry the same request;'
+    excluded: 'Client obligation; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#error-handling
+  - text: 'The host **MAY** request the complete visible tool catalog through `tools/list` for existing discovery, indexing, or SDK operation.'
+    excluded: 'Host permission; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#discovery-and-invocation-flow
+  - text: 'Existing systems that already call `tools/list` **MAY** retain that behavior for indexing, schema validation, and other host operations.'
+    excluded: 'Host permission; these are server scenarios.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#discovery-and-invocation-flow
+  - text: "When the field is absent, unsupported, or cannot be satisfied, the host **MAY** use its default model or inherit the supervisor's model."
+    excluded: 'Host model selection is off the wire.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#retrieving-agent-details
+  - text: "Hosts **MAY** resolve the hint through local configuration, inherit the supervisor's model, or ignore unsupported values."
+    excluded: 'Host model selection is off the wire.'
+    url: https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md#retrieving-agent-details
