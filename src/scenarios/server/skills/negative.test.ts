@@ -10,6 +10,7 @@ import {
   formatWireViolation
 } from '../../../validation/wire-schema';
 import { SkillsEnumerationScenario } from './enumeration';
+import { SkillsDirectoryReadScenario } from './directory';
 import { SKILLS_EXTENSION_ID } from './helpers';
 
 /**
@@ -297,5 +298,117 @@ describe('SEP-2640 frontmatter identity', () => {
     });
     const checks = await checksFor({}, [entry], files);
     expect(checks.get(IDENTICAL_ID)?.status).toBe('FAILURE');
+  });
+});
+
+/**
+ * `sep-2640-directory-read-cache-attributes` (ext-skills#157): from protocol
+ * 2026-07-28, `ReadResourceDirectoryResult` extends `CacheableResult`, so a
+ * directory read that omits `ttlMs` or `cacheScope` is non-conformant. The
+ * shared stateless mock only stamps those fields on base cacheable methods,
+ * so this server sends exactly what each case hands it.
+ */
+const DIR_CACHE_ID = 'sep-2640-directory-read-cache-attributes';
+
+function startDirectoryServer(
+  cacheFields: Record<string, unknown>
+): Promise<{ url: string; server: Server }> {
+  const skillUri = 'skill://demo/SKILL.md';
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(405).end();
+      return;
+    }
+    const body = await readJsonBody(req);
+    const method = body.method as string;
+    const id = body.id;
+    const params = (body.params ?? {}) as { uri?: string };
+    const send = (result: object) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(jsonRpcResult(id, method, result));
+    };
+    const fail = (code: number, message: string) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }));
+    };
+
+    switch (method) {
+      case 'server/discover':
+        send({
+          supportedVersions: [DRAFT_PROTOCOL_VERSION],
+          capabilities: {
+            resources: {},
+            extensions: { [SKILLS_EXTENSION_ID]: { directoryRead: true } }
+          },
+          serverInfo: { name: 'skills-directory-negative', version: '1.0.0' }
+        });
+        return;
+      case 'skills/list':
+        send({ skills: [entryFor('demo')], ttlMs: 0, cacheScope: 'private' });
+        return;
+      case 'resources/list':
+        send({ resources: [] });
+        return;
+      case 'resources/directory/read':
+        if (params.uri === 'skill://demo') {
+          send({
+            resources: [
+              { uri: skillUri, name: 'SKILL.md', mimeType: 'text/markdown' },
+              {
+                uri: 'skill://demo/templates',
+                name: 'templates',
+                mimeType: 'inode/directory'
+              }
+            ],
+            ...cacheFields
+          });
+        } else {
+          fail(-32602, `not a directory: ${params.uri}`);
+        }
+        return;
+      default:
+        fail(-32601, `Method not found: ${method}`);
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, () => {
+      const addr = server.address() as AddressInfo;
+      resolve({ url: `http://localhost:${addr.port}/mcp`, server });
+    });
+  });
+}
+
+async function directoryChecksFor(cacheFields: Record<string, unknown>) {
+  const { url, server } = await startDirectoryServer(cacheFields);
+  try {
+    const scenario = new SkillsDirectoryReadScenario();
+    const checks = await scenario.run(testContext(url, DRAFT_PROTOCOL_VERSION));
+    // A result missing CacheableResult fields may also trip wire validation
+    // where the harness knows the method; drain so the global hook stays quiet.
+    takeWireViolations();
+    return new Map(checks.map((c) => [c.id, c]));
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+}
+
+describe('SEP-2640 directory-read caching attributes', () => {
+  test('a result carrying ttlMs and cacheScope passes', async () => {
+    const checks = await directoryChecksFor({
+      ttlMs: 300000,
+      cacheScope: 'public'
+    });
+    expect(checks.get(DIR_CACHE_ID)?.status).toBe('SUCCESS');
+  });
+
+  test.each([
+    ['both fields', {}],
+    ['ttlMs', { cacheScope: 'public' }],
+    ['cacheScope', { ttlMs: 300000 }]
+  ])('a result omitting %s is a FAILURE', async (_label, fields) => {
+    const checks = await directoryChecksFor(fields);
+    expect(checks.get(DIR_CACHE_ID)?.status).toBe('FAILURE');
   });
 });

@@ -25,9 +25,9 @@
 #
 # coverage: extracted against branch head a3e147ca2710 (2026-08-25), the commit
 #   the CM vote is running on. A keyword sweep of the source finds 97 sentences
-#   carrying an RFC 2119 term; this file declares 89 checks plus 7 excluded rows.
+#   carrying an RFC 2119 term; this file declares 90 checks plus 7 excluded rows.
 #   The residual handful are restatements that fold into a declared row rather
-#   than standing alone. Of the 89 declared checks, 40 are exercised on the wire
+#   than standing alone. Of the 90 declared checks, 41 are exercised on the wire
 #   by the three server scenarios; the other 49 are host obligations (retrieval
 #   policy, approval binding, cache isolation, context handling) that a
 #   server-side harness cannot observe and that would need a host-side scenario
@@ -283,6 +283,8 @@ requirements:
     text: 'The method applies only to directory resources. If the URI does not exist, or exists but is not a directory resource, the server MUST return error `-32602` (Invalid params) — the same code `resources/read` uses for unknown resources.'
   - check: sep-2640-directory-read-pagination
     text: 'Pagination mirrors `resources/list`: when the result includes `nextCursor`, the client passes it back as `cursor` to retrieve the next page.'
+  - check: sep-2640-directory-read-cache-attributes
+    text: '`ReadResourceDirectoryResult` extends `CacheableResult`, so `ttlMs` and `cacheScope` are **REQUIRED**, as they are on `resources/list`, and carry the same semantics. They describe the freshness of the directory listing, not of the held entry.'
   - check: sep-2640-directory-read-empty-dir
     text: 'An empty directory yields an empty `resources` array.'
   - check: sep-2640-directory-read-not-manifest-extension

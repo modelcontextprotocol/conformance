@@ -2,7 +2,7 @@
  * SEP-2640 Skills extension — the `resources/directory/read` surface (added in
  * spec commit 2e04c48d, 2026-06-09).
  *
- * One scenario, six checks (per AGENTS.md "fewer scenarios, more checks").
+ * One scenario, seven checks (per AGENTS.md "fewer scenarios, more checks").
  * Each check's verbatim spec quote lives next to its check ID in
  * src/seps/sep-2640.yaml.
  *
@@ -39,12 +39,16 @@ import {
 
 const DIRECTORY_MIME = 'inode/directory';
 
+const CACHE_TEXT =
+  'ReadResourceDirectoryResult extends CacheableResult, so ttlMs and cacheScope are REQUIRED, as they are on resources/list.';
+
 const CAPABILITY_ID = 'sep-2640-capability-directory-read-flag';
 const METHOD_ID = 'sep-2640-directory-read-method-registered';
 const SHAPE_ID = 'sep-2640-directory-read-result-resources-shape';
 const SUBDIR_ID = 'sep-2640-directory-read-subdir-mimetype';
 const INVALID_PARAMS_ID = 'sep-2640-directory-read-invalid-params';
 const PAGINATION_ID = 'sep-2640-directory-read-pagination';
+const CACHE_ID = 'sep-2640-directory-read-cache-attributes';
 
 const ALL_IDS = [
   CAPABILITY_ID,
@@ -52,12 +56,15 @@ const ALL_IDS = [
   SHAPE_ID,
   SUBDIR_ID,
   INVALID_PARAMS_ID,
-  PAGINATION_ID
+  PAGINATION_ID,
+  CACHE_ID
 ];
 
 interface DirectoryReadResult {
   resources?: SkillResource[];
   nextCursor?: string;
+  ttlMs?: unknown;
+  cacheScope?: unknown;
 }
 
 /** A directory to exercise plus, when known, a non-directory resource under it. */
@@ -136,6 +143,7 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
 - \`sep-2640-directory-read-subdir-mimetype\` — subdirectory children carry \`inode/directory\` (MUST)
 - \`sep-2640-directory-read-invalid-params\` — a non-directory URI returns \`-32602\` (MUST)
 - \`sep-2640-directory-read-pagination\` — \`nextCursor\` round-trips per resources/list (single-page is conformant)
+- \`sep-2640-directory-read-cache-attributes\` — from protocol 2026-07-28, the result carries \`ttlMs\` and \`cacheScope\` (MUST; ext-skills#157)
 
 **Gating & discovery**: the checks SKIP when the skills extension or its \`directoryRead\` flag is undeclared. The directory to exercise is discovered dynamically from \`skills/list\` / \`resources/list\` — no fixture URI is hardcoded.`;
 
@@ -193,7 +201,8 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
           [
             PAGINATION_ID,
             'nextCursor round-trips per the resources/list contract.'
-          ]
+          ],
+          [CACHE_ID, CACHE_TEXT]
         ];
         for (const [id, desc] of rest) {
           checks.push(
@@ -205,12 +214,14 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
 
       // === Happy path: list the discovered directory ===
       let happy: DirectoryReadResult | undefined;
+      let firstPage: DirectoryReadResult | undefined;
       let happyErr: unknown;
       try {
         happy = await conn.request<DirectoryReadResult>(
           'resources/directory/read',
           { uri: target.dirUri }
         );
+        firstPage = happy;
         // Every check below inspects the directory's children, so they need
         // the whole directory rather than whichever slice fits one page.
         const all = await directoryReadAll(conn, target.dirUri);
@@ -384,6 +395,54 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
             : { errorMessage: paginationDetail }
         )
       );
+
+      // Check 7: caching attributes. ext-skills#157 made
+      // ReadResourceDirectoryResult extend CacheableResult, matching every base
+      // list-shaped result. Gated like the skills/list and skills/get checks:
+      // below 2026-07-28 CacheableResult is undefined by the negotiated
+      // schema, so omission there is correct rather than a defect.
+      const cacheApplies = ctx.specVersion >= '2026-07-28';
+      if (firstPage === undefined) {
+        checks.push(
+          skillsCheck(CACHE_ID, CACHE_TEXT, 'FAILURE', {
+            errorMessage: 'directory read did not return a result'
+          })
+        );
+      } else if (!cacheApplies) {
+        checks.push(
+          skillsCheck(CACHE_ID, CACHE_TEXT, 'SKIPPED', {
+            errorMessage: `not applicable on negotiated protocol ${ctx.specVersion}: ttlMs and cacheScope are defined from 2026-07-28`,
+            details: {
+              specVersion: ctx.specVersion,
+              ttlMs: firstPage.ttlMs,
+              cacheScope: firstPage.cacheScope
+            }
+          })
+        );
+      } else {
+        const hasTtl = firstPage.ttlMs !== undefined;
+        const hasScope = firstPage.cacheScope !== undefined;
+        const missing = [!hasTtl && 'ttlMs', !hasScope && 'cacheScope']
+          .filter(Boolean)
+          .join(' and ');
+        checks.push(
+          skillsCheck(
+            CACHE_ID,
+            CACHE_TEXT,
+            hasTtl && hasScope ? 'SUCCESS' : 'FAILURE',
+            hasTtl && hasScope
+              ? {
+                  details: {
+                    ttlMs: firstPage.ttlMs,
+                    cacheScope: firstPage.cacheScope
+                  }
+                }
+              : {
+                  errorMessage: `resources/directory/read result omits ${missing} on protocol ${ctx.specVersion}, where the stable spec page requires both.`
+                }
+          )
+        );
+      }
 
       return checks;
     } finally {
