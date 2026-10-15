@@ -161,6 +161,10 @@ export interface SubscribeBehaviour {
   grantBeyondSuggestion?: boolean;
   /** Raw `refreshBefore` to answer with, for the non-timestamp case. */
   refreshBefore?: unknown;
+  /** Leave `refreshBefore` out of the subscribe result entirely. */
+  omitRefreshBefore?: boolean;
+  /** Fields merged into a successful unsubscribe result, which is otherwise empty. */
+  unsubscribeResult?: Record<string, unknown>;
   /** Reject a `ttlMs` the server dislikes instead of clamping it. */
   rejectTtl?: 'short' | 'long' | 'both';
   /** Fields merged into every subscribe result. */
@@ -733,7 +737,7 @@ export async function startEventsFixture(
         }
         if (held) {
           subscriptions.delete(key);
-          send({});
+          send({ ...(behaviour.unsubscribeResult ?? {}) });
           return;
         }
         if (behaviour.unsubscribeUnknownOk) {
@@ -897,7 +901,7 @@ export async function startEventsFixture(
 
       send({
         ...(behaviour.omitId ? {} : { id }),
-        refreshBefore,
+        ...(behaviour.omitRefreshBefore ? {} : { refreshBefore }),
         cursor: 'cursor_sub_001',
         truncated: false,
         ...(behaviour.result ?? {})

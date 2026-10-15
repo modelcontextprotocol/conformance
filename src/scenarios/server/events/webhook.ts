@@ -94,6 +94,7 @@ const SUBSCRIBE_IDS = [
   'sep-3415-subscribe-refresh-reactivates',
   'sep-3415-subscribe-response-cursor',
   'sep-3415-subscribe-response-truncated',
+  'sep-3415-subscribe-refresh-before-present',
   'sep-3415-subscribe-cross-tenant-isolation'
 ] as const;
 
@@ -109,6 +110,7 @@ const TTL_IDS = [
 
 const UNSUBSCRIBE_IDS = [
   'sep-3415-unsubscribe-by-key',
+  'sep-3415-unsubscribe-empty-result',
   'sep-3415-unsubscribe-unknown-not-found'
 ] as const;
 
@@ -595,9 +597,31 @@ export class EventsWebhookScenario implements ClientScenario {
     }
   }
 
-  /** `cursor` and `truncated` on the subscribe response. */
+  /** `cursor`, `truncated` and the presence of `refreshBefore` on the subscribe response. */
   private responseChecks(result: SubscribeResult): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
+    // Presence only: whether a finite grant is well formed and within the
+    // suggestion is sep-3415-ttl-refresh-before-lte-suggestion's business.
+    const refreshDescription =
+      "`refreshBefore` (response, always present, nullable) is the server's authoritative grant: an ISO 8601 timestamp for when the subscription expires, or `null` for no expiry.";
+    out.push(
+      Object.prototype.hasOwnProperty.call(result, 'refreshBefore')
+        ? eventsCheck(
+            'sep-3415-subscribe-refresh-before-present',
+            refreshDescription,
+            'SUCCESS',
+            { details: { refreshBefore: result.refreshBefore } }
+          )
+        : eventsCheck(
+            'sep-3415-subscribe-refresh-before-present',
+            refreshDescription,
+            'FAILURE',
+            {
+              errorMessage:
+                'The subscribe response has no `refreshBefore` member. It is always present, and `null` is how a server grants no expiry, so an absent field leaves the client unable to tell a grant from an omission.'
+            }
+          )
+    );
     out.push(
       isValidCursor(result.cursor)
         ? eventsCheck(
@@ -1399,6 +1423,55 @@ export class EventsWebhookScenario implements ClientScenario {
             { details: { id: first.id } }
           )
     );
+
+    const emptyDescription = 'The result is an empty `Result`.';
+    if ('error' in byKey) {
+      out.push(
+        untestableCheck(
+          'sep-3415-unsubscribe-empty-result',
+          'sep-3415-unsubscribe-empty-result',
+          emptyDescription,
+          'Unsubscribing by key failed, so there is no result to inspect.',
+          [EVENTS_SPEC_REF],
+          'WARNING'
+        )
+      );
+    } else {
+      // `resultType` and `_meta` belong to every Result, so an empty one may
+      // still carry them; anything else is a member the SEP does not define.
+      const extra =
+        byKey.result !== null && typeof byKey.result === 'object'
+          ? Object.keys(byKey.result).filter(
+              (k) => k !== 'resultType' && k !== '_meta'
+            )
+          : null;
+      out.push(
+        extra === null
+          ? eventsCheck(
+              'sep-3415-unsubscribe-empty-result',
+              emptyDescription,
+              'FAILURE',
+              {
+                errorMessage: `The unsubscribe result is ${describeValue(byKey.result)}, not an object.`
+              }
+            )
+          : extra.length === 0
+            ? eventsCheck(
+                'sep-3415-unsubscribe-empty-result',
+                emptyDescription,
+                'SUCCESS'
+              )
+            : eventsCheck(
+                'sep-3415-unsubscribe-empty-result',
+                emptyDescription,
+                'FAILURE',
+                {
+                  errorMessage: `The unsubscribe result carries ${extra.map((k) => `\`${k}\``).join(', ')}, which an empty \`Result\` does not define.`,
+                  details: { result: byKey.result }
+                }
+              )
+      );
+    }
 
     // Both results this scenario holds: the subscribe that started it and the
     // unsubscribe that just ended it.
