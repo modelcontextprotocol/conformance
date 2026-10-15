@@ -34,6 +34,14 @@ requirements:
     text: 'Servers MUST NOT send an inputRequests that the client has not declared support for in its capabilities.'
 
   # ── Client Requirements (Basic Workflow) ───────────────────────────────────
+  - check: sep-2322-client-constructs-inputs
+    text: 'If a client receives an InputRequiredResult that contains the inputRequests field, the client MUST construct the requested inputs before retrying the original request.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr#client-requirements-basic-workflow
+
+  - check: sep-2322-client-constructs-inputs-mixed
+    text: 'If a client receives an InputRequiredResult that contains the inputRequests field, the client MUST construct the requested inputs before retrying the original request. (mixed URL and form input requests variant)'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr#client-requirements-basic-workflow
+
   - check: sep-2322-client-request-state-echoed
     text: 'If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents.'
 
@@ -64,6 +72,12 @@ requirements:
 
   - check: sep-2322-missing-response-rerequests
     text: 'If the client fails to send all the information requested in a previous InputRequests, and the missing information is necessary for the server to process the request, the server SHOULD respond with a new InputRequiredResult requesting the missing information again, rather than returning an error.'
+
+  # Added to client/elicitation.mdx by the SEP-2322 PR (commit 4c31fcd), not
+  # by SEP-1036. Exercised by the URL-mode elicitation server scenario.
+  - check: sep-2322-server-handles-decline-cancel
+    text: 'Servers SHOULD NOT assume that elicitation requests will always succeed, and MUST handle cases where the user declines or cancels the elicitation, or where the client fails to process the request.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#error-handling
 
   # ── Excluded requirements ──────────────────────────────────────────────────
 
