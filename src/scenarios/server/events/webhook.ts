@@ -1142,9 +1142,30 @@ export class EventsWebhookScenario implements ClientScenario {
       ];
     }
 
-    await conn
-      .request(EVENTS_UNSUBSCRIBE_METHOD, { id: myId })
-      .catch(() => undefined);
+    // By key: the derived id is not accepted as input, so unsubscribing by id
+    // removes nothing on a conformant server, and the other tenant would
+    // "survive" whatever the server does.
+    try {
+      await conn.request(EVENTS_UNSUBSCRIBE_METHOD, {
+        name,
+        arguments: {},
+        delivery: { mode: 'webhook', url }
+      });
+    } catch (err) {
+      const why =
+        err instanceof JsonRpcError
+          ? `${err.code} ${err.message}`
+          : String(err);
+      return [
+        untestableCheck(
+          id,
+          id,
+          description,
+          `Unsubscribing this run's own subscription by key failed (${why}), so whether the other tenant's subscription survives it says nothing.`,
+          [EVENTS_SPEC_REF]
+        )
+      ];
+    }
     const survived = await askControl(
       conn,
       EVENTS_CONTROL_SUBSCRIPTION_EXISTS,

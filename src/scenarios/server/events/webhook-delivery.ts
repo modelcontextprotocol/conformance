@@ -107,15 +107,18 @@ const PUBLISH_WELL_KNOWN = process.env.EVENTS_RECEIVER_WELL_KNOWN !== '0';
 const WELL_KNOWN_PREFIX = '/wk/';
 
 /**
- * The `lastError` categories the document names for `-32027`. A server may have
- * more, so an unlisted one warns rather than fails: the rule is that the reason
- * is a category, not a raw response.
+ * The `lastError` categories, which SEP-3415 closes: `lastError` "MUST be ...
+ * one of" these, and `-32027`'s `data.reason` is "one of the `lastError`
+ * categories". The `-32027` row still only warns on an unlisted reason, since
+ * that sentence carries no keyword.
  */
 const LAST_ERROR_CATEGORIES = [
-  'challenge_failed',
   'connection_refused',
   'timeout',
-  'tls_error'
+  'tls_error',
+  'http_4xx',
+  'http_5xx',
+  'challenge_failed'
 ];
 
 /** 256 KiB, the body-size ceiling the document asks servers to respect. */
@@ -518,7 +521,18 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       checks.push(...this.transportChecks(all, subscriptionId));
       checks.push(...this.signatureChecks(all, secret.bytes));
       checks.push(...(await this.redirectChecks(receiver, subscribe, release)));
-      checks.push(...(await this.retryChecks(receiver, subscribe, release)));
+      // Whether the source fires more than once, so the 410 probe can tell a
+      // suspended subscription from a quiet event.
+      const periodic =
+        new Set(
+          receiver
+            .on(path)
+            .filter(isEvent)
+            .map((d) => d.headers['webhook-id'])
+        ).size >= 2;
+      checks.push(
+        ...(await this.retryChecks(receiver, subscribe, release, periodic))
+      );
       // Last, because terminating ends the subscription everything above
       // delivered to. The envelope rows grade from what arrived after, so the
       // signalled gap and terminated envelopes count toward the discriminator,
@@ -1032,16 +1046,6 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
 
     out.push(
       untestableCheck(
-        'sep-3415-delivery-status-last-error-category',
-        'sep-3415-delivery-status-last-error-category',
-        '`lastError` MUST be a server-generated category string and MUST NOT include raw response bodies.',
-        '`deliveryStatus` is OPTIONAL and no refresh in this run carried one, so there was no `lastError` to inspect.',
-        [EVENTS_SPEC_REF],
-        'WARNING'
-      )
-    );
-    out.push(
-      untestableCheck(
         'sep-3415-delivery-dual-sign-on-rotation',
         'sep-3415-delivery-dual-sign-on-rotation',
         'The server SHOULD dual-sign deliveries with both the old and new secrets for a short grace window.',
@@ -1451,7 +1455,8 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     subscribe: (
       url: string
     ) => Promise<{ id?: unknown } | { error: JsonRpcError }>,
-    release: (url: string) => Promise<void>
+    release: (url: string) => Promise<void>,
+    periodic: boolean
   ): Promise<ConformanceCheck[]> {
     const out: ConformanceCheck[] = [];
     const flaky = `/flaky-${Date.now()}`;
@@ -1586,13 +1591,16 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
       }
     }
 
-    // 410 Gone and 413 Payload Too Large are both non-retryable.
+    // 410 Gone and 413 Payload Too Large are both non-retryable. The 410 probe
+    // also grades that the subscription outlives it, and the 413 probe, whose
+    // path keeps failing so nothing clears it, grades `lastError`.
+    let lastErrorGraded = false;
     for (const [id, kind, status, description] of [
       [
         'sep-3415-delivery-410-non-retryable',
         'gone' as const,
         410,
-        'A receiver that intentionally rejects a delivery and does not want it retried responds `410 Gone`; the server MUST treat it as non-retryable.'
+        'The server MUST treat `410` as a non-retryable failure for that delivery, without affecting the subscription itself.'
       ],
       [
         'sep-3415-delivery-413-non-retryable',
@@ -1643,22 +1651,132 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
           .filter(
             (d) => d.headers['webhook-id'] === first.headers['webhook-id']
           );
-        out.push(
-          repeats.length <= 1
-            ? eventsCheck(id, description, 'SUCCESS', {
-                details: { attempts: repeats.length }
-              })
-            : eventsCheck(id, description, 'FAILURE', {
-                errorMessage: `The same \`webhook-id\` was delivered ${repeats.length} times after a ${status}, which the document defines as non-retryable.`
-              })
-        );
+        if (repeats.length > 1) {
+          out.push(
+            eventsCheck(id, description, 'FAILURE', {
+              errorMessage: `The same \`webhook-id\` was delivered ${repeats.length} times after a ${status}, which the document defines as non-retryable.`
+            })
+          );
+        } else if (status === 410) {
+          out.push(
+            await this.goneSurvivalCheck(receiver, path, first, periodic)
+          );
+        } else {
+          out.push(
+            eventsCheck(id, description, 'SUCCESS', {
+              details: { attempts: repeats.length }
+            })
+          );
+        }
+        if (status === 413) {
+          // A refresh on the same key; the 413 is the most recent outcome, and
+          // the path still answers 413, so nothing has cleared it.
+          const refreshed = await subscribe(url);
+          out.push(lastErrorCheck(refreshed));
+          lastErrorGraded = true;
+        }
       } finally {
         await release(url);
       }
     }
+    if (!lastErrorGraded) {
+      out.push(
+        untestableCheck(
+          LAST_ERROR_ID,
+          LAST_ERROR_ID,
+          LAST_ERROR_DESCRIPTION,
+          'The 413 probe delivered nothing, so there was no failure for `lastError` to report.',
+          [EVENTS_SPEC_REF],
+          'WARNING'
+        )
+      );
+    }
 
     return out;
   }
+
+  /**
+   * After a 410, later events still reach the callback. Silence only means
+   * something when the source is known to fire more than once.
+   */
+  private async goneSurvivalCheck(
+    receiver: Receiver,
+    path: string,
+    first: ReceivedDelivery,
+    periodic: boolean
+  ): Promise<ConformanceCheck> {
+    const id = 'sep-3415-delivery-410-non-retryable';
+    const description =
+      'The server MUST treat `410` as a non-retryable failure for that delivery, without affecting the subscription itself.';
+    receiver.behave(path, { kind: 'accept' });
+    const later = await receiver.waitFor(
+      path,
+      (d) =>
+        isEvent(d) && d.headers['webhook-id'] !== first.headers['webhook-id'],
+      periodic ? DELIVERY_WAIT_MS : SETTLE_MS
+    );
+    if (later) {
+      return eventsCheck(id, description, 'SUCCESS', {
+        details: { retried: false, laterDelivery: later.headers['webhook-id'] }
+      });
+    }
+    if (periodic) {
+      return eventsCheck(id, description, 'FAILURE', {
+        errorMessage: `After one \`410\`, no further event reached the callback within ${DELIVERY_WAIT_MS}ms, though the main subscription received several. A \`410\` is non-retryable for that delivery only, and must not suspend or drop the subscription.`
+      });
+    }
+    return untestableCheck(
+      id,
+      id,
+      description,
+      'The 410 was not retried, but the event source fired only once in this run, so whether the subscription outlived the 410 could not be observed.',
+      [EVENTS_SPEC_REF],
+      'WARNING'
+    );
+  }
+}
+
+const LAST_ERROR_ID = 'sep-3415-delivery-status-last-error-category';
+const LAST_ERROR_DESCRIPTION =
+  '`lastError` MUST be a server-generated category string, one of `connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx` or `challenge_failed`. It MUST NOT include raw response bodies, headers or status lines from the endpoint.';
+
+/** `lastError` off a refresh that followed a failed delivery. */
+function lastErrorCheck(
+  refreshed: object | { error: JsonRpcError }
+): ConformanceCheck {
+  const status =
+    'error' in refreshed
+      ? undefined
+      : (refreshed as { deliveryStatus?: unknown }).deliveryStatus;
+  const lastError =
+    status !== null && typeof status === 'object'
+      ? (status as { lastError?: unknown }).lastError
+      : undefined;
+  if (lastError === undefined || lastError === null) {
+    return untestableCheck(
+      LAST_ERROR_ID,
+      LAST_ERROR_ID,
+      LAST_ERROR_DESCRIPTION,
+      'error' in refreshed
+        ? `The refresh after the 413 failed (${refreshed.error.code} ${refreshed.error.message}).`
+        : '`deliveryStatus` is OPTIONAL, and the refresh after a failed delivery carried no `lastError`.',
+      [EVENTS_SPEC_REF],
+      'WARNING'
+    );
+  }
+  return typeof lastError === 'string' &&
+    LAST_ERROR_CATEGORIES.includes(lastError)
+    ? eventsCheck(LAST_ERROR_ID, LAST_ERROR_DESCRIPTION, 'SUCCESS', {
+        details: { lastError }
+      })
+    : eventsCheck(LAST_ERROR_ID, LAST_ERROR_DESCRIPTION, 'FAILURE', {
+        errorMessage: `\`lastError\` is ${describeValue(lastError)}, not one of ${LAST_ERROR_CATEGORIES.join(', ')}. Anything else can carry endpoint detail back to the subscriber.`
+      });
+}
+
+/** An event delivery, as opposed to a verification or control envelope. */
+function isEvent(d: ReceivedDelivery): boolean {
+  return !isVerificationEnvelope(d) && typeof d.json?.type !== 'string';
 }
 
 function isVerificationEnvelope(d: ReceivedDelivery): boolean {

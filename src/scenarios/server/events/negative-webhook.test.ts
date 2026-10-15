@@ -450,6 +450,47 @@ describe('unsubscribe', () => {
   });
 });
 
+describe('two tenants', () => {
+  const ROW = 'sep-3415-subscribe-cross-tenant-isolation';
+
+  test('distinct, independent subscriptions pass', async () => {
+    const { checks } = await webhookChecks({
+      ...webhookFixture(),
+      tenants: {}
+    });
+    expect(checks.get(ROW)?.status).toBe('SUCCESS');
+  });
+
+  test('a key without the principal fails on the shared id', async () => {
+    const { checks } = await webhookChecks({
+      ...webhookFixture(),
+      tenants: { keyIgnoresPrincipal: true }
+    });
+    expect(checks.get(ROW)?.status).toBe('FAILURE');
+    expect(checks.get(ROW)?.errorMessage).toContain('same subscription id');
+  });
+
+  // The defect the row exists for, and the one it could not see while it
+  // cleaned up by id: a conformant server refuses `id` as input, so nothing
+  // was removed and the other tenant always "survived".
+  test('an unsubscribe that removes the other tenant too fails', async () => {
+    const { checks } = await webhookChecks({
+      ...webhookFixture(),
+      tenants: { unsubscribeIgnoresPrincipal: true }
+    });
+    expect(checks.get(ROW)?.status).toBe('FAILURE');
+    expect(checks.get(ROW)?.errorMessage).toContain('also removed');
+  });
+
+  test('an own unsubscribe that fails is untestable, not a pass', async () => {
+    const { checks } = await webhookChecks({
+      ...webhookFixture({ unsubscribeHeldCode: -32603 }),
+      tenants: { unsubscribeIgnoresPrincipal: true }
+    });
+    expect(checks.get(ROW)?.details?.untestable).toBe(true);
+  });
+});
+
 describe('SEP-3415 codes and resultType', () => {
   test('subscribe and unsubscribe without resultType fail only the resultType row', async () => {
     const { checks: ok } = await webhookChecks(webhookFixture());
