@@ -8,7 +8,13 @@
  *   1  hasMore: false, nextPollMs 2000  -> next poll should wait ~2s
  *   2  nextPollMs: 0                    -> next poll should wait the 1s floor
  *   3  truncated: true, fresh cursor    -> next poll should carry that cursor
- *   4  list_changed on the SSE response -> client should re-call events/list
+ *   4  list_changed                     -> client should re-call events/list
+ *
+ * Step 4's notification goes where SEP-3415 says it travels: on the client's
+ * `subscriptions/listen` stream, and only if the client opted in with
+ * `eventsListChanged`. On the legacy lifecycle, which the SEP does not cover,
+ * it goes out on the session's GET stream instead, the base protocol's channel
+ * for server-initiated notifications.
  *
  * The cursorless type answers `cursor: null` once and then omits the field,
  * which the sketch says means the same thing. A client must keep polling it
@@ -21,9 +27,13 @@
 import http from 'http';
 import { ConformanceCheck } from '../../../types.js';
 import {
+  EVENTS_LIST_CHANGED_FILTER_KEY,
   EVENTS_LIST_CHANGED_NOTIFICATION,
   EVENTS_LIST_METHOD,
-  EVENTS_POLL_METHOD
+  EVENTS_POLL_METHOD,
+  SUBSCRIPTION_ID_META,
+  SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION,
+  SUBSCRIPTIONS_LISTEN_METHOD
 } from '../../server/events/helpers.js';
 import {
   CURSORLESS_TYPE,
@@ -31,6 +41,7 @@ import {
   REPLAY_TYPE,
   clientUntestable,
   cursorOf,
+  eventsCheck,
   graded
 } from './helpers.js';
 
@@ -48,10 +59,50 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
   protected mode = 'poll' as const;
 
   private listChangedSentAt: number | undefined;
+  /** Step 4 has been reached and its notification not yet delivered. */
+  private listChangedPending = false;
+  /** The client's listen stream, when it opted in to `eventsListChanged`. */
+  private listenSend: ((message: object) => void) | undefined;
+  /** The session's GET stream, on the legacy lifecycle. */
+  private getSend: ((message: object) => void) | undefined;
 
   async start(ctx: Parameters<EventsClientScenarioBase['start']>[0]) {
     this.listChangedSentAt = undefined;
+    this.listChangedPending = false;
+    this.listenSend = undefined;
+    this.getSend = undefined;
     return super.start(ctx);
+  }
+
+  async stop(): Promise<void> {
+    this.server?.closeAllConnections?.();
+    return super.stop();
+  }
+
+  /** Keep the GET stream, so a legacy-lifecycle notification has a channel. */
+  protected handleRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): void {
+    if (req.method === 'GET') {
+      this.getSend = this.openSse(res);
+      if (this.listChangedPending) this.deliverListChanged();
+      return;
+    }
+    super.handleRequest(req, res);
+  }
+
+  /** True when the client used the 2026-07-28 lifecycle (no `initialize`). */
+  private stateless(): boolean {
+    return !this.requests.some((r) => r.method === 'initialize');
+  }
+
+  private deliverListChanged(): void {
+    const send = this.stateless() ? this.listenSend : this.getSend;
+    if (!send) return;
+    send({ jsonrpc: '2.0', method: EVENTS_LIST_CHANGED_NOTIFICATION });
+    this.listChangedSentAt = Date.now();
+    this.listChangedPending = false;
   }
 
   protected eventsSettings(): object {
@@ -63,6 +114,31 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
     res: http.ServerResponse,
     request: any
   ): boolean {
+    if (request.method === SUBSCRIPTIONS_LISTEN_METHOD) {
+      const filter = request.params?.notifications ?? {};
+      const optedIn = filter[EVENTS_LIST_CHANGED_FILTER_KEY] === true;
+      const send = this.openSse(res);
+      const meta = { [SUBSCRIPTION_ID_META]: request.id };
+      send({
+        jsonrpc: '2.0',
+        method: SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION,
+        params: {
+          _meta: meta,
+          notifications: optedIn
+            ? { [EVENTS_LIST_CHANGED_FILTER_KEY]: true }
+            : {}
+        }
+      });
+      if (optedIn) {
+        this.listenSend = (message: any) =>
+          send({
+            ...message,
+            params: { ...(message.params ?? {}), _meta: meta }
+          });
+        if (this.listChangedPending) this.deliverListChanged();
+      }
+      return true;
+    }
     if (request.method !== EVENTS_POLL_METHOD) return false;
     const name = request.params?.name;
     const step = this.requestsFor(EVENTS_POLL_METHOD, name).length - 1;
@@ -114,24 +190,16 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           nextPollMs: 0
         });
         return true;
-      case 4: {
-        const send = this.openSse(res);
-        send({ jsonrpc: '2.0', method: EVENTS_LIST_CHANGED_NOTIFICATION });
-        this.listChangedSentAt = Date.now();
-        send({
-          jsonrpc: '2.0',
-          id: request.id,
-          result: {
-            resultType: 'complete',
-            events: [],
-            cursor: 'tick-5',
-            hasMore: false,
-            nextPollMs: 1000
-          }
+      case 4:
+        reply({
+          events: [],
+          cursor: 'tick-5',
+          hasMore: false,
+          nextPollMs: 1000
         });
-        res.end();
+        this.listChangedPending = true;
+        this.deliverListChanged();
         return true;
-      }
       default:
         reply({
           events: [],
@@ -214,24 +282,49 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
           )
     );
 
+    const OPTIN_ID = 'sep-3415-client-listen-opt-in';
+    const OPTIN_DESC =
+      '`notifications/events/list_changed` is delivered only on a `subscriptions/listen` stream, and only when the client opted in with `eventsListChanged`.';
+    const optedIn = this.requestsFor(SUBSCRIPTIONS_LISTEN_METHOD).some(
+      (r) =>
+        (r.params.notifications as Record<string, unknown> | undefined)?.[
+          EVENTS_LIST_CHANGED_FILTER_KEY
+        ] === true
+    );
+    checks.push(
+      !this.stateless()
+        ? eventsCheck(OPTIN_ID, OPTIN_DESC, 'SKIPPED', {
+            errorMessage:
+              'The client used the legacy lifecycle, which SEP-3415 does not cover; the notification travels on the session GET stream there.'
+          })
+        : graded(
+            OPTIN_ID,
+            OPTIN_DESC,
+            optedIn,
+            'WARNING',
+            'The server declared `listChanged: true` and the client never opened `subscriptions/listen` with `eventsListChanged: true`, so it can never learn that the event types changed.'
+          )
+    );
+
     const RELIST_ID = 'sep-3415-client-relist-on-list-changed';
     const RELIST_DESC =
       'On `notifications/events/list_changed` the client SHOULD re-call `events/list` to refresh its event type registry.';
     const sentAt = this.listChangedSentAt;
+    const undelivered =
+      ticks.length < 5
+        ? `${missing(4)}, which is the poll that triggers the notification`
+        : this.stateless()
+          ? 'the client never opened `subscriptions/listen` with `eventsListChanged`, so the notification had no channel to arrive on'
+          : 'the client never opened the session GET stream, so the notification had no channel to arrive on';
     checks.push(
       sentAt === undefined
-        ? clientUntestable(
-            RELIST_ID,
-            RELIST_DESC,
-            `${missing(4)}, which is the response that carries the notification`,
-            'WARNING'
-          )
+        ? clientUntestable(RELIST_ID, RELIST_DESC, undelivered, 'WARNING')
         : graded(
             RELIST_ID,
             RELIST_DESC,
             this.requestsFor(EVENTS_LIST_METHOD).some((r) => r.at >= sentAt),
             'WARNING',
-            'The client received `notifications/events/list_changed` on a poll response and never called `events/list` again.'
+            'The client received `notifications/events/list_changed` and never called `events/list` again.'
           )
     );
 

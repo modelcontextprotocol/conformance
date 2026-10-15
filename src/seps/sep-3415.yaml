@@ -912,6 +912,9 @@ requirements:
   - check: sep-3415-client-no-events-without-extension
     text: 'All `events/*` requests are client-initiated. A client MUST NOT send them to a server that has not advertised the extension'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+  - check: sep-3415-client-listen-opt-in
+    text: 'Like the core `list_changed` notifications, it is delivered only on a `subscriptions/listen` stream, and only when the client opted in.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
   - check: sep-3415-client-relist-on-list-changed
     text: 'The client SHOULD call `events/list` again to refresh its registry of event types.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types

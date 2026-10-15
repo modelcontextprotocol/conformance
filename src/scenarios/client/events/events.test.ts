@@ -66,7 +66,7 @@ describe.concurrent('events client scenarios', () => {
   test.each(
     (
       [
-        ['events-client-poll', 7],
+        ['events-client-poll', 8],
         ['events-client-push', 2],
         ['events-client-webhook', 2],
         ['events-client-no-extension', 1]
@@ -118,6 +118,17 @@ describe.concurrent('events client scenarios', () => {
       'events-client-poll',
       ['sep-3415-client-relist-on-list-changed']
     ],
+    // With no listen stream the notification has no channel, so the re-list
+    // row reports untestable alongside the opt-in row.
+    [
+      'neverListens',
+      'events-client-poll',
+      [
+        'sep-3415-client-listen-opt-in',
+        'sep-3415-client-relist-on-list-changed'
+      ],
+      DRAFT_PROTOCOL_VERSION
+    ],
     [
       'refreshesAfterExpiry',
       'events-client-webhook',
@@ -150,8 +161,12 @@ describe.concurrent('events client scenarios', () => {
     ]
   ] as const)(
     '%s against %s turns exactly %j red',
-    async (client, name, expected) => {
-      const checks = await run(broken[client as keyof typeof broken], name);
+    async (client, name, expected, version?: SpecVersion) => {
+      const checks = await run(
+        broken[client as keyof typeof broken],
+        name,
+        version
+      );
       expect(red(checks)).toEqual([...expected].sort());
     },
     TIMEOUT

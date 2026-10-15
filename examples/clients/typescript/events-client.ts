@@ -35,6 +35,12 @@ export interface EventsClientOptions {
   /** When false, a response without `cursor` ends that subscription. */
   tolerateAbsentCursor: boolean;
   relistOnListChanged: boolean;
+  /**
+   * Open `subscriptions/listen` with `eventsListChanged` on the 2026-07-28
+   * lifecycle when the server declared `listChanged: true`, which is the only
+   * channel `notifications/events/list_changed` travels on.
+   */
+  listenForListChanged: boolean;
   /** When false, refresh a webhook subscription only after it has expired. */
   refreshBeforeExpiry: boolean;
   /** When false, never reconnect a silent push stream. */
@@ -50,6 +56,7 @@ export const CONFORMANT: EventsClientOptions = {
   replayNullCursor: false,
   tolerateAbsentCursor: true,
   relistOnListChanged: true,
+  listenForListChanged: true,
   refreshBeforeExpiry: true,
   reconnectDeadStream: true
 };
@@ -182,24 +189,45 @@ class Rpc {
   }
 
   /**
-   * Open an `events/stream` request and hand every frame to `onMessage` until
-   * the stream ends or `signal` aborts.
+   * Open an `events/stream` request (or another long-lived request with the
+   * same shape, such as `subscriptions/listen`) and hand every frame to
+   * `onMessage` until the stream ends or `signal` aborts.
    */
   async stream(
     params: Json,
     onMessage: OnNotification,
-    signal: AbortSignal
+    signal: AbortSignal,
+    method = 'events/stream'
   ): Promise<void> {
     const id = this.nextId++;
     const res = await fetch(this.serverUrl, {
       method: 'POST',
       headers: this.headers(true),
-      body: this.body('events/stream', params, id),
+      body: this.body(method, params, id),
       signal
     });
     for await (const message of sseMessages(res, signal)) {
       onMessage(message);
       if (message.id === id) return;
+    }
+  }
+
+  /**
+   * The legacy session's GET stream, where the base protocol delivers
+   * server-initiated notifications. Frames go to `onMessage` until `signal`
+   * aborts.
+   */
+  async getStream(
+    onMessage: OnNotification,
+    signal: AbortSignal
+  ): Promise<void> {
+    const res = await fetch(this.serverUrl, {
+      method: 'GET',
+      headers: { ...this.headers(true), Accept: 'text/event-stream' },
+      signal
+    });
+    for await (const message of sseMessages(res, signal)) {
+      onMessage(message);
     }
   }
 }
@@ -434,6 +462,33 @@ export function makeEventsClient(
       }
     };
 
+    // list_changed: on 2026-07-28 it rides a subscriptions/listen stream the
+    // client opts in to; on the legacy lifecycle it arrives on the GET stream.
+    const onListChanged = (m: Json) => {
+      if (m.method === 'notifications/events/list_changed') session.relist();
+    };
+    const listChanged =
+      caps.extensions?.[EVENTS_EXTENSION_ID]?.listChanged === true;
+    const background: Promise<void>[] = [];
+    if (rpc.stateless) {
+      if (opts.listenForListChanged && listChanged) {
+        background.push(
+          rpc
+            .stream(
+              { notifications: { eventsListChanged: true } },
+              onListChanged,
+              stopper.signal,
+              'subscriptions/listen'
+            )
+            .catch(() => undefined)
+        );
+      }
+    } else {
+      background.push(
+        rpc.getStream(onListChanged, stopper.signal).catch(() => undefined)
+      );
+    }
+
     const listed = await rpc.request('events/list');
     const descriptors: Json[] = Array.isArray(listed.events)
       ? listed.events
@@ -459,6 +514,7 @@ export function makeEventsClient(
     await Promise.all(loops);
     clearTimeout(timer);
     stopper.abort();
+    await Promise.all(background);
     receiver?.close();
   };
 }
