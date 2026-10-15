@@ -524,6 +524,9 @@ export function descriptorLabel(
 export function minimalArguments(
   descriptor: EventDescriptor
 ): Record<string, unknown> | undefined {
+  const name = descriptorName(descriptor);
+  const override = name !== undefined ? argumentOverrides()[name] : undefined;
+  if (override !== undefined) return override;
   const schema = descriptor.inputSchema;
   if (!isObject(schema)) return {};
   const required = Array.isArray(schema.required) ? schema.required : [];
@@ -665,4 +668,59 @@ export function resultTypeCheck(observed: ObservedResult[]): ConformanceCheck {
   return eventsCheck(RESULT_TYPE_ID, RESULT_TYPE_DESCRIPTION, 'SUCCESS', {
     details: { methods: [...new Set(observed.map((o) => o.method))] }
   });
+}
+
+/**
+ * Per-event-type arguments from `EVENTS_ARGUMENTS`, a JSON object keyed by
+ * event name, e.g. `{"metronome.tick": {"periodSeconds": 1}}`. They replace
+ * what `minimalArguments` would derive from the schema. For grading another
+ * implementation past a defect on the minimal arguments: a server that crashes
+ * on `{}` reports that crash on a first pass, and a second pass with arguments
+ * it survives grades everything else. Read on every call, so tests can stub it.
+ */
+function argumentOverrides(): Record<string, Record<string, unknown>> {
+  const raw = process.env.EVENTS_ARGUMENTS;
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed)) throw new Error('not a JSON object');
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [name, args] of Object.entries(parsed)) {
+      if (isObject(args)) out[name] = args as Record<string, unknown>;
+    }
+    return out;
+  } catch (err) {
+    throw new Error(
+      `EVENTS_ARGUMENTS must be a JSON object of event name to arguments: ${String(err)}`
+    );
+  }
+}
+
+/**
+ * Run a scenario body, turning a failure to answer into rows instead of an
+ * aborted run. Anything thrown out of a scenario (an HTTP 5xx with no JSON-RPC
+ * body, a dropped connection) means the server stopped answering partway
+ * through, often because the request just made crashed it. Every row the
+ * scenario owns then reports untestable at FAILURE with the reason, so a crash
+ * reads as red in the report rather than as a scenario that produced nothing.
+ */
+export async function guardScenario(
+  ids: readonly string[],
+  body: () => Promise<ConformanceCheck[]>
+): Promise<ConformanceCheck[]> {
+  try {
+    return await body();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return ids.map((id) =>
+      untestableCheck(
+        id,
+        id,
+        id,
+        `The server stopped answering partway through this scenario (${reason}), so its rows could not be graded. A 5xx with no JSON-RPC body usually means the request just made crashed the server.`,
+        [EVENTS_SPEC_REF],
+        'FAILURE'
+      )
+    );
+  }
 }

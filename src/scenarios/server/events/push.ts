@@ -69,7 +69,8 @@ import {
   isIso8601,
   isObject,
   isValidCursor,
-  minimalArguments
+  minimalArguments,
+  guardScenario
 } from './helpers';
 import {
   openEventStream,
@@ -232,6 +233,13 @@ export class EventsPushScenario implements ClientScenario {
 **Untestable rather than green**: an upstream failure, a retention gap, a termination and a server-initiated close cannot be provoked from the client side, so those rows name the missing prerequisite instead of passing against a server that simply never did it.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
+    return guardScenario(
+      [...STREAM_IDS, ...ERROR_IDS, NO_REPLAY_ID, ...CATALOG_IDS],
+      () => this.runUnguarded(ctx)
+    );
+  }
+
+  private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const checks = await this.runStreams(ctx);
     if (checks.length > 0 && checks.every((c) => c.status === 'SKIPPED')) {
       for (const id of CATALOG_IDS) {
