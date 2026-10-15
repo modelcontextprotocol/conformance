@@ -66,21 +66,29 @@ export interface StreamSession {
   cancel(): Promise<void>;
 }
 
-/** Open `events/stream` and return once the server has answered the POST. */
+/**
+ * Open `events/stream` and return once the server has answered the POST.
+ *
+ * `options.method` opens another long-lived request with the same shape
+ * instead, which is how the discovery scenario holds a `subscriptions/listen`
+ * stream open: confirmation first, notifications after, a result only on
+ * close.
+ */
 export async function openEventStream(
   serverUrl: string,
   specVersion: SpecVersion,
   params: Record<string, unknown>,
-  options: { openTimeoutMs?: number } = {}
+  options: { openTimeoutMs?: number; method?: string } = {}
 ): Promise<StreamSession> {
+  const method = options.method ?? 'events/stream';
   const requestId = Math.floor(Math.random() * 1_000_000) + 1;
-  const headers = buildStandardHeaders('events/stream', params, {
+  const headers = buildStandardHeaders(method, params, {
     specVersion
   });
   const body = JSON.stringify({
     jsonrpc: '2.0',
     id: requestId,
-    method: 'events/stream',
+    method,
     params: withRequestMeta(params, specVersion)
   });
 

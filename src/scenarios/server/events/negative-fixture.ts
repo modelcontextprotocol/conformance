@@ -349,9 +349,11 @@ export interface ListenBehaviour {
   /**
    * Which listeners get `eventsListChanged` echoed. `honor` is conformant;
    * `always` echoes it even when the capability did not declare
-   * `listChanged: true` (breaks sep-3415-capability-list-changed-gated).
+   * `listChanged: true` (breaks sep-3415-capability-list-changed-gated);
+   * `never` declines it even when it was declared, which leaves the
+   * notification with no channel (breaks sep-3415-list-changed-notification).
    */
-  echo?: 'honor' | 'always';
+  echo?: 'honor' | 'always' | 'never';
   /**
    * Set false to acknowledge the opt-in but never send the notification
    * (breaks sep-3415-list-changed-notification).
@@ -641,7 +643,9 @@ export async function startEventsFixture(
         typeof opts.capability === 'object' &&
         opts.capability !== null &&
         (opts.capability as Record<string, unknown>).listChanged === true;
-      const echoed = requested && (opts.listen.echo === 'always' || declared);
+      const echo = opts.listen.echo ?? 'honor';
+      const echoed =
+        requested && echo !== 'never' && (echo === 'always' || declared);
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache'

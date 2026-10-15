@@ -281,6 +281,25 @@ export const EVENTS_CONTROL_SUBSCRIPTION_EXISTS =
  * process restart would. Every session ends, so a scenario firing it must
  * reconnect and must fire it last.
  */
+/**
+ * Changes the event catalog at runtime: `{op: "add"}` registers a fresh type
+ * and answers `ok: <name>`, `{op: "remove", name}` drops one the control
+ * added. Both are changes to the set of event types, so a server that
+ * declared `listChanged: true` sends `notifications/events/list_changed` for
+ * each.
+ */
+export const EVENTS_CONTROL_CATALOG = 'events_conformance_catalog';
+
+/** The core method a client opens to receive list-changed notifications. */
+export const SUBSCRIPTIONS_LISTEN_METHOD = 'subscriptions/listen';
+
+/** First frame on a listen stream; `params.notifications` is the honored filter. */
+export const SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION =
+  'notifications/subscriptions/acknowledged';
+
+/** The filter key SEP-3415 adds to `subscriptions/listen`. */
+export const EVENTS_LIST_CHANGED_FILTER_KEY = 'eventsListChanged';
+
 export const EVENTS_CONTROL_RESTART = 'events_conformance_restart';
 /**
  * Answers the fixture's current restart generation. The restart control

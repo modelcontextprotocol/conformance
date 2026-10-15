@@ -512,3 +512,72 @@ describe('EventOccurrence shape', () => {
     expect(checks.get('sep-3415-occurrence-data')?.status).toBe('FAILURE');
   });
 });
+
+describe('list_changed over subscriptions/listen', () => {
+  const GATED = 'sep-3415-capability-list-changed-gated';
+  const NOTIFIED = 'sep-3415-list-changed-notification';
+  const LISTENING: EventsFixtureOptions = { ...CONFORMANT, listen: {} };
+
+  /** Ids whose status differs between two runs. */
+  const flipped = (
+    a: Map<string, { status: string }>,
+    b: Map<string, { status: string }>
+  ) => [...a.keys()].filter((id) => a.get(id)?.status !== b.get(id)?.status);
+
+  test('a declaring server that honors the opt-in and notifies on a catalog change passes', async () => {
+    const checks = await checksFor(discovery(), LISTENING);
+    expect(checks.get(NOTIFIED)?.status).toBe('SUCCESS');
+    expect(checks.get(GATED)?.status).toBe('SKIPPED');
+    expect(checks.get(GATED)?.errorMessage).toContain('listChanged: true');
+  });
+
+  test('a server that did not declare listChanged leaves the key out and is not asked to notify', async () => {
+    const checks = await checksFor(discovery(), {
+      ...LISTENING,
+      capability: {}
+    });
+    expect(checks.get(GATED)?.status).toBe('SUCCESS');
+    expect(checks.get(NOTIFIED)?.status).toBe('SKIPPED');
+  });
+
+  test('echoing eventsListChanged without declaring listChanged fails only the gate', async () => {
+    const ok = await checksFor(discovery(), { ...LISTENING, capability: {} });
+    const broken = await checksFor(discovery(), {
+      ...LISTENING,
+      capability: {},
+      listen: { echo: 'always' }
+    });
+    expect(broken.get(GATED)?.status).toBe('FAILURE');
+    expect(broken.get(GATED)?.errorMessage).toContain('acknowledged');
+    expect(flipped(ok, broken)).toEqual([GATED]);
+  });
+
+  test('acknowledging the opt-in but never notifying fails only the notification', async () => {
+    const ok = await checksFor(discovery(), LISTENING);
+    const broken = await checksFor(discovery(), {
+      ...LISTENING,
+      listen: { sendListChanged: false }
+    });
+    expect(broken.get(NOTIFIED)?.status).toBe('FAILURE');
+    expect(broken.get(NOTIFIED)?.errorMessage).toContain(
+      'no `notifications/events/list_changed`'
+    );
+    expect(flipped(ok, broken)).toEqual([NOTIFIED]);
+  });
+
+  test('declaring listChanged and then declining the opt-in fails the notification', async () => {
+    const checks = await checksFor(discovery(), {
+      ...LISTENING,
+      listen: { echo: 'never' }
+    });
+    expect(checks.get(NOTIFIED)?.status).toBe('FAILURE');
+    expect(checks.get(NOTIFIED)?.errorMessage).toContain('did not honor');
+  });
+
+  test('a server with no subscriptions/listen reports the notification untestable, naming the method', async () => {
+    const checks = await checksFor(discovery(), CONFORMANT);
+    const check = checks.get(NOTIFIED);
+    expect(check?.status).toBe('FAILURE');
+    expect(check?.errorMessage).toContain('subscriptions/listen');
+  });
+});
