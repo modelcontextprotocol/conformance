@@ -315,7 +315,32 @@ export interface WebhookEnvelopeControls {
   terminate?: true | { error?: unknown } | 'silent';
 }
 
+/**
+ * `subscriptions/listen` and the catalog control. The conformant fixture
+ * echoes `eventsListChanged` exactly when the client asked and the declared
+ * capability says `listChanged: true`, and sends `notifications/events/list_changed`
+ * to every listener it echoed for whenever `events_conformance_catalog` adds or
+ * removes a type.
+ */
+export interface ListenBehaviour {
+  /**
+   * Which listeners get `eventsListChanged` echoed. `honor` is conformant;
+   * `always` echoes it even when the capability did not declare
+   * `listChanged: true` (breaks sep-3415-capability-list-changed-gated);
+   * `never` declines it even when it was declared, which leaves the
+   * notification with no channel (breaks sep-3415-list-changed-notification).
+   */
+  echo?: 'honor' | 'always' | 'never';
+  /**
+   * Set false to acknowledge the opt-in but never send the notification
+   * (breaks sep-3415-list-changed-notification).
+   */
+  sendListChanged?: boolean;
+}
+
 export interface EventsFixtureOptions {
+  /** Serve `subscriptions/listen` and expose `events_conformance_catalog`. */
+  listen?: ListenBehaviour;
   /** Expose the durability controls as tools. */
   durability?: DurabilityBehaviour;
   /** Expose the per-subscription webhook envelope controls. */
@@ -439,6 +464,27 @@ export async function startEventsFixture(
   let liveStreams = 0;
   const liveByName = new Map<string, number>();
 
+  /** Open `subscriptions/listen` streams, and whether each was honored. */
+  const listeners = new Set<{
+    res: ServerResponse;
+    id: unknown;
+    echoed: boolean;
+  }>();
+  let catalogMinted = 0;
+  const notifyListChanged = () => {
+    if (opts.listen?.sendListChanged === false) return;
+    for (const l of listeners) {
+      if (!l.echoed) continue;
+      l.res.write(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/events/list_changed',
+          params: { _meta: { [SUBSCRIPTION_ID_META]: l.id } }
+        })}\n\n`
+      );
+    }
+  };
+
   const server = createServer(async (req, res) => {
     if (req.method !== 'POST') {
       res.writeHead(405).end();
@@ -491,6 +537,9 @@ export async function startEventsFixture(
       if (opts.noReplay) {
         tools.push({ name: 'events_conformance_yield_gap', inputSchema: obj });
       }
+      if (opts.listen) {
+        tools.push({ name: 'events_conformance_catalog', inputSchema: obj });
+      }
       if (opts.webhookEnvelopeControls?.gap) {
         tools.push({
           name: 'events_conformance_webhook_gap',
@@ -507,6 +556,64 @@ export async function startEventsFixture(
         send({ tools });
         return;
       }
+    }
+
+    if (
+      method === 'tools/call' &&
+      opts.listen &&
+      params.name === 'events_conformance_catalog'
+    ) {
+      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      if (args.op === 'add') {
+        catalogMinted += 1;
+        const name = `catalog.${catalogMinted}`;
+        names.add(name);
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${name}` }] });
+        return;
+      }
+      const target = String(args.name ?? '');
+      if (
+        args.op === 'remove' &&
+        target.startsWith('catalog.') &&
+        names.delete(target)
+      ) {
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+        return;
+      }
+      fail(-32602, `events_conformance_catalog cannot ${String(args.op)}`);
+      return;
+    }
+
+    if (method === 'subscriptions/listen' && opts.listen) {
+      const filter = (params.notifications ?? {}) as Record<string, unknown>;
+      const requested = filter.eventsListChanged === true;
+      const declared =
+        typeof opts.capability === 'object' &&
+        opts.capability !== null &&
+        (opts.capability as Record<string, unknown>).listChanged === true;
+      const echo = opts.listen.echo ?? 'honor';
+      const echoed =
+        requested && echo !== 'never' && (echo === 'always' || declared);
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      res.write(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/subscriptions/acknowledged',
+          params: {
+            _meta: { [SUBSCRIPTION_ID_META]: id },
+            notifications: echoed ? { eventsListChanged: true } : {}
+          }
+        })}\n\n`
+      );
+      const entry = { res, id, echoed };
+      listeners.add(entry);
+      req.on('close', () => listeners.delete(entry));
+      return;
     }
 
     if (
@@ -1020,6 +1127,10 @@ export async function startEventsFixture(
         entry.res.destroy();
       }
       liveStreams = 0;
+      for (const l of [...listeners]) {
+        listeners.delete(l);
+        l.res.destroy();
+      }
       server.closeAllConnections?.();
       await new Promise<void>((r) => server.close(() => r()));
     }

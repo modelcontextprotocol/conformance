@@ -28,7 +28,15 @@
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { RunContext } from '../../../connection';
 import { untestableCheck } from '../../untestable';
+import { openEventStream } from './stream';
 import {
+  EVENTS_CONTROL_CATALOG,
+  EVENTS_LIST_CHANGED_FILTER_KEY,
+  EVENTS_LIST_CHANGED_NOTIFICATION,
+  SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION,
+  SUBSCRIPTIONS_LISTEN_METHOD,
+  askControl,
+  hasControl,
   EVENTS_EXTENSION_ID,
   EVENTS_LIST_METHOD,
   EVENTS_POLL_METHOD,
@@ -80,6 +88,20 @@ const ERROR_IDS = [
   'sep-3415-fallback-method-not-found'
 ] as const;
 
+const LISTEN_IDS = [
+  'sep-3415-capability-list-changed-gated',
+  'sep-3415-list-changed-notification'
+] as const;
+
+const GATED_DESCRIPTION =
+  'A server that did not declare `listChanged: true` omits `eventsListChanged` from the acknowledged filter.';
+const LIST_CHANGED_DESCRIPTION =
+  'A change to the set of event types sends `notifications/events/list_changed`, on a `subscriptions/listen` stream whose client opted in with `eventsListChanged`.';
+
+/** How long to wait for the acknowledgement, and for the notification. */
+const LISTEN_ACK_MS = 3000;
+const LIST_CHANGED_MS = 3000;
+
 const FALLBACK_DESCRIPTION =
   'A server that does not offer the extension answers any `events/*` request with `-32601 MethodNotFound` (standard JSON-RPC).';
 
@@ -88,6 +110,7 @@ const ALL_IDS = [
   ...LIST_IDS,
   ...DESCRIPTOR_IDS,
   ...ERROR_IDS,
+  ...LISTEN_IDS,
   RESULT_TYPE_ID
 ];
 
@@ -115,16 +138,197 @@ export class EventsDiscoveryScenario implements ClientScenario {
 - \`sep-3415-error-not-found\` — an unknown event name answers \`-32023 NotFound\` (the poll-specific restatement of the same rule is graded by \`events-poll\`)
 - \`sep-3415-error-server-range\` — the code is one of the five SEP-3415 allocates (\`-32023\` to \`-32027\`), not the design sketch's \`-32011\` to \`-32015\`
 - \`sep-3415-result-type-complete\` — the \`events/list\` result carries \`resultType: "complete"\`
+- \`sep-3415-capability-list-changed-gated\` — a server that did not declare \`listChanged: true\` leaves \`eventsListChanged\` out of the \`subscriptions/listen\` acknowledgement
+- \`sep-3415-list-changed-notification\` — a catalog change, made through the \`events_conformance_catalog\` control, sends \`notifications/events/list_changed\` on an opted-in listen stream
 
 **Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
-      return await this.checks(conn);
+      const checks = await this.checks(conn);
+      // The skip path already carries the listen rows as SKIPPED; every other
+      // path grades them here, so no row vanishes depending on the server.
+      if (
+        !checks.some((c) => (LISTEN_IDS as readonly string[]).includes(c.id))
+      ) {
+        checks.push(...(await this.listenChecks(ctx, conn)));
+      }
+      return checks;
     } finally {
       await conn.close();
     }
+  }
+
+  /**
+   * `list_changed` reaches a client only on a `subscriptions/listen` stream it
+   * opened with `eventsListChanged: true`, and the server's acknowledgement
+   * says whether it will honor that. Two rows hang off one stream:
+   *
+   * - the gate: a server that did not declare `listChanged: true` must leave
+   *   the key out of the acknowledgement. A server that did declare it may
+   *   still decline, so for it this row has nothing to grade;
+   * - the notification: a server that declared `listChanged: true` sends
+   *   `notifications/events/list_changed` when its catalog changes. The
+   *   harness cannot change a catalog over the protocol, so it asks the
+   *   fixture's `events_conformance_catalog` control to add a type, waits for
+   *   the notification, then removes the type again.
+   */
+  private async listenChecks(
+    ctx: RunContext,
+    conn: Awaited<ReturnType<RunContext['connect']>>
+  ): Promise<ConformanceCheck[]> {
+    const caps = await eventsCapability(conn);
+    const declaredTrue = caps?.listChanged === true;
+
+    const session = await openEventStream(
+      ctx.serverUrl,
+      ctx.specVersion,
+      { notifications: { [EVENTS_LIST_CHANGED_FILTER_KEY]: true } },
+      { method: SUBSCRIPTIONS_LISTEN_METHOD, openTimeoutMs: LISTEN_ACK_MS }
+    );
+    try {
+      const ack = session.contentType?.includes('text/event-stream')
+        ? await session.waitFor(
+            (n) => n.method === SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION,
+            LISTEN_ACK_MS
+          )
+        : undefined;
+      if (!ack) {
+        const why = session.error
+          ? `\`${SUBSCRIPTIONS_LISTEN_METHOD}\` failed: ${session.error.code} ${session.error.message}`
+          : `\`${SUBSCRIPTIONS_LISTEN_METHOD}\` did not confirm with \`${SUBSCRIPTIONS_ACKNOWLEDGED_NOTIFICATION}\` within ${LISTEN_ACK_MS}ms (HTTP ${session.status}, ${session.contentType ?? 'no content type'})`;
+        return [
+          declaredTrue
+            ? this.gatedNotApplicable()
+            : untestableCheck(
+                LISTEN_IDS[0],
+                LISTEN_IDS[0],
+                GATED_DESCRIPTION,
+                why,
+                [EVENTS_SPEC_REF],
+                'FAILURE'
+              ),
+          declaredTrue
+            ? untestableCheck(
+                LISTEN_IDS[1],
+                LISTEN_IDS[1],
+                LIST_CHANGED_DESCRIPTION,
+                why,
+                [EVENTS_SPEC_REF],
+                'FAILURE'
+              )
+            : this.notificationNotApplicable()
+        ];
+      }
+
+      const honored = isObject(ack.params.notifications)
+        ? ack.params.notifications
+        : {};
+      const echoed = honored[EVENTS_LIST_CHANGED_FILTER_KEY] === true;
+      const checks: ConformanceCheck[] = [];
+
+      if (declaredTrue) {
+        checks.push(this.gatedNotApplicable());
+      } else {
+        checks.push(
+          eventsCheck(
+            LISTEN_IDS[0],
+            GATED_DESCRIPTION,
+            echoed ? 'FAILURE' : 'SUCCESS',
+            echoed
+              ? {
+                  errorMessage: `The server declared \`listChanged: ${String(caps?.listChanged ?? false)}\` but acknowledged \`${EVENTS_LIST_CHANGED_FILTER_KEY}\`, promising a notification it did not advertise.`,
+                  details: { listChanged: caps?.listChanged, honored }
+                }
+              : { details: { listChanged: caps?.listChanged, honored } }
+          )
+        );
+      }
+
+      if (!declaredTrue) {
+        checks.push(this.notificationNotApplicable());
+        return checks;
+      }
+      if (!echoed) {
+        checks.push(
+          eventsCheck(LISTEN_IDS[1], LIST_CHANGED_DESCRIPTION, 'FAILURE', {
+            errorMessage: `The server declared \`listChanged: true\` but did not honor \`${EVENTS_LIST_CHANGED_FILTER_KEY}\` on \`${SUBSCRIPTIONS_LISTEN_METHOD}\`, which is the only channel the notification travels on, so no client can receive it.`,
+            details: { honored }
+          })
+        );
+        return checks;
+      }
+      if (!(await hasControl(conn, EVENTS_CONTROL_CATALOG))) {
+        checks.push(
+          untestableCheck(
+            LISTEN_IDS[1],
+            LISTEN_IDS[1],
+            LIST_CHANGED_DESCRIPTION,
+            `The server exposes no \`${EVENTS_CONTROL_CATALOG}\` control, and the harness has no other way to change its catalog mid-run.`,
+            [EVENTS_SPEC_REF],
+            'FAILURE'
+          )
+        );
+        return checks;
+      }
+
+      const before = session.notifications.length;
+      const added = await askControl(conn, EVENTS_CONTROL_CATALOG, {
+        op: 'add'
+      });
+      const name = added?.match(/^ok:\s*(\S+)/)?.[1];
+      if (!name) {
+        checks.push(
+          untestableCheck(
+            LISTEN_IDS[1],
+            LISTEN_IDS[1],
+            LIST_CHANGED_DESCRIPTION,
+            `\`${EVENTS_CONTROL_CATALOG}\` {op: "add"} did not add a type (answered ${JSON.stringify(added)}).`,
+            [EVENTS_SPEC_REF],
+            'FAILURE'
+          )
+        );
+        return checks;
+      }
+      const hit = await session.waitFor(
+        (n) =>
+          n.method === EVENTS_LIST_CHANGED_NOTIFICATION &&
+          session.notifications.indexOf(n) >= before,
+        LIST_CHANGED_MS
+      );
+      checks.push(
+        eventsCheck(
+          LISTEN_IDS[1],
+          LIST_CHANGED_DESCRIPTION,
+          hit ? 'SUCCESS' : 'FAILURE',
+          hit
+            ? { details: { added: name, atMs: hit.atMs } }
+            : {
+                errorMessage: `Added event type \`${name}\` through \`${EVENTS_CONTROL_CATALOG}\`, and no \`${EVENTS_LIST_CHANGED_NOTIFICATION}\` arrived on the acknowledged listen stream within ${LIST_CHANGED_MS}ms.`,
+                details: { added: name }
+              }
+        )
+      );
+      await askControl(conn, EVENTS_CONTROL_CATALOG, { op: 'remove', name });
+      return checks;
+    } finally {
+      await session.cancel();
+    }
+  }
+
+  private gatedNotApplicable(): ConformanceCheck {
+    return eventsCheck(LISTEN_IDS[0], GATED_DESCRIPTION, 'SKIPPED', {
+      errorMessage:
+        'The server declared `listChanged: true`; the rule covers servers that did not, and a declaring server may echo or decline the key.'
+    });
+  }
+
+  private notificationNotApplicable(): ConformanceCheck {
+    return eventsCheck(LISTEN_IDS[1], LIST_CHANGED_DESCRIPTION, 'SKIPPED', {
+      errorMessage:
+        'The server did not declare `listChanged: true`, so it does not promise the notification.'
+    });
   }
 
   private async checks(
