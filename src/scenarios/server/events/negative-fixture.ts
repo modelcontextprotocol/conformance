@@ -1,0 +1,1753 @@
+/**
+ * The fixture the MCP Events negative controls are graded against.
+ *
+ * One server, five scenarios. Every option here exists to break exactly one
+ * rule while leaving the rest of the wire conformant, which is what makes a
+ * negative control a control: if two things are wrong at once, a flipped check
+ * does not say which one it caught.
+ *
+ * It speaks the SEP-2575 stateless wire (`server/discover` plus one POST per
+ * request), built per test rather than checked in as an example server, which
+ * matches the SEP-2640 negative tests. `events/stream` is a real SSE response
+ * held open with timers rather than a canned transcript, because the heartbeat
+ * cadence and the cancellation rows are about timing.
+ */
+
+import { EVENTS_EXTENSION_ID } from './helpers';
+import { createHash, createHmac } from 'crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import type { AddressInfo } from 'net';
+import { withRequiredDraftResultFields } from '../../../mock-server';
+import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { SUBSCRIPTION_ID_META } from './helpers';
+
+/** A descriptor that is well formed apart from whatever a test overrides. */
+export function descriptor(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'test.event',
+    description: 'A negative-control fixture event type.',
+    delivery: ['poll'],
+    inputSchema: {
+      type: 'object',
+      properties: { channel: { type: 'string' } }
+    },
+    payloadSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    ...overrides
+  };
+}
+
+/** A poll result that is well formed apart from whatever a test overrides. */
+export function pollResult(overrides: Record<string, unknown> = {}) {
+  return {
+    events: [],
+    cursor: 'cursor_001',
+    truncated: false,
+    hasMore: false,
+    nextPollMs: 30000,
+    ...overrides
+  };
+}
+
+/** An occurrence that is well formed apart from whatever a test overrides. */
+export function occurrence(overrides: Record<string, unknown> = {}) {
+  return {
+    eventId: 'evt_001',
+    name: 'test.event',
+    timestamp: '2026-09-15T12:00:00Z',
+    data: { id: 'x' },
+    ...overrides
+  };
+}
+
+export type JsonRpcErrorShape = { code: number; message: string };
+
+/** A queued poll answer: a result body, or an error to answer with instead. */
+export type PollAnswer = Record<string, unknown> | { error: JsonRpcErrorShape };
+
+/**
+ * How `events/stream` behaves. The defaults are conformant: an immediate
+ * `active` confirmation carrying the parent request id in `_meta`, a heartbeat
+ * with a cursor, and one well-formed event.
+ */
+export interface StreamBehaviour {
+  /** Answer the POST with this JSON-RPC error instead of opening a stream. */
+  error?: JsonRpcErrorShape;
+  /** Stream a type whose `delivery` omits `push`, instead of refusing it. */
+  acceptNonPushType?: boolean;
+  /** Answer the POST with a plain JSON result, which is not a stream at all. */
+  answerJson?: boolean;
+  /** Send no `notifications/events/active`. */
+  omitActive?: boolean;
+  /** Fields merged into the `active` params. */
+  activeParams?: Record<string, unknown>;
+  /**
+   * Where the parent request id goes. `meta` is the spelling the document
+   * requires; `requestId` is the one kitchen-sink ships; `none` omits it.
+   */
+  correlation?: 'meta' | 'requestId' | 'none';
+  /** Heartbeat cadence. 0 sends none. */
+  heartbeatMs?: number;
+  /** Fields merged into each heartbeat's params. */
+  heartbeatParams?: Record<string, unknown>;
+  /** Send `: keepalive` SSE comment lines at the heartbeat cadence too. */
+  sseComments?: boolean;
+  /** Deliver an event this long after the stream opens. 0 sends none. */
+  eventAfterMs?: number;
+  /** Fields merged into the delivered event's params. */
+  eventParams?: Record<string, unknown>;
+  /** Ride a non-`notifications/events/*` notification on the stream. */
+  foreignNotification?: string;
+  /** Send `notifications/events/error` after this long. */
+  errorNotificationAfterMs?: number;
+  /** Send `notifications/events/terminated` after this long. */
+  terminatedAfterMs?: number;
+  /** Send a second `active` with `truncated: true`, the retention-gap signal. */
+  gapAfterMs?: number;
+  /** Close the stream from the server side, writing a final frame first. */
+  closeAfterMs?: number;
+  /** The `result` of that final frame. Defaults to an empty typed result. */
+  finalResult?: Record<string, unknown>;
+  /** Refuse concurrent opens past this many, the cap streams are exempt from. */
+  maxConcurrent?: number;
+  /** Open a stream for any name, including one the catalog does not serve. */
+  acceptAnyName?: boolean;
+  /** Name the quota in `data.limit` when refusing past `maxConcurrent`. */
+  capLimitName?: string;
+}
+
+const CONFORMANT_STREAM: Required<
+  Pick<
+    StreamBehaviour,
+    'correlation' | 'heartbeatMs' | 'eventAfterMs' | 'maxConcurrent'
+  >
+> = {
+  correlation: 'meta',
+  heartbeatMs: 150,
+  eventAfterMs: 80,
+  maxConcurrent: Infinity
+};
+
+/**
+ * How `events/subscribe` and `events/unsubscribe` behave. The defaults are
+ * conformant: an https-only callback, a validated `whsec_` secret, an id
+ * derived from the whole key, an idempotent upsert, and `-32023 NotFound` for
+ * a key the server does not hold.
+ */
+export interface SubscribeBehaviour {
+  /** Answer every subscribe with this error instead of subscribing. */
+  error?: JsonRpcErrorShape;
+  /** Accept a subscribe carrying no `delivery.secret`. */
+  acceptMissingSecret?: boolean;
+  /** Accept a secret without the `whsec_` prefix. */
+  acceptBadPrefix?: boolean;
+  /** Accept a `whsec_` secret that decodes to fewer than 24 bytes. */
+  acceptShortSecret?: boolean;
+  /** Accept an `http://` callback URL. */
+  acceptHttpUrl?: boolean;
+  /**
+   * Refuse a callback whose host is a loopback, private, link-local or
+   * unspecified literal, with the rejection code. Off by default so the
+   * default fixture enforces the scheme rule alone, which is the state that
+   * used to pass `reject-non-routable` on the scheme refusal.
+   */
+  rejectNonRoutableUrl?: boolean;
+  /** Code for a rejected secret or URL, where the document says -32602. */
+  rejectionCode?: number;
+  /** Subscribe to a type whose `delivery` does not list `webhook`. */
+  acceptNonWebhookType?: boolean;
+  /** Grant `refreshBefore: null` however finite the suggestion. */
+  nullRefreshAlways?: boolean;
+  /** Grant `refreshBefore: null` when `ttlMs` was omitted. */
+  nullRefreshOnOmitted?: boolean;
+  /** Grant a `refreshBefore` well past the suggestion. */
+  grantBeyondSuggestion?: boolean;
+  /** Raw `refreshBefore` to answer with, for the non-timestamp case. */
+  refreshBefore?: unknown;
+  /** Leave `refreshBefore` out of the subscribe result entirely. */
+  omitRefreshBefore?: boolean;
+  /** Fields merged into a successful unsubscribe result, which is otherwise empty. */
+  unsubscribeResult?: Record<string, unknown>;
+  /** Reject a `ttlMs` the server dislikes instead of clamping it. */
+  rejectTtl?: 'short' | 'long' | 'both';
+  /** Fields merged into every subscribe result. */
+  result?: Record<string, unknown>;
+  /** Omit `id` from the subscribe result. */
+  omitId?: boolean;
+  /** Mint a fresh id per call, so a repeat subscribe is not an upsert. */
+  nonIdempotentId?: boolean;
+  /** Derive the id from `(name, arguments)` only, leaving the URL out. */
+  idIgnoresUrl?: boolean;
+  /** Treat a supplied `id` as addressing that subscription. */
+  idIsAnInput?: boolean;
+  /** Answer success for an unsubscribe of a key never held. */
+  unsubscribeUnknownOk?: boolean;
+  /** Code for an unsubscribe of an unknown key, where the document says -32023. */
+  unsubscribeUnknownCode?: number;
+  /** Code for an unsubscribe of a key the server does hold. */
+  unsubscribeHeldCode?: number;
+  /** Answer -32025 once this many subscriptions are live. */
+  maxSubscriptions?: number;
+  /**
+   * Expose `events_conformance_allow_callback_origin` as a tool, which permits
+   * one origin past the callback guards for the rest of the process.
+   *
+   * There is no separate "harden" switch: leaving `acceptHttpUrl` unset already
+   * refuses the harness's loopback http callback, which is what a server with
+   * its SSRF guards on does.
+   */
+  allowCallbackOriginControl?: boolean;
+}
+
+/**
+ * What the fixture POSTs to a webhook callback once a subscription exists. The
+ * defaults are conformant: a verification challenge first, then one event, both
+ * signed per Standard Webhooks with the decoded secret bytes, both carrying
+ * `X-MCP-Subscription-Id`, retried on 5xx with a fresh timestamp and signature,
+ * and never retried after 410 or 413.
+ *
+ * Delivering at all is what a *loopback* callback makes wrong, so the SSRF rows
+ * fail whenever this is switched on without `EVENTS_WEBHOOK_CALLBACK_BASE`.
+ * That is the fixture standing in for a server run with its private-network
+ * guard disabled, which is the state the demo fixtures ship in.
+ */
+export interface DeliveryBehaviour {
+  /** Events to send after the first, each with a fresh `webhook-id`. */
+  followUpEvents?: number;
+  /** Stop sending to a callback once it has answered `410`, as a server that suspends on it would. */
+  stopAfterGone?: boolean;
+  /**
+   * Report `deliveryStatus` on a refresh, `lastError` being the category of the
+   * callback's last failed response. A string replaces the category, for the
+   * defect where raw endpoint detail leaks into it.
+   */
+  deliveryStatus?: true | { lastError: string };
+  /** Send the verification envelope before any event. */
+  verify?: boolean;
+  /**
+   * Run the handshake inside `events/subscribe`, before answering, and refuse
+   * with -32027 `challenge_failed` when the callback does not echo the nonce
+   * in a 2xx body. The default challenges after the response and ignores the
+   * answer.
+   */
+  synchronousVerification?: boolean;
+  /** With `synchronousVerification`, accept the subscription anyway. */
+  ignoreFailedEcho?: boolean;
+  /**
+   * Confirm intent by fetching the callback origin's
+   * `/.well-known/mcp-webhook-receiver.json` instead of running the handshake,
+   * which is the fourth consent path the document allows. A document covering
+   * the callback path means no challenge POST; a 404 means no consent, and this
+   * fixture then delivers anyway, which is the case the rule exists to catch.
+   */
+  verifyViaWellKnown?: boolean;
+  /** Code to answer when the handshake fails, where the table says -32027. */
+  challengeFailureCode?: number;
+  /** `data.reason` for that failure, where the table wants a category. */
+  challengeFailureReason?: string;
+  /** Echo the endpoint's own response body back in the failure message. */
+  challengeFailureLeaksBody?: boolean;
+  /** Deliver an event at all. */
+  sendEvent?: boolean;
+  /** Deliver the event before the verification envelope. */
+  eventBeforeVerification?: boolean;
+  /** Sign with the literal `whsec_…` string instead of its decoded bytes. */
+  literalKeySignature?: boolean;
+  /** Standard Webhooks headers to leave off. */
+  omitHeaders?: string[];
+  /** Leave off `X-MCP-Subscription-Id`. */
+  omitSubscriptionIdHeader?: boolean;
+  /** Send an `X-MCP-Subscription-Id` that is not the subscribe response's id. */
+  wrongSubscriptionIdHeader?: boolean;
+  /** Deliver with this method instead of POST. */
+  method?: string;
+  /** Deliver with this Content-Type instead of application/json. */
+  contentType?: string;
+  /** Pad the event body past the 256 KiB ceiling. */
+  oversizedBody?: boolean;
+  /** Follow a 302 from the callback, which the document forbids. */
+  followRedirects?: boolean;
+  /** Total attempts for a delivery the callback rejects with 5xx. */
+  attempts?: number;
+  /** Milliseconds between retry attempts; defaults to just over a second. */
+  retryGapMs?: number;
+  /** Reuse the first attempt's timestamp and signature on every retry. */
+  staleRetrySignature?: boolean;
+  /** Retry after 410 and 413, which the document defines as non-retryable. */
+  retryNonRetryable?: boolean;
+  /** Sign control envelopes the way deliveries are signed. */
+  signEnvelopes?: boolean;
+  /** `webhook-id` form for control envelopes. */
+  envelopeIdFormat?: 'msg' | 'plain';
+  /** Send a `gap` control envelope. */
+  gapEnvelope?: boolean | { cursor?: unknown };
+  /** Send a `terminated` control envelope. */
+  terminatedEnvelope?: boolean | { error?: unknown };
+}
+
+/**
+ * The restart, generation and subscription-state controls, for the TTL
+ * durability rows. Defaults are conformant: both grants survive a restart and
+ * nothing is garbage-collected.
+ */
+export interface DurabilityBehaviour {
+  /** Drop a no-expiry subscription this long after it was created. */
+  gcAfterMs?: number;
+  /** Lose no-expiry subscriptions across a restart. */
+  dropNoExpiryOnRestart?: boolean;
+  /** Lose finite subscriptions across a restart. */
+  dropFiniteOnRestart?: boolean;
+  /** Answer the restart control without restarting. */
+  restartNoop?: boolean;
+}
+
+/**
+ * A per-event-type subscription cap on streams, the shape kitchen-sink's
+ * `Quota` has, reported through `events_conformance_quota`.
+ */
+export interface QuotaBehaviour {
+  /** Event type the cap applies to. */
+  name: string;
+  /** Streams allowed at once on that type. */
+  max: number;
+  /** Refuse past `max`. Off stands for a server that reports a cap it does not enforce. */
+  enforce?: boolean;
+  /** `data.limit` on the refusal; null omits it. Defaults to `subscriptions`. */
+  limitName?: string | null;
+  /** Expose `events_conformance_quota`. Defaults to true. */
+  control?: boolean;
+}
+
+/**
+ * `events_conformance_webhook_gap` / `_terminate`, which signal one webhook
+ * subscription by id. `true` sends the conformant envelope, an object
+ * overrides its fields, and `'silent'` acknowledges and sends nothing.
+ */
+export interface WebhookEnvelopeControls {
+  gap?: true | { cursor?: unknown } | 'silent';
+  terminate?: true | { error?: unknown } | 'silent';
+}
+
+/**
+ * A second principal, through `events_conformance_subscribe_as` and
+ * `events_conformance_subscription_exists`, for the cross-tenant row. Defaults
+ * are conformant: the principal is part of the key, and unsubscribing one
+ * tenant's subscription leaves the other's alone.
+ */
+export interface TenantBehaviour {
+  /** Leave the principal out of the key, so both tenants share one subscription. */
+  keyIgnoresPrincipal?: boolean;
+  /** Unsubscribing a key removes every tenant's subscription with that key. */
+  unsubscribeIgnoresPrincipal?: boolean;
+}
+
+/**
+ * `subscriptions/listen` and the catalog control. The conformant fixture
+ * echoes `eventsListChanged` exactly when the client asked and the declared
+ * capability says `listChanged: true`, and sends `notifications/events/list_changed`
+ * to every listener it echoed for whenever `events_conformance_catalog` adds or
+ * removes a type.
+ */
+export interface ListenBehaviour {
+  /**
+   * Which listeners get `eventsListChanged` echoed. `honor` is conformant;
+   * `always` echoes it even when the capability did not declare
+   * `listChanged: true` (breaks sep-3415-capability-list-changed-gated);
+   * `never` declines it even when it was declared, which leaves the
+   * notification with no channel (breaks sep-3415-list-changed-notification).
+   */
+  echo?: 'honor' | 'always' | 'never';
+  /**
+   * Set false to acknowledge the opt-in but never send the notification
+   * (breaks sep-3415-list-changed-notification).
+   */
+  sendListChanged?: boolean;
+}
+
+/**
+ * What `events_conformance_catalog` does to streams on a type it changes. The
+ * defaults are conformant: remove ends them with -32023 {kind: "event"},
+ * retype with -32026 {feature: "inputSchema", reason: "schema_changed"}, and
+ * extend leaves them open.
+ */
+export interface CatalogBehaviour {
+  /** Remove without ending the streams on the type. */
+  removeSilently?: boolean;
+  /** Retype without ending the streams on the type. */
+  retypeSilently?: boolean;
+  /** End streams on a removed type with this error instead. */
+  removeError?: { code: number; data?: unknown };
+  /** End streams on a retyped type with this error instead. */
+  retypeError?: { code: number; data?: unknown };
+  /** End streams on an extended type, which an additive change must not do. */
+  extendTerminates?: boolean;
+}
+
+export interface EventsFixtureOptions {
+  /**
+   * Methods that "crash" when called with empty `arguments` on a served type: the fixture
+   * answers HTTP 502 with no body, the way a proxy does when the server behind
+   * it dies mid-request. metronome-mcp did exactly this on `{}` (#1535).
+   */
+  crashOnEmptyArguments?: string[];
+  /** Serve `subscriptions/listen` and expose `events_conformance_catalog`. */
+  listen?: ListenBehaviour;
+  /** Expose `events_conformance_catalog` and set what its changes do to streams. */
+  catalog?: CatalogBehaviour;
+  /** Expose the durability controls as tools. */
+  durability?: DurabilityBehaviour;
+  /** Expose the two-tenant controls. */
+  tenants?: TenantBehaviour;
+  /** Expose the per-subscription webhook envelope controls. */
+  webhookEnvelopeControls?: WebhookEnvelopeControls;
+  /**
+   * One event type without replay: its streams confirm with `cursor: null`,
+   * and `events_conformance_yield_gap` is exposed. For that type the control
+   * sends `active{cursor: null, truncated: true}` when `truncatedOnGap` is set
+   * (the defect) and nothing otherwise; for any other type it sends the
+   * conformant fresh `active{cursor, truncated: true}`.
+   */
+  noReplay?: { name: string; truncatedOnGap?: boolean };
+  /** A per-type cap on streams, and optionally the control that reports it. */
+  quota?: QuotaBehaviour;
+  /**
+   * Raw value to declare at `capabilities.extensions["io.modelcontextprotocol/events"]`;
+   * omit for no declaration.
+   */
+  capability?: unknown;
+  descriptors?: object[];
+  /** Answer `events/list` with this JSON-RPC error instead of a result. */
+  listError?: JsonRpcErrorShape;
+  /**
+   * Poll responses, consumed in order; the last one repeats once exhausted.
+   * A `{ error }` entry makes that poll answer with a JSON-RPC error.
+   */
+  pollResponses?: PollAnswer[];
+  /** Overrides keyed by the polled event name, taking priority over the queue. */
+  pollByName?: Record<string, PollAnswer>;
+  /** Error code for a poll naming an event type the fixture does not serve. */
+  unknownNameCode?: number;
+  /** Error code for a poll whose arguments violate `inputSchema`. */
+  invalidArgsCode?: number;
+  /**
+   * Leave `resultType` off every `events/*` result, including the stream's
+   * final frame. Breaks only sep-3415-result-type-complete.
+   */
+  omitResultType?: boolean;
+  /** How `events/stream` behaves. */
+  stream?: StreamBehaviour;
+  /** How `events/subscribe` and `events/unsubscribe` behave. */
+  subscribe?: SubscribeBehaviour;
+  /**
+   * What the fixture POSTs to the callback. Omit it and the fixture subscribes
+   * without ever delivering, which is what a server with no webhook delivery
+   * looks like from the receiver's side.
+   */
+  delivery?: DeliveryBehaviour;
+}
+
+export interface EventsFixture {
+  url: string;
+  /** Params of every `events/poll` received, in order. */
+  polls: Array<Record<string, unknown>>;
+  /** Params of every `events/stream` received, in order. */
+  streams: Array<Record<string, unknown>>;
+  /** Params of every `events/subscribe` received, in order. */
+  subscribes: Array<Record<string, unknown>>;
+  /** Subscription keys the fixture still holds when it is asked. */
+  liveSubscriptions(): string[];
+  close(): Promise<void>;
+}
+
+/** `whsec_` plus base64 of 24–64 bytes, which is what the document requires. */
+function secretProblem(
+  secret: unknown,
+  behaviour: SubscribeBehaviour
+): 'missing' | 'prefix' | 'length' | undefined {
+  if (secret === undefined || secret === null) {
+    return behaviour.acceptMissingSecret ? undefined : 'missing';
+  }
+  if (typeof secret !== 'string' || !secret.startsWith('whsec_')) {
+    return behaviour.acceptBadPrefix ? undefined : 'prefix';
+  }
+  const bytes = Buffer.from(secret.slice('whsec_'.length), 'base64');
+  if (bytes.length < 24 || bytes.length > 64) {
+    return behaviour.acceptShortSecret ? undefined : 'length';
+  }
+  return undefined;
+}
+
+export async function startEventsFixture(
+  opts: EventsFixtureOptions
+): Promise<EventsFixture> {
+  const polls: Array<Record<string, unknown>> = [];
+  const streams: Array<Record<string, unknown>> = [];
+  const subscribes: Array<Record<string, unknown>> = [];
+  /** Live subscriptions, keyed the way the document keys them. */
+  const subscriptions = new Map<
+    string,
+    {
+      id: string;
+      noExpiry?: boolean;
+      at?: number;
+      url?: string;
+      secret?: unknown;
+      name?: string;
+    }
+  >();
+  let generation = 1;
+  /** The last non-2xx status each callback URL answered, cleared by a 2xx. */
+  const lastFailureByUrl = new Map<string, number>();
+  /** `deliveryStatus` for a refresh, when the fixture reports it at all. */
+  const deliveryStatusFor = (
+    refreshing: boolean,
+    url: unknown
+  ): { deliveryStatus?: object } => {
+    const report = opts.delivery?.deliveryStatus;
+    const failed =
+      typeof url === 'string' ? lastFailureByUrl.get(url) : undefined;
+    if (!report || !refreshing || failed === undefined) return {};
+    const lastError =
+      typeof report === 'object'
+        ? report.lastError
+        : failed >= 500
+          ? 'http_5xx'
+          : 'http_4xx';
+    return { deliveryStatus: { active: true, lastError } };
+  };
+  /** Deliveries still in flight, so close() can settle rather than abandon. */
+  const inFlight = new Set<Promise<void>>();
+  /** Origins the callback guard has been asked to permit. */
+  const permittedOrigins = new Set<string>();
+  let mintedIds = 0;
+  const queue = [...(opts.pollResponses ?? [pollResult()])];
+  const descriptors = opts.descriptors ?? [descriptor()];
+  const names = new Set(
+    descriptors
+      .map((d) => (d as { name?: unknown }).name)
+      .filter((n): n is string => typeof n === 'string')
+  );
+
+  /** Open streams, so close() can tear them down instead of hanging on them. */
+  const openStreams = new Set<{
+    res: ServerResponse;
+    stop: () => void;
+    name: string;
+    notify: (method: string, params: Record<string, unknown>) => void;
+  }>();
+  let liveStreams = 0;
+  const liveByName = new Map<string, number>();
+
+  /** Open `subscriptions/listen` streams, and whether each was honored. */
+  const listeners = new Set<{
+    res: ServerResponse;
+    id: unknown;
+    echoed: boolean;
+  }>();
+  let catalogMinted = 0;
+  const notifyListChanged = () => {
+    if (opts.listen?.sendListChanged === false) return;
+    for (const l of listeners) {
+      if (!l.echoed) continue;
+      l.res.write(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/events/list_changed',
+          params: { _meta: { [SUBSCRIPTION_ID_META]: l.id } }
+        })}\n\n`
+      );
+    }
+  };
+
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(405).end();
+      return;
+    }
+    const body = await readJsonBody(req);
+    const method = body.method as string;
+    const id = body.id;
+    const params = (body.params ?? {}) as Record<string, unknown>;
+
+    // Only for a type the fixture serves: metronome answered an unknown or
+    // missing name with the right error, and died only on its own type.
+    if (
+      opts.crashOnEmptyArguments?.includes(method) &&
+      typeof params.name === 'string' &&
+      names.has(params.name) &&
+      Object.keys(isRecord(params.arguments) ? params.arguments : {}).length ===
+        0
+    ) {
+      res.writeHead(502).end();
+      return;
+    }
+
+    const send = (result: object) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result:
+            opts.omitResultType && method.startsWith('events/')
+              ? result
+              : withRequiredDraftResultFields(method, result)
+        })
+      );
+    };
+    const fail = (code: number, message: string, data?: unknown) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } })
+      );
+    };
+
+    if (method === 'tools/list') {
+      const obj = { type: 'object', properties: {} };
+      const tools = [];
+      if (opts.durability) {
+        tools.push(
+          { name: 'events_conformance_restart', inputSchema: obj },
+          { name: 'events_conformance_generation', inputSchema: obj },
+          { name: 'events_conformance_subscription_state', inputSchema: obj }
+        );
+      }
+      if (opts.subscribe?.allowCallbackOriginControl) {
+        tools.push({
+          name: 'events_conformance_allow_callback_origin',
+          inputSchema: obj
+        });
+      }
+      if (opts.quota && opts.quota.control !== false) {
+        tools.push({ name: 'events_conformance_quota', inputSchema: obj });
+      }
+      if (opts.noReplay) {
+        tools.push({ name: 'events_conformance_yield_gap', inputSchema: obj });
+      }
+      if (opts.listen || opts.catalog) {
+        tools.push({ name: 'events_conformance_catalog', inputSchema: obj });
+      }
+      if (opts.tenants) {
+        tools.push(
+          { name: 'events_conformance_subscribe_as', inputSchema: obj },
+          { name: 'events_conformance_subscription_exists', inputSchema: obj }
+        );
+      }
+      if (opts.webhookEnvelopeControls?.gap) {
+        tools.push({
+          name: 'events_conformance_webhook_gap',
+          inputSchema: obj
+        });
+      }
+      if (opts.webhookEnvelopeControls?.terminate) {
+        tools.push({
+          name: 'events_conformance_webhook_terminate',
+          inputSchema: obj
+        });
+      }
+      if (tools.length > 0 || opts.durability) {
+        send({ tools });
+        return;
+      }
+    }
+
+    if (
+      method === 'tools/call' &&
+      (opts.listen || opts.catalog) &&
+      params.name === 'events_conformance_catalog'
+    ) {
+      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      const catalog = opts.catalog ?? {};
+      /** End every open stream on name with error, as a server terminating them would. */
+      const terminateStreams = (
+        name: string,
+        error: { code: number; message: string; data?: unknown }
+      ) => {
+        for (const st of [...openStreams]) {
+          if (st.name !== name) continue;
+          st.notify('notifications/events/terminated', { error });
+          st.stop();
+          st.res.end();
+        }
+      };
+      if (args.op === 'add') {
+        catalogMinted += 1;
+        const name = `catalog.${catalogMinted}`;
+        names.add(name);
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${name}` }] });
+        return;
+      }
+      const target = String(args.name ?? '');
+      if (
+        args.op === 'remove' &&
+        target.startsWith('catalog.') &&
+        names.delete(target)
+      ) {
+        if (!catalog.removeSilently) {
+          terminateStreams(target, {
+            message: `event type ${target} was removed`,
+            ...(catalog.removeError ?? {
+              code: -32023,
+              data: { kind: 'event' }
+            })
+          });
+        }
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+        return;
+      }
+      if (
+        (args.op === 'retype' || args.op === 'extend') &&
+        target.startsWith('catalog.') &&
+        names.has(target)
+      ) {
+        if (args.op === 'retype' && !catalog.retypeSilently) {
+          terminateStreams(target, {
+            message: `event type ${target} changed its inputSchema in place`,
+            ...(catalog.retypeError ?? {
+              code: -32026,
+              data: { feature: 'inputSchema', reason: 'schema_changed' }
+            })
+          });
+        }
+        if (args.op === 'extend' && catalog.extendTerminates) {
+          terminateStreams(target, {
+            code: -32026,
+            message: 'changed',
+            data: { feature: 'inputSchema', reason: 'schema_changed' }
+          });
+        }
+        notifyListChanged();
+        send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+        return;
+      }
+      fail(-32602, `events_conformance_catalog cannot ${String(args.op)}`);
+      return;
+    }
+
+    if (method === 'subscriptions/listen' && opts.listen) {
+      const filter = (params.notifications ?? {}) as Record<string, unknown>;
+      const requested = filter.eventsListChanged === true;
+      const declared =
+        typeof opts.capability === 'object' &&
+        opts.capability !== null &&
+        (opts.capability as Record<string, unknown>).listChanged === true;
+      const echo = opts.listen.echo ?? 'honor';
+      const echoed =
+        requested && echo !== 'never' && (echo === 'always' || declared);
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      });
+      res.write(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/subscriptions/acknowledged',
+          params: {
+            _meta: { [SUBSCRIPTION_ID_META]: id },
+            notifications: echoed ? { eventsListChanged: true } : {}
+          }
+        })}\n\n`
+      );
+      const entry = { res, id, echoed };
+      listeners.add(entry);
+      req.on('close', () => listeners.delete(entry));
+      return;
+    }
+
+    if (
+      method === 'tools/call' &&
+      opts.noReplay &&
+      params.name === 'events_conformance_yield_gap'
+    ) {
+      const target = String(
+        ((params.arguments ?? {}) as Record<string, unknown>).name ?? ''
+      );
+      const isNoReplay = target === opts.noReplay.name;
+      for (const s of openStreams) {
+        if (s.name !== target) continue;
+        if (!isNoReplay) {
+          s.notify('notifications/events/active', {
+            cursor: 'cursor_after_gap',
+            truncated: true
+          });
+        } else if (opts.noReplay.truncatedOnGap) {
+          s.notify('notifications/events/active', {
+            cursor: null,
+            truncated: true
+          });
+        }
+      }
+      send({ content: [{ type: 'text', text: `ok: ${target}` }] });
+      return;
+    }
+    if (
+      method === 'tools/call' &&
+      opts.webhookEnvelopeControls &&
+      (params.name === 'events_conformance_webhook_gap' ||
+        params.name === 'events_conformance_webhook_terminate')
+    ) {
+      const isGap = params.name === 'events_conformance_webhook_gap';
+      const mode = isGap
+        ? opts.webhookEnvelopeControls.gap
+        : opts.webhookEnvelopeControls.terminate;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      const entry = [...subscriptions.entries()].find(
+        ([, sub]) => sub.id === toolArgs.id
+      );
+      const sub = entry?.[1];
+      if (!mode || !entry || !sub?.url) {
+        send({
+          content: [{ type: 'text', text: 'no such webhook subscription' }],
+          isError: true
+        });
+        return;
+      }
+      if (!isGap) subscriptions.delete(entry[0]);
+      if (mode !== 'silent') {
+        const run = deliverToCallback(
+          sub.url,
+          sub.secret,
+          sub.id,
+          sub.name ?? '',
+          {
+            verify: false,
+            sendEvent: false,
+            ...(isGap ? { gapEnvelope: mode } : { terminatedEnvelope: mode })
+          } as DeliveryBehaviour
+        ).finally(() => inFlight.delete(run));
+        inFlight.add(run);
+      }
+      send({
+        content: [{ type: 'text', text: isGap ? 'cursor_after_gap' : 'ok' }]
+      });
+      return;
+    }
+    if (
+      method === 'tools/call' &&
+      opts.tenants &&
+      (params.name === 'events_conformance_subscribe_as' ||
+        params.name === 'events_conformance_subscription_exists')
+    ) {
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      // The run's own principal holds the bare key; another tenant's carries
+      // its principal in front, unless the key is the defect under test.
+      const bare = [String(toolArgs.url), String(toolArgs.name), '{}'].join(
+        '|'
+      );
+      const key = opts.tenants.keyIgnoresPrincipal
+        ? bare
+        : `${String(toolArgs.principal)}#${bare}`;
+      if (params.name === 'events_conformance_subscribe_as') {
+        const held = subscriptions.get(key);
+        const subId = held?.id ?? hashKey(key);
+        subscriptions.set(key, {
+          id: subId,
+          url: String(toolArgs.url),
+          name: String(toolArgs.name)
+        });
+        send({ content: [{ type: 'text', text: subId }] });
+      } else {
+        send({
+          content: [{ type: 'text', text: String(subscriptions.has(key)) }]
+        });
+      }
+      return;
+    }
+    if (
+      method === 'tools/call' &&
+      params.name === 'events_conformance_quota' &&
+      opts.quota &&
+      opts.quota.control !== false
+    ) {
+      const text = JSON.stringify({
+        name: opts.quota.name,
+        max: opts.quota.max
+      });
+      send({ content: [{ type: 'text', text }] });
+      return;
+    }
+    if (
+      method === 'tools/call' &&
+      params.name === 'events_conformance_allow_callback_origin'
+    ) {
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      if (typeof toolArgs.origin !== 'string') {
+        send({
+          content: [{ type: 'text', text: 'origin required' }],
+          isError: true
+        });
+        return;
+      }
+      permittedOrigins.add(toolArgs.origin);
+      send({ content: [{ type: 'text', text: toolArgs.origin }] });
+      return;
+    }
+    if (opts.durability && method === 'tools/call') {
+      const d = opts.durability;
+      const text = (t: string) =>
+        send({ content: [{ type: 'text', text: t }] });
+      const tool = params.name;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      if (tool === 'events_conformance_restart') {
+        if (d.restartNoop) {
+          text(String(generation + 1));
+          return;
+        }
+        generation++;
+        for (const [key, sub] of [...subscriptions.entries()]) {
+          if (sub.noExpiry ? d.dropNoExpiryOnRestart : d.dropFiniteOnRestart) {
+            subscriptions.delete(key);
+          }
+        }
+        text(String(generation));
+        return;
+      }
+      if (tool === 'events_conformance_generation') {
+        text(String(generation));
+        return;
+      }
+      if (tool === 'events_conformance_subscription_state') {
+        const entry = [...subscriptions.entries()].find(
+          ([, sub]) => sub.id === toolArgs.id
+        );
+        if (!entry) {
+          text('absent');
+          return;
+        }
+        const [key, sub] = entry;
+        if (
+          d.gcAfterMs !== undefined &&
+          sub.noExpiry &&
+          Date.now() - (sub.at ?? 0) > d.gcAfterMs
+        ) {
+          subscriptions.delete(key);
+          text('absent');
+          return;
+        }
+        text('active');
+        return;
+      }
+      fail(-32602, `unknown tool ${String(tool)}`);
+      return;
+    }
+
+    if (method === 'server/discover') {
+      send({
+        supportedVersions: [DRAFT_PROTOCOL_VERSION],
+        capabilities:
+          'capability' in opts
+            ? { extensions: { [EVENTS_EXTENSION_ID]: opts.capability } }
+            : {},
+        serverInfo: { name: 'events-negative', version: '1.0.0' }
+      });
+      return;
+    }
+
+    if (method === 'events/list') {
+      if (opts.listError) {
+        fail(opts.listError.code, opts.listError.message);
+        return;
+      }
+      send({ events: descriptors });
+      return;
+    }
+
+    if (method === 'events/poll') {
+      polls.push(params);
+      const name = params.name;
+
+      if (typeof name !== 'string') {
+        fail(-32602, 'InvalidParams: `name` is required');
+        return;
+      }
+      if (!names.has(name)) {
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
+        return;
+      }
+
+      const byName = opts.pollByName?.[name];
+      const chosen =
+        byName ??
+        (queue.length > 1 ? queue.shift()! : (queue[0] ?? pollResult()));
+
+      // Argument validation against the fixture's own declared schema, so the
+      // invalid-arguments probe has something real to violate.
+      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      const decl = descriptors.find(
+        (d) => (d as { name?: unknown }).name === name
+      ) as { inputSchema?: { properties?: Record<string, { type?: string }> } };
+      for (const [key, value] of Object.entries(args)) {
+        const declared = decl?.inputSchema?.properties?.[key];
+        if (declared?.type === 'string' && typeof value !== 'string') {
+          fail(opts.invalidArgsCode ?? -32602, 'InvalidParams');
+          return;
+        }
+      }
+
+      if ('error' in chosen) {
+        const e = (chosen as { error: JsonRpcErrorShape }).error;
+        fail(e.code, e.message);
+        return;
+      }
+      send(chosen as Record<string, unknown>);
+      return;
+    }
+
+    if (method === 'events/subscribe' || method === 'events/unsubscribe') {
+      const behaviour = opts.subscribe ?? {};
+      const delivery = isRecord(params.delivery) ? params.delivery : {};
+      const name = params.name;
+      const url = delivery.url;
+      // The document's key, minus the principal a single run cannot vary.
+      const key = [
+        behaviour.idIgnoresUrl ? '' : String(url),
+        String(name),
+        JSON.stringify(params.arguments ?? {})
+      ].join('|');
+
+      if (method === 'events/unsubscribe') {
+        const held = subscriptions.has(key);
+        if (held && behaviour.unsubscribeHeldCode !== undefined) {
+          fail(behaviour.unsubscribeHeldCode, 'Unsubscribe refused');
+          return;
+        }
+        if (held) {
+          subscriptions.delete(key);
+          if (opts.tenants?.unsubscribeIgnoresPrincipal) {
+            for (const k of [...subscriptions.keys()]) {
+              if (k.endsWith(`#${key}`)) subscriptions.delete(k);
+            }
+          }
+          send({ ...(behaviour.unsubscribeResult ?? {}) });
+          return;
+        }
+        if (behaviour.unsubscribeUnknownOk) {
+          send({});
+          return;
+        }
+        fail(behaviour.unsubscribeUnknownCode ?? -32023, 'NotFound', {
+          kind: 'subscription'
+        });
+        return;
+      }
+
+      subscribes.push(params);
+      if (behaviour.error) {
+        fail(behaviour.error.code, behaviour.error.message);
+        return;
+      }
+
+      const rejectionCode = behaviour.rejectionCode ?? -32602;
+      const problem = secretProblem(delivery.secret, behaviour);
+      if (problem) {
+        fail(rejectionCode, `InvalidParams: \`delivery.secret\` (${problem})`);
+        return;
+      }
+      // A permitted origin bypasses the callback guards, which is what the real
+      // control does: one origin, both guards, for the rest of the process.
+      let callbackOrigin = '';
+      try {
+        callbackOrigin = new URL(String(url)).origin;
+      } catch {
+        callbackOrigin = '';
+      }
+      const permittedCallback =
+        callbackOrigin !== '' && permittedOrigins.has(callbackOrigin);
+
+      if (
+        !permittedCallback &&
+        !behaviour.acceptHttpUrl &&
+        (typeof url !== 'string' || !url.startsWith('https://'))
+      ) {
+        fail(rejectionCode, 'InvalidParams: `delivery.url` must be https');
+        return;
+      }
+      if (
+        !permittedCallback &&
+        behaviour.rejectNonRoutableUrl &&
+        typeof url === 'string' &&
+        nonRoutableHost(url)
+      ) {
+        fail(
+          rejectionCode,
+          'InvalidParams: `delivery.url` is not globally routable'
+        );
+        return;
+      }
+
+      const served = descriptors.find(
+        (d) => (d as { name?: unknown }).name === name
+      ) as { delivery?: unknown } | undefined;
+      if (!served) {
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
+        return;
+      }
+      const modes = Array.isArray(served.delivery) ? served.delivery : [];
+      if (!modes.includes('webhook') && !behaviour.acceptNonWebhookType) {
+        fail(-32026, 'Unsupported: event type does not offer webhook delivery');
+        return;
+      }
+
+      const ttl = params.ttlMs;
+      const reject = behaviour.rejectTtl;
+      const shortTtl = typeof ttl === 'number' && ttl <= 60_000;
+      const longTtl = typeof ttl === 'number' && ttl > 7 * 24 * 3600_000;
+      if (
+        (reject === 'both' && (shortTtl || longTtl)) ||
+        (reject === 'short' && shortTtl) ||
+        (reject === 'long' && longTtl)
+      ) {
+        fail(-32602, 'InvalidParams: `ttlMs` out of range');
+        return;
+      }
+
+      // An `id` supplied by the caller is a routing handle, never an input, so
+      // by default it has no bearing on which subscription this addresses.
+      const addressed =
+        behaviour.idIsAnInput && typeof params.id === 'string'
+          ? [...subscriptions.entries()].find(
+              ([, sub]) => sub.id === params.id
+            )?.[0]
+          : undefined;
+      const effectiveKey = addressed ?? key;
+
+      const existing = subscriptions.get(effectiveKey);
+      if (
+        !existing &&
+        behaviour.maxSubscriptions !== undefined &&
+        subscriptions.size >= behaviour.maxSubscriptions
+      ) {
+        fail(-32025, 'ResourceExhausted: subscription cap reached');
+        return;
+      }
+      const id =
+        existing && !behaviour.nonIdempotentId
+          ? existing.id
+          : behaviour.nonIdempotentId
+            ? `sub_${++mintedIds}_${hashKey(effectiveKey)}`
+            : hashKey(effectiveKey);
+      subscriptions.set(effectiveKey, {
+        id,
+        url: typeof url === 'string' ? url : undefined,
+        secret: delivery.secret,
+        name: String(name)
+      });
+
+      // Clamp rather than reject, and never hand back no-expiry unasked.
+      const cap = 7 * 24 * 3600_000;
+      let refreshBefore: unknown;
+      if (behaviour.refreshBefore !== undefined) {
+        refreshBefore = behaviour.refreshBefore;
+      } else if (behaviour.nullRefreshAlways) {
+        refreshBefore = null;
+      } else if (ttl === null) {
+        refreshBefore = null;
+      } else if (ttl === undefined) {
+        refreshBefore = behaviour.nullRefreshOnOmitted
+          ? null
+          : new Date(Date.now() + 3600_000).toISOString();
+      } else {
+        const granted = behaviour.grantBeyondSuggestion
+          ? Number(ttl) + 7 * 24 * 3600_000
+          : Math.min(Number(ttl), cap);
+        refreshBefore = new Date(Date.now() + granted).toISOString();
+      }
+      const held = subscriptions.get(effectiveKey);
+      if (held) {
+        held.noExpiry = refreshBefore === null;
+        held.at = held.at ?? Date.now();
+      }
+
+      if (opts.delivery?.verifyViaWellKnown && typeof url === 'string') {
+        await fetchReceiverWellKnown(url);
+      } else if (
+        opts.delivery?.synchronousVerification &&
+        typeof url === 'string'
+      ) {
+        const echoed = await challengeCallback(url, delivery.secret, id);
+        if (!echoed.ok && !opts.delivery.ignoreFailedEcho) {
+          const leak = opts.delivery.challengeFailureLeaksBody
+            ? `: endpoint answered ${echoed.body}`
+            : '';
+          fail(
+            opts.delivery.challengeFailureCode ?? -32027,
+            `endpoint verification failed${leak}`,
+            {
+              reason: opts.delivery.challengeFailureReason ?? 'challenge_failed'
+            }
+          );
+          return;
+        }
+      }
+
+      send({
+        ...(behaviour.omitId ? {} : { id }),
+        ...(behaviour.omitRefreshBefore ? {} : { refreshBefore }),
+        cursor: 'cursor_sub_001',
+        truncated: false,
+        ...deliveryStatusFor(existing !== undefined, url),
+        ...(behaviour.result ?? {})
+      });
+
+      // Delivery runs after the response, because that is the order a receiver
+      // sees it in: the subscribe returns, then the callback starts ringing.
+      if (opts.delivery && typeof url === 'string') {
+        const run = deliverToCallback(
+          url,
+          delivery.secret,
+          id,
+          String(name),
+          opts.delivery.synchronousVerification
+            ? { ...opts.delivery, verify: false }
+            : opts.delivery,
+          (status) => {
+            if (status >= 200 && status < 300) lastFailureByUrl.delete(url);
+            else lastFailureByUrl.set(url, status);
+          }
+        ).finally(() => inFlight.delete(run));
+        inFlight.add(run);
+      }
+      return;
+    }
+
+    if (method === 'events/stream') {
+      streams.push(params);
+      const behaviour = { ...CONFORMANT_STREAM, ...(opts.stream ?? {}) };
+      const name = params.name;
+
+      if (behaviour.error) {
+        fail(behaviour.error.code, behaviour.error.message);
+        return;
+      }
+      if (
+        !behaviour.acceptAnyName &&
+        (typeof name !== 'string' || !names.has(name))
+      ) {
+        fail(opts.unknownNameCode ?? -32023, 'NotFound', { kind: 'event' });
+        return;
+      }
+      const servedModes = (
+        descriptors.find((d) => (d as { name?: unknown }).name === name) as
+          | { delivery?: unknown }
+          | undefined
+      )?.delivery;
+      if (
+        !behaviour.acceptNonPushType &&
+        Array.isArray(servedModes) &&
+        !servedModes.includes('push')
+      ) {
+        fail(-32026, 'Unsupported: event type does not offer push delivery', {
+          feature: 'deliveryMode',
+          value: 'push'
+        });
+        return;
+      }
+      if (liveStreams >= behaviour.maxConcurrent) {
+        fail(
+          -32025,
+          'ResourceExhausted: too many subscriptions',
+          behaviour.capLimitName ? { limit: behaviour.capLimitName } : undefined
+        );
+        return;
+      }
+      const quota = opts.quota;
+      const capped = quota !== undefined && quota.name === name;
+      if (
+        capped &&
+        quota.enforce !== false &&
+        (liveByName.get(quota.name) ?? 0) >= quota.max
+      ) {
+        const limit =
+          quota.limitName === undefined ? 'subscriptions' : quota.limitName;
+        fail(
+          -32025,
+          'ResourceExhausted: subscription quota reached',
+          limit === null ? undefined : { limit, max: quota.max }
+        );
+        return;
+      }
+      if (behaviour.answerJson) {
+        send({});
+        return;
+      }
+
+      liveStreams += 1;
+      const key = String(name);
+      if (capped) liveByName.set(key, (liveByName.get(key) ?? 0) + 1);
+      const entry = openStream(
+        res,
+        id,
+        key,
+        behaviour,
+        opts.noReplay?.name === key,
+        opts.omitResultType === true
+      );
+      openStreams.add(entry);
+      const done = () => {
+        if (!openStreams.delete(entry)) return;
+        liveStreams -= 1;
+        if (capped) liveByName.set(key, (liveByName.get(key) ?? 1) - 1);
+        entry.stop();
+      };
+      req.on('close', done);
+      res.on('close', done);
+      return;
+    }
+
+    fail(-32601, `Method not found: ${method}`);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, () => resolve());
+  });
+  const addr = server.address() as AddressInfo;
+
+  return {
+    url: `http://localhost:${addr.port}/mcp`,
+    polls,
+    streams,
+    subscribes,
+    liveSubscriptions: () => [...subscriptions.keys()],
+    async close() {
+      // Let the callback stop ringing before the receiver goes away, so a
+      // pending fetch cannot outlive the test that started it.
+      await Promise.race([
+        Promise.allSettled([...inFlight]),
+        new Promise((resolve) => setTimeout(resolve, 2000))
+      ]);
+      for (const entry of [...openStreams]) {
+        openStreams.delete(entry);
+        entry.stop();
+        entry.res.destroy();
+      }
+      liveStreams = 0;
+      for (const l of [...listeners]) {
+        listeners.delete(l);
+        l.res.destroy();
+      }
+      server.closeAllConnections?.();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  };
+}
+
+/** Write the SSE frames a push subscription produces, on timers. */
+function openStream(
+  res: ServerResponse,
+  requestId: unknown,
+  name: string,
+  behaviour: StreamBehaviour & typeof CONFORMANT_STREAM,
+  noReplay = false,
+  omitResultType = false
+): {
+  res: ServerResponse;
+  stop: () => void;
+  name: string;
+  notify: (method: string, params: Record<string, unknown>) => void;
+} {
+  const timers: NodeJS.Timeout[] = [];
+  const stop = () => {
+    for (const t of timers) clearInterval(t);
+    timers.length = 0;
+  };
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  /** The correlation id goes where the behaviour says, not always in `_meta`. */
+  const correlate = (params: Record<string, unknown>) => {
+    if (behaviour.correlation === 'meta') {
+      return { ...params, _meta: { [SUBSCRIPTION_ID_META]: requestId } };
+    }
+    if (behaviour.correlation === 'requestId') {
+      return { ...params, requestId };
+    }
+    return params;
+  };
+  const notify = (method: string, params: Record<string, unknown>) => {
+    if (res.writableEnded) return;
+    res.write(
+      `data: ${JSON.stringify({ jsonrpc: '2.0', method, params: correlate(params) })}\n\n`
+    );
+  };
+  const after = (ms: number, fn: () => void) => {
+    const t = setTimeout(fn, ms);
+    timers.push(t);
+  };
+
+  if (!behaviour.omitActive) {
+    notify('notifications/events/active', {
+      cursor: noReplay ? null : 'cursor_stream_001',
+      truncated: false,
+      ...(behaviour.activeParams ?? {})
+    });
+  }
+
+  if (behaviour.heartbeatMs > 0) {
+    const beat = setInterval(() => {
+      notify('notifications/events/heartbeat', {
+        cursor: 'cursor_stream_001',
+        ...(behaviour.heartbeatParams ?? {})
+      });
+      if (behaviour.sseComments && !res.writableEnded) {
+        res.write(': keepalive\n\n');
+      }
+    }, behaviour.heartbeatMs);
+    timers.push(beat);
+  } else if (behaviour.sseComments) {
+    const beat = setInterval(() => {
+      if (!res.writableEnded) res.write(': keepalive\n\n');
+    }, 150);
+    timers.push(beat);
+  }
+
+  if (behaviour.eventAfterMs > 0) {
+    after(behaviour.eventAfterMs, () =>
+      notify('notifications/events/event', {
+        ...occurrence({ name }),
+        ...(behaviour.eventParams ?? {})
+      })
+    );
+  }
+
+  if (behaviour.foreignNotification) {
+    after(60, () => notify(behaviour.foreignNotification!, {}));
+  }
+  if (behaviour.errorNotificationAfterMs) {
+    after(behaviour.errorNotificationAfterMs, () =>
+      notify('notifications/events/error', {
+        code: -32603,
+        message: 'upstream unavailable, retrying'
+      })
+    );
+  }
+  if (behaviour.terminatedAfterMs) {
+    after(behaviour.terminatedAfterMs, () =>
+      notify('notifications/events/terminated', { reason: 'revoked' })
+    );
+  }
+  if (behaviour.gapAfterMs) {
+    after(behaviour.gapAfterMs, () =>
+      notify('notifications/events/active', {
+        cursor: 'cursor_stream_002',
+        truncated: true
+      })
+    );
+  }
+  if (behaviour.closeAfterMs) {
+    after(behaviour.closeAfterMs, () => {
+      if (res.writableEnded) return;
+      res.write(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: requestId,
+          result: behaviour.finalResult ?? {
+            ...(omitResultType ? {} : { resultType: 'complete' }),
+            _meta: { [SUBSCRIPTION_ID_META]: requestId }
+          }
+        })}\n\n`
+      );
+      stop();
+      res.end();
+    });
+  }
+
+  return { res, stop, name, notify };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Retry spacing. Over a second, because `webhook-timestamp` is in seconds and
+ * two attempts inside one second would share a stamp the fixture did freshen. */
+const RETRY_GAP_MS = 1100;
+
+/** Spacing between follow-up events, so they read as a cadence rather than a burst. */
+const FOLLOW_UP_GAP_MS = 300;
+
+/**
+ * The handshake as a server that verifies inside `events/subscribe` runs it:
+ * one signed `verification` POST, and true only for a 2xx whose body echoes the
+ * nonce. No retries and no redirects, the same as a delivery.
+ */
+async function fetchReceiverWellKnown(callbackUrl: string): Promise<boolean> {
+  try {
+    const origin = new URL(callbackUrl).origin;
+    const res = await fetch(`${origin}/.well-known/mcp-webhook-receiver.json`);
+    if (!res.ok) {
+      await res.text();
+      return false;
+    }
+    const doc: unknown = await res.json();
+    const prefixes =
+      isRecord(doc) && Array.isArray(doc.receivers) ? doc.receivers : [];
+    const path = new URL(callbackUrl).pathname;
+    return prefixes.some((p) => typeof p === 'string' && path.startsWith(p));
+  } catch {
+    return false;
+  }
+}
+
+async function challengeCallback(
+  url: string,
+  secret: unknown,
+  subscriptionId: string
+): Promise<{ ok: boolean; body: string }> {
+  const key =
+    typeof secret === 'string' && secret.startsWith('whsec_')
+      ? Buffer.from(secret.slice('whsec_'.length), 'base64')
+      : Buffer.from(String(secret ?? ''));
+  const challenge = `chal_${Math.random().toString(36).slice(2, 14)}`;
+  const body = JSON.stringify({ type: 'verification', challenge });
+  const webhookId = `msg_verification_${Math.random().toString(36).slice(2, 10)}`;
+  const stamp = String(Math.floor(Date.now() / 1000));
+  const signature = `v1,${createHmac('sha256', key).update(`${webhookId}.${stamp}.${body}`).digest('base64')}`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'webhook-id': webhookId,
+        'webhook-timestamp': stamp,
+        'webhook-signature': signature,
+        'x-mcp-subscription-id': subscriptionId
+      },
+      body,
+      redirect: 'manual'
+    });
+    const text = await res.text();
+    if (res.status < 200 || res.status >= 300) return { ok: false, body: text };
+    const reply: unknown = JSON.parse(text);
+    return {
+      ok: isRecord(reply) && reply.challenge === challenge,
+      body: text
+    };
+  } catch (err) {
+    return { ok: false, body: String(err) };
+  }
+}
+
+/**
+ * POST the verification challenge and then the event, the way the document says
+ * to, with whatever this behaviour breaks.
+ *
+ * Errors are swallowed: the callback is a receiver the scenario owns, it may
+ * refuse or vanish mid-run by design, and a fixture that threw here would fail
+ * the test rather than the check under test.
+ */
+async function deliverToCallback(
+  url: string,
+  secret: unknown,
+  subscriptionId: string,
+  eventName: string,
+  behaviour: DeliveryBehaviour,
+  onStatus?: (status: number) => void
+): Promise<void> {
+  let gone = false;
+  const key =
+    typeof secret === 'string' && secret.startsWith('whsec_')
+      ? behaviour.literalKeySignature
+        ? Buffer.from(secret)
+        : Buffer.from(secret.slice('whsec_'.length), 'base64')
+      : Buffer.from(String(secret ?? ''));
+
+  const headersFor = (webhookId: string, timestamp: string, body: string) => {
+    const omit = new Set(behaviour.omitHeaders ?? []);
+    const signature = `v1,${createHmac('sha256', key).update(`${webhookId}.${timestamp}.${body}`).digest('base64')}`;
+    const headers: Record<string, string> = {
+      'content-type': behaviour.contentType ?? 'application/json'
+    };
+    if (!omit.has('webhook-id')) headers['webhook-id'] = webhookId;
+    if (!omit.has('webhook-timestamp'))
+      headers['webhook-timestamp'] = timestamp;
+    if (!omit.has('webhook-signature'))
+      headers['webhook-signature'] = signature;
+    if (!behaviour.omitSubscriptionIdHeader) {
+      headers['x-mcp-subscription-id'] = behaviour.wrongSubscriptionIdHeader
+        ? 'sub_someone_elses'
+        : subscriptionId;
+    }
+    return headers;
+  };
+
+  /** One delivery, with the retry rules applied to whatever it answers. */
+  const post = async (
+    webhookId: string,
+    body: string,
+    opts: { retryable?: boolean } = {}
+  ): Promise<void> => {
+    const attempts = Math.max(1, behaviour.attempts ?? 3);
+    let stamp = String(Math.floor(Date.now() / 1000));
+    let target = url;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (attempt > 1 && !behaviour.staleRetrySignature) {
+        stamp = String(Math.floor(Date.now() / 1000));
+      }
+      let status: number;
+      let location: string | null = null;
+      try {
+        const res = await fetch(target, {
+          method: behaviour.method ?? 'POST',
+          headers: headersFor(webhookId, stamp, body),
+          body,
+          redirect: 'manual'
+        });
+        status = res.status;
+        location = res.headers.get('location');
+        await res.text();
+        onStatus?.(status);
+        if (status === 410) gone = true;
+      } catch {
+        return;
+      }
+
+      if (status === 302 && location) {
+        // A conformant server stops here. Following is the SSRF hazard the
+        // no-redirects rule exists for.
+        if (!behaviour.followRedirects) return;
+        target = location;
+        continue;
+      }
+      if (status >= 200 && status < 300) return;
+      if ((status === 410 || status === 413) && !behaviour.retryNonRetryable) {
+        return;
+      }
+      if (opts.retryable === false) return;
+      if (attempt === attempts) return;
+      await new Promise((resolve) =>
+        setTimeout(resolve, behaviour.retryGapMs ?? RETRY_GAP_MS)
+      );
+    }
+  };
+
+  const envelopeId = (type: string) =>
+    behaviour.envelopeIdFormat === 'plain'
+      ? `wh-${Math.random().toString(36).slice(2, 10)}`
+      : `msg_${type}_${Math.random().toString(36).slice(2, 10)}`;
+
+  /** Control envelopes are signed and headed exactly like deliveries — unless
+   * this behaviour is the one that says otherwise. */
+  const postEnvelope = async (
+    type: string,
+    body: Record<string, unknown>
+  ): Promise<void> => {
+    const json = JSON.stringify({ type, ...body });
+    if (behaviour.signEnvelopes === false) {
+      try {
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: json,
+          redirect: 'manual'
+        }).then((r) => r.text());
+      } catch {
+        // See above: a receiver refusing is the scenario's business.
+      }
+      return;
+    }
+    await post(envelopeId(type), json);
+  };
+
+  const postEvent = async (): Promise<void> => {
+    const data = behaviour.oversizedBody
+      ? { id: 'x', padding: 'p'.repeat(300 * 1024) }
+      : { id: 'x' };
+    await post(
+      envelopeId('event'),
+      JSON.stringify({
+        eventId: `evt_${Math.random().toString(36).slice(2, 10)}`,
+        name: eventName,
+        timestamp: new Date().toISOString(),
+        data
+      })
+    );
+  };
+
+  if (behaviour.eventBeforeVerification) {
+    await postEvent();
+    // The check compares millisecond arrival times, and two loopback POSTs land
+    // inside the same millisecond often enough to make the out-of-order case
+    // read as in-order. A real server delivering before it verifies is not this
+    // close, so the gap is realism rather than a thumb on the scale.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  if (behaviour.verify !== false) {
+    await postEnvelope('verification', {
+      challenge: `chal_${Math.random().toString(36).slice(2, 14)}`,
+      subscriptionId
+    });
+  }
+  if (behaviour.sendEvent !== false && !behaviour.eventBeforeVerification) {
+    await postEvent();
+    for (let i = 0; i < (behaviour.followUpEvents ?? 0); i++) {
+      await new Promise((resolve) => setTimeout(resolve, FOLLOW_UP_GAP_MS));
+      if (behaviour.stopAfterGone && gone) break;
+      await postEvent();
+    }
+  }
+  if (behaviour.gapEnvelope) {
+    const override = isRecord(behaviour.gapEnvelope)
+      ? behaviour.gapEnvelope
+      : {};
+    await postEnvelope('gap', {
+      cursor: 'cursor_after_gap',
+      ...override
+    });
+  }
+  if (behaviour.terminatedEnvelope) {
+    const override = isRecord(behaviour.terminatedEnvelope)
+      ? behaviour.terminatedEnvelope
+      : {};
+    await postEnvelope('terminated', {
+      error: { code: -32024, message: 'authorization revoked' },
+      ...override
+    });
+  }
+}
+
+/** A deterministic id over the subscription key, which is what the document asks for. */
+function hashKey(key: string): string {
+  return `sub_${createHash('sha256').update(key).digest('hex').slice(0, 24)}`;
+}
+
+export async function readJsonBody(
+  req: IncomingMessage
+): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+}
+
+/** Literal hosts a hardened server refuses without resolving anything. */
+function nonRoutableHost(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || host === '::1' || host === '::') return true;
+  const v4 = host.match(/^(\d+)\.(\d+)\.\d+\.\d+$/);
+  if (!v4) return /^f[cd]|^fe80:/.test(host);
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  return (
+    a === 127 ||
+    a === 10 ||
+    a === 0 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+}
