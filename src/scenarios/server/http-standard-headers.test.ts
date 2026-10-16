@@ -6,6 +6,10 @@ import {
   CUSTOM_HEADER_SERVER_DECLARED_CHECK_IDS
 } from './http-standard-headers';
 import type { ConformanceCheck } from '../../types';
+import {
+  createCustomHeaderPresenceServer,
+  type HeaderPresenceBehavior
+} from '../../../examples/servers/typescript/custom-header-presence';
 
 /**
  * Pins the untestable-failure policy (issue #248) for the SEP-2243 server
@@ -45,6 +49,119 @@ function mockFetchTarget(
 
 const findAll = (checks: ConformanceCheck[], id: string) =>
   checks.filter((c) => c.id === id);
+
+describe('http-custom-header-server-validation - empty versus absent', () => {
+  const caseNames = [
+    'ServerRejectsMissingEmptyCustomHeader',
+    'ServerRejectsEmptyHeaderForOmittedParam',
+    'ServerRejectsEmptyHeaderForNullParam'
+  ];
+
+  async function runPresenceScenario(
+    behavior: HeaderPresenceBehavior,
+    allParamsRequired = false
+  ) {
+    const fixture = createCustomHeaderPresenceServer(
+      behavior,
+      allParamsRequired
+    );
+    await new Promise<void>((resolve) =>
+      fixture.server.listen(0, '127.0.0.1', resolve)
+    );
+    const address = fixture.server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Fixture did not listen on a TCP port');
+    }
+    try {
+      const checks = await new HttpCustomHeaderServerValidationScenario().run(
+        testContext(`http://127.0.0.1:${address.port}/mcp`)
+      );
+      return { checks, requests: fixture.requests };
+    } finally {
+      fixture.server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        fixture.server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  }
+
+  test('rejects all three mismatches and preserves required parameters', async () => {
+    const { checks, requests } = await runPresenceScenario('correct');
+    for (const name of caseNames) {
+      for (const checkName of [name, `${name}ErrorCode`]) {
+        expect(
+          checks.find((c) => c.name === checkName)?.status,
+          checkName
+        ).toBe('SUCCESS');
+      }
+    }
+    expect(checks.every((c) => c.status === 'SUCCESS')).toBe(true);
+
+    const emptyHeaders = requests.filter(
+      (r) => r.headers['mcp-param-region'] === ''
+    );
+    expect(emptyHeaders).toHaveLength(2);
+    expect(emptyHeaders[0].body.params.arguments).not.toHaveProperty('region');
+    expect(emptyHeaders[1].body.params.arguments).toHaveProperty(
+      'region',
+      null
+    );
+    for (const request of emptyHeaders) {
+      expect(request.body.params.arguments.required_region).toBe(
+        'test-default'
+      );
+      expect(request.headers['mcp-param-requiredregion']).toBe('test-default');
+    }
+    const missingHeader = requests.find(
+      (r) => r.body.params?.arguments?.region === ''
+    );
+    expect(missingHeader).toBeDefined();
+    expect(missingHeader?.headers).not.toHaveProperty('mcp-param-region');
+  });
+
+  test.each<{
+    behavior: HeaderPresenceBehavior;
+    failedCases: string[];
+  }>([
+    {
+      behavior: 'empty-is-absent',
+      failedCases: caseNames.slice(1)
+    },
+    {
+      behavior: 'absent-is-empty',
+      failedCases: caseNames.slice(0, 1)
+    }
+  ])('detects $behavior behavior', async ({ behavior, failedCases }) => {
+    const { checks } = await runPresenceScenario(behavior);
+    expect(
+      checks.filter((c) => c.status === 'FAILURE').map((c) => c.name)
+    ).toEqual(failedCases.flatMap((name) => [name, `${name}ErrorCode`]));
+    for (const name of caseNames.filter((n) => !failedCases.includes(n))) {
+      expect(checks.find((c) => c.name === name)?.status, name).toBe('SUCCESS');
+    }
+  });
+
+  test('marks omitted/null probes untestable without an optional string parameter', async () => {
+    const { checks } = await runPresenceScenario('correct', true);
+    expect(
+      checks.find((c) => c.name === 'ServerRejectsMissingEmptyCustomHeader')
+        ?.status
+    ).toBe('SUCCESS');
+    for (const name of caseNames.slice(1)) {
+      expect(
+        checks.find((c) => c.name === name),
+        name
+      ).toMatchObject({
+        status: 'FAILURE',
+        details: { untestable: true },
+        errorMessage: expect.stringContaining(
+          'optional string-typed x-mcp-header'
+        )
+      });
+    }
+    expect(checks.some((c) => c.status === 'SKIPPED')).toBe(false);
+  });
+});
 
 describe('http-custom-header-server-validation — missing fixture policy', () => {
   test('emits untestable FAILUREs for every declared check when no x-mcp-header tool exists', async () => {

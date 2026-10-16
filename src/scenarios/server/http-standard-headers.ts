@@ -609,11 +609,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 
 **Endpoint**: Streamable HTTP with at least one tool using \`x-mcp-header\`
 
+**Fixture**: The omitted/null probes require an optional string-typed \`x-mcp-header\` parameter on the selected tool.
+
 **Requirements**:
 - Server MUST validate Base64-encoded header values
 - Server MUST reject requests with invalid Base64 padding or characters
 - Server MUST treat values without =?base64?...?= wrapper as literal
-- Server MUST reject requests where custom header is omitted but value is in body`;
+- Server MUST reject requests where custom header is omitted but value is in body, including an empty string
+- Server MUST reject a present empty custom header for an omitted or null parameter`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
@@ -680,13 +683,17 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
       };
 
-      // Find the first x-mcp-header annotated STRING property
-      // that is callable with minimal arguments to avoid schema validation failures
+      // Prefer an optional string so omission probes do not also violate a
+      // required-parameter constraint unrelated to header validation.
       const schema = xMcpTool.inputSchema as any;
-      const annotatedEntry = Object.entries(schema.properties).find(
+      const requiredParams: string[] = schema.required || [];
+      const annotatedEntries = Object.entries(schema.properties).filter(
         ([, def]: [string, any]) =>
           def['x-mcp-header'] !== undefined && (def as any).type === 'string'
       );
+      const annotatedEntry =
+        annotatedEntries.find(([name]) => !requiredParams.includes(name)) ??
+        annotatedEntries[0];
       if (!annotatedEntry) {
         checks.push(
           untestableCheck(
@@ -710,7 +717,6 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // These go in the JSON body, so number/boolean must be the real types —
       // sending '0' or 'false' as strings makes the server reject on JSON-schema
       // grounds and the header-validation checks below would false-pass on that 400.
-      const requiredParams: string[] = schema.required || [];
       const defaultArgs: Record<string, string | number | boolean> = {};
       const defaultHeaders: Record<string, string> = {};
       for (const rp of requiredParams) {
@@ -741,7 +747,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       const validBase64Value = Buffer.from('Hello').toString('base64');
 
       // Valid Base64 - server decodes and validates
-      await this.testBase64Case(
+      await this.testCustomHeaderCase(
         checks,
         serverUrl,
         baseHeaders,
@@ -765,7 +771,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       // strict rejection. SDKs whose stdlib decoders are lenient (Node
       // Buffer.from, browser atob) will need to validate before decoding; if
       // that proves burdensome we'll revisit.
-      await this.testBase64Case(
+      await this.testCustomHeaderCase(
         checks,
         serverUrl,
         baseHeaders,
@@ -784,7 +790,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
 
       // Invalid Base64 characters — FAILURE for the same reason as padding.
-      await this.testBase64Case(
+      await this.testCustomHeaderCase(
         checks,
         serverUrl,
         baseHeaders,
@@ -803,7 +809,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
 
       // Missing prefix - server treats as literal value
-      await this.testBase64Case(
+      await this.testCustomHeaderCase(
         checks,
         serverUrl,
         baseHeaders,
@@ -822,7 +828,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       );
 
       // Missing suffix - server treats as literal value
-      await this.testBase64Case(
+      await this.testCustomHeaderCase(
         checks,
         serverUrl,
         baseHeaders,
@@ -853,6 +859,67 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         defaultArgs,
         defaultHeaders
       );
+
+      await this.testMissingCustomHeader(
+        checks,
+        serverUrl,
+        baseHeaders,
+        nextId,
+        xMcpTool.name,
+        paramName,
+        headerSuffix,
+        defaultArgs,
+        defaultHeaders,
+        '',
+        'ServerRejectsMissingEmptyCustomHeader'
+      );
+
+      for (const testCase of [
+        {
+          name: 'ServerRejectsEmptyHeaderForOmittedParam',
+          value: undefined,
+          description:
+            'Server MUST reject a present empty custom header when the parameter is omitted'
+        },
+        {
+          name: 'ServerRejectsEmptyHeaderForNullParam',
+          value: null,
+          description:
+            'Server MUST reject a present empty custom header when the parameter is null'
+        }
+      ]) {
+        const checkId = 'sep-2243-server-validate-param-match';
+        if (requiredParams.includes(paramName)) {
+          checks.push(
+            untestableCheck(
+              checkId,
+              testCase.name,
+              testCase.description,
+              'selected tool exposes no optional string-typed x-mcp-header parameter for the omitted/null probes',
+              [SPEC_REFERENCE_CUSTOM]
+            )
+          );
+          continue;
+        }
+        await this.testCustomHeaderCase(
+          checks,
+          serverUrl,
+          baseHeaders,
+          nextId,
+          'reject',
+          checkId,
+          testCase.name,
+          testCase.description,
+          xMcpTool.name,
+          paramName,
+          testCase.value,
+          headerSuffix,
+          '',
+          defaultArgs,
+          defaultHeaders,
+          SPEC_REFERENCE_CUSTOM
+        );
+      }
     } catch (error) {
       checks.push({
         id: 'sep-2243-server-custom-setup',
@@ -918,7 +985,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     }
   }
 
-  private async testBase64Case(
+  private async testCustomHeaderCase(
     checks: ConformanceCheck[],
     serverUrl: string,
     baseHeaders: Record<string, string>,
@@ -929,11 +996,12 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     description: string,
     toolName: string,
     paramName: string,
-    bodyValue: string,
+    bodyValue: string | null | undefined,
     headerSuffix: string,
     headerValue: string,
     defaultArgs: Record<string, any>,
-    defaultHeaders: Record<string, string>
+    defaultHeaders: Record<string, string>,
+    specRef: { id: string; url: string } = SPEC_REFERENCE_BASE64
   ): Promise<void> {
     try {
       const response = await sendRawRequest(
@@ -973,7 +1041,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
             checkName,
             description,
             response,
-            SPEC_REFERENCE_BASE64,
+            specRef,
             details
           )
         );
@@ -990,7 +1058,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
             checkName,
             description,
             response,
-            SPEC_REFERENCE_BASE64,
+            specRef,
             details,
             { errorCodeSeverity: 'FAILURE' }
           )
@@ -1004,7 +1072,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         status: 'FAILURE',
         timestamp: new Date().toISOString(),
         errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: [SPEC_REFERENCE_BASE64]
+        specReferences: [specRef]
       });
     }
   }
@@ -1018,7 +1086,9 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     paramName: string,
     headerSuffix: string,
     defaultArgs: Record<string, any>,
-    defaultHeaders: Record<string, string>
+    defaultHeaders: Record<string, string>,
+    bodyValue = 'test-value',
+    checkName = 'ServerRejectsMissingCustomHeader'
   ): Promise<void> {
     try {
       // Send tools/call with value in body but NO Mcp-Param header
@@ -1032,7 +1102,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           // this case only omits the Mcp-Param header.
           params: withRequestMeta({
             name: toolName,
-            arguments: { ...defaultArgs, [paramName]: 'test-value' }
+            arguments: { ...defaultArgs, [paramName]: bodyValue }
           })
         },
         {
@@ -1051,14 +1121,14 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
         ...createRejectionChecks(
           'sep-2243-server-validate-param-match',
           PARAM_REJECT_ERROR_CODE_CHECK_ID,
-          'ServerRejectsMissingCustomHeader',
+          checkName,
           'Server MUST reject request where custom header is omitted but value is present in body',
           response,
           SPEC_REFERENCE_CUSTOM,
           {
             toolName,
             paramName,
-            bodyValue: 'test-value',
+            bodyValue,
             expectedHeader: `Mcp-Param-${headerSuffix}`,
             mcpParamHeader: '(missing)'
           },
@@ -1068,7 +1138,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
     } catch (error) {
       checks.push({
         id: 'sep-2243-server-validate-param-match',
-        name: 'ServerRejectsMissingCustomHeader',
+        name: checkName,
         description:
           'Server MUST reject request where custom header is omitted but value is present in body',
         status: 'FAILURE',
