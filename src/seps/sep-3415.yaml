@@ -70,7 +70,12 @@
 #   they keep resolving when the PR moves. Re-extract when the SEP's head
 #   moves past c47fd245.
 #
-# coverage: 136 declared checks plus 32 excluded rows. On 2026-10-15
+# coverage: 131 declared checks plus 37 excluded rows, and every declared
+#   check is emitted by a scenario. Five rows that nothing could emit moved to
+#   excluded on 2026-10-15 (panyam/mcpkit#1535): sep-3415-error-forbidden and
+#   the two sep-3415-authz-* rows need a second principal, payload-minimality
+#   has no observable verdict, and capability-client-declaration is a MAY.
+#   Earlier on 2026-10-15
 #   sep-3415-stream-mode-unsupported was added (#1417), and
 #   sep-3415-schema-evolution-additive and sep-3415-breaking-change-new-name
 #   moved to excluded (#1465): both are SHOULDs about how a server chooses to
@@ -187,26 +192,10 @@
 #   report untestable against both implementations, so the controls are the only
 #   evidence those checks work at all.
 #
-#   The 11 rows nothing emits yet, and what each needs:
-#     sep-3415-schema-evolution-additive, sep-3415-breaking-change-new-name
-#     and the four sep-3415-removal-* rows need a catalog that changes mid-run.
-#     events_conformance_catalog adds and removes types now (it drives
-#     sep-3415-list-changed-notification), which is enough for the removal
-#     rows once a scenario subscribes before the remove. The two
-#     schema-evolution rows also need it to alter a type in place
-#     (panyam/mcpkit#1465).
-#     sep-3415-error-forbidden is the last error-code table row with no probe:
-#     it needs a principal the harness can be refused as. The other three are
-#     claimed off the rule that provokes each, with details.gradedBy naming it:
-#     -32602 off the poll invalid-arguments probe, -32013 off the concurrent
-#     streams, -32015 off the wrong-challenge callback.
-#     sep-3415-capability-client-declaration is a MAY about what a client
-#     declares, so no server-side scenario can emit it. Declared for now; the
-#     honest place for it is `excluded:` beside the other MAY rows.
-#     sep-3415-authz-subscribe-time and -delivery-time-reverify need two
-#     principals with different permissions.
-#     sep-3415-payload-minimality is a SHOULD about payload content, which
-#     sep-3415-delivery-body-size measures the observable half of.
+#   Every declared row is emitted by some scenario. The rows that once had no
+#   emitter either gained one (the removal rows, through the catalog control's
+#   remove and retype, panyam/mcpkit#1465) or moved to excluded with the reason
+#   on the row.
 #
 # running them: events-push needs `--timeout 60000`, because it watches an idle
 #   stream for 35s and the document allows a 30s heartbeat cadence. A shorter
@@ -490,9 +479,6 @@ requirements:
   - check: sep-3415-capability-empty-settings
     text: 'An empty settings object declares event support with no list-change notifications.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
-  - check: sep-3415-capability-client-declaration
-    text: 'A client MAY declare the same identifier with an empty settings object, in its per-request capabilities, to indicate that it understands the extension:'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
   - check: sep-3415-capability-list-changed-gated
     text: 'A server that did not declare `listChanged: true` omits it from the acknowledged filter.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
@@ -551,9 +537,6 @@ requirements:
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-not-found
     text: '`NotFound` `-32023`: A referenced entity does not exist: an unknown event name, or no subscription that matches the key on `events/unsubscribe`. The method implies which. `data.kind` (`"event"` | `"subscription"`) MAY disambiguate.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
-  - check: sep-3415-error-forbidden
-    text: '`Forbidden` `-32024`: The authenticated principal is not permitted for this combination of event and arguments, or its access was revoked.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-resource-exhausted
     text: '`ResourceExhausted` `-32025`: A server-imposed limit or quota was reached. `data.limit` names it (for example `"subscriptions"`), and `data.max` MAY give the ceiling.'
@@ -913,23 +896,11 @@ requirements:
     text: '`terminated` `{"type":"terminated","error":{"code":...,"message":...,"data":...}}`: The subscription has ended, for example because authorization was revoked. The subscription no longer exists on the server.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
 
-  # === Authorization ===
-  - check: sep-3415-authz-subscribe-time
-    text: 'When the caller is authenticated, the server MUST verify that the principal has permission to subscribe to the requested event type with the given arguments.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
-  - check: sep-3415-authz-delivery-time-reverify
-    text: 'The server SHOULD periodically re-verify permissions.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
-
-  # === Payload handling (server side) ===
-  - check: sep-3415-payload-minimality
-    text: 'Servers SHOULD keep event payloads minimal: enough to identify and triage the event, and not the full content.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#payload-minimality
-
   # ==========================================================================
   # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a
-  # server wire obligation, so no server-side scenario can emit a check for it.
-  # Kept here so the keyword sweep stays auditable against the document.
+  # server wire obligation a harness can grade, so no server-side scenario can
+  # emit a check for it. Kept here so the keyword sweep stays auditable against
+  # the document.
   # ==========================================================================
 
   # --- Client / host obligations ---
@@ -1015,6 +986,20 @@ requirements:
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
     excluded: deployment advisory addressed to operators, not to an implementation
 
+  # --- Server obligations a single-principal harness cannot grade ---
+  - text: '`Forbidden` `-32024`: The authenticated principal is not permitted for this combination of event and arguments, or its access was revoked.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    excluded: needs a principal the harness can be refused as; a single-principal harness has no way to provoke -32024 (was sep-3415-error-forbidden, moved to excluded in panyam/mcpkit#1535)
+  - text: 'When the caller is authenticated, the server MUST verify that the principal has permission to subscribe to the requested event type with the given arguments.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
+    excluded: needs two principals with different permissions on the same event type; the harness authenticates as one (was sep-3415-authz-subscribe-time, moved to excluded in panyam/mcpkit#1535)
+  - text: 'The server SHOULD periodically re-verify permissions.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
+    excluded: needs two principals and a permission revoked mid-subscription, and 'periodically' sets no interval to wait for (was sep-3415-authz-delivery-time-reverify, moved to excluded in panyam/mcpkit#1535)
+  - text: 'Servers SHOULD keep event payloads minimal: enough to identify and triage the event, and not the full content.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#payload-minimality
+    excluded: a SHOULD about how much content a payload carries, which only the event's own semantics can judge; sep-3415-delivery-body-size grades the observable half (was sep-3415-payload-minimality, moved to excluded in panyam/mcpkit#1535)
+
   # --- Pure MAY / OPTIONAL (handoff disposition: no row) ---
   - text: 'A server MAY return `cursor: null` in any delivery (a poll result, a push `notifications/events/event` or `notifications/events/active`, a webhook payload) when the event type does not support replay.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
@@ -1031,6 +1016,9 @@ requirements:
   - text: '`deliveryStatus` is OPTIONAL, and servers MAY omit it entirely.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-delivery-status
     excluded: OPTIONAL by its own wording; a server omitting deliveryStatus entirely is conformant
+  - text: 'A client MAY declare the same identifier with an empty settings object, in its per-request capabilities, to indicate that it understands the extension:'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    excluded: a MAY about what a client declares, so it has no failing case, and no server-side scenario can see it (was sep-3415-capability-client-declaration, moved to excluded in panyam/mcpkit#1535)
   - text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
     excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-schema-evolution-additive, moved to excluded in panyam/mcpkit#1465)
