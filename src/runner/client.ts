@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { formatTally, tallyChecks } from './summary';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
@@ -264,12 +265,8 @@ export function printClientResults(
   warnings: number;
   overallFailure: boolean;
 } {
-  const denominator = checks.filter(
-    (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
-  ).length;
-  const passed = checks.filter((c) => c.status === 'SUCCESS').length;
-  const failed = checks.filter((c) => c.status === 'FAILURE').length;
-  const warnings = checks.filter((c) => c.status === 'WARNING').length;
+  const tally = tallyChecks(checks);
+  const { passed, failed, warnings, denominator } = tally;
 
   // Determine if there's an overall failure (failures, warnings, client timeout, or exit failure)
   const clientTimedOut = clientOutput?.timedOut ?? false;
@@ -292,9 +289,7 @@ export function printClientResults(
 
   // Test results summary goes to stderr
   console.error(`\nTest Results:`);
-  console.error(
-    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
-  );
+  console.error(formatTally(tally));
 
   if (clientTimedOut) {
     console.error(`\n⚠️  CLIENT TIMED OUT - Test incomplete`);
