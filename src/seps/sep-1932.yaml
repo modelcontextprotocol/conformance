@@ -6,7 +6,7 @@ requirements:
   - check: sep-1932-client-fresh-proof
     text: 'When making requests to protected MCP server resources, clients MUST include a fresh DPoP proof in the `DPoP` header'
   - check: sep-1932-client-token-request-proof
-    text: 'To obtain a DPoP-bound access token, the client MUST include a DPoP proof in the `DPoP` header of its token request (RFC 9449 Section 5)'
+    text: 'MCP clients conforming to this extension MUST obtain DPoP-bound access tokens by including a DPoP proof in the `DPoP` header of the token request, as defined in RFC 9449 Section 5'
   - check: sep-1932-client-as-nonce
     text: 'When the authorization server responds with `use_dpop_nonce`, the client MUST retry the token request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 8)'
   - check: sep-1932-client-rs-nonce
@@ -14,7 +14,7 @@ requirements:
   - check: sep-1932-server-validate-proof
     text: 'MCP servers MUST validate DPoP proofs according to RFC 9449 Section 4.3'
   - check: sep-1932-server-iat-window
-    text: "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time / MCP servers that are not capable of keeping state or performing global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation"
+    text: "Implementations conforming to this specification MUST reject DPoP proofs whose `iat` claim falls outside ±5 minutes of the server's current time. Servers MAY enforce a narrower acceptance window"
   - check: sep-1932-server-reject-401
     text: 'If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1'
   - check: sep-1932-as-metadata-alg-values
@@ -22,8 +22,10 @@ requirements:
   - check: sep-1932-as-no-none-alg
     text: 'Only asymmetric signature algorithms are permitted; the `none` algorithm MUST NOT be included'
   # Binding mechanics are defined in RFC 9449 (§6 cnf/jkt thumbprint, §5 token_type: DPoP), which the SEP builds on rather than restating.
+  # RFC 9449 behavior, applied unmodified by the profile ("Obtaining DPoP-Bound Access Tokens").
   - check: sep-1932-as-token-binding
     text: "When issuing a DPoP-bound access token, the authorization server MUST bind it to the client's DPoP public key by including a `cnf` claim carrying the JWK SHA-256 thumbprint (`jkt`) of that key (RFC 9449 Section 6) and MUST set the token response `token_type` to `DPoP` (RFC 9449 Section 5)"
+    url: https://www.rfc-editor.org/rfc/rfc9449.html#section-5
   - check: sep-1932-asymmetric-alg-only
     text: 'Only asymmetric signature algorithms MUST be used for DPoP proofs. Symmetric algorithms and the `none` algorithm MUST NOT be permitted as specified in RFC 9449 Section 11.6'
   - check: sep-1932-server-nonce
