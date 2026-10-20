@@ -109,6 +109,7 @@ export {
   buildStandardHeaders,
   withRequestMeta,
   mcpNameForRequest,
+  encodeMcpHeaderValue,
   readSseJsonRpcResponse,
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES,

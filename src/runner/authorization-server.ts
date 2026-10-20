@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import { formatTally, tallyChecks } from './summary';
 import path from 'path';
 import { ConformanceCheck, SpecVersion } from '../types';
 import {
@@ -70,12 +71,8 @@ export function printAuthorizationServerResults(
   denominator: number;
   warnings: number;
 } {
-  const denominator = checks.filter(
-    (c) => c.status === 'SUCCESS' || c.status === 'FAILURE'
-  ).length;
-  const passed = checks.filter((c) => c.status === 'SUCCESS').length;
-  const failed = checks.filter((c) => c.status === 'FAILURE').length;
-  const warnings = checks.filter((c) => c.status === 'WARNING').length;
+  const tally = tallyChecks(checks);
+  const { passed, failed, warnings, denominator } = tally;
 
   if (verbose) {
     console.log(JSON.stringify(checks, null, 2));
@@ -84,9 +81,7 @@ export function printAuthorizationServerResults(
   }
 
   console.log(`\nTest Results:`);
-  console.log(
-    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
-  );
+  console.log(formatTally(tally));
 
   if (failed > 0) {
     console.log('\n=== Failed Checks ===');
