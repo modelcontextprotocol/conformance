@@ -4,6 +4,7 @@ import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { takeWireViolations } from '../../../validation/wire-schema';
 import { EventsDiscoveryScenario } from './discovery';
 import { EventsPollScenario } from './poll';
+import { mcpNameChecks, mcpNameListExemptCheck } from './routing-headers';
 import {
   descriptor,
   occurrence,
@@ -579,5 +580,66 @@ describe('list_changed over subscriptions/listen', () => {
     const check = checks.get(NOTIFIED);
     expect(check?.status).toBe('FAILURE');
     expect(check?.errorMessage).toContain('subscriptions/listen');
+  });
+});
+
+describe('the Mcp-Name routing header', () => {
+  const MISSING = 'sep-3415-mcp-name-missing-rejected';
+  const MISMATCH = 'sep-3415-mcp-name-mismatch-rejected';
+  const LIST_EXEMPT = 'sep-3415-mcp-name-list-exempt';
+
+  /** Ids whose status differs between two runs. */
+  const flipped = (
+    a: Map<string, { status: string }>,
+    b: Map<string, { status: string }>
+  ) => [...a.keys()].filter((id) => a.get(id)?.status !== b.get(id)?.status);
+
+  test('a server that validates the header passes both poll rows', async () => {
+    const ok = await checksFor(poll(), CONFORMANT);
+    expect(ok.get(MISSING)?.status).toBe('SUCCESS');
+    expect(ok.get(MISMATCH)?.status).toBe('SUCCESS');
+  });
+
+  test('accepting a poll with no Mcp-Name fails only the missing row', async () => {
+    const ok = await checksFor(poll(), CONFORMANT);
+    const broken = await checksFor(poll(), {
+      ...CONFORMANT,
+      mcpName: 'acceptMissing'
+    });
+    expect(flipped(ok, broken)).toEqual([MISSING]);
+    expect(broken.get(MISSING)?.errorMessage).toContain('events/poll');
+  });
+
+  test('ignoring the header fails both poll rows', async () => {
+    const ok = await checksFor(poll(), CONFORMANT);
+    const broken = await checksFor(poll(), {
+      ...CONFORMANT,
+      mcpName: 'ignore'
+    });
+    expect(flipped(ok, broken).sort()).toEqual([MISMATCH, MISSING]);
+    expect(broken.get(MISMATCH)?.errorMessage).toContain('HTTP 200');
+  });
+
+  test('events/list without Mcp-Name passes, and refusing it fails only the exempt row', async () => {
+    const ok = await checksFor(discovery(), CONFORMANT);
+    expect(ok.get(LIST_EXEMPT)?.status).toBe('SUCCESS');
+    const broken = await checksFor(discovery(), {
+      ...CONFORMANT,
+      mcpName: 'requireOnList'
+    });
+    expect(broken.get(LIST_EXEMPT)?.status).toBe('FAILURE');
+    expect(flipped(ok, broken)).toContain(LIST_EXEMPT);
+  });
+
+  test('on the 2025-11-25 lifecycle the rows skip without sending anything', async () => {
+    const ctx = testContext('http://127.0.0.1:9/unreachable', '2025-11-25');
+    const checks = await mcpNameChecks(ctx, [
+      { method: 'events/poll', params: { name: 'x' } }
+    ]);
+    expect(checks.map((c) => [c.id, c.status])).toEqual([
+      [MISSING, 'SKIPPED'],
+      [MISMATCH, 'SKIPPED']
+    ]);
+    expect((await mcpNameListExemptCheck(ctx)).status).toBe('SKIPPED');
   });
 });

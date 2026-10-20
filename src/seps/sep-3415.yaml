@@ -1,9 +1,9 @@
-# spec_source: modelcontextprotocol/modelcontextprotocol@c47fd2451c91ad11708dd498ddee060a1d73aedc seps/0000-events-extension.md
-# extracted: 2026-09-15 against the design sketch; every row re-quoted against SEP-3415 at c47fd245 on 2026-10-14
+# spec_source: modelcontextprotocol/modelcontextprotocol@2ec39b9c49c583411b73cb460dea5f52b5c541a6 seps/0000-events-extension.md
+# extracted: 2026-09-15 against the design sketch; every row re-quoted against SEP-3415 at c47fd245 on 2026-10-14, and re-pinned to 2ec39b9c on 2026-10-20
 #
 # ############################################################################
 # # MCP Events is SEP-3415 (modelcontextprotocol/modelcontextprotocol#3415).  #
-# # Every row quotes the SEP at c47fd245 and carries a `url` to its section.  #
+# # Every row quotes the SEP at 2ec39b9c and carries a `url` to its section.  #
 # ############################################################################
 #
 #   SEP numbers are PR numbers in modelcontextprotocol/modelcontextprotocol.
@@ -68,15 +68,26 @@
 #   (src/new-sep/index.ts:19 hard-requires that prefix) still cannot point at
 #   it. `spec_url` and the per-row urls are pinned to the commit instead, so
 #   they keep resolving when the PR moves. Re-extract when the SEP's head
-#   moves past c47fd245.
+#   moves past 2ec39b9c.
 #
-# coverage: 142 declared checks plus 31 excluded rows, and every declared
+#   Re-pinned from c47fd245 to 2ec39b9c on 2026-10-20, after the rmcp
+#   implementers pointed out the gap on conformance PR 521. One commit between
+#   them is normative: "Streamable HTTP: Routing Headers", which requires
+#   `Mcp-Name: <params.name>` on events/poll, events/stream, events/subscribe
+#   and events/unsubscribe, rejects a missing or mismatched header with 400 and
+#   -32020, and drops Open Question 8, which had asked whether to. Every
+#   existing row's text and section anchor was checked against the new file
+#   and none changed. Three rows are new (sep-3415-mcp-name-*).
+#
+# coverage: 143 declared checks plus 33 excluded rows, and every declared
 #   check is emitted by a scenario.
 #
-#   131 server rows (see the server branch's header: the 2026-10-14
-#   re-extraction dropped one and added two, and on 2026-10-15 one more was
-#   added and seven moved to excluded, five of them because nothing could
-#   emit them, panyam/mcpkit#1535), plus 11 client rows: ten added with
+#   132 server rows (see the server branch's header: the 2026-10-14
+#   re-extraction dropped one and added two, on 2026-10-15 one more was added
+#   and seven moved to excluded, five of them because nothing could emit
+#   them, panyam/mcpkit#1535, and on 2026-10-20 the three
+#   sep-3415-mcp-name-* rows were added and two more moved to excluded), plus
+#   11 client rows: ten added with
 #   the client scenarios in modelcontextprotocol/conformance#540, and
 #   sep-3415-client-listen-opt-in with mcpkit #1505. Seven of the ten were
 #   excluded here as client obligations before a client scenario set existed. The other
@@ -86,15 +97,16 @@
 #   half of "Absent means null", which binds a client reading a poll response
 #   as much as a server reading a request.
 #
-#   A keyword sweep of SEP-3415 at c47fd245, outside code blocks and before the
-#   non-normative Appendix A, finds 135 RFC 2119 keyword occurrences: 33 MUST,
-#   10 MUST NOT, 3 REQUIRED, 46 SHOULD, 9 SHOULD NOT (101 normative), plus 33
-#   MAY and 1 OPTIONAL. The design sketch these rows were first extracted from
+#   A keyword sweep of SEP-3415 at 2ec39b9c, outside code blocks and before the
+#   non-normative Appendix A, finds 137 RFC 2119 keyword occurrences: 35 MUST,
+#   10 MUST NOT, 3 REQUIRED, 46 SHOULD, 9 SHOULD NOT (103 normative), plus 33
+#   MAY and 1 OPTIONAL. The two MUSTs over c47fd245 are both in Routing
+#   Headers, and both bind the client. The design sketch these rows were first extracted from
 #   had 144 (109 normative); the SEP states fewer rules with keywords and more
 #   as tables and examples.
 #
-#   Only 56 of the declared rows quote a sentence carrying a keyword. The other
-#   91 are shape requirements the document states declaratively — the
+#   Only 55 of the declared rows quote a sentence carrying a keyword. The other
+#   88 are shape requirements the document states declaratively — the
 #   `EventOccurrence` field table, the error-code table, the `events/list`
 #   descriptor fields, the response payloads. They are normative and directly
 #   testable, they are simply not written with a keyword, which is why the row
@@ -474,7 +486,7 @@
 #   The rest of the gap is untestable rather than wrong: rows that need the
 #   `events_conformance_*` controls only kitchen-sink exposes, the
 #   unsupported-mode rows (its one type offers all three modes), the restart
-#   rows, and subscribe-auth-required.
+#   rows, and subscribe-auth-required (excluded since 2026-10-20).
 #
 #   One harness bug, fixed here: a scenario that met a transport error (the
 #   502) threw out of run() and reported nothing, so the runner printed
@@ -483,469 +495,474 @@
 #
 sep: 3415
 # SEP-3415 pinned at the commit every row quotes. See the header.
-spec_url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md
+spec_url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md
 requirements:
   # === Capability Declaration ===
   - check: sep-3415-capability-events-object
     text: "the identifier appears as a key in the `extensions` field of capabilities, mapped to the extension's settings object."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
   - check: sep-3415-capability-list-changed-flag
     text: "The server's settings object has one member: `listChanged` (boolean, optional, default `false`), which says whether the server sends `notifications/events/list_changed`"
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
   - check: sep-3415-capability-empty-settings
     text: 'An empty settings object declares event support with no list-change notifications.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
   - check: sep-3415-capability-list-changed-gated
     text: 'A server that did not declare `listChanged: true` omits it from the acknowledged filter.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#dynamic-event-types
   - check: sep-3415-fallback-method-not-found
     text: 'a server that does not offer it answers any `events/*` request with `-32601` (Method not found).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
 
   # === Listing Available Events ===
   - check: sep-3415-list-implemented
     text: 'A server lists its event types with `events/list`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#abstract
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#abstract
   - check: sep-3415-list-pagination
     text: '"nextCursor": "...", // present when more pages are available; same semantics as tools/list'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
   - check: sep-3415-descriptor-name
     text: 'Each event type has a name, an `inputSchema` for subscription arguments, a `payloadSchema`, and the delivery modes it supports.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#abstract
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#abstract
   - check: sep-3415-descriptor-delivery-subset
     text: '`delivery` lists the delivery modes the event type supports. It is any non-empty subset of `"poll"`, `"push"` and `"webhook"`. No mode is mandatory.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
   - check: sep-3415-descriptor-input-schema
     text: '`inputSchema` is a JSON Schema for valid subscription arguments.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
   - check: sep-3415-descriptor-payload-schema
     text: '`payloadSchema` is a JSON Schema for `data` in delivered events.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
   - check: sep-3415-descriptor-meta
     text: '"_meta": { "...": "..." }, // optional; same semantics as on Tool/Resource/Prompt'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
 
   # === Dynamic Event Types ===
   - check: sep-3415-list-changed-notification
     text: 'If the set of available event types changes at runtime, or the descriptor of any of them changes (`description`, `delivery`, `inputSchema`, `payloadSchema`), a server that declared `listChanged: true` sends `notifications/events/list_changed`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#dynamic-event-types
 
   # === Event Type Removal and Breaking Changes (spec commit 28ec35e9) ===
   - check: sep-3415-removal-terminates-subscriptions
     text: "The server SHOULD end them with each mode's termination signal (see [Subscription Termination](#subscription-termination)): `notifications/events/terminated` on push streams, and a `terminated` envelope to webhook subscriptions."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-error-not-found
     text: '`NotFound` with `data: {"kind": "event"}` when the type was removed.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-error-schema-changed
     text: '`Unsupported` with `data: {"feature": "payloadSchema" | "inputSchema", "reason": "schema_changed"}` when it was changed in place. It is not `Forbidden`, because the principal''s access is unchanged.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-additive-no-terminate
     text: 'Purely additive changes MUST NOT terminate subscriptions.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
   - check: sep-3415-removal-poll-not-found
     text: 'Poll holds no server-side subscription to terminate. A poll against a removed name already returns `NotFound`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-type-removal-and-breaking-changes
 
   # === Error Codes ===
   - check: sep-3415-error-invalid-params
     text: "`InvalidParams` `-32602`: The request is statically invalid: the arguments do not match the event's `inputSchema`, the callback `delivery.url` is malformed or not `https`, or `delivery.secret` is not a valid `whsec_` value. This is the standard JSON-RPC code."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-not-found
     text: '`NotFound` `-32023`: A referenced entity does not exist: an unknown event name, or no subscription that matches the key on `events/unsubscribe`. The method implies which. `data.kind` (`"event"` | `"subscription"`) MAY disambiguate.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-resource-exhausted
     text: '`ResourceExhausted` `-32025`: A server-imposed limit or quota was reached. `data.limit` names it (for example `"subscriptions"`), and `data.max` MAY give the ceiling.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-unsupported
     text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-callback-endpoint-error
     text: '`CallbackEndpointError` `-32027`: A client-supplied callback endpoint failed verification or could not be reached (webhook mode only). `data.reason` is one of the `lastError` categories (`connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx`, `challenge_failed`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-error-server-range
     text: 'The core specification partitions the JSON-RPC implementation-defined range: `-32000` to `-32019` is left to implementations and is never defined by the specification, and `-32020` to `-32099` is allocated sequentially by the specification. This SEP requests the next five codes in the allocated range.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
 
   # === Results (SEP-3415 conventions) ===
   - check: sep-3415-result-type-complete
     text: 'Every result this extension defines is a standard `Result` and carries `resultType: "complete"`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#specification
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#specification
 
   # === Poll-Based Delivery ===
   - check: sep-3415-poll-implemented
     text: 'The client calls `events/poll` with the event name, arguments and cursor.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#delivery-modes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#delivery-modes
   - check: sep-3415-poll-one-subscription-per-request
     text: 'Each `events/poll` request carries one subscription.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#request-eventspoll
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#request-eventspoll
   - check: sep-3415-poll-bootstraps-subscription
     text: 'There is no separate subscribe step: the first poll with a `null` cursor bootstraps the subscription.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#delivery-modes
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#delivery-modes
   - check: sep-3415-poll-events-array
     text: 'An empty `events` array means nothing happened.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-response-cursor
     text: 'Poll covers this inherently, because every response carries `cursor`, including when `events` is empty.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-poll-next-poll-ms
     text: '`nextPollMs` lets the server adjust polling frequency, for example to back off when it is rate-limited upstream or to speed up when it sees activity.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-next-poll-ms-ignored-when-has-more
     text: 'It is ignored when `hasMore` is `true`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-has-more
     text: '`hasMore` says whether more events are available beyond the returned batch.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-max-events-cap
     text: '`maxEvents` is an optional cap on the number of events returned. If more events are available than the cap, the server returns a partial batch with an intermediate cursor and sets `hasMore: true`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-stateless-request
     text: 'Each poll request is self-contained: the client provides the event name, arguments and cursor, and the server does not need to remember earlier polls to answer it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-errors-are-jsonrpc
     text: 'Errors (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`) are returned as a standard JSON-RPC error response.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-poll-invalid-arguments
     text: "`InvalidParams` `-32602`: The request is statically invalid: the arguments do not match the event's `inputSchema`, the callback `delivery.url` is malformed or not `https`, or `delivery.secret` is not a valid `whsec_` value. This is the standard JSON-RPC code."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-poll-mode-unsupported
     text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
 
   # === EventOccurrence schema ===
   - check: sep-3415-occurrence-event-id
     text: '`eventId` string yes: Stable identifier for deduplication.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-name
     text: '`name` string yes: Event type name.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-timestamp
     text: '`timestamp` string (ISO 8601) yes: When the event occurred.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-data
     text: "`data` object yes: Payload that conforms to the event type's `payloadSchema`."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-cursor-optional
     text: '`cursor` string | null no: Subscription position after this event. Push and webhook only; poll carries the cursor at the response level. `null` when the event type does not support replay (see [Cursor Lifecycle](#cursor-lifecycle)).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-meta-ungoverned
     text: '`_meta` object no: Reserved for protocol and extension metadata, consistent with `_meta` on other MCP types. Not governed by `payloadSchema`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-occurrence-event-id-from-upstream
     text: 'When the upstream source provides a stable event identifier (a Stripe `evt_*`, a GitHub delivery GUID, a Kafka offset, a Gmail message ID), the server SHOULD use that value as `eventId`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
 
   # === Cursor Lifecycle ===
   - check: sep-3415-cursor-opaque
     text: 'Cursors are opaque strings managed by the server. They represent a position in the event stream.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-cursor-null-starts-from-now
     text: 'Passing `cursor: null` in any mode means "start from now". The server returns a fresh cursor for the current position, or `null` if the event type does not support replay. No historical events are replayed.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-cursor-absent-equals-null
     text: 'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`. A sender MAY omit the field in place of writing `null`, and a receiver MUST NOT fail because it is missing.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-cursor-consistency
     text: 'Servers SHOULD be consistent: an event type that ever returns a non-null cursor SHOULD always do so, and one that returns `null` SHOULD always return `null`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-cursor-advances-when-quiet
     text: "The client's persisted cursor has to advance during quiet periods, so that it does not fall outside the upstream's retention window when nothing is happening. Poll covers this inherently, because every response carries `cursor`, including when `events` is empty."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-max-age-ms-floor
     text: 'All three modes accept an optional `maxAgeMs` (integer milliseconds) alongside `cursor`. When it is present, the server begins replay from whichever is _later_: the supplied `cursor`, or `now − maxAgeMs`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-max-age-ms-sets-truncated
     text: 'If the floor advances past the cursor, the server SHOULD set `truncated: true` on the first response (the poll result, `notifications/events/active`, or the webhook subscribe response), so that the client knows older events were skipped.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-max-age-ms-ignored-when-cursor-null
     text: '`maxAgeMs` is ignored when `cursor` is `null`, because `null` already means "now" and replay from before the subscription''s start is out of scope.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-replay-ceiling-sets-truncated
     text: 'Servers MAY also apply their own replay ceiling independent of `maxAgeMs`, and MUST signal it with `truncated: true` when they do.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-truncated-returns-fresh-cursor
     text: 'In every case the server resets to a position it can serve from, returns that position as the fresh `cursor` alongside `truncated: true`, and continues. The client never reconnects or resubscribes in response.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-truncated-poll-never-an-error
     text: 'Poll: The result body: `{events:[], cursor:<fresh>, truncated:true, hasMore, nextPollMs}`. Never a JSON-RPC error.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-truncated-false-when-no-replay
     text: 'For event types that do not support replay, where `cursor` is always `null`, `truncated` SHOULD be `false` and clients SHOULD ignore it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
 
   # === Push-Based Delivery ===
   - check: sep-3415-stream-implemented
     text: 'Push delivery uses a long-lived `events/stream` request, one per subscription. The client opens a stream for each subscription, and the server delivers events as they occur. The request is a standard JSON-RPC request with an `id`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#push-based-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#push-based-delivery
   - check: sep-3415-stream-error-before-open
     text: 'If the subscription is invalid (`NotFound`, `Forbidden`, `InvalidParams`, `Unsupported`), the server responds immediately with a JSON-RPC error and no stream is opened.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-mode-unsupported
     text: '`Unsupported` `-32026`: The request is well-formed, but a requested capability or option is not supported here, for example a delivery mode that the event type does not offer. `data` identifies it (for example `{ "feature": "deliveryMode", "value": "push" }`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
   - check: sep-3415-stream-active-confirmation
     text: 'Otherwise the server confirms the subscription with `notifications/events/active`, and then delivers events as notifications.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-subscription-id-meta
     text: 'Every `notifications/events/*` message carries the JSON-RPC `id` of the parent `events/stream` request in `params._meta["io.modelcontextprotocol/subscriptionId"]`, the correlation key the core protocol defines for subscription streams.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-event-notification
     text: "Each entry in a poll result's `events[]`, the params of `notifications/events/event`, and the body of a webhook event delivery is an `EventOccurrence`."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-occurrences
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-occurrences
   - check: sep-3415-stream-error-is-recoverable
     text: '`notifications/events/error` reports a recoverable failure, such as a single failed upstream fetch. The subscription stays active, and the server retries and resumes.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-terminated-ends-subscription
     text: 'Only `notifications/events/terminated` ends the subscription'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-gap-resends-active
     text: "A gap, such as a cursor that fell outside the upstream's retention window, is not an error. The server sends a fresh `notifications/events/active` with `truncated: true` and a new cursor, and continues delivering"
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-delivery
   - check: sep-3415-stream-heartbeat-required
     text: 'The server MUST send periodic keepalive messages on the push stream, so that the client can tell "nothing to send" from "the connection is dead".'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-heartbeat-carries-cursor
     text: "`cursor` is the position the server has checked up to, so the client's persisted cursor advances even when no events match (see [Cursor Lifecycle](#cursor-lifecycle)). It is `null` for event types that do not support replay."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-heartbeat-interval
     text: 'The server SHOULD send a heartbeat at least every 30 seconds.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-heartbeat-not-sse-comment
     text: 'On Streamable HTTP the heartbeat is an SSE `data:` frame. The SSE comment form (`: keepalive`) is not used, because it cannot carry cursor state.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-final-result-shape
     text: 'The `StreamEventsResult` is an empty result that carries only `resultType` and the subscription ID in `_meta`, mirroring `SubscriptionsListenResult`. It carries no information.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-final-result-timing
     text: "It is sent whenever the server can write a final frame: on Streamable HTTP only when the server initiates the close, and on stdio at the server's discretion. Clients MUST NOT depend on receiving it."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-cancel-stops-delivery
     text: 'In both cases the server MUST stop delivering events and release the associated resources.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-exempt-from-concurrency-cap
     text: 'Server SDKs MUST exempt `events/stream` from any general cap on concurrent requests, because each push subscription is a long-lived request that does not complete until it is cancelled.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-stream-carries-only-event-notifications
     text: "The stream carries only this subscription's `notifications/events/*` messages. It is not a general server-to-client channel."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#push-based-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#push-based-delivery
 
   # === Webhook: subscribing ===
   - check: sep-3415-subscribe-webhook-only
     text: '`events/subscribe` is used only for webhook delivery. Poll and push do not need it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-secret-required
     text: '`delivery.secret` is REQUIRED. The client supplies the HMAC signing secret, and the server never generates one.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-secret-format
     text: 'The value MUST be a Standard Webhooks symmetric secret: the literal prefix `whsec_` followed by the base64 encoding of 24 to 64 random bytes.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-secret-rejected
     text: 'The value MUST be a Standard Webhooks symmetric secret: the literal prefix `whsec_` followed by the base64 encoding of 24 to 64 random bytes. Servers MUST reject other values with `InvalidParams`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-url-https-required
     text: 'Callback URLs MUST use `https://`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-subscribe-url-non-https-rejected
     text: 'Servers MUST reject `events/subscribe` with a non-`https` `delivery.url` (`InvalidParams`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
-  - check: sep-3415-subscribe-auth-required
-    text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal. Servers MUST reject calls without an authorized principal with `Forbidden`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-subscribe-key-composition
     text: 'The subscription key is `(principal, delivery.url, name, arguments)`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-key-immutable
     text: "All four components are immutable for the subscription's lifetime. A subscribe call with a different value for any of them addresses a different subscription."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-idempotent-upsert
     text: "`events/subscribe` is idempotent within the caller's subscription scope. If a subscription with the same scoped key exists, the server resets the TTL and updates the mutable fields in place."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-id-derived
     text: 'The server computes a deterministic `id` over the key, for example a truncated SHA-256 of the canonical key serialization, and returns it in the subscribe response.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-id-not-an-input
     text: "A caller who learns another tenant's derived `id` gains nothing, because `id` is not accepted as input to any method."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
-  - check: sep-3415-subscribe-refresh-replaces-secret
-    text: 'The client supplies a new `delivery.secret` on a refresh call, and the idempotent upsert replaces it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-refresh-reactivates
     text: 'A later successful refresh reactivates the subscription (sets `active: true`), and the server resumes retrying pending events.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
   - check: sep-3415-subscribe-response-cursor
     text: "It computes a safe-to-persist watermark, includes it in each delivered payload (see [Webhook event delivery](#webhook-event-delivery)), and returns the same watermark in each subscribe or refresh response, so the client's cursor advances during quiet periods."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-response-truncated
     text: 'Webhook: The subscribe or refresh response: `{id, refreshBefore, cursor:<fresh>, truncated:true, ...}`. For a gap detected between refreshes, the server POSTs a `{"type":"gap","cursor":"<fresh>"}` control envelope, so that the client learns of it without waiting for the next refresh.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-subscribe-refresh-before-present
     text: "`refreshBefore` (response, always present, nullable) is the server's authoritative grant: an ISO 8601 timestamp for when the subscription expires, or `null` for no expiry."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-subscribe-cross-tenant-isolation
     text: 'Because the key includes `principal` and `delivery.url`, two tenants that subscribe to the same `(name, arguments)` get distinct subscriptions.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-identity
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
 
   # === Webhook: TTL negotiation ===
   - check: sep-3415-ttl-refresh-before-lte-suggestion
     text: '`refreshBefore` (response) is the grant. It SHOULD be less than or equal to the suggestion.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
   - check: sep-3415-ttl-no-rejection-path
     text: 'Clamping in either direction announces itself. The client reads the granted `refreshBefore` and schedules its refresh loop from that, so a clamped grant is not an error, and there is no rejection path for TTL values.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
   - check: sep-3415-ttl-null-only-when-requested
     text: 'A server MUST NOT return `null` unless the client suggested `ttlMs: null`, because no expiry exceeds every finite suggestion.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
   - check: sep-3415-ttl-omitted-means-default
     text: 'Omitting the field means "server default". An explicit `ttlMs: null` requests a subscription with **no expiry**.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
   - check: sep-3415-ttl-long-grant-retained
     text: 'A server that grants long or no-expiry TTLs MUST retain subscriptions for the lifetime it granted, including across restarts.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-ttl-no-expiry-persisted
     text: 'The server MUST persist no-expiry subscriptions across restarts, because a client that never refreshes will never detect or repair one that was silently dropped.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
   - check: sep-3415-ttl-no-expiry-gc-terminated
     text: 'The server MAY drop a no-expiry subscription after sustained delivery failure over a server-defined window, and SHOULD attempt a `terminated` envelope when it does.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
 
   # === Webhook: unsubscribing ===
   - check: sep-3415-unsubscribe-by-key
     text: '`events/unsubscribe` resolves the subscription with the same key as `events/subscribe`: `(principal, delivery.url, name, arguments)`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#unsubscribing-eventsunsubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#unsubscribing-eventsunsubscribe
   - check: sep-3415-unsubscribe-empty-result
     text: 'The result is an empty `Result`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#unsubscribing-eventsunsubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#unsubscribing-eventsunsubscribe
   - check: sep-3415-unsubscribe-unknown-not-found
     text: '`NotFound` `-32023`: A referenced entity does not exist: an unknown event name, or no subscription that matches the key on `events/unsubscribe`. The method implies which. `data.kind` (`"event"` | `"subscription"`) MAY disambiguate.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
 
   # === Webhook: delivery status ===
   - check: sep-3415-delivery-status-last-error-category
     text: '`lastError` MUST be a server-generated category string, one of `connection_refused`, `timeout`, `tls_error`, `http_4xx`, `http_5xx` or `challenge_failed`. It MUST NOT include raw response bodies, headers or status lines from the endpoint, so that it cannot serve as a response oracle for attacker-chosen URLs.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-delivery-status
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-delivery-status
 
   # === Webhook: delivery mechanics ===
   - check: sep-3415-delivery-post-json
     text: 'Deliveries are HTTP `POST` only. - **Content-Type.** `application/json`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-standard-webhooks-headers
     text: 'Every delivery MUST include `webhook-id`, `webhook-timestamp` and `webhook-signature`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-subscription-id-header
     text: 'Deliveries MUST also include `X-MCP-Subscription-Id` (the subscription `id`), so that the receiver can select the correct secret without parsing the body.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-signature-formula
     text: 'The signature is `HMAC-SHA256(secret, webhook-id + "." + webhook-timestamp + "." + body)`, encoded as base64 with a `v1,` prefix. `body` is the raw HTTP request body bytes exactly as received, before any parsing or re-serialization. The `webhook-id + "." + webhook-timestamp + "."` prefix is UTF-8. `secret` is the base64-decoded bytes of the value after the `whsec_` prefix.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-retry-regenerates-signature
     text: "Each retry attempt MUST regenerate the timestamp and signature, so that retries are not rejected by the receiver's freshness window."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-dual-sign-on-rotation
     text: 'The server SHOULD dual-sign deliveries with both the old and new secrets for a short grace window, so that in-flight deliveries verify under either.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-body-size
     text: 'Servers SHOULD keep delivery bodies at or under 256 KiB, consistent with [Payload minimality](#payload-minimality).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-413-non-retryable
     text: 'Servers MUST treat `413` as a non-retryable failure for that event.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-delivery-410-non-retryable
     text: 'The server MUST treat `410` as a non-retryable failure for that delivery (like `413`, see [Delivery profile](#webhook-security)), without affecting the subscription itself.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
   - check: sep-3415-delivery-retries-bounded
     text: 'Servers SHOULD cap both the attempt count and the elapsed retry window, for example 3 to 5 attempts spread over no more than 10 to 15 minutes, and SHOULD NOT retry indefinitely.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
 
   # === Webhook: SSRF and endpoint verification ===
   - check: sep-3415-ssrf-validate-callback-url
     text: 'The server MUST validate callback URLs.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-ssrf-reject-non-routable
     text: 'Servers SHOULD reject URLs whose resolved IP is not globally routable per the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/) and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) Special-Purpose Address Registries, unless they are explicitly configured to allow them.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-ssrf-validate-at-delivery-time
     text: 'To prevent DNS rebinding, this validation MUST be performed at delivery time, and not only at subscribe time. The server resolves the hostname, checks the resolved IP against the blocklist, and connects directly to that validated IP, sending the original hostname in the `Host` header and TLS SNI, so that the address cannot change between the check and the connection.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-ssrf-no-redirects
     text: 'Webhook delivery requests MUST NOT follow HTTP redirects, because a redirect can target an internal address that bypasses the blocklist.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-required-before-delivery
     text: "A server therefore MUST NOT begin delivering to a callback URL until the endpoint's intent to receive deliveries is confirmed, by **one of**:"
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-challenge-echo
     text: 'Before activating, the server POSTs a `verification` control envelope that carries a single-use, short-lived `challenge` nonce, signed and headed like any delivery. The endpoint proves intent by echoing the nonce in a `2xx` body (`{"challenge":"<nonce>"}`), which the server compares in constant time.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-failure-error
     text: 'A reachable endpoint that fails to echo the challenge yields `CallbackEndpointError` with `data.reason: "challenge_failed"`. An unreachable one yields the same error with the relevant connection-failure category (`connection_refused`, `timeout` or `tls_error`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-cached-per-principal-url
     text: "Verification is cached per `(principal, url)`. A successful handshake, allowlist hit or well-known match covers that principal's subscriptions to that URL across refreshes and `arguments`. Varying `arguments` therefore cannot multiply verification POSTs at a victim, and one principal's verification never waives the challenge for another."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-persisted-for-no-expiry
     text: 'A server that persists no-expiry subscriptions across restarts MUST persist their verification status alongside them.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-uses-ssrf-hardened-path
     text: 'The verification POST MUST use the same SSRF-hardened path as deliveries (delivery-time IP validation, no redirects)'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-verification-no-raw-endpoint-responses
     text: 'Failures surface only through the `lastError` category `challenge_failed`, and never through raw endpoint responses.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-server-identity-key-discovery
     text: 'The verifying public key MUST be discovered from an origin the client already authenticates, and never from the challenge or delivery body, which the attacker controls and which would make this trust-on-first-use.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
 
   # === Webhook: control envelopes ===
   - check: sep-3415-envelope-type-discriminator
     text: 'A body with a top-level `type` field is a control envelope, and a body without one is an `EventOccurrence`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
   - check: sep-3415-envelope-signed-like-deliveries
     text: 'Control envelopes are signed and carry the same headers as event deliveries (the Standard Webhooks headers and `X-MCP-Subscription-Id`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
   - check: sep-3415-envelope-webhook-id-format
     text: '`webhook-id` for a control envelope is a per-message identifier of the form `msg_<type>_<random>`, so that receivers can deduplicate retries.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
   - check: sep-3415-envelope-gap
     text: '`gap` `{"type":"gap","cursor":"<fresh>"}`: A gap is detected between refreshes (see [Cursor Lifecycle](#cursor-lifecycle)). The client persists `cursor` and treats it as `truncated: true`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
   - check: sep-3415-envelope-terminated
     text: '`terminated` `{"type":"terminated","error":{"code":...,"message":...,"data":...}}`: The subscription has ended, for example because authorization was revoked. The subscription no longer exists on the server.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
+
+  # === Streamable HTTP: Routing Headers (2ec39b9c) ===
+  - check: sep-3415-mcp-name-missing-rejected
+    text: 'A request whose `Mcp-Name` header is missing, or does not match `params.name`, is rejected with HTTP status `400 Bad Request` and `HeaderMismatch` (`-32020`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
+  - check: sep-3415-mcp-name-mismatch-rejected
+    text: 'A request whose `Mcp-Name` header is missing, or does not match `params.name`, is rejected with HTTP status `400 Bad Request` and `HeaderMismatch` (`-32020`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
+  - check: sep-3415-mcp-name-list-exempt
+    text: '`events/list` has no `params.name` and carries no `Mcp-Name` header.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
 
   # === Client obligations (src/scenarios/client/events/, #540) ===
   - check: sep-3415-client-no-events-without-extension
     text: 'All `events/*` requests are client-initiated. A client MUST NOT send them to a server that has not advertised the extension'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
   - check: sep-3415-client-listen-opt-in
     text: 'Like the core `list_changed` notifications, it is delivered only on a `subscriptions/listen` stream, and only when the client opted in.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#dynamic-event-types
   - check: sep-3415-client-relist-on-list-changed
     text: 'The client SHOULD call `events/list` again to refresh its registry of event types.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#dynamic-event-types
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#dynamic-event-types
   - check: sep-3415-client-poll-drain-on-has-more
     text: 'When it is `true`, the client SHOULD poll again immediately with the updated cursor, ignoring `nextPollMs`, to drain the backlog.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-client-poll-respects-next-poll-ms
     text: '`nextPollMs` lets servers control polling frequency dynamically, and clients SHOULD respect it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#governance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#governance
   - check: sep-3415-client-poll-floor
     text: 'Clients SHOULD apply a configurable floor (default 1000 ms) so that a misbehaving server cannot induce a tight loop.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response-1
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response-1
   - check: sep-3415-client-stream-reconnect-with-cursor
     text: 'A client that has received neither an event nor a heartbeat for more than twice the heartbeat interval SHOULD treat the stream as dead and reconnect with its cursor.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
   - check: sep-3415-client-refresh-before-expiry
     text: 'Unless it was granted no expiry, the client MUST call `events/subscribe` again with the same subscription key before `refreshBefore` to keep the subscription alive.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
   - check: sep-3415-client-null-cursor-not-replayed
     text: 'A client that receives `cursor: null` MUST NOT attempt to persist or replay from it. On reconnect or resubscribe it sends `cursor: null` (start from now)'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-client-cursor-absent-tolerated
     text: 'An absent `cursor` field MUST be treated identically to an explicit `cursor: null`. A sender MAY omit the field in place of writing `null`, and a receiver MUST NOT fail because it is missing.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
   - check: sep-3415-client-truncated-persists-fresh-cursor
     text: '`truncated: true` always implies a possible gap. Clients SHOULD treat it as one, for example by fetching authoritative state again with tools if it matters, and SHOULD persist the fresh cursor.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
 
   # ==========================================================================
   # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a
@@ -956,105 +973,111 @@ requirements:
 
   # --- Client / host obligations ---
   - text: 'Clients SHOULD NOT apply their default request timeout to `events/stream`: the heartbeat is the liveness signal.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#lifecycle
     excluded: client-side obligation; observing it needs a window longer than any client's default request timeout (60s in the TypeScript SDK), and the reconnect half of the sentence is declared as sep-3415-client-stream-reconnect-with-cursor (modelcontextprotocol/conformance#540)
   - text: 'Even with no expiry, clients SHOULD still call `events/subscribe` and `events/list` occasionally.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
     excluded: client-side obligation; "occasionally" has no window a finite run can observe
   - text: 'Client SDKs SHOULD generate the secret for the application, and SHOULD NOT expose an interface that encourages hand-picked values.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscribing-eventssubscribe
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscribing-eventssubscribe
     excluded: client-SDK guidance; not observable from the server under test
   - text: 'Clients SHOULD sanitize or sandbox event payloads before presenting them to an LLM, following the security model the specification already defines for tool results.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#event-payloads-are-untrusted-data
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#event-payloads-are-untrusted-data
     excluded: host obligation; not observable from the server under test
   - text: 'Clients SHOULD support policy evaluation between event receipt and action execution.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#governance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#governance
     excluded: host obligation (Enterprise Governance); not observable from the server under test
   - text: 'The client SDK SHOULD remove the subscription and notify the application.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-termination
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-termination
     excluded: client-SDK guidance; not observable from the server under test
 
   # --- Receiver (callback endpoint) obligations ---
   - text: 'The receiver MUST verify the signature before processing, SHOULD reject deliveries whose `webhook-timestamp` is more than 5 minutes old, and SHOULD deduplicate on `webhook-id`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
     excluded: receiver obligation; the harness implements this rather than grading it
   - text: 'Receivers MUST compute the HMAC over the raw body, and never over a re-serialized JSON object.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
     excluded: receiver obligation; the harness implements this rather than grading it
   - text: 'The endpoint MUST forward `gap` and `terminated` envelopes to the consuming client by the same channel it uses to forward events.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#non-event-webhook-bodies
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
     excluded: receiver obligation; the harness implements this rather than grading it
   - text: 'The endpoint SHOULD NOT return `2xx` until the event has been durably persisted or forwarded.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
     excluded: receiver obligation; the harness implements this rather than grading it
   - text: 'A receiver that gets a delivery for an `id` it has not yet been told to route, for example because the subscribe response has not propagated to the gateway, SHOULD return a retryable status (`503` or `425 Too Early`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
     excluded: receiver obligation; the harness implements this rather than grading it
 
   # --- Server-SDK implementation guidance (not wire-observable) ---
   - text: 'The SDK SHOULD enable poll by default, so that it is available unless the author opts out.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-SDK guidance; indistinguishable on the wire from an author opting in
   - text: 'SDKs SHOULD refuse a no-expiry cap unless the author has wired up durable storage.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-SDK guidance; a construction-time policy with no wire signal
   - text: 'SDKs SHOULD provide an in-memory ring buffer that retains a bounded window of emitted events per event type, configurable by time, by count or by both.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-SDK guidance; an internal structure with no wire signal
   - text: 'Servers SHOULD enforce the subscription limit (`ResourceExhausted`) before they invoke `on_subscribe`, so that a rejected subscription never provisions upstream resources.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-SDK ordering guidance; the harness cannot observe hook invocation order
   - text: "The lease window is configurable in the SDK, and SHOULD default to a small multiple of the server's typical `nextPollMs`, so that a well-behaved client never lapses between polls:"
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-SDK guidance; an internal lease table with no wire signal
   - text: 'For servers that wrap upstreams that _do_ offer a durable cursor (Gmail `historyId`, Kubernetes `resourceVersion`, Stripe `/v1/events`, a Kafka offset), authors SHOULD prefer a check function that queries the upstream directly.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#server-sdk-guidance
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#server-sdk-guidance
     excluded: server-authoring guidance; a design recommendation with no wire signal
   - text: 'On HTTP/1.1 each stream is a TCP connection, so SDKs SHOULD prefer HTTP/2 when many subscriptions are active.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#how-each-mode-works
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#how-each-mode-works
     excluded: transport guidance; not a protocol conformance obligation
 
   # --- Deployment profile advisories ---
   - text: 'A WAF MAY drop requests that are missing any of them as a cheap pre-filter.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
     excluded: deployment advisory addressed to operators, not to an implementation
 
   # --- Server obligations a single-principal harness cannot grade ---
+  - text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal. Servers MUST reject calls without an authorized principal with `Forbidden`.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
+    excluded: needs the same call made with no principal, and the harness sends the one credential it was given on every request, so no run over the wire can provoke the rejection (was sep-3415-subscribe-auth-required, moved to excluded after the conformance PR 521 review)
+  - text: 'The client supplies a new `delivery.secret` on a refresh call, and the idempotent upsert replaces it.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
+    excluded: the replacement shows only in a delivery signed with the new secret after a refresh, which events-webhook ran without a receiver and events-webhook-delivery never sets up, so the row could only ever report untestable (was sep-3415-subscribe-refresh-replaces-secret, moved to excluded after the conformance PR 521 review)
   - text: '`Forbidden` `-32024`: The authenticated principal is not permitted for this combination of event and arguments, or its access was revoked.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#error-handling
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
     excluded: needs a principal the harness can be refused as; a single-principal harness has no way to provoke -32024 (was sep-3415-error-forbidden, moved to excluded in panyam/mcpkit#1535)
   - text: 'When the caller is authenticated, the server MUST verify that the principal has permission to subscribe to the requested event type with the given arguments.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#authorization
     excluded: needs two principals with different permissions on the same event type; the harness authenticates as one (was sep-3415-authz-subscribe-time, moved to excluded in panyam/mcpkit#1535)
   - text: 'The server SHOULD periodically re-verify permissions.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#authorization
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#authorization
     excluded: needs two principals and a permission revoked mid-subscription, and 'periodically' sets no interval to wait for (was sep-3415-authz-delivery-time-reverify, moved to excluded in panyam/mcpkit#1535)
   - text: 'Servers SHOULD keep event payloads minimal: enough to identify and triage the event, and not the full content.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#payload-minimality
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#payload-minimality
     excluded: a SHOULD about how much content a payload carries, which only the event's own semantics can judge; sep-3415-delivery-body-size grades the observable half (was sep-3415-payload-minimality, moved to excluded in panyam/mcpkit#1535)
 
   # --- Pure MAY / OPTIONAL (handoff disposition: no row) ---
   - text: 'A server MAY return `cursor: null` in any delivery (a poll result, a push `notifications/events/event` or `notifications/events/active`, a webhook payload) when the event type does not support replay.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#cursor-lifecycle
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
     excluded: pure MAY; kept as context for sep-3415-cursor-consistency, which carries the testable half
   - text: 'The one sanctioned exception is a server-side floor: a server MAY clamp an impractically short suggestion up to its minimum TTL, to protect itself from refresh storms.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#subscription-ttl
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-ttl
     excluded: pure MAY; the testable half is sep-3415-ttl-refresh-before-lte-suggestion, which this sentence excepts
   - text: 'The header MAY contain several space-delimited signatures (`v1,<sigA> v1,<sigB>`) during secret rotation. The receiver accepts the delivery if any of them verifies.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-security
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
     excluded: pure MAY, and the obligation it creates falls on the receiver
   - text: 'After repeated failures, at a server-defined threshold, the server MAY suspend delivery (`deliveryStatus.active: false`).'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-event-delivery
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
     excluded: pure MAY; suspension is observable only through the OPTIONAL deliveryStatus object
   - text: '`deliveryStatus` is OPTIONAL, and servers MAY omit it entirely.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#webhook-delivery-status
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-delivery-status
     excluded: OPTIONAL by its own wording; a server omitting deliveryStatus entirely is conformant
   - text: 'A client MAY declare the same identifier with an empty settings object, in its per-request capabilities, to indicate that it understands the extension:'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#capability-negotiation
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#capability-negotiation
     excluded: a MAY about what a client declares, so it has no failing case, and no server-side scenario can see it (was sep-3415-capability-client-declaration, moved to excluded in panyam/mcpkit#1535)
   - text: "Servers SHOULD therefore evolve an event type's `inputSchema` and `payloadSchema` additively for the lifetime of its `name`: - New optional fields MAY be added. - Existing fields SHOULD NOT be removed, renamed or retyped. - Enums SHOULD NOT be narrowed. - `inputSchema` SHOULD NOT be tightened so that previously accepted `arguments` become invalid."
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
     excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-schema-evolution-additive, moved to excluded in panyam/mcpkit#1465)
   - text: 'A breaking change SHOULD instead be published under a new event name and served alongside the old one for a migration period, after which the old name is removed'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/c47fd2451c91ad11708dd498ddee060a1d73aedc/seps/0000-events-extension.md#response
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#response
     excluded: server policy over a catalog's lifetime; a harness can force a change but cannot observe whether the server would have chosen it, so the row has no verdict (was sep-3415-breaking-change-new-name, moved to excluded in panyam/mcpkit#1465)

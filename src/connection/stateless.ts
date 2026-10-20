@@ -60,7 +60,8 @@ let nextRequestId = 1;
 /**
  * The `Mcp-Name` source field per SEP-2243: `params.name` for tools/call and
  * prompts/get, `params.uri` for resources/read, `params.taskId` for the
- * SEP-2663 tasks methods (`tasks/get`, `tasks/update`, `tasks/cancel`).
+ * SEP-2663 tasks methods (`tasks/get`, `tasks/update`, `tasks/cancel`), and
+ * `params.name` for the SEP-3415 events methods other than `events/list`.
  * Absent otherwise.
  */
 export function mcpNameForRequest(
@@ -80,7 +81,35 @@ export function mcpNameForRequest(
   ) {
     return typeof params?.taskId === 'string' ? params.taskId : undefined;
   }
+  if (EVENTS_NAMED_METHODS.has(method)) {
+    return typeof params?.name === 'string'
+      ? encodeMcpHeaderValue(params.name)
+      : undefined;
+  }
   return undefined;
+}
+
+/**
+ * The SEP-3415 methods that carry `Mcp-Name: <params.name>` (its "Streamable
+ * HTTP: Routing Headers" section). `events/list` has no `params.name` and is
+ * not one of them.
+ */
+const EVENTS_NAMED_METHODS = new Set([
+  'events/poll',
+  'events/stream',
+  'events/subscribe',
+  'events/unsubscribe'
+]);
+
+/**
+ * SEP-2243's header encoding: a value that is not plain printable ASCII, or
+ * that has leading or trailing whitespace, travels as `=?base64?{utf8}?=`.
+ */
+export function encodeMcpHeaderValue(value: string): string {
+  const plain = /^[\x20-\x7e]*$/.test(value) && value.trim() === value;
+  return plain
+    ? value
+    : `=?base64?${Buffer.from(value, 'utf8').toString('base64')}?=`;
 }
 
 /**

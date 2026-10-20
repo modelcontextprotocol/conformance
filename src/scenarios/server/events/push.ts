@@ -72,6 +72,7 @@ import {
   minimalArguments,
   guardScenario
 } from './helpers';
+import { MCP_NAME_IDS, mcpNameChecks } from './routing-headers';
 import {
   openEventStream,
   type StreamNotification,
@@ -207,8 +208,8 @@ function untestableAll(
 }
 
 function skipAll(reason: string): ConformanceCheck[] {
-  return [...STREAM_IDS, ...ERROR_IDS, NO_REPLAY_ID].map((id) =>
-    eventsCheck(id, id, 'SKIPPED', { errorMessage: reason })
+  return [...STREAM_IDS, ...ERROR_IDS, ...MCP_NAME_IDS, NO_REPLAY_ID].map(
+    (id) => eventsCheck(id, id, 'SKIPPED', { errorMessage: reason })
   );
 }
 
@@ -227,6 +228,7 @@ export class EventsPushScenario implements ClientScenario {
 - \`sep-3415-stream-heartbeat-*\` — the keepalive is required, carries a cursor, arrives at least every 30s, and is a \`data:\` frame rather than an SSE comment
 - \`sep-3415-stream-exempt-from-concurrency-cap\` — concurrent streams stay open together
 - \`sep-3415-stream-cancel-stops-delivery\` / \`sep-3415-stream-final-result-*\` — cancellation and the empty final result
+- \`sep-3415-mcp-name-missing-rejected\` / \`sep-3415-mcp-name-mismatch-rejected\` — an \`events/stream\` whose \`Mcp-Name\` header is missing or names another event is rejected with HTTP 400 and \`-32020\` (2026-07-28 only)
 
 **This scenario needs \`--timeout 60000\`.** It watches an idle stream for ${WATCH_MS / 1000}s, because a server may heartbeat as slowly as every 30s and still be conformant. Override the window with \`EVENTS_PUSH_WATCH_MS\`.
 
@@ -234,7 +236,13 @@ export class EventsPushScenario implements ClientScenario {
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     return guardScenario(
-      [...STREAM_IDS, ...ERROR_IDS, NO_REPLAY_ID, ...CATALOG_IDS],
+      [
+        ...STREAM_IDS,
+        ...ERROR_IDS,
+        ...MCP_NAME_IDS,
+        NO_REPLAY_ID,
+        ...CATALOG_IDS
+      ],
       () => this.runUnguarded(ctx)
     );
   }
@@ -287,7 +295,7 @@ export class EventsPushScenario implements ClientScenario {
           );
         }
         return untestableAll(
-          [...STREAM_IDS, ...ERROR_IDS],
+          [...STREAM_IDS, ...ERROR_IDS, ...MCP_NAME_IDS],
           `\`events/list\` failed (${listed.error.code} ${listed.error.message}), so no push-capable event type could be discovered. See the events-discovery scenario.`
         );
       }
@@ -300,7 +308,7 @@ export class EventsPushScenario implements ClientScenario {
         return dedupe([
           await this.unsupportedModeCheck(ctx, listed.descriptors),
           ...untestableAll(
-            [...STREAM_IDS, ...ERROR_IDS],
+            [...STREAM_IDS, ...ERROR_IDS, ...MCP_NAME_IDS],
             listed.descriptors.length === 0
               ? '`events/list` returned an empty catalog, so no push-capable event type could be exercised.'
               : 'No event type advertises `push` delivery, so `events/stream` could not be exercised. Push is optional per event type.'
@@ -322,13 +330,13 @@ export class EventsPushScenario implements ClientScenario {
       const args = minimalArguments(target);
       if (args === undefined) {
         return untestableAll(
-          [...STREAM_IDS, ...ERROR_IDS],
+          [...STREAM_IDS, ...ERROR_IDS, ...MCP_NAME_IDS],
           `Event type \`${name}\` declares required \`inputSchema\` properties the harness cannot satisfy from the schema, so no stream could be opened.`
         );
       }
 
       const quota = await this.readQuota(conn);
-      return await this.streamChecks(
+      const checks = await this.streamChecks(
         ctx,
         name,
         args,
@@ -336,6 +344,17 @@ export class EventsPushScenario implements ClientScenario {
         listed.descriptors,
         quota
       );
+      // After the stream checks, so a server that accepts a bad header and
+      // opens a stream cannot push the concurrency probe over its cap.
+      checks.push(
+        ...(await mcpNameChecks(ctx, [
+          {
+            method: EVENTS_STREAM_METHOD,
+            params: { name, arguments: args, cursor: null }
+          }
+        ]))
+      );
+      return checks;
     } finally {
       await conn.close();
     }

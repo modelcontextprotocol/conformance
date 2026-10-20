@@ -37,6 +37,26 @@ describe('buildStandardHeaders', () => {
     ).toBe('file:///a.txt');
   });
 
+  test('sets Mcp-Name from params.name on events/* except events/list (SEP-3415)', () => {
+    for (const method of [
+      'events/poll',
+      'events/stream',
+      'events/subscribe',
+      'events/unsubscribe'
+    ]) {
+      expect(buildStandardHeaders(method, { name: 'tick' })['Mcp-Name']).toBe(
+        'tick'
+      );
+    }
+    expect(buildStandardHeaders('events/list', {})['Mcp-Name']).toBeUndefined();
+  });
+
+  test('wraps a non-ASCII event name in the SEP-2243 Base64 sentinel', () => {
+    expect(
+      buildStandardHeaders('events/poll', { name: 'café' })['Mcp-Name']
+    ).toBe(`=?base64?${Buffer.from('café').toString('base64')}?=`);
+  });
+
   test('overrides replace defaults case-insensitively', () => {
     const headers = buildStandardHeaders('tools/list', undefined, {
       headers: { 'mcp-protocol-version': '2025-06-18' }

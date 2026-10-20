@@ -37,10 +37,12 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
-/** Rows every conformant run passes, which is the whole surface bar the seven
+/** Rows every conformant run passes, which is the whole surface bar the five
  * that need a second principal or a restart. */
 const GRADEABLE = [
   'sep-3415-result-type-complete',
+  'sep-3415-mcp-name-missing-rejected',
+  'sep-3415-mcp-name-mismatch-rejected',
   'sep-3415-subscribe-webhook-only',
   'sep-3415-subscribe-secret-required',
   'sep-3415-subscribe-secret-format',
@@ -67,9 +69,7 @@ const GRADEABLE = [
 
 /** Rows no single-principal, single-process run can exercise. */
 const ALWAYS_UNTESTABLE = [
-  'sep-3415-subscribe-auth-required',
   'sep-3415-subscribe-cross-tenant-isolation',
-  'sep-3415-subscribe-refresh-replaces-secret',
   'sep-3415-subscribe-refresh-reactivates',
   'sep-3415-ttl-long-grant-retained',
   'sep-3415-ttl-no-expiry-persisted',
@@ -597,5 +597,30 @@ describe.concurrent('durability across a restart', () => {
     const check = checks.get('sep-3415-ttl-no-expiry-persisted');
     expect(check?.details?.untestable).toBe(true);
     expect(check?.errorMessage).toContain('no evidence a restart happened');
+  });
+});
+
+describe('the Mcp-Name routing header', () => {
+  const MCP_NAME = [
+    'sep-3415-mcp-name-missing-rejected',
+    'sep-3415-mcp-name-mismatch-rejected'
+  ];
+
+  test('a server that ignores the header fails both rows on subscribe and unsubscribe, and nothing else', async () => {
+    const ok = await webhookChecks(webhookFixture());
+    const broken = await webhookChecks({
+      ...webhookFixture(),
+      mcpName: 'ignore'
+    });
+    const flipped = [...ok.checks.keys()].filter(
+      (id) => ok.checks.get(id)?.status !== broken.checks.get(id)?.status
+    );
+    expect(flipped.sort()).toEqual([...MCP_NAME].sort());
+    for (const id of MCP_NAME) {
+      const msg = broken.checks.get(id)?.errorMessage;
+      expect(msg, id).toContain('events/subscribe');
+      expect(msg, id).toContain('events/unsubscribe');
+    }
+    expect(broken.leaked).toEqual([]);
   });
 });

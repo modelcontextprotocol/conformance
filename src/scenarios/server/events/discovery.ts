@@ -63,6 +63,10 @@ import {
   unknownEventName,
   guardScenario
 } from './helpers';
+import {
+  MCP_NAME_LIST_EXEMPT_ID,
+  mcpNameListExemptCheck
+} from './routing-headers';
 
 const CAPABILITY_IDS = [
   'sep-3415-capability-events-object',
@@ -112,6 +116,7 @@ const ALL_IDS = [
   ...DESCRIPTOR_IDS,
   ...ERROR_IDS,
   ...LISTEN_IDS,
+  MCP_NAME_LIST_EXEMPT_ID,
   RESULT_TYPE_ID
 ];
 
@@ -141,6 +146,7 @@ export class EventsDiscoveryScenario implements ClientScenario {
 - \`sep-3415-result-type-complete\` — the \`events/list\` result carries \`resultType: "complete"\`
 - \`sep-3415-capability-list-changed-gated\` — a server that did not declare \`listChanged: true\` leaves \`eventsListChanged\` out of the \`subscriptions/listen\` acknowledgement
 - \`sep-3415-list-changed-notification\` — a catalog change, made through the \`events_conformance_catalog\` control, sends \`notifications/events/list_changed\` on an opted-in listen stream
+- \`sep-3415-mcp-name-list-exempt\` — an \`events/list\` sent without \`Mcp-Name\` is not refused for lacking one (2026-07-28 only)
 
 **Discovery is dynamic**: a server that neither declares the extension nor implements \`events/list\` SKIPs everything. One that answers \`events/list\` without declaring the extension is graded, and fails the declaration check, because that surface is unreachable for a client that reads capabilities first. An empty catalog reports the descriptor checks as untestable rather than passing them.`;
 
@@ -158,6 +164,9 @@ export class EventsDiscoveryScenario implements ClientScenario {
         !checks.some((c) => (LISTEN_IDS as readonly string[]).includes(c.id))
       ) {
         checks.push(...(await this.listenChecks(ctx, conn)));
+      }
+      if (!checks.some((c) => c.id === MCP_NAME_LIST_EXEMPT_ID)) {
+        checks.push(await mcpNameListExemptCheck(ctx));
       }
       return checks;
     } finally {

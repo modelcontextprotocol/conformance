@@ -54,6 +54,7 @@ import {
   unknownEventName,
   guardScenario
 } from './helpers';
+import { MCP_NAME_IDS, mcpNameChecks } from './routing-headers';
 
 const POLL_IDS = [
   'sep-3415-poll-implemented',
@@ -141,6 +142,7 @@ const ALL_IDS = [
   ...OCCURRENCE_IDS,
   ...CURSOR_IDS,
   ...ERROR_IDS,
+  ...MCP_NAME_IDS,
   RESULT_TYPE_ID
 ];
 
@@ -180,6 +182,7 @@ export class EventsPollScenario implements ClientScenario {
 - \`sep-3415-occurrence-*\` — \`eventId\`, \`name\`, \`timestamp\`, \`data\` required; \`cursor\` and \`_meta\` optional
 - \`sep-3415-cursor-*\` — opaqueness, \`null\` means start-from-now, absent means \`null\`, consistency, and advancement during quiet periods
 - \`sep-3415-max-age-ms-*\` / \`sep-3415-truncated-*\` — bounding replay and signalling a gap
+- \`sep-3415-mcp-name-missing-rejected\` / \`sep-3415-mcp-name-mismatch-rejected\` — a poll whose \`Mcp-Name\` header is missing or names another event is rejected with HTTP 400 and \`-32020\` (2026-07-28 only)
 
 **Discovery is dynamic**: a server that neither declares the capability nor implements \`events/list\` SKIPs everything; no poll-capable event type reports the poll checks as untestable. Checks that need a delivered event (the \`EventOccurrence\` shape) are untestable against a quiet server rather than passing vacuously.`;
 
@@ -190,13 +193,16 @@ export class EventsPollScenario implements ClientScenario {
   private async runUnguarded(ctx: RunContext): Promise<ConformanceCheck[]> {
     const conn = await ctx.connect();
     try {
-      return await this.checks(conn);
+      return await this.checks(conn, ctx);
     } finally {
       await conn.close();
     }
   }
 
-  private async checks(conn: Connection): Promise<ConformanceCheck[]> {
+  private async checks(
+    conn: Connection,
+    ctx: RunContext
+  ): Promise<ConformanceCheck[]> {
     const { declared } = await declaredEventsCapability(conn);
     const listed = await eventsListAll(conn);
 
@@ -304,6 +310,16 @@ export class EventsPollScenario implements ClientScenario {
 
     // --- Error contract ---------------------------------------------------
     checks.push(...(await this.errorChecks(conn, descriptors, name, args)));
+
+    // --- Routing headers --------------------------------------------------
+    checks.push(
+      ...(await mcpNameChecks(ctx, [
+        {
+          method: EVENTS_POLL_METHOD,
+          params: { name, arguments: args, cursor: null }
+        }
+      ]))
+    );
 
     return checks;
   }
