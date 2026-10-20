@@ -666,3 +666,20 @@ describe.concurrent('a catalog that changes under a live stream', () => {
     othersPass(checks, [ROWS.additive]);
   });
 });
+
+describe.concurrent('the Mcp-Name routing header', () => {
+  const MCP_NAME = [
+    'sep-3415-mcp-name-missing-rejected',
+    'sep-3415-mcp-name-mismatch-rejected'
+  ];
+
+  test('a stream opened despite a bad header fails both rows, naming the stream', async () => {
+    const ok = await pushChecks(pushFixture());
+    for (const id of MCP_NAME) expect(ok.get(id)?.status, id).toBe('SUCCESS');
+    const broken = await pushChecks({ ...pushFixture(), mcpName: 'ignore' });
+    for (const id of MCP_NAME) {
+      expect(broken.get(id)?.status, id).toBe('FAILURE');
+      expect(broken.get(id)?.errorMessage, id).toContain('open stream');
+    }
+  });
+});

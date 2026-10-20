@@ -61,6 +61,7 @@ import {
   type EventDescriptor,
   guardScenario
 } from './helpers';
+import { MCP_NAME_IDS, mcpNameChecks } from './routing-headers';
 
 /** A callback URL that is syntactically valid and points nowhere in use. */
 const CALLBACK_BASE = 'https://conformance.invalid/mcp-events';
@@ -129,6 +130,7 @@ const ALL_IDS = [
   ...TTL_IDS,
   ...UNSUBSCRIBE_IDS,
   ...ERROR_IDS,
+  ...MCP_NAME_IDS,
   RESULT_TYPE_ID
 ];
 
@@ -185,6 +187,7 @@ export class EventsWebhookScenario implements ClientScenario {
 - \`sep-3415-subscribe-idempotent-upsert\` / \`sep-3415-subscribe-response-*\` — a repeat subscribe refreshes in place and returns \`cursor\` and \`truncated\`
 - \`sep-3415-ttl-*\` — the grant is at or under the suggestion, there is no rejection path, and \`null\` comes back only when asked for
 - \`sep-3415-unsubscribe-*\` — teardown by key, and \`-32023 NotFound\` for a key the server does not hold
+- \`sep-3415-mcp-name-missing-rejected\` / \`sep-3415-mcp-name-mismatch-rejected\` — a subscribe or unsubscribe whose \`Mcp-Name\` header is missing or names another event is rejected with HTTP 400 and \`-32020\` (2026-07-28 only)
 
 **Scope**: subscription management only. Signatures, the verification handshake and control envelopes belong to events-webhook-delivery, which needs a reachable callback.
 
@@ -243,12 +246,49 @@ export class EventsWebhookScenario implements ClientScenario {
         name,
         args
       );
+      checks.push(...(await this.routingChecks(ctx, conn, name, args)));
       // Last, because the restart ends this connection.
       const durable = await this.durabilityChecks(ctx, conn, name, args);
       return checks.map((c) => durable.get(c.id) ?? c);
     } finally {
       await conn.close().catch(() => undefined);
     }
+  }
+
+  /**
+   * The `Mcp-Name` rows, over both methods this scenario sends. A server that
+   * ignores the header subscribes the probe, so the probe's url is released
+   * afterwards with a conformant unsubscribe.
+   */
+  private async routingChecks(
+    ctx: RunContext,
+    conn: Connection,
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<ConformanceCheck[]> {
+    const url = `${CALLBACK_BASE}/mcp-name-${Date.now()}`;
+    const checks = await mcpNameChecks(ctx, [
+      {
+        method: EVENTS_SUBSCRIBE_METHOD,
+        params: {
+          name,
+          arguments: args,
+          delivery: { mode: 'webhook', url, secret: freshSecret() }
+        }
+      },
+      {
+        method: EVENTS_UNSUBSCRIBE_METHOD,
+        params: { name, arguments: args, delivery: { mode: 'webhook', url } }
+      }
+    ]);
+    await conn
+      .request(EVENTS_UNSUBSCRIBE_METHOD, {
+        name,
+        arguments: args,
+        delivery: { mode: 'webhook', url }
+      })
+      .catch(() => undefined);
+    return checks;
   }
 
   /**

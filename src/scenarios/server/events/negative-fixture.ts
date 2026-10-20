@@ -19,6 +19,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
 import { withRequiredDraftResultFields } from '../../../mock-server';
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { HEADER_MISMATCH } from '../../../spec-types/draft';
 import { SUBSCRIPTION_ID_META } from './helpers';
 
 /** A descriptor that is well formed apart from whatever a test overrides. */
@@ -382,6 +383,44 @@ export interface CatalogBehaviour {
   extendTerminates?: boolean;
 }
 
+const EVENTS_NAMED_METHODS = new Set([
+  'events/poll',
+  'events/stream',
+  'events/subscribe',
+  'events/unsubscribe'
+]);
+
+/** Why a request's `Mcp-Name` header is refused, or undefined to accept it. */
+function mcpNameRefusal(
+  mode: EventsFixtureOptions['mcpName'],
+  method: string,
+  params: Record<string, unknown>,
+  raw: string | string[] | undefined
+): string | undefined {
+  if (mode === 'ignore') return undefined;
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  if (method === 'events/list') {
+    return mode === 'requireOnList' && header === undefined
+      ? 'Mcp-Name header required'
+      : undefined;
+  }
+  // With no `params.name` there is nothing to mirror, and the request fails
+  // as InvalidParams, which the poll error-contract rows grade.
+  if (!EVENTS_NAMED_METHODS.has(method) || typeof params.name !== 'string') {
+    return undefined;
+  }
+  if (header === undefined) {
+    return mode === 'acceptMissing' ? undefined : 'Mcp-Name header missing';
+  }
+  const sentinel = /^=\?base64\?(.*)\?=$/.exec(header);
+  const value = sentinel
+    ? Buffer.from(sentinel[1], 'base64').toString('utf8')
+    : header;
+  return value === params.name
+    ? undefined
+    : 'Mcp-Name header does not match params.name';
+}
+
 export interface EventsFixtureOptions {
   /**
    * Methods that "crash" when called with empty `arguments` on a served type: the fixture
@@ -437,6 +476,13 @@ export interface EventsFixtureOptions {
   stream?: StreamBehaviour;
   /** How `events/subscribe` and `events/unsubscribe` behave. */
   subscribe?: SubscribeBehaviour;
+  /**
+   * How the fixture treats the `Mcp-Name` routing header. Omit it to validate
+   * as SEP-3415 asks. `ignore` accepts any header or none, `acceptMissing`
+   * checks a header only when one is sent, and `requireOnList` also refuses an
+   * `events/list` without one.
+   */
+  mcpName?: 'ignore' | 'acceptMissing' | 'requireOnList';
   /**
    * What the fixture POSTs to the callback. Omit it and the fixture subscribes
    * without ever delivering, which is what a server with no webhook delivery
@@ -567,6 +613,24 @@ export async function startEventsFixture(
     const method = body.method as string;
     const id = body.id;
     const params = (body.params ?? {}) as Record<string, unknown>;
+
+    const refusal = mcpNameRefusal(
+      opts.mcpName,
+      method,
+      params,
+      req.headers['mcp-name']
+    );
+    if (refusal) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          error: { code: HEADER_MISMATCH, message: refusal }
+        })
+      );
+      return;
+    }
 
     // Only for a type the fixture serves: metronome answered an unknown or
     // missing name with the right error, and died only on its own type.

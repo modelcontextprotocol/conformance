@@ -77,10 +77,11 @@
 #   and events/unsubscribe, rejects a missing or mismatched header with 400 and
 #   -32020, and drops Open Question 8, which had asked whether to. Every
 #   existing row's text and section anchor was checked against the new file
-#   and none changed.
+#   and none changed. Three rows are new (sep-3415-mcp-name-*).
 #
-# coverage: 131 declared checks plus 37 excluded rows, and every declared
-#   check is emitted by a scenario. Five rows that nothing could emit moved to
+# coverage: 134 declared checks plus 37 excluded rows, and every declared
+#   check is emitted by a scenario. On 2026-10-20 the three sep-3415-mcp-name-*
+#   rows were added. Earlier, five rows that nothing could emit moved to
 #   excluded on 2026-10-15 (panyam/mcpkit#1535): sep-3415-error-forbidden and
 #   the two sep-3415-authz-* rows need a second principal, payload-minimality
 #   has no observable verdict, and capability-client-declaration is a MAY.
@@ -905,6 +906,17 @@ requirements:
   - check: sep-3415-envelope-terminated
     text: '`terminated` `{"type":"terminated","error":{"code":...,"message":...,"data":...}}`: The subscription has ended, for example because authorization was revoked. The subscription no longer exists on the server.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#non-event-webhook-bodies
+
+  # === Streamable HTTP: Routing Headers (2ec39b9c) ===
+  - check: sep-3415-mcp-name-missing-rejected
+    text: 'A request whose `Mcp-Name` header is missing, or does not match `params.name`, is rejected with HTTP status `400 Bad Request` and `HeaderMismatch` (`-32020`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
+  - check: sep-3415-mcp-name-mismatch-rejected
+    text: 'A request whose `Mcp-Name` header is missing, or does not match `params.name`, is rejected with HTTP status `400 Bad Request` and `HeaderMismatch` (`-32020`).'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
+  - check: sep-3415-mcp-name-list-exempt
+    text: '`events/list` has no `params.name` and carries no `Mcp-Name` header.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
 
   # ==========================================================================
   # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a
