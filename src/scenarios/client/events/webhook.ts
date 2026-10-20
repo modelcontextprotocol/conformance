@@ -140,6 +140,8 @@ export class EventsClientWebhookScenario extends EventsClientScenarioBase {
           )
     );
 
+    checks.push(this.mcpNameSetCheck());
+
     return checks;
   }
 }

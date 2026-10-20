@@ -24,6 +24,7 @@ import {
   eventsCheck
 } from '../../server/events/helpers.js';
 import { untestableCheck } from '../../untestable.js';
+import { encodeMcpHeaderValue } from '../../../connection/stateless.js';
 
 export { EVENTS_EXTENSION_ID, eventsCheck };
 
@@ -39,7 +40,24 @@ export interface RecordedRequest {
   params: Record<string, unknown>;
   id: unknown;
   at: number;
+  /** The `Mcp-Name` header as received, when the request carried one. */
+  mcpName?: string;
 }
+
+/** The `events/*` methods that carry `Mcp-Name`; `events/list` does not. */
+const MCP_NAME_METHODS = new Set([
+  'events/poll',
+  'events/stream',
+  'events/subscribe',
+  'events/unsubscribe'
+]);
+
+const MCP_NAME_SET_ID = 'sep-3415-client-mcp-name-set';
+const MCP_NAME_SET_DESC =
+  'On Streamable HTTP the client MUST set `Mcp-Name` to `params.name` on `events/poll`, `events/stream`, `events/subscribe` and `events/unsubscribe`.';
+export const MCP_NAME_BASE64_ID = 'sep-3415-client-mcp-name-base64';
+const MCP_NAME_BASE64_DESC =
+  'An event name that cannot be safely represented as a plain ASCII header value MUST be carried in the Base64 sentinel format.';
 
 export function descriptor(name: string, mode: DeliveryMode): object {
   return {
@@ -86,12 +104,14 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
       : { tools: {}, extensions: { [EVENTS_EXTENSION_ID]: settings } };
   }
 
-  private record(request: any): void {
+  private record(request: any, req?: http.IncomingMessage): void {
+    const header = req?.headers['mcp-name'];
     this.requests.push({
       method: request.method,
       params: (request.params ?? {}) as Record<string, unknown>,
       id: request.id,
-      at: Date.now()
+      at: Date.now(),
+      mcpName: Array.isArray(header) ? header[0] : header
     });
   }
 
@@ -106,7 +126,7 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
     res: http.ServerResponse,
     request: any
   ): void {
-    this.record(request);
+    this.record(request, req);
 
     if (request.method === 'initialize') {
       this.sendInitialize(res, request);
@@ -124,7 +144,8 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
           resultType: 'complete',
           events: [
             descriptor(REPLAY_TYPE, this.mode),
-            descriptor(CURSORLESS_TYPE, this.mode)
+            descriptor(CURSORLESS_TYPE, this.mode),
+            ...this.extraDescriptors()
           ]
         }
       });
@@ -132,6 +153,11 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
     }
     if (this.handleEvents(req, res, request)) return;
     this.sendGenericResult(res, request);
+  }
+
+  /** Event types a scenario lists beyond the two every scenario serves. */
+  protected extraDescriptors(): object[] {
+    return [];
   }
 
   /** Serve one `events/*` request; return false to fall through. */
@@ -145,6 +171,84 @@ export abstract class EventsClientScenarioBase extends BaseHttpScenario {
     return this.requests.filter(
       (r) =>
         r.method === method && (name === undefined || r.params.name === name)
+    );
+  }
+
+  /** True when the client used the 2026-07-28 lifecycle (no `initialize`). */
+  protected stateless(): boolean {
+    return !this.requests.some((r) => r.method === 'initialize');
+  }
+
+  /**
+   * Grade `Mcp-Name` on every named `events/*` request whose name is plain
+   * ASCII. The routing header is a 2026-07-28 transport rule, so a client on
+   * the legacy lifecycle skips.
+   */
+  protected mcpNameSetCheck(): ConformanceCheck {
+    if (!this.stateless()) {
+      return eventsCheck(MCP_NAME_SET_ID, MCP_NAME_SET_DESC, 'SKIPPED', {
+        errorMessage:
+          'The client used the legacy lifecycle; `Mcp-Name` is a 2026-07-28 Streamable HTTP header.'
+      });
+    }
+    const named = this.requests.filter(
+      (r) =>
+        MCP_NAME_METHODS.has(r.method) &&
+        typeof r.params.name === 'string' &&
+        encodeMcpHeaderValue(r.params.name) === r.params.name
+    );
+    if (named.length === 0) {
+      return clientUntestable(
+        MCP_NAME_SET_ID,
+        MCP_NAME_SET_DESC,
+        'the client sent no `events/*` request naming an event',
+        'FAILURE'
+      );
+    }
+    const wrong = named.filter((r) => r.mcpName !== r.params.name);
+    return graded(
+      MCP_NAME_SET_ID,
+      MCP_NAME_SET_DESC,
+      wrong.length === 0,
+      'FAILURE',
+      `${wrong.length} of ${named.length} named \`events/*\` request(s) did not carry \`Mcp-Name\` equal to \`params.name\`: ${wrong
+        .slice(0, 3)
+        .map(
+          (r) =>
+            `\`${r.method}\` for ${JSON.stringify(r.params.name)} sent ${r.mcpName === undefined ? 'no header' : JSON.stringify(r.mcpName)}`
+        )
+        .join('; ')}.`,
+      { requests: named.length }
+    );
+  }
+
+  /** Grade the Base64 sentinel on the requests naming `name`. */
+  protected mcpNameBase64Check(name: string): ConformanceCheck {
+    if (!this.stateless()) {
+      return eventsCheck(MCP_NAME_BASE64_ID, MCP_NAME_BASE64_DESC, 'SKIPPED', {
+        errorMessage:
+          'The client used the legacy lifecycle; `Mcp-Name` is a 2026-07-28 Streamable HTTP header.'
+      });
+    }
+    const sent = this.requests.filter(
+      (r) => MCP_NAME_METHODS.has(r.method) && r.params.name === name
+    );
+    if (sent.length === 0) {
+      return clientUntestable(
+        MCP_NAME_BASE64_ID,
+        MCP_NAME_BASE64_DESC,
+        `the client sent no \`events/*\` request for ${JSON.stringify(name)}, the listed type whose name is not plain ASCII`,
+        'FAILURE'
+      );
+    }
+    const expected = encodeMcpHeaderValue(name);
+    const wrong = sent.filter((r) => r.mcpName !== expected);
+    return graded(
+      MCP_NAME_BASE64_ID,
+      MCP_NAME_BASE64_DESC,
+      wrong.length === 0,
+      'FAILURE',
+      `For ${JSON.stringify(name)} the client sent ${wrong[0]?.mcpName === undefined ? 'no `Mcp-Name`' : `\`Mcp-Name: ${wrong[0]?.mcpName}\``}, where SEP-2243's sentinel is \`${expected}\`.`
     );
   }
 

@@ -16,6 +16,9 @@
  * it goes out on the session's GET stream instead, the base protocol's channel
  * for server-initiated notifications.
  *
+ * A third type has a name that is not plain ASCII and answers empty polls. It
+ * is there for the `Mcp-Name` Base64 row; nothing else reads it.
+ *
  * The cursorless type answers `cursor: null` once and then omits the field,
  * which the sketch says means the same thing. A client must keep polling it
  * with a null cursor and must not fail on the missing field.
@@ -41,11 +44,19 @@ import {
   REPLAY_TYPE,
   clientUntestable,
   cursorOf,
+  descriptor,
   eventsCheck,
   graded
 } from './helpers.js';
 
 const FRESH_CURSOR = 'tick-fresh';
+/**
+ * A third type whose name is not plain ASCII, so its `Mcp-Name` has to travel
+ * in SEP-2243's Base64 sentinel. It is a code point a raw header can still
+ * carry as Latin-1, so a client that skips the encoding sends something the
+ * check can name rather than failing to send at all.
+ */
+const NON_ASCII_TYPE = 'conformance.ünicode';
 const HAS_MORE_NEXT_POLL_MS = 3000;
 const REQUESTED_WAIT_MS = 2000;
 const DRAIN_WITHIN_MS = 1000;
@@ -92,11 +103,6 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
     super.handleRequest(req, res);
   }
 
-  /** True when the client used the 2026-07-28 lifecycle (no `initialize`). */
-  private stateless(): boolean {
-    return !this.requests.some((r) => r.method === 'initialize');
-  }
-
   private deliverListChanged(): void {
     const send = this.stateless() ? this.listenSend : this.getSend;
     if (!send) return;
@@ -107,6 +113,10 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
 
   protected eventsSettings(): object {
     return { listChanged: true };
+  }
+
+  protected extraDescriptors(): object[] {
+    return [descriptor(NON_ASCII_TYPE, this.mode)];
   }
 
   protected handleEvents(
@@ -148,6 +158,11 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
         id: request.id,
         result: { resultType: 'complete', ...result }
       });
+
+    if (name === NON_ASCII_TYPE) {
+      reply({ events: [], cursor: null, hasMore: false, nextPollMs: 1000 });
+      return true;
+    }
 
     if (name === CURSORLESS_TYPE) {
       const result: Record<string, unknown> = {
@@ -370,6 +385,9 @@ export class EventsClientPollScenario extends EventsClientScenarioBase {
             { polls: cursorless.length }
           )
     );
+
+    checks.push(this.mcpNameSetCheck());
+    checks.push(this.mcpNameBase64Check(NON_ASCII_TYPE));
 
     return checks;
   }

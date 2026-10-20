@@ -79,7 +79,7 @@
 #   existing row's text and section anchor was checked against the new file
 #   and none changed. Three rows are new (sep-3415-mcp-name-*).
 #
-# coverage: 143 declared checks plus 33 excluded rows, and every declared
+# coverage: 145 declared checks plus 33 excluded rows, and every declared
 #   check is emitted by a scenario.
 #
 #   132 server rows (see the server branch's header: the 2026-10-14
@@ -87,7 +87,7 @@
 #   and seven moved to excluded, five of them because nothing could emit
 #   them, panyam/mcpkit#1535, and on 2026-10-20 the three
 #   sep-3415-mcp-name-* rows were added and two more moved to excluded), plus
-#   11 client rows: ten added with
+#   13 client rows: ten added with
 #   the client scenarios in modelcontextprotocol/conformance#540, and
 #   sep-3415-client-listen-opt-in with mcpkit #1505. Seven of the ten were
 #   excluded here as client obligations before a client scenario set existed. The other
@@ -95,7 +95,9 @@
 #   (no `events/*` to a server that did not advertise the extension), "Clients
 #   SHOULD respect" `nextPollMs` under Enterprise Governance, and the receiver
 #   half of "Absent means null", which binds a client reading a poll response
-#   as much as a server reading a request.
+#   as much as a server reading a request. The remaining two,
+#   sep-3415-client-mcp-name-set and sep-3415-client-mcp-name-base64, came
+#   with the 2ec39b9c re-pin: the two client MUSTs in Routing Headers.
 #
 #   A keyword sweep of SEP-3415 at 2ec39b9c, outside code blocks and before the
 #   non-normative Appendix A, finds 137 RFC 2119 keyword occurrences: 35 MUST,
@@ -105,7 +107,7 @@
 #   had 144 (109 normative); the SEP states fewer rules with keywords and more
 #   as tables and examples.
 #
-#   Only 55 of the declared rows quote a sentence carrying a keyword. The other
+#   Only 57 of the declared rows quote a sentence carrying a keyword. The other
 #   88 are shape requirements the document states declaratively — the
 #   `EventOccurrence` field table, the error-code table, the `events/list`
 #   descriptor fields, the response payloads. They are normative and directly
@@ -963,6 +965,12 @@ requirements:
   - check: sep-3415-client-truncated-persists-fresh-cursor
     text: '`truncated: true` always implies a possible gap. Clients SHOULD treat it as one, for example by fetching authoritative state again with tools if it matters, and SHOULD persist the fresh cursor.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#cursor-lifecycle
+  - check: sep-3415-client-mcp-name-set
+    text: 'When `events/poll`, `events/stream`, `events/subscribe` or `events/unsubscribe` is sent over the Streamable HTTP transport, the client MUST set the `Mcp-Name` header (defined by [SEP-2243](./2243-http-standardization.md)) to the value of `params.name`, which is the event name.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
+  - check: sep-3415-client-mcp-name-base64
+    text: 'An event name that cannot be safely represented as a plain ASCII header value MUST be carried in the Base64 sentinel format.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#streamable-http-routing-headers
 
   # ==========================================================================
   # Excluded rows. Each carries an RFC 2119 keyword in the source but is not a

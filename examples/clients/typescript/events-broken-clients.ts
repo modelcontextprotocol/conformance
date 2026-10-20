@@ -26,3 +26,5 @@ export const ignoresListChanged = broken({ relistOnListChanged: false });
 export const neverListens = broken({ listenForListChanged: false });
 export const refreshesAfterExpiry = broken({ refreshBeforeExpiry: false });
 export const neverReconnects = broken({ reconnectDeadStream: false });
+export const omitsMcpName = broken({ sendMcpName: false });
+export const sendsRawMcpName = broken({ encodeMcpName: false });

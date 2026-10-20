@@ -66,9 +66,9 @@ describe.concurrent('events client scenarios', () => {
   test.each(
     (
       [
-        ['events-client-poll', 8],
-        ['events-client-push', 2],
-        ['events-client-webhook', 2],
+        ['events-client-poll', 10],
+        ['events-client-push', 3],
+        ['events-client-webhook', 3],
         ['events-client-no-extension', 1]
       ] as const
     ).flatMap(([name, count]) =>
@@ -158,6 +158,31 @@ describe.concurrent('events client scenarios', () => {
       'ignoresExtensionGate',
       'events-client-no-extension',
       ['sep-3415-client-no-events-without-extension']
+    ],
+    // With no header at all, the non-ASCII type's sentinel is missing too.
+    [
+      'omitsMcpName',
+      'events-client-poll',
+      ['sep-3415-client-mcp-name-base64', 'sep-3415-client-mcp-name-set'],
+      DRAFT_PROTOCOL_VERSION
+    ],
+    [
+      'omitsMcpName',
+      'events-client-push',
+      ['sep-3415-client-mcp-name-set'],
+      DRAFT_PROTOCOL_VERSION
+    ],
+    [
+      'omitsMcpName',
+      'events-client-webhook',
+      ['sep-3415-client-mcp-name-set'],
+      DRAFT_PROTOCOL_VERSION
+    ],
+    [
+      'sendsRawMcpName',
+      'events-client-poll',
+      ['sep-3415-client-mcp-name-base64'],
+      DRAFT_PROTOCOL_VERSION
     ]
   ] as const)(
     '%s against %s turns exactly %j red',

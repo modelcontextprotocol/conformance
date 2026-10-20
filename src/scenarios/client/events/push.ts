@@ -180,6 +180,8 @@ export class EventsClientPushScenario extends EventsClientScenarioBase {
           )
     );
 
+    checks.push(this.mcpNameSetCheck());
+
     return checks;
   }
 }

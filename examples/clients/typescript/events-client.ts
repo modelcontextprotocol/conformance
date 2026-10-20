@@ -14,6 +14,7 @@ import http from 'http';
 import { randomBytes } from 'crypto';
 import { DRAFT_PROTOCOL_VERSION } from '../../../src/types.js';
 import { STATELESS_SPEC_VERSIONS } from '../../../src/connection/select.js';
+import { encodeMcpHeaderValue } from '../../../src/connection/stateless.js';
 
 const EVENTS_EXTENSION_ID = 'io.modelcontextprotocol/events';
 
@@ -45,6 +46,14 @@ export interface EventsClientOptions {
   refreshBeforeExpiry: boolean;
   /** When false, never reconnect a silent push stream. */
   reconnectDeadStream: boolean;
+  /**
+   * On 2026-07-28, set `Mcp-Name` to `params.name` on events/poll,
+   * events/stream, events/subscribe and events/unsubscribe (SEP-3415, Routing
+   * Headers).
+   */
+  sendMcpName: boolean;
+  /** Wrap a non-ASCII event name in SEP-2243's `=?base64?...?=` sentinel. */
+  encodeMcpName: boolean;
 }
 
 export const CONFORMANT: EventsClientOptions = {
@@ -58,8 +67,18 @@ export const CONFORMANT: EventsClientOptions = {
   relistOnListChanged: true,
   listenForListChanged: true,
   refreshBeforeExpiry: true,
-  reconnectDeadStream: true
+  reconnectDeadStream: true,
+  sendMcpName: true,
+  encodeMcpName: true
 };
+
+/** The `events/*` methods that carry `Mcp-Name`; `events/list` does not. */
+const NAMED_METHODS = new Set([
+  'events/poll',
+  'events/stream',
+  'events/subscribe',
+  'events/unsubscribe'
+]);
 
 /** Push notifications whose `cursor` is a position to persist. */
 const CURSOR_BEARING = new Set([
@@ -85,7 +104,10 @@ class Rpc {
   readonly stateless: boolean;
   readonly version: string;
 
-  constructor(private serverUrl: string) {
+  constructor(
+    private serverUrl: string,
+    private opts: EventsClientOptions
+  ) {
     const v = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
     this.stateless = v
       ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(v)
@@ -108,13 +130,30 @@ class Rpc {
     return result.capabilities ?? {};
   }
 
-  private headers(sse: boolean): Record<string, string> {
+  private headers(
+    sse: boolean,
+    method?: string,
+    params: Json = {}
+  ): Record<string, string> {
     const h: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: sse ? 'text/event-stream' : 'application/json, text/event-stream',
       'MCP-Protocol-Version': this.version
     };
     if (this.sessionId) h['mcp-session-id'] = this.sessionId;
+    // SEP-2243's routing headers belong to the 2026-07-28 transport.
+    if (this.stateless && method) {
+      h['Mcp-Method'] = method;
+      if (
+        this.opts.sendMcpName &&
+        NAMED_METHODS.has(method) &&
+        typeof params.name === 'string'
+      ) {
+        h['Mcp-Name'] = this.opts.encodeMcpName
+          ? encodeMcpHeaderValue(params.name)
+          : params.name;
+      }
+    }
     return h;
   }
 
@@ -142,7 +181,7 @@ class Rpc {
   async notify(method: string, params: Json = {}): Promise<void> {
     await fetch(this.serverUrl, {
       method: 'POST',
-      headers: this.headers(false),
+      headers: this.headers(false, method, params),
       body: this.body(method, params)
     });
   }
@@ -160,7 +199,7 @@ class Rpc {
     const id = this.nextId++;
     const res = await fetch(this.serverUrl, {
       method: 'POST',
-      headers: this.headers(false),
+      headers: this.headers(false, method, params),
       body: this.body(method, params, id),
       signal
     });
@@ -202,7 +241,7 @@ class Rpc {
     const id = this.nextId++;
     const res = await fetch(this.serverUrl, {
       method: 'POST',
-      headers: this.headers(true),
+      headers: this.headers(true, method, params),
       body: this.body(method, params, id),
       signal
     });
@@ -446,7 +485,7 @@ export function makeEventsClient(
   return async (serverUrl: string) => {
     // Read before the first await: the runner's env is process-wide.
     const durationMs = durationFromContext();
-    const rpc = new Rpc(serverUrl);
+    const rpc = new Rpc(serverUrl, opts);
     const caps = await rpc.connect();
     if (opts.gateOnExtension && !caps.extensions?.[EVENTS_EXTENSION_ID]) return;
 
