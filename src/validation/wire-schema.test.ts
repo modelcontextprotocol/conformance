@@ -579,3 +579,88 @@ describe('schema errata', () => {
     ).toBe('integer');
   });
 });
+
+describe('wireSchemaChecks scope', () => {
+  // A tools/list result missing `tools`: invalid at every version.
+  const record = (requestMethod: string | undefined) =>
+    validateWireMessage(
+      DRAFT_PROTOCOL_VERSION,
+      { jsonrpc: '2.0', id: 1, result: {} },
+      { origin: 'implementation', context: 'test response', requestMethod }
+    );
+  const status = (checks: ReturnType<typeof wireSchemaChecks>, id: string) =>
+    checks.find((c) => c.id === id)?.status;
+
+  it('grades only in-scope methods and reports the rest as INFO', () =>
+    withWireRecorder(async () => {
+      record('tools/list');
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['events/']);
+      expect(status(checks, 'wire-schema-valid')).toBe('SUCCESS');
+      expect(status(checks, 'wire-schema-valid-out-of-scope')).toBe('INFO');
+    }));
+
+  it('still fails a violation inside the scope, by prefix or exact method', () =>
+    withWireRecorder(async () => {
+      record('tools/list');
+      expect(
+        status(
+          wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['tools/']),
+          'wire-schema-valid'
+        )
+      ).toBe('FAILURE');
+      record('tools/list');
+      expect(
+        status(
+          wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['tools/list']),
+          'wire-schema-valid'
+        )
+      ).toBe('FAILURE');
+    }));
+
+  it('keeps a violation with no known method in scope', () =>
+    withWireRecorder(async () => {
+      record(undefined);
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['events/']);
+      expect(status(checks, 'wire-schema-valid')).toBe('FAILURE');
+      expect(status(checks, 'wire-schema-valid-out-of-scope')).toBeUndefined();
+    }));
+
+  it('grades every message when no scope is set', () =>
+    withWireRecorder(async () => {
+      record('tools/list');
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      expect(status(checks, 'wire-schema-valid')).toBe('FAILURE');
+      expect(status(checks, 'wire-schema-valid-out-of-scope')).toBeUndefined();
+    }));
+
+  it('attributes a request or notification by its own method', () =>
+    withWireRecorder(async () => {
+      validateWireMessage(
+        DRAFT_PROTOCOL_VERSION,
+        { jsonrpc: '2.0', method: 'notifications/progress', params: {} },
+        { origin: 'implementation', context: 'test notification' }
+      );
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['events/']);
+      expect(status(checks, 'wire-schema-valid')).toBe('SUCCESS');
+      expect(status(checks, 'wire-schema-valid-out-of-scope')).toBe('INFO');
+    }));
+
+  it('treats an empty scope as grading everything', () =>
+    withWireRecorder(async () => {
+      record('tools/list');
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION, []);
+      expect(status(checks, 'wire-schema-valid')).toBe('FAILURE');
+    }));
+
+  it('leaves harness-origin violations failing whatever the scope', () =>
+    withWireRecorder(async () => {
+      validateWireMessage(
+        DRAFT_PROTOCOL_VERSION,
+        { jsonrpc: '2.0', id: 1, result: {} },
+        { origin: 'harness', context: 'test', requestMethod: 'tools/list' }
+      );
+      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION, ['events/']);
+      expect(status(checks, 'wire-schema-harness-error')).toBe('FAILURE');
+      expect(status(checks, 'wire-schema-valid-out-of-scope')).toBeUndefined();
+    }));
+});

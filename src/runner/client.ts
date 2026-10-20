@@ -220,7 +220,7 @@ export async function runConformanceTest(
     }
 
     const checks = scenario.getChecks();
-    checks.push(...wireSchemaChecks(resolvedVersion));
+    checks.push(...wireSchemaChecks(resolvedVersion, scenario.wireSchemaScope));
 
     if (resultDir) {
       await fs.writeFile(
@@ -382,7 +382,7 @@ export async function runInteractiveMode(
     console.log('\nShutting down...');
 
     const checks = scenario.getChecks();
-    checks.push(...wireSchemaChecks(resolvedVersion));
+    checks.push(...wireSchemaChecks(resolvedVersion, scenario.wireSchemaScope));
 
     if (resultDir) {
       await fs.writeFile(

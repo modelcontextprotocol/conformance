@@ -138,6 +138,17 @@ export interface Scenario {
    * Use this for scenarios where the client is expected to error (e.g., rejecting invalid auth).
    */
   allowClientError?: boolean;
+  /**
+   * Methods whose messages this scenario grades for wire-schema validity. When
+   * set, `wire-schema-valid` covers only the implementation's messages for these
+   * methods, and violations elsewhere are reported as an INFO check instead.
+   * An entry ending in `/` matches a prefix, so an events scenario would list
+   * `['events/', 'notifications/events/']`. Lifecycle messages (`initialize`,
+   * `server/discover`, `ping`) are out of scope unless listed. Use it for
+   * extension scenarios, so a gap outside the extension does not fail them.
+   * Unset or empty means every message is graded.
+   */
+  wireSchemaScope?: readonly string[];
   start(ctx: ScenarioContext): Promise<ScenarioUrls>;
   stop(): Promise<void>;
   getChecks(): ConformanceCheck[];
@@ -147,6 +158,8 @@ export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
+  /** See `Scenario.wireSchemaScope`. */
+  wireSchemaScope?: readonly string[];
   run(ctx: RunContext): Promise<ConformanceCheck[]>;
 }
 
