@@ -2,11 +2,9 @@
  * Shared helpers for the MCP Events server-conformance scenarios under this
  * directory.
  *
- * Extracted against the merged design sketch on `main` of
- * modelcontextprotocol/experimental-ext-triggers-events (merged 2026-09-08).
- * Each check's verbatim excerpt lives next to its check ID in
- * src/seps/sep-3415.yaml. The rows still quote the sketch while they are
- * re-extracted against SEP-3415; see that file's header.
+ * Graded against SEP-3415 at 2ec39b9c. Each check's verbatim excerpt lives
+ * next to its check ID in src/seps/sep-3415.yaml, whose header says how the
+ * rows moved from the design sketch to the SEP.
  *
  * One thing about Events differs from every other extension suite here and is
  * worth knowing before reading the scenarios:
@@ -97,9 +95,10 @@ export const EVENTS_ERROR_CODES: readonly number[] = [
   EVENTS_CALLBACK_ENDPOINT_ERROR
 ];
 
+/** SEP-3415 at the commit src/seps/sep-3415.yaml quotes. */
 export const EVENTS_SPEC_REF: SpecReference = {
-  id: 'MCP-Events',
-  url: 'https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/main/docs/design-sketch-proposal.md'
+  id: 'SEP-3415',
+  url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md'
 };
 
 /** One entry of the `events` array returned by `events/list`. */
