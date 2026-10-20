@@ -86,13 +86,11 @@ const SUBSCRIBE_IDS = [
   'sep-3415-subscribe-secret-rejected',
   'sep-3415-subscribe-url-https-required',
   'sep-3415-subscribe-url-non-https-rejected',
-  'sep-3415-subscribe-auth-required',
   'sep-3415-subscribe-key-composition',
   'sep-3415-subscribe-key-immutable',
   'sep-3415-subscribe-idempotent-upsert',
   'sep-3415-subscribe-id-derived',
   'sep-3415-subscribe-id-not-an-input',
-  'sep-3415-subscribe-refresh-replaces-secret',
   'sep-3415-subscribe-refresh-reactivates',
   'sep-3415-subscribe-response-cursor',
   'sep-3415-subscribe-response-truncated',
@@ -191,7 +189,7 @@ export class EventsWebhookScenario implements ClientScenario {
 
 **Scope**: subscription management only. Signatures, the verification handshake and control envelopes belong to events-webhook-delivery, which needs a reachable callback.
 
-**The principal is one row's blind spot**: the key is \`(principal, delivery.url, name, arguments)\` and a run holds one principal, so cross-tenant isolation and the auth requirement report untestable rather than passing unexercised.
+**The principal is one row's blind spot**: the key is \`(principal, delivery.url, name, arguments)\` and a run holds one principal, so cross-tenant isolation reports untestable rather than passing unexercised.
 
 **Cleanup**: every subscription created here is unsubscribed before the scenario returns.`;
 
@@ -1091,17 +1089,6 @@ export class EventsWebhookScenario implements ClientScenario {
       );
     }
 
-    // The principal half of the surface. One run, one credential.
-    out.push(
-      untestableCheck(
-        'sep-3415-subscribe-auth-required',
-        'sep-3415-subscribe-auth-required',
-        '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal; servers MUST reject calls without one with `-32024 Forbidden`.',
-        'The harness sends whatever credential it was pointed at, on every request, and has no way to make the same call as an anonymous caller. Grading this needs a runner that can drop its own auth for one probe.',
-        [EVENTS_SPEC_REF]
-      )
-    );
-
     return out;
   }
 
@@ -1284,8 +1271,7 @@ export class EventsWebhookScenario implements ClientScenario {
         ...untestableAll(
           [
             'sep-3415-subscribe-key-composition',
-            'sep-3415-subscribe-key-immutable',
-            'sep-3415-subscribe-refresh-replaces-secret'
+            'sep-3415-subscribe-key-immutable'
           ],
           'The repeat subscribe failed, so nothing about key identity could be compared.'
         )
@@ -1307,19 +1293,6 @@ export class EventsWebhookScenario implements ClientScenario {
                 errorMessage: `The same key produced a different \`id\` (${describeValue(firstId)} then ${describeValue(again.result.id)}), so the second call created a second subscription.`
               }
             )
-      );
-
-      // A refresh carrying a new secret is accepted; whether the next delivery
-      // is signed with it belongs to events-webhook-delivery.
-      out.push(
-        untestableCheck(
-          'sep-3415-subscribe-refresh-replaces-secret',
-          'sep-3415-subscribe-refresh-replaces-secret',
-          'On an idempotent subscribe against an existing key, `delivery.secret` is replaced.',
-          'The refresh carrying a new secret was accepted, but confirming the replacement needs a delivery signed with it, which events-webhook-delivery covers.',
-          [EVENTS_SPEC_REF],
-          'WARNING'
-        )
       );
     }
 

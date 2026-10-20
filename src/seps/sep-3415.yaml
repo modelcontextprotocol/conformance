@@ -79,9 +79,12 @@
 #   existing row's text and section anchor was checked against the new file
 #   and none changed. Three rows are new (sep-3415-mcp-name-*).
 #
-# coverage: 134 declared checks plus 37 excluded rows, and every declared
+# coverage: 132 declared checks plus 39 excluded rows, and every declared
 #   check is emitted by a scenario. On 2026-10-20 the three sep-3415-mcp-name-*
-#   rows were added. Earlier, five rows that nothing could emit moved to
+#   rows were added, and sep-3415-subscribe-auth-required and
+#   sep-3415-subscribe-refresh-replaces-secret moved to excluded: no run over
+#   the wire could pass either, so they read as permanent red and amber
+#   (conformance PR 521 review). Earlier, five rows that nothing could emit moved to
 #   excluded on 2026-10-15 (panyam/mcpkit#1535): sep-3415-error-forbidden and
 #   the two sep-3415-authz-* rows need a second principal, payload-minimality
 #   has no observable verdict, and capability-client-declaration is a MAY.
@@ -469,7 +472,7 @@
 #   The rest of the gap is untestable rather than wrong: rows that need the
 #   `events_conformance_*` controls only kitchen-sink exposes, the
 #   unsupported-mode rows (its one type offers all three modes), the restart
-#   rows, and subscribe-auth-required.
+#   rows, and subscribe-auth-required (excluded since 2026-10-20).
 #
 #   One harness bug, fixed here: a scenario that met a transport error (the
 #   502) threw out of run() and reported nothing, so the runner printed
@@ -744,9 +747,6 @@ requirements:
   - check: sep-3415-subscribe-url-non-https-rejected
     text: 'Servers MUST reject `events/subscribe` with a non-`https` `delivery.url` (`InvalidParams`).'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
-  - check: sep-3415-subscribe-auth-required
-    text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal. Servers MUST reject calls without an authorized principal with `Forbidden`.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
   - check: sep-3415-subscribe-key-composition
     text: 'The subscription key is `(principal, delivery.url, name, arguments)`.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
@@ -762,9 +762,6 @@ requirements:
   - check: sep-3415-subscribe-id-not-an-input
     text: "A caller who learns another tenant's derived `id` gains nothing, because `id` is not accepted as input to any method."
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
-  - check: sep-3415-subscribe-refresh-replaces-secret
-    text: 'The client supplies a new `delivery.secret` on a refresh call, and the idempotent upsert replaces it.'
-    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
   - check: sep-3415-subscribe-refresh-reactivates
     text: 'A later successful refresh reactivates the subscription (sets `active: true`), and the server resumes retrying pending events.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-event-delivery
@@ -1009,6 +1006,12 @@ requirements:
     excluded: deployment advisory addressed to operators, not to an implementation
 
   # --- Server obligations a single-principal harness cannot grade ---
+  - text: '`events/subscribe` and `events/unsubscribe` MUST be called with an authenticated principal. Servers MUST reject calls without an authorized principal with `Forbidden`.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#subscription-identity
+    excluded: needs the same call made with no principal, and the harness sends the one credential it was given on every request, so no run over the wire can provoke the rejection (was sep-3415-subscribe-auth-required, moved to excluded after the conformance PR 521 review)
+  - text: 'The client supplies a new `delivery.secret` on a refresh call, and the idempotent upsert replaces it.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#webhook-security
+    excluded: the replacement shows only in a delivery signed with the new secret after a refresh, which events-webhook ran without a receiver and events-webhook-delivery never sets up, so the row could only ever report untestable (was sep-3415-subscribe-refresh-replaces-secret, moved to excluded after the conformance PR 521 review)
   - text: '`Forbidden` `-32024`: The authenticated principal is not permitted for this combination of event and arguments, or its access was revoked.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md#error-handling
     excluded: needs a principal the harness can be refused as; a single-principal harness has no way to provoke -32024 (was sep-3415-error-forbidden, moved to excluded in panyam/mcpkit#1535)

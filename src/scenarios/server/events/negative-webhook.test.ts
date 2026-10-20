@@ -25,7 +25,7 @@ import {
  * success.
  */
 
-const ALL_ROWS = 32;
+const ALL_ROWS = 30;
 
 // The durability rows poll for a restart and for a GC drop; the defaults are
 // sized for a real server and would make this file crawl.
@@ -37,7 +37,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
 });
 
-/** Rows every conformant run passes, which is the whole surface bar the seven
+/** Rows every conformant run passes, which is the whole surface bar the five
  * that need a second principal or a restart. */
 const GRADEABLE = [
   'sep-3415-result-type-complete',
@@ -69,9 +69,7 @@ const GRADEABLE = [
 
 /** Rows no single-principal, single-process run can exercise. */
 const ALWAYS_UNTESTABLE = [
-  'sep-3415-subscribe-auth-required',
   'sep-3415-subscribe-cross-tenant-isolation',
-  'sep-3415-subscribe-refresh-replaces-secret',
   'sep-3415-subscribe-refresh-reactivates',
   'sep-3415-ttl-long-grant-retained',
   'sep-3415-ttl-no-expiry-persisted',
