@@ -150,7 +150,9 @@ export async function runServerConformanceTest(
     scenarioName,
     timeout
   );
-  checks.push(...wireSchemaChecks(resolvedSpecVersion));
+  checks.push(
+    ...wireSchemaChecks(resolvedSpecVersion, scenario.wireSchemaScope)
+  );
 
   if (resultDir) {
     await fs.writeFile(
