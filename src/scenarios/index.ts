@@ -2,6 +2,7 @@ import {
   Scenario,
   ClientScenario,
   ClientScenarioForAuthorizationServer,
+  ScenarioForResourceAuthorizationServer,
   ScenarioSource,
   SpecVersion,
   DatedSpecVersion,
@@ -315,6 +316,21 @@ export const clientScenariosForAuthorizationServer = new Map<
   ])
 );
 
+// All scenarios for the EMA Resource Authorization Server (ISSUE-470)
+const allScenariosListForResourceAuthorizationServer: ScenarioForResourceAuthorizationServer[] =
+  [];
+
+// Scenarios map for the EMA Resource Authorization Server - built from list
+export const resourceAuthorizationServerScenarios = new Map<
+  string,
+  ScenarioForResourceAuthorizationServer
+>(
+  allScenariosListForResourceAuthorizationServer.map((scenario) => [
+    scenario.name,
+    scenario
+  ])
+);
+
 // All client test scenarios (core + backcompat + extensions)
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
@@ -418,6 +434,16 @@ export function listClientScenariosForAuthorizationServer(): string[] {
   return Array.from(clientScenariosForAuthorizationServer.keys());
 }
 
+export function getScenarioForResourceAuthorizationServer(
+  name: string
+): ScenarioForResourceAuthorizationServer | undefined {
+  return resourceAuthorizationServerScenarios.get(name);
+}
+
+export function listScenariosForResourceAuthorizationServer(): string[] {
+  return Array.from(resourceAuthorizationServerScenarios.keys());
+}
+
 // All client-testing scenarios that target the draft spec, derived from the
 // declared `source.introducedIn` rather than a hand-maintained list (covers
 // both the auth draft scenarios and the non-auth ones, e.g. SEP-2243/2575).
@@ -514,7 +540,8 @@ export function getScenarioSpecVersions(
   const s =
     scenarios.get(name) ??
     clientScenarios.get(name) ??
-    clientScenariosForAuthorizationServer.get(name);
+    clientScenariosForAuthorizationServer.get(name) ??
+    resourceAuthorizationServerScenarios.get(name);
   if (!s) return undefined;
   if ('extensionId' in s.source) return ['extension'];
   const result: ScenarioSpecTag[] = [];
