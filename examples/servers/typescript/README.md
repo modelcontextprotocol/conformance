@@ -188,3 +188,38 @@ npx @modelcontextprotocol/conformance server \
 ```
 
 **DO NOT** use this pattern in production servers. Always use `createMcpExpressApp()` or the `localhostHostValidation()` middleware for localhost servers.
+
+### auth-prm-server.ts
+
+A small auth-enabled server for the `auth/protected-resource-metadata` scenario. Requests without a bearer token get a `401` with a `WWW-Authenticate` challenge; the Protected Resource Metadata (RFC 9728) is served at the path-based well-known URL. It listens on port 3013 (`PORT` overrides).
+
+`PRM_BREAK` picks one deliberate defect so each check has a negative case. Unknown values exit with the allowed list.
+
+| `PRM_BREAK`                     | Effect                                                | Expected result                                          |
+| ------------------------------- | ----------------------------------------------------- | -------------------------------------------------------- |
+| `none` (default)                | compliant                                             | all checks pass                                          |
+| `no-prm`                        | no `resource_metadata`, no well-known document        | `server-prm-discovery` fails, document checks untestable |
+| `challenge-404`                 | `resource_metadata` points at a 404; well-known works | `server-prm-discovery` fails                             |
+| `wrong-content-type`            | metadata served as `text/html`                        | `server-prm-response` fails                              |
+| `wrong-resource`                | `resource` names another server                       | `server-prm-resource` fails                              |
+| `missing-resource`              | `resource` omitted                                    | `server-prm-resource` fails                              |
+| `missing-authorization-servers` | `authorization_servers` omitted                       | `server-prm-authorization-servers` fails                 |
+| `empty-authorization-servers`   | `authorization_servers` is `[]`                       | `server-prm-authorization-servers` fails                 |
+| `status-403`                    | `403` instead of `401` for a missing token            | `server-auth-401` fails                                  |
+| `no-scope`                      | challenge omits `scope`                               | `server-www-authenticate-scope` warns                    |
+| `well-known-only`               | no `resource_metadata`; well-known works              | passes at 2025-11-25+, discovery fails at 2025-06-18     |
+| `root-well-known`               | metadata only at the root URL, `resource` = origin    | all checks pass                                          |
+| `no-auth`                       | no authorization at all                               | every check untestable                                   |
+
+```bash
+# Run the compliant server
+npx tsx auth-prm-server.ts
+
+# Run one negative case
+PRM_BREAK=no-scope npx tsx auth-prm-server.ts
+
+# Grade it
+npx @modelcontextprotocol/conformance server \
+  --url http://localhost:3013/mcp \
+  --scenario auth/protected-resource-metadata
+```
