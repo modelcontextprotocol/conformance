@@ -42,6 +42,8 @@ import { setLogLevel } from '../../../../examples/clients/typescript/helpers/log
 import { DRAFT_PROTOCOL_VERSION } from '../../../types';
 import { testScenarioContext } from '../../../mock-server/testing';
 import { ClientConformanceContextSchema } from '../../../schemas/context';
+import { discoverAuthorizationServerMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
+import { decodeProtectedHeader } from 'jose';
 
 beforeAll(() => {
   setLogLevel('error');
@@ -161,6 +163,37 @@ describe('auth/pre-registration context', () => {
       await scenario.stop();
     }
   });
+});
+
+test('enterprise authorization serves discoverable IdP metadata', async () => {
+  const scenario = extensionScenariosList.find(
+    (entry) => entry.name === 'auth/enterprise-managed-authorization'
+  );
+  if (!scenario) {
+    throw new Error('Enterprise authorization scenario not found');
+  }
+  const urls = await scenario.start(testScenarioContext());
+  try {
+    const context = ClientConformanceContextSchema.parse({
+      name: scenario.name,
+      ...urls.context
+    });
+    if (context.name !== 'auth/enterprise-managed-authorization') {
+      throw new Error(`Unexpected context variant: ${context.name}`);
+    }
+    const metadata = await discoverAuthorizationServerMetadata(
+      context.idp_issuer
+    );
+    expect(metadata).toMatchObject({
+      issuer: context.idp_issuer,
+      token_endpoint: context.idp_token_endpoint,
+      subject_types_supported: ['public'],
+      id_token_signing_alg_values_supported: ['RS256']
+    });
+    expect(decodeProtectedHeader(context.idp_id_token).alg).toBe('RS256');
+  } finally {
+    await scenario.stop();
+  }
 });
 
 describe('Negative tests', () => {

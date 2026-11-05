@@ -16,13 +16,13 @@ const IDP_CLIENT_ID = 'conformance-test-idp-client';
 const DEMO_USER_ID = 'demo-user@example.com';
 
 /**
- * Generate an EC P-256 keypair for IDP ID token signing.
+ * Generate an RSA keypair for the OIDC-required RS256 ID token algorithm.
  */
 async function generateIdpKeypair(): Promise<{
   publicKey: CryptoKey;
   privateKey: CryptoKey;
 }> {
-  const { publicKey, privateKey } = await jose.generateKeyPair('ES256', {
+  const { publicKey, privateKey } = await jose.generateKeyPair('RS256', {
     extractable: true
   });
   return { publicKey, privateKey };
@@ -42,7 +42,7 @@ async function createIdpIdToken(
     email: userId,
     aud: audience
   })
-    .setProtectedHeader({ alg: 'ES256' })
+    .setProtectedHeader({ alg: 'RS256' })
     .setIssuer(idpIssuer)
     .setIssuedAt()
     .setExpirationTime('1h')
@@ -165,6 +165,9 @@ export class EnterpriseManagedAuthorizationScenario implements Scenario {
           authorization_endpoint: `${this.idpServer.getUrl()}/authorize`,
           token_endpoint: `${this.idpServer.getUrl()}/token`,
           jwks_uri: `${this.idpServer.getUrl()}/.well-known/jwks.json`,
+          response_types_supported: ['id_token'],
+          subject_types_supported: ['public'],
+          id_token_signing_alg_values_supported: ['RS256'],
           grant_types_supported: [
             'urn:ietf:params:oauth:grant-type:token-exchange'
           ]
