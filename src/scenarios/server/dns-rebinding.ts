@@ -6,12 +6,12 @@
  */
 
 import {
-  CheckStatus,
   ClientScenario,
   ConformanceCheck,
   DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { buildStandardHeaders, type RunContext } from '../../connection';
+import { untestableCheck } from '../untestable';
 import { request } from 'undici';
 
 const SPEC_REFERENCES = [
@@ -42,8 +42,8 @@ const SPEC_REFERENCES = [
  * miss is WARNING.
  */
 const ORIGIN_ONLY_EXPECTED_STATUS = 403;
-const ORIGIN_ONLY_MISS_STATUS: CheckStatus = 'FAILURE';
-const HOST_ONLY_MISS_STATUS: CheckStatus = 'WARNING';
+const ORIGIN_ONLY_MISS_STATUS: 'FAILURE' | 'WARNING' = 'FAILURE';
+const HOST_ONLY_MISS_STATUS: 'FAILURE' | 'WARNING' = 'WARNING';
 
 const ORIGIN_ONLY_SPEC_REFERENCES = [
   {
@@ -257,6 +257,11 @@ website tricks a user's browser into making requests to the local server.
   with HTTP 403 Forbidden. Expects exactly 403.
 - \`localhost-host-valid-accepted\`: localhost Host and Origin. Expects HTTP 2xx.
 
+Before any forged request, a control request with a localhost Host and no Origin is sent.
+If the server does not answer it with 2xx, the Host-only and Origin-only checks are reported
+as not testable (at their usual severity), since a rejection would not show which header,
+if any, is validated.
+
 **Valid localhost values:** \`localhost\`, \`127.0.0.1\`, \`[::1]\` (with optional port)
 
 **Note:** This test requires a localhost server URL. Non-localhost URLs will fail.
@@ -340,6 +345,23 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
     const validHost = getHostFromUrl(serverUrl);
     const attackerHost = 'evil.example.com';
 
+    // Control request: the probe a non-browser client sends, with the
+    // server's own Host and no Origin. The Host-only and Origin-only checks
+    // pass on a rejection, so they only show header validation if the server
+    // accepts this request. A server that rejects it would pass them without
+    // validating either header, so they are reported as not testable instead.
+    let controlFailure: string | undefined;
+    try {
+      const control = await sendProbe(serverUrl, specVersion, {
+        host: validHost
+      });
+      if (control.statusCode < 200 || control.statusCode >= 300) {
+        controlFailure = `the server answered HTTP ${control.statusCode} to a control request with a localhost Host header and no Origin header, so a rejected forged request would not show that either header is validated`;
+      }
+    } catch (error) {
+      controlFailure = `the control request with a localhost Host header and no Origin header failed (${error instanceof Error ? error.message : String(error)})`;
+    }
+
     // Check 1: Invalid Host/Origin headers should be rejected with a 4xx error
     try {
       const response = await sendRequestWithHostAndOrigin(
@@ -383,80 +405,101 @@ See: https://github.com/modelcontextprotocol/typescript-sdk/security/advisories/
       });
     }
 
-    // Check 2: A non-localhost Host with no Origin should be rejected with a 4xx
-    try {
-      const response = await sendProbe(serverUrl, specVersion, {
-        host: attackerHost
-      });
-      const isRejected =
-        response.statusCode >= 400 && response.statusCode < 500;
-
-      const details = {
-        hostHeader: attackerHost,
-        originHeader: null,
-        statusCode: response.statusCode,
-        body: response.body
-      };
-
-      if (isRejected) {
-        checks.push({
-          ...hostOnlyCheckBase,
-          status: 'SUCCESS',
-          details
+    if (controlFailure) {
+      checks.push(
+        untestableCheck(
+          hostOnlyCheckBase.id,
+          hostOnlyCheckBase.name,
+          hostOnlyCheckBase.description,
+          controlFailure,
+          hostOnlyCheckBase.specReferences,
+          HOST_ONLY_MISS_STATUS
+        ),
+        untestableCheck(
+          originOnlyCheckBase.id,
+          originOnlyCheckBase.name,
+          originOnlyCheckBase.description,
+          controlFailure,
+          originOnlyCheckBase.specReferences,
+          ORIGIN_ONLY_MISS_STATUS
+        )
+      );
+    } else {
+      // Check 2: A non-localhost Host with no Origin should be rejected with a 4xx
+      try {
+        const response = await sendProbe(serverUrl, specVersion, {
+          host: attackerHost
         });
-      } else {
+        const isRejected =
+          response.statusCode >= 400 && response.statusCode < 500;
+
+        const details = {
+          hostHeader: attackerHost,
+          originHeader: null,
+          statusCode: response.statusCode,
+          body: response.body
+        };
+
+        if (isRejected) {
+          checks.push({
+            ...hostOnlyCheckBase,
+            status: 'SUCCESS',
+            details
+          });
+        } else {
+          checks.push({
+            ...hostOnlyCheckBase,
+            status: HOST_ONLY_MISS_STATUS,
+            errorMessage: `Expected HTTP 4xx for a non-localhost Host header with no Origin header, got ${response.statusCode}`,
+            details
+          });
+        }
+      } catch (error) {
         checks.push({
           ...hostOnlyCheckBase,
           status: HOST_ONLY_MISS_STATUS,
-          errorMessage: `Expected HTTP 4xx for a non-localhost Host header with no Origin header, got ${response.statusCode}`,
-          details
+          errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+          details: { hostHeader: attackerHost, originHeader: null }
         });
       }
-    } catch (error) {
-      checks.push({
-        ...hostOnlyCheckBase,
-        status: HOST_ONLY_MISS_STATUS,
-        errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
-        details: { hostHeader: attackerHost, originHeader: null }
-      });
-    }
 
-    // Check 3: A localhost Host with a non-localhost Origin should get a 403
-    const attackerOrigin = `http://${attackerHost}`;
-    try {
-      const response = await sendProbe(serverUrl, specVersion, {
-        host: validHost,
-        origin: attackerOrigin
-      });
-
-      const details = {
-        hostHeader: validHost,
-        originHeader: attackerOrigin,
-        statusCode: response.statusCode,
-        body: response.body
-      };
-
-      if (response.statusCode === ORIGIN_ONLY_EXPECTED_STATUS) {
-        checks.push({
-          ...originOnlyCheckBase,
-          status: 'SUCCESS',
-          details
+      // Check 3: A localhost Host with a non-localhost Origin should get a 403
+      const attackerOrigin = `http://${attackerHost}`;
+      try {
+        const response = await sendProbe(serverUrl, specVersion, {
+          host: validHost,
+          origin: attackerOrigin
         });
-      } else {
+
+        const details = {
+          hostHeader: validHost,
+          originHeader: attackerOrigin,
+          statusCode: response.statusCode,
+          body: response.body
+        };
+
+        if (response.statusCode === ORIGIN_ONLY_EXPECTED_STATUS) {
+          checks.push({
+            ...originOnlyCheckBase,
+            status: 'SUCCESS',
+            details
+          });
+        } else {
+          checks.push({
+            ...originOnlyCheckBase,
+            status: ORIGIN_ONLY_MISS_STATUS,
+            errorMessage: `Expected HTTP ${ORIGIN_ONLY_EXPECTED_STATUS} for a non-localhost Origin header, got ${response.statusCode}`,
+            details
+          });
+        }
+      } catch (error) {
         checks.push({
           ...originOnlyCheckBase,
           status: ORIGIN_ONLY_MISS_STATUS,
-          errorMessage: `Expected HTTP ${ORIGIN_ONLY_EXPECTED_STATUS} for a non-localhost Origin header, got ${response.statusCode}`,
-          details
+          errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
+          details: { hostHeader: validHost, originHeader: attackerOrigin }
         });
       }
-    } catch (error) {
-      checks.push({
-        ...originOnlyCheckBase,
-        status: ORIGIN_ONLY_MISS_STATUS,
-        errorMessage: `Request failed: ${error instanceof Error ? error.message : String(error)}`,
-        details: { hostHeader: validHost, originHeader: attackerOrigin }
-      });
     }
 
     // Check 4: Valid localhost Host/Origin headers should be accepted (2xx response)

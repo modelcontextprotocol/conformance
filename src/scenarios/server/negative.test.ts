@@ -239,6 +239,12 @@ describe('Server scenario negative tests', () => {
 
         const validHost = new URL(serverUrl).host;
         expect(requests).toEqual([
+          // Control request
+          expect.objectContaining({
+            method: 'initialize',
+            host: validHost,
+            origin: undefined
+          }),
           expect.objectContaining({
             method: 'initialize',
             host: 'evil.example.com',
@@ -325,8 +331,44 @@ describe('Server scenario negative tests', () => {
           'server/discover',
           'server/discover',
           'server/discover',
+          'server/discover',
           'server/discover'
         ]);
+      } finally {
+        await closeHttpServer(server);
+      }
+    }, 10000);
+
+    it('reports the Host-only and Origin-only checks as not testable when the server rejects every request', async () => {
+      const server = createServer((_req, res) => {
+        res
+          .writeHead(403, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ error: 'forbidden' }));
+      });
+
+      const serverUrl = await listenOnRandomPort(server);
+      try {
+        const checks = await new DNSRebindingProtectionScenario().run(
+          testContext(serverUrl, LATEST_SPEC_VERSION)
+        );
+
+        const hostOnly = checks.find(
+          (c) => c.id === 'localhost-host-only-rebinding-rejected'
+        );
+        expect(hostOnly?.status).toBe('WARNING');
+        expect(hostOnly?.errorMessage).toMatch(/^Not testable: .*HTTP 403/);
+        expect(hostOnly?.details).toMatchObject({ untestable: true });
+
+        const originOnly = checks.find(
+          (c) => c.id === 'localhost-origin-only-rebinding-rejected'
+        );
+        expect(originOnly?.status).toBe('FAILURE');
+        expect(originOnly?.errorMessage).toMatch(/^Not testable: .*HTTP 403/);
+        expect(originOnly?.details).toMatchObject({ untestable: true });
+
+        expect(
+          checks.find((c) => c.id === 'localhost-host-valid-accepted')?.status
+        ).toBe('FAILURE');
       } finally {
         await closeHttpServer(server);
       }
