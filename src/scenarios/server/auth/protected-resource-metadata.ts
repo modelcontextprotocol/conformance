@@ -2,7 +2,7 @@
  * Server-side Protected Resource Metadata discovery (RFC 9728).
  *
  * The harness plays an MCP client with no token: one unauthenticated POST to
- * the MCP endpoint, then metadata discovery in client order. Six checks come
+ * the MCP endpoint, then metadata discovery in client order. Seven checks come
  * from those few requests. A server that answers the probe with 2xx is not
  * configured for authorization, so every check is reported untestable (#248).
  */
@@ -55,6 +55,21 @@ const SCOPE_REFERENCES: SpecReference[] = [
   SpecReferences.MCP_SCOPE_SELECTION_STRATEGY
 ];
 
+// The array parameters RFC 9728 §2 defines that §3.2 ("Parameters with zero
+// values MUST be omitted from the response") applies to. Left out on purpose:
+// bearer_methods_supported, because §2 says "The empty array [] can be used to
+// indicate that no bearer methods are supported"; and any parameter §2 does
+// not define. The MUST has no carve-out for those, but the harness cannot know
+// what [] means in someone else's parameter, and §3.2 tells readers to ignore
+// parameters they do not understand.
+const ZERO_VALUE_PARAMETERS = [
+  'authorization_servers',
+  'scopes_supported',
+  'resource_signing_alg_values_supported',
+  'authorization_details_types_supported',
+  'dpop_signing_alg_values_supported'
+];
+
 interface CheckSpec {
   id: string;
   name: string;
@@ -102,6 +117,14 @@ const CHECKS = {
     description:
       'Protected resource metadata lists at least one authorization server',
     specReferences: AUTHORIZATION_SERVERS_REFERENCES,
+    severity: 'FAILURE'
+  },
+  noEmptyParameters: {
+    id: 'server-prm-no-empty-parameters',
+    name: 'ServerPrmNoEmptyParameters',
+    description:
+      'Protected resource metadata omits array parameters with zero values; bearer_methods_supported may be empty',
+    specReferences: RESPONSE_REFERENCES,
     severity: 'FAILURE'
   },
   scope: {
@@ -304,6 +327,24 @@ function gradeAuthorizationServers(
   return check(CHECKS.authorizationServers, undefined, details);
 }
 
+function gradeNoEmptyParameters(
+  doc: Record<string, unknown>
+): ConformanceCheck {
+  const empty = ZERO_VALUE_PARAMETERS.filter((parameter) => {
+    const value = doc[parameter];
+    return Array.isArray(value) && value.length === 0;
+  });
+  const details = { empty };
+  if (empty.length > 0) {
+    return check(
+      CHECKS.noEmptyParameters,
+      `parameters with zero values must be omitted, found empty: ${empty.join(', ')}`,
+      details
+    );
+  }
+  return check(CHECKS.noEmptyParameters, undefined, details);
+}
+
 function gradeScope(
   probe: UnauthenticatedProbe,
   specVersion: string
@@ -351,6 +392,7 @@ The harness sends one unauthenticated request to the MCP endpoint, then looks fo
 - The metadata response **MUST** be HTTP 200 \`application/json\` with a JSON object body (RFC 9728 §3.2)
 - \`resource\` **MUST** identify the MCP server (RFC 9728 §3.3); for metadata at the root well-known URL the origin is accepted
 - \`authorization_servers\` **MUST** contain at least one authorization server
+- Array parameters with zero values **MUST** be omitted (RFC 9728 §3.2); \`bearer_methods_supported\` is exempt, RFC 9728 §2 allows \`[]\` there
 - The challenge **SHOULD** include a \`scope\` parameter (2025-11-25 and later; SKIPPED at 2025-06-18)
 
 **Prerequisite:** the server under test must require authorization. A 2xx to the unauthenticated request makes every check untestable. Each request is bounded to 10 s; a server that holds a stream open fails the checks it blocks with a reason naming the timeout.`;
@@ -415,15 +457,18 @@ The harness sends one unauthenticated request to the MCP endpoint, then looks fo
       checks.push(untestable(CHECKS.response, reason));
       checks.push(untestable(CHECKS.resource, reason));
       checks.push(untestable(CHECKS.authorizationServers, reason));
+      checks.push(untestable(CHECKS.noEmptyParameters, reason));
     } else {
       checks.push(gradeResponse(found));
       if (!found.doc) {
         const reason = `metadata at ${found.url} is not a JSON object`;
         checks.push(untestable(CHECKS.resource, reason));
         checks.push(untestable(CHECKS.authorizationServers, reason));
+        checks.push(untestable(CHECKS.noEmptyParameters, reason));
       } else {
         checks.push(gradeResource(found.doc, serverUrl, found.url));
         checks.push(gradeAuthorizationServers(found.doc));
+        checks.push(gradeNoEmptyParameters(found.doc));
       }
     }
 

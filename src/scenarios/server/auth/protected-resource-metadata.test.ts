@@ -172,6 +172,14 @@ describe('auth/protected-resource-metadata', () => {
         byId(checks, 'server-prm-resource').details?.resource
       );
     }, 40000);
+
+    it('accepts bearer_methods_supported: [], which RFC 9728 §2 allows', async () => {
+      const checks = await runAgainst('empty-bearer-methods-supported');
+      expectAllPass(checks);
+      expect(
+        byId(checks, 'server-prm-response').details?.bodyPreview
+      ).toContain('"bearer_methods_supported":[]');
+    }, 40000);
   });
 
   describe('well-known only', () => {
@@ -208,7 +216,8 @@ describe('auth/protected-resource-metadata', () => {
       for (const id of [
         'server-prm-response',
         'server-prm-resource',
-        'server-prm-authorization-servers'
+        'server-prm-authorization-servers',
+        'server-prm-no-empty-parameters'
       ]) {
         const check = byId(checks, id);
         expect(check.status, id).toBe('FAILURE');
@@ -267,13 +276,33 @@ describe('auth/protected-resource-metadata', () => {
       expect(failing.errorMessage).toContain('missing');
     }, 40000);
 
-    it('empty-authorization-servers fails the authorization_servers check', async () => {
-      const failing = expectOnlyFailing(
-        await runAgainst('empty-authorization-servers'),
+    it('empty-authorization-servers fails the MCP rule and RFC 9728 §3.2', async () => {
+      const checks = await runAgainst('empty-authorization-servers');
+      const failing = [
         'server-prm-authorization-servers',
+        'server-prm-no-empty-parameters'
+      ];
+      for (const check of checks) {
+        expect(check.status, check.id).toBe(
+          failing.includes(check.id) ? 'FAILURE' : 'SUCCESS'
+        );
+      }
+      expect(
+        byId(checks, 'server-prm-authorization-servers').errorMessage
+      ).toContain('empty');
+      expect(
+        byId(checks, 'server-prm-no-empty-parameters').errorMessage
+      ).toContain('authorization_servers');
+    }, 40000);
+
+    it('empty-scopes-supported fails the zero-value check', async () => {
+      const failing = expectOnlyFailing(
+        await runAgainst('empty-scopes-supported'),
+        'server-prm-no-empty-parameters',
         'FAILURE'
       );
-      expect(failing.errorMessage).toContain('empty');
+      expect(failing.errorMessage).toContain('scopes_supported');
+      expect(failing.details?.empty).toEqual(['scopes_supported']);
     }, 40000);
 
     it('status-403 fails the 401 check', async () => {
@@ -386,6 +415,132 @@ describe('timeouts', () => {
       `timed out after ${REQUEST_TIMEOUT_MS} ms`
     );
   }, 20000);
+});
+
+describe('zero-valued parameters', () => {
+  // RFC 9728 §3.2 read against documents the fixture has no break mode for.
+  let server: Server;
+  let url: string;
+  let extra: Record<string, unknown>;
+  let rawBody: string | undefined;
+
+  beforeAll(async () => {
+    server = createHttpServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/mcp') {
+        res.writeHead(401, {
+          'www-authenticate': `Bearer resource_metadata="${url}/prm", scope="mcp:read"`
+        });
+        res.end('{"error":"unauthorized"}');
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/prm') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          rawBody ??
+            JSON.stringify({
+              resource: `${url}/mcp`,
+              authorization_servers: ['https://auth.example.com'],
+              ...extra
+            })
+        );
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    url = `http://127.0.0.1:${port}`;
+  });
+
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  async function grade(
+    parameters: Record<string, unknown>
+  ): Promise<ConformanceCheck[]> {
+    extra = parameters;
+    rawBody = undefined;
+    return new ProtectedResourceMetadataScenario().run(
+      testContext(`${url}/mcp`)
+    );
+  }
+
+  it.each([
+    'scopes_supported',
+    'resource_signing_alg_values_supported',
+    'authorization_details_types_supported',
+    'dpop_signing_alg_values_supported'
+  ])('fails on an empty %s', async (parameter) => {
+    const failing = expectOnlyFailing(
+      await grade({ [parameter]: [] }),
+      'server-prm-no-empty-parameters',
+      'FAILURE'
+    );
+    expect(failing.errorMessage).toContain(parameter);
+  });
+
+  it('names every empty parameter in one failure', async () => {
+    const failing = expectOnlyFailing(
+      await grade({
+        scopes_supported: [],
+        dpop_signing_alg_values_supported: [],
+        bearer_methods_supported: []
+      }),
+      'server-prm-no-empty-parameters',
+      'FAILURE'
+    );
+    expect(failing.details?.empty).toEqual([
+      'scopes_supported',
+      'dpop_signing_alg_values_supported'
+    ]);
+  });
+
+  it.each([
+    ['a populated array', { scopes_supported: ['mcp:read'] }],
+    ['bearer_methods_supported: []', { bearer_methods_supported: [] }],
+    ['a single-valued parameter that is empty', { resource_name: '' }],
+    ['a boolean set to false', { dpop_bound_access_tokens_required: false }],
+    ['an empty parameter it does not understand', { example_extension: [] }],
+    // null is a type problem, not zero values, and nothing here checks types.
+    ['scopes_supported: null', { scopes_supported: null }],
+    ['a listed parameter set to an empty string', { scopes_supported: '' }],
+    ['a listed parameter set to false', { scopes_supported: false }],
+    ['a listed parameter set to 0', { scopes_supported: 0 }]
+  ])('passes on %s', async (_name, parameters) => {
+    expectAllPass(await grade(parameters));
+  });
+
+  it.each([
+    ['a JSON array', '[]'],
+    ['JSON null', 'null'],
+    ['invalid JSON', '{']
+  ])('leaves the document checks untestable on %s', async (_name, body) => {
+    rawBody = body;
+    const checks = await new ProtectedResourceMetadataScenario().run(
+      testContext(`${url}/mcp`)
+    );
+    expect(checks.map((c) => c.id).sort()).toEqual(
+      [...PRM_DECLARED_CHECK_IDS].sort()
+    );
+    const response = byId(checks, 'server-prm-response');
+    expect(response.status).toBe('FAILURE');
+    expect(response.details?.untestable).toBeUndefined();
+    for (const id of [
+      'server-prm-resource',
+      'server-prm-authorization-servers',
+      'server-prm-no-empty-parameters'
+    ]) {
+      const check = byId(checks, id);
+      expect(check.status, id).toBe('FAILURE');
+      expect(check.errorMessage, id).toContain('Not testable:');
+      expect(check.details, id).toMatchObject({ untestable: true });
+    }
+  });
 });
 
 describe('prm helpers', () => {

@@ -14,6 +14,8 @@
  *   missing-resource             resource omitted
  *   missing-authorization-servers  authorization_servers omitted
  *   empty-authorization-servers  authorization_servers is []
+ *   empty-scopes-supported       scopes_supported is []
+ *   empty-bearer-methods-supported  bearer_methods_supported is [] (allowed by RFC 9728 §2)
  *   status-403                   403 instead of 401 for a missing token
  *   no-scope                     challenge omits scope
  *   well-known-only              no resource_metadata; well-known works
@@ -35,6 +37,8 @@ const BREAK_MODES = [
   'missing-resource',
   'missing-authorization-servers',
   'empty-authorization-servers',
+  'empty-scopes-supported',
+  'empty-bearer-methods-supported',
   'status-403',
   'no-scope',
   'well-known-only',
@@ -67,6 +71,9 @@ function prmDocument(atRoot: boolean): Record<string, unknown> {
   if (BREAK === 'missing-authorization-servers')
     delete doc.authorization_servers;
   if (BREAK === 'empty-authorization-servers') doc.authorization_servers = [];
+  if (BREAK === 'empty-scopes-supported') doc.scopes_supported = [];
+  if (BREAK === 'empty-bearer-methods-supported')
+    doc.bearer_methods_supported = [];
   return doc;
 }
 
