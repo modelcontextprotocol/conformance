@@ -125,6 +125,7 @@ describe.concurrent('a server that delivers to loopback', () => {
         'sep-3415-verification-challenge-echo',
         'sep-3415-delivery-post-json',
         'sep-3415-delivery-standard-webhooks-headers',
+        'sep-3415-delivery-webhook-id-per-message',
         'sep-3415-delivery-subscription-id-header',
         'sep-3415-delivery-signature-formula',
         'sep-3415-delivery-body-size',
@@ -422,6 +423,21 @@ describe.concurrent('signing', () => {
       expect(
         checks.get('sep-3415-delivery-signature-formula')?.details?.untestable
       ).toBe(true);
+    },
+    TIMEOUT
+  );
+
+  test(
+    'using the eventId as webhook-id fails the per-message row',
+    async () => {
+      const checks = await deliveryChecks(
+        delivering({ webhookIdIsEventId: true })
+      );
+      const check = checks.get('sep-3415-delivery-webhook-id-per-message');
+      expect(check?.status).toBe('FAILURE');
+      expect(check?.errorMessage).toContain(
+        'used the `eventId` as `webhook-id`'
+      );
     },
     TIMEOUT
   );

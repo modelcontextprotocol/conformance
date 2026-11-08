@@ -128,6 +128,7 @@ const BODY_CEILING_BYTES = 256 * 1024;
 const DELIVERY_IDS = [
   'sep-3415-delivery-post-json',
   'sep-3415-delivery-standard-webhooks-headers',
+  'sep-3415-delivery-webhook-id-per-message',
   'sep-3415-delivery-subscription-id-header',
   'sep-3415-delivery-signature-formula',
   'sep-3415-delivery-retry-regenerates-signature',
@@ -1154,6 +1155,11 @@ export class EventsWebhookDeliveryScenario implements ClientScenario {
     signalled: SignalledEnvelopes
   ): ConformanceCheck[] {
     const out: ConformanceCheck[] = [];
+    // Graded here rather than with the transport rows, because only this
+    // point sees every event the run produced, retries included.
+    out.push(
+      webhookIdPerMessageCheck(all.filter((d) => d.respondedStatus !== 302))
+    );
     const envelopes = all.filter((d) => typeof d.json?.type === 'string');
     const events = all.filter(
       (d) =>
@@ -1776,6 +1782,74 @@ function lastErrorCheck(
       })
     : eventsCheck(LAST_ERROR_ID, LAST_ERROR_DESCRIPTION, 'FAILURE', {
         errorMessage: `\`lastError\` is ${describeValue(lastError)}, not one of ${LAST_ERROR_CATEGORIES.join(', ')}. Anything else can carry endpoint detail back to the subscriber.`
+      });
+}
+
+const WEBHOOK_ID_ID = 'sep-3415-delivery-webhook-id-per-message';
+const WEBHOOK_ID_DESCRIPTION =
+  '`webhook-id` identifies the delivered message: server-generated, unique per message, reused across retries, only ASCII letters, digits, `_` and `-`, and MUST NOT be derived from `eventId`.';
+
+/**
+ * `webhook-id` on event deliveries. Retries share an id by design, so two
+ * deliveries carrying one id must also carry one `eventId`. The id must never
+ * be the `eventId` itself: one event matching two subscriptions to the same
+ * receiver would then arrive twice under one id, and a receiver deduplicating
+ * on `webhook-id` would drop the second.
+ */
+function webhookIdPerMessageCheck(
+  graded: ReceivedDelivery[]
+): ConformanceCheck {
+  const events = graded.filter(
+    (d) =>
+      isEvent(d) &&
+      typeof d.json?.eventId === 'string' &&
+      typeof d.headers['webhook-id'] === 'string'
+  );
+  if (events.length === 0) {
+    return untestableCheck(
+      WEBHOOK_ID_ID,
+      WEBHOOK_ID_ID,
+      WEBHOOK_ID_DESCRIPTION,
+      'No event delivery carrying a `webhook-id` arrived during the run.',
+      [EVENTS_SPEC_REF]
+    );
+  }
+  const problems: string[] = [];
+  const isEventId = events.filter(
+    (d) => d.headers['webhook-id'] === d.json?.eventId
+  );
+  if (isEventId.length > 0) {
+    problems.push(
+      `${isEventId.length} of ${events.length} event delivery(ies) used the \`eventId\` as \`webhook-id\` (e.g. ${JSON.stringify(isEventId[0].headers['webhook-id'])})`
+    );
+  }
+  const unsafe = events.filter(
+    (d) => !/^[A-Za-z0-9_-]+$/.test(d.headers['webhook-id'])
+  );
+  if (unsafe.length > 0) {
+    problems.push(
+      `${unsafe.length} carried a \`webhook-id\` outside ASCII letters, digits, \`_\` and \`-\` (e.g. ${JSON.stringify(unsafe[0].headers['webhook-id'])})`
+    );
+  }
+  const eventIdsById = new Map<string, Set<string>>();
+  for (const d of events) {
+    const id = d.headers['webhook-id'];
+    const set = eventIdsById.get(id) ?? new Set<string>();
+    set.add(d.json?.eventId as string);
+    eventIdsById.set(id, set);
+  }
+  const shared = [...eventIdsById.entries()].filter(([, ids]) => ids.size > 1);
+  if (shared.length > 0) {
+    problems.push(
+      `${shared.length} \`webhook-id\`(s) were reused for different events (e.g. ${JSON.stringify(shared[0][0])} for ${[...shared[0][1]].join(', ')})`
+    );
+  }
+  return problems.length === 0
+    ? eventsCheck(WEBHOOK_ID_ID, WEBHOOK_ID_DESCRIPTION, 'SUCCESS', {
+        details: { deliveries: events.length, ids: eventIdsById.size }
+      })
+    : eventsCheck(WEBHOOK_ID_ID, WEBHOOK_ID_DESCRIPTION, 'FAILURE', {
+        errorMessage: `${problems.join('; ')}.`
       });
 }
 
