@@ -86,7 +86,8 @@
 #   signing keys and egress ranges onto the Server Card and drops the JWKS
 #   well-known path. Every row's text was checked against the new file. Two
 #   rows changed wording (sep-3415-occurrence-event-id and the receiver
-#   dedup row), and one is new (sep-3415-delivery-webhook-id-per-message).
+#   dedup row). Two are new: sep-3415-delivery-webhook-id-per-message, and an
+#   excluded receiver row scoping `eventId` dedup to the subscription.
 #   No row quoted the removed JWKS or egress text.
 #
 # coverage: 132 declared checks plus 39 excluded rows, and every declared
@@ -977,6 +978,9 @@ requirements:
   - text: 'The receiver MUST verify the signature before processing, SHOULD reject deliveries whose `webhook-timestamp` is more than 5 minutes old, and SHOULD deduplicate on `webhook-id`, which identifies the delivered message and not the event.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b08e4f9dd684f39d846d94089487fbeb28e666f5/seps/0000-events-extension.md#webhook-event-delivery
     excluded: receiver obligation; the harness implements this rather than grading it
+  - text: 'A receiver that deduplicates by it MUST scope that to the subscription (`X-MCP-Subscription-Id`): the same `eventId` delivered on two subscriptions is two deliveries, and both are processed.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b08e4f9dd684f39d846d94089487fbeb28e666f5/seps/0000-events-extension.md#webhook-event-delivery
+    excluded: receiver obligation; what reaches the application is not observable over the wire
   - text: 'Receivers MUST compute the HMAC over the raw body, and never over a re-serialized JSON object.'
     url: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b08e4f9dd684f39d846d94089487fbeb28e666f5/seps/0000-events-extension.md#webhook-security
     excluded: receiver obligation; the harness implements this rather than grading it
