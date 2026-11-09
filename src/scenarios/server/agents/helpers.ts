@@ -60,7 +60,7 @@ export const CONTROL_FIXTURE = 'agents_conformance_fixture';
 export const CONTROL_ADD_AGENT = 'agents_conformance_add_agent';
 
 const SEP_URL =
-  'https://github.com/modelcontextprotocol/agents-wg/blob/9b16840e2f958b3dd9a418bb321189a0d1ab3493/proposals/0000-mcp-agent-discovery-extension.md';
+  'https://github.com/modelcontextprotocol/agents-wg/blob/137d88bd7e23f9ce17933248c6924505a6f5ec00/proposals/0000-mcp-agent-discovery-extension.md';
 
 export const AGENTS_SPEC_REF: SpecReference = {
   id: 'agents-wg#22 (MCP Agent Discovery Extension)',
