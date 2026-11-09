@@ -257,6 +257,8 @@ export interface DeliveryBehaviour {
   omitHeaders?: string[];
   /** Leave off `X-MCP-Subscription-Id`. */
   omitSubscriptionIdHeader?: boolean;
+  /** Send each event's `eventId` as its `webhook-id`, which SEP-3415 forbids. */
+  webhookIdIsEventId?: boolean;
   /** Send an `X-MCP-Subscription-Id` that is not the subscribe response's id. */
   wrongSubscriptionIdHeader?: boolean;
   /** Deliver with this method instead of POST. */
@@ -1723,10 +1725,11 @@ async function deliverToCallback(
     const data = behaviour.oversizedBody
       ? { id: 'x', padding: 'p'.repeat(300 * 1024) }
       : { id: 'x' };
+    const eventId = `evt_${Math.random().toString(36).slice(2, 10)}`;
     await post(
-      envelopeId('event'),
+      behaviour.webhookIdIsEventId ? eventId : envelopeId('event'),
       JSON.stringify({
-        eventId: `evt_${Math.random().toString(36).slice(2, 10)}`,
+        eventId,
         name: eventName,
         timestamp: new Date().toISOString(),
         data

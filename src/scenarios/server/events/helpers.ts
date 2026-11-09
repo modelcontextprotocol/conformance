@@ -2,7 +2,7 @@
  * Shared helpers for the MCP Events server-conformance scenarios under this
  * directory.
  *
- * Graded against SEP-3415 at 2ec39b9c. Each check's verbatim excerpt lives
+ * Graded against SEP-3415 at b08e4f9d. Each check's verbatim excerpt lives
  * next to its check ID in src/seps/sep-3415.yaml, whose header says how the
  * rows moved from the design sketch to the SEP.
  *
@@ -98,7 +98,7 @@ export const EVENTS_ERROR_CODES: readonly number[] = [
 /** SEP-3415 at the commit src/seps/sep-3415.yaml quotes. */
 export const EVENTS_SPEC_REF: SpecReference = {
   id: 'SEP-3415',
-  url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/2ec39b9c49c583411b73cb460dea5f52b5c541a6/seps/0000-events-extension.md'
+  url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b08e4f9dd684f39d846d94089487fbeb28e666f5/seps/0000-events-extension.md'
 };
 
 /** One entry of the `events` array returned by `events/list`. */
