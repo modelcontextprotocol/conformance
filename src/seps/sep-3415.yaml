@@ -90,8 +90,10 @@
 #   excluded receiver row scoping `eventId` dedup to the subscription.
 #   No row quoted the removed JWKS or egress text.
 #
-# coverage: 132 declared checks plus 39 excluded rows, and every declared
-#   check is emitted by a scenario. On 2026-10-20 the three sep-3415-mcp-name-*
+# coverage: 133 declared checks plus 40 excluded rows, and every declared
+#   check is emitted by a scenario. On 2026-11-08
+#   sep-3415-delivery-webhook-id-per-message was added, and the receiver's
+#   per-subscription eventId dedup was listed as excluded. On 2026-10-20 the three sep-3415-mcp-name-*
 #   rows were added, and sep-3415-subscribe-auth-required and
 #   sep-3415-subscribe-refresh-replaces-secret moved to excluded: no run over
 #   the wire could pass either, so they read as permanent red and amber
