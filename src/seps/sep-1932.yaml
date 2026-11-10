@@ -17,6 +17,8 @@ requirements:
     text: "Implementations conforming to this specification MUST verify that the `iat` claim is within ±5 minutes of the server's current time / MCP servers that are not capable of keeping state or performing global `jti` tracking MUST provide DPoP proof replay protection by enforcing short `iat` acceptance windows of ±5 minutes and standard RFC 9449 claim validation"
   - check: sep-1932-server-reject-401
     text: 'If any validation step fails, the MCP server MUST reject the request with an HTTP 401 response and include appropriate error information in the `WWW-Authenticate` header as specified in RFC 9449 Section 7.1'
+  - check: sep-1932-server-error-code
+    text: 'An `error` parameter ([RFC6750], Section 3) SHOULD be included to indicate the reason why the request was declined, if the request included an access token but failed authentication. The error parameter values described in [RFC6750], Section 3.1 are suitable, as are any appropriate values defined by extension. The value `use_dpop_nonce` can be used as described in Section 9 to signal that a nonce is needed in the DPoP proof of a subsequent request(s). Additionally, `invalid_dpop_proof` is used to indicate that the DPoP proof itself was deemed invalid based on the criteria of Section 4.3.'
   - check: sep-1932-as-metadata-alg-values
     text: 'Authorization servers supporting DPoP MUST include the `dpop_signing_alg_values_supported` field in their Authorization Server Metadata as defined in RFC 9449 Section 5.1. This field MUST contain a JSON array listing the JWS algorithm values supported for DPoP proof JWTs'
   - check: sep-1932-as-no-none-alg
