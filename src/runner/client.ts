@@ -9,7 +9,11 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { getScenario, isScenarioApplicableAt } from '../scenarios';
-import { createServerFor, type ScenarioContext } from '../mock-server';
+import {
+  createServerFor,
+  createHandlerFor,
+  type ScenarioContext
+} from '../mock-server';
 import {
   resetWireValidation,
   wireSchemaChecks
@@ -182,16 +186,23 @@ export async function runConformanceTest(
   );
   const ctx: ScenarioContext = {
     specVersion: resolvedVersion,
-    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers),
+    createHandler: (handlers) => createHandlerFor(resolvedVersion)(handlers)
   };
 
   console.error(`Starting scenario: ${scenarioName}`);
   resetWireValidation();
   const urls = await scenario.start(ctx);
 
+  // Steering steps ride in the same context blob as credentials etc.
+  const context: Record<string, unknown> | undefined =
+    scenario.steps || urls.context
+      ? { ...urls.context, ...(scenario.steps && { steps: scenario.steps }) }
+      : undefined;
+
   console.error(`Executing client: ${clientCommand} ${urls.serverUrl}`);
-  if (urls.context) {
-    console.error(`With context: ${JSON.stringify(urls.context)}`);
+  if (context) {
+    console.error(`With context: ${JSON.stringify(context)}`);
   }
 
   try {
@@ -200,7 +211,7 @@ export async function runConformanceTest(
       scenarioName,
       urls.serverUrl,
       timeout,
-      urls.context,
+      context,
       resolvedVersion
     );
 
@@ -368,7 +379,8 @@ export async function runInteractiveMode(
   );
   const ctx: ScenarioContext = {
     specVersion: resolvedVersion,
-    createServer: (handlers) => createServerFor(resolvedVersion)(handlers)
+    createServer: (handlers) => createServerFor(resolvedVersion)(handlers),
+    createHandler: (handlers) => createHandlerFor(resolvedVersion)(handlers)
   };
 
   console.log(`Starting scenario: ${scenarioName}`);

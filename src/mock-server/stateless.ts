@@ -11,10 +11,10 @@
 import express from 'express';
 import { DRAFT_PROTOCOL_VERSION, type SpecVersion } from '../types';
 import type { JSONRPCRequest } from '../spec-types/2025-11-25';
-import type { MockServer, RequestHandlers } from './index';
+import type { MockHandler, MockServer, RequestHandlers } from './index';
 import { STATELESS_SPEC_VERSIONS } from '../connection/select';
 import { validateWireMessage } from '../validation/wire-schema';
-import { capabilitiesFromHandlers } from './stateful';
+import { capabilitiesFromHandlers, listenMockHandler } from './stateful';
 
 /**
  * The required per-request `_meta` keys. `io.modelcontextprotocol/clientInfo`
@@ -182,10 +182,10 @@ export function validateStatelessRequest(
  * server accepts exactly that version. Without it, every known stateless
  * version is accepted.
  */
-export async function createServerStateless(
+export function createHandlerStateless(
   handlers: RequestHandlers,
   specVersion?: SpecVersion
-): Promise<MockServer> {
+): MockHandler {
   const recorded: JSONRPCRequest[] = [];
   const capabilities = capabilitiesFromHandlers(handlers);
   const supportedVersions: readonly string[] = specVersion
@@ -263,23 +263,12 @@ export async function createServerStateless(
     }
   });
 
-  return new Promise((resolve, reject) => {
-    const httpServer = app.listen(0);
-    httpServer.on('error', reject);
-    httpServer.on('listening', () => {
-      const addr = httpServer.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const baseUrl = `http://localhost:${port}`;
-      resolve({
-        url: `${baseUrl}/mcp`,
-        baseUrl,
-        recorded,
-        close: () =>
-          new Promise<void>((r) => {
-            httpServer.closeAllConnections?.();
-            httpServer.close(() => r());
-          })
-      });
-    });
-  });
+  return { listener: app, recorded };
+}
+
+export async function createServerStateless(
+  handlers: RequestHandlers,
+  specVersion?: SpecVersion
+): Promise<MockServer> {
+  return listenMockHandler(createHandlerStateless(handlers, specVersion));
 }

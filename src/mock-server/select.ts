@@ -1,8 +1,8 @@
 import type { SpecVersion } from '../types';
-import type { MockServer, RequestHandlers } from './index';
+import type { MockHandler, MockServer, RequestHandlers } from './index';
 import { isStatefulVersion } from '../connection/select';
-import { createServerStateful } from './stateful';
-import { createServerStateless } from './stateless';
+import { createHandlerStateful, createServerStateful } from './stateful';
+import { createHandlerStateless, createServerStateless } from './stateless';
 
 export function createServerFor(
   specVersion: SpecVersion
@@ -10,4 +10,12 @@ export function createServerFor(
   return isStatefulVersion(specVersion)
     ? (handlers) => createServerStateful(handlers, specVersion)
     : (handlers) => createServerStateless(handlers, specVersion);
+}
+
+export function createHandlerFor(
+  specVersion: SpecVersion
+): (handlers: RequestHandlers) => MockHandler {
+  return isStatefulVersion(specVersion)
+    ? (handlers) => createHandlerStateful(handlers, specVersion)
+    : (handlers) => createHandlerStateless(handlers, specVersion);
 }

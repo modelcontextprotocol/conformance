@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
 import { ALL_SPEC_VERSIONS } from './scenarios';
+import { SPEC_VERSION_TIMELINE, type SpecVersion } from './types';
 
 /**
  * A frozen requirement set for one specification revision: the scenarios an
@@ -61,13 +62,56 @@ function requirementsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'requirements');
 }
 
-export function listRequirementRevisions(): string[] {
-  const dir = requirementsDir();
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.yaml'))
-    .map((f) => f.replace(/\.yaml$/, ''))
-    .sort();
+/**
+ * Requirement sets supplied as text, keyed by revision. A deployment that has
+ * no `requirements/` directory next to it (a serverless bundle of the import
+ * closure, say) registers the yaml texts up front; see
+ * examples/hosted/bundle-requirements.ts. Registered text wins over a file of
+ * the same revision and goes through exactly the same validation.
+ */
+const registeredSources = new Map<string, string>();
+
+export function registerRequirementSources(
+  sources: Record<string, string>
+): void {
+  for (const [revision, text] of Object.entries(sources)) {
+    registeredSources.set(revision, text);
+  }
+}
+
+/** Revisions with a yaml on disk; empty when the directory is unreadable. */
+function revisionsOnDisk(): string[] {
+  try {
+    const dir = requirementsDir();
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.yaml'))
+      .map((f) => f.replace(/\.yaml$/, ''));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Revisions that ship a requirement set — registered or on disk — in
+ * spec-timeline order. A yaml whose name is not a protocol version this build
+ * knows is ignored: it could not be loaded anyway (see loadRequirements).
+ */
+export function listRequirementRevisions(): SpecVersion[] {
+  const present = new Set([...registeredSources.keys(), ...revisionsOnDisk()]);
+  return SPEC_VERSION_TIMELINE.filter((v) => present.has(v));
+}
+
+/** The yaml text for a revision: registered first, then the bundled file. */
+function requirementSource(revision: string): string | undefined {
+  const registered = registeredSources.get(revision);
+  if (registered !== undefined) return registered;
+  try {
+    const path = join(requirementsDir(), `${revision}.yaml`);
+    return existsSync(path) ? readFileSync(path, 'utf-8') : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function asNameList(value: unknown, field: string, revision: string): string[] {
@@ -102,8 +146,8 @@ export function loadRequirements(revision: string): RequirementSet {
     );
   }
 
-  const path = join(requirementsDir(), `${revision}.yaml`);
-  if (!existsSync(path)) {
+  const source = requirementSource(revision);
+  if (source === undefined) {
     const known = listRequirementRevisions();
     throw new Error(
       `No requirement set for ${revision}.` +
@@ -113,7 +157,7 @@ export function loadRequirements(revision: string): RequirementSet {
     );
   }
 
-  const parsed = parseYaml(readFileSync(path, 'utf-8')) ?? {};
+  const parsed = parseYaml(source) ?? {};
 
   // A frozen contract must fail loudly on anything it does not recognise: a
   // typo'd key ("sever:") would otherwise silently empty a leg and the gate

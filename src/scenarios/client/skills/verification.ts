@@ -103,6 +103,11 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
     this.description = MODES[mode].description;
   }
 
+  /** One class, three registry entries: a per-run copy must keep its mode. */
+  fresh(): SkillsVerificationScenario {
+    return new SkillsVerificationScenario(this.mode);
+  }
+
   /** The entry as advertised. Always internally consistent with SKILL_MD. */
   private entry() {
     const resources = [

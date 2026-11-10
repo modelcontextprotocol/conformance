@@ -63,6 +63,7 @@ import { createTierCheckCommand } from './tier-check';
 import { createNewSepCommand } from './new-sep';
 import { createSdkCommand } from './sdk-runner';
 import { createTraceabilityCommand } from './traceability';
+import { runHostedServer } from './hosted';
 import packageJson from '../package.json';
 
 // Note on naming: `command` refers to which CLI command is calling this.
@@ -928,6 +929,47 @@ program.addCommand(createSdkCommand());
 
 // SEP traceability manifest command
 program.addCommand(createTraceabilityCommand());
+
+// Hosted server — mount scenarios on URL paths for remote clients
+program
+  .command('hosted')
+  .description(
+    'Run a long-lived HTTP server that exposes every client scenario at ' +
+      'every requirement-set revision under /s/<run-id>/<revision>/<scenario> ' +
+      'and serves results at /results/<run-id>. With --as-origin, auth/* ' +
+      'scenarios are also mounted; deploy examples/hosted/valtown-relay.ts ' +
+      'at that origin.'
+  )
+  .option('--port <port>', 'Port to listen on', '3000')
+  .option(
+    '--public-origin <url>',
+    'Origin to use in generated links (default: derived from Host header)'
+  )
+  .option('--ttl <ms>', 'Idle session TTL in milliseconds', '300000')
+  .option(
+    '--as-origin <url>',
+    'Public origin of the AS relay (enables auth/* scenarios)'
+  )
+  .option('--as2-origin <url>', 'Second AS relay (for migration scenario)')
+  .option('--idp-origin <url>', 'IdP relay (for EMA scenario)')
+  .option(
+    '--relay-secret <secret>',
+    'Shared secret the relay sends in x-relay-secret. Required with --as-origin. ' +
+      'Defaults to $CONFORMANCE_RELAY_SECRET.'
+  )
+  .action(async (options) => {
+    await runHostedServer({
+      port: parseInt(options.port, 10),
+      publicOrigin: options.publicOrigin,
+      ttlMs: parseInt(options.ttl, 10),
+      auxOrigins: {
+        as: options.asOrigin,
+        as2: options.as2Origin,
+        idp: options.idpOrigin
+      },
+      relaySecret: options.relaySecret ?? process.env.CONFORMANCE_RELAY_SECRET
+    });
+  });
 
 // List scenarios command
 program
