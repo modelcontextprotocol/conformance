@@ -38,7 +38,7 @@ const SKILLS_EXTENSION_ID = 'io.modelcontextprotocol/skills';
 
 const SPEC_REFERENCE = {
   id: 'SEP-2640-Verification-On-Read',
-  url: 'https://modelcontextprotocol.io/seps/2640-skills-extension#integrity-and-verification'
+  url: 'https://skills.extensions.modelcontextprotocol.io/specification/beta/skills#integrity-and-verification'
 };
 
 const SKILL_URI = 'skill://pdf-processing/SKILL.md';

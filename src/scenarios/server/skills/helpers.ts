@@ -50,7 +50,7 @@ export const JSONRPC_INVALID_PARAMS = -32602;
 
 export const SEP_2640_REF: SpecReference = {
   id: 'SEP-2640',
-  url: 'https://modelcontextprotocol.io/seps/2640-skills-extension#specification'
+  url: 'https://skills.extensions.modelcontextprotocol.io/specification/beta/skills'
 };
 
 /** A `resources/list` / directory-read entry (only the fields we inspect). */
