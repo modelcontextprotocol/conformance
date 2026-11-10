@@ -25,7 +25,7 @@ import {
 
 const SPEC_REFERENCE = {
   id: 'SEP-2640-Lazy-Retrieval',
-  url: 'https://modelcontextprotocol.io/seps/2640-skills-extension#integrity-and-verification'
+  url: 'https://skills.extensions.modelcontextprotocol.io/specification/beta/skills#integrity-and-verification'
 };
 
 const SKILLS_EXTENSION_ID = 'io.modelcontextprotocol/skills';
