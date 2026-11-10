@@ -104,6 +104,68 @@ handlers['tools/call'] = (params) => {
       };
     }
 
+    case 'test_input_required_result_request_state': {
+      if (!inputResponses) {
+        return {
+          resultType: 'input_required',
+          inputRequests: {
+            confirm: {
+              method: 'elicitation/create',
+              params: {
+                message: 'Confirm?',
+                requestedSchema: {
+                  type: 'object',
+                  properties: { ok: { type: 'boolean' } },
+                  required: ['ok']
+                }
+              }
+            }
+          },
+          requestState: 'request-state-negative-fixture'
+        };
+      }
+      if (
+        params.requestState !== 'request-state-negative-fixture' ||
+        !inputResponses['confirm']
+      ) {
+        throw {
+          code: -32602,
+          message: 'Expected echoed state and confirm response'
+        };
+      }
+      const mode = process.env.MRTR_REQUEST_STATE_MODE || 'missing-marker';
+      if (mode === 'jsonrpc-error') {
+        throw { code: -32602, message: 'State rejected' };
+      }
+      if (mode === 'input-required') {
+        return { resultType: 'input_required', requestState: 'still-pending' };
+      }
+      const isError =
+        mode === 'tool-error' || mode === 'tool-error-with-marker';
+      const marker =
+        mode === 'valid' ||
+        mode === 'valid-second-text' ||
+        mode === 'tool-error-with-marker';
+      return {
+        resultType: 'complete',
+        isError,
+        content:
+          mode === 'empty-content'
+            ? []
+            : [
+                ...(mode === 'valid-second-text'
+                  ? [{ type: 'text', text: 'Context' }]
+                  : []),
+                {
+                  type: 'text',
+                  text: marker
+                    ? 'state-ok: requestState validated'
+                    : 'State rejected'
+                }
+              ]
+      };
+    }
+
     case 'test_input_required_result_capabilities': {
       // BUG 4: Conformant on its face — `requestState` satisfies "at least one
       // of inputRequests or requestState" — but it names no input request, so

@@ -558,6 +558,28 @@ Implement a tool named \`test_input_required_result_request_state\` (no argument
           r2Errors.push(
             'Expected complete result after retry with requestState'
           );
+        } else {
+          if (r2Result.isError === true) {
+            r2Errors.push(
+              'Tool result reported isError: true after retry with requestState'
+            );
+          }
+          const content = r2Result.content;
+          const hasStateMarker =
+            Array.isArray(content) &&
+            content.some(
+              (block) =>
+                typeof block === 'object' &&
+                block !== null &&
+                block.type === 'text' &&
+                typeof block.text === 'string' &&
+                block.text.includes('state-ok')
+            );
+          if (!hasStateMarker) {
+            r2Errors.push(
+              'Expected text content containing the fixture marker "state-ok"'
+            );
+          }
         }
 
         checks.push({
