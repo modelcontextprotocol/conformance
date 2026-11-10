@@ -64,6 +64,11 @@ import { createNewSepCommand } from './new-sep';
 import { createSdkCommand } from './sdk-runner';
 import { createTraceabilityCommand } from './traceability';
 import packageJson from '../package.json';
+import {
+  DEFAULT_CLIENT_SUITE_CONCURRENCY,
+  mapWithConcurrency,
+  parseConcurrency
+} from './runner/concurrency';
 
 // Note on naming: `command` refers to which CLI command is calling this.
 // The `client` command tests Scenario objects (which test clients),
@@ -221,7 +226,11 @@ program
   )
   .option('--command <command>', 'Command to run the client')
   .option('--scenario <scenario>', 'Scenario to test')
-  .option('--suite <suite>', 'Run a suite of tests in parallel (e.g., "auth")')
+  .option('--suite <suite>', 'Run a suite of tests (e.g., "auth")')
+  .option(
+    '--concurrency <n>',
+    `Maximum number of client suite scenarios to run at once (default: ${DEFAULT_CLIENT_SUITE_CONCURRENCY})`
+  )
   .option('--timeout <ms>', 'Timeout in milliseconds', '30000')
   .option(
     '--expected-failures <path>',
@@ -312,12 +321,15 @@ program
           }
           selection = `${suiteName} suite`;
         }
+        const concurrency = parseConcurrency(options.concurrency);
         console.log(
-          `Running ${selection} (${scenarios.length} scenarios) in parallel...\n`
+          `Running ${selection} (${scenarios.length} scenarios) with concurrency ${concurrency}...\n`
         );
 
-        const results = await Promise.all(
-          scenarios.map(async (scenarioName) => {
+        const results = await mapWithConcurrency(
+          scenarios,
+          concurrency,
+          async (scenarioName) => {
             try {
               // Each concurrent scenario records wire violations into its own
               // AsyncLocalStorage-scoped recorder (see withWireRecorder).
@@ -357,7 +369,7 @@ program
                 error
               };
             }
-          })
+          }
         );
 
         console.log('\n=== SUITE SUMMARY ===\n');

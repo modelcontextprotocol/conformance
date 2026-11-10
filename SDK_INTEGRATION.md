@@ -30,6 +30,12 @@ npx @modelcontextprotocol/conformance client \
 npx @modelcontextprotocol/conformance client \
   --command "python tests/conformance/client.py" \
   --suite auth
+
+# Bound suite load; use --concurrency 1 to isolate timing-sensitive scenarios.
+npx @modelcontextprotocol/conformance client \
+  --command "python tests/conformance/client.py" \
+  --suite all \
+  --concurrency 4
 ```
 
 **Available client suites:** `all`, `core`, `extensions`, `auth`, `metadata`, `sep-835`
