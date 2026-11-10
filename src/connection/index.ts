@@ -112,6 +112,7 @@ export {
   readSseJsonRpcResponse,
   CONFORMANCE_CLIENT_INFO,
   DEFAULT_CLIENT_CAPABILITIES,
+  DEFAULT_STATELESS_REQUEST_TIMEOUT_MS,
   type JsonRpcResponse,
   type StatelessResponse
 } from './stateless';
