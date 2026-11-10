@@ -1,3 +1,4 @@
+// eslint-disable-next-line local/comment-length -- pre-existing scenario contract
 /**
  * Client-side JSON Schema 2020-12 keyword preservation (SEP-1613, SEP-2106)
  *

@@ -12,6 +12,7 @@ import type { Connection } from '../../../connection';
 
 export const TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
 
+// eslint-disable-next-line local/comment-length -- pre-existing fixture contract shared by the tasks scenarios
 /**
  * Baseline "otherwise well-formed" params for a tasks-namespace
  * method, used by negative-path checks that need to isolate a single

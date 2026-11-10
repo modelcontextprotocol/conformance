@@ -8,6 +8,7 @@ import {
 } from '../../../../src/scenarios/client/auth/helpers/dpopProof';
 import { logger } from './logger';
 
+// eslint-disable-next-line local/comment-length -- pre-existing step-by-step protocol walkthrough for the example client
 /**
  * Shared DPoP client flow (SEP-1932 / RFC 9449). Acquires a DPoP-bound access
  * token via the authorization_code + PKCE grant (with a DPoP proof at the token
