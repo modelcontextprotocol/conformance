@@ -177,6 +177,37 @@ describe('Server Scenarios', () => {
     expect(nonFailures.length).toBe(checks.length);
   }
 
+  it('accepts request metadata on a stateful initialize', async () => {
+    const response = await fetch(serverUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'metadata-test', version: '1.0.0' },
+          _meta: {}
+        }
+      })
+    });
+
+    const sessionId = response.headers.get('mcp-session-id');
+    expect(response.status).toBe(200);
+    expect(sessionId).toBeTruthy();
+    expect(await response.text()).toContain('"protocolVersion":"2025-11-25"');
+
+    await fetch(serverUrl, {
+      method: 'DELETE',
+      headers: { 'mcp-session-id': sessionId! }
+    });
+  });
+
   for (const scenarioName of scenarios) {
     it(`${scenarioName}`, async () => {
       await expectScenarioToPass(scenarioName);
