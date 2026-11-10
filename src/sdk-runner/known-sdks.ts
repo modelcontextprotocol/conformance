@@ -159,6 +159,25 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
         server: { url: 'http://localhost:3000/stateless' }
       }
     }
+  },
+  // Fixtures live under conformance/ (server.rb + client.rb, the same files
+  // the SDK's own `rake conformance` CI drives). The client reads
+  // MCP_CONFORMANCE_SCENARIO from the environment and the server URL from argv.
+  // One dual-era server serves every revision from the same /mcp endpoint —
+  // the stateful (dated-spec) handshake and the SEP-2575 stateless lifecycle
+  // side by side — so no specOverrides are needed. The rake task reads PORT
+  // from the environment (the SDK's own default is 9292); PORT=3000 matches
+  // the 3000 convention used above.
+  'ruby-sdk': {
+    build: 'bundle install',
+    client: {
+      command: 'bundle exec ruby conformance/client.rb'
+    },
+    server: {
+      command: 'PORT=3000 bundle exec rake conformance:server',
+      url: 'http://localhost:3000/mcp'
+    },
+    expectedFailures: 'conformance/expected_failures.yml'
   }
 };
 

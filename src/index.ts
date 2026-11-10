@@ -520,11 +520,13 @@ program
     '--requirements <revision>',
     'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
   )
+  .option('--timeout <ms>', 'Per-scenario timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options, cmd) => {
     try {
       // Validate options with Zod
       const validated = ServerOptionsSchema.parse(options);
+      const timeout = parseInt(options.timeout, 10);
 
       const verbose = options.verbose ?? false;
       const outputDir = options.outputDir;
@@ -553,7 +555,8 @@ program
           validated.scenario,
           outputDir,
           specVersionFilter,
-          options.force ?? false
+          options.force ?? false,
+          timeout
         );
 
         // Inapplicable scenario/spec-version combination (already logged by
@@ -640,7 +643,8 @@ program
                 specVersionFilter,
                 // a requirement set decides membership, so its choice outranks a
                 // scenario's own applicability window at the pinned revision
-                Boolean(requirements)
+                Boolean(requirements),
+                timeout
               )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });
@@ -725,6 +729,10 @@ program
   .option(
     '--client-secret <secret>',
     'OAuth client secret (omit for public/PKCE-only clients)'
+  )
+  .option(
+    '--resource <uri>',
+    'Canonical URI of the MCP server the token is for (RFC 8707 resource parameter)'
   )
   .option(
     '-p, --port <port>',

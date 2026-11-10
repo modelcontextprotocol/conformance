@@ -1,0 +1,3 @@
+# Authorization server conformance area — team managed in modelcontextprotocol/access
+/src/scenarios/authorization-server/ @modelcontextprotocol/conformance-auth
+/src/runner/authorization-server.ts @modelcontextprotocol/conformance-auth

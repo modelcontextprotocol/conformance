@@ -81,6 +81,14 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'MCP-Resource-Parameter-Implementation',
     url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#resource-parameter-implementation'
   },
+  MCP_CANONICAL_SERVER_URI: {
+    id: 'MCP-Canonical-Server-URI',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#canonical-server-uri'
+  },
+  RFC_9728_RESOURCE_IDENTITY: {
+    id: 'RFC-9728-resource-identity',
+    url: 'https://www.rfc-editor.org/rfc/rfc9728.html#section-3.3'
+  },
   MCP_PREREGISTRATION: {
     id: 'MCP-Preregistration',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#preregistration'

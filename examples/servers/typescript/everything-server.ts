@@ -1246,14 +1246,13 @@ const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
   'resources/read'
 ]);
 
-/** Send a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
+/** Normalize a stateless (draft) JSON-RPC response. Draft results MUST carry `resultType`
  * and cacheable operations the SEP-2549 caching hints; stamp any the dispatch site did
  * not set so every stateless result is draft-schema-valid. Errors pass through untouched. */
-function sendStatelessJson(
-  res: import('express').Response,
+function normalizeStatelessResponse(
   method: string,
   payload: { result?: Record<string, unknown>; [key: string]: unknown }
-): import('express').Response {
+): { result?: Record<string, unknown>; [key: string]: unknown } {
   const result = payload.result;
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     result.resultType ??= 'complete';
@@ -1262,7 +1261,16 @@ function sendStatelessJson(
       result.cacheScope ??= 'private';
     }
   }
-  return res.json(payload);
+  return payload;
+}
+
+/** Send a normalized stateless response as JSON. */
+function sendStatelessJson(
+  res: import('express').Response,
+  method: string,
+  payload: { result?: Record<string, unknown>; [key: string]: unknown }
+): import('express').Response {
+  return res.json(normalizeStatelessResponse(method, payload));
 }
 
 // Handle POST requests - stateful mode
@@ -2257,7 +2265,9 @@ app.post('/mcp', async (req, res) => {
           ResultSchema as any
         );
         for (const n of dispatch.drainNotifications()) write(n);
-        write({ jsonrpc: '2.0', id, result });
+        write(
+          normalizeStatelessResponse(method, { jsonrpc: '2.0', id, result })
+        );
       } catch (e: any) {
         for (const n of dispatch.drainNotifications()) write(n);
         write({

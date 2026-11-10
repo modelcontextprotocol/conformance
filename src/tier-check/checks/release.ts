@@ -33,7 +33,7 @@ export async function checkStableRelease(
       };
     }
 
-    const version = latest.tag_name.replace(/^v/, '');
+    const version = versionFromTag(latest.tag_name);
     const isPrerelease =
       latest.prerelease ||
       /-(alpha|beta|rc|dev|preview|snapshot)/i.test(version);
@@ -56,4 +56,17 @@ export async function checkStableRelease(
       is_prerelease: false
     };
   }
+}
+
+/**
+ * Extract the semantic version from a release tag.
+ *
+ * Handles bare tags (`1.2.3`), `v`-prefixed tags (`v1.2.3`), and the
+ * package-prefixed tags monorepos publish (`rmcp-v3.0.1`,
+ * `rmcp-macros-v3.0.1`). Tags that carry no recognizable version are
+ * returned unchanged so they still surface in the check output.
+ */
+function versionFromTag(tag: string): string {
+  const match = tag.match(/(?:^|-)v?(\d+(?:\.\d+)*(?:[-+].*)?)$/);
+  return match ? match[1] : tag;
 }

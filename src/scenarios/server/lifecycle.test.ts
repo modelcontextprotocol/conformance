@@ -140,4 +140,48 @@ describe('ServerInitializeScenario', () => {
     );
     expect(deleteCalls).toHaveLength(0);
   });
+
+  it('bounds the session-id probe so a server that never answers cannot hang it', async () => {
+    fetchMock.mockResolvedValue(new Response(null));
+
+    await new ServerInitializeScenario().run(testContext(serverUrl));
+
+    const probe = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(probe?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('cancels the probe response body so an SSE answer does not leak the connection', async () => {
+    // `Accept` on the probe includes `text/event-stream`, so a server is free
+    // to answer with a stream that stays open. Only the header is read, so the
+    // body has to be released explicitly.
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const body = new ReadableStream({
+      start() {
+        // Never enqueue, never close: an SSE stream awaiting its first event.
+      },
+      cancel
+    });
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(body, {
+        headers: {
+          'content-type': 'text/event-stream',
+          'mcp-session-id': 'session-123_ABC'
+        }
+      })
+    );
+    fetchMock.mockResolvedValue(new Response(null));
+
+    const checks = await new ServerInitializeScenario().run(
+      testContext(serverUrl)
+    );
+
+    expect(cancel).toHaveBeenCalled();
+    expect(checks[1]).toMatchObject({
+      id: 'server-session-id-visible-ascii',
+      status: 'SUCCESS'
+    });
+  });
 });

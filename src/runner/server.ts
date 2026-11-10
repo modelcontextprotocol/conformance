@@ -27,12 +27,59 @@ function formatMarkdown(text: string): string {
   );
 }
 
+/**
+ * Bound `scenario.run` so a server that accepts connections but never answers
+ * fails one scenario instead of stalling the whole suite.
+ *
+ * The losing promise is left pending on purpose: a scenario blocked on a socket
+ * read has no cancellation channel, so there is nothing to await. Its rejection
+ * is swallowed to keep a late failure from surfacing as an unhandled rejection
+ * against whichever scenario happens to be running by then.
+ */
+async function runScenarioBounded(
+  run: Promise<ConformanceCheck[]>,
+  scenarioName: string,
+  timeout: number
+): Promise<ConformanceCheck[]> {
+  const timedOut = Symbol('timed-out');
+  let timeoutHandle: NodeJS.Timeout | undefined;
+
+  run.catch(() => {});
+
+  const result = await Promise.race([
+    run,
+    new Promise<typeof timedOut>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve(timedOut), timeout);
+    })
+  ]);
+  clearTimeout(timeoutHandle);
+
+  if (result !== timedOut) {
+    return result;
+  }
+
+  console.log(`\nScenario timed out after ${timeout}ms`);
+  return [
+    {
+      id: 'scenario-timeout',
+      name: 'Scenario completes within the timeout',
+      description:
+        'The scenario must finish within the configured timeout. A server that ' +
+        'accepts the connection but never responds leaves it running forever.',
+      status: 'FAILURE',
+      timestamp: new Date().toISOString(),
+      errorMessage: `Scenario '${scenarioName}' did not complete within ${timeout}ms. The server under test accepted the connection but did not finish the exchange.`
+    }
+  ];
+}
+
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
   outputDir?: string,
   specVersion?: SpecVersion,
-  force = false
+  force = false,
+  timeout: number = 30000
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -98,7 +145,11 @@ export async function runServerConformanceTest(
     connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
   resetWireValidation();
-  const checks = await scenario.run(ctx);
+  const checks = await runScenarioBounded(
+    scenario.run(ctx),
+    scenarioName,
+    timeout
+  );
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
   if (resultDir) {

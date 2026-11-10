@@ -141,6 +141,19 @@ describe('lookupBuiltinConfig', () => {
     expect(rs?.server?.url).toBe('http://localhost:3000/mcp');
   });
 
+  it('exposes ruby-sdk with the conformance/ fixtures and a baseline', () => {
+    const rb = lookupBuiltinConfig('ruby-sdk');
+    expect(rb?.build).toBe('bundle install');
+    expect(rb?.client?.command).toBe('bundle exec ruby conformance/client.rb');
+    expect(rb?.server?.command).toBe(
+      'PORT=3000 bundle exec rake conformance:server'
+    );
+    expect(rb?.server?.url).toBe('http://localhost:3000/mcp');
+    expect(rb?.expectedFailures).toBe('conformance/expected_failures.yml');
+    // One dual-era server serves every revision, so no per-spec overrides.
+    expect(rb?.specOverrides).toBeUndefined();
+  });
+
   it('every built-in entry validates against SdkConfigSchema', () => {
     for (const [name, cfg] of Object.entries(KNOWN_SDKS)) {
       expect(() => SdkConfigSchema.parse(cfg), name).not.toThrow();
