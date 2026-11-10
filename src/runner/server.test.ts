@@ -187,3 +187,150 @@ describe('runServerConformanceTest wire selection for draft-only scenarios', () 
     });
   }, 30000);
 });
+
+describe('runServerConformanceTest session teardown', () => {
+  // A minimal stateful Streamable HTTP server that records the methods it is
+  // sent, so a test can assert on the DELETE that terminates the session.
+  // `promptsList` decides which exit path the prompts-list scenario takes:
+  // 'ok' its success path, 'error' its catch, 'hang' the runner's timeout.
+  let server: http.Server;
+  let url: string;
+  let methods: string[];
+  let liveSessions: Set<string>;
+  let promptsList: 'ok' | 'error' | 'hang';
+
+  const sse = (res: http.ServerResponse, body: unknown) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.write(`event: message\ndata: ${JSON.stringify(body)}\n\n`);
+    res.end();
+  };
+
+  beforeEach(async () => {
+    methods = [];
+    liveSessions = new Set();
+    promptsList = 'ok';
+
+    server = http.createServer((req, res) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+      if (req.method === 'DELETE') {
+        methods.push('DELETE');
+        if (sessionId) liveSessions.delete(sessionId);
+        res.writeHead(204).end();
+        return;
+      }
+      if (req.method === 'GET') {
+        // The standalone SSE stream: held open, as a real server holds it.
+        methods.push('GET');
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(': open\n\n');
+        return;
+      }
+
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        const msg = JSON.parse(raw || '{}');
+        methods.push(`POST ${msg.method}`);
+
+        if (msg.method === 'initialize') {
+          const sessionId = `s${liveSessions.size + 1}`;
+          liveSessions.add(sessionId);
+          res.setHeader('mcp-session-id', sessionId);
+          sse(res, {
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: {
+              protocolVersion: msg.params.protocolVersion,
+              capabilities: { prompts: {} },
+              serverInfo: { name: 'teardown-probe', version: '0.0.1' }
+            }
+          });
+          return;
+        }
+        if (msg.id === undefined) {
+          res.writeHead(202).end(); // notification
+          return;
+        }
+        if (msg.method === 'prompts/list' && promptsList === 'hang') {
+          return; // accepted, never answered
+        }
+        if (msg.method === 'prompts/list' && promptsList === 'ok') {
+          sse(res, {
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { prompts: [{ name: 'p', description: 'd' }] }
+          });
+          return;
+        }
+        sse(res, {
+          jsonrpc: '2.0',
+          id: msg.id,
+          error: { code: -32601, message: `Method not found: ${msg.method}` }
+        });
+      });
+    });
+
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  const deleteCount = () => methods.filter((m) => m === 'DELETE').length;
+
+  test('terminates the session when the scenario fails', async () => {
+    // prompts/list answers -32601, so the scenario throws and its own
+    // close() — the last statement of its try block — never runs.
+    promptsList = 'error';
+    const result = await runServerConformanceTest(
+      url,
+      'prompts-list',
+      undefined,
+      '2025-06-18'
+    );
+
+    expect(result.checks.some((c) => c.status === 'FAILURE')).toBe(true);
+    expect(deleteCount()).toBe(1);
+    expect([...liveSessions]).toEqual([]);
+  }, 60000);
+
+  test('terminates the session when the scenario times out', async () => {
+    // The timeout path abandons the scenario with its promise left pending, so
+    // no `finally` inside the scenario can ever run: only the runner can close.
+    promptsList = 'hang';
+    const result = await runServerConformanceTest(
+      url,
+      'prompts-list',
+      undefined,
+      '2025-06-18',
+      false,
+      2000
+    );
+
+    expect(result.checks.some((c) => c.id === 'scenario-timeout')).toBe(true);
+    expect(deleteCount()).toBe(1);
+    expect([...liveSessions]).toEqual([]);
+  }, 60000);
+
+  test('does not terminate a session twice when the scenario closed it', async () => {
+    // A second close() re-sends the DELETE, so cleanup must skip connections
+    // the scenario already closed.
+    promptsList = 'ok';
+    const result = await runServerConformanceTest(
+      url,
+      'prompts-list',
+      undefined,
+      '2025-06-18'
+    );
+
+    expect(result.checks.every((c) => c.status !== 'FAILURE')).toBe(true);
+    expect(deleteCount()).toBe(1);
+    expect([...liveSessions]).toEqual([]);
+  }, 60000);
+});

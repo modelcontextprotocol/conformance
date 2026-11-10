@@ -7,7 +7,7 @@ import {
   DRAFT_PROTOCOL_VERSION
 } from '../types';
 import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
-import { connectFor, type RunContext } from '../connection';
+import { connectFor, type Connection, type RunContext } from '../connection';
 import {
   resetWireValidation,
   wireSchemaChecks
@@ -71,6 +71,69 @@ async function runScenarioBounded(
       errorMessage: `Scenario '${scenarioName}' did not complete within ${timeout}ms. The server under test accepted the connection but did not finish the exchange.`
     }
   ];
+}
+
+/**
+ * Hand a connection to the scenario while remembering it, so the runner can
+ * terminate whatever the scenario did not.
+ *
+ * An explicit `conn.close()` removes it from `open` before delegating, so a
+ * scenario that closes on its own path is not closed twice — a second
+ * `close()` sends a second HTTP DELETE for the same session, which is exactly
+ * the wire noise this is meant to avoid.
+ *
+ * `notifications` is exposed as a getter rather than copied: it is appended to
+ * for the connection's lifetime, and scenarios read it after the requests that
+ * produce the notifications.
+ */
+function trackConnection(open: Set<Connection>, conn: Connection): Connection {
+  const tracked: Connection = {
+    request: <R = unknown>(
+      method: string,
+      params?: Record<string, unknown>,
+      extraHeaders?: Record<string, string>
+    ) => conn.request<R>(method, params, extraHeaders),
+    get notifications() {
+      return conn.notifications;
+    },
+    discover: () => conn.discover(),
+    close: async () => {
+      open.delete(tracked);
+      await conn.close();
+    }
+  };
+  open.add(tracked);
+  return tracked;
+}
+
+/**
+ * Terminate every session the scenario left open.
+ *
+ * Scenarios overwhelmingly call `close()` as the last statement of a `try`,
+ * so a scenario that throws — a `-32601` for a method the server does not
+ * implement, a failed assertion — leaves its session and its standalone GET
+ * stream open until the process exits. A server that caps concurrent sessions
+ * per client then refuses the sessions of later scenarios, and their results
+ * describe the harness rather than the server.
+ *
+ * This lives in the runner, not in a `finally` inside each scenario, because
+ * `runScenarioBounded` abandons a timed-out scenario with its promise left
+ * pending on purpose: that scenario's own `finally` never runs, so the runner
+ * is the only place that can still close the connection.
+ *
+ * Failures are swallowed: the cleanup is best effort, and a server that has
+ * already dropped the session must not turn into a scenario failure.
+ */
+async function closeOpenConnections(open: Set<Connection>): Promise<void> {
+  const leaked = [...open];
+  open.clear();
+  for (const conn of leaked) {
+    try {
+      await conn.close();
+    } catch {
+      // best-effort teardown; the scenario's own result already stands
+    }
+  }
 }
 
 export async function runServerConformanceTest(
@@ -139,10 +202,24 @@ export async function runServerConformanceTest(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
 
+  const openConnections = new Set<Connection>();
+  let scenarioFinished = false;
   const ctx: RunContext = {
     serverUrl,
     specVersion: resolvedSpecVersion,
-    connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
+    connect: async (opts) => {
+      if (scenarioFinished) {
+        throw new Error(`Scenario '${scenarioName}' has already finished`);
+      }
+      const conn = await connectFor(resolvedSpecVersion)(serverUrl, opts);
+      // A handshake can finish after the timeout's cleanup sweep. Close it
+      // here and keep the abandoned scenario from issuing any more probes.
+      if (scenarioFinished) {
+        await conn.close();
+        throw new Error(`Scenario '${scenarioName}' has already finished`);
+      }
+      return trackConnection(openConnections, conn);
+    }
   };
   resetWireValidation();
   const checks = await runScenarioBounded(
@@ -150,6 +227,8 @@ export async function runServerConformanceTest(
     scenarioName,
     timeout
   );
+  scenarioFinished = true;
+  await closeOpenConnections(openConnections);
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
   if (resultDir) {
