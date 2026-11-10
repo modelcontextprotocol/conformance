@@ -7,6 +7,7 @@ import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
 import { ToolsListScenario } from './tools';
+import { HttpHeaderValidationScenario } from './http-standard-headers';
 import {
   JsonSchema2020_12Scenario,
   sep2106KeywordCheckStatus
@@ -497,6 +498,94 @@ describe('Server scenario negative tests', () => {
           'bad tool name': expect.stringMatching(/invalid:/)
         })
       });
+    }, 10000);
+  });
+
+  describe('http-header-validation', () => {
+    // Validates the standard headers correctly and rejects with HTTP 400,
+    // using `rejectCode` as the JSON-RPC error code.
+    async function startHeaderValidatingServer(rejectCode: number): Promise<{
+      server: Server;
+      serverUrl: string;
+    }> {
+      const server = createServer(async (req, res) => {
+        const body = await readJsonBody(req);
+        const params = body.params as { name?: string } | undefined;
+        const send = (status: number, payload: Record<string, unknown>) =>
+          res
+            .writeHead(status, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ jsonrpc: '2.0', id: body.id, ...payload }));
+
+        const methodHeader = req.headers['mcp-method'];
+        const nameHeader = req.headers['mcp-name'];
+        if (
+          methodHeader?.toString().trim() !== body.method ||
+          (body.method === 'tools/call' &&
+            nameHeader?.toString().trim() !== params?.name)
+        ) {
+          send(400, {
+            error: { code: rejectCode, message: 'Invalid headers' }
+          });
+          return;
+        }
+
+        const complete = { resultType: 'complete' };
+        if (body.method === 'tools/list') {
+          send(200, {
+            result: {
+              ...complete,
+              ttlMs: 0,
+              cacheScope: 'private',
+              tools: [{ name: 'echo', inputSchema: { type: 'object' } }]
+            }
+          });
+          return;
+        }
+        send(200, {
+          result: { ...complete, content: [{ type: 'text', text: 'ok' }] }
+        });
+      });
+      return { server, serverUrl: await listenOnRandomPort(server) };
+    }
+
+    it('passes every check against a server rejecting with 400 and -32020', async () => {
+      const { server, serverUrl } = await startHeaderValidatingServer(-32020);
+      try {
+        const checks = await new HttpHeaderValidationScenario().run(
+          testContext(serverUrl, DRAFT_PROTOCOL_VERSION)
+        );
+
+        expect(checks.length).toBeGreaterThan(0);
+        expect(checks.filter((c) => c.status !== 'SUCCESS')).toEqual([]);
+      } finally {
+        await closeHttpServer(server);
+      }
+    }, 10000);
+
+    it('emits FAILURE for reject-error-code against a server rejecting with 400 but not -32020', async () => {
+      const { server, serverUrl } = await startHeaderValidatingServer(-32600);
+      try {
+        const checks = await new HttpHeaderValidationScenario().run(
+          testContext(serverUrl, DRAFT_PROTOCOL_VERSION)
+        );
+
+        const statusChecks = checks.filter(
+          (c) => c.id === 'sep-2243-server-reject-invalid-headers'
+        );
+        const codeChecks = checks.filter(
+          (c) => c.id === 'sep-2243-server-reject-error-code'
+        );
+        expect(statusChecks).toHaveLength(5);
+        expect(statusChecks.map((c) => c.status)).toEqual(
+          Array(5).fill('SUCCESS')
+        );
+        expect(codeChecks).toHaveLength(5);
+        expect(codeChecks.map((c) => c.status)).toEqual(
+          Array(5).fill('FAILURE')
+        );
+      } finally {
+        await closeHttpServer(server);
+      }
     }, 10000);
   });
 

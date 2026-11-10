@@ -188,10 +188,10 @@ async function sendRawRequest(
 
 /**
  * Builds two checks for a rejection case: one for the HTTP 400 status, one for
- * the -32020 JSON-RPC error code. Per SEP-2243 §Server Validation, 400 is MUST
- * but -32020 is SHOULD for *standard* headers (and MUST for *custom* headers,
- * §Server Behavior for Custom Headers) — so a server returning 400 with a
- * different error code is compliant for standard headers and must not FAIL.
+ * the -32020 JSON-RPC error code. Both are MUST for standard and custom headers
+ * alike (2026-07-28 Streamable HTTP §Server Validation: servers "MUST return
+ * HTTP status 400 Bad Request and MUST include a JSON-RPC error response" with
+ * -32020).
  *
  * The two emitted check IDs are supplied explicitly by the caller: standard-
  * header callers pass the coarse REJECT_STATUS_CHECK_ID/REJECT_ERROR_CODE_CHECK_ID
@@ -207,8 +207,7 @@ function createRejectionChecks(
   description: string,
   response: { status: number; body: any },
   specRef: { id: string; url: string },
-  details: Record<string, unknown>,
-  opts: { errorCodeSeverity: 'FAILURE' | 'WARNING' }
+  details: Record<string, unknown>
 ): ConformanceCheck[] {
   const fullDetails = {
     ...details,
@@ -237,7 +236,7 @@ function createRejectionChecks(
       id: errorCodeId,
       name: `${name}ErrorCode`,
       description: `${description} — uses JSON-RPC error code -32020 (HeaderMismatch)`,
-      status: codeOk ? 'SUCCESS' : opts.errorCodeSeverity,
+      status: codeOk ? 'SUCCESS' : 'FAILURE',
       timestamp: ts,
       errorMessage: codeOk
         ? undefined
@@ -559,7 +558,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         ...extraHeaders
       });
       if (expectation === 'reject') {
-        // Standard-header rejection: 400 is MUST, -32020 is SHOULD. All
+        // Standard-header rejection: 400 and -32020 are both MUST. All
         // standard-header rejection cases collapse onto the coarse requirement
         // ids; checkId/checkName still distinguish the case via name/details.
         checks.push(
@@ -570,8 +569,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
             description,
             response,
             specRef,
-            details,
-            { errorCodeSeverity: 'WARNING' }
+            details
           )
         );
       } else {
@@ -991,8 +989,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
             description,
             response,
             SPEC_REFERENCE_BASE64,
-            details,
-            { errorCodeSeverity: 'FAILURE' }
+            details
           )
         );
       }
@@ -1061,8 +1058,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
             bodyValue: 'test-value',
             expectedHeader: `Mcp-Param-${headerSuffix}`,
             mcpParamHeader: '(missing)'
-          },
-          { errorCodeSeverity: 'FAILURE' }
+          }
         )
       );
     } catch (error) {
