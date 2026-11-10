@@ -1,0 +1,12 @@
+{
+  "url": "https://resource-as.example.com",
+  "clientId": "mcp-client",
+  "clientSecret": "REPLACE_WITH_CLIENT_SECRET",
+  "trustedIdpIssuer": "https://trusted-idp.example.com",
+  "untrustedIdpIssuer": "https://untrusted-idp.example.com",
+  "trustedMcpServer": "https://mcp.example/",
+  "untrustedMcpServer": "https://other-mcp.example/",
+  "scope": "mcp.read",
+  "sub": "user-123",
+  "idpSub": "idp-user-123"
+}
