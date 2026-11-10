@@ -4,6 +4,7 @@ import { createServer } from 'net';
 import {
   getClientScenario,
   listActiveClientScenarios,
+  listExtensionClientScenarios,
   listDraftClientScenarios,
   listPendingClientScenarios
 } from '../index';
@@ -133,6 +134,7 @@ describe('Server Scenarios', () => {
   const pendingScenarios = new Set(listPendingClientScenarios());
   const scenarios = [
     ...listActiveClientScenarios(),
+    ...listExtensionClientScenarios(),
     ...listDraftClientScenarios().filter((name) => !pendingScenarios.has(name))
   ];
 

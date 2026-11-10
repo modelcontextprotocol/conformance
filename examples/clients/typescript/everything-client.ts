@@ -12,6 +12,10 @@
  * consolidating all the individual test clients into one.
  */
 
+import {
+  CLIENT_EXTENSIONS,
+  EXTENSIONS_ECHO_TOOL
+} from '../../../src/scenarios/legacy-extensions.js';
 import { fileURLToPath } from 'url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -195,6 +199,21 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 }
 
 registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
+registerScenarios(['legacy-extensions'], async (serverUrl) => {
+  const client = new Client(
+    { name: 'legacy-extensions-client', version: '1.0.0' },
+    { capabilities: { extensions: CLIENT_EXTENSIONS } }
+  );
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(serverUrl)));
+    await client.callTool({
+      name: EXTENSIONS_ECHO_TOOL,
+      arguments: { extensions: client.getServerCapabilities()?.extensions }
+    });
+  } finally {
+    await client.close();
+  }
+});
 
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and
