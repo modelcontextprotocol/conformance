@@ -22,7 +22,7 @@ import {
   mockListRootsResponse,
   MRTR_SPEC_REFERENCES
 } from './input-required-result-helpers';
-import { notTestable } from '../untestable';
+import { notTestable, untestableCheck } from '../untestable';
 
 // ─── A1: Basic Elicitation ────────────────────────────────────────────────────
 
@@ -1225,7 +1225,10 @@ export class InputRequiredResultUnsupportedMethodsScenario implements ClientScen
   specVersions: SpecVersion[] = [DRAFT_PROTOCOL_VERSION];
   description = `Test that server does NOT return InputRequiredResult on unsupported methods (SEP-2322).
 
-Servers MUST NOT send InputRequiredResult responses on any client requests other than the supported ones (prompts/get, resources/read, tools/call, tasks/result).`;
+Servers MUST NOT send InputRequiredResult responses on any client requests other than the supported ones (prompts/get, resources/read, tools/call, tasks/result).
+
+The scenario probes \`tools/list\` and \`prompts/list\`. A rejected probe does not exercise the requirement, so if
+neither returns a result the check reports \`Not testable:\` instead of SUCCESS.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
@@ -1235,17 +1238,41 @@ Servers MUST NOT send InputRequiredResult responses on any client requests other
     const unsupportedMethods = ['tools/list', 'prompts/list'];
 
     try {
+      // A method the server rejects never had the chance to return an
+      // InputRequiredResult, so it does not exercise the MUST NOT. A server
+      // without prompts may reject prompts/list; at least one probe has to
+      // come back with a result, or a server that rejects every request
+      // would score SUCCESS here (#451).
+      const rejected: string[] = [];
       for (const method of unsupportedMethods) {
         const resp = await sendRpc(serverUrl, method, {});
-        if (
-          resp.result &&
+        if (!resp.result) {
+          rejected.push(
+            resp.error
+              ? `${method} (JSON-RPC error ${resp.error.code}: ${resp.error.message})`
+              : `${method} (no result)`
+          );
+        } else if (
           (resp.result as Record<string, unknown>).resultType ===
-            'input_required'
+          'input_required'
         ) {
           errors.push(
             `${method} returned InputRequiredResult, but it is not a supported method for MRTR`
           );
         }
+      }
+
+      if (rejected.length === unsupportedMethods.length) {
+        checks.push(
+          untestableCheck(
+            'sep-2322-not-on-unsupported-requests',
+            'NotOnUnsupportedRequests',
+            'Server does not return InputRequiredResult on unsupported methods',
+            `no probe returned a result: ${rejected.join('; ')}`,
+            MRTR_SPEC_REFERENCES
+          )
+        );
+        return checks;
       }
 
       checks.push({
@@ -1575,13 +1602,55 @@ export class InputRequiredResultValidateInputScenario implements ClientScenario 
 Uses the same tool as A1: \`test_input_required_result_elicitation\`.
 
 This scenario sends completely invalid inputResponses structures. The server SHOULD validate them
-and return a JSON-RPC error or a new InputRequiredResult.`;
+and return a JSON-RPC error or a new InputRequiredResult.
+
+Both checks first require the plain call (no \`inputResponses\`) to return an InputRequiredResult,
+as in A1. Otherwise a rejection of the invalid input cannot be told apart from a server that rejects
+every request, and both checks report \`Not testable:\` instead of SUCCESS.`;
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
     const checks: ConformanceCheck[] = [];
 
     try {
+      // Control: the same tool called without inputResponses must answer with
+      // an InputRequiredResult. The checks below pass on any JSON-RPC error, so
+      // without this a server that rejects every request (e.g. -32000 "Server
+      // not initialized") would score both as SUCCESS for an unrelated reason.
+      const control = await sendRpc(serverUrl, 'tools/call', {
+        name: 'test_input_required_result_elicitation',
+        arguments: {}
+      });
+      if (control.error || !isInputRequiredResult(control.result)) {
+        const got = control.error
+          ? `JSON-RPC error ${control.error.code}: ${control.error.message}`
+          : control.result
+            ? 'a complete result'
+            : 'no result';
+        const reason =
+          'test_input_required_result_elicitation called without inputResponses ' +
+          `returned ${got} instead of an InputRequiredResult, so a rejection of ` +
+          'invalid inputResponses cannot be attributed to input validation';
+        return [
+          untestableCheck(
+            'sep-2322-validate-input-responses',
+            'ValidateInputResponses',
+            'Server validates InputResponses structure',
+            reason,
+            MRTR_SPEC_REFERENCES,
+            'WARNING'
+          ),
+          untestableCheck(
+            'sep-2322-error-on-protocol-error',
+            'ErrorOnProtocolError',
+            'Server returns JSON-RPC error for protocol-level input errors',
+            reason,
+            MRTR_SPEC_REFERENCES,
+            'WARNING'
+          )
+        ];
+      }
+
       // Send inputResponses with invalid structure (number instead of object
       // for the response). Deliberately schema-invalid, so wire-schema
       // validation is skipped for this call.
@@ -1656,15 +1725,32 @@ and return a JSON-RPC error or a new InputRequiredResult.`;
         details: { result: resp2.result, error: resp2.error }
       });
     } catch (error) {
-      checks.push({
-        id: 'sep-2322-validate-input-responses',
-        name: 'ValidateInputResponses',
-        description: 'Server validates InputResponses structure',
-        status: 'WARNING',
-        timestamp: new Date().toISOString(),
-        errorMessage: `Failed: ${error instanceof Error ? error.message : String(error)}`,
-        specReferences: MRTR_SPEC_REFERENCES
-      });
+      // Report every check that did not get to run, so a throw does not
+      // shrink the emitted set.
+      const errorMessage = `Failed: ${error instanceof Error ? error.message : String(error)}`;
+      for (const [id, name, description] of [
+        [
+          'sep-2322-validate-input-responses',
+          'ValidateInputResponses',
+          'Server validates InputResponses structure'
+        ],
+        [
+          'sep-2322-error-on-protocol-error',
+          'ErrorOnProtocolError',
+          'Server returns JSON-RPC error for protocol-level input errors'
+        ]
+      ]) {
+        if (checks.some((c) => c.id === id)) continue;
+        checks.push({
+          id,
+          name,
+          description,
+          status: 'WARNING',
+          timestamp: new Date().toISOString(),
+          errorMessage,
+          specReferences: MRTR_SPEC_REFERENCES
+        });
+      }
     }
 
     return checks;
