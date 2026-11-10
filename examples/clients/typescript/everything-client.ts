@@ -1052,7 +1052,32 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
     logger.debug('test_mrtr_no_state: MRTR flow completed');
   }
 
-  // Tool 3: test_mrtr_no_result_type — returns result without resultType field
+  // Tool 3: test_mrtr_state_only — call, get InputRequiredResult with requestState
+  // and no inputRequests; nothing to fulfill, so retry with only the state echoed
+  const rStateOnly = await sendRpc('tools/call', {
+    name: 'test_mrtr_state_only',
+    arguments: {}
+  });
+
+  const rStateOnlyResult = rStateOnly.result as
+    | Record<string, unknown>
+    | undefined;
+  if (rStateOnlyResult?.resultType === 'input_required') {
+    const requestState = rStateOnlyResult.requestState as string | undefined;
+
+    const retryParams: Record<string, unknown> = {
+      name: 'test_mrtr_state_only',
+      arguments: {}
+    };
+    if (requestState !== undefined) {
+      retryParams.requestState = requestState;
+    }
+
+    await sendRpc('tools/call', retryParams);
+    logger.debug('test_mrtr_state_only: MRTR flow completed');
+  }
+
+  // Tool 4: test_mrtr_no_result_type — returns result without resultType field
   // Client must treat it as complete (default) and NOT retry
   const r3 = await sendRpc('tools/call', {
     name: 'test_mrtr_no_result_type',

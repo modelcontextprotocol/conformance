@@ -4,6 +4,7 @@ import type { ScenarioContext } from '../../mock-server';
  *
  * Tests that clients correctly handle the MRTR (Multi-Round Tool Resolution) flow:
  * - Echo requestState back unchanged when retrying
+ * - Echo requestState back unchanged when the result carries no inputRequests
  * - Don't include requestState when server didn't send one
  * - Use a different JSON-RPC id on retry
  *
@@ -15,6 +16,7 @@ import type { Scenario, ConformanceCheck } from '../../types';
 import { DRAFT_PROTOCOL_VERSION, ScenarioUrls } from '../../types';
 import express, { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { untestableCheck } from '../untestable';
 
 const MRTR_SPEC_REFERENCES = [
   {
@@ -38,6 +40,16 @@ const TOOLS = [
     name: 'test_mrtr_no_state',
     description:
       'Test tool: triggers MRTR flow WITHOUT requestState. Client must NOT include requestState in retry.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [] as string[]
+    }
+  },
+  {
+    name: 'test_mrtr_state_only',
+    description:
+      'Test tool: triggers MRTR flow with requestState and no inputRequests. Client must echo state back unchanged.',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -136,6 +148,11 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
 
         if (toolName === 'test_mrtr_no_state') {
           handleNoState(id, inputResponses, requestState, checks, res);
+          return;
+        }
+
+        if (toolName === 'test_mrtr_state_only') {
+          handleStateOnly(id, inputResponses, requestState, checks, res);
           return;
         }
 
@@ -356,6 +373,98 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
     });
   }
 
+  function handleStateOnly(
+    id: string | number,
+    inputResponses: Record<string, unknown> | undefined,
+    requestState: string | undefined,
+    checks: ConformanceCheck[],
+    res: Response
+  ) {
+    const checkId = 'sep-2322-client-request-state-only-echoed';
+    const name = 'MRTRClientRequestStateOnlyEchoed';
+    const description =
+      'Client MUST echo back the exact value of requestState when retrying a result that has no inputRequests';
+
+    if (!originalIds.has('state_only')) {
+      // Initial call — return InputRequiredResult with requestState and NO
+      // inputRequests. The spec requires at least one of the two, so this is
+      // valid: the client has nothing to fulfill, only state to echo.
+      originalIds.set('state_only', id);
+      const state = JSON.stringify({
+        nonce: randomUUID(),
+        originalId: id
+      });
+      sentStates.set('state_only', state);
+      // Retrying is a MAY, so until a retry arrives the echo requirement
+      // cannot be checked. The retry replaces this check with the verdict.
+      checks.push(
+        untestableCheck(
+          checkId,
+          name,
+          description,
+          'the client did not retry the InputRequiredResult that had requestState and no inputRequests',
+          MRTR_SPEC_REFERENCES
+        )
+      );
+      res.json({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          resultType: 'input_required',
+          requestState: state
+          // No inputRequests field!
+        }
+      });
+      return;
+    }
+
+    // Retry — a broken client may drop requestState, so the params cannot
+    // tell a retry from a fresh call. Every call after the first is a retry;
+    // only the first one is checked.
+    const pendingIdx = checks.findIndex(
+      (c) => c.id === checkId && c.details?.untestable === true
+    );
+    if (pendingIdx !== -1) {
+      checks.splice(pendingIdx, 1);
+      const sentState = sentStates.get('state_only');
+      const errors: string[] = [];
+      if (!requestState) {
+        errors.push('Client did not include requestState in retry');
+      } else if (requestState !== sentState) {
+        errors.push(
+          'requestState was not echoed back exactly — clients MUST NOT inspect, parse, or modify it'
+        );
+      }
+
+      checks.push({
+        id: checkId,
+        name,
+        description,
+        status: errors.length === 0 ? 'SUCCESS' : 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
+        specReferences: MRTR_SPEC_REFERENCES,
+        details: {
+          requestStateSent: sentState,
+          requestStateReceived: requestState,
+          inputResponsesReceived: inputResponses,
+          originalId: originalIds.get('state_only'),
+          retryId: id
+        }
+      });
+    }
+
+    // Return complete result
+    res.json({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        resultType: 'complete',
+        content: [{ type: 'text', text: 'state-only-ok' }]
+      }
+    });
+  }
+
   function handleUnrelated(
     inputResponses: Record<string, unknown> | undefined,
     requestState: string | undefined,
@@ -492,6 +601,7 @@ export class MRTRClientScenario implements Scenario {
   getChecks(): ConformanceCheck[] {
     const expectedSlugs = [
       'sep-2322-client-request-state-echoed',
+      'sep-2322-client-request-state-only-echoed',
       'sep-2322-client-jsonrpc-id-different',
       'sep-2322-client-no-state-omitted',
       'sep-2322-client-parallel-isolation',

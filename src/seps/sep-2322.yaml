@@ -37,6 +37,9 @@ requirements:
   - check: sep-2322-client-request-state-echoed
     text: 'If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. Clients MUST NOT inspect, parse, modify, or make any assumptions about the requestState contents.'
 
+  - check: sep-2322-client-request-state-only-echoed
+    text: 'If an InputRequiredResult contains the requestState field, the client MUST echo back the exact value of that field when retrying the original request. (requestState-only variant: the result has no inputRequests)'
+
   - check: sep-2322-client-no-state-omitted
     text: 'If the InputRequiredResult does not contain a requestState field, the client MUST NOT include one in the retry.'
 
