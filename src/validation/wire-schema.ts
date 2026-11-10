@@ -32,6 +32,8 @@ export interface WireSchemaViolation {
   origin: WireOrigin;
   specVersion: SpecVersion;
   context: string;
+  /** The message's own `method`, or for a response the answered request's. */
+  method?: string;
   errors: string[];
   message: unknown;
 }
@@ -353,10 +355,12 @@ export function validateWireMessage(
   state.observed++;
   const errors = wireSchemaErrors(specVersion, message, info.requestMethod);
   if (errors.length > 0) {
+    const own = (message as { method?: unknown } | null)?.method;
     state.violations.push({
       origin: info.origin,
       specVersion,
       context: info.context,
+      method: typeof own === 'string' ? own : info.requestMethod,
       errors,
       message
     });
@@ -397,9 +401,27 @@ export function formatWireViolation(v: WireSchemaViolation): string {
   );
 }
 
+/** Whether a violation falls in a scenario's `wireSchemaScope`. A scope entry
+ * ending in `/` matches a method prefix; any other entry matches exactly. An
+ * empty scope grades everything. A violation whose method is unknown (a batch,
+ * or a response not paired with its request) stays in scope, so scoping never
+ * hides it. */
+function inScope(v: WireSchemaViolation, scope?: readonly string[]): boolean {
+  if (!scope?.length || v.method === undefined) return true;
+  const method = v.method;
+  return scope.some((s) =>
+    s.endsWith('/') ? method.startsWith(s) : method === s
+  );
+}
+
 /** Drain the recorder and synthesize the per-scenario conformance checks. Returns `[]`
- * when no wire traffic was observed (e.g. a scenario asserting only on raw HTTP). */
-export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
+ * when no wire traffic was observed (e.g. a scenario asserting only on raw HTTP).
+ * With a `scope`, `wire-schema-valid` grades only the implementation's messages
+ * for those methods; violations elsewhere are reported as an INFO check. */
+export function wireSchemaChecks(
+  specVersion: SpecVersion,
+  scope?: readonly string[]
+): ConformanceCheck[] {
   const { violations: all, observed: count } = takeWireViolations();
   if (count === 0 && all.length === 0) return [];
 
@@ -412,7 +434,12 @@ export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
   ];
   const checks: ConformanceCheck[] = [];
 
-  const implViolations = all.filter((v) => v.origin === 'implementation');
+  const implViolations = all.filter(
+    (v) => v.origin === 'implementation' && inScope(v, scope)
+  );
+  const outOfScope = all.filter(
+    (v) => v.origin === 'implementation' && !inScope(v, scope)
+  );
   checks.push({
     id: 'wire-schema-valid',
     name: 'WireSchemaValid',
@@ -423,6 +450,7 @@ export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
     specReferences,
     details: {
       messagesValidated: count,
+      ...(scope !== undefined && { scope }),
       violations: implViolations.map(violationDetails)
     },
     errorMessage:
@@ -430,6 +458,20 @@ export function wireSchemaChecks(specVersion: SpecVersion): ConformanceCheck[] {
         ? implViolations.map(formatWireViolation).join('\n')
         : undefined
   });
+
+  if (outOfScope.length > 0) {
+    checks.push({
+      id: 'wire-schema-valid-out-of-scope',
+      name: 'WireSchemaValidOutOfScope',
+      description:
+        "Implementation messages outside this scenario's area that are invalid per the spec JSON schema. Reported for information; they do not fail the scenario.",
+      status: 'INFO',
+      timestamp,
+      specReferences,
+      details: { scope, violations: outOfScope.map(violationDetails) },
+      errorMessage: outOfScope.map(formatWireViolation).join('\n')
+    });
+  }
 
   const harnessViolations = all.filter((v) => v.origin === 'harness');
   if (harnessViolations.length > 0) {
