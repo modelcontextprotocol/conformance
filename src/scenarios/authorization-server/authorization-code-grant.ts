@@ -3,7 +3,8 @@
  */
 import {
   ClientScenarioForAuthorizationServer,
-  ConformanceCheck
+  ConformanceCheck,
+  DRAFT_PROTOCOL_VERSION
 } from '../../types';
 import { startCallbackServer } from '../authorization-server/auth/helpers/createCallbackServer';
 import { request } from 'undici';
@@ -58,12 +59,15 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 - HTTP response status code of token response MUST be 200 OK
 - Content-Type header of token response MUST be application/json
 - Cache-Control header of token response MUST be no-store
-- Token response MUST return a JSON response including access_token and token_type`;
+- Token response MUST return a JSON response including access_token and token_type
+- (2026-07-28+, SEP-2468) SHOULD include the iss parameter in authorization responses, including error responses
+- (2026-07-28+, SEP-2468) If the iss parameter is included, MUST set authorization_response_iss_parameter_supported to true in metadata`;
 
   async run(
     options: AuthorizationServerOptions,
     details: Record<string, unknown>
   ): Promise<ConformanceCheck[]> {
+    let issChecks: ConformanceCheck[] = [];
     try {
       if (!options.clientId) {
         return [
@@ -116,6 +120,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
 
         const authorizationResponseUrl =
           await callback.waitForCallback(300_000);
+        issChecks = this.checkIssParameter(authorizationResponseUrl, metadata);
 
         const errors: string[] = [];
         const code = this.validateAuthorizationResponse(
@@ -134,7 +139,7 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
         this.validateTokenResponse(tokenResponse, errors);
 
         if (errors.length > 0) {
-          return [this.failureCheck(errors.join(', '))];
+          return [this.failureCheck(errors.join(', ')), ...issChecks];
         }
 
         return [
@@ -142,14 +147,90 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
             authorizationRequest,
             authorizationResponseUrl,
             body: redactTokens(tokenResponse.body)
-          })
+          }),
+          ...issChecks
         ];
       } finally {
         callback.close();
       }
     } catch (error) {
-      return [this.failureCheck(error)];
+      return [this.failureCheck(error), ...issChecks];
     }
+  }
+
+  // SEP-2468: evaluated on every authorization response, including error responses.
+  private checkIssParameter(
+    responseUrl: string,
+    metadata: Record<string, unknown>
+  ): ConformanceCheck[] {
+    const url = new URL(responseUrl);
+    const iss = url.searchParams.getAll('iss');
+    const issPresent = iss.length > 0;
+    const isErrorResponse = url.searchParams.has('error');
+    const issSupported =
+      metadata.authorization_response_iss_parameter_supported;
+    const source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+    const timestamp = new Date().toISOString();
+
+    const includeIss: ConformanceCheck = {
+      id: 'sep-2468-as-include-iss',
+      name: 'AuthorizationResponseIncludesIss',
+      description:
+        'Authorization server includes the iss parameter in authorization responses, including error responses',
+      status: issPresent ? 'SUCCESS' : 'WARNING',
+      source,
+      timestamp,
+      ...(issPresent
+        ? {}
+        : {
+            errorMessage: `Authorization ${isErrorResponse ? 'error ' : ''}response does not include the iss parameter`
+          }),
+      specReferences: [
+        SpecReferences.MCP_AUTH_RESPONSE_VALIDATION,
+        SpecReferences.RFC_9207_ISS_PARAMETER
+      ],
+      details: { iss, isErrorResponse }
+    };
+
+    const advertiseCheck = {
+      id: 'sep-2468-as-advertise-iss-supported',
+      name: 'AuthorizationServerAdvertisesIssSupported',
+      description:
+        'Authorization server that includes iss sets authorization_response_iss_parameter_supported to true in its metadata',
+      source,
+      timestamp,
+      specReferences: [
+        SpecReferences.MCP_AUTH_RESPONSE_VALIDATION,
+        SpecReferences.RFC_9207_AS_METADATA
+      ],
+      details: {
+        iss,
+        authorization_response_iss_parameter_supported: issSupported
+      }
+    };
+    let advertiseIss: ConformanceCheck;
+    if (!issPresent) {
+      // The MUST is conditional on the AS including iss.
+      advertiseIss = {
+        ...advertiseCheck,
+        status: 'SKIPPED',
+        errorMessage:
+          'Not applicable: authorization response does not include the iss parameter'
+      };
+    } else if (issSupported === true) {
+      advertiseIss = { ...advertiseCheck, status: 'SUCCESS' };
+    } else {
+      advertiseIss = {
+        ...advertiseCheck,
+        status: 'FAILURE',
+        errorMessage:
+          issSupported === undefined
+            ? 'Authorization response includes iss but metadata does not include "authorization_response_iss_parameter_supported"'
+            : `Authorization response includes iss but "authorization_response_iss_parameter_supported" is ${JSON.stringify(issSupported)}, expected true`
+      };
+    }
+
+    return [includeIss, advertiseIss];
   }
 
   private buildAuthorizationRequest(
