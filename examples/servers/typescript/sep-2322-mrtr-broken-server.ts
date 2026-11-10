@@ -64,6 +64,12 @@ handlers['tools/list'] = () => ({
       name: 'test_input_required_result_capabilities',
       description: 'Test tool for client capability handling',
       inputSchema: { type: 'object' as const, properties: {} }
+    },
+    {
+      name: 'test_input_required_result_request_state',
+      description:
+        'Test tool returning input_required with requestState but no input requests',
+      inputSchema: { type: 'object' as const, properties: {} }
     }
   ]
 });
@@ -111,6 +117,16 @@ handlers['tools/call'] = (params) => {
       return {
         resultType: 'input_required',
         requestState: 'no-input-requested'
+      };
+    }
+
+    case 'test_input_required_result_request_state': {
+      // Answers with conformant input_required result that carries requestState
+      // but no input requests, so round 2 retry cannot be exercised.
+      return {
+        resultType: 'input_required',
+        requestState: 'no-input-requested',
+        inputRequests: {}
       };
     }
 
