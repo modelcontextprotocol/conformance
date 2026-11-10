@@ -68,12 +68,12 @@ function createServer(checks: ConformanceCheck[]): {
       };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       if (request.params.name === 'test_client_elicitation_defaults') {
         try {
-          // Request elicitation with all optional fields having defaults
-          // Using raw server.request() to verify client applies defaults before sending response
-          const elicitResult = await server.request(
+          // Associate the server request with this tool call so transports can
+          // send it on the originating response stream.
+          const elicitResult = await extra.sendRequest(
             {
               method: 'elicitation/create',
               params: {
