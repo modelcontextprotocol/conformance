@@ -63,6 +63,8 @@ import {
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
+import { AgentsDiscoveryScenario } from './server/agents/discovery';
+import { AgentsListChangedScenario } from './server/agents/list-changed';
 
 import {
   PromptsListScenario,
@@ -166,7 +168,14 @@ const pendingClientScenariosList: ClientScenario[] = [
   // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
-  new SkillsManifestScenario()
+  new SkillsManifestScenario(),
+
+  // MCP Agent Discovery Extension (agents-wg#22, placeholder number 9998).
+  // Pending because the everything-server does not implement
+  // io.modelcontextprotocol/agents; targeted runs point at a conformant
+  // fixture via `npm start -- server --scenario sep-9998-agents-* --url <fixture>`.
+  new AgentsDiscoveryScenario(),
+  new AgentsListChangedScenario()
 ];
 
 // All client scenarios
@@ -223,6 +232,11 @@ const allClientScenariosList: ClientScenario[] = [
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
   new SkillsManifestScenario(),
+
+  // Agent discovery extension (agents-wg#22). Fixture-dependent; each
+  // scenario SKIPs cleanly when the extension is not declared.
+  new AgentsDiscoveryScenario(),
+  new AgentsListChangedScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
