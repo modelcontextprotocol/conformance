@@ -46,13 +46,17 @@ async function runScenarioBounded(
 
   run.catch(() => {});
 
-  const result = await Promise.race([
-    run,
-    new Promise<typeof timedOut>((resolve) => {
-      timeoutHandle = setTimeout(() => resolve(timedOut), timeout);
-    })
-  ]);
-  clearTimeout(timeoutHandle);
+  let result: ConformanceCheck[] | typeof timedOut;
+  try {
+    result = await Promise.race([
+      run,
+      new Promise<typeof timedOut>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(timedOut), timeout);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 
   if (result !== timedOut) {
     return result;
@@ -145,11 +149,24 @@ export async function runServerConformanceTest(
     connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
   resetWireValidation();
-  const checks = await runScenarioBounded(
-    scenario.run(ctx),
-    scenarioName,
-    timeout
-  );
+  let checks: ConformanceCheck[];
+  try {
+    checks = await runScenarioBounded(scenario.run(ctx), scenarioName, timeout);
+  } catch (error) {
+    console.error(`Failed to run scenario ${scenarioName}:`, error);
+    // Match the CLI suite's failure check, but persist it through the same
+    // report path as completed scenarios. Report-write errors still propagate.
+    checks = [
+      {
+        id: scenarioName,
+        name: scenarioName,
+        description: 'Failed to run scenario',
+        status: 'FAILURE',
+        timestamp: new Date().toISOString(),
+        errorMessage: error instanceof Error ? error.message : String(error)
+      }
+    ];
+  }
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
   if (resultDir) {
