@@ -12,6 +12,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
+import { z } from 'zod';
 
 // Create a fresh MCP server per request to avoid "Already connected" errors
 // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -25,7 +26,7 @@ function createMcpServer() {
     'echo',
     {
       description: 'Echo the input back',
-      inputSchema: { message: { type: 'string' } }
+      inputSchema: { message: z.string() }
     },
     async ({ message }) => ({
       content: [{ type: 'text', text: `Echo: ${message}` }]
