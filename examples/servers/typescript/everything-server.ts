@@ -2185,11 +2185,15 @@ app.post('/mcp', async (req, res) => {
         );
 
         return res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: { content: [{ type: 'text', text: 'Streaming complete' }] }
-          })
+          JSON.stringify(
+            normalizeStatelessResponse(method, {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [{ type: 'text', text: 'Streaming complete' }]
+              }
+            })
+          )
         );
       }
 
@@ -2215,11 +2219,15 @@ app.post('/mcp', async (req, res) => {
         }
 
         return res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id,
-            result: { content: [{ type: 'text', text: 'Logging evaluated' }] }
-          })
+          JSON.stringify(
+            normalizeStatelessResponse(method, {
+              jsonrpc: '2.0',
+              id,
+              result: {
+                content: [{ type: 'text', text: 'Logging evaluated' }]
+              }
+            })
+          )
         );
       }
 
