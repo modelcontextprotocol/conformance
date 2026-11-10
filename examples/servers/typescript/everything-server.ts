@@ -1487,6 +1487,12 @@ app.post('/mcp', async (req, res) => {
                 inputSchema: { type: 'object', properties: {} }
               },
               {
+                name: 'test_url_elicitation',
+                description:
+                  'SEP-1036: needs URL-mode elicitation; -32021 if the client did not declare it',
+                inputSchema: { type: 'object', properties: {} }
+              },
+              {
                 name: 'test_streaming_elicitation',
                 description:
                   'Diagnostic tool validating response progress streams',
@@ -1720,9 +1726,90 @@ app.post('/mcp', async (req, res) => {
         });
       }
 
+      // ===== SEP-1036 URL mode elicitation =====
+
+      if (name === 'test_url_elicitation') {
+        // This tool can only work through URL mode. A server MUST NOT send a
+        // mode the client did not declare, so a client without URL mode gets
+        // -32021 (HTTP 400) instead.
+        const elicitation =
+          meta['io.modelcontextprotocol/clientCapabilities']?.elicitation;
+        if (!elicitation?.url) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: { requiredCapabilities: { elicitation: { url: {} } } }
+            }
+          });
+        }
+        const answer = inputResponses?.['connect_account'] as
+          | { action?: string }
+          | undefined;
+        if (answer) {
+          // `accept` only means the user consented to open the URL. A real
+          // server would check its own state for the out-of-band result; this
+          // fixture has no out-of-band page, so it ends the call either way.
+          return sendStatelessJson(res, method, {
+            jsonrpc: '2.0',
+            id,
+            result:
+              answer.action === 'accept'
+                ? { content: [{ type: 'text', text: 'Account connected.' }] }
+                : {
+                    content: [
+                      {
+                        type: 'text',
+                        text: `Account not connected: the user chose ${answer.action}.`
+                      }
+                    ],
+                    isError: true
+                  }
+          });
+        }
+        return sendStatelessJson(res, method, {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: {
+              connect_account: {
+                method: 'elicitation/create',
+                params: {
+                  mode: 'url',
+                  message: 'Connect your account to continue.',
+                  url: `http://localhost:${PORT}/connect-account`
+                }
+              }
+            }
+          }
+        });
+      }
+
       // ===== SEP-2322 MRTR tools/call handlers =====
 
       if (name === 'test_input_required_result_elicitation') {
+        // Sends a form-mode request, so it needs form mode declared (an empty
+        // `elicitation: {}` counts as form mode only).
+        const elicitation =
+          meta['io.modelcontextprotocol/clientCapabilities']?.elicitation;
+        const declaresForm =
+          elicitation !== undefined &&
+          (Object.keys(elicitation).length === 0 ||
+            elicitation.form !== undefined);
+        if (!declaresForm) {
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32021,
+              message: 'MissingRequiredClientCapabilityError',
+              data: { requiredCapabilities: { elicitation: { form: {} } } }
+            }
+          });
+        }
         if (inputResponses?.['user_name']) {
           const userName = getMrtInputText(inputResponses['user_name'], 'name');
           return sendStatelessJson(res, method, {

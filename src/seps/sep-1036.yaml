@@ -1,0 +1,99 @@
+sep: 1036
+spec_url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation
+requirements:
+  - check: sep-1036-client-supports-declared-mode
+    text: 'Clients declaring the `elicitation` capability MUST support at least one mode (`form` or `url`).'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#capabilities
+  - check: sep-1036-server-no-unsupported-mode
+    text: 'Servers MUST NOT send elicitation requests with modes that are not supported by the client.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#capabilities
+  - check: sep-1036-client-missing-mode-is-form
+    text: 'Clients MUST treat requests without a `mode` field as form mode.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#elicitation-requests
+  - check: sep-1036-url-request-params
+    text: 'URL mode elicitation requests MUST specify `mode: "url"`, a `message`, and include these additional parameters: `url` / All elicitation requests MUST include the following parameters: `mode`, `message`'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#url-mode-elicitation-requests
+  - check: sep-1036-url-valid
+    text: 'The `url` parameter MUST contain a valid URL.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#url-mode-elicitation-requests
+  # Added to basic/index.mdx by spec PR #2907 (error code allocation policy),
+  # which is not a SEP. Tracked here because -32042 was SEP-1036's error code.
+  - check: sep-1036-server-no-url-elicitation-required-error
+    text: 'Codes defined by earlier protocol versions remain reserved and will not be reused. Implementations of this protocol version MUST NOT emit these codes: -32042 — URL elicitation required (2025-11-25 only).'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/basic/index#error-codes
+  # Observed only on an elicitation the client declines. A declined request
+  # means the user refused consent, so any request to that URL is a prefetch
+  # (or an unconsented open). The accept path can't be judged: in the spec's
+  # URL Mode Flow the client opens the URL before it sends the accept retry,
+  # so a consented open looks identical to a prefetch. Cancel can't be
+  # judged either, because the spec's cancel examples include "browser
+  # failed to load", which implies the URL was opened.
+  - check: sep-1036-client-no-url-prefetch
+    text: 'When handling URL mode elicitation requests, MCP clients: MUST NOT automatically pre-fetch the URL or any of its metadata.'
+    url: https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation#safe-url-handling
+
+  # Scenario flow gates (sep-1036-client-held-json-retry-complete,
+  # sep-1036-client-held-sse-retry-complete) intentionally have no rows here.
+  # They verify the end-to-end URL flow against a server that holds the retry
+  # open. The URL Mode Flow allows a server to do that, but no RFC-2119
+  # sentence requires clients to wait for it, so there is no requirement to
+  # track. They surface in the traceability manifest's `untracked` list.
+
+  - text: 'Servers MUST NOT use form mode elicitation to request sensitive information such as passwords, API keys, access tokens, or payment credentials'
+    excluded: 'Whether requested data is sensitive is a semantic judgment about server intent; not protocol-observable'
+  - text: 'Servers MUST use URL mode for interactions involving such sensitive information'
+    excluded: 'Whether an interaction involves sensitive information is a semantic judgment about server intent; not protocol-observable'
+  - text: 'MCP clients MUST: Provide UI that makes it clear which server is requesting information / Clients MUST provide clear indication of which server is requesting information'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'MCP clients MUST: Respect user privacy and provide clear decline and cancel options'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'MCP clients MUST: For form mode, allow users to review and modify their responses before sending'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'MCP clients MUST: For URL mode, clearly display the target domain/host and gather user consent before navigation to the target URL'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'Clients SHOULD provide manual controls that let the user retry or cancel the original request (or otherwise resume interacting with the client).'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'Clients implementing URL mode elicitation MUST handle URLs carefully to prevent users from unknowingly clicking malicious links.'
+    excluded: 'Umbrella requirement for the Safe URL Handling list; the testable item is tracked as sep-1036-client-no-url-prefetch'
+  - text: 'When handling URL mode elicitation requests, MCP clients: MUST NOT open the URL without explicit consent from the user.'
+    excluded: 'User consent happens in client UI; the harness observes wire traffic only'
+  - text: 'When handling URL mode elicitation requests, MCP clients: MUST show the full URL to the user for examination before consent.'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'When handling URL mode elicitation requests, MCP clients: MUST open the URL provided by the server in a secure manner that does not enable the client or LLM to inspect the content or user inputs.'
+    excluded: 'How the client opens the URL (user agent choice, isolation from the LLM) is not protocol-observable'
+  - text: 'When handling URL mode elicitation requests, MCP clients: SHOULD highlight the domain of the URL to mitigate subdomain spoofing.'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'When handling URL mode elicitation requests, MCP clients: SHOULD have warnings for ambiguous/suspicious URIs (i.e., containing Punycode).'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'When handling URL mode elicitation requests, MCP clients: SHOULD NOT render URLs as clickable in any field of an elicitation request, except for the `url` field in a URL elicitation request (with the restrictions detailed above).'
+    excluded: 'Client UI requirement; the harness observes wire traffic only'
+  - text: 'If state is stored, servers implementing elicitation MUST securely associate this state with individual users following the guidelines in the security best practices document. Specifically: State storage MUST be protected against unauthorized access / For remote MCP servers, user identification MUST be derived from credentials acquired via MCP authorization when possible (e.g. `sub` claim)'
+    excluded: 'Server-internal state handling; not protocol-observable'
+  - text: 'MCP servers MUST NOT rely on URL mode elicitation to authorize users for themselves.'
+    excluded: 'Architectural constraint on server authorization design; not protocol-observable'
+  - text: 'The third-party credentials MUST NOT transit through the MCP client'
+    excluded: 'Third-party credentials are opaque to the harness; cannot distinguish them from other payloads'
+  - text: "The MCP server MUST NOT use the client's credentials for the third-party service"
+    excluded: 'Server-to-third-party traffic is out of band; not observable by the harness'
+  - text: 'The user MUST authorize the MCP server directly'
+    excluded: 'Out-of-band browser interaction; not protocol-observable'
+  - text: 'The MCP server MUST NOT transmit credentials obtained through URL mode elicitation to the MCP client.'
+    excluded: 'Third-party credentials are opaque to the harness; cannot distinguish them from other payloads'
+  - text: 'Servers MUST bind elicitation requests to the client and user identity'
+    excluded: 'Server-internal state handling; not protocol-observable'
+  - text: 'MCP servers requesting elicitation: MUST NOT include sensitive information about the end-user, including credentials, personally identifiable information, etc., in the URL sent to the client in a URL elicitation request.'
+    excluded: 'Whether URL contents are sensitive is a semantic judgment; not protocol-observable'
+  - text: 'MCP servers requesting elicitation: MUST NOT provide a URL which is pre-authenticated to access a protected resource, as the URL could be used to impersonate the user by a malicious client.'
+    excluded: 'Whether a URL is pre-authenticated depends on server-side semantics; not protocol-observable'
+  - text: 'MCP servers requesting elicitation: SHOULD NOT include URLs intended to be clickable in any field of a form mode elicitation request.'
+    excluded: 'Whether a URL is intended to be clickable is a semantic judgment; not protocol-observable'
+  - text: 'MCP servers requesting elicitation: SHOULD use HTTPS URLs for non-development environments.'
+    excluded: 'The harness only exercises local development servers, where the requirement does not apply'
+  - text: 'Servers MUST NOT rely on client-provided user identification without server verification, as this can be forged. Instead, servers SHOULD follow security best practices.'
+    excluded: 'Server-internal identity handling; not protocol-observable'
+  - text: 'The MCP Server MUST verify the identity of the user who opens the URL before accepting information.'
+    excluded: 'Out-of-band browser interaction; not protocol-observable'
+  - text: 'The server MUST ensure that the user who started the elicitation request (the end-user who is accessing the server via the MCP client) is the same user who completes the authorization flow.'
+    excluded: 'Out-of-band browser interaction; not protocol-observable'
+  - text: "In all implementations, the server MUST ensure that the mechanism to determine the user's identity is resilient to attacks where an attacker can modify the elicitation URL."
+    excluded: 'Out-of-band browser interaction; not protocol-observable'

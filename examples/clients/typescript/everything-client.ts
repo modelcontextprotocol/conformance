@@ -115,6 +115,34 @@ const STATELESS_META_BASE = {
   }
 };
 
+/**
+ * Read the JSON-RPC response to request `id`. A server may answer with
+ * application/json or with an SSE stream, and the client MUST support both;
+ * on a stream, notifications and keep-alive comments can precede the response.
+ */
+async function readJsonRpcResponse(
+  response: Response,
+  id: number
+): Promise<any> {
+  if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+    return response.json();
+  }
+  const text = await response.text();
+  for (const event of text.split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trimStart())
+      .join('\n');
+    if (!data) continue;
+    const message = JSON.parse(data);
+    if (message.id === id && ('result' in message || 'error' in message)) {
+      return message;
+    }
+  }
+  throw new Error(`SSE stream ended without a response to request ${id}`);
+}
+
 let _nextStatelessId = 1;
 async function statelessRequest(
   serverUrl: string,
@@ -126,6 +154,7 @@ async function statelessRequest(
     ...STATELESS_META_BASE,
     ...((params._meta as object | undefined) ?? {})
   };
+  const id = _nextStatelessId++;
   const response = await fetch(serverUrl, {
     method: 'POST',
     headers: {
@@ -137,12 +166,12 @@ async function statelessRequest(
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
-      id: _nextStatelessId++,
+      id,
       method,
       params: { ...params, _meta }
     })
   });
-  const body = await response.json();
+  const body = await readJsonRpcResponse(response, id);
   if (body.error) {
     throw new Error(
       `${method} failed: ${body.error.code} ${body.error.message}`
@@ -1071,6 +1100,79 @@ async function runMRTRClient(serverUrl: string): Promise<void> {
 }
 
 registerScenario('sep-2322-client-request-state', runMRTRClient);
+
+// ============================================================================
+// URL mode elicitation, client side (SEP-1036, 2026-07-28)
+//
+// Scenario contract (the scenario description has the full version):
+//   - Declare `elicitation: { form: {}, url: {} }` on every request.
+//   - Call every listed tool once, in order. While the result is an
+//     InputRequiredResult, answer every input request and retry, echoing
+//     requestState.
+//   - URL mode: decline when the message starts with "DECLINE:", otherwise
+//     accept. The URL is never fetched or opened.
+//   - Form mode (explicit, or `mode` omitted): accept with { confirmed: true }.
+// ============================================================================
+
+const URL_MODE_META = {
+  'io.modelcontextprotocol/clientCapabilities': {
+    ...STATELESS_META_BASE['io.modelcontextprotocol/clientCapabilities'],
+    elicitation: { form: {}, url: {} }
+  }
+};
+
+function answerElicitation(
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  if (params.mode === 'url') {
+    // Stands in for the user's consent decision. This client never fetches or
+    // opens the URL.
+    return String(params.message).startsWith('DECLINE:')
+      ? { action: 'decline' }
+      : { action: 'accept' };
+  }
+  return { action: 'accept', content: { confirmed: true } };
+}
+
+async function runElicitationUrlModeClient(serverUrl: string): Promise<void> {
+  const list = await statelessRequest(serverUrl, 'tools/list', {
+    _meta: URL_MODE_META
+  });
+  for (const tool of list?.tools ?? []) {
+    let params: Record<string, unknown> = { name: tool.name, arguments: {} };
+    // Bounded so a misbehaving server cannot keep the client retrying forever.
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      const result = await statelessRequest(serverUrl, 'tools/call', {
+        ...params,
+        // Lets a server that holds the retry open report progress meanwhile.
+        _meta: { ...URL_MODE_META, progressToken: `${tool.name}-${attempt}` }
+      });
+      if (result?.resultType !== 'input_required') break;
+
+      const inputResponses: Record<string, unknown> = {};
+      for (const [key, request] of Object.entries(
+        (result.inputRequests ?? {}) as Record<
+          string,
+          { method: string; params?: Record<string, unknown> }
+        >
+      )) {
+        if (request.method === 'elicitation/create') {
+          inputResponses[key] = answerElicitation(request.params ?? {});
+        }
+      }
+      params = { name: tool.name, arguments: {}, inputResponses };
+      if (result.requestState !== undefined) {
+        params.requestState = result.requestState;
+      }
+    }
+    logger.debug(`${tool.name}: flow completed`);
+  }
+}
+
+registerScenario(
+  'elicitation-sep1036-client-url-mode',
+  runElicitationUrlModeClient
+);
 
 // ============================================================================
 // WIF JWT-bearer scenario
