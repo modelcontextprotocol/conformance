@@ -36,6 +36,8 @@ import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/t
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
+import { runClient as dpopNoJktClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-jkt';
+import { runClient as dpopWrongJktClient } from '../../../../examples/clients/typescript/auth-test-dpop-wrong-jkt';
 import { runClient as resourceSlashClient } from '../../../../examples/clients/typescript/auth-test-resource-slash';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
@@ -455,7 +457,10 @@ describe('DPoP client negative tests (SEP-1932)', () => {
         'sep-1932-client-fresh-proof',
         'sep-1932-client-rs-nonce'
       ],
-      expectedSuccessSlugs: ['sep-1932-client-token-request-proof']
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-jkt'
+      ]
     });
   });
 
@@ -468,11 +473,52 @@ describe('DPoP client negative tests (SEP-1932)', () => {
       expectedFailureSlugs: ['sep-1932-client-rs-nonce'],
       expectedSuccessSlugs: [
         'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-jkt',
         'sep-1932-client-dpop-auth-scheme',
         'sep-1932-client-fresh-proof',
         'sep-1932-client-as-nonce'
       ]
     });
+  });
+
+  test('auth/dpop: client binds the authorization code via dpop_jkt', async () => {
+    const runner = new InlineClientRunner(dpopClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedSuccessSlugs: ['sep-1932-client-dpop-jkt']
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-dpop-jkt')?.status
+    ).toBe('SUCCESS');
+  });
+
+  test('auth/dpop: client omits dpop_jkt', async () => {
+    const runner = new InlineClientRunner(dpopNoJktClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: ['sep-1932-client-dpop-jkt'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof'
+      ]
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-dpop-jkt')?.status
+    ).toBe('WARNING');
+  });
+
+  test('auth/dpop: client sends a mismatched dpop_jkt', async () => {
+    const runner = new InlineClientRunner(dpopWrongJktClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedFailureSlugs: [
+        'sep-1932-client-dpop-jkt',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof'
+      ],
+      expectedSuccessSlugs: ['sep-1932-client-token-request-proof']
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-dpop-jkt')?.status
+    ).toBe('FAILURE');
   });
 });
 
@@ -485,7 +531,7 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
   test('auth/dpop: nonce-incapable client passes the baseline', async () => {
     const runner = new InlineClientRunner(dpopNoNonceClient);
     // No expectedFailureSlugs → asserts every emitted check is SUCCESS (the
-    // three baseline checks; no as-nonce/rs-nonce checks are emitted here).
+    // four baseline checks; no as-nonce/rs-nonce checks are emitted here).
     await runClientAgainstScenario(runner, 'auth/dpop');
   });
 
@@ -501,6 +547,9 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
     expect(count('token-request')).toBe(1);
     expect(count('pkce-code-verifier-sent')).toBe(1);
     expect(count('pkce-verifier-matches-challenge')).toBe(1);
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-dpop-jkt')?.status
+    ).toBe('SUCCESS');
   });
 });
 

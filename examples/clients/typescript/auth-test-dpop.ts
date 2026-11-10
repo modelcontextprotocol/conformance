@@ -4,8 +4,10 @@ import { runDpopClient } from './helpers/dpopClientFlow';
 import { runAsCli } from './helpers/cliRunner';
 
 /**
- * Well-behaved DPoP client (SEP-1932 / RFC 9449): presents the DPoP-bound token
- * with the `DPoP` Authorization scheme and a fresh proof on every MCP request.
+ * Well-behaved DPoP client (SEP-1932 / RFC 9449): binds the authorization code
+ * to its DPoP key via `dpop_jkt` (RFC 9449 §10), then presents the DPoP-bound
+ * token with the `DPoP` Authorization scheme and a fresh proof on every MCP
+ * request.
  */
 export async function runClient(serverUrl: string): Promise<void> {
   await runDpopClient(serverUrl, {
@@ -13,7 +15,8 @@ export async function runClient(serverUrl: string): Promise<void> {
     freshProofPerRequest: true,
     sendTokenRequestProof: true,
     handleAsNonce: true,
-    handleRsNonce: true
+    handleRsNonce: true,
+    sendDpopJkt: true
   });
 }
 

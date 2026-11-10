@@ -29,6 +29,10 @@ import { logger } from './logger';
  *    challenge (RFC 9449 §8); fails sep-1932-client-as-nonce
  *  - `handleRsNonce:false`        → ignores the MCP server's `use_dpop_nonce`
  *    challenge (RFC 9449 §9); fails sep-1932-client-rs-nonce
+ *  - `sendDpopJkt:false`          → omits dpop_jkt on the authorization request;
+ *    warns sep-1932-client-dpop-jkt (SEP-1932 / RFC 9449 §10)
+ *  - `wrongDpopJkt:true`          → sends a dpop_jkt that does not match the
+ *    token-request proof key; fails sep-1932-client-dpop-jkt (AS returns 400)
  */
 export interface DpopClientOptions {
   scheme: 'DPoP' | 'Bearer';
@@ -38,6 +42,10 @@ export interface DpopClientOptions {
   handleAsNonce: boolean;
   /** Retry an MCP request with the server-supplied nonce on a use_dpop_nonce challenge (RFC 9449 §9). */
   handleRsNonce: boolean;
+  /** Include dpop_jkt on the authorization request (RFC 9449 §10). Default true. */
+  sendDpopJkt?: boolean;
+  /** Send a dpop_jkt that does not match the token-request proof key. */
+  wrongDpopJkt?: boolean;
 }
 
 const REDIRECT_URI = 'http://127.0.0.1:9876/callback';
@@ -90,14 +98,26 @@ export async function runDpopClient(
   const codeChallenge = createHash('sha256')
     .update(codeVerifier)
     .digest('base64url');
-  const authorizeUrl = `${authorizationEndpoint}?${new URLSearchParams({
+  const authorizeParams = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
     state,
     redirect_uri: REDIRECT_URI,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256'
-  }).toString()}`;
+  });
+  // RFC 9449 §10: bind the authorization code to this DPoP key. Default on so
+  // the compliant fixture and the other single-defect variants send a matching
+  // dpop_jkt unless they are the dedicated omit/mismatch clients.
+  if (options.sendDpopJkt !== false) {
+    authorizeParams.set(
+      'dpop_jkt',
+      options.wrongDpopJkt
+        ? (await generateDpopKeyPair()).thumbprint
+        : keyPair.thumbprint
+    );
+  }
+  const authorizeUrl = `${authorizationEndpoint}?${authorizeParams.toString()}`;
   const authorizeResponse = await request(authorizeUrl, { method: 'GET' });
   await authorizeResponse.body.text().catch(() => undefined);
   const location = authorizeResponse.headers['location'];

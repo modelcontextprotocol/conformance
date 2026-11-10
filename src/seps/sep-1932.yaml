@@ -7,6 +7,10 @@ requirements:
     text: 'When making requests to protected MCP server resources, clients MUST include a fresh DPoP proof in the `DPoP` header'
   - check: sep-1932-client-token-request-proof
     text: 'To obtain a DPoP-bound access token, the client MUST include a DPoP proof in the `DPoP` header of its token request (RFC 9449 Section 5)'
+  # Proposed SEP-1932 client guidance; RFC 9449 §10 currently makes this optional.
+  - check: sep-1932-client-dpop-jkt
+    text: 'Clients using the authorization code grant SHOULD bind the authorization code to their DPoP key using the dpop_jkt authorization request parameter.'
+    url: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932
   - check: sep-1932-client-as-nonce
     text: 'When the authorization server responds with `use_dpop_nonce`, the client MUST retry the token request with a DPoP proof that includes the supplied `nonce` (RFC 9449 Section 8)'
   - check: sep-1932-client-rs-nonce
