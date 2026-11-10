@@ -73,6 +73,7 @@ import {
 } from './server/prompts';
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
+import { ProtectedResourceMetadataScenario } from './server/auth/protected-resource-metadata';
 import { CachingScenario } from './server/caching';
 
 // InputRequiredResult scenarios from (SEP-2322)
@@ -166,7 +167,13 @@ const pendingClientScenariosList: ClientScenario[] = [
   // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
-  new SkillsManifestScenario()
+  new SkillsManifestScenario(),
+
+  // Protected Resource Metadata discovery (RFC 9728). Pending because the
+  // everything-server does not run with authorization enabled; targeted runs
+  // point at an auth-enabled server via
+  // `npm start -- server --scenario auth/protected-resource-metadata --url <server>`.
+  new ProtectedResourceMetadataScenario()
 ];
 
 // All client scenarios
@@ -233,6 +240,9 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
+
+  // Authorization scenarios
+  new ProtectedResourceMetadataScenario(),
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),
