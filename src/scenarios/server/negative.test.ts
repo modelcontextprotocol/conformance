@@ -317,7 +317,7 @@ describe('Server scenario negative tests', () => {
       await stopServer(serverProcess);
     });
 
-    it('emits FAILURE for no-empty-contents and WARNING for error-code against a server returning empty contents', async () => {
+    it('emits FAILURE for no-empty-contents and error-code against a server returning empty contents', async () => {
       const scenario = new ResourcesNotFoundErrorScenario();
       const checks = await scenario.run(
         testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
@@ -327,7 +327,56 @@ describe('Server scenario negative tests', () => {
       expect(noEmpty?.status).toBe('FAILURE');
 
       const errorCode = checks.find((c) => c.id === 'sep-2164-error-code');
-      expect(errorCode?.status).toBe('WARNING');
+      expect(errorCode?.status).toBe('FAILURE');
+    }, 10000);
+
+    it('emits FAILURE for error-code against a server answering with the retired -32002 code', async () => {
+      const server = createServer(async (req, res) => {
+        const body = await readJsonBody(req);
+        const result =
+          body.method === 'server/discover'
+            ? {
+                result: {
+                  resultType: 'complete',
+                  ttlMs: 0,
+                  cacheScope: 'private',
+                  supportedVersions: [DRAFT_PROTOCOL_VERSION],
+                  capabilities: { resources: {} },
+                  serverInfo: { name: 'sep-2164-legacy-code', version: '1.0.0' }
+                }
+              }
+            : {
+                error: {
+                  code: -32002,
+                  message: 'Resource not found',
+                  data: {
+                    uri: (body.params as { uri?: string } | undefined)?.uri
+                  }
+                }
+              };
+        res
+          .writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ jsonrpc: '2.0', id: body.id, ...result }));
+      });
+
+      const serverUrl = await listenOnRandomPort(server);
+      try {
+        const checks = await new ResourcesNotFoundErrorScenario().run(
+          testContext(serverUrl, DRAFT_PROTOCOL_VERSION)
+        );
+
+        expect(
+          checks.find((c) => c.id === 'sep-2164-no-empty-contents')?.status
+        ).toBe('SUCCESS');
+        const errorCode = checks.find((c) => c.id === 'sep-2164-error-code');
+        expect(errorCode?.status).toBe('FAILURE');
+        expect(errorCode?.errorMessage).toContain('-32002');
+        expect(checks.find((c) => c.id === 'sep-2164-data-uri')?.status).toBe(
+          'SUCCESS'
+        );
+      } finally {
+        await closeHttpServer(server);
+      }
     }, 10000);
   });
 

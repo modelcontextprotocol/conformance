@@ -53,7 +53,7 @@ requirements:
           check: 'sep-2164-no-empty-contents'
         },
         {
-          text: 'Servers SHOULD return standard JSON-RPC errors for common failure cases: Resource not found: -32602 (Invalid Params)',
+          text: 'If the requested resource does not exist, servers MUST return a JSON-RPC error with code -32602 (Invalid Params).',
           check: 'sep-2164-error-code'
         },
         {
@@ -70,7 +70,7 @@ requirements:
   - check: sep-2164-no-empty-contents
     text: 'Servers MUST NOT return an empty contents array for a non-existent resource'
   - check: sep-2164-error-code
-    text: 'Servers SHOULD return standard JSON-RPC errors for common failure cases: Resource not found: -32602 (Invalid Params)'
+    text: 'If the requested resource does not exist, servers MUST return a JSON-RPC error with code -32602 (Invalid Params).'
 
   - text: 'clients SHOULD also accept -32002 as a resource not found error'
     excluded: 'Client-side error handling is implementation-defined; not protocol-observable'
