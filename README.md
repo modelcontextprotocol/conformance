@@ -63,7 +63,8 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
-- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
+- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), `custom` (the scenarios loaded with `--scenario-file`), or `sep-835`
+- `--scenario-file <path>` - Load your own scenarios from a JavaScript module; repeatable (see [Writing Your Own Scenarios](#writing-your-own-scenarios))
 - `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `2026-07-28`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
 - `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
 - `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
@@ -255,6 +256,53 @@ Two things to know:
 
 A scenario cannot be listed both wholesale and per-check — the wholesale entry already
 excuses everything, so the pair is contradictory and is rejected.
+
+## Writing Your Own Scenarios
+
+You can run client scenarios that are not part of this repository: checks that belong to your own product, or a scenario you are trying out before proposing it here. Put them in a JavaScript module and pass it with `--scenario-file`:
+
+```bash
+npx @modelcontextprotocol/conformance client \
+  --scenario-file ./my-scenarios.mjs \
+  --command "<client-command>"
+```
+
+[`examples/scenarios/trace-id.mjs`](./examples/scenarios/trace-id.mjs) is a complete, commented scenario, and [`trace-id-client.mjs`](./examples/scenarios/trace-id-client.mjs) is a client that passes it. From a checkout of this repository, after `npm install && npm run build`:
+
+```bash
+node dist/index.js client \
+  --scenario-file examples/scenarios/trace-id.mjs \
+  --scenario example/trace-id \
+  --command "node examples/scenarios/trace-id-client.mjs"
+```
+
+**This interface is experimental** and may change between releases.
+
+### The scenario object
+
+The module's default export is one scenario or an array of them. A scenario plays the server and judges what the client sent. It imports nothing from this package.
+
+| Member             | What it is                                                                                                                                                                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | Parts of letters, digits, `.`, `_` and `-`, each starting with a letter or digit, with `/` between parts. Prefix it (`acme/login`) so that it cannot clash with a built-in scenario, now or later.                                                                                                                   |
+| `description`      | One sentence.                                                                                                                                                                                                                                                                                                        |
+| `source`           | `{ introducedIn: '<spec version>' }`, the first spec version the scenario applies to, and optionally `removedIn`.                                                                                                                                                                                                    |
+| `start(ctx)`       | Starts the server and returns `{ serverUrl }`. `ctx.createServer(handlers)` serves one handler per method, `(params, request) => result`, which may be async, with the lifecycle of `ctx.specVersion` around them. An optional `context` object in the return value reaches the client as `MCP_CONFORMANCE_CONTEXT`. |
+| `getChecks()`      | Returns the checks, synchronously. It is called after the client has finished and before `stop()`. `server.recorded` holds every request and notification the client sent, in order, without the lifecycle messages.                                                                                                 |
+| `stop()`           | Closes the server.                                                                                                                                                                                                                                                                                                   |
+| `allowClientError` | Optional. `true` if the client is expected to exit with an error.                                                                                                                                                                                                                                                    |
+
+A check has an `id`, a `name`, a `description`, a `timestamp` and a `status`: `SUCCESS`, `FAILURE`, `WARNING`, `SKIPPED` or `INFO`. `FAILURE` and `WARNING` fail the run. `errorMessage`, `details` and `specReferences` are optional. Use one `id` per check whether it passes or fails; expected-failures entries refer to it. Give your ids a prefix of your own: `traceability` counts ids of the form `sep-<number>-…`. The runner adds a `wire-schema-valid` check when it has seen traffic. More conventions are in [AGENTS.md](./AGENTS.md).
+
+### How loaded scenarios run
+
+- **Selection.** With `--scenario-file`, only the loaded scenarios can be selected. `--scenario <name>` runs one and prints each check; without `--command` it starts in interactive mode and prints the server URL, so any client can be pointed at it. Without `--scenario`, all loaded scenarios run as the `custom` suite.
+- **Marked as custom.** Every run names the loaded scenarios and says that they are not part of MCP conformance. `list --scenario-file <path>` and the suite summary mark them `(custom)`.
+- **Spec versions.** `--spec-version` selects and skips them by their `source`, as for built-in scenarios. The same scenario serves every spec version it applies to; the example client speaks the lifecycle of `2025-11-25`, the default.
+- **Not part of conformance.** Loaded scenarios never count towards a requirement set or a tier: `--scenario-file` cannot be combined with `--requirements` or with a built-in suite. [Expected failures](#expected-failures) work for them as for any scenario.
+- **Trust.** The module is loaded with `import()`, which runs its code. Load only files you trust.
+
+A scenario that has proved useful can be proposed for the suite: see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## GitHub Action
 
