@@ -5,6 +5,18 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'MCP-Authorization-metadata-discovery',
     url: 'https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization#authorization-server-metadata-discovery'
   },
+  MCP_AUTH_RESPONSE_VALIDATION: {
+    id: 'MCP-Authorization-response-validation',
+    url: 'https://modelcontextprotocol.io/specification/draft/basic/authorization#authorization-response-validation'
+  },
+  RFC_9207_ISS_PARAMETER: {
+    id: 'RFC-9207-iss-parameter',
+    url: 'https://www.rfc-editor.org/rfc/rfc9207.html#section-2'
+  },
+  RFC_9207_AS_METADATA: {
+    id: 'RFC-9207-authorization-server-metadata',
+    url: 'https://www.rfc-editor.org/rfc/rfc9207.html#section-2.3'
+  },
   OAUTH_2_1_AUTHORIZATION_CODE_GRANT: {
     id: 'OAUTH-2.1-authorization-code-grant',
     url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-v2-1-13.html#section-4.1'

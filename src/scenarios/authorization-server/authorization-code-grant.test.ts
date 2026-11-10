@@ -100,7 +100,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -132,7 +132,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -154,7 +154,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -173,7 +173,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -197,7 +197,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -219,7 +219,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -241,7 +241,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -273,7 +273,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -305,7 +305,7 @@ describe('AuthorizationCodeGrantScenario', () => {
 
     const checks = await scenario.run(OPTIONS, DETAILS);
 
-    expect(checks).toHaveLength(1);
+    expect(checks).toHaveLength(3);
 
     const check = checks[0];
 
@@ -425,5 +425,115 @@ describe('AuthorizationCodeGrantScenario', () => {
     const check = checks[0];
 
     expect(check.status).toBe('SKIPPED');
+  });
+
+  describe('SEP-2468 iss parameter (2026-07-28)', () => {
+    const DETAILS_ISS_SUPPORTED = {
+      'authorization-server-metadata-endpoint': {
+        body: {
+          ...METADATA,
+          authorization_response_iss_parameter_supported: true
+        }
+      }
+    };
+
+    const statusOf = (checks: { id: string; status: string }[], id: string) =>
+      checks.find((c) => c.id === id)?.status;
+
+    beforeEach(() => {
+      mockTokenResponse({ access_token: 'access-token', token_type: 'Bearer' });
+    });
+
+    it('passes when iss is included and advertised in metadata', async () => {
+      const scenario = new AuthorizationCodeGrantScenario();
+      mockCallbackServer(
+        scenario,
+        (state) =>
+          `http://127.0.0.1:3000/callback?code=abc&state=${state}&iss=${SERVER_URL}`
+      );
+
+      const checks = await scenario.run(OPTIONS, DETAILS_ISS_SUPPORTED);
+
+      expect(statusOf(checks, 'authorization-code-grant')).toBe('SUCCESS');
+      expect(statusOf(checks, 'sep-2468-as-include-iss')).toBe('SUCCESS');
+      expect(statusOf(checks, 'sep-2468-as-advertise-iss-supported')).toBe(
+        'SUCCESS'
+      );
+      for (const c of checks.slice(1)) {
+        expect(c.source).toEqual({ introducedIn: '2026-07-28' });
+      }
+    });
+
+    it('warns when iss is omitted and skips the advertisement check', async () => {
+      const scenario = new AuthorizationCodeGrantScenario();
+      mockCallbackServer(
+        scenario,
+        (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+      );
+
+      const checks = await scenario.run(OPTIONS, DETAILS_ISS_SUPPORTED);
+
+      expect(statusOf(checks, 'sep-2468-as-include-iss')).toBe('WARNING');
+      expect(statusOf(checks, 'sep-2468-as-advertise-iss-supported')).toBe(
+        'SKIPPED'
+      );
+    });
+
+    it('fails when iss is included but not advertised in metadata', async () => {
+      const scenario = new AuthorizationCodeGrantScenario();
+      mockCallbackServer(
+        scenario,
+        (state) =>
+          `http://127.0.0.1:3000/callback?code=abc&state=${state}&iss=${SERVER_URL}`
+      );
+
+      const checks = await scenario.run(OPTIONS, DETAILS);
+
+      expect(statusOf(checks, 'sep-2468-as-include-iss')).toBe('SUCCESS');
+      const advertise = checks.find(
+        (c) => c.id === 'sep-2468-as-advertise-iss-supported'
+      );
+      expect(advertise?.status).toBe('FAILURE');
+      expect(advertise?.errorMessage).toContain(
+        'authorization_response_iss_parameter_supported'
+      );
+    });
+
+    it('fails when iss is included but advertised as false', async () => {
+      const scenario = new AuthorizationCodeGrantScenario();
+      mockCallbackServer(
+        scenario,
+        (state) =>
+          `http://127.0.0.1:3000/callback?code=abc&state=${state}&iss=${SERVER_URL}`
+      );
+
+      const checks = await scenario.run(OPTIONS, {
+        'authorization-server-metadata-endpoint': {
+          body: {
+            ...METADATA,
+            authorization_response_iss_parameter_supported: false
+          }
+        }
+      });
+
+      expect(statusOf(checks, 'sep-2468-as-advertise-iss-supported')).toBe(
+        'FAILURE'
+      );
+    });
+
+    it('evaluates iss on error responses too', async () => {
+      const scenario = new AuthorizationCodeGrantScenario();
+      mockCallbackServer(
+        scenario,
+        () => 'http://127.0.0.1:3000/callback?error=access_denied'
+      );
+
+      const checks = await scenario.run(OPTIONS, DETAILS_ISS_SUPPORTED);
+
+      expect(statusOf(checks, 'authorization-code-grant')).toBe('FAILURE');
+      const includeIss = checks.find((c) => c.id === 'sep-2468-as-include-iss');
+      expect(includeIss?.status).toBe('WARNING');
+      expect(includeIss?.errorMessage).toContain('error response');
+    });
   });
 });
