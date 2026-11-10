@@ -6,6 +6,7 @@ import { runAsCli } from './helpers/cliRunner';
 /**
  * Well-behaved DPoP client (SEP-1932 / RFC 9449): presents the DPoP-bound token
  * with the `DPoP` Authorization scheme and a fresh proof on every MCP request.
+ * It also uses the optional refresh token with a proof for the same key (§5).
  */
 export async function runClient(serverUrl: string): Promise<void> {
   await runDpopClient(serverUrl, {
@@ -13,7 +14,8 @@ export async function runClient(serverUrl: string): Promise<void> {
     freshProofPerRequest: true,
     sendTokenRequestProof: true,
     handleAsNonce: true,
-    handleRsNonce: true
+    handleRsNonce: true,
+    exerciseRefresh: true
   });
 }
 

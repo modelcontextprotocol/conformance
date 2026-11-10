@@ -36,6 +36,8 @@ import { runClient as dpopNoAsNonceClient } from '../../../../examples/clients/t
 import { runClient as dpopNoRsNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-rs-nonce';
 import { runClient as dpopNoNonceClient } from '../../../../examples/clients/typescript/auth-test-dpop-no-nonce';
 import { runClient as dpopClient } from '../../../../examples/clients/typescript/auth-test-dpop';
+import { runClient as dpopRefreshNoProofClient } from '../../../../examples/clients/typescript/auth-test-dpop-refresh-no-proof';
+import { runClient as dpopRefreshNewKeyClient } from '../../../../examples/clients/typescript/auth-test-dpop-refresh-new-key';
 import { runClient as resourceSlashClient } from '../../../../examples/clients/typescript/auth-test-resource-slash';
 import { getHandler } from '../../../../examples/clients/typescript/everything-client';
 import { setLogLevel } from '../../../../examples/clients/typescript/helpers/logger';
@@ -351,7 +353,7 @@ describe('Client Extension Scenarios', () => {
       }
       const runner = new InlineClientRunner(clientFn);
       await runClientAgainstScenario(runner, scenario.name);
-    });
+    }, 15_000);
   }
 });
 
@@ -476,6 +478,58 @@ describe('DPoP client negative tests (SEP-1932)', () => {
   });
 });
 
+describe('DPoP client refresh (SEP-1932)', () => {
+  test('auth/dpop: client proves the bound key on refresh', async () => {
+    const runner = new InlineClientRunner(dpopClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      expectedSuccessSlugs: ['sep-1932-client-refresh-proof']
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+    ).toBe('SUCCESS');
+  });
+
+  test('auth/dpop: client omits the DPoP proof on refresh', async () => {
+    const runner = new InlineClientRunner(dpopRefreshNoProofClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      allowClientError: true,
+      expectedFailureSlugs: ['sep-1932-client-refresh-proof'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof'
+      ]
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+    ).toBe('FAILURE');
+  });
+
+  test('auth/dpop: client refreshes with a different key', async () => {
+    const runner = new InlineClientRunner(dpopRefreshNewKeyClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop', {
+      allowClientError: true,
+      expectedFailureSlugs: ['sep-1932-client-refresh-proof'],
+      expectedSuccessSlugs: [
+        'sep-1932-client-token-request-proof',
+        'sep-1932-client-dpop-auth-scheme',
+        'sep-1932-client-fresh-proof'
+      ]
+    });
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+    ).toBe('FAILURE');
+  });
+
+  test('auth/dpop: client does not use the optional refresh token', async () => {
+    const runner = new InlineClientRunner(dpopNoNonceClient);
+    const checks = await runClientAgainstScenario(runner, 'auth/dpop');
+    expect(
+      checks.find((c) => c.id === 'sep-1932-client-refresh-proof')?.status
+    ).toBe('SKIPPED');
+  });
+});
+
 // DPoP nonce-less baseline (SEP-1932): a client that implements NO nonce
 // handling still completes DPoP successfully when the server does not require a
 // nonce (the common case — server nonces are OPTIONAL, RFC 9449 §8/§9). The
@@ -485,7 +539,7 @@ describe('DPoP client nonce-less baseline (SEP-1932)', () => {
   test('auth/dpop: nonce-incapable client passes the baseline', async () => {
     const runner = new InlineClientRunner(dpopNoNonceClient);
     // No expectedFailureSlugs → asserts every emitted check is SUCCESS (the
-    // three baseline checks; no as-nonce/rs-nonce checks are emitted here).
+    // four baseline checks; no as-nonce/rs-nonce checks are emitted here).
     await runClientAgainstScenario(runner, 'auth/dpop');
   });
 

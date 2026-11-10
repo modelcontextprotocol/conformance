@@ -29,6 +29,12 @@ import { logger } from './logger';
  *    challenge (RFC 9449 §8); fails sep-1932-client-as-nonce
  *  - `handleRsNonce:false`        → ignores the MCP server's `use_dpop_nonce`
  *    challenge (RFC 9449 §9); fails sep-1932-client-rs-nonce
+ *  - `exerciseRefresh:true`       → uses the issued refresh token, then makes
+ *    more MCP requests with the replacement access token
+ *  - `sendRefreshProof:false`     → refresh omits the DPoP proof; fails
+ *    sep-1932-client-refresh-proof
+ *  - `refreshWithNewKey:true`     → refresh proof uses a different key; fails
+ *    sep-1932-client-refresh-proof
  */
 export interface DpopClientOptions {
   scheme: 'DPoP' | 'Bearer';
@@ -38,6 +44,12 @@ export interface DpopClientOptions {
   handleAsNonce: boolean;
   /** Retry an MCP request with the server-supplied nonce on a use_dpop_nonce challenge (RFC 9449 §9). */
   handleRsNonce: boolean;
+  /** Use the issued refresh token and continue with the replacement token. */
+  exerciseRefresh?: boolean;
+  /** Include a DPoP proof on the refresh request. Default true. */
+  sendRefreshProof?: boolean;
+  /** Sign the refresh proof with a new key instead of the bound one. */
+  refreshWithNewKey?: boolean;
 }
 
 const REDIRECT_URI = 'http://127.0.0.1:9876/callback';
@@ -83,89 +95,133 @@ export async function runDpopClient(
   ).json();
   const clientId: string = reg.client_id;
 
-  // 4. Authorization request (PKCE). The test AS redirects straight to the
-  // redirect_uri, so read the code from the Location header (no callback needed).
-  const state = randomBytes(16).toString('base64url');
-  const codeVerifier = randomBytes(32).toString('base64url');
-  const codeChallenge = createHash('sha256')
-    .update(codeVerifier)
-    .digest('base64url');
-  const authorizeUrl = `${authorizationEndpoint}?${new URLSearchParams({
-    response_type: 'code',
-    client_id: clientId,
-    state,
-    redirect_uri: REDIRECT_URI,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256'
-  }).toString()}`;
-  const authorizeResponse = await request(authorizeUrl, { method: 'GET' });
-  await authorizeResponse.body.text().catch(() => undefined);
-  const location = authorizeResponse.headers['location'];
-  const locationStr = Array.isArray(location) ? location[0] : location;
-  if (!locationStr) {
-    throw new Error('Authorization endpoint did not redirect with a code');
-  }
-  const code = new URL(locationStr).searchParams.get('code');
-  if (!code) throw new Error('No authorization code in redirect');
+  let accessToken = '';
+  let refreshToken: string | undefined;
 
-  // 5. Token request with a DPoP proof → DPoP-bound access token. The broken
-  // `sendTokenRequestProof:false` variant omits the proof, so the AS issues an
-  // unbound Bearer token instead.
-  const tokenReqBody = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: REDIRECT_URI,
-    code_verifier: codeVerifier,
-    client_id: clientId
-  }).toString();
-  const requestToken = async (nonce?: string): Promise<Response> => {
-    const headers: Record<string, string> = {
-      'content-type': 'application/x-www-form-urlencoded'
+  const postToken = async (
+    body: string,
+    proofFor: (nonce?: string) => Promise<string | undefined>
+  ): Promise<Response> => {
+    const send = async (nonce?: string): Promise<Response> => {
+      const headers: Record<string, string> = {
+        'content-type': 'application/x-www-form-urlencoded'
+      };
+      const proof = await proofFor(nonce);
+      if (proof) headers.dpop = proof;
+      return fetch(tokenEndpoint, { method: 'POST', headers, body });
     };
-    if (options.sendTokenRequestProof) {
-      headers.dpop = await buildDpopProof({
-        keyPair,
-        htm: 'POST',
-        // RFC 9449 §4.2: htu carries no query/fragment (the token endpoint URL
-        // may legally have a query, so strip it here).
-        htu: stripQuery(tokenEndpoint),
-        ...(nonce ? { nonce } : {})
-      });
+    let response = await send();
+    // RFC 9449 §8: retry only on use_dpop_nonce, not on any 400 that happens
+    // to carry a DPoP-Nonce header (for example invalid_grant).
+    const asNonce = response.headers.get('DPoP-Nonce');
+    if (response.status === 400 && asNonce && options.handleAsNonce) {
+      const challenge = await response
+        .clone()
+        .json()
+        .catch(() => ({}) as { error?: string });
+      if (challenge?.error === 'use_dpop_nonce') {
+        response = await send(asNonce);
+      }
     }
-    return fetch(tokenEndpoint, {
-      method: 'POST',
-      headers,
-      body: tokenReqBody
-    });
+    return response;
   };
-  let tokenResponse = await requestToken();
-  // RFC 9449 §8: the AS may answer with `use_dpop_nonce` (HTTP 400 + DPoP-Nonce);
-  // a conformant client retries the token request with the supplied nonce. Match
-  // on the `use_dpop_nonce` error code (not merely any 400 carrying a nonce), so
-  // an unrelated error (e.g. invalid_grant) that an AS proactively decorates with
-  // a DPoP-Nonce header does not burn the retry and mask the real failure —
-  // consistent with the resource-side check below.
-  const asNonce = tokenResponse.headers.get('DPoP-Nonce');
-  if (tokenResponse.status === 400 && asNonce && options.handleAsNonce) {
-    const challenge = await tokenResponse
-      .clone()
-      .json()
-      .catch(() => ({}) as { error?: string });
-    if (challenge?.error === 'use_dpop_nonce') {
-      tokenResponse = await requestToken(asNonce);
-    }
-  }
-  if (!tokenResponse.ok) {
-    throw new Error(`Token request failed: HTTP ${tokenResponse.status}`);
-  }
-  const tokenBody = await tokenResponse.json();
-  const accessToken: string = tokenBody.access_token;
-  logger.debug(`Obtained ${tokenBody.token_type} access token`);
 
-  // 6. MCP session — present the token to the resource with a per-request proof.
+  const rememberTokens = (body: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    token_type?: string;
+  }): void => {
+    accessToken = body.access_token;
+    refreshToken = body.refresh_token;
+    logger.debug(`Obtained ${body.token_type} access token`);
+  };
+
+  // Authorization code + PKCE, then the token request. Callable again so a
+  // client can re-authorize instead of refreshing.
+  const exchangeAuthorizationCode = async (): Promise<void> => {
+    const state = randomBytes(16).toString('base64url');
+    const codeVerifier = randomBytes(32).toString('base64url');
+    const codeChallenge = createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
+    const authorizeParams = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      state,
+      redirect_uri: REDIRECT_URI,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256'
+    });
+    const authorizeUrl = `${authorizationEndpoint}?${authorizeParams.toString()}`;
+    const authorizeResponse = await request(authorizeUrl, { method: 'GET' });
+    await authorizeResponse.body.text().catch(() => undefined);
+    const location = authorizeResponse.headers['location'];
+    const locationStr = Array.isArray(location) ? location[0] : location;
+    if (!locationStr) {
+      throw new Error('Authorization endpoint did not redirect with a code');
+    }
+    const code = new URL(locationStr).searchParams.get('code');
+    if (!code) throw new Error('No authorization code in redirect');
+
+    const tokenResponse = await postToken(
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+        code_verifier: codeVerifier,
+        client_id: clientId
+      }).toString(),
+      async (nonce) => {
+        if (!options.sendTokenRequestProof) return undefined;
+        return buildDpopProof({
+          keyPair,
+          htm: 'POST',
+          // RFC 9449 §4.2: htu carries no query/fragment (the token endpoint URL
+          // may legally have a query, so strip it here).
+          htu: stripQuery(tokenEndpoint),
+          ...(nonce ? { nonce } : {})
+        });
+      }
+    );
+    if (!tokenResponse.ok) {
+      throw new Error(`Token request failed: HTTP ${tokenResponse.status}`);
+    }
+    rememberTokens(await tokenResponse.json());
+  };
+
+  const refreshAccessToken = async (): Promise<void> => {
+    if (!refreshToken) throw new Error('No refresh token to present');
+    const proofKey = options.refreshWithNewKey
+      ? await generateDpopKeyPair()
+      : keyPair;
+    const response = await postToken(
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId
+      }).toString(),
+      async (nonce) => {
+        if (options.sendRefreshProof === false) return undefined;
+        return buildDpopProof({
+          keyPair: proofKey,
+          htm: 'POST',
+          htu: stripQuery(tokenEndpoint),
+          ...(nonce ? { nonce } : {})
+        });
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`Refresh request failed: HTTP ${response.status}`);
+    }
+    rememberTokens(await response.json());
+  };
+
+  await exchangeAuthorizationCode();
+
+  // MCP session — present the token to the resource with a per-request proof.
   // On a `use_dpop_nonce` challenge (RFC 9449 §9) a conformant client retries
-  // with the server-supplied nonce embedded in the proof, and carries it on
-  // subsequent requests.
+  // with the server-supplied nonce embedded in the proof.
   const mcpUrl = `${serverUrl}`;
   let reusableProof: string | undefined;
   let rsNonce: string | undefined;
@@ -197,12 +253,13 @@ export async function runDpopClient(
       return fetch(input, { ...init, headers });
     };
     let res = await attempt();
+    const wwwAuthenticate = res.headers.get('WWW-Authenticate') ?? '';
     const nonce = res.headers.get('DPoP-Nonce');
     if (
       res.status === 401 &&
       nonce &&
       options.handleRsNonce &&
-      (res.headers.get('WWW-Authenticate') ?? '').includes('use_dpop_nonce')
+      wwwAuthenticate.includes('use_dpop_nonce')
     ) {
       rsNonce = nonce;
       reusableProof = undefined; // rebuild the proof carrying the nonce
@@ -225,6 +282,12 @@ export async function runDpopClient(
   logger.debug('Listed tools');
   await client.callTool({ name: 'test-tool', arguments: {} });
   logger.debug('Called tool');
+  if (options.exerciseRefresh) {
+    await refreshAccessToken();
+    reusableProof = undefined;
+    await client.callTool({ name: 'test-tool', arguments: {} });
+    await client.listTools();
+  }
   await transport.close();
 }
 
