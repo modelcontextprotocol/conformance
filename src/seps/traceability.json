@@ -240,12 +240,12 @@
         },
         {
           "check": "sep-2243-server-not-expect-null",
-          "status": "untested",
+          "status": "tested",
           "text": "Parameter value is null or omitted: Server MUST NOT expect the header."
         },
         {
           "check": "sep-2243-server-reject-missing-required",
-          "status": "untested",
+          "status": "tested",
           "text": "Required parameter is omitted: Server MUST reject with JSON-RPC error."
         },
         {
@@ -289,8 +289,8 @@
         "sep-2243-server-no-xmcp-tool"
       ],
       "summary": {
-        "tested": 18,
-        "untested": 2,
+        "tested": 20,
+        "untested": 0,
         "excluded": 4,
         "untracked": 3,
         "unkeyed": 0
