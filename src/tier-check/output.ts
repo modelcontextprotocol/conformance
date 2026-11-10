@@ -287,7 +287,7 @@ export function formatMarkdown(scorecard: TierScorecard): string {
       .join(', ')} |`
   );
   lines.push(
-    `| Spec Tracking | ${c.spec_tracking.status} | ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : 'N/A'} |`
+    `| Spec Tracking | ${c.spec_tracking.status} | ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : (c.spec_tracking.reason ?? 'N/A')} |`
   );
   lines.push('');
 
@@ -485,7 +485,7 @@ export function formatTerminal(scorecard: TierScorecard): void {
       .join(', ')}`
   );
   console.log(
-    `  ${statusIcon(c.spec_tracking.status)} Spec Tracking  ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : 'N/A'}`
+    `  ${statusIcon(c.spec_tracking.status)} Spec Tracking  ${c.spec_tracking.days_gap !== null ? `${c.spec_tracking.days_gap}d gap` : (c.spec_tracking.reason ?? 'N/A')}`
   );
 
   if (scorecard.implied_tier.tier1_blockers.length > 0) {

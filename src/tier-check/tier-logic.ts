@@ -35,7 +35,9 @@ export function computeTier(
   // they feed into the skill's judgment-based evaluation but don't independently
   // block tier advancement since SEP-1730 doesn't list specific files.
 
-  if (checks.spec_tracking.status === 'fail') {
+  if (checks.spec_tracking.status === 'skipped') {
+    tier1Blockers.push('spec_tracking (skipped)');
+  } else if (checks.spec_tracking.meets_tier1_window !== true) {
     tier1Blockers.push('spec_tracking');
   }
 
@@ -49,6 +51,8 @@ export function computeTier(
       checks.conformance.pass_rate >= 0.8) &&
     (checks.client_conformance.status === 'skipped' ||
       checks.client_conformance.pass_rate >= 0.8) &&
+    (checks.spec_tracking.status === 'skipped' ||
+      checks.spec_tracking.meets_tier2_window === true) &&
     checks.p0_resolution.all_p0s_resolved_within_14d &&
     checks.stable_release.is_stable;
 
