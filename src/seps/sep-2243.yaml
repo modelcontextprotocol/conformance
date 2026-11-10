@@ -25,6 +25,9 @@ requirements:
   - check: sep-2243-x-mcp-header-primitive-only
     text: 'x-mcp-header MUST only be applied to parameters with primitive types (integer, string, boolean). Parameters with type `number` are not permitted.'
     url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers
+  - check: sep-2243-x-mcp-header-integer-safe-range
+    text: 'Integer values MUST be within the safe range for integers represented using IEEE754 double-precision floating point numbers (−2^53+1 to 2^53−1).'
+    url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers
   - check: sep-2243-client-reject-invalid-tool
     text: 'Clients MUST reject tool definitions where any x-mcp-header value violates these constraints. Rejection means the client MUST exclude the invalid tool from the set of tools returned by tools/list.'
     url: https://modelcontextprotocol.io/specification/draft/server/tools#custom-headers

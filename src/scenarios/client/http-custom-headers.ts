@@ -14,6 +14,7 @@ import type { ScenarioContext } from '../../mock-server';
 import http from 'http';
 import { ScenarioUrls, ConformanceCheck } from '../../types.js';
 import { BaseHttpScenario } from './http-base.js';
+import { untestableCheck } from '../untestable.js';
 
 const SPEC_REFERENCE_CUSTOM = {
   id: 'SEP-2243-Custom-Headers',
@@ -42,7 +43,8 @@ export const CUSTOM_HEADERS_DECLARED_CHECK_IDS = [
   'sep-2243-client-mirrors-designated-params',
   'sep-2243-client-encode-values',
   'sep-2243-client-base64-unsafe',
-  'sep-2243-client-omit-null'
+  'sep-2243-client-omit-null',
+  'sep-2243-x-mcp-header-integer-safe-range'
 ] as const;
 
 /**
@@ -223,6 +225,12 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
             verbose: null,
             query: 'SELECT 1'
           }
+        },
+        // Keep the range probe last: a client may reject this argument before
+        // sending the request, but must still exercise the ordinary checks.
+        {
+          name: 'test_custom_headers_unsafe_integer',
+          arguments: { unsafe_integer_val: 9007199254740992 }
         }
       ]
     };
@@ -235,6 +243,18 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
     // calls the annotated tools. The `some()` guard makes this idempotent.
     for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
       if (this.checks.some((c) => c.id === id)) continue;
+      if (id === 'sep-2243-x-mcp-header-integer-safe-range') {
+        this.checks.push(
+          untestableCheck(
+            id,
+            'ClientCustomHeaderSafeIntegerRange',
+            'Out-of-range integer arguments are not mirrored into Mcp-Param headers',
+            'Client did not send test_custom_headers_unsafe_integer with unsafe_integer_val = 9007199254740992. It may have rejected the argument locally; the server cannot distinguish rejection from a skipped probe.',
+            [SPEC_REFERENCE_TOOL_DEF]
+          )
+        );
+        continue;
+      }
       const missingNullCall =
         id === 'sep-2243-client-omit-null' && !this.nullToolCallReceived;
       this.checks.push({
@@ -410,6 +430,21 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
               },
               required: ['region', 'priority', 'query']
             }
+          },
+          {
+            name: 'test_custom_headers_unsafe_integer',
+            description:
+              'A separate probe for out-of-range integer header values',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                unsafe_integer_val: {
+                  type: 'integer',
+                  'x-mcp-header': 'UnsafeInteger'
+                }
+              },
+              required: ['unsafe_integer_val']
+            }
           }
         ]
       }
@@ -584,6 +619,41 @@ export class HttpCustomHeadersScenario extends BaseHttpScenario {
             : undefined,
         specReferences: [SPEC_REFERENCE_CUSTOM]
       });
+    } else if (toolName === 'test_custom_headers_unsafe_integer') {
+      const unsafeIntegerHeader = req.headers['mcp-param-unsafeinteger'];
+      if (args.unsafe_integer_val !== 9007199254740992) {
+        this.checks.push(
+          untestableCheck(
+            'sep-2243-x-mcp-header-integer-safe-range',
+            'ClientCustomHeaderSafeIntegerRange',
+            'Out-of-range integer arguments are not mirrored into Mcp-Param headers',
+            'Client called test_custom_headers_unsafe_integer without the requested unsafe_integer_val = 9007199254740992.',
+            [SPEC_REFERENCE_TOOL_DEF]
+          )
+        );
+      } else {
+        // This checks only the on-wire range constraint. Whether an invalid
+        // argument must cause a local error instead of header omission remains
+        // an open spec question in #445; SUCCESS does not settle that question.
+        this.checks.push({
+          id: 'sep-2243-x-mcp-header-integer-safe-range',
+          name: 'ClientCustomHeaderSafeIntegerRange',
+          description:
+            'Out-of-range integer arguments are not mirrored into Mcp-Param headers',
+          status: unsafeIntegerHeader === undefined ? 'SUCCESS' : 'FAILURE',
+          timestamp: new Date().toISOString(),
+          errorMessage:
+            unsafeIntegerHeader !== undefined
+              ? `Client sent Mcp-Param-UnsafeInteger '${unsafeIntegerHeader}' for out-of-range argument 9007199254740992. Integer values MUST be within the safe range (-2^53+1 to 2^53-1).`
+              : undefined,
+          specReferences: [SPEC_REFERENCE_TOOL_DEF, SPEC_REFERENCE_CUSTOM],
+          details: {
+            headerName: 'Mcp-Param-UnsafeInteger',
+            rawHeaderValue: unsafeIntegerHeader,
+            bodyValue: args.unsafe_integer_val
+          }
+        });
+      }
     } else if (toolName === 'test_custom_headers_null') {
       this.nullToolCallReceived = true;
 
