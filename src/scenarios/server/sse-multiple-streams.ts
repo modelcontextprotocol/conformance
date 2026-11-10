@@ -69,8 +69,9 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
           checks.push({
             id: 'server-sse-multiple-streams-session',
             name: 'ServerSSEMultipleStreamsSession',
-            description: 'Server provides session ID for multiple streams test',
-            status: 'WARNING',
+            description:
+              'Server does not use optional session management for the multiple streams test',
+            status: 'INFO',
             timestamp: new Date().toISOString(),
             specReferences: [
               {
@@ -80,10 +81,9 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
             ],
             details: {
               message:
-                'Server did not provide session ID - multiple streams test may not work correctly'
+                'Server did not provide an optional session ID; continuing without MCP-Session-Id'
             }
           });
-          return checks;
         }
       }
 
@@ -98,7 +98,7 @@ export class ServerSSEMultipleStreamsScenario implements ClientScenario {
         : {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream, application/json',
-            'mcp-session-id': sessionId!,
+            ...(sessionId && { 'mcp-session-id': sessionId }),
             'mcp-protocol-version': negotiatedProtocolVersion ?? specVersion
           };
       const requestParams = stateless

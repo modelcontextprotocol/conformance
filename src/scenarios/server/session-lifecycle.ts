@@ -313,15 +313,14 @@ Servers without session management (stateless) are reported as SKIPPED.`;
       if (!deleteAccepted && !deleteReturned404) {
         // The spec only says the client SHOULD send DELETE and the server
         // MAY respond 405; it never pins a success status, so an unexpected
-        // status is a warning rather than a failure. Without a confirmed
+        // status is diagnostic rather than a conformance failure. Without a confirmed
         // termination the terminated-returns-404 check would be misleading.
-        const warningMessage = `Expected 2xx, 404, or 405 for DELETE, got ${deleteResponse.status}. The spec does not pin a success status for session termination, so this is reported as a warning.`;
+        const diagnosticMessage = `Expected 2xx, 404, or 405 for DELETE, got ${deleteResponse.status}. The spec does not pin a success status for session termination, so this is reported as diagnostic information.`;
         checks.push(
-          check(DELETE_ACCEPTED, 'WARNING', {
-            errorMessage: warningMessage,
+          check(DELETE_ACCEPTED, 'INFO', {
             details: {
               statusCode: deleteResponse.status,
-              message: warningMessage
+              message: diagnosticMessage
             }
           }),
           skipped(
@@ -350,11 +349,10 @@ Servers without session management (stateless) are reported as SKIPPED.`;
         // The 404 on DELETE was not a termination: the session still
         // answers. Most likely the server has no DELETE route (it should
         // return 405 in that case).
-        const warningMessage = `DELETE returned 404 but the session still responds (HTTP ${afterTerminationResponse.status} on a follow-up request). A server without explicit termination support should return 405.`;
+        const diagnosticMessage = `DELETE returned 404 but the session still responds (HTTP ${afterTerminationResponse.status} on a follow-up request). The spec permits servers not to support explicit termination and does not require a particular response other than allowing 405.`;
         checks.push(
-          check(DELETE_ACCEPTED, 'WARNING', {
-            errorMessage: warningMessage,
-            details: { statusCode: 404, message: warningMessage }
+          check(DELETE_ACCEPTED, 'INFO', {
+            details: { statusCode: 404, message: diagnosticMessage }
           }),
           skipped(
             TERMINATED_RETURNS_404,

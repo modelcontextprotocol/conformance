@@ -26,7 +26,9 @@ interface VersionEnforcingServer {
 // Down-negotiates every initialize to DOWN_NEGOTIATED_VERSION so a scenario
 // that hard-codes the latest version cannot pass, records each follow-up's
 // version header, and 400s any version or session mismatch.
-async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
+async function startVersionEnforcingServer(
+  supportsReconnectionTool = true
+): Promise<VersionEnforcingServer> {
   let negotiated: string | undefined;
   const seen: SeenRequest[] = [];
 
@@ -117,6 +119,14 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
         return;
       }
       if (body.method === 'tools/call') {
+        if (!supportsReconnectionTool) {
+          respond(404, {
+            jsonrpc: '2.0',
+            id: body.id,
+            error: { code: -32601, message: 'Tool not found' }
+          });
+          return;
+        }
         // Spec-shaped priming event (id + empty data), then close without
         // the result, so the scenario must reconnect via GET + Last-Event-ID.
         res.writeHead(200, sseHead);
@@ -179,6 +189,28 @@ describe('server-sse-polling — negotiated protocol version', () => {
     const resume = findAll(checks, 'server-sse-disconnect-resume')[0];
     expect(resume?.status).toBe('SUCCESS');
     expect(checks.filter((c) => c.status === 'FAILURE')).toEqual([]);
+  });
+
+  test('reports an unavailable fixture tool as diagnostic information', async () => {
+    const srv = await startVersionEnforcingServer(false);
+
+    let checks: ConformanceCheck[];
+    try {
+      checks = await new ServerSSEPollingScenario().run(
+        testContext(srv.url, LATEST_SPEC_VERSION)
+      );
+    } finally {
+      await srv.close();
+    }
+
+    expect(
+      findAll(checks, 'server-sse-test-reconnection-tool')[0]
+    ).toMatchObject({
+      status: 'INFO',
+      details: { statusCode: 404 }
+    });
+    expect(checks.some((check) => check.status === 'WARNING')).toBe(false);
+    expect(checks.some((check) => check.status === 'FAILURE')).toBe(false);
   });
 
   test('fixture rejects a supported but non-negotiated version', async () => {

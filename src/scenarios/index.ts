@@ -74,6 +74,7 @@ import {
 
 import { DNSRebindingProtectionScenario } from './server/dns-rebinding';
 import { CachingScenario } from './server/caching';
+import { ServerScopeChallengeScenario } from './server/scope-challenge';
 
 // InputRequiredResult scenarios from (SEP-2322)
 import {
@@ -160,6 +161,10 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksRequiredTaskErrorScenario(),
   new TasksMrtrCompositionScenario(),
 
+  // SEP-2350 server scope challenges. Pending until the bundled reference SDK
+  // exposes the request-time challenge seam; targeted SDK runs can exercise it.
+  new ServerScopeChallengeScenario(),
+
   // SEP-2640 Skills extension. Pending because the everything-server does not
   // implement io.modelcontextprotocol/skills; targeted runs point at a
   // SEP-2640-conformant fixture via
@@ -233,6 +238,7 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
+  new ServerScopeChallengeScenario(),
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),

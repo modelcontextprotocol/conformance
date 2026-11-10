@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { parse as parseYaml } from 'yaml';
 import { ALL_SPEC_VERSIONS } from './scenarios';
+import type { ConformanceCheck } from './types';
 
 /**
  * A frozen requirement set for one specification revision: the scenarios an
@@ -249,4 +250,43 @@ export function filterScenariosByRequirements(
     );
   }
   return wanted.filter((name) => available.has(name));
+}
+
+function isBlockingCheck(check: ConformanceCheck): boolean {
+  return check.status === 'FAILURE' || check.status === 'WARNING';
+}
+
+/**
+ * Exit status under a frozen requirement set. Scored failures and warnings
+ * block conformance; not-scored scenarios are reported without changing it.
+ */
+export function requirementsExitCode(
+  requirements: RequirementSet,
+  leg: Leg,
+  results: { scenario: string; checks: ConformanceCheck[] }[]
+): number {
+  const scored = new Set(scoredScenarios(requirements, leg));
+  const unscored = results.filter((result) => !scored.has(result.scenario));
+  if (unscored.length > 0) {
+    const blocking = unscored.filter((result) =>
+      result.checks.some(isBlockingCheck)
+    );
+    console.log(
+      `\nNot scored for ${requirements.revision}: ${unscored.length} scenario(s) run, ${blocking.length} non-green. These do not affect conformance.`
+    );
+    for (const result of unscored) {
+      const why = notScoredScenarios(requirements, leg).find(
+        (entry) => entry.scenario === result.scenario
+      );
+      const isBlocking = result.checks.some(isBlockingCheck);
+      console.log(
+        `  ${isBlocking ? '\u2717' : '\u2713'} ${result.scenario} (${why?.reason ?? 'not scored'})`
+      );
+    }
+  }
+
+  const scoredBlocked = results
+    .filter((result) => scored.has(result.scenario))
+    .some((result) => result.checks.some(isBlockingCheck));
+  return scoredBlocked ? 1 : 0;
 }

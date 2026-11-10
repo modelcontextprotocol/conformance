@@ -20,7 +20,9 @@ interface VersionEnforcingServer {
   close: () => Promise<void>;
 }
 
-async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
+async function startVersionEnforcingServer(
+  useSession = true
+): Promise<VersionEnforcingServer> {
   let negotiated: string | undefined;
 
   const server = http.createServer((req, res) => {
@@ -49,7 +51,9 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
 
       if (body.method === 'initialize') {
         negotiated = body.params?.protocolVersion;
-        res.setHeader('mcp-session-id', SESSION_ID);
+        if (useSession) {
+          res.setHeader('mcp-session-id', SESSION_ID);
+        }
         respond(200, {
           jsonrpc: '2.0',
           id: body.id,
@@ -127,6 +131,27 @@ describe('server-sse-multiple-streams — negotiated protocol version', () => {
       numStreamsAccepted: 3
     });
     expect(checks.every((c) => c.status !== 'FAILURE')).toBe(true);
+  });
+
+  test('keeps a conformant sessionless server green and exercises its requests', async () => {
+    const srv = await startVersionEnforcingServer(false);
+
+    const scenario = new ServerSSEMultipleStreamsScenario();
+    let checks: ConformanceCheck[];
+    try {
+      checks = await scenario.run(testContext(srv.url));
+    } finally {
+      await srv.close();
+    }
+
+    expect(
+      findAll(checks, 'server-sse-multiple-streams-session')[0]?.status
+    ).toBe('INFO');
+    expect(
+      findAll(checks, 'server-accepts-multiple-post-streams')[0]?.status
+    ).toBe('SUCCESS');
+    expect(checks.some((check) => check.status === 'WARNING')).toBe(false);
+    expect(checks.some((check) => check.status === 'FAILURE')).toBe(false);
   });
 
   test('fixture server rejects a supported but non-negotiated version', async () => {
