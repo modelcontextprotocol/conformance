@@ -91,7 +91,10 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   // branch, and targets the latest
   // dated spec so draft-only scenarios/checks are excluded by default. uv
   // workspace: the `mcp` (client) and `mcp-everything-server` (server) packages
-  // are both members, so one `uv sync --all-packages` covers both modes.
+  // are both members. They are synced individually, exactly as the SDK's own
+  // v1.x conformance CI does, because `--all-packages` is unbuildable on a
+  // case-sensitive filesystem: an example package declares README.md but ships
+  // README.MD (the same reason the `python-sdk` entry avoids it).
   // Fixtures live in the python-sdk repo (.github/actions/conformance/ and
   // examples/servers/everything-server). `--port 3000` matches the url and the
   // 3000 convention used above; the server's own default is 3001.
@@ -99,7 +102,8 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
     repo: 'python-sdk',
     defaultRef: 'v1.x',
     specVersion: '2025-11-25',
-    build: 'uv sync --frozen --all-extras --all-packages',
+    build:
+      'uv sync --frozen --all-extras --package mcp-everything-server && uv sync --frozen --all-extras --package mcp --inexact',
     client: {
       command: 'uv run --frozen python .github/actions/conformance/client.py'
     },
