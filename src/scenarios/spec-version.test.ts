@@ -4,6 +4,7 @@ import {
   listScenariosForSpec,
   listDraftScenarios,
   listDraftClientScenarios,
+  listPendingClientScenarios,
   listActiveClientScenarios,
   listExtensionScenarios,
   getScenario,
@@ -133,6 +134,7 @@ describe('draft suite membership', () => {
     }
 
     const draftServerTesting = new Set(listDraftClientScenarios());
+    const pendingServerTesting = new Set(listPendingClientScenarios());
     for (const [name, scenario] of clientScenarios) {
       if (
         'introducedIn' in scenario.source &&
@@ -140,8 +142,8 @@ describe('draft suite membership', () => {
       ) {
         expect(
           draftServerTesting.has(name),
-          `server-testing scenario "${name}" should be in the draft suite`
-        ).toBe(true);
+          `server-testing scenario "${name}" has incorrect draft-suite membership`
+        ).toBe(!pendingServerTesting.has(name));
       }
     }
   });
