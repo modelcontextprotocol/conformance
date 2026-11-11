@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
+import { describe, expect, it, vi } from 'vitest';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../types';
 import { parseSdkSpec } from './checkout';
 import { lookupBuiltinConfig, KNOWN_SDKS } from './known-sdks';
 import { SdkConfigSchema, resolveConfigForSpec } from './config';
@@ -185,6 +185,33 @@ describe('resolveConfigForSpec', () => {
       resolveConfigForSpec(KNOWN_SDKS['go-sdk'], DRAFT_PROTOCOL_VERSION).server
         ?.command
     );
+  });
+
+  it("falls back to the latest release's overlay when the draft's wire version has no entry", async () => {
+    // Once the spec repo gives the draft its own marker, the draft's wire
+    // string is no longer a dated specOverrides key. Simulate that by
+    // re-evaluating the modules against a vendored draft schema that
+    // declares one.
+    vi.resetModules();
+    vi.doMock('../spec-types/draft', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../spec-types/draft')>()),
+      LATEST_PROTOCOL_VERSION: 'DRAFT-2099-v1'
+    }));
+    try {
+      const types = await import('../types');
+      const config = await import('./config');
+      expect(types.DRAFT_PROTOCOL_VERSION).toBe('DRAFT-2099-v1');
+
+      const go = KNOWN_SDKS['go-sdk'];
+      const resolved = config.resolveConfigForSpec(go, 'draft');
+      expect(resolved.server?.command).toBe(
+        go.specOverrides?.[LATEST_SPEC_VERSION]?.server?.command
+      );
+      expect(resolved.server?.command).not.toBe(go.server?.command);
+    } finally {
+      vi.doUnmock('../spec-types/draft');
+      vi.resetModules();
+    }
   });
 
   it('returns the base config when no spec version is given', () => {

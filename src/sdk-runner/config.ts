@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   DATED_SPEC_VERSIONS,
+  DRAFT_SPEC_VERSION,
+  LATEST_SPEC_VERSION,
   isSpecVersion,
   protocolVersionFor,
   type DatedSpecVersion
@@ -55,7 +57,8 @@ export const SdkConfigSchema = z.object({
   specVersion: z.string().optional(),
   // Per-spec-version defaults, keyed by the dated spec version a run targets
   // (--spec-version, a --requirements revision, or the entry's own
-  // specVersion; a `draft` run uses the entry for the draft's wire version).
+  // specVersion; a `draft` run uses the entry for the draft's wire version,
+  // or the latest release's entry when that wire version has none).
   // Matched entries are merged over the base config field-by-field before CLI
   // flags apply, so `sdk go-sdk --mode server --spec-version 2026-07-28` picks
   // up the right server invocation with no manual overrides.
@@ -97,7 +100,14 @@ export function resolveConfigForSpec(
     specVersion && isSpecVersion(specVersion)
       ? protocolVersionFor(specVersion)
       : specVersion;
-  const override = key ? config.specOverrides?.[key] : undefined;
+  // The draft's wire string need not be a dated key (the spec repo can give
+  // the draft its own marker). The draft follows the latest release, so it
+  // then inherits that release's overlay instead of silently getting none.
+  const override =
+    (key ? config.specOverrides?.[key] : undefined) ??
+    (specVersion === DRAFT_SPEC_VERSION
+      ? config.specOverrides?.[LATEST_SPEC_VERSION]
+      : undefined);
   if (!override) return config;
   const server =
     config.server || override.server
