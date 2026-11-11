@@ -534,10 +534,10 @@ describe('sep-2640 skills client mock results', () => {
   ];
 
   for (const s of skillsScenarios) {
-    it(`${s.name} carries the draft-required members on skills/list and resources/read`, async () => {
+    it(`${s.name} carries the 2026-07-28-required members on skills/list and resources/read`, async () => {
       const scenario = s.make();
       const { serverUrl } = await scenario.start(
-        testScenarioContext(DRAFT_PROTOCOL_VERSION)
+        testScenarioContext(STATELESS)
       );
       try {
         let id = 1;
@@ -554,17 +554,16 @@ describe('sep-2640 skills client mock results', () => {
               params: { ...params, _meta: meta }
             },
             {
-              'mcp-protocol-version': DRAFT_PROTOCOL_VERSION,
+              'mcp-protocol-version': STATELESS,
               'Mcp-Method': method
             }
           );
           expect(status, method).toBe(200);
           expect(body.result, method).toMatchObject(CACHEABLE_FIELDS);
           if (method === 'resources/read') {
-            expect(
-              wireSchemaErrors(DRAFT_PROTOCOL_VERSION, body, method),
-              method
-            ).toEqual([]);
+            expect(wireSchemaErrors(STATELESS, body, method), method).toEqual(
+              []
+            );
           }
         }
       } finally {
@@ -572,15 +571,14 @@ describe('sep-2640 skills client mock results', () => {
       }
     });
 
-    // The runner hands these scenarios' clients 2025-11-25 unless
-    // --spec-version says otherwise, and the extension has no 2026-07-28
-    // dependency, so the mock answers at the version the client asked for.
+    // The extension has no 2026-07-28 dependency, so whichever revision the
+    // run targets, the mock answers at the version the client asked for.
     it(`${s.name} answers initialize at the requested protocol version`, async () => {
       const scenario = s.make();
       const { serverUrl } = await scenario.start(testScenarioContext());
       try {
         let id = 1;
-        for (const protocolVersion of ['2025-11-25', DRAFT_PROTOCOL_VERSION]) {
+        for (const protocolVersion of ['2025-11-25', STATELESS]) {
           const { status, body } = await post(serverUrl, {
             jsonrpc: '2.0',
             id: id++,

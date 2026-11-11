@@ -186,7 +186,7 @@ describe('Server scenario negative tests', () => {
                 jsonrpc: '2.0',
                 id: body.id,
                 result: {
-                  protocolVersion: LATEST_SPEC_VERSION,
+                  protocolVersion: STATEFUL,
                   capabilities: {},
                   serverInfo: {
                     name: 'dns-rebinding-lifecycle-test',
@@ -212,7 +212,7 @@ describe('Server scenario negative tests', () => {
       const serverUrl = await listenOnRandomPort(server);
       try {
         const checks = await new DNSRebindingProtectionScenario().run(
-          testContext(serverUrl, LATEST_SPEC_VERSION)
+          testContext(serverUrl, STATEFUL)
         );
 
         expect(
@@ -247,7 +247,7 @@ describe('Server scenario negative tests', () => {
       }
     }, 10000);
 
-    it('does not send initialized notification for the draft discover probe', async () => {
+    it('does not send initialized notification for the stateless discover probe', async () => {
       const methods: Array<string | undefined> = [];
       const server = createServer(async (req, res) => {
         if (req.method !== 'POST' || req.url !== '/mcp') {
@@ -287,7 +287,7 @@ describe('Server scenario negative tests', () => {
       const serverUrl = await listenOnRandomPort(server);
       try {
         const checks = await new DNSRebindingProtectionScenario().run(
-          testContext(serverUrl, DRAFT_PROTOCOL_VERSION)
+          testContext(serverUrl, STATELESS)
         );
 
         expect(
@@ -454,7 +454,7 @@ describe('Server scenario negative tests', () => {
     it('emits WARNING for deterministic-order while tools-list still passes against a server that rotates its tool list', async () => {
       const scenario = new ToolsListScenario();
       const checks = await scenario.run(
-        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+        testContext(`http://localhost:${PORT}/mcp`, STATELESS)
       );
 
       const list = checks.find((c) => c.id === 'tools-list');

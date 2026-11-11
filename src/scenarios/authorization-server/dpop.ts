@@ -28,7 +28,7 @@ import {
   CheckStatus,
   ClientScenarioForAuthorizationServer,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION,
+  DRAFT_SPEC_VERSION,
   SpecReference
 } from '../../types';
 import { AuthorizationServerOptions } from '../../schemas';
@@ -148,7 +148,9 @@ interface TokenExchangeResult {
 
 export class DPoPAuthorizationServerScenario implements ClientScenarioForAuthorizationServer {
   name = 'dpop';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  // Not part of the 2026-07-28 release: the DPoP profile is still a draft in
+  // modelcontextprotocol/ext-auth, so this stays out of dated-revision runs.
+  readonly source = { introducedIn: DRAFT_SPEC_VERSION } as const;
   description = `Test DPoP support in the authorization server (SEP-1932 / RFC 9449).
 
 **Authorization Server Implementation Requirements:**

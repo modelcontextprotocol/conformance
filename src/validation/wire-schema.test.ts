@@ -117,7 +117,7 @@ describe('wireSchemaErrors', () => {
   it('accepts extension result types through the generic result envelope', () => {
     expect(
       wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
+        STATELESS,
         {
           jsonrpc: '2.0',
           id: 3,
@@ -134,7 +134,7 @@ describe('wireSchemaErrors', () => {
 
   it('names an unrecognised resultType when the result then fails its typed definition', () => {
     const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
+      STATELESS,
       { jsonrpc: '2.0', id: 3, result: { resultType: 'complet' } },
       'tools/call'
     );
@@ -146,7 +146,7 @@ describe('wireSchemaErrors', () => {
   it('accepts an unrecognised resultType whose result satisfies the typed definition (open discriminator)', () => {
     expect(
       wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
+        STATELESS,
         {
           jsonrpc: '2.0',
           id: 3,

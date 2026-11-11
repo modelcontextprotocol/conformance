@@ -5,10 +5,11 @@
  */
 
 import {
-  DRAFT_PROTOCOL_VERSION,
-  NEGOTIABLE_PROTOCOL_VERSIONS
+  NEGOTIABLE_PROTOCOL_VERSIONS,
+  protocolVersionFor,
+  type SpecVersion
 } from '../../../types.js';
-import { withRequiredDraftResultFields } from '../../../mock-server/index.js';
+import { withRequiredResultFields } from '../../../mock-server/index.js';
 
 /**
  * `ListSkillsResult` is cacheable like `resources/list`, but `skills/list` is
@@ -20,29 +21,30 @@ export function skillsListResult(skills: object[]): object {
 }
 
 export function readResult(uri: unknown, text: string): unknown {
-  return withRequiredDraftResultFields('resources/read', {
+  return withRequiredResultFields('resources/read', {
     contents: [{ uri, mimeType: 'text/markdown', text }]
   });
 }
 
 /**
  * The `initialize` result at the version the client asked for, when the suite
- * can speak it. The extension has no 2026-07-28 dependency, and the runner
- * hands these scenarios' clients 2025-11-25 unless `--spec-version` says
- * otherwise, so a fixed 2026-07-28 reply would turn a correct stateful client
- * away before it ever lists.
+ * can speak it, and otherwise at the wire version of the run's spec version.
+ * The extension has no 2026-07-28 dependency, so a reply fixed at the run's
+ * version would turn a correct stateful client (one that asked for an older
+ * negotiable version) away before it ever lists.
  */
 export function initializeResult(
   name: string,
   request: { params?: { protocolVersion?: unknown } },
-  capabilities: object
+  capabilities: object,
+  specVersion: SpecVersion
 ): object {
   const requested = request.params?.protocolVersion;
   const protocolVersion =
     typeof requested === 'string' &&
     NEGOTIABLE_PROTOCOL_VERSIONS.includes(requested)
       ? requested
-      : DRAFT_PROTOCOL_VERSION;
+      : protocolVersionFor(specVersion);
   return {
     resultType: 'complete',
     protocolVersion,
