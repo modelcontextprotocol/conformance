@@ -173,7 +173,8 @@ export class SkillsVerificationScenario extends BaseHttpScenario {
           result: initializeResult(
             this.name,
             request,
-            this.discoverCapabilities()
+            this.discoverCapabilities(),
+            this.specVersion
           )
         });
         return;

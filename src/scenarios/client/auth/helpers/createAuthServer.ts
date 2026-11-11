@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { createHash } from 'crypto';
 import type { ConformanceCheck } from '../../../../types';
 import type { ScenarioContext } from '../../../../mock-server';
-import { isStatefulVersion } from '../../../../connection/select';
+import { specVersionAtLeast } from '../../../../types';
 import { createRequestLogger } from '../../../request-logger';
 import { SpecReferences } from '../spec-references';
 import { MockTokenVerifier } from './mockTokenVerifier';
@@ -752,11 +752,10 @@ export function createAuthServer(
     // SEP-837: clients MUST specify an appropriate application_type during DCR.
     // The harness can't know the client's real class (native vs web), so this
     // checks presence + that the value is one of the two OIDC-defined values.
-    // SEP-837 first appears in the draft spec (the same revision that
-    // introduces the stateless lifecycle), so the check only exists for runs
-    // targeting a version that includes it; at dated versions it is not
+    // SEP-837 first appears in 2026-07-28, so the check only exists for runs
+    // targeting a version that includes it; at earlier versions it is not
     // emitted at all.
-    if (!isStatefulVersion(ctx.specVersion)) {
+    if (specVersionAtLeast(ctx.specVersion, '2026-07-28')) {
       const appType = req.body.application_type;
       const validAppType = appType === 'native' || appType === 'web';
       checks.push({

@@ -6,9 +6,13 @@ import {
   ScenarioSource,
   SpecVersion,
   LATEST_SPEC_VERSION,
-  DRAFT_PROTOCOL_VERSION
+  protocolVersionFor
 } from '../types';
-import { getScenario, isScenarioApplicableAt } from '../scenarios';
+import {
+  defaultSpecVersionFor,
+  getScenario,
+  isScenarioApplicableAt
+} from '../scenarios';
 import { createServerFor, type ScenarioContext } from '../mock-server';
 import {
   resetWireValidation,
@@ -46,7 +50,9 @@ async function executeClient(
   // 3. Semantic separation: scenario identifies "which test", context provides "test data"
   const env = { ...process.env };
   env.MCP_CONFORMANCE_SCENARIO = scenarioName;
-  env.MCP_CONFORMANCE_PROTOCOL_VERSION = specVersion ?? LATEST_SPEC_VERSION;
+  env.MCP_CONFORMANCE_PROTOCOL_VERSION = protocolVersionFor(
+    specVersion ?? LATEST_SPEC_VERSION
+  );
   if (context) {
     // Include scenario name in context for discriminated union parsing
     env.MCP_CONFORMANCE_CONTEXT = JSON.stringify({
@@ -132,18 +138,14 @@ function shouldSkipForSpecVersion(
 }
 
 // When --spec-version is omitted, infer the version from the scenario's
-// declared source so draft-only scenarios get the draft (stateless) mock
-// server rather than the stateful latest-spec default.
+// declared source so each scenario gets a mock server speaking a wire it was
+// written for: the latest release when it applies there, otherwise the newest
+// revision in its window (draft-only → draft, removed → last release before).
 function resolveScenarioSpecVersion(
   source: ScenarioSource,
   specVersion: SpecVersion | undefined
 ): SpecVersion {
-  return (
-    specVersion ??
-    ('introducedIn' in source && source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION)
-  );
+  return specVersion ?? defaultSpecVersionFor(source);
 }
 
 export async function runConformanceTest(

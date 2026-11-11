@@ -24,7 +24,7 @@ import { McpError } from '@modelcontextprotocol/sdk/types.js';
 
 import { ClientScenario, ConformanceCheck } from '../../../types';
 import type { Connection, RunContext } from '../../../connection';
-import { HEADER_MISMATCH } from '../../../spec-types/draft';
+import { HEADER_MISMATCH } from '../../../spec-types/2026-07-28';
 import { SEP_2243_REF, SEP_2663_REF } from './mrtr-helpers';
 import { errMsg, failureCheck } from './mrtr-helpers';
 import { TASKS_EXTENSION_ID } from './helpers';

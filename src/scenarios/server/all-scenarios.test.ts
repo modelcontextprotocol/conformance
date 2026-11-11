@@ -2,16 +2,14 @@ import { testContext } from '../../connection/testing';
 import { spawn, ChildProcess } from 'child_process';
 import { createServer } from 'net';
 import {
+  defaultSpecVersionFor,
   getClientScenario,
+  isScenarioApplicableAt,
   listActiveClientScenarios,
   listDraftClientScenarios,
   listPendingClientScenarios
 } from '../index';
-import {
-  DRAFT_PROTOCOL_VERSION,
-  LATEST_SPEC_VERSION,
-  type SpecVersion
-} from '../../types';
+import { LATEST_SPEC_VERSION, type SpecVersion } from '../../types';
 import path from 'path';
 
 function getFreePort(): Promise<number> {
@@ -147,14 +145,11 @@ describe('Server Scenarios', () => {
       throw new Error(`Scenario ${scenarioName} not found`);
     }
 
-    // Draft-only scenarios expect the draft (stateless) connection. Other
-    // scenarios normally use the latest stateful wire unless a test overrides it.
+    // Mirror the runner: without an override each scenario runs at the
+    // latest release if it applies there, else the newest revision in its
+    // window (stateful-only scenarios land on 2025-11-25).
     const targetSpecVersion =
-      specVersion ??
-      ('introducedIn' in scenario.source &&
-      scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
-        ? DRAFT_PROTOCOL_VERSION
-        : LATEST_SPEC_VERSION);
+      specVersion ?? defaultSpecVersionFor(scenario.source);
 
     const checks = await scenario.run(
       testContext(serverUrl, targetSpecVersion)
@@ -183,20 +178,19 @@ describe('Server Scenarios', () => {
     }, 10000); // 10 second timeout per scenario
   }
 
-  // These scenarios are introduced before the stateless protocol, so the normal
-  // fixture matrix exercises them on the latest stateful wire. Run them again on
-  // the modern wire to cover the streamed response adapter used by tools/call.
-  for (const scenarioName of [
-    'tools-call-simple-text',
-    'tools-call-image',
-    'tools-call-audio',
-    'tools-call-embedded-resource',
-    'tools-call-mixed-content',
-    'tools-call-error',
-    'tools-call-with-progress'
-  ]) {
-    it(`${scenarioName} on ${DRAFT_PROTOCOL_VERSION}`, async () => {
-      await expectScenarioToPass(scenarioName, DRAFT_PROTOCOL_VERSION);
-    }, 10000);
+  // Scenarios that span both wire eras run above at the latest (stateless)
+  // release; run them again on the last stateful revision so the initialize
+  // handshake path of each stays covered too.
+  const LAST_STATEFUL: SpecVersion = '2025-11-25';
+  for (const scenarioName of scenarios) {
+    const scenario = getClientScenario(scenarioName)!;
+    if (
+      defaultSpecVersionFor(scenario.source) === LATEST_SPEC_VERSION &&
+      isScenarioApplicableAt(scenario.source, LAST_STATEFUL)
+    ) {
+      it(`${scenarioName} on ${LAST_STATEFUL}`, async () => {
+        await expectScenarioToPass(scenarioName, LAST_STATEFUL);
+      }, 10000);
+    }
   }
 });

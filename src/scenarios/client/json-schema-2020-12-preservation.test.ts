@@ -4,8 +4,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { JsonSchema2020_12PreservationScenario } from './json-schema-2020-12-preservation';
 import { sendStatelessRequest } from '../../connection/stateless';
-import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../../types';
 import { JSON_SCHEMA_2020_12_FIXTURE } from '../server/json-schema-2020-12';
+
+// The SDK Client below drives the stateful lifecycle (last stateful
+// revision); the raw helper drives the stateless one (first stateless
+// revision, where SEP-2106 applies).
+const STATEFUL = '2025-11-25' as const;
+const STATELESS = '2026-07-28' as const;
 
 const FOCAL_TOOL = 'json_schema_2020_12_tool';
 const ECHO_TOOL = 'json_schema_echo';
@@ -46,7 +51,7 @@ async function runEchoClient(
 
 /**
  * Drive the scenario's mock server through the SEP-2575 stateless lifecycle
- * that the draft protocol version uses: list tools, then echo the focal
+ * that 2026-07-28 onward uses: list tools, then echo the focal
  * tool's inputSchema back (verbatim or after the caller-supplied transform).
  * The SDK `Client` does not support the stateless lifecycle, so these
  * requests go through the raw stateless helper instead.
@@ -104,11 +109,9 @@ describe('json-schema-2020-12-preservation scenario', () => {
     }
   });
 
-  it('emits SUCCESS for SEP-1613 keywords and SKIPPED for SEP-2106 when a compliant client echoes back on a dated target', async () => {
+  it('emits SUCCESS for SEP-1613 keywords and SKIPPED for SEP-2106 when a compliant client echoes back on a pre-2026-07-28 target', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(LATEST_SPEC_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATEFUL));
     try {
       await runEchoClient(serverUrl);
 
@@ -151,11 +154,9 @@ describe('json-schema-2020-12-preservation scenario', () => {
     }
   });
 
-  it('emits all SUCCESS when a compliant client echoes back on the draft target', async () => {
+  it('emits all SUCCESS when a compliant client echoes back on the 2026-07-28 target', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       await runStatelessEchoClient(serverUrl);
 
@@ -170,9 +171,7 @@ describe('json-schema-2020-12-preservation scenario', () => {
 
   it('flags SEP-1613 FAILURE when a client strips $schema and $defs before echoing', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(LATEST_SPEC_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATEFUL));
     try {
       await runEchoClient(serverUrl, (schema) => {
         const stripped = { ...schema };
@@ -211,11 +210,9 @@ describe('json-schema-2020-12-preservation scenario', () => {
     }
   });
 
-  it('flags SEP-2106 FAILURE on the draft target when composition keywords are stripped', async () => {
+  it('flags SEP-2106 FAILURE on the 2026-07-28 target when composition keywords are stripped', async () => {
     const scenario = new JsonSchema2020_12PreservationScenario();
-    const { serverUrl } = await scenario.start(
-      testScenarioContext(DRAFT_PROTOCOL_VERSION)
-    );
+    const { serverUrl } = await scenario.start(testScenarioContext(STATELESS));
     try {
       await runStatelessEchoClient(serverUrl, (schema) => {
         const stripped = { ...schema };

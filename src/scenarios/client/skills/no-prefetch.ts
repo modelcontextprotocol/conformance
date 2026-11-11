@@ -86,7 +86,8 @@ export class SkillsNoPrefetchScenario extends BaseHttpScenario {
           result: initializeResult(
             this.name,
             request,
-            this.discoverCapabilities()
+            this.discoverCapabilities(),
+            this.specVersion
           )
         });
         return;

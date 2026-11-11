@@ -1,6 +1,6 @@
 import {
-  DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION,
+  SPEC_VERSION_TIMELINE,
+  protocolVersionFor,
   type SpecVersion
 } from '../types';
 import type { Connection, ConnectOptions, RunContext } from './index';
@@ -20,12 +20,6 @@ const STATEFUL_VERSIONS: ReadonlySet<string> = new Set([
   '2025-11-25'
 ]);
 
-/** Every spec version the suite can target, in timeline order. */
-const ALL_SPEC_VERSIONS: readonly SpecVersion[] = [
-  ...DATED_SPEC_VERSIONS,
-  DRAFT_PROTOCOL_VERSION
-];
-
 export function isStatefulVersion(v: SpecVersion): boolean {
   return STATEFUL_VERSIONS.has(v);
 }
@@ -33,12 +27,22 @@ export function isStatefulVersion(v: SpecVersion): boolean {
 /**
  * Spec versions that use the stateless lifecycle, derived from
  * {@link isStatefulVersion} so there is a single source of truth for the
- * version→lifecycle mapping. The list grows automatically when the draft is
- * dated (added to `DATED_SPEC_VERSIONS` without joining `STATEFUL_VERSIONS`)
- * or a second stateless version appears.
+ * version→lifecycle mapping. The list grows automatically when a new dated
+ * revision is added to `DATED_SPEC_VERSIONS` without joining
+ * `STATEFUL_VERSIONS`.
  */
 export const STATELESS_SPEC_VERSIONS: readonly SpecVersion[] =
-  ALL_SPEC_VERSIONS.filter((v) => !isStatefulVersion(v));
+  SPEC_VERSION_TIMELINE.filter((v) => !isStatefulVersion(v));
+
+/**
+ * Wire `protocolVersion` strings of the stateless revisions, deduplicated
+ * (the draft shares the latest release's wire string until the spec repo
+ * gives the next draft its own). What a stateless mock server advertises in
+ * `server/discover` when the run does not pin one version.
+ */
+export const STATELESS_PROTOCOL_VERSIONS: readonly string[] = [
+  ...new Set(STATELESS_SPEC_VERSIONS.map(protocolVersionFor))
+];
 
 export function connectFor(
   specVersion: SpecVersion

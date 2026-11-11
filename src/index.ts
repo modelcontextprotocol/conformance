@@ -36,7 +36,11 @@ import {
   resolveSpecVersion
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
-import { ConformanceCheck } from './types';
+import {
+  ConformanceCheck,
+  DATED_SPEC_VERSIONS,
+  LATEST_SPEC_VERSION
+} from './types';
 import {
   AuthorizationServerOptionsSchema,
   ClientOptionsSchema,
@@ -83,7 +87,7 @@ function resolveRequirements(
   // failure this flag exists to prevent.
   if (revision === '') {
     console.error(
-      '--requirements needs a revision, such as 2026-07-28. Run `conformance list` to see which are available.'
+      `--requirements needs a revision, such as ${LATEST_SPEC_VERSION}. Run \`conformance list\` to see which are available.`
     );
     process.exit(1);
   }
@@ -186,6 +190,25 @@ function requiredScenariosOrExit(
   }
 }
 
+const SPEC_VERSION_HELP =
+  `Target a spec revision: a dated release (${DATED_SPEC_VERSIONS.join(', ')}) ` +
+  'or "draft" for the unreleased revision after the latest. Selects the scenarios ' +
+  'applicable at that revision and the wire version they run at';
+
+/**
+ * The draft suites hold scenarios for requirements newer than the latest
+ * release. Right after a release they are empty (everything that was "draft"
+ * shipped and got retagged), which is worth one line so a CI job that still
+ * passes `--suite draft` is not silently testing nothing.
+ */
+function noteIfDraftSuiteEmpty(suite: string, scenarios: string[]): void {
+  if (suite !== 'draft' || scenarios.length > 0) return;
+  console.error(
+    `Note: the draft suite is empty — no scenario targets a requirement newer than ${LATEST_SPEC_VERSION} yet. ` +
+      `Scenarios that used to live here shipped with ${LATEST_SPEC_VERSION} and now run in the default suite.`
+  );
+}
+
 function filterScenariosBySpecVersion(
   allScenarios: string[],
   version: SpecVersion,
@@ -228,17 +251,14 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option(
     '--requirements <revision>',
-    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+    `Run exactly the scenarios a spec revision requires, frozen at its release (e.g. ${LATEST_SPEC_VERSION}). Replaces --suite and --spec-version`
   )
   .option('--verbose', 'Show verbose output')
   .action(async (options, cmd) => {
@@ -303,6 +323,7 @@ program
           }
 
           scenarios = suites[suiteName]();
+          noteIfDraftSuiteEmpty(suiteName, scenarios);
           if (specVersionFilter) {
             scenarios = filterScenariosBySpecVersion(
               scenarios,
@@ -543,17 +564,14 @@ program
     'Path to YAML file listing expected failures (baseline)'
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--force',
     'Run a scenario even if it is not applicable at the requested --spec-version'
   )
   .option(
     '--requirements <revision>',
-    'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
+    `Run exactly the scenarios a spec revision requires, frozen at its release (e.g. ${LATEST_SPEC_VERSION}). Replaces --suite and --spec-version`
   )
   .option('--timeout <ms>', 'Per-scenario timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
@@ -641,9 +659,11 @@ program
         } else if (suite === 'pending') {
           scenarios = listPendingClientScenarios();
         } else if (suite === 'draft') {
-          // Scenarios targeting the in-progress draft spec; excluded from
-          // 'active' until the draft is published as a dated release.
+          // Scenarios targeting requirements newer than the latest release;
+          // excluded from 'active' until that draft is published as a dated
+          // release and they are retagged to it.
           scenarios = listDraftClientScenarios();
+          noteIfDraftSuiteEmpty(suite, scenarios);
         } else {
           console.error(`Unknown suite: ${suite}`);
           console.error('Available suites: active, all, core, draft, pending');
@@ -778,10 +798,7 @@ program
     3000
   )
   .option('-o, --output-dir <path>', 'Save results to this directory')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options) => {
     try {
@@ -938,10 +955,7 @@ program
   .option('--client', 'List client scenarios')
   .option('--server', 'List server scenarios')
   .option('--authorization', 'List authorization server scenarios')
-  .option(
-    '--spec-version <version>',
-    'Filter scenarios by spec version (cumulative for date versions)'
-  )
+  .option('--spec-version <version>', SPEC_VERSION_HELP)
   .option(
     '--requirements <revision>',
     'List exactly what a spec revision requires, frozen at its release'

@@ -18,14 +18,16 @@ import http from 'http';
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  LATEST_SPEC_VERSION,
+  SpecVersion,
+  protocolVersionFor
 } from '../../types';
 import {
   withRequestMeta,
   sendStatelessRequest,
   type RunContext
 } from '../../connection';
-import { HEADER_MISMATCH } from '../../spec-types/draft';
+import { HEADER_MISMATCH } from '../../spec-types/2026-07-28';
 import { untestableCheck } from '../untestable';
 
 const SPEC_REFERENCE = {
@@ -291,7 +293,7 @@ function createAcceptanceCheck(
 
 export class HttpHeaderValidationScenario implements ClientScenario {
   name = 'http-header-validation';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test server validation of standard MCP request headers (SEP-2243).
 
 **Server Implementation Requirements:**
@@ -307,14 +309,23 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 - Server MUST return HTTP 400 Bad Request for validation failures
 - Server MUST return JSON-RPC error with code -32020 (HeaderMismatch)`;
 
+  /** Spec version of the current run; requests declare its wire version. */
+  private specVersion: SpecVersion = LATEST_SPEC_VERSION;
+
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
+    this.specVersion = ctx.specVersion;
     const checks: ConformanceCheck[] = [];
 
     try {
       // Discover the server's tools with a fully-conformant stateless request
       // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      const toolsResponse = await sendStatelessRequest(
+        serverUrl,
+        'tools/list',
+        undefined,
+        { specVersion: ctx.specVersion }
+      );
       if (!toolsResponse.body?.result) {
         // The server under test could not even answer a conformant tools/list:
         // report a single explicit setup failure instead of misleading
@@ -345,7 +356,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
       };
 
       const baseHeaders: Record<string, string> = {
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+        'MCP-Protocol-Version': protocolVersionFor(ctx.specVersion)
       };
 
       let idCounter = 100;
@@ -552,7 +563,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
       const requestBody = {
         ...body,
         id: body.id === 0 ? nextId() : body.id,
-        params: withRequestMeta(body.params)
+        params: withRequestMeta(body.params, this.specVersion)
       };
       const response = await sendRawRequest(serverUrl, requestBody, {
         ...baseHeaders,
@@ -602,7 +613,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 
 export class HttpCustomHeaderServerValidationScenario implements ClientScenario {
   name = 'http-custom-header-server-validation';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test server validation of custom Mcp-Param headers and Base64 encoding (SEP-2243).
 
 **Server Implementation Requirements:**
@@ -615,14 +626,23 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
 - Server MUST treat values without =?base64?...?= wrapper as literal
 - Server MUST reject requests where custom header is omitted but value is in body`;
 
+  /** Spec version of the current run; requests declare its wire version. */
+  private specVersion: SpecVersion = LATEST_SPEC_VERSION;
+
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl } = ctx;
+    this.specVersion = ctx.specVersion;
     const checks: ConformanceCheck[] = [];
 
     try {
       // Discover the server's tools with a fully-conformant stateless request
       // (SEP-2575) — that wire protocol has no initialize handshake or sessions.
-      const toolsResponse = await sendStatelessRequest(serverUrl, 'tools/list');
+      const toolsResponse = await sendStatelessRequest(
+        serverUrl,
+        'tools/list',
+        undefined,
+        { specVersion: ctx.specVersion }
+      );
       if (!toolsResponse.body?.result) {
         // The server under test could not even answer a conformant tools/list:
         // report a single explicit setup failure (and backfill the declared
@@ -677,7 +697,7 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
       }
 
       const baseHeaders: Record<string, string> = {
-        'MCP-Protocol-Version': DRAFT_PROTOCOL_VERSION
+        'MCP-Protocol-Version': protocolVersionFor(ctx.specVersion)
       };
 
       // Find the first x-mcp-header annotated STRING property
@@ -944,10 +964,13 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // these cases only vary the Mcp-Param header value.
-          params: withRequestMeta({
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: bodyValue }
-          })
+          params: withRequestMeta(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: bodyValue }
+            },
+            this.specVersion
+          )
         },
         {
           ...baseHeaders,
@@ -1030,10 +1053,13 @@ export class HttpCustomHeaderServerValidationScenario implements ClientScenario 
           method: 'tools/call',
           // Issue #311: the body always carries the SEP-2575 _meta fields —
           // this case only omits the Mcp-Param header.
-          params: withRequestMeta({
-            name: toolName,
-            arguments: { ...defaultArgs, [paramName]: 'test-value' }
-          })
+          params: withRequestMeta(
+            {
+              name: toolName,
+              arguments: { ...defaultArgs, [paramName]: 'test-value' }
+            },
+            this.specVersion
+          )
         },
         {
           ...baseHeaders,

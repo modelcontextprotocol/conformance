@@ -63,15 +63,15 @@ npx @modelcontextprotocol/conformance client --command "<client-command>" --scen
 
 - `--command` - The command to run your MCP client (can include flags)
 - `--scenario` - The test scenario to run (e.g., "initialize")
-- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios targeting the in-progress draft spec), or `sep-835`
-- `--spec-version <version>` - Filter scenarios by spec version (e.g., `2025-11-25`, `2026-07-28`; `draft` is accepted as an alias for the current draft identifier). The draft version selects the latest dated release plus any draft-only scenarios. When omitted, the version is inferred from the scenario's spec applicability (draft-only scenarios run at the draft version, everything else at the latest dated release); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
+- `--suite` - Run a suite of tests in parallel: `all`, `core`, `extensions`, `backcompat`, `auth`, `metadata`, `draft` (scenarios for requirements newer than the latest dated release — currently empty, since everything that was in it shipped in `2026-07-28`), or `sep-835`
+- `--spec-version <version>` - Target a spec revision: a dated release (`2025-03-26`, `2025-06-18`, `2025-11-25`, `2026-07-28`) or `draft` for the unreleased revision after the latest. A dated version selects every scenario applicable at that revision (cumulative, minus anything the revision removed); `draft` selects the latest release's set plus any draft-only scenarios and runs them at the draft's wire `protocolVersion` (currently also `2026-07-28`, until the spec repo gives the next draft its own). When omitted, each scenario runs at the latest dated release if it applies there, otherwise at the newest revision it does apply to (draft-only scenarios at the draft, scenarios removed in `2026-07-28` at `2025-11-25`); an explicitly requested version outside a scenario's applicability window skips the scenario (exit 0) unless `--force` is passed
 - `--force` - Run a scenario even if it is not applicable at the requested `--spec-version`
 - `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--timeout` - Timeout in milliseconds (default: 30000)
 - `--verbose` - Show verbose output
 
-The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. When `--spec-version` is passed, its resolved value is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it. Clients under test must derive the lifecycle from the protocol version they are asked to run: dated versions through `2025-11-25` use the stateful lifecycle (initialize handshake), while the 2026 draft (`2026-07-28`) uses the stateless lifecycle (per-request `_meta`).
+The framework appends `<server-url>` as an argument to your command and sets the `MCP_CONFORMANCE_SCENARIO` environment variable to the scenario name. For scenarios that require additional context (e.g., client credentials), the `MCP_CONFORMANCE_CONTEXT` environment variable contains a JSON object with scenario-specific data. The wire `protocolVersion` of the revision a scenario runs at is forwarded to the client process as `MCP_CONFORMANCE_PROTOCOL_VERSION`; example clients can use this value directly as their `protocolVersion`. SDKs that hard-code their protocol version can ignore it. Clients under test must derive the lifecycle from the protocol version they are asked to run: dated versions through `2025-11-25` use the stateful lifecycle (initialize handshake), while `2026-07-28` and later use the stateless lifecycle (per-request `_meta`).
 
 ### Server Testing
 
@@ -83,7 +83,8 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 
 - `--url` - URL of the server to test
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
-- `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
+- `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-only scenarios), "all", "draft" (scenarios for requirements newer than the latest dated release — currently empty), or "pending"
+- `--spec-version <version>` - Target a spec revision (see Client Testing above). When omitted, scenarios that apply to `2026-07-28` run at that (stateless) wire and scenarios it removed run at `2025-11-25`; pass `--spec-version 2025-11-25` to test a server that only implements the stateful lifecycle
 - `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
@@ -364,7 +365,7 @@ npm start -- sdk typescript-sdk --mode client --suite auth
 # Target a specific spec version (passed through to the underlying run).
 # When omitted, the SDK's `specVersion` from KNOWN_SDKS is used, if set —
 # e.g. typescript-sdk-v1 defaults to 2025-11-25.
-npm start -- sdk typescript-sdk --mode client --spec-version draft
+npm start -- sdk typescript-sdk --mode client --spec-version 2026-07-28
 ```
 
 Build/run commands for each official SDK are looked up by name from [`src/sdk-runner/known-sdks.ts`](src/sdk-runner/known-sdks.ts) — no config file is required in the SDK repo. Resolution order is **CLI flag > built-in entry**, so any field can be overridden on the command line for refs that diverge from the built-in.
@@ -434,8 +435,11 @@ npx @modelcontextprotocol/conformance tier-check \
 ```
 
 Omit `--client-cmd` and the client leg is skipped and reported as a gap. Omit
-`--requirements` and scoring falls back to the suite as it stands today, which is
-not what you want for a tier claim; see [Conformance Requirements](#conformance-requirements).
+`--requirements` (and `--spec-version`) and scoring uses the latest shipped
+revision's requirement set alone (`2026-07-28`), which claims one revision, not
+every one; pass `--requirements` explicitly for a tier claim. `--spec-version`
+without `--requirements` scores the suite as it stands today at that revision,
+which is not frozen; see [Conformance Requirements](#conformance-requirements).
 
 The exit code is a CI verdict on the machine-checkable half: nonzero when any
 scored conformance scenario fails or a leg could not be measured. Governance

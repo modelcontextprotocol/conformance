@@ -1,5 +1,5 @@
 import {
-  withRequiredDraftResultFields,
+  withRequiredResultFields,
   type ScenarioContext
 } from '../../mock-server';
 import http from 'http';
@@ -8,7 +8,8 @@ import {
   ScenarioUrls,
   ConformanceCheck,
   CheckStatus,
-  DRAFT_PROTOCOL_VERSION
+  LATEST_SPEC_VERSION,
+  protocolVersionFor
 } from '../../types';
 
 /**
@@ -42,7 +43,7 @@ export const DECLARED_CHECK_IDS = [
 
 export class RequestMetadataScenario implements Scenario {
   name = 'request-metadata';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description =
     'Per-request _meta and MCP-Protocol-Version header obligations (SEP-2575)';
 
@@ -50,11 +51,14 @@ export class RequestMetadataScenario implements Scenario {
   private checks: ConformanceCheck[] = [];
   private hasSimulatedRejection = false;
   private requestsObserved = 0;
+  /** Wire protocolVersion the mock supports: the run's spec version. */
+  private protocolVersion: string = protocolVersionFor(LATEST_SPEC_VERSION);
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.hasSimulatedRejection = false;
     this.checks = [];
     this.requestsObserved = 0;
+    this.protocolVersion = protocolVersionFor(ctx.specVersion);
     return new Promise((resolve, reject) => {
       this.server = http.createServer((req, res) => {
         this.handleRequest(req, res);
@@ -329,11 +333,11 @@ export class RequestMetadataScenario implements Scenario {
             jsonrpc: '2.0',
             id: request.id ?? null,
             error: {
-              // UnsupportedProtocolVersionError per the draft schema.
+              // UnsupportedProtocolVersionError per the 2026-07-28 schema.
               code: -32022,
               message: 'Unsupported protocol version',
               data: {
-                supported: [DRAFT_PROTOCOL_VERSION],
+                supported: [this.protocolVersion],
                 requested: String(headerVersion ?? metaVersion ?? '')
               }
             }
@@ -347,8 +351,8 @@ export class RequestMetadataScenario implements Scenario {
       );
       if (retryCheck) {
         if (
-          headerVersion === DRAFT_PROTOCOL_VERSION &&
-          metaVersion === DRAFT_PROTOCOL_VERSION
+          headerVersion === this.protocolVersion &&
+          metaVersion === this.protocolVersion
         ) {
           retryCheck.status = 'SUCCESS';
         } else {
@@ -370,8 +374,8 @@ export class RequestMetadataScenario implements Scenario {
           JSON.stringify({
             jsonrpc: '2.0',
             id: request.id,
-            result: withRequiredDraftResultFields(request.method, {
-              supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            result: withRequiredResultFields(request.method, {
+              supportedVersions: [this.protocolVersion],
               capabilities: {},
               serverInfo: { name: 'test', version: '1.0' }
             })
@@ -392,7 +396,7 @@ export class RequestMetadataScenario implements Scenario {
         JSON.stringify({
           jsonrpc: '2.0',
           id: request.id,
-          result: withRequiredDraftResultFields(request.method, result)
+          result: withRequiredResultFields(request.method, result)
         })
       );
     });

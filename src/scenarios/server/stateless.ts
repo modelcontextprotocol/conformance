@@ -5,7 +5,7 @@
 import {
   ClientScenario,
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
+  protocolVersionFor
 } from '../../types';
 import {
   buildStandardHeaders,
@@ -23,7 +23,7 @@ const SPEC_REF = [
 
 export class ServerStatelessScenario implements ClientScenario {
   name = 'server-stateless';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test stateless MCP server architecture (SEP-2575).
 
 **Server Implementation Requirements:**
@@ -56,6 +56,9 @@ export class ServerStatelessScenario implements ClientScenario {
 
   async run(ctx: RunContext): Promise<ConformanceCheck[]> {
     const { serverUrl, specVersion } = ctx;
+    // Wire string for hand-built _meta/header values (the draft maps to its
+    // current protocolVersion; dated revisions are their own).
+    const protocolVersion = protocolVersionFor(specVersion);
     const checks: ConformanceCheck[] = [];
     const timestamp = new Date().toISOString();
 
@@ -283,7 +286,7 @@ export class ServerStatelessScenario implements ClientScenario {
     };
 
     const validMeta = {
-      'io.modelcontextprotocol/protocolVersion': specVersion,
+      'io.modelcontextprotocol/protocolVersion': protocolVersion,
       'io.modelcontextprotocol/clientInfo': {
         name: 'conformance-client',
         version: '1.0.0'
@@ -676,7 +679,7 @@ export class ServerStatelessScenario implements ClientScenario {
     const responseAbsent = await sendRpc(
       'server/discover',
       { _meta: headerMismatchMeta },
-      { 'MCP-Protocol-Version': specVersion },
+      { 'MCP-Protocol-Version': protocolVersion },
       302
     ).catch(() => null);
     const resAbsent: any = responseAbsent?.res ?? null;

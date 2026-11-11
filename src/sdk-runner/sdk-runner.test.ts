@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { DRAFT_PROTOCOL_VERSION, LATEST_SPEC_VERSION } from '../types';
 import { parseSdkSpec } from './checkout';
 import { lookupBuiltinConfig, KNOWN_SDKS } from './known-sdks';
 import { SdkConfigSchema, resolveConfigForSpec } from './config';
@@ -167,9 +168,50 @@ describe('resolveConfigForSpec', () => {
       server: { command: 'x', url: 'http://localhost:3000' },
       specOverrides: { draft: { server: { command: 'y' } } }
     };
-    expect(() => SdkConfigSchema.parse(bad)).toThrow(/not a spec version/);
+    expect(() => SdkConfigSchema.parse(bad)).toThrow(
+      /not a dated spec version/
+    );
     const typo = { ...bad, specOverrides: { '2026-7-28': {} } };
-    expect(() => SdkConfigSchema.parse(typo)).toThrow(/not a spec version/);
+    expect(() => SdkConfigSchema.parse(typo)).toThrow(
+      /not a dated spec version/
+    );
+  });
+
+  it("resolves a 'draft' run through the draft's wire version", () => {
+    // The draft currently shares 2026-07-28's wire string, so a draft run
+    // reuses that revision's invocation rather than matching nothing.
+    const resolved = resolveConfigForSpec(KNOWN_SDKS['go-sdk'], 'draft');
+    expect(resolved.server?.command).toBe(
+      resolveConfigForSpec(KNOWN_SDKS['go-sdk'], DRAFT_PROTOCOL_VERSION).server
+        ?.command
+    );
+  });
+
+  it("falls back to the latest release's overlay when the draft's wire version has no entry", async () => {
+    // Once the spec repo gives the draft its own marker, the draft's wire
+    // string is no longer a dated specOverrides key. Simulate that by
+    // re-evaluating the modules against a vendored draft schema that
+    // declares one.
+    vi.resetModules();
+    vi.doMock('../spec-types/draft', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../spec-types/draft')>()),
+      LATEST_PROTOCOL_VERSION: 'DRAFT-2099-v1'
+    }));
+    try {
+      const types = await import('../types');
+      const config = await import('./config');
+      expect(types.DRAFT_PROTOCOL_VERSION).toBe('DRAFT-2099-v1');
+
+      const go = KNOWN_SDKS['go-sdk'];
+      const resolved = config.resolveConfigForSpec(go, 'draft');
+      expect(resolved.server?.command).toBe(
+        go.specOverrides?.[LATEST_SPEC_VERSION]?.server?.command
+      );
+      expect(resolved.server?.command).not.toBe(go.server?.command);
+    } finally {
+      vi.doUnmock('../spec-types/draft');
+      vi.resetModules();
+    }
   });
 
   it('returns the base config when no spec version is given', () => {

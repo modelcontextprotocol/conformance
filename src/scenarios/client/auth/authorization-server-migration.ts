@@ -9,7 +9,7 @@
 import type { ScenarioContext } from '../../../mock-server';
 import type { Request, Response, NextFunction } from 'express';
 import type { Scenario, ConformanceCheck } from '../../../types';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { ScenarioUrls } from '../../../types';
 import { createAuthServer } from './helpers/createAuthServer';
 import { createServer } from './helpers/createServer';
 import { ServerLifecycle } from './helpers/serverLifecycle';
@@ -18,7 +18,7 @@ import { SpecReferences } from './spec-references';
 
 export class AuthorizationServerMigrationScenario implements Scenario {
   name = 'auth/authorization-server-migration';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description =
     'Tests that a client, when the PRM authorization_servers changes to a new issuer, re-registers with the new authorization server and does not reuse credentials from the previous one (SEP-2352).';
   private as1 = new ServerLifecycle();

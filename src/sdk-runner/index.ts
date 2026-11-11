@@ -223,7 +223,7 @@ export function createSdkCommand(): Command {
         // The targeted spec version (explicit flag wins over the per-SDK
         // default) selects that version's specOverrides entry, so version-
         // specific invocations live in config instead of copy-paste flags.
-        // 'draft' resolves to its dated alias so overlay keys stay canonical.
+        // A 'draft' run looks up the overlay for the draft's wire version.
         if (
           options.requirements &&
           (options.specVersion || options.suite || options.scenario)
@@ -327,7 +327,7 @@ export function createSdkCommand(): Command {
             serverUrl,
             ...passThrough({
               scenario: options.scenario,
-              // Default to the `active` suite (excludes pending/draft) — the same
+              // Default to the `active` suite (excludes pending and draft-only) — the same
               // suite tiering runs, and the most reasonable default to avoid
               // surfacing intentionally-deferred `pending` scenarios.
               suite: options.requirements

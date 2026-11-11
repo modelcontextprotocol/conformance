@@ -19,7 +19,12 @@
  */
 
 import { isDeepStrictEqual } from 'util';
-import { ClientScenario, ConformanceCheck } from '../../../types';
+import {
+  ClientScenario,
+  ConformanceCheck,
+  specVersionAtLeast,
+  type SpecVersion
+} from '../../../types';
 import type { RunContext } from '../../../connection';
 import {
   SKILLS_EXTENSION_ID,
@@ -356,7 +361,7 @@ export class SkillsEnumerationScenario implements ClientScenario {
       const first = pages[0]?.result ?? {};
       const hasTtl = first.ttlMs !== undefined;
       const hasScope = first.cacheScope !== undefined;
-      const cacheAttrsApply = ctx.specVersion >= '2026-07-28';
+      const cacheAttrsApply = specVersionAtLeast(ctx.specVersion, '2026-07-28');
 
       if (!cacheAttrsApply) {
         checks.push(
@@ -1014,7 +1019,7 @@ async function readbackChecks(
 async function getChecks(
   conn: Parameters<typeof skillsGet>[0],
   entries: SkillEntry[],
-  specVersion: string
+  specVersion: SpecVersion
 ): Promise<ConformanceCheck[]> {
   const checks: ConformanceCheck[] = [];
   const sample = entries.find((e) => typeof e.uri === 'string');
@@ -1134,7 +1139,7 @@ async function getChecks(
   const getResult = got.result as Record<string, unknown>;
   const getTtl = getResult.ttlMs !== undefined;
   const getScope = getResult.cacheScope !== undefined;
-  const getCacheApplies = specVersion >= '2026-07-28';
+  const getCacheApplies = specVersionAtLeast(specVersion, '2026-07-28');
   const getCacheText =
     'GetSkillResult extends CacheableResult, so ttlMs and cacheScope are REQUIRED, as they are on resources/read.';
 

@@ -10,9 +10,10 @@ import {
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express, { Request, Response, NextFunction } from 'express';
 import type { ConformanceCheck } from '../../../../types';
+import { protocolVersionFor } from '../../../../types';
 import {
   validateStatelessRequest,
-  withRequiredDraftResultFields,
+  withRequiredResultFields,
   type ScenarioContext
 } from '../../../../mock-server';
 import { isStatefulVersion } from '../../../../connection/select';
@@ -207,7 +208,9 @@ export function createServer(
   // as createMcpServer. Bearer-auth middleware and PRM route above are
   // version-independent.
   function handleStateless(req: Request, res: Response) {
-    const v = validateStatelessRequest(req, { tools: {} }, [ctx.specVersion]);
+    const v = validateStatelessRequest(req, { tools: {} }, [
+      protocolVersionFor(ctx.specVersion)
+    ]);
     if (v.kind !== 'route') {
       return res.status(v.status).json(v.body);
     }
@@ -216,7 +219,7 @@ export function createServer(
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: withRequiredDraftResultFields(method, {
+        result: withRequiredResultFields(method, {
           tools: [{ name: 'test-tool', inputSchema: { type: 'object' } }]
         })
       });
@@ -225,7 +228,7 @@ export function createServer(
       return res.json({
         jsonrpc: '2.0',
         id,
-        result: withRequiredDraftResultFields(method, {
+        result: withRequiredResultFields(method, {
           content: [{ type: 'text', text: 'test' }]
         })
       });

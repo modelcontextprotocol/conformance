@@ -4,19 +4,23 @@ import { createServerStateful } from './stateful';
 import {
   createServerStateless,
   validateStatelessRequest,
-  withRequiredDraftResultFields,
+  withRequiredResultFields,
   CACHEABLE_RESULT_METHODS
 } from './stateless';
-import { STATELESS_SPEC_VERSIONS } from '../connection/select';
-import { LATEST_SPEC_VERSION, DRAFT_PROTOCOL_VERSION } from '../types';
+import { STATELESS_PROTOCOL_VERSIONS } from '../connection/select';
 import { takeWireViolations } from '../validation/wire-schema';
 
+// The stateless mock is exercised at the first stateless release; the
+// stateful mock at the last stateful one.
+const STATELESS = '2026-07-28' as const;
+const STATEFUL = '2025-11-25' as const;
+
 const meta = {
-  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/protocolVersion': STATELESS,
   'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' },
   'io.modelcontextprotocol/clientCapabilities': {}
 };
-const headers = { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION };
+const headers = { 'mcp-protocol-version': STATELESS };
 
 async function post(url: string, body: object, headers: object = {}) {
   const r = await fetch(url, {
@@ -40,7 +44,7 @@ describe('validateStatelessRequest', () => {
         }
       },
       {},
-      [DRAFT_PROTOCOL_VERSION]
+      [STATELESS]
     );
     expect(v).toMatchObject({ kind: 'reject', status: 400 });
   });
@@ -57,7 +61,7 @@ describe('validateStatelessRequest', () => {
         }
       },
       {},
-      [DRAFT_PROTOCOL_VERSION]
+      [STATELESS]
     );
     expect(v).toMatchObject({ kind: 'handled', status: 200 });
   });
@@ -74,7 +78,7 @@ describe('validateStatelessRequest', () => {
         }
       },
       {},
-      [DRAFT_PROTOCOL_VERSION]
+      [STATELESS]
     );
     expect(v).toMatchObject({ kind: 'route', id: 1, method: 'tools/list' });
   });
@@ -91,7 +95,7 @@ describe('validateStatelessRequest', () => {
         }
       },
       {},
-      [DRAFT_PROTOCOL_VERSION]
+      [STATELESS]
     );
     expect(v).toMatchObject({
       kind: 'handled',
@@ -118,7 +122,7 @@ describe('validateStatelessRequest', () => {
         }
       },
       {},
-      [DRAFT_PROTOCOL_VERSION]
+      [STATELESS]
     );
     expect(v).toMatchObject({
       kind: 'reject',
@@ -126,23 +130,24 @@ describe('validateStatelessRequest', () => {
       body: {
         error: {
           code: -32022,
-          data: { supported: [DRAFT_PROTOCOL_VERSION], requested: '2099-01-01' }
+          data: { supported: [STATELESS], requested: '2099-01-01' }
         }
       }
     });
   });
 });
 
-describe('withRequiredDraftResultFields', () => {
+describe('withRequiredResultFields', () => {
   it('stamps resultType "complete" when the handler omitted it', () => {
-    expect(
-      withRequiredDraftResultFields('tools/call', { content: [] })
-    ).toEqual({ resultType: 'complete', content: [] });
+    expect(withRequiredResultFields('tools/call', { content: [] })).toEqual({
+      resultType: 'complete',
+      content: []
+    });
   });
 
   it('adds ttlMs and cacheScope for every cacheable method', () => {
     for (const method of CACHEABLE_RESULT_METHODS) {
-      expect(withRequiredDraftResultFields(method, {})).toEqual({
+      expect(withRequiredResultFields(method, {})).toEqual({
         resultType: 'complete',
         ttlMs: 0,
         cacheScope: 'private'
@@ -151,7 +156,7 @@ describe('withRequiredDraftResultFields', () => {
   });
 
   it('does not add caching hints to non-cacheable results', () => {
-    const result = withRequiredDraftResultFields('tools/call', {
+    const result = withRequiredResultFields('tools/call', {
       content: []
     });
     expect(result).not.toHaveProperty('ttlMs');
@@ -160,13 +165,13 @@ describe('withRequiredDraftResultFields', () => {
 
   it('preserves members the handler set itself', () => {
     expect(
-      withRequiredDraftResultFields('tools/call', {
+      withRequiredResultFields('tools/call', {
         resultType: 'input_required',
         inputRequests: {}
       })
     ).toMatchObject({ resultType: 'input_required' });
     expect(
-      withRequiredDraftResultFields('tools/list', {
+      withRequiredResultFields('tools/list', {
         ttlMs: 5000,
         cacheScope: 'public',
         tools: []
@@ -175,8 +180,8 @@ describe('withRequiredDraftResultFields', () => {
   });
 
   it('passes non-object results through untouched', () => {
-    expect(withRequiredDraftResultFields('tools/call', null)).toBeNull();
-    expect(withRequiredDraftResultFields('tools/call', [1])).toEqual([1]);
+    expect(withRequiredResultFields('tools/call', null)).toBeNull();
+    expect(withRequiredResultFields('tools/call', [1])).toEqual([1]);
   });
 });
 
@@ -210,7 +215,7 @@ describe('createServerFor', () => {
     }
   });
   it('returns a stateless factory bound to the requested version', async () => {
-    const srv = await createServerFor(DRAFT_PROTOCOL_VERSION)({});
+    const srv = await createServerFor(STATELESS)({});
     try {
       const { status, body } = await post(
         srv.url,
@@ -223,7 +228,7 @@ describe('createServerFor', () => {
         headers
       );
       expect(status).toBe(200);
-      expect(body.result.supportedVersions).toEqual([DRAFT_PROTOCOL_VERSION]);
+      expect(body.result.supportedVersions).toEqual([STATELESS]);
     } finally {
       await srv.close();
     }
@@ -253,7 +258,7 @@ describe('createServerStateless', () => {
       const { status, body } = await post(
         srv.url,
         { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(status).toBe(400);
       expect(body.error.code).toBe(-32602);
@@ -264,7 +269,7 @@ describe('createServerStateless', () => {
     }
   });
 
-  it('serves server/discover, defaulting to every known stateless version', async () => {
+  it('serves server/discover, defaulting to every known stateless wire version', async () => {
     const srv = await createServerStateless({});
     try {
       const { status, body } = await post(
@@ -275,10 +280,12 @@ describe('createServerStateless', () => {
           method: 'server/discover',
           params: { _meta: meta }
         },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(status).toBe(200);
-      expect(body.result.supportedVersions).toEqual(STATELESS_SPEC_VERSIONS);
+      expect(body.result.supportedVersions).toEqual(
+        STATELESS_PROTOCOL_VERSIONS
+      );
       // Spec PR #3002: server identity lives in the result `_meta`.
       expect(body.result._meta['io.modelcontextprotocol/serverInfo'].name).toBe(
         'conformance-mock-server'
@@ -291,7 +298,7 @@ describe('createServerStateless', () => {
   it('accepts the version it was created for and rejects others with -32022', async () => {
     const srv = await createServerStateless(
       { 'tools/list': () => ({ tools: [] }) },
-      DRAFT_PROTOCOL_VERSION
+      STATELESS
     );
     try {
       const accepted = await post(
@@ -323,9 +330,7 @@ describe('createServerStateless', () => {
       );
       expect(rejected.status).toBe(400);
       expect(rejected.body.error.code).toBe(-32022);
-      expect(rejected.body.error.data.supported).toEqual([
-        DRAFT_PROTOCOL_VERSION
-      ]);
+      expect(rejected.body.error.data.supported).toEqual([STATELESS]);
       expect(rejected.body.error.data.requested).toBe('2099-01-01');
     } finally {
       await srv.close();
@@ -347,7 +352,7 @@ describe('createServerStateless', () => {
           method: 'tools/list',
           params: { _meta: meta }
         },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(body.result.tools[0].name).toBe('x');
       expect(srv.recorded).toHaveLength(1);
@@ -363,7 +368,7 @@ describe('createServerStateless', () => {
       const { status } = await post(
         srv.url,
         { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(status).toBe(400);
       expect(srv.recorded.map((r) => r.method)).toEqual(['tools/list']);
@@ -385,7 +390,7 @@ describe('createServerStateless', () => {
           method: 'server/discover',
           params: { _meta: meta }
         },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(status).toBe(200);
       expect(srv.recorded).toHaveLength(0);
@@ -464,7 +469,7 @@ describe('createServerStateless', () => {
       const { status, body } = await post(
         srv.url,
         { jsonrpc: '2.0', id: 1, method: 'nope', params: { _meta: meta } },
-        { 'mcp-protocol-version': DRAFT_PROTOCOL_VERSION }
+        { 'mcp-protocol-version': STATELESS }
       );
       expect(status).toBe(404);
       expect(body.error.code).toBe(-32601);
@@ -502,7 +507,7 @@ describe('createServerStateful', () => {
   it('accepts initialize and routes to handlers, recording non-preamble', async () => {
     const srv = await createServerStateful(
       { 'tools/list': () => ({ tools: [] }) },
-      LATEST_SPEC_VERSION
+      STATEFUL
     );
     try {
       // SDK transport in sessionless mode handles initialize internally; we
@@ -527,7 +532,7 @@ describe('createServerStateful', () => {
   it('derives capabilities from handler keys; non-tools handler does not 500 initialize', async () => {
     const srv = await createServerStateful(
       { 'prompts/list': () => ({ prompts: [] }) },
-      LATEST_SPEC_VERSION
+      STATEFUL
     );
     try {
       const { status, contentType } = await postInit(srv.url);
@@ -541,7 +546,7 @@ describe('createServerStateful', () => {
   it('records requests for unregistered methods (parity with stateless)', async () => {
     const srv = await createServerStateful(
       { 'tools/list': () => ({ tools: [] }) },
-      LATEST_SPEC_VERSION
+      STATEFUL
     );
     try {
       const { Client } =
@@ -571,7 +576,7 @@ describe('createServerStateful', () => {
 
 describe('wire violation attribution', () => {
   it('does not blame the harness for the JSON-RPC-mandated id:null on error replies', async () => {
-    const srv = await createServerStateless({}, DRAFT_PROTOCOL_VERSION);
+    const srv = await createServerStateless({}, STATELESS);
     try {
       // An id-less, _meta-less message forces a reject reply carrying
       // `id: null` (JSON-RPC 2.0 when the request id cannot be determined).
@@ -584,8 +589,8 @@ describe('wire violation attribution', () => {
   });
 
   it('does not record an implementation violation for an unparsed body (wrong Content-Type)', async () => {
-    const stateless = await createServerStateless({}, DRAFT_PROTOCOL_VERSION);
-    const stateful = await createServerStateful({}, LATEST_SPEC_VERSION);
+    const stateless = await createServerStateless({}, STATELESS);
+    const stateful = await createServerStateful({}, STATEFUL);
     try {
       for (const url of [stateless.url, stateful.url]) {
         await fetch(url, {

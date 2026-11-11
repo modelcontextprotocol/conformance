@@ -22,8 +22,9 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // v1.x — the published npm line. Same fixtures as v2; differs only in the
   // build (npm, not pnpm) and the baseline filename. Clones the typescript-sdk
-  // repo, defaulting to the `v1.x` branch. Targets the latest dated spec, so
-  // draft-only scenarios and checks are excluded by default.
+  // repo, defaulting to the `v1.x` branch. Pinned to 2025-11-25 (the last
+  // stateful revision it implements), so 2026-07-28 scenarios and checks are
+  // excluded by default.
   'typescript-sdk-v1': {
     repo: 'typescript-sdk',
     defaultRef: 'v1.x',
@@ -88,8 +89,8 @@ export const KNOWN_SDKS: Record<string, SdkConfig> = {
   },
   // v1.x — the stable, published line of the python-sdk, analogous to
   // typescript-sdk-v1. Clones the python-sdk repo, defaulting to the `v1.x`
-  // branch, and targets the latest
-  // dated spec so draft-only scenarios/checks are excluded by default. uv
+  // branch, and is pinned to 2025-11-25 (the last stateful revision it
+  // implements) so 2026-07-28 scenarios/checks are excluded by default. uv
   // workspace: the `mcp` (client) and `mcp-everything-server` (server) packages
   // are both members, so one `uv sync --all-packages` covers both modes.
   // Fixtures live in the python-sdk repo (.github/actions/conformance/ and

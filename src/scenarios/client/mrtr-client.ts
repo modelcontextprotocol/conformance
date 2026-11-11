@@ -12,7 +12,7 @@ import type { ScenarioContext } from '../../mock-server';
  */
 
 import type { Scenario, ConformanceCheck } from '../../types';
-import { DRAFT_PROTOCOL_VERSION, ScenarioUrls } from '../../types';
+import { ScenarioUrls, protocolVersionFor } from '../../types';
 import express, { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 
@@ -73,7 +73,10 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-function createMRTRServer(checks: ConformanceCheck[]): express.Application {
+function createMRTRServer(
+  checks: ConformanceCheck[],
+  protocolVersion: string
+): express.Application {
   const app = express();
   app.use(express.json());
 
@@ -95,7 +98,7 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
             resultType: 'complete',
             ttlMs: 0,
             cacheScope: 'private',
-            supportedVersions: [DRAFT_PROTOCOL_VERSION],
+            supportedVersions: [protocolVersion],
             capabilities: { tools: {} },
             serverInfo: { name: 'mrtr-mock-server', version: '1.0.0' }
           }
@@ -465,16 +468,19 @@ function createMRTRServer(checks: ConformanceCheck[]): express.Application {
 
 export class MRTRClientScenario implements Scenario {
   name = 'sep-2322-client-request-state';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description =
     'Tests client MRTR behavior: requestState echo, no-state omission, and JSON-RPC id uniqueness (SEP-2322)';
   private app: express.Application | null = null;
   private httpServer: ReturnType<express.Application['listen']> | null = null;
   private checks: ConformanceCheck[] = [];
 
-  async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
+  async start(ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
-    this.app = createMRTRServer(this.checks);
+    this.app = createMRTRServer(
+      this.checks,
+      protocolVersionFor(ctx.specVersion)
+    );
     this.httpServer = this.app.listen(0);
     const addr = this.httpServer.address();
     const port = typeof addr === 'object' && addr ? addr.port : 0;

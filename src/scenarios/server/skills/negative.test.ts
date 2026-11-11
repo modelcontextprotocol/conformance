@@ -3,14 +3,17 @@ import { createHash } from 'crypto';
 import { createServer, type IncomingMessage, type Server } from 'http';
 import type { AddressInfo } from 'net';
 import { testContext } from '../../../connection/testing';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
-import { withRequiredDraftResultFields } from '../../../mock-server';
+import { withRequiredResultFields } from '../../../mock-server';
 import {
   takeWireViolations,
   formatWireViolation
 } from '../../../validation/wire-schema';
 import { SkillsEnumerationScenario } from './enumeration';
 import { SKILLS_EXTENSION_ID } from './helpers';
+
+// The fixture server below speaks the stateless lifecycle only; pin the
+// first stateless release.
+const STATELESS = '2026-07-28' as const;
 
 /**
  * Negative controls for the SEP-2640 capability checks.
@@ -51,7 +54,7 @@ function jsonRpcResult(id: unknown, method: string, result: object): string {
   return JSON.stringify({
     jsonrpc: '2.0',
     id,
-    result: withRequiredDraftResultFields(method, result)
+    result: withRequiredResultFields(method, result)
   });
 }
 
@@ -95,7 +98,7 @@ function startServerDeclaring(
       const extensions =
         declared === undefined ? {} : { [SKILLS_EXTENSION_ID]: declared };
       send({
-        supportedVersions: [DRAFT_PROTOCOL_VERSION],
+        supportedVersions: [STATELESS],
         capabilities: { resources: {}, extensions },
         serverInfo: { name: 'skills-negative', version: '1.0.0' }
       });
@@ -145,7 +148,7 @@ async function runAgainst(
   const { url, server } = await startServerDeclaring(declared, skills, files);
   try {
     const scenario = new SkillsEnumerationScenario();
-    const checks = await scenario.run(testContext(url, DRAFT_PROTOCOL_VERSION));
+    const checks = await scenario.run(testContext(url, STATELESS));
     return {
       checks: new Map(checks.map((c) => [c.id, c])),
       // Drained here so an intentionally malformed declaration does not trip

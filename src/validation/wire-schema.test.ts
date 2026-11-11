@@ -1,7 +1,4 @@
 import { createServer, type Server } from 'http';
-import rawSchema2025_06_18 from '../spec-types/2025-06-18.schema.json';
-import rawSchema2025_11_25 from '../spec-types/2025-11-25.schema.json';
-import { DRAFT_PROTOCOL_VERSION } from '../types';
 import { sendStatelessRequest } from '../connection/stateless';
 import {
   resetWireValidation,
@@ -13,8 +10,11 @@ import {
   withWireRecorder
 } from './wire-schema';
 
+// The stateless-lifecycle schema under test is the 2026-07-28 release.
+const STATELESS = '2026-07-28' as const;
+
 const META = {
-  'io.modelcontextprotocol/protocolVersion': DRAFT_PROTOCOL_VERSION,
+  'io.modelcontextprotocol/protocolVersion': STATELESS,
   'io.modelcontextprotocol/clientInfo': { name: 'c', version: '1' },
   'io.modelcontextprotocol/clientCapabilities': { sampling: {} }
 };
@@ -52,11 +52,8 @@ function listen(
 }
 
 describe('wireSchemaErrors', () => {
-  it('rejects the PR #376 hallucinated requiredCapabilities array under the draft schema', () => {
-    const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
-      PR_376_INVALID_ERROR
-    );
+  it('rejects the PR #376 hallucinated requiredCapabilities array under the 2026-07-28 schema', () => {
+    const errors = wireSchemaErrors(STATELESS, PR_376_INVALID_ERROR);
     expect(errors).toEqual([
       expect.stringContaining(
         'MissingRequiredClientCapabilityError/error/data/requiredCapabilities: must be object'
@@ -66,7 +63,7 @@ describe('wireSchemaErrors', () => {
 
   it('accepts the spec-valid ClientCapabilities object shape', () => {
     expect(
-      wireSchemaErrors(DRAFT_PROTOCOL_VERSION, {
+      wireSchemaErrors(STATELESS, {
         jsonrpc: '2.0',
         id: 1,
         error: {
@@ -86,7 +83,7 @@ describe('wireSchemaErrors', () => {
 
   it('validates typed requests by method const', () => {
     expect(
-      wireSchemaErrors(DRAFT_PROTOCOL_VERSION, {
+      wireSchemaErrors(STATELESS, {
         jsonrpc: '2.0',
         id: 2,
         method: 'tools/call',
@@ -100,9 +97,9 @@ describe('wireSchemaErrors', () => {
   });
 
   it('validates results against the typed result definition for the request method', () => {
-    // Draft results must carry resultType / ttlMs / cacheScope.
+    // 2026-07-28 results must carry resultType / ttlMs / cacheScope.
     const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
+      STATELESS,
       { jsonrpc: '2.0', id: 3, result: { tools: [] } },
       'tools/list'
     );
@@ -120,7 +117,7 @@ describe('wireSchemaErrors', () => {
   it('accepts extension result types through the generic result envelope', () => {
     expect(
       wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
+        STATELESS,
         {
           jsonrpc: '2.0',
           id: 3,
@@ -137,7 +134,7 @@ describe('wireSchemaErrors', () => {
 
   it('names an unrecognised resultType when the result then fails its typed definition', () => {
     const errors = wireSchemaErrors(
-      DRAFT_PROTOCOL_VERSION,
+      STATELESS,
       { jsonrpc: '2.0', id: 3, result: { resultType: 'complet' } },
       'tools/call'
     );
@@ -149,7 +146,7 @@ describe('wireSchemaErrors', () => {
   it('accepts an unrecognised resultType whose result satisfies the typed definition (open discriminator)', () => {
     expect(
       wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
+        STATELESS,
         {
           jsonrpc: '2.0',
           id: 3,
@@ -185,7 +182,7 @@ describe('wire-schema choke points and checks', () => {
     try {
       resetWireValidation();
       await sendStatelessRequest(url, 'tools/list');
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       const wire = checks.find((c) => c.id === 'wire-schema-valid');
       expect(wire?.status).toBe('FAILURE');
       expect(wire?.errorMessage).toContain('requiredCapabilities');
@@ -212,7 +209,7 @@ describe('wire-schema choke points and checks', () => {
       resetWireValidation();
       // tools/call without params.name violates CallToolRequest.
       await sendStatelessRequest(url, 'tools/call', { arguments: {} });
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       const harness = checks.find((c) => c.id === 'wire-schema-harness-error');
       expect(harness?.status).toBe('FAILURE');
       expect(harness?.errorMessage).toContain('HARNESS ERROR');
@@ -299,7 +296,7 @@ describe('wire-schema choke points and checks', () => {
     try {
       resetWireValidation();
       await sendStatelessRequest(url, 'tools/list');
-      const checks = wireSchemaChecks(DRAFT_PROTOCOL_VERSION);
+      const checks = wireSchemaChecks(STATELESS);
       expect(checks).toHaveLength(1);
       expect(checks[0].id).toBe('wire-schema-valid');
       expect(checks[0].status).toBe('SUCCESS');
@@ -311,7 +308,7 @@ describe('wire-schema choke points and checks', () => {
 
   it('emits no checks when no wire traffic was observed', () => {
     resetWireValidation();
-    expect(wireSchemaChecks(DRAFT_PROTOCOL_VERSION)).toEqual([]);
+    expect(wireSchemaChecks(STATELESS)).toEqual([]);
   });
 });
 
@@ -365,10 +362,10 @@ describe('specDispatchMaps', () => {
     'notifications/tasks/status': 'TaskStatusNotification'
   };
 
-  // The draft (SEP-2575) drops the initialize/session lifecycle, ping,
+  // 2026-07-28 (SEP-2575) drops the initialize/session lifecycle, ping,
   // logging/setLevel, roots-changed, tasks, and resource subscriptions, and
   // adds server/discover plus subscriptions/listen.
-  const METHOD_DEFS_DRAFT: Record<string, string> = (() => {
+  const METHOD_DEFS_2026: Record<string, string> = (() => {
     const defs: Record<string, string> = {
       ...METHOD_DEFS_2025_11_25,
       'server/discover': 'DiscoverRequest',
@@ -405,8 +402,8 @@ describe('specDispatchMaps', () => {
       { '-32042': 'URLElicitationRequiredError' }
     ],
     [
-      DRAFT_PROTOCOL_VERSION,
-      METHOD_DEFS_DRAFT,
+      STATELESS,
+      METHOD_DEFS_2026,
       {
         '-32020': 'HeaderMismatchError',
         '-32021': 'MissingRequiredClientCapabilityError',
@@ -442,13 +439,11 @@ describe('specDispatchMaps', () => {
       specDispatchMaps('2025-11-25').resultDefs.get('elicitation/create')
     ).toBe('ElicitResult');
     expect(
-      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get(
-        'elicitation/create'
-      )
+      specDispatchMaps(STATELESS).resultDefs.get('elicitation/create')
     ).toBe('ElicitResult');
-    expect(
-      specDispatchMaps(DRAFT_PROTOCOL_VERSION).resultDefs.get('server/discover')
-    ).toBe('DiscoverResult');
+    expect(specDispatchMaps(STATELESS).resultDefs.get('server/discover')).toBe(
+      'DiscoverResult'
+    );
   });
 });
 
@@ -485,7 +480,7 @@ describe('withWireRecorder', () => {
 
     const scopeResult = withWireRecorder(async () => {
       const server = createServer((_req, res) => {
-        validateWireMessage(DRAFT_PROTOCOL_VERSION, PR_376_INVALID_ERROR, {
+        validateWireMessage(STATELESS, PR_376_INVALID_ERROR, {
           origin: 'implementation',
           context: 'inbound message to in-scope server'
         });
@@ -515,7 +510,7 @@ describe('withWireRecorder', () => {
   });
 });
 
-describe('schema errata', () => {
+describe('NumberSchema bounds (generator bug fixed upstream, modelcontextprotocol#2710/#3139)', () => {
   const elicitWithScore = (score: Record<string, unknown>) => ({
     jsonrpc: '2.0',
     id: 1,
@@ -526,7 +521,19 @@ describe('schema errata', () => {
     }
   });
 
-  it('accepts fractional NumberSchema bounds/defaults at 2025-11-25 (spec generator bug, modelcontextprotocol#2710)', () => {
+  it.each(['2025-06-18', '2025-11-25'] as const)(
+    'accepts fractional NumberSchema bounds at %s from the vendored schema itself',
+    (version) => {
+      expect(
+        wireSchemaErrors(
+          version,
+          elicitWithScore({ type: 'number', minimum: 0.5, maximum: 99.5 })
+        )
+      ).toEqual([]);
+    }
+  );
+
+  it('accepts a fractional NumberSchema default at 2025-11-25', () => {
     expect(
       wireSchemaErrors(
         '2025-11-25',
@@ -538,44 +545,5 @@ describe('schema errata', () => {
         })
       )
     ).toEqual([]);
-    // The erratum makes 2025-11-25 agree with the fixed draft schema.
-    expect(
-      wireSchemaErrors(
-        DRAFT_PROTOCOL_VERSION,
-        elicitWithScore({
-          type: 'number',
-          minimum: 0.5,
-          maximum: 99.5,
-          default: 95.5
-        })
-      )
-    ).toEqual([]);
-  });
-
-  it('accepts fractional NumberSchema bounds at 2025-06-18 (same generator bug, no default there)', () => {
-    expect(
-      wireSchemaErrors(
-        '2025-06-18',
-        elicitWithScore({ type: 'number', minimum: 0.5, maximum: 99.5 })
-      )
-    ).toEqual([]);
-  });
-
-  it('tripwire: delete applySchemaErrata once the vendored schemas are fixed (modelcontextprotocol#3139)', () => {
-    const numberSchema = (raw: Record<string, unknown>, defsKey: string) =>
-      (
-        raw[defsKey] as Record<
-          string,
-          { properties: Record<string, { type: string }> }
-        >
-      ).NumberSchema.properties;
-    expect(
-      numberSchema(rawSchema2025_11_25, '$defs').default.type,
-      'the re-vendored 2025-11-25 schema no longer needs the erratum — delete its applySchemaErrata branch'
-    ).toBe('integer');
-    expect(
-      numberSchema(rawSchema2025_06_18, 'definitions').minimum.type,
-      'the re-vendored 2025-06-18 schema no longer needs the erratum — delete its applySchemaErrata branch'
-    ).toBe('integer');
   });
 });

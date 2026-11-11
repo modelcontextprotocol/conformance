@@ -19,15 +19,12 @@ import {
 } from '../../requirements';
 import {
   ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION,
+  DRAFT_SPEC_VERSION,
   ScenarioSpecTag,
   SpecVersion
 } from '../../types';
 
-const NON_SCORING_TAGS: ScenarioSpecTag[] = [
-  DRAFT_PROTOCOL_VERSION,
-  'extension'
-];
+const NON_SCORING_TAGS: ScenarioSpecTag[] = [DRAFT_SPEC_VERSION, 'extension'];
 
 /** Whether a scenario counts toward tier scoring (has at least one date-versioned spec). */
 function isTierScoring(specVersions?: ScenarioSpecTag[]): boolean {

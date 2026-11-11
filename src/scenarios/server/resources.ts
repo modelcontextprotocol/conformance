@@ -2,11 +2,7 @@
  * Resources test scenarios for MCP servers
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import { JsonRpcError, type RunContext } from '../../connection';
 import type {
   ListResourcesResult,
@@ -375,7 +371,7 @@ export class ResourcesSubscribeScenario implements ClientScenario {
   name = 'resources-subscribe';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test subscribing to resource updates.
 
@@ -447,7 +443,7 @@ Example request:
 
 export class ResourcesNotFoundErrorScenario implements ClientScenario {
   name = 'sep-2164-resource-not-found';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description = `Test error handling for non-existent resources (SEP-2164).
 
 **Server Implementation Requirements:**
@@ -489,9 +485,9 @@ This scenario does not require the server to register any specific resource — 
       }
     ];
 
-    // SEP-2164 is a draft-spec requirement; under --spec-version draft the
+    // SEP-2164 is a 2026-07-28 requirement; at that revision (and later) the
     // RunContext-provided connect() resolves to the stateless impl, so the
-    // request goes out with the draft protocol version and _meta/headers.
+    // request goes out with the run's protocol version and _meta/headers.
     let conn;
     try {
       conn = await ctx.connect();
@@ -605,7 +601,7 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
   name = 'resources-unsubscribe';
   readonly source = {
     introducedIn: '2025-06-18',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Test unsubscribing from resource.
 

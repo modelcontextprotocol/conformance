@@ -1,5 +1,5 @@
 import { TierScorecard, CheckStatus, ConformanceResult } from './types';
-import { DATED_SPEC_VERSIONS, DRAFT_PROTOCOL_VERSION } from '../types';
+import { DATED_SPEC_VERSIONS, DRAFT_SPEC_VERSION } from '../types';
 
 const COLORS = {
   RESET: '\x1b[0m',
@@ -26,7 +26,7 @@ function statusIcon(status: CheckStatus): string {
 
 const TIER_SPEC_VERSIONS = DATED_SPEC_VERSIONS;
 
-const INFO_SPEC_VERSIONS = [DRAFT_PROTOCOL_VERSION, 'extension'] as const;
+const INFO_SPEC_VERSIONS = [DRAFT_SPEC_VERSION, 'extension'] as const;
 
 type Cell = { passed: number; total: number };
 
@@ -74,6 +74,10 @@ function buildConformanceMatrix(
     bucket.total++;
     if (d.passed) bucket.passed++;
     for (const v of versions) {
+      // The informational columns list what does NOT count. A scored
+      // scenario that merely also applies at the draft is not informational,
+      // so it stays out of the draft column rather than appearing twice.
+      if (isTierScoring && INFO_SET.has(v)) continue;
       const cell = row.cells.get(v) ?? { passed: 0, total: 0 };
       cell.total++;
       if (d.passed) cell.passed++;

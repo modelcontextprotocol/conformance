@@ -11,11 +11,7 @@
  * See https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#session-management
  */
 
-import {
-  ClientScenario,
-  ConformanceCheck,
-  DRAFT_PROTOCOL_VERSION
-} from '../../types';
+import { ClientScenario, ConformanceCheck } from '../../types';
 import { readSseJsonRpcResponse, type RunContext } from '../../connection';
 
 const SPEC_REFERENCES = [
@@ -134,11 +130,11 @@ async function negotiatedProtocolVersion(
 
 export class SessionLifecycleScenario implements ClientScenario {
   name = 'server-session-lifecycle';
-  // Sessions were removed entirely from the draft spec (SEP-2575), so the
-  // lifecycle checks only apply to the dated stateful versions.
+  // Sessions were removed entirely in 2026-07-28 (SEP-2575), so the
+  // lifecycle checks only apply to the earlier stateful versions.
   readonly source = {
     introducedIn: '2025-03-26',
-    removedIn: DRAFT_PROTOCOL_VERSION
+    removedIn: '2026-07-28'
   } as const;
   description = `Verify the server honours the streamable-HTTP session
 termination contract.

@@ -1,6 +1,6 @@
 import type { ScenarioContext } from '../../../mock-server';
 import type { Scenario, ConformanceCheck } from '../../../types.js';
-import { ScenarioUrls, DRAFT_PROTOCOL_VERSION } from '../../../types.js';
+import { ScenarioUrls } from '../../../types.js';
 import { createAuthServer } from './helpers/createAuthServer.js';
 import { createServer } from './helpers/createServer.js';
 import { ServerLifecycle } from './helpers/serverLifecycle.js';
@@ -29,7 +29,7 @@ import { untestableCheck } from '../../untestable.js';
  */
 export class ResourceMismatchScenario implements Scenario {
   name = 'auth/resource-mismatch';
-  readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly source = { introducedIn: '2026-07-28' } as const;
   description =
     'Tests that client rejects when PRM resource does not match server URL';
   allowClientError = true;
