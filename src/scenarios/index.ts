@@ -11,6 +11,8 @@ import {
   SPEC_VERSION_TIMELINE
 } from '../types';
 import { InitializeScenario } from './client/initialize';
+import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
+import { SkillsVerificationScenario } from './client/skills/verification';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
@@ -58,6 +60,10 @@ import {
   ResourcesUnsubscribeScenario,
   ResourcesNotFoundErrorScenario
 } from './server/resources';
+
+import { SkillsDirectoryReadScenario } from './server/skills/directory';
+import { SkillsEnumerationScenario } from './server/skills/enumeration';
+import { SkillsManifestScenario } from './server/skills/manifest';
 
 import {
   PromptsListScenario,
@@ -112,6 +118,7 @@ import {
 import { listMetadataScenarios } from './client/auth/discovery-metadata';
 import { AuthorizationServerMetadataEndpointScenario } from './authorization-server/authorization-server-metadata';
 import { AuthorizationCodeGrantScenario } from './authorization-server/authorization-code-grant';
+import { DPoPAuthorizationServerScenario } from './authorization-server/dpop';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
 import {
@@ -151,7 +158,15 @@ const pendingClientScenariosList: ClientScenario[] = [
   new TasksDispatchScenario(),
   new TasksStatusNotificationsScenario(),
   new TasksRequiredTaskErrorScenario(),
-  new TasksMrtrCompositionScenario()
+  new TasksMrtrCompositionScenario(),
+
+  // SEP-2640 Skills extension. Pending because the everything-server does not
+  // implement io.modelcontextprotocol/skills; targeted runs point at a
+  // SEP-2640-conformant fixture via
+  // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
+  new SkillsDirectoryReadScenario(),
+  new SkillsEnumerationScenario(),
+  new SkillsManifestScenario()
 ];
 
 // All client scenarios
@@ -202,6 +217,12 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Resources error handling (SEP-2164)
   new ResourcesNotFoundErrorScenario(),
+
+  // Skills extension (SEP-2640). Fixture-dependent (needs a SEP-2640 server);
+  // each scenario SKIPs cleanly when the extension is not declared.
+  new SkillsDirectoryReadScenario(),
+  new SkillsEnumerationScenario(),
+  new SkillsManifestScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),
@@ -281,7 +302,8 @@ const allClientScenariosListForAuthorizationServer: ClientScenarioForAuthorizati
   [
     // Authorization server scenarios
     new AuthorizationServerMetadataEndpointScenario(),
-    new AuthorizationCodeGrantScenario()
+    new AuthorizationCodeGrantScenario(),
+    new DPoPAuthorizationServerScenario()
   ];
 
 // Client scenarios map for authorization server - built from list
@@ -318,7 +340,15 @@ const scenariosList: Scenario[] = [
   new JsonSchemaRefDerefScenario(),
 
   // JSON Schema 2020-12 client-side keyword preservation (SEP-1613, SEP-2106)
-  new JsonSchema2020_12PreservationScenario()
+  new JsonSchema2020_12PreservationScenario(),
+
+  // SEP-2640 skills, client side. The harness is the server and grades what
+  // the client requests, which is how the retrieval-policy MUSTs become
+  // observable at all.
+  new SkillsNoPrefetchScenario(),
+  new SkillsVerificationScenario('digest'),
+  new SkillsVerificationScenario('size'),
+  new SkillsVerificationScenario('frontmatter')
 ];
 
 // Core scenarios (tier 1 requirements)

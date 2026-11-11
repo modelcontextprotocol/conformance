@@ -18,8 +18,8 @@ async function post(
   serverUrl: string,
   body: object,
   headers: Record<string, string> = {}
-): Promise<void> {
-  await fetch(serverUrl, {
+): Promise<{ status: number; body: any }> {
+  const response = await fetch(serverUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -28,6 +28,19 @@ async function post(
     },
     body: JSON.stringify(body)
   });
+  return { status: response.status, body: await response.json() };
+}
+
+async function postJson(serverUrl: string, body: object): Promise<any> {
+  const res = await fetch(serverUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify(body)
+  });
+  return res.json();
 }
 
 function idsOf(checks: { id: string }[]): Set<string> {
@@ -150,6 +163,83 @@ describe('HttpCustomHeadersScenario (SEP-2243) check IDs', () => {
       await scenario.stop();
     }
   });
+
+  it('serves a fresh tools/list TTL before requiring schema-derived custom headers', async () => {
+    const scenario = new HttpCustomHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      const toolsList = await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list'
+      });
+      const schemaIsFresh = toolsList.body.result.ttlMs > 0;
+
+      const nonAscii = 'Hello, 世界';
+      const nonAsciiB64 = Buffer.from(nonAscii, 'utf-8').toString('base64');
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers',
+            arguments: {
+              region: 'us-west1',
+              priority: 42,
+              non_ascii_val: nonAscii,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        schemaIsFresh
+          ? {
+              'Mcp-Method': 'tools/call',
+              'Mcp-Name': 'test_custom_headers',
+              'Mcp-Param-Region': 'us-west1',
+              'Mcp-Param-Priority': '42',
+              'Mcp-Param-NonAscii': `=?base64?${nonAsciiB64}?=`
+            }
+          : {}
+      );
+      await post(
+        serverUrl,
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: {
+            name: 'test_custom_headers_null',
+            arguments: {
+              region: 'us-east1',
+              priority: 1,
+              verbose: null,
+              query: 'SELECT 1'
+            }
+          }
+        },
+        schemaIsFresh
+          ? {
+              'Mcp-Method': 'tools/call',
+              'Mcp-Name': 'test_custom_headers_null',
+              'Mcp-Param-Region': 'us-east1',
+              'Mcp-Param-Priority': '1'
+            }
+          : {}
+      );
+
+      expect(toolsList.body.result.ttlMs).toBeGreaterThan(0);
+      const checks = scenario.getChecks();
+      for (const id of CUSTOM_HEADERS_DECLARED_CHECK_IDS) {
+        const statuses = statusesFor(checks, id);
+        expect(statuses.length, id).toBeGreaterThan(0);
+        expect(statuses, id).not.toContain('FAILURE');
+      }
+    } finally {
+      await scenario.stop();
+    }
+  });
 });
 
 describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
@@ -193,6 +283,44 @@ describe('HttpInvalidToolHeadersScenario (SEP-2243) check IDs', () => {
       // The other constraints were not violated.
       expect(
         statusesFor(checks, 'sep-2243-x-mcp-header-charset')
+      ).not.toContain('FAILURE');
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it('FAILs primitive-only when the client calls the number-typed tool', async () => {
+    const scenario = new HttpInvalidToolHeadersScenario();
+    const { serverUrl } = await scenario.start(testScenarioContext());
+    try {
+      const listed = await postJson(serverUrl, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list'
+      });
+      // SEP-2243 permits x-mcp-header only on integer/string/boolean, so the
+      // number-typed tool must be served for the client to reject it.
+      const numberTool = listed.result.tools.find(
+        (t: { name: string }) => t.name === 'invalid_number_header'
+      );
+      expect(numberTool?.inputSchema.properties.score).toEqual({
+        type: 'number',
+        'x-mcp-header': 'Score'
+      });
+
+      await post(serverUrl, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'invalid_number_header', arguments: { score: 1.5 } }
+      });
+      const checks = scenario.getChecks();
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-primitive-only')
+      ).toContain('FAILURE');
+      // The other constraints were not violated.
+      expect(
+        statusesFor(checks, 'sep-2243-x-mcp-header-not-empty')
       ).not.toContain('FAILURE');
     } finally {
       await scenario.stop();
