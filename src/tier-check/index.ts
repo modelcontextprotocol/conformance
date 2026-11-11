@@ -276,8 +276,14 @@ export function createTierCheckCommand(): Command {
           `No --requirements given; assessing every shipped revision: ${revisions.join(', ')}`
         );
         requirements = revisions.map(loadRequirements);
-      } else if (!specVersion && !options.skipConformance) {
-        // No target named at all. Score against the latest shipped revision's
+      } else if (
+        !specVersion &&
+        !options.skipConformance &&
+        (options.conformanceServerUrl || options.clientCmd)
+      ) {
+        // A conformance leg will run (without a server URL or client command
+        // nothing is measured, so no revision may be reported as scored) and
+        // no target was named. Score against the latest shipped revision's
         // frozen requirement set rather than "the suite as it stands today":
         // that keeps legacy-only scenarios (removed before this revision) and
         // extensions out of the denominator, and makes a bare run mean the
