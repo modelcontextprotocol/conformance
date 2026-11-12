@@ -13,6 +13,7 @@ import { InitializeScenario } from './client/initialize';
 import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { SkillsVerificationScenario } from './client/skills/verification';
 import { ToolsCallScenario } from './client/tools_call';
+import { PaginationScenario } from './client/pagination';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
 import { RequestMetadataScenario } from './client/request-metadata';
@@ -319,6 +320,7 @@ export const clientScenariosForAuthorizationServer = new Map<
 const scenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
+  new PaginationScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
   new RequestMetadataScenario(),
@@ -354,6 +356,7 @@ const scenariosList: Scenario[] = [
 const coreScenariosList: Scenario[] = [
   new InitializeScenario(),
   new ToolsCallScenario(),
+  new PaginationScenario(),
   new ElicitationClientDefaultsScenario(),
   new SSERetryScenario(),
   ...authScenariosList
