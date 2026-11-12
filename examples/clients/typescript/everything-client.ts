@@ -196,6 +196,44 @@ async function runBasicClient(serverUrl: string): Promise<void> {
 
 registerScenarios(['initialize', 'tools_call', 'tools-call'], runBasicClient);
 
+// One complete enumeration: cursors are opaque strings, including ""; the
+// presence of nextCursor, not page size or cursor truthiness, controls it.
+// https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/pagination
+async function runPaginationClient(serverUrl: string): Promise<void> {
+  const protocolVersion = process.env.MCP_CONFORMANCE_PROTOCOL_VERSION;
+  const stateless = protocolVersion
+    ? (STATELESS_SPEC_VERSIONS as readonly string[]).includes(protocolVersion)
+    : false;
+  const client = new Client(
+    { name: 'pagination-client', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+  try {
+    if (!stateless) await client.connect(transport);
+    const tools: { name: string }[] = [];
+    let cursor: string | undefined;
+    do {
+      const params = cursor === undefined ? {} : { cursor };
+      const page = stateless
+        ? await statelessRequest(serverUrl, 'tools/list', params)
+        : await client.listTools(params);
+      tools.push(...page.tools);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    if (!tools.some((tool) => tool.name === 'add_numbers')) {
+      throw new Error('Paginated discovery did not return add_numbers');
+    }
+    const params = { name: 'add_numbers', arguments: { a: 2, b: 3 } };
+    if (stateless) await statelessRequest(serverUrl, 'tools/call', params);
+    else await client.callTool(params);
+  } finally {
+    await client.close();
+  }
+}
+
+registerScenario('client-pagination', runPaginationClient);
+
 // SEP-2106: json-schema-ref-no-deref advertises a tool whose inputSchema
 // contains a network-URI $ref. A conformant client lists tools normally and
 // simply never fetches that URI. The scenario's mock only serves tools/list,
