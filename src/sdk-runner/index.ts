@@ -36,6 +36,45 @@ function selfInvoke(args: string[], cwd: string): Promise<number> {
   });
 }
 
+// Connect errors that mean nothing is listening at the address.
+const NOBODY_LISTENING = new Set([
+  'ECONNREFUSED',
+  'EADDRNOTAVAIL',
+  'ENETUNREACH',
+  'EHOSTUNREACH'
+]);
+
+function nobodyListening(err: unknown): boolean {
+  const cause = (err as { cause?: { code?: string; errors?: unknown[] } })
+    ?.cause;
+  if (!cause) return false;
+  // A localhost url tries ::1 and 127.0.0.1, and fetch reports both errors.
+  if (Array.isArray(cause.errors) && cause.errors.length > 0) {
+    return cause.errors.every((e) =>
+      NOBODY_LISTENING.has((e as { code?: string })?.code ?? '')
+    );
+  }
+  return NOBODY_LISTENING.has(cause.code ?? '');
+}
+
+// Returns why the url looks held, or null when nothing is listening there.
+// Only a refused connect counts as free. A process that accepts the socket
+// and then stalls or hangs up still holds the port.
+async function heldBy(url: string, timeoutMs: number): Promise<string | null> {
+  try {
+    await fetch(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+    return 'something answered';
+  } catch (err) {
+    if (nobodyListening(err)) return null;
+    if ((err as Error)?.name === 'TimeoutError') {
+      return `something accepted the connection but did not answer within ${timeoutMs}ms`;
+    }
+    const cause = (err as { cause?: { code?: string; message?: string } })
+      ?.cause;
+    return `the probe failed with ${cause?.code ?? cause?.message ?? String(err)}`;
+  }
+}
+
 async function waitForReady(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   // Per-probe timeout: a server that accepts the socket but never responds must
@@ -66,6 +105,16 @@ export async function withManagedServer<T>(
   readyTimeoutMs: number,
   fn: () => Promise<T>
 ): Promise<T> {
+  // A leftover process on the same port would pass the readiness probe, and
+  // the run would grade it instead of the server we are about to start.
+  const held = await heldBy(url, 1000);
+  if (held) {
+    throw new Error(
+      `${url} is already in use before the server started (${held}). ` +
+        `Stop that process or change the port, or this run would grade it ` +
+        `instead of the SDK's server.`
+    );
+  }
   console.error(`[sdk] Starting server: ${command}`);
   const child: ChildProcess = spawn(command, {
     shell: true,
