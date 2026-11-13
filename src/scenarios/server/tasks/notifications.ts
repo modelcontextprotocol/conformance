@@ -24,6 +24,11 @@ import { skipCheck } from './mrtr-helpers';
 export class TasksStatusNotificationsScenario implements ClientScenario {
   name = 'tasks-status-notifications';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 status notifications (optional).
 
 **Server Implementation Requirements:**

@@ -20,6 +20,11 @@ import { TASKS_EXTENSION_ID } from './helpers';
 export class TasksCapabilityNegotiationScenario implements ClientScenario {
   name = 'tasks-capability-negotiation';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 capability negotiation for the tasks extension.
 
 **Server Implementation Requirements:**

@@ -16,6 +16,7 @@ export class LoggingSetLevelScenario implements ClientScenario {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = { capabilities: ['logging'] } as const;
   description = `Test setting logging level.
 
 **Server Implementation Requirements:**
@@ -190,6 +191,10 @@ export class PingScenario implements ClientScenario {
 export class CompletionCompleteScenario implements ClientScenario {
   name = 'completion-complete';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = {
+    capabilities: ['completions'],
+    fixture: true
+  } as const;
   description = `Test completion endpoint.
 
 **Server Implementation Requirements:**

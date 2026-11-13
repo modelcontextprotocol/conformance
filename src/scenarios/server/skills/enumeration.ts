@@ -132,6 +132,7 @@ function joinErrs(errs: string[], limit = 5): string {
 export class SkillsEnumerationScenario implements ClientScenario {
   name = 'sep-2640-skills-enumeration';
   readonly source = { extensionId: SKILLS_EXTENSION_ID } as const;
+  readonly requires = { extensions: [SKILLS_EXTENSION_ID] } as const;
   description = `SEP-2640 Skills extension: \`skills/list\` enumeration and \`skills/get\` retrieval.
 
 **Methods**: \`skills/list\`, \`skills/get\` (both mandatory for a server declaring \`io.modelcontextprotocol/skills\`)

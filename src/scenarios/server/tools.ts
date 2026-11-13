@@ -249,6 +249,7 @@ export function buildToolsListDeterministicOrderCheck(
 export class ToolsListScenario implements ClientScenario {
   name = 'tools-list';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'] } as const;
   description = `Test listing available tools.
 
 **Server Implementation Requirements:**
@@ -371,6 +372,7 @@ export class ToolsListScenario implements ClientScenario {
 export class ToolsCallSimpleTextScenario implements ClientScenario {
   name = 'tools-call-simple-text';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test calling a tool that returns simple text.
 
 **Server Implementation Requirements:**
@@ -456,6 +458,7 @@ Implement tool \`test_simple_text\` with no arguments that returns:
 export class ToolsCallImageScenario implements ClientScenario {
   name = 'tools-call-image';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test calling a tool that returns image content.
 
 **Server Implementation Requirements:**
@@ -544,6 +547,7 @@ Implement tool \`test_image_content\` with no arguments that returns:
 export class ToolsCallMultipleContentTypesScenario implements ClientScenario {
   name = 'tools-call-mixed-content';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test tool returning multiple content types.
 
 **Server Implementation Requirements:**
@@ -648,6 +652,10 @@ export class ToolsCallWithLoggingScenario implements ClientScenario {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = {
+    capabilities: ['tools', 'logging'],
+    fixture: true
+  } as const;
   description = `Test tool that sends log messages during execution.
 
 **Server Implementation Requirements:**
@@ -738,6 +746,7 @@ Implement tool \`test_tool_with_logging\` with no arguments.
 export class ToolsCallErrorScenario implements ClientScenario {
   name = 'tools-call-error';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test tool error reporting.
 
 **Server Implementation Requirements:**
@@ -823,6 +832,7 @@ Implement tool \`test_error_handling\` with no arguments.
 export class ToolsCallWithProgressScenario implements ClientScenario {
   name = 'tools-call-with-progress';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test tool that reports progress notifications.
 
 **Server Implementation Requirements:**
@@ -947,6 +957,7 @@ export class ToolsCallSamplingScenario implements ClientScenario {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test tool that requests LLM sampling from client.
 
 **Server Implementation Requirements:**
@@ -1079,6 +1090,7 @@ export class ToolsCallElicitationScenario implements ClientScenario {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test tool that requests user input (elicitation) from client.
 
 **Server Implementation Requirements:**
@@ -1211,6 +1223,7 @@ Implement tool \`test_elicitation\` with argument:
 export class ToolsCallAudioScenario implements ClientScenario {
   name = 'tools-call-audio';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test calling a tool that returns audio content.
 
 **Server Implementation Requirements:**
@@ -1306,6 +1319,7 @@ Implement tool \`test_audio_content\` with no arguments that returns:
 export class ToolsCallEmbeddedResourceScenario implements ClientScenario {
   name = 'tools-call-embedded-resource';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test calling a tool that returns embedded resource content.
 
 **Server Implementation Requirements:**

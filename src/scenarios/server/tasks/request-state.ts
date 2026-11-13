@@ -30,6 +30,11 @@ import { TASKS_EXTENSION_ID } from './helpers';
 export class TasksRequestStateRemovalScenario implements ClientScenario {
   name = 'tasks-request-state-removal';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Verify the absence of \`requestState\` on the tasks-v2 wire.
 
 **Server Implementation Requirements:**

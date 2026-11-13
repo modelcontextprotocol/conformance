@@ -52,6 +52,7 @@ function isNamespacedMetaKey(key: string): boolean {
 export class SkillsManifestScenario implements ClientScenario {
   name = 'sep-2640-skills-manifest';
   readonly source = { extensionId: SKILLS_EXTENSION_ID } as const;
+  readonly requires = { extensions: [SKILLS_EXTENSION_ID] } as const;
   description = `SEP-2640 Skills extension: the \`SKILL.md\` manifest resource.
 
 **Resource**: \`skill://<skill-path>/SKILL.md\` (read via \`resources/read\`)

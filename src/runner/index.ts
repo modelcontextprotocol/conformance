@@ -10,7 +10,8 @@ export {
 export {
   runServerConformanceTest,
   printServerResults,
-  printServerSummary
+  printServerSummary,
+  type ServerRunOptions
 } from './server';
 
 // Export utilities

@@ -747,6 +747,16 @@ export class ServerStatelessScenario implements ClientScenario {
               details: { response: data401 }
             };
           }
+          if (ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_missing_capability',
+                response: data401
+              }
+            };
+          }
           return {
             error: notTestable(
               "server does not list the diagnostic tool 'test_missing_capability' in tools/list and the probe call did not exercise it (required for the undeclared-capability rejection)"
@@ -785,6 +795,16 @@ export class ServerStatelessScenario implements ClientScenario {
           };
 
         if (!serverRequiresCapability) {
+          if (!capabilityToolListed && ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_missing_capability',
+                httpStatus: res401.status
+              }
+            };
+          }
           // Same root cause as the previous check: either the diagnostic
           // tool is missing (untestable) or the server failed to emit the
           // -32021 this status requirement attaches to.
@@ -915,9 +935,22 @@ export class ServerStatelessScenario implements ClientScenario {
         // requirement could not be exercised — fail with the cause rather
         // than reporting a vacuous SUCCESS or an invisible SKIPPED.
         if (frames.every((f) => f?.error !== undefined)) {
+          const toolListed = listedToolNames.includes(
+            'test_streaming_elicitation'
+          );
+          if (!toolListed && ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_streaming_elicitation',
+                response: frames[0]
+              }
+            };
+          }
           return {
             error: notTestable(
-              listedToolNames.includes('test_streaming_elicitation')
+              toolListed
                 ? `the 'test_streaming_elicitation' call was rejected (code ${frames[0]?.error?.code}), so the response stream could not be exercised`
                 : "server does not list the diagnostic tool 'test_streaming_elicitation' in tools/list, so the response stream could not be exercised"
             ),
@@ -962,9 +995,20 @@ export class ServerStatelessScenario implements ClientScenario {
         // to log and the requirement could not be exercised — fail with the
         // cause rather than reporting a vacuous SUCCESS or invisible SKIPPED.
         if (frames.every((f) => f?.error !== undefined)) {
+          const toolListed = listedToolNames.includes('test_logging_tool');
+          if (!toolListed && ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_logging_tool',
+                response: frames[0]
+              }
+            };
+          }
           return {
             error: notTestable(
-              listedToolNames.includes('test_logging_tool')
+              toolListed
                 ? `the 'test_logging_tool' call was rejected (code ${frames[0]?.error?.code}), so the no-log-without-logLevel requirement could not be exercised`
                 : "server does not list the diagnostic tool 'test_logging_tool' in tools/list, so the no-log-without-logLevel requirement could not be exercised"
             ),
@@ -1220,6 +1264,15 @@ export class ServerStatelessScenario implements ClientScenario {
           }
         );
         if (trigger?.data?.error?.code === -32601) {
+          if (ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_trigger_prompt_change'
+              }
+            };
+          }
           // SHOULD-level requirement, so the untestable report is a WARNING.
           return {
             warning: true,
@@ -1290,6 +1343,15 @@ export class ServerStatelessScenario implements ClientScenario {
           }
         );
         if (trigger?.data?.error?.code === -32601) {
+          if (ctx.production) {
+            return {
+              skipped: true,
+              details: {
+                skippedReason: 'requires-fixture',
+                fixture: 'test_trigger_tool_change'
+              }
+            };
+          }
           // SHOULD-level requirement, so the untestable report is a WARNING.
           return {
             warning: true,

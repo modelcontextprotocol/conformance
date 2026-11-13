@@ -124,6 +124,7 @@ async function discoverDirectory(
 export class SkillsDirectoryReadScenario implements ClientScenario {
   name = 'sep-2640-skills-directory';
   readonly source = { extensionId: SKILLS_EXTENSION_ID } as const;
+  readonly requires = { extensions: [SKILLS_EXTENSION_ID] } as const;
   description = `SEP-2640 Skills extension: resources/directory/read surface (added in spec commit 2e04c48d, 2026-06-09).
 
 **Endpoint**: \`resources/directory/read\` (gated by \`io.modelcontextprotocol/skills.directoryRead: true\`)

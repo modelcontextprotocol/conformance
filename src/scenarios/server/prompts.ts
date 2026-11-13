@@ -12,6 +12,7 @@ import type {
 export class PromptsListScenario implements ClientScenario {
   name = 'prompts-list';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['prompts'] } as const;
   description = `Test listing available prompts.
 
 **Server Implementation Requirements:**
@@ -93,6 +94,7 @@ export class PromptsListScenario implements ClientScenario {
 export class PromptsGetSimpleScenario implements ClientScenario {
   name = 'prompts-get-simple';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['prompts'], fixture: true } as const;
   description = `Test getting a simple prompt without arguments.
 
 **Server Implementation Requirements:**
@@ -178,6 +180,7 @@ Implement a prompt named \`test_simple_prompt\` with no arguments that returns:
 export class PromptsGetWithArgsScenario implements ClientScenario {
   name = 'prompts-get-with-args';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['prompts'], fixture: true } as const;
   description = `Test parameterized prompt.
 
 **Server Implementation Requirements:**
@@ -274,6 +277,7 @@ Returns (with args \`{arg1: "hello", arg2: "world"}\`):
 export class PromptsGetEmbeddedResourceScenario implements ClientScenario {
   name = 'prompts-get-embedded-resource';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['prompts'], fixture: true } as const;
   description = `Test prompt with embedded resource content.
 
 **Server Implementation Requirements:**
@@ -380,6 +384,7 @@ Returns:
 export class PromptsGetWithImageScenario implements ClientScenario {
   name = 'prompts-get-with-image';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['prompts'], fixture: true } as const;
   description = `Test prompt with image content.
 
 **Server Implementation Requirements:**

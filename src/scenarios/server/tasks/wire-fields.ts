@@ -20,6 +20,11 @@ import { untestableCheck } from '../../untestable';
 export class TasksWireFieldsScenario implements ClientScenario {
   name = 'tasks-wire-fields';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 wire-field renames + TTL semantics.
 
 **Server Implementation Requirements:**
