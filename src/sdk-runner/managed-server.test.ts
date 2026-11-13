@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import http from 'http';
+import net from 'net';
 import type { AddressInfo } from 'net';
 import { withManagedServer } from './index';
 
@@ -39,10 +40,38 @@ describe('withManagedServer', () => {
             ran = true;
           }
         )
-      ).rejects.toThrow(/already answering/);
+      ).rejects.toThrow(/already in use .*something answered/);
       expect(ran).toBe(false);
     } finally {
       await new Promise((r) => stranger.close(r));
+    }
+  });
+
+  it('refuses when a leftover accepts the connection but never answers', async () => {
+    const sockets = new Set<net.Socket>();
+    const staller = net.createServer((s) => sockets.add(s));
+    const port = await new Promise<number>((resolve) =>
+      staller.listen(0, '127.0.0.1', () =>
+        resolve((staller.address() as AddressInfo).port)
+      )
+    );
+    let ran = false;
+    try {
+      await expect(
+        withManagedServer(
+          serverCommand(port),
+          process.cwd(),
+          `http://127.0.0.1:${port}/mcp`,
+          5000,
+          async () => {
+            ran = true;
+          }
+        )
+      ).rejects.toThrow(/already in use .*did not answer within/);
+      expect(ran).toBe(false);
+    } finally {
+      for (const s of sockets) s.destroy();
+      await new Promise((r) => staller.close(r));
     }
   });
 
