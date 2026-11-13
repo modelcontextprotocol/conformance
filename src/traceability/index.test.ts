@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { computeTraceability, DeclaredSep } from './index';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import os from 'os';
+import path from 'path';
+import {
+  collectScenarioBaselines,
+  computeTraceability,
+  DeclaredSep,
+  scenarioKeyForResultDir
+} from './index';
 
 const decl = (
   sep: number,
@@ -120,5 +128,69 @@ describe('computeTraceability', () => {
   it('defaults source to null', () => {
     const m = computeTraceability({ declared: [], emitted: new Set() });
     expect(m.source).toBeNull();
+  });
+});
+
+describe('scenario baselines', () => {
+  const client = new Set(['initialize', 'auth/dpop', 'server-ish']);
+  const server = new Set(['tools-list', 'server-stateless']);
+
+  it('maps result dirs to scenario keys', () => {
+    const ts = '-2026-11-13T20-00-00-000Z';
+    expect(
+      scenarioKeyForResultDir(`server-tools-list${ts}`, client, server)
+    ).toBe('server:tools-list');
+    expect(
+      scenarioKeyForResultDir(`server-server-stateless${ts}`, client, server)
+    ).toBe('server:server-stateless');
+    expect(
+      scenarioKeyForResultDir(path.join('auth', `dpop${ts}`), client, server)
+    ).toBe('client:auth/dpop');
+    // A client scenario whose name starts with server- is not a server run.
+    expect(scenarioKeyForResultDir(`server-ish${ts}`, client, server)).toBe(
+      'client:server-ish'
+    );
+    expect(
+      scenarioKeyForResultDir(`authorization-server-x${ts}`, client, server)
+    ).toBeNull();
+  });
+
+  it('collects counted check IDs per scenario from a results dir', () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'trace-'));
+    try {
+      const write = (rel: string, checks: object[]) => {
+        mkdirSync(path.join(dir, rel), { recursive: true });
+        writeFileSync(
+          path.join(dir, rel, 'checks.json'),
+          JSON.stringify(checks)
+        );
+      };
+      write('server-tools-list-2026-11-13T20-00-00-000Z', [
+        { id: 'tools-list', status: 'SUCCESS' },
+        { id: 'incoming-request', status: 'INFO' },
+        { id: 'wire-schema-valid', status: 'SUCCESS' }
+      ]);
+      write(path.join('auth', 'dpop-2026-11-13T20-00-00-000Z'), [
+        { id: 'sep-1932-proof', status: 'FAILURE' },
+        { id: 'sep-1932-skip', status: 'SKIPPED' }
+      ]);
+      const got = collectScenarioBaselines(dir, client, server);
+      const m = computeTraceability({
+        declared: [],
+        emitted: new Set(),
+        scenarios: got
+      });
+      expect(m.scenarios).toEqual({
+        'client:auth/dpop': { expected: ['sep-1932-proof'] },
+        'server:tools-list': { expected: ['tools-list', 'wire-schema-valid'] }
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits scenarios when none were collected', () => {
+    const m = computeTraceability({ declared: [], emitted: new Set() });
+    expect(m.scenarios).toBeUndefined();
   });
 });

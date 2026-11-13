@@ -5,10 +5,10 @@
  * exists* for each declared SEP requirement. It says NOTHING about whether any
  * particular SDK passes that scenario — per-SDK pass/fail lives in `tier-check`.
  *
- * Joining the two is a future goal, NOT possible today: tier-check reports at
- * scenario granularity and does not currently expose per-check IDs, while this
- * manifest carries check IDs but not scenario names. Wiring plan.mcp.io's two
- * feeds together needs one side to add the missing column first.
+ * Joining the two is a future goal. tier-check reports at scenario
+ * granularity and does not expose per-check IDs. This manifest's `scenarios`
+ * map now carries scenario names next to check IDs, which is one half of that
+ * join.
  */
 
 export const TRACEABILITY_SCHEMA_VERSION = 1;
@@ -64,6 +64,15 @@ export interface SepTraceability {
   };
 }
 
+/**
+ * The check IDs one scenario emitted in the reference run, with status
+ * SUCCESS, FAILURE or WARNING. A later run compares against this to show
+ * checks that never fired (see src/coverage.ts).
+ */
+export interface ScenarioBaseline {
+  expected: string[];
+}
+
 export interface TraceabilityManifest {
   schemaVersion: number;
   /** Pointer to where this file's semantics are documented (not prose-in-data). */
@@ -76,4 +85,9 @@ export interface TraceabilityManifest {
   source: string | null;
   /** Keyed by SEP number (as a string). */
   seps: Record<string, SepTraceability>;
+  /**
+   * Keyed by `client:<scenario>` or `server:<scenario>`, where the prefix is
+   * the CLI mode that ran it. Absent in manifests built before #451.
+   */
+  scenarios?: Record<string, ScenarioBaseline>;
 }

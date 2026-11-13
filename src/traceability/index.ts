@@ -2,11 +2,13 @@ import { Command } from 'commander';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import path from 'path';
 import { parse as parseYaml } from 'yaml';
+import { listClientScenarios, listScenarios } from '../scenarios';
 import {
   TRACEABILITY_SCHEMA_VERSION,
   TraceabilityManifest,
   ExcludedRequirement,
   RequirementTraceability,
+  ScenarioBaseline,
   SepTraceability,
   UnkeyedRequirement
 } from './types';
@@ -54,6 +56,7 @@ export function computeTraceability(args: {
   declared: DeclaredSep[];
   emitted: Set<string>;
   source?: string | null;
+  scenarios?: Record<string, ScenarioBaseline>;
 }): TraceabilityManifest {
   const { declared, emitted } = args;
 
@@ -132,8 +135,49 @@ export function computeTraceability(args: {
     schemaVersion: TRACEABILITY_SCHEMA_VERSION,
     docs: DOCS,
     source: args.source ?? null,
-    seps
+    seps,
+    ...(args.scenarios && Object.keys(args.scenarios).length
+      ? { scenarios: sortedScenarios(args.scenarios) }
+      : {})
   };
+}
+
+function sortedScenarios(
+  scenarios: Record<string, ScenarioBaseline>
+): Record<string, ScenarioBaseline> {
+  const out: Record<string, ScenarioBaseline> = {};
+  for (const key of Object.keys(scenarios).sort()) {
+    out[key] = { expected: [...new Set(scenarios[key].expected)].sort() };
+  }
+  return out;
+}
+
+const RESULT_DIR_TIMESTAMP = /-\d{4}-\d{2}-\d{2}T[\d-]+Z$/;
+const COUNTED_STATUS = new Set(['SUCCESS', 'FAILURE', 'WARNING']);
+
+/**
+ * Pure: map a results-relative directory (from createResultDir) to its
+ * scenario key. Server runs are prefixed `server-`. Client runs carry the bare
+ * scenario name, which may contain a slash. The registered scenario lists
+ * settle the ambiguous case where a client scenario name starts with
+ * `server-`. Returns null for directories that are neither, such as
+ * authorization-server runs.
+ */
+export function scenarioKeyForResultDir(
+  relDir: string,
+  clientScenarios: ReadonlySet<string>,
+  serverScenarios: ReadonlySet<string>
+): string | null {
+  const name = relDir
+    .split(path.sep)
+    .join('/')
+    .replace(RESULT_DIR_TIMESTAMP, '');
+  if (name.startsWith('server-')) {
+    const rest = name.slice('server-'.length);
+    if (serverScenarios.has(rest)) return `server:${rest}`;
+  }
+  if (clientScenarios.has(name)) return `client:${name}`;
+  return null;
 }
 
 /** Serialize deterministically (sorted SEP keys, trailing newline). */
@@ -166,6 +210,46 @@ export function collectEmittedIds(resultsDir: string): Set<string> {
     }
   }
   return ids;
+}
+
+/**
+ * Collect each scenario's counted check IDs from a results dir. Every check
+ * ID counts here, not only sep-NNNN-* ones, since a thin run can drop any of
+ * them.
+ */
+export function collectScenarioBaselines(
+  resultsDir: string,
+  clientScenarios: ReadonlySet<string>,
+  serverScenarios: ReadonlySet<string>
+): Record<string, ScenarioBaseline> {
+  const out: Record<string, ScenarioBaseline> = {};
+  let entries: string[];
+  try {
+    entries = readdirSync(resultsDir, { recursive: true, encoding: 'utf-8' });
+  } catch {
+    return out;
+  }
+  for (const rel of entries) {
+    if (path.basename(rel) !== 'checks.json') continue;
+    const key = scenarioKeyForResultDir(
+      path.dirname(rel),
+      clientScenarios,
+      serverScenarios
+    );
+    if (!key) continue;
+    try {
+      const arr = JSON.parse(readFileSync(path.join(resultsDir, rel), 'utf8'));
+      if (!Array.isArray(arr)) continue;
+      const ids = (out[key] ??= { expected: [] }).expected;
+      for (const c of arr) {
+        if (c && typeof c.id === 'string' && COUNTED_STATUS.has(c.status))
+          ids.push(c.id);
+      }
+    } catch {
+      // skip unreadable/partial result files
+    }
+  }
+  return out;
 }
 
 export function gatherDeclared(sepsDir = SEPS_DIR): DeclaredSep[] {
@@ -276,10 +360,17 @@ export function createTraceabilityCommand(): Command {
         process.exit(1);
       }
 
+      const scenarios = collectScenarioBaselines(
+        options.results,
+        new Set(listScenarios()),
+        new Set(listClientScenarios())
+      );
+
       const manifest = computeTraceability({
         declared,
         emitted,
-        source: options.source ?? null
+        source: options.source ?? null,
+        scenarios
       });
       const serialized = serializeManifest(manifest);
       const untestedTotal = Object.values(manifest.seps).reduce(

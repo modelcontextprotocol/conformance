@@ -1,4 +1,10 @@
 import { spawn } from 'child_process';
+import {
+  Coverage,
+  formatCoverage,
+  scenarioCoverage,
+  writeCoverage
+} from '../coverage';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
@@ -159,6 +165,7 @@ export async function runConformanceTest(
   resultDir?: string;
   allowClientError?: boolean;
   skipped?: boolean;
+  coverage?: Coverage | null;
 }> {
   let resultDir: string | undefined;
 
@@ -222,11 +229,21 @@ export async function runConformanceTest(
     const checks = scenario.getChecks();
     checks.push(...wireSchemaChecks(resolvedVersion));
 
+    const coverage = scenarioCoverage(
+      'client',
+      scenarioName,
+      checks,
+      resolvedVersion === resolveScenarioSpecVersion(scenario.source, undefined)
+    );
+
     if (resultDir) {
       await fs.writeFile(
         path.join(resultDir, 'checks.json'),
         JSON.stringify(checks, null, 2)
       );
+      if (coverage) {
+        await writeCoverage(resultDir, 'client', scenarioName, coverage);
+      }
 
       await fs.writeFile(
         path.join(resultDir, 'stdout.txt'),
@@ -245,7 +262,8 @@ export async function runConformanceTest(
       checks,
       clientOutput,
       resultDir,
-      allowClientError: scenario.allowClientError
+      allowClientError: scenario.allowClientError,
+      coverage
     };
   } finally {
     await scenario.stop();
@@ -256,7 +274,8 @@ export function printClientResults(
   checks: ConformanceCheck[],
   verbose: boolean = false,
   clientOutput?: ClientExecutionResult,
-  allowClientError: boolean = false
+  allowClientError: boolean = false,
+  coverage?: Coverage | null
 ): {
   passed: number;
   failed: number;
@@ -295,6 +314,7 @@ export function printClientResults(
   console.error(
     `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
   );
+  if (coverage) console.error(formatCoverage(coverage));
 
   if (clientTimedOut) {
     console.error(`\n⚠️  CLIENT TIMED OUT - Test incomplete`);

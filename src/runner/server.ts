@@ -1,4 +1,11 @@
 import { promises as fs } from 'fs';
+import {
+  Coverage,
+  coverageSuffix,
+  formatCoverage,
+  scenarioCoverage,
+  writeCoverage
+} from '../coverage';
 import path from 'path';
 import {
   ConformanceCheck,
@@ -85,6 +92,7 @@ export async function runServerConformanceTest(
   resultDir?: string;
   scenarioDescription: string;
   skipped?: boolean;
+  coverage?: Coverage | null;
 }> {
   let resultDir: string | undefined;
 
@@ -128,12 +136,12 @@ export async function runServerConformanceTest(
   // connection rather than the stateful latest-spec default. Extension
   // scenarios are off-timeline; today every extension in this repo lives
   // on draft, so they fall under the same inference.
-  const resolvedSpecVersion =
-    specVersion ??
-    ('extensionId' in scenario.source ||
+  const defaultSpecVersion =
+    'extensionId' in scenario.source ||
     scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
       ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION);
+      : LATEST_SPEC_VERSION;
+  const resolvedSpecVersion = specVersion ?? defaultSpecVersion;
 
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
@@ -152,11 +160,21 @@ export async function runServerConformanceTest(
   );
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
 
+  const coverage = scenarioCoverage(
+    'server',
+    scenarioName,
+    checks,
+    resolvedSpecVersion === defaultSpecVersion
+  );
+
   if (resultDir) {
     await fs.writeFile(
       path.join(resultDir, 'checks.json'),
       JSON.stringify(checks, null, 2)
     );
+    if (coverage) {
+      await writeCoverage(resultDir, 'server', scenarioName, coverage);
+    }
 
     console.log(`Results saved to ${resultDir}`);
   }
@@ -164,14 +182,16 @@ export async function runServerConformanceTest(
   return {
     checks,
     resultDir,
-    scenarioDescription: scenario.description
+    scenarioDescription: scenario.description,
+    coverage
   };
 }
 
 export function printServerResults(
   checks: ConformanceCheck[],
   scenarioDescription: string,
-  verbose: boolean = false
+  verbose: boolean = false,
+  coverage?: Coverage | null
 ): {
   passed: number;
   failed: number;
@@ -195,6 +215,7 @@ export function printServerResults(
   console.log(
     `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
   );
+  if (coverage) console.log(formatCoverage(coverage));
 
   if (failed > 0) {
     console.log('\n=== Failed Checks ===');
@@ -213,7 +234,11 @@ export function printServerResults(
 }
 
 export function printServerSummary(
-  allResults: { scenario: string; checks: ConformanceCheck[] }[]
+  allResults: {
+    scenario: string;
+    checks: ConformanceCheck[];
+    coverage?: Coverage | null;
+  }[]
 ): { totalPassed: number; totalFailed: number } {
   console.log('\n\n=== SUMMARY ===');
   let totalPassed = 0;
@@ -227,7 +252,8 @@ export function printServerSummary(
 
     const status = failed === 0 ? '✓' : '✗';
     console.log(
-      `${status} ${result.scenario}: ${passed} passed, ${failed} failed`
+      `${status} ${result.scenario}: ${passed} passed, ${failed} failed` +
+        coverageSuffix(result.coverage)
     );
   }
 
