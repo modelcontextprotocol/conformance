@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { Coverage, coverageSuffix } from './coverage';
 import { ZodError } from 'zod';
 import { promises as fs } from 'fs';
 import {
@@ -337,6 +338,7 @@ program
                 scenario: scenarioName,
                 checks: result.checks,
                 skipped: result.skipped,
+                coverage: result.coverage,
                 error: null
               };
             } catch (error) {
@@ -354,6 +356,7 @@ program
                   }
                 ],
                 skipped: undefined,
+                coverage: undefined,
                 error
               };
             }
@@ -393,7 +396,8 @@ program
           const status = failed === 0 && warnings === 0 ? '✓' : '✗';
           const warningStr = warnings > 0 ? `, ${warnings} warnings` : '';
           console.log(
-            `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}`
+            `${status} ${result.scenario}: ${passed} passed, ${failed} failed${warningStr}` +
+              coverageSuffix(result.coverage)
           );
 
           if (verbose && failed > 0) {
@@ -492,7 +496,8 @@ program
         result.checks,
         verbose,
         result.clientOutput,
-        result.allowClientError
+        result.allowClientError,
+        result.coverage
       );
 
       if (options.expectedFailures) {
@@ -603,7 +608,8 @@ program
         const { failed } = printServerResults(
           result.checks,
           result.scenarioDescription,
-          verbose
+          verbose,
+          result.coverage
         );
 
         if (options.expectedFailures) {
@@ -662,8 +668,11 @@ program
           `Running ${selection} (${scenarios.length} scenarios) against ${validated.url}\n`
         );
 
-        const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
-          [];
+        const allResults: {
+          scenario: string;
+          checks: ConformanceCheck[];
+          coverage?: Coverage | null;
+        }[] = [];
 
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
@@ -682,7 +691,11 @@ program
                 timeout
               )
             );
-            allResults.push({ scenario: scenarioName, checks: result.checks });
+            allResults.push({
+              scenario: scenarioName,
+              checks: result.checks,
+              coverage: result.coverage
+            });
           } catch (error) {
             console.error(`Failed to run scenario ${scenarioName}:`, error);
             allResults.push({
