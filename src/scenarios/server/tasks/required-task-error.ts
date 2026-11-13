@@ -42,6 +42,11 @@ const REQUIRED_TASK_TOOL = 'failing_job';
 export class TasksRequiredTaskErrorScenario implements ClientScenario {
   name = 'tasks-required-task-error';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Verify the -32021 error path for required-task tools when the
 client has not negotiated the io.modelcontextprotocol/tasks extension.
 

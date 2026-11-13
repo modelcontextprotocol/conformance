@@ -19,6 +19,7 @@ import type {
 export class ResourcesListScenario implements ClientScenario {
   name = 'resources-list';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['resources'] } as const;
   description = `Test listing available resources.
 
 **Server Implementation Requirements:**
@@ -100,6 +101,7 @@ export class ResourcesListScenario implements ClientScenario {
 export class ResourcesReadTextScenario implements ClientScenario {
   name = 'resources-read-text';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['resources'], fixture: true } as const;
   description = `Test reading text resource.
 
 **Server Implementation Requirements:**
@@ -187,6 +189,7 @@ Implement resource \`test://static-text\` that returns:
 export class ResourcesReadBinaryScenario implements ClientScenario {
   name = 'resources-read-binary';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['resources'], fixture: true } as const;
   description = `Test reading binary resource.
 
 **Server Implementation Requirements:**
@@ -272,6 +275,7 @@ Implement resource \`test://static-binary\` that returns:
 export class ResourcesTemplateReadScenario implements ClientScenario {
   name = 'resources-templates-read';
   readonly source = { introducedIn: '2025-06-18' } as const;
+  readonly requires = { capabilities: ['resources'], fixture: true } as const;
   description = `Test reading resource from template.
 
 **Server Implementation Requirements:**
@@ -377,6 +381,10 @@ export class ResourcesSubscribeScenario implements ClientScenario {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = {
+    capabilities: ['resources.subscribe'],
+    fixture: true
+  } as const;
   description = `Test subscribing to resource updates.
 
 **Server Implementation Requirements:**
@@ -448,6 +456,7 @@ Example request:
 export class ResourcesNotFoundErrorScenario implements ClientScenario {
   name = 'sep-2164-resource-not-found';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly requires = { capabilities: ['resources'] } as const;
   description = `Test error handling for non-existent resources (SEP-2164).
 
 **Server Implementation Requirements:**
@@ -606,6 +615,10 @@ export class ResourcesUnsubscribeScenario implements ClientScenario {
   readonly source = {
     introducedIn: '2025-06-18',
     removedIn: DRAFT_PROTOCOL_VERSION
+  } as const;
+  readonly requires = {
+    capabilities: ['resources.subscribe'],
+    fixture: true
   } as const;
   description = `Test unsubscribing from resource.
 

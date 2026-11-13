@@ -24,6 +24,11 @@ import { isIso8601 } from './mrtr-helpers';
 export class TasksLifecycleScenario implements ClientScenario {
   name = 'tasks-lifecycle';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 Tasks extension lifecycle on the server.
 
 **Server Implementation Requirements (SEP-2663):**

@@ -20,6 +20,11 @@ import { TASKS_EXTENSION_ID, waitForStatus, waitForTerminal } from './helpers';
 export class TasksMRTRInputScenario implements ClientScenario {
   name = 'tasks-mrtr-input';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2322 MRTR input flow on the tasks surface.
 
 **Server Implementation Requirements:**

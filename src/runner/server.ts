@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import {
   ConformanceCheck,
+  ScenarioSource,
   SpecVersion,
   LATEST_SPEC_VERSION,
   DRAFT_PROTOCOL_VERSION
@@ -9,10 +10,28 @@ import {
 import { getClientScenario, isScenarioApplicableAt } from '../scenarios';
 import { connectFor, type RunContext } from '../connection';
 import {
+  evaluateScenarioRequirements,
+  isPlainObject
+} from '../scenarios/server/requirements-check';
+import {
   resetWireValidation,
   wireSchemaChecks
 } from '../validation/wire-schema';
 import { createResultDir, formatPrettyChecks } from './utils';
+
+export interface ServerRunOptions {
+  /**
+   * When true, evaluate each scenario's declarative `requires` metadata
+   * against the server's advertised capabilities and emit `SKIPPED` checks
+   * for undeclared optional capabilities/extensions or fixture contracts.
+   */
+  production?: boolean;
+  /**
+   * Optional per-spec-version capability cache shared across scenarios in a
+   * suite run so capability discovery happens at most once per wire version.
+   */
+  capabilitiesCache?: Map<SpecVersion, Record<string, unknown>>;
+}
 
 /**
  * Format markdown-style text for terminal output using ANSI codes
@@ -73,13 +92,142 @@ async function runScenarioBounded(
   ];
 }
 
+async function discoverServerCapabilities(
+  serverUrl: string,
+  specVersion: SpecVersion,
+  timeout: number,
+  cache?: Map<SpecVersion, Record<string, unknown>>
+): Promise<Record<string, unknown> | null> {
+  if (cache?.has(specVersion)) {
+    return cache.get(specVersion)!;
+  }
+
+  let timeoutHandle: NodeJS.Timeout | undefined;
+  const probe = (async () => {
+    const conn = await connectFor(specVersion)(serverUrl);
+    try {
+      const discovered = await conn.discover();
+      return isPlainObject(discovered.capabilities)
+        ? discovered.capabilities
+        : {};
+    } finally {
+      await conn.close().catch(() => {});
+    }
+  })();
+  probe.catch(() => {});
+
+  try {
+    const result = await Promise.race([
+      probe,
+      new Promise<null>((resolve) => {
+        timeoutHandle = setTimeout(() => resolve(null), timeout);
+      })
+    ]);
+    if (result !== null) {
+      cache?.set(specVersion, result);
+    }
+    return result;
+  } catch {
+    // Discovery failed (unreachable server or broken handshake). Return null
+    // so the scenario executes and surfaces the real protocol/network failure
+    // rather than falsely skipping.
+    return null;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function writeChecksIfNeeded(
+  resultDir: string | undefined,
+  checks: ConformanceCheck[]
+): Promise<void> {
+  if (!resultDir) return;
+  await fs.writeFile(
+    path.join(resultDir, 'checks.json'),
+    JSON.stringify(checks, null, 2)
+  );
+  console.log(`Results saved to ${resultDir}`);
+}
+
+function logSpecVersionSkipIfNeeded(
+  scenarioName: string,
+  source: ScenarioSource,
+  specVersion: SpecVersion | undefined,
+  force: boolean
+): boolean {
+  if (
+    specVersion === undefined ||
+    force ||
+    isScenarioApplicableAt(source, specVersion)
+  ) {
+    return false;
+  }
+
+  const introduced =
+    'introducedIn' in source
+      ? `introduced in ${source.introducedIn}` +
+        (source.removedIn !== undefined
+          ? `, removed in ${source.removedIn}`
+          : '')
+      : 'extension scenario, not on the spec timeline';
+  console.log(
+    `SKIPPED: scenario '${scenarioName}' is not applicable at spec version ` +
+      `${specVersion} (${introduced}). Use --force to run it anyway.`
+  );
+  return true;
+}
+
+function resolveDefaultSpecVersion(
+  source: ScenarioSource,
+  specVersion?: SpecVersion
+): SpecVersion {
+  if (specVersion) return specVersion;
+  return 'extensionId' in source ||
+    source.introducedIn === DRAFT_PROTOCOL_VERSION
+    ? DRAFT_PROTOCOL_VERSION
+    : LATEST_SPEC_VERSION;
+}
+
+async function evaluateProductionSkip(
+  serverUrl: string,
+  scenarioName: string,
+  requires: NonNullable<ReturnType<typeof getClientScenario>>['requires'],
+  resolvedSpecVersion: SpecVersion,
+  timeout: number,
+  options?: ServerRunOptions
+): Promise<ConformanceCheck[] | null> {
+  if (!options?.production || !requires) return null;
+  resetWireValidation();
+  const capabilities = await discoverServerCapabilities(
+    serverUrl,
+    resolvedSpecVersion,
+    timeout,
+    options.capabilitiesCache
+  );
+  if (capabilities === null) return null;
+
+  const skippedCheck = evaluateScenarioRequirements(
+    scenarioName,
+    requires,
+    capabilities
+  );
+  if (!skippedCheck) return null;
+
+  const discoverySchemaFailures = wireSchemaChecks(resolvedSpecVersion).filter(
+    (c) => c.status === 'FAILURE'
+  );
+  console.log(`SKIPPED: ${skippedCheck.description}`);
+  return [skippedCheck, ...discoverySchemaFailures];
+}
+
 export async function runServerConformanceTest(
   serverUrl: string,
   scenarioName: string,
   outputDir?: string,
   specVersion?: SpecVersion,
   force = false,
-  timeout: number = 30000
+  timeout: number = 30000,
+  options?: ServerRunOptions
 ): Promise<{
   checks: ConformanceCheck[];
   resultDir?: string;
@@ -87,34 +235,20 @@ export async function runServerConformanceTest(
   skipped?: boolean;
 }> {
   let resultDir: string | undefined;
-
   if (outputDir) {
     resultDir = createResultDir(outputDir, scenarioName, 'server');
     await fs.mkdir(resultDir, { recursive: true });
   }
 
-  // Scenario is guaranteed to exist by CLI validation
   const scenario = getClientScenario(scenarioName)!;
-
-  // An explicitly-requested spec version outside the scenario's applicability
-  // window is a contradiction: running anyway would test something other than
-  // what the flag claims. Skip (exit 0) unless --force.
   if (
-    specVersion !== undefined &&
-    !force &&
-    !isScenarioApplicableAt(scenario.source, specVersion)
+    logSpecVersionSkipIfNeeded(
+      scenarioName,
+      scenario.source,
+      specVersion,
+      force
+    )
   ) {
-    const introduced =
-      'introducedIn' in scenario.source
-        ? `introduced in ${scenario.source.introducedIn}` +
-          (scenario.source.removedIn !== undefined
-            ? `, removed in ${scenario.source.removedIn}`
-            : '')
-        : 'extension scenario, not on the spec timeline';
-    console.log(
-      `SKIPPED: scenario '${scenarioName}' is not applicable at spec version ` +
-        `${specVersion} (${introduced}). Use --force to run it anyway.`
-    );
     return {
       checks: [],
       resultDir,
@@ -123,25 +257,34 @@ export async function runServerConformanceTest(
     };
   }
 
-  // When --spec-version is omitted, infer the version from the scenario's
-  // declared source so draft-only scenarios get the draft (stateless)
-  // connection rather than the stateful latest-spec default. Extension
-  // scenarios are off-timeline; today every extension in this repo lives
-  // on draft, so they fall under the same inference.
-  const resolvedSpecVersion =
-    specVersion ??
-    ('extensionId' in scenario.source ||
-    scenario.source.introducedIn === DRAFT_PROTOCOL_VERSION
-      ? DRAFT_PROTOCOL_VERSION
-      : LATEST_SPEC_VERSION);
+  const resolvedSpecVersion = resolveDefaultSpecVersion(
+    scenario.source,
+    specVersion
+  );
+  const skippedChecks = await evaluateProductionSkip(
+    serverUrl,
+    scenarioName,
+    scenario.requires,
+    resolvedSpecVersion,
+    timeout,
+    options
+  );
+  if (skippedChecks) {
+    await writeChecksIfNeeded(resultDir, skippedChecks);
+    return {
+      checks: skippedChecks,
+      resultDir,
+      scenarioDescription: scenario.description
+    };
+  }
 
   console.log(
     `Running client scenario '${scenarioName}' against server: ${serverUrl}`
   );
-
   const ctx: RunContext = {
     serverUrl,
     specVersion: resolvedSpecVersion,
+    production: Boolean(options?.production),
     connect: (opts) => connectFor(resolvedSpecVersion)(serverUrl, opts)
   };
   resetWireValidation();
@@ -151,21 +294,9 @@ export async function runServerConformanceTest(
     timeout
   );
   checks.push(...wireSchemaChecks(resolvedSpecVersion));
+  await writeChecksIfNeeded(resultDir, checks);
 
-  if (resultDir) {
-    await fs.writeFile(
-      path.join(resultDir, 'checks.json'),
-      JSON.stringify(checks, null, 2)
-    );
-
-    console.log(`Results saved to ${resultDir}`);
-  }
-
-  return {
-    checks,
-    resultDir,
-    scenarioDescription: scenario.description
-  };
+  return { checks, resultDir, scenarioDescription: scenario.description };
 }
 
 export function printServerResults(
@@ -175,6 +306,7 @@ export function printServerResults(
 ): {
   passed: number;
   failed: number;
+  skipped: number;
   denominator: number;
   warnings: number;
 } {
@@ -183,6 +315,7 @@ export function printServerResults(
   ).length;
   const passed = checks.filter((c) => c.status === 'SUCCESS').length;
   const failed = checks.filter((c) => c.status === 'FAILURE').length;
+  const skipped = checks.filter((c) => c.status === 'SKIPPED').length;
   const warnings = checks.filter((c) => c.status === 'WARNING').length;
 
   if (verbose) {
@@ -191,9 +324,10 @@ export function printServerResults(
     console.log(`Checks:\n${formatPrettyChecks(checks)}`);
   }
 
+  const skippedSuffix = skipped > 0 ? `, ${skipped} skipped` : '';
   console.log(`\nTest Results:`);
   console.log(
-    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings`
+    `Passed: ${passed}/${denominator}, ${failed} failed, ${warnings} warnings${skippedSuffix}`
   );
 
   if (failed > 0) {
@@ -209,29 +343,42 @@ export function printServerResults(
       });
   }
 
-  return { passed, failed, denominator, warnings };
+  return { passed, failed, skipped, denominator, warnings };
 }
 
 export function printServerSummary(
   allResults: { scenario: string; checks: ConformanceCheck[] }[]
-): { totalPassed: number; totalFailed: number } {
+): { totalPassed: number; totalFailed: number; totalSkipped: number } {
   console.log('\n\n=== SUMMARY ===');
   let totalPassed = 0;
   let totalFailed = 0;
+  let totalSkipped = 0;
 
   for (const result of allResults) {
     const passed = result.checks.filter((c) => c.status === 'SUCCESS').length;
     const failed = result.checks.filter((c) => c.status === 'FAILURE').length;
+    const skipped = result.checks.filter((c) => c.status === 'SKIPPED').length;
     totalPassed += passed;
     totalFailed += failed;
+    totalSkipped += skipped;
+
+    if (passed === 0 && failed === 0 && skipped > 0) {
+      console.log(`- ${result.scenario}: ${skipped} skipped`);
+      continue;
+    }
 
     const status = failed === 0 ? '✓' : '✗';
+    const skippedSuffix = skipped > 0 ? `, ${skipped} skipped` : '';
     console.log(
-      `${status} ${result.scenario}: ${passed} passed, ${failed} failed`
+      `${status} ${result.scenario}: ${passed} passed, ${failed} failed${skippedSuffix}`
     );
   }
 
-  console.log(`\nTotal: ${totalPassed} passed, ${totalFailed} failed`);
+  const totalSkippedSuffix =
+    totalSkipped > 0 ? `, ${totalSkipped} skipped` : '';
+  console.log(
+    `\nTotal: ${totalPassed} passed, ${totalFailed} failed${totalSkippedSuffix}`
+  );
 
-  return { totalPassed, totalFailed };
+  return { totalPassed, totalFailed, totalSkipped };
 }

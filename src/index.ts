@@ -555,6 +555,10 @@ program
     '--requirements <revision>',
     'Run exactly the scenarios a spec revision requires, frozen at its release (e.g. 2026-07-28). Replaces --suite and --spec-version'
   )
+  .option(
+    '--production',
+    'Test a production server: skip scenarios requiring undeclared optional capabilities or reference fixtures'
+  )
   .option('--timeout <ms>', 'Per-scenario timeout in milliseconds', '30000')
   .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
   .action(async (options, cmd) => {
@@ -564,6 +568,7 @@ program
       const timeout = parseInt(options.timeout, 10);
 
       const verbose = options.verbose ?? false;
+      const production = options.production ?? false;
       const outputDir = options.outputDir;
       const requirements = resolveRequirements(options.requirements, {
         specVersion: options.specVersion,
@@ -591,7 +596,8 @@ program
           outputDir,
           specVersionFilter,
           options.force ?? false,
-          timeout
+          timeout,
+          { production }
         );
 
         // Inapplicable scenario/spec-version combination (already logged by
@@ -664,6 +670,9 @@ program
 
         const allResults: { scenario: string; checks: ConformanceCheck[] }[] =
           [];
+        const capabilitiesCache = production
+          ? new Map<SpecVersion, Record<string, unknown>>()
+          : undefined;
 
         for (const scenarioName of scenarios) {
           console.log(`\n=== Running scenario: ${scenarioName} ===`);
@@ -679,7 +688,8 @@ program
                 // a requirement set decides membership, so its choice outranks a
                 // scenario's own applicability window at the pinned revision
                 Boolean(requirements),
-                timeout
+                timeout,
+                { production, capabilitiesCache }
               )
             );
             allResults.push({ scenario: scenarioName, checks: result.checks });

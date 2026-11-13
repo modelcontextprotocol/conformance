@@ -37,7 +37,8 @@ export const ServerOptionsSchema = z.object({
     .refine((scenario) => getClientScenario(scenario) !== undefined, {
       error: (iss) => `Unknown scenario '${iss.input}'`
     })
-    .optional()
+    .optional(),
+  production: z.boolean().optional()
 });
 
 export type ServerOptions = z.infer<typeof ServerOptionsSchema>;

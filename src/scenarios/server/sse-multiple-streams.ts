@@ -23,6 +23,7 @@ import { terminateSessionBestEffort } from '../../connection/sdk-client';
 export class ServerSSEMultipleStreamsScenario implements ClientScenario {
   name = 'server-sse-multiple-streams';
   readonly source = { introducedIn: '2025-11-25' } as const;
+  readonly requires = { capabilities: ['tools'] } as const;
   description =
     'Test server supports multiple concurrent POST SSE streams (SEP-1699)';
 

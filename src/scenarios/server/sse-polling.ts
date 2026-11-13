@@ -77,6 +77,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
     introducedIn: '2025-11-25',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description =
     'Test server SSE polling via test_reconnection tool that closes stream mid-call (SEP-1699)';
 

@@ -34,6 +34,11 @@ const HEADER_MISMATCH_ERROR_CODE = HEADER_MISMATCH;
 export class TasksRequestHeadersScenario implements ClientScenario {
   name = 'tasks-request-headers';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2243 Mcp-Method / Mcp-Name request-header validation, tasks surface.
 
 **Server Implementation Requirements:**

@@ -85,6 +85,7 @@ npx @modelcontextprotocol/conformance server --url <url> [--scenario <scenario>]
 - `--scenario <scenario>` - Test scenario to run (e.g., "server-initialize"). Runs all available scenarios by default
 - `--suite <suite>` - Suite to run: "active" (default; excludes pending and draft-spec scenarios), "all", "draft" (scenarios targeting the in-progress draft spec), or "pending"
 - `--requirements <revision>` - Run exactly what a spec revision requires, frozen at its release (see [Conformance Requirements](#conformance-requirements))
+- `--production` - Test a capability-partial production server rather than an SDK reference fixture: scenarios requiring optional capabilities or extensions the server did not declare, or reference-fixture artifacts (`test_*` / `test://`), are reported as `SKIPPED` instead of `FAILURE`
 - `--expected-failures <path>` - Path to YAML baseline file of known failures (see [Expected Failures](#expected-failures))
 - `--verbose` - Show verbose output
 

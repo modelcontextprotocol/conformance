@@ -17,6 +17,7 @@ export class ElicitationDefaultsScenario implements ClientScenario {
     introducedIn: '2025-11-25',
     removedIn: DRAFT_PROTOCOL_VERSION
   } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test elicitation with default values for all primitive types (SEP-1034).
 
 **Server Implementation Requirements:**

@@ -51,6 +51,11 @@ const ISOLATION_HINT =
 export class TasksDispatchScenario implements ClientScenario {
   name = 'tasks-dispatch-and-envelope';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 dispatch / envelope rules across the tasks surface.
 
 **Server Implementation Requirements:**

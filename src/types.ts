@@ -119,6 +119,42 @@ export type ScenarioSource =
     }
   | { extensionId: ExtensionId };
 
+/**
+ * Optional server capabilities declared on `initialize` (2025-x) or
+ * `server/discover` (2026-x).
+ */
+export type ServerCapability =
+  | 'tools'
+  | 'resources'
+  | 'resources.subscribe'
+  | 'prompts'
+  | 'logging'
+  | 'completions';
+
+/**
+ * Declarative prerequisites for a server-conformance scenario.
+ *
+ * Distinguishes optional MCP capabilities/extensions from reference-fixture
+ * contracts (`test_*` tools/prompts, `test://` resources). In default SDK
+ * conformance mode every scenario still runs and missing prerequisites fail;
+ * in opt-in `--production` mode, unmet capability/extension requirements and
+ * fixture-bound scenarios emit `SKIPPED` checks instead of `FAILURE`.
+ */
+export interface ScenarioRequirements {
+  /** Server capabilities that must all be declared (AND). */
+  capabilities?: readonly ServerCapability[];
+  /** Server capabilities where at least one must be declared (OR). */
+  anyCapability?: readonly ServerCapability[];
+  /** Protocol extensions under `capabilities.extensions` that must be declared. */
+  extensions?: readonly ExtensionId[];
+  /**
+   * True when the scenario requires reference-fixture artifacts
+   * (e.g. `test_*` tools/prompts or `test://` resources from the
+   * conformance everything-server) rather than arbitrary domain endpoints.
+   */
+  fixture?: boolean;
+}
+
 export interface ScenarioUrls {
   serverUrl: string;
   authUrl?: string;
@@ -147,6 +183,7 @@ export interface ClientScenario {
   name: string;
   description: string;
   source: ScenarioSource;
+  requires?: ScenarioRequirements;
   run(ctx: RunContext): Promise<ConformanceCheck[]>;
 }
 

@@ -88,6 +88,7 @@ export function sep2106KeywordCheckStatus(
 export class JsonSchema2020_12Scenario implements ClientScenario {
   name = 'json-schema-2020-12';
   readonly source = { introducedIn: '2025-11-25' } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Validates JSON Schema 2020-12 keyword preservation (SEP-1613, SEP-2106).
 
 **Server Implementation Requirements:**

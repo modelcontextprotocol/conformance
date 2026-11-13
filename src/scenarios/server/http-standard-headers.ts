@@ -126,6 +126,23 @@ function untestableMcpNameCases(checks: ConformanceCheck[], reason: string) {
   }
 }
 
+/** Emit the Mcp-Name cases as SKIPPED in production mode to avoid invoking arbitrary domain tools. */
+function skippedMcpNameCases(checks: ConformanceCheck[], reason: string) {
+  const timestamp = new Date().toISOString();
+  for (const c of MCP_NAME_CASES) {
+    checks.push({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      status: 'SKIPPED',
+      timestamp,
+      errorMessage: reason,
+      specReferences: [c.specRef],
+      details: { skippedReason: 'requires-fixture' }
+    });
+  }
+}
+
 /**
  * Helper to send a raw HTTP POST request with custom headers.
  * Uses Node.js http.request to preserve exact header casing and values,
@@ -292,6 +309,7 @@ function createAcceptanceCheck(
 export class HttpHeaderValidationScenario implements ClientScenario {
   name = 'http-header-validation';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly requires = { capabilities: ['tools'] } as const;
   description = `Test server validation of standard MCP request headers (SEP-2243).
 
 **Server Implementation Requirements:**
@@ -383,7 +401,12 @@ export class HttpHeaderValidationScenario implements ClientScenario {
         { requestBodyMethod: 'tools/list', mcpMethodHeader: '(missing)' }
       );
 
-      if (toolsResult.tools && toolsResult.tools.length > 0) {
+      if (ctx.production) {
+        skippedMcpNameCases(
+          checks,
+          'Skipped in production mode: Mcp-Name tools/call acceptance check is not invoked against arbitrary production tools'
+        );
+      } else if (toolsResult.tools && toolsResult.tools.length > 0) {
         const toolName = toolsResult.tools[0].name;
 
         await this.testCase(
@@ -603,6 +626,7 @@ export class HttpHeaderValidationScenario implements ClientScenario {
 export class HttpCustomHeaderServerValidationScenario implements ClientScenario {
   name = 'http-custom-header-server-validation';
   readonly source = { introducedIn: DRAFT_PROTOCOL_VERSION } as const;
+  readonly requires = { capabilities: ['tools'], fixture: true } as const;
   description = `Test server validation of custom Mcp-Param headers and Base64 encoding (SEP-2243).
 
 **Server Implementation Requirements:**

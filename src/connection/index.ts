@@ -84,6 +84,11 @@ export interface RunContext {
   serverUrl: string;
   specVersion: SpecVersion;
   /**
+   * True when running in opt-in `--production` mode against a real deployment
+   * rather than an SDK reference fixture server.
+   */
+  production?: boolean;
+  /**
    * Open a version-appropriate connection to the server-under-test.
    * Scenarios that test the connection mechanics themselves (initialize,
    * GET-SSE, DNS rebinding) bypass this and use raw fetch.

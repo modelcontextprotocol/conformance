@@ -30,6 +30,11 @@ const MRTR_INPUT_REQUIRED_RESULT_TYPE = 'input_required';
 export class TasksMrtrCompositionScenario implements ClientScenario {
   name = 'tasks-mrtr-composition';
   readonly source = { extensionId: 'io.modelcontextprotocol/tasks' } as const;
+  readonly requires = {
+    extensions: ['io.modelcontextprotocol/tasks'],
+    capabilities: ['tools'],
+    fixture: true
+  } as const;
   description = `Test SEP-2663 MRTR → Tasks composition (SEP-2663 commit 451f5e1).
 
 **Server Implementation Requirements:**
