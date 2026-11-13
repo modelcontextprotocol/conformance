@@ -36,6 +36,16 @@ function selfInvoke(args: string[], cwd: string): Promise<number> {
   });
 }
 
+// True when anything at all answers an HTTP GET on url within timeoutMs.
+async function answers(url: string, timeoutMs: number): Promise<boolean> {
+  try {
+    await fetch(url, { method: 'GET', signal: AbortSignal.timeout(timeoutMs) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForReady(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   // Per-probe timeout: a server that accepts the socket but never responds must
@@ -66,6 +76,15 @@ export async function withManagedServer<T>(
   readyTimeoutMs: number,
   fn: () => Promise<T>
 ): Promise<T> {
+  // A leftover process on the same port would pass the readiness probe, and
+  // the run would grade it instead of the server we are about to start.
+  if (await answers(url, 1000)) {
+    throw new Error(
+      `Something is already answering at ${url} before the server started. ` +
+        `Stop that process or change the port, or this run would grade it ` +
+        `instead of the SDK's server.`
+    );
+  }
   console.error(`[sdk] Starting server: ${command}`);
   const child: ChildProcess = spawn(command, {
     shell: true,
