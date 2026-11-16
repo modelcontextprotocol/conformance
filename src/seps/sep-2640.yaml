@@ -73,11 +73,12 @@
 #   This file declares 89 checks plus 11 excluded rows. Of the uncovered
 #   sentences, four are base-protocol rules (below), several restate a declared
 #   row in Security Considerations, and the rest are MAY permissions with
-#   nothing to check. Of the 89 checks, 46 are emitted by a scenario: 42 by the
-#   three server scenarios and 4 by the two client scenarios. The other 43 are
-#   host obligations (approval binding, cache isolation, context handling) that
-#   no current scenario can observe. Nothing recomputes these counts, so treat
-#   them as a claim with a date.
+#   nothing to check. Of the 89 checks, 59 are emitted by a scenario: 48 by the
+#   three server scenarios and 11 by the six client scenarios (counted
+#   2026-11-16). The other 30 are host obligations (approval binding, cache
+#   isolation, context handling, what the model is shown) that no scenario can
+#   observe on the wire, plus MAY permissions with nothing to fail. Nothing
+#   recomputes these counts, so treat them as a claim with a date.
 #
 # deliberately not declared here: `resultType` and request `_meta`. The page
 #   says `resultType` MUST be `"complete"` on each of its three results, and
@@ -88,13 +89,14 @@
 #   base-protocol yamls.
 #
 # backing_scenarios: three server ClientScenarios under
-#   src/scenarios/server/skills/ and two client scenarios under
+#   src/scenarios/server/skills/ and six client scenarios under
 #   src/scenarios/client/skills/ emit the check IDs below (a row is "tested"
 #   once a scenario emits its check ID; see src/traceability/):
 #     enumeration.ts (sep-2640-skills-enumeration) — the capability rows, the
 #       sep-2640-skills-list-* rows, the entry-schema and resources rows, the two
-#       limit rows, and the sep-2640-skills-get-* rows. Replaces the retired
-#       index.ts, which tested `skill://index.json`.
+#       limit rows, the sep-2640-skills-get-* rows, the two nested-skill rows,
+#       and the two error-handling rows. Replaces the retired index.ts, which
+#       tested `skill://index.json`.
 #     manifest.ts (sep-2640-skills-manifest) — sep-2640-skillmd-mimetype,
 #       sep-2640-skillmd-metadata-name, sep-2640-skillmd-metadata-description,
 #       sep-2640-final-segment-equals-name, sep-2640-meta-prefix.
@@ -105,9 +107,17 @@
 #     verification.ts (sep-2640-client-verify-digest, -verify-size,
 #       -verify-frontmatter) — sep-2640-host-verify-digest,
 #       sep-2640-host-size-mismatch-failure, sep-2640-host-frontmatter-comparison.
+#     hosting.ts (sep-2640-client-load-by-uri, -invalid-entry,
+#       -directory-unlisted-child, -two-origins) — sep-2640-host-load-by-uri,
+#       sep-2640-host-no-empty-listing-assumption,
+#       sep-2640-resources-invalid-entry,
+#       sep-2640-directory-read-not-manifest-extension,
+#       sep-2640-host-skill-identity-pair, sep-2640-host-cross-origin-no-shadow,
+#       sep-2640-host-reads-bound-to-origin. The two-origins scenario runs two
+#       mock servers and hands the client the second one's URL in
+#       MCP_CONFORMANCE_CONTEXT.
 #   The remaining rows are host-internal or off-wire (approval binding, cache
-#   isolation, context handling) and stay traceability-only. More client
-#   scenarios would be needed to exercise them.
+#   isolation, context handling) and stay traceability-only.
 sep: 2640
 spec_url: https://skills.extensions.modelcontextprotocol.io/specification/beta/skills
 requirements:

@@ -2,7 +2,7 @@
  * SEP-2640 Skills extension — the `resources/directory/read` surface (added in
  * spec commit 2e04c48d, 2026-06-09).
  *
- * One scenario, six checks (per AGENTS.md "fewer scenarios, more checks").
+ * One scenario, eight checks (per AGENTS.md "fewer scenarios, more checks").
  * Each check's verbatim spec quote lives next to its check ID in
  * src/seps/sep-2640.yaml.
  *
@@ -45,6 +45,11 @@ const SHAPE_ID = 'sep-2640-directory-read-result-resources-shape';
 const SUBDIR_ID = 'sep-2640-directory-read-subdir-mimetype';
 const INVALID_PARAMS_ID = 'sep-2640-directory-read-invalid-params';
 const PAGINATION_ID = 'sep-2640-directory-read-pagination';
+const CACHE_ID = 'sep-2640-directory-read-cache-attributes';
+const EMPTY_DIR_ID = 'sep-2640-directory-read-empty-dir';
+
+/** How many directories the empty-directory search reads before giving up. */
+const MAX_DIRS_SEARCHED = 32;
 
 const ALL_IDS = [
   CAPABILITY_ID,
@@ -52,12 +57,16 @@ const ALL_IDS = [
   SHAPE_ID,
   SUBDIR_ID,
   INVALID_PARAMS_ID,
-  PAGINATION_ID
+  PAGINATION_ID,
+  CACHE_ID,
+  EMPTY_DIR_ID
 ];
 
 interface DirectoryReadResult {
   resources?: SkillResource[];
   nextCursor?: string;
+  ttlMs?: unknown;
+  cacheScope?: unknown;
 }
 
 /** A directory to exercise plus, when known, a non-directory resource under it. */
@@ -136,6 +145,8 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
 - \`sep-2640-directory-read-subdir-mimetype\` — subdirectory children carry \`inode/directory\` (MUST)
 - \`sep-2640-directory-read-invalid-params\` — a non-directory URI returns \`-32602\` (MUST)
 - \`sep-2640-directory-read-pagination\` — \`nextCursor\` round-trips per resources/list (single-page is conformant)
+- \`sep-2640-directory-read-cache-attributes\` — the result carries \`ttlMs\` and \`cacheScope\` (from 2026-07-28)
+- \`sep-2640-directory-read-empty-dir\` — an empty subdirectory reads as \`resources: []\` (SKIPs when there is none)
 
 **Gating & discovery**: the checks SKIP when the skills extension or its \`directoryRead\` flag is undeclared. The directory to exercise is discovered dynamically from \`skills/list\` / \`resources/list\` — no fixture URI is hardcoded.`;
 
@@ -193,7 +204,9 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
           [
             PAGINATION_ID,
             'nextCursor round-trips per the resources/list contract.'
-          ]
+          ],
+          [CACHE_ID, 'The directory result carries ttlMs and cacheScope.'],
+          [EMPTY_DIR_ID, 'An empty directory yields an empty resources array.']
         ];
         for (const [id, desc] of rest) {
           checks.push(
@@ -385,9 +398,126 @@ export class SkillsDirectoryReadScenario implements ClientScenario {
         )
       );
 
+      checks.push(cacheCheck(happy, ctx.specVersion));
+      checks.push(
+        await emptyDirCheck(conn, happy, await otherSkillRoots(conn, target))
+      );
+
       return checks;
     } finally {
       await conn.close();
     }
   }
+}
+
+const CACHE_TEXT =
+  'ReadResourceDirectoryResult extends CacheableResult, so ttlMs and cacheScope are REQUIRED, as they are on resources/list.';
+
+/**
+ * ttlMs and cacheScope on the first page of the directory read. Below
+ * 2026-07-28 CacheableResult does not exist, so the check SKIPs there, the
+ * same way the skills/list and skills/get cache checks do.
+ */
+function cacheCheck(
+  happy: DirectoryReadResult | undefined,
+  specVersion: string
+): ConformanceCheck {
+  if (specVersion < '2026-07-28') {
+    return skillsCheck(CACHE_ID, CACHE_TEXT, 'SKIPPED', {
+      errorMessage: `not applicable on negotiated protocol ${specVersion}: ttlMs and cacheScope are defined from 2026-07-28`
+    });
+  }
+  if (happy === undefined) {
+    return skillsCheck(CACHE_ID, CACHE_TEXT, 'FAILURE', {
+      errorMessage: 'directory read did not return a result'
+    });
+  }
+  const missing = [
+    happy.ttlMs === undefined && 'ttlMs',
+    happy.cacheScope === undefined && 'cacheScope'
+  ]
+    .filter(Boolean)
+    .join(' and ');
+  return skillsCheck(
+    CACHE_ID,
+    CACHE_TEXT,
+    missing ? 'FAILURE' : 'SUCCESS',
+    missing
+      ? {
+          errorMessage: `resources/directory/read result omits ${missing} on protocol ${specVersion}.`
+        }
+      : { details: { ttlMs: happy.ttlMs, cacheScope: happy.cacheScope } }
+  );
+}
+
+/** The root directory of every listed skill other than the one exercised. */
+async function otherSkillRoots(
+  conn: Connection,
+  target: DirectoryTarget
+): Promise<string[]> {
+  const listed = await skillsListAll(conn);
+  if ('error' in listed) return [];
+  return listed.entries
+    .map((e) =>
+      typeof e.uri === 'string' ? skillRootFromManifestUri(e.uri) : undefined
+    )
+    .filter((r): r is string => r !== undefined && r !== target.dirUri);
+}
+
+/**
+ * Searches the skill's subdirectories, then the other listed skills' trees,
+ * breadth first, for one with no
+ * children, and checks that its read answers `resources: []`. A read that
+ * answers no `resources` member at all is the failure: a client cannot tell
+ * that from a broken reply. Having no empty directory is not a defect, so
+ * that case SKIPs.
+ */
+async function emptyDirCheck(
+  conn: Connection,
+  happy: DirectoryReadResult | undefined,
+  otherRoots: string[]
+): Promise<ConformanceCheck> {
+  const text = 'An empty directory yields an empty resources array.';
+  const queue = (happy?.resources ?? [])
+    .filter((r) => r.mimeType === DIRECTORY_MIME && typeof r.uri === 'string')
+    .map((r) => r.uri);
+  queue.push(...otherRoots);
+  let read = 0;
+  while (queue.length > 0 && read < MAX_DIRS_SEARCHED) {
+    const uri = queue.shift()!;
+    read++;
+    let res: DirectoryReadResult;
+    try {
+      res = await conn.request<DirectoryReadResult>(
+        'resources/directory/read',
+        { uri }
+      );
+    } catch (e) {
+      return skillsCheck(EMPTY_DIR_ID, text, 'FAILURE', {
+        errorMessage: `resources/directory/read on the listed subdirectory ${uri} failed: ${e instanceof Error ? e.message : String(e)}`
+      });
+    }
+    const children = res.resources;
+    if (children === undefined || children === null) {
+      if (res.nextCursor) continue;
+      return skillsCheck(EMPTY_DIR_ID, text, 'FAILURE', {
+        errorMessage: `resources/directory/read on ${uri} answered with no resources member; an empty directory yields resources: [].`
+      });
+    }
+    if (Array.isArray(children) && children.length === 0 && !res.nextCursor) {
+      return skillsCheck(EMPTY_DIR_ID, text, 'SUCCESS', {
+        details: { emptyDirectory: uri }
+      });
+    }
+    if (Array.isArray(children)) {
+      for (const c of children) {
+        if (c.mimeType === DIRECTORY_MIME && typeof c.uri === 'string') {
+          queue.push(c.uri);
+        }
+      }
+    }
+  }
+  return skillsCheck(EMPTY_DIR_ID, text, 'SKIPPED', {
+    errorMessage: `no empty directory found in the ${read} subdirectories read; serving one is optional.`
+  });
 }

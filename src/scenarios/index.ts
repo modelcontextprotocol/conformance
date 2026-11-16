@@ -12,6 +12,12 @@ import {
 import { InitializeScenario } from './client/initialize';
 import { SkillsNoPrefetchScenario } from './client/skills/no-prefetch';
 import { SkillsVerificationScenario } from './client/skills/verification';
+import {
+  SkillsLoadByUriScenario,
+  SkillsInvalidEntryScenario,
+  SkillsDirectoryUnlistedChildScenario,
+  SkillsTwoOriginsScenario
+} from './client/skills/hosting';
 import { ToolsCallScenario } from './client/tools_call';
 import { ElicitationClientDefaultsScenario } from './client/elicitation-defaults';
 import { SSERetryScenario } from './client/sse-retry';
@@ -347,7 +353,11 @@ const scenariosList: Scenario[] = [
   new SkillsNoPrefetchScenario(),
   new SkillsVerificationScenario('digest'),
   new SkillsVerificationScenario('size'),
-  new SkillsVerificationScenario('frontmatter')
+  new SkillsVerificationScenario('frontmatter'),
+  new SkillsLoadByUriScenario(),
+  new SkillsInvalidEntryScenario(),
+  new SkillsDirectoryUnlistedChildScenario(),
+  new SkillsTwoOriginsScenario()
 ];
 
 // Core scenarios (tier 1 requirements)
