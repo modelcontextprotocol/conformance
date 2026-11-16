@@ -7,6 +7,7 @@ import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
 import { ToolsListScenario } from './tools';
+import { ToolsCallInputValidationScenario } from './tools-input-validation';
 import {
   JsonSchema2020_12Scenario,
   sep2106KeywordCheckStatus
@@ -463,6 +464,47 @@ describe('Server scenario negative tests', () => {
       expect(order?.details).toMatchObject({ toolCount: 4, probes: 3 });
       expect(order?.details?.untestable).toBeUndefined();
     }, 10000);
+  });
+
+  describe('tools-call-input-validation (SEP-1303)', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3010;
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/no-input-validation.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('emits FAILURE for input-validation-rejected against a server that executes tools on schema-invalid arguments', async () => {
+      const scenario = new ToolsCallInputValidationScenario();
+      const checks = await scenario.run(
+        testContext(`http://localhost:${PORT}/mcp`, '2025-11-25')
+      );
+
+      expect(
+        checks.find((c) => c.id === 'tools-call-input-validation-valid')?.status
+      ).toBe('SUCCESS');
+      const rejected = checks.find(
+        (c) => c.id === 'sep-1303-input-validation-rejected'
+      );
+      expect(rejected?.status).toBe('FAILURE');
+      expect(rejected?.errorMessage).toContain('wrong type');
+      expect(rejected?.errorMessage).toContain('missing required property');
+      expect(rejected?.errorMessage).toContain('out of range');
+      expect(
+        checks.find((c) => c.id === 'sep-1303-input-validation-tool-error')
+          ?.status
+      ).toBe('WARNING');
+    }, 15000);
   });
 
   describe('tools-name-format', () => {

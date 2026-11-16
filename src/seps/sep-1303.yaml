@@ -1,0 +1,10 @@
+sep: 1303
+spec_url: https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling
+requirements:
+  - check: sep-1303-input-validation-rejected
+    text: 'Servers MUST: Validate all tool inputs'
+  - check: sep-1303-input-validation-tool-error
+    text: 'Tool Execution Errors: Reported in tool results with `isError: true`: Input validation errors (e.g., date in wrong format, value out of range)'
+
+  - text: 'Clients SHOULD provide tool execution errors to language models to enable self-correction.'
+    excluded: 'What a client passes to its language model is host-internal; not observable at the protocol level'

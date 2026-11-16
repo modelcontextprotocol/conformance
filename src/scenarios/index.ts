@@ -1,3 +1,4 @@
+import { ToolsCallInputValidationScenario } from './server/tools-input-validation';
 import {
   Scenario,
   ClientScenario,
@@ -190,6 +191,7 @@ const allClientScenariosList: ClientScenario[] = [
   new ToolsCallMultipleContentTypesScenario(),
   new ToolsCallWithLoggingScenario(),
   new ToolsCallErrorScenario(),
+  new ToolsCallInputValidationScenario(),
   new ToolsCallWithProgressScenario(),
   new ToolsCallSamplingScenario(),
   new ToolsCallElicitationScenario(),

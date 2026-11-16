@@ -313,6 +313,28 @@ function createMcpServer() {
     }
   );
 
+  // Input validation tool (SEP-1303): the SDK validates arguments against
+  // this schema before the handler runs.
+  mcpServer.registerTool(
+    'test_input_validation',
+    {
+      description: 'Tests that schema-invalid arguments are rejected',
+      inputSchema: {
+        value: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe('An integer from 1 to 10')
+      }
+    },
+    async (args: { value: number }) => {
+      return {
+        content: [{ type: 'text', text: `executed: ${args.value}` }]
+      };
+    }
+  );
+
   // Image content tool
   mcpServer.registerTool(
     'test_image_content',
