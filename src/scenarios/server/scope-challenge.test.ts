@@ -305,7 +305,7 @@ describe('ServerScopeChallengeScenario', () => {
     ['missing', undefined],
     ['malformed', 'Bearer/ error="insufficient_scope"']
   ])(
-    'skips completeness when the WWW-Authenticate header is %s',
+    'reports completeness as untestable when the WWW-Authenticate header is %s',
     async (_case, wwwAuthenticate) => {
       server = createServer((req, res) => {
         let rawBody = '';
@@ -362,12 +362,28 @@ describe('ServerScopeChallengeScenario', () => {
       );
       expect(completenessChecks).toHaveLength(4);
       expect(
-        completenessChecks.every((check) => check.status === 'SKIPPED')
+        completenessChecks.every((check) => check.status === 'WARNING')
       ).toBe(true);
+      for (const check of completenessChecks) {
+        expect(check.errorMessage).toMatch(
+          /^Not testable: server did not provide a parseable Bearer WWW-Authenticate challenge/
+        );
+        expect(check.errorMessage).toContain('under-scoped');
+        expect(check.details).toMatchObject({
+          untestable: true,
+          reason: expect.stringContaining('under-scoped'),
+          responseStatus: 403
+        });
+        expect(check.specReferences).toContainEqual(
+          expect.objectContaining({
+            id: 'MCP-Authorization-Runtime-Insufficient-Scope'
+          })
+        );
+      }
     }
   );
 
-  it('emits prerequisite warnings and skips completeness against a server that does not challenge', async () => {
+  it('reports the completeness check as untestable against a server that does not challenge', async () => {
     const port = await getFreePort();
     process = await startBrokenFixture(port);
 
@@ -388,9 +404,19 @@ describe('ServerScopeChallengeScenario', () => {
       (check) => check.id === 'sep-2350-server-single-challenge'
     );
     expect(completeness).toHaveLength(4);
-    expect(completeness.every((check) => check.status === 'SKIPPED')).toBe(
+    expect(completeness.every((check) => check.status === 'WARNING')).toBe(
       true
     );
+    for (const check of completeness) {
+      expect(check.details).toMatchObject({
+        untestable: true,
+        reason: expect.stringContaining('under-scoped'),
+        responseStatus: 200
+      });
+      expect(check.errorMessage).toContain(
+        'Not testable: server did not provide a parseable Bearer WWW-Authenticate challenge'
+      );
+    }
 
     const retries = checks.filter(
       (check) => check.id === 'server-scope-challenge-upgraded-retry'

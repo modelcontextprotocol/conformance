@@ -10,6 +10,7 @@ import {
   type RunContext,
   type StatelessResponse
 } from '../../connection';
+import { untestableCheck } from '../untestable';
 
 export const SCOPE_CHALLENGE_LOW_TOKEN = 'mcp-conformance-scope-low';
 export const SCOPE_CHALLENGE_FULL_TOKEN = 'mcp-conformance-scope-full';
@@ -329,33 +330,44 @@ function challengeChecks(
   };
   const requestErrorMessage =
     requestError instanceof Error ? requestError.message : String(requestError);
+  const completenessId = 'sep-2350-server-single-challenge';
+  const completenessName = `${fixture.label.replace(/ /g, '')}ScopeChallengeCompleteScopeSet`;
+  const completenessDescription = `${fixture.label} includes all scopes required for the operation in one challenge`;
   const completenessCheck: ConformanceCheck = parsed
     ? check(
         fixture,
-        'sep-2350-server-single-challenge',
+        completenessId,
         'ScopeChallengeCompleteScopeSet',
-        `${fixture.label} includes all scopes required for the operation in one challenge`,
+        completenessDescription,
         hasAllScopes,
         'WARNING',
         `Expected one challenge containing ${fixture.requiredScopes.join(' and ')}, got ${scopes.join(' ') || '(no scopes)'}`,
         { ...details, challengedScopes: scopes }
       )
-    : {
-        id: 'sep-2350-server-single-challenge',
-        name: `${fixture.label.replace(/ /g, '')}ScopeChallengeCompleteScopeSet`,
-        description: `${fixture.label} includes all scopes required for the operation in one challenge`,
-        status: 'SKIPPED',
-        timestamp: new Date().toISOString(),
-        specReferences: [SPEC_REFERENCE],
-        details: {
-          fixture: fixture.key,
-          method: fixture.method,
-          params: fixture.params,
-          requiredScopes: fixture.requiredScopes,
-          ...details,
-          note: 'No parseable Bearer challenge; the prerequisite challenge check reports the missing or malformed header'
-        }
-      };
+    : (() => {
+        const reason = response
+          ? `server did not provide a parseable Bearer WWW-Authenticate challenge for the under-scoped ${fixture.method} request`
+          : `request failed before a parseable Bearer WWW-Authenticate challenge could be received for the under-scoped ${fixture.method} request: ${requestErrorMessage}`;
+        const untestable = untestableCheck(
+          completenessId,
+          completenessName,
+          completenessDescription,
+          reason,
+          [SPEC_REFERENCE],
+          'WARNING'
+        );
+        return {
+          ...untestable,
+          details: {
+            ...untestable.details,
+            fixture: fixture.key,
+            method: fixture.method,
+            params: fixture.params,
+            requiredScopes: fixture.requiredScopes,
+            ...details
+          }
+        };
+      })();
 
   return [
     check(
