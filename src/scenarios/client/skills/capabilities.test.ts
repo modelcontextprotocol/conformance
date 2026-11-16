@@ -1,9 +1,15 @@
 import { describe, test, expect } from 'vitest';
 import { testScenarioContext } from '../../../mock-server/testing';
 import { sendStatelessRequest } from '../../../connection/stateless';
-import { DRAFT_PROTOCOL_VERSION } from '../../../types';
+import { DRAFT_PROTOCOL_VERSION, type Scenario } from '../../../types';
 import { SkillsNoPrefetchScenario } from './no-prefetch';
 import { SkillsVerificationScenario } from './verification';
+import {
+  SkillsLoadByUriScenario,
+  SkillsInvalidEntryScenario,
+  SkillsDirectoryUnlistedChildScenario,
+  SkillsTwoOriginsScenario
+} from './hosting';
 
 /**
  * Regression for PR #330 review: both skills client scenarios declared the
@@ -40,13 +46,18 @@ function expectSkillsAdvertised(caps: Caps, where: string): void {
   expect(caps.resources, `${where}: resources not advertised`).toBeDefined();
 }
 
-const SCENARIOS: Array<
-  [string, () => SkillsNoPrefetchScenario | SkillsVerificationScenario]
-> = [
+const SCENARIOS: Array<[string, () => Scenario]> = [
   ['no-prefetch', () => new SkillsNoPrefetchScenario()],
   ['verify-digest', () => new SkillsVerificationScenario('digest')],
   ['verify-size', () => new SkillsVerificationScenario('size')],
-  ['verify-frontmatter', () => new SkillsVerificationScenario('frontmatter')]
+  ['verify-frontmatter', () => new SkillsVerificationScenario('frontmatter')],
+  ['load-by-uri', () => new SkillsLoadByUriScenario()],
+  ['invalid-entry', () => new SkillsInvalidEntryScenario()],
+  [
+    'directory-unlisted-child',
+    () => new SkillsDirectoryUnlistedChildScenario()
+  ],
+  ['two-origins', () => new SkillsTwoOriginsScenario()]
 ];
 
 describe('SEP-2640 client scenarios advertise skills on both lifecycles', () => {

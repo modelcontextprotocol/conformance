@@ -20,7 +20,7 @@
 
 import { isDeepStrictEqual } from 'util';
 import { ClientScenario, ConformanceCheck } from '../../../types';
-import type { RunContext } from '../../../connection';
+import { Connection, JsonRpcError, type RunContext } from '../../../connection';
 import {
   SKILLS_EXTENSION_ID,
   SKILLS_LIST_METHOD,
@@ -33,6 +33,7 @@ import {
   MAX_TOTAL_SIZE_PER_SKILL,
   FRONTMATTER_RESERVED_PREFIX,
   JSONRPC_INVALID_PARAMS,
+  JSONRPC_RESOURCE_NOT_FOUND_2025,
   type SkillEntry,
   type SkillResourceEntry,
   declaredSkillsCapability,
@@ -81,7 +82,9 @@ const ENTRY_IDS = [
   'sep-2640-metadata-reserved-prefix',
   'sep-2640-name-naming-rules',
   'sep-2640-authority-reg-name',
-  'sep-2640-names-should-be-unique'
+  'sep-2640-names-should-be-unique',
+  'sep-2640-resources-nested-completeness',
+  'sep-2640-nested-publication-flat'
 ] as const;
 
 const GET_IDS = [
@@ -96,7 +99,9 @@ const GET_IDS = [
 const READBACK_IDS = [
   'sep-2640-skillmd-required',
   'sep-2640-skillmd-frontmatter',
-  'sep-2640-entry-frontmatter-identical'
+  'sep-2640-entry-frontmatter-identical',
+  'sep-2640-error-standard-codes',
+  'sep-2640-error-informative-messages'
 ] as const;
 
 const ALL_CHECK_IDS = [
@@ -150,6 +155,8 @@ export class SkillsEnumerationScenario implements ClientScenario {
 - \`sep-2640-limit-resources-per-skill\` / \`sep-2640-limit-total-size\` — 512 entries, 16 MiB
 - \`sep-2640-metadata-reserved-prefix\` — frontmatter \`metadata\` keys under \`io.modelcontextprotocol/\` are reserved
 - \`sep-2640-skills-get-*\` — \`skills/get\` returns a list-shaped entry, carries no cursor, and answers \`-32602\` for an unknown URI
+- \`sep-2640-resources-nested-completeness\` / \`sep-2640-nested-publication-flat\` — an enclosing skill lists a nested skill's files, and no entry embeds another (SKIP without nesting)
+- \`sep-2640-error-standard-codes\` / \`sep-2640-error-informative-messages\` — an unserved file under a skill answers \`-32602\` with a message naming the cause
 
 **Discovery is dynamic**: an undeclared extension SKIPs everything; an empty or partial listing is permitted and SKIPs the entry-level checks.`;
 
@@ -414,8 +421,10 @@ export class SkillsEnumerationScenario implements ClientScenario {
       }
 
       checks.push(...entryChecks(entries));
+      checks.push(...nestedChecks(entries));
       checks.push(...(await getChecks(conn, entries, ctx.specVersion)));
       checks.push(...(await readbackChecks(conn, entries)));
+      checks.push(...(await errorChecks(conn, entries, ctx.specVersion)));
 
       return checks;
     } finally {
@@ -1211,5 +1220,254 @@ async function getChecks(
     );
   }
 
+  return checks;
+}
+
+/**
+ * The listed pairs where one skill sits inside another: the inner skill's root
+ * directory is a descendant of the outer skill's root.
+ */
+function nestedPairs(
+  entries: SkillEntry[]
+): Array<{ outer: SkillEntry; inner: SkillEntry }> {
+  const rooted = entries
+    .map((e) => ({
+      e,
+      root:
+        typeof e.uri === 'string' ? skillRootFromManifestUri(e.uri) : undefined
+    }))
+    .filter((x): x is { e: SkillEntry; root: string } => x.root !== undefined);
+  const pairs: Array<{ outer: SkillEntry; inner: SkillEntry }> = [];
+  for (const o of rooted) {
+    for (const i of rooted) {
+      if (i.root.startsWith(`${o.root}/`))
+        pairs.push({ outer: o.e, inner: i.e });
+    }
+  }
+  return pairs;
+}
+
+/** An object shaped like a skill entry, which a flat listing never embeds. */
+function looksLikeEntry(value: unknown): boolean {
+  return (
+    isSettingsObject(value) &&
+    typeof value.uri === 'string' &&
+    isSettingsObject(value.frontmatter)
+  );
+}
+
+/**
+ * Nested skills: completeness of the enclosing skill's `resources`, and a
+ * listing that stays flat. Nesting is optional, so a listing without a nested
+ * pair SKIPs both.
+ */
+function nestedChecks(entries: SkillEntry[]): ConformanceCheck[] {
+  const pairs = nestedPairs(entries);
+  const completenessText =
+    "Completeness extends to nested skills: the enclosing skill's resources lists the nested skill's files too.";
+  const flatText =
+    'A nested skill is published like any other, and nothing in the listing marks nesting.';
+  if (pairs.length === 0) {
+    const reason =
+      'No listed skill sits inside another, so there is no nesting to check. Nesting is optional.';
+    return [
+      skillsCheck(
+        'sep-2640-resources-nested-completeness',
+        completenessText,
+        'SKIPPED',
+        {
+          errorMessage: reason
+        }
+      ),
+      skillsCheck('sep-2640-nested-publication-flat', flatText, 'SKIPPED', {
+        errorMessage: reason
+      })
+    ];
+  }
+
+  // === resources-nested-completeness ===
+  // The inner skill's files, as its own entry lists them, must all appear in
+  // the outer skill's resources. A "dynamic" outer publishes no manifest, so
+  // there is nothing to be complete.
+  const missing: string[] = [];
+  let graded = 0;
+  for (const { outer, inner } of pairs) {
+    const outerArr = resourcesArray(outer);
+    if (!outerArr) continue;
+    graded++;
+    const have = new Set(
+      outerArr
+        .map((r) => r.uri)
+        .filter((u): u is string => typeof u === 'string')
+    );
+    const innerArr = resourcesArray(inner);
+    const want = innerArr
+      ? innerArr
+          .map((r) => r.uri)
+          .filter((u): u is string => typeof u === 'string')
+      : [inner.uri as string];
+    for (const uri of want) {
+      if (!have.has(uri)) {
+        missing.push(
+          `${String(outer.uri)} does not list ${uri}, a file of the nested skill ${String(inner.uri)}`
+        );
+      }
+    }
+  }
+  const checks: ConformanceCheck[] = [];
+  checks.push(
+    graded === 0
+      ? skillsCheck(
+          'sep-2640-resources-nested-completeness',
+          completenessText,
+          'SKIPPED',
+          {
+            errorMessage:
+              'Every enclosing skill declares "resources": "dynamic", which publishes no manifest to be complete.'
+          }
+        )
+      : skillsCheck(
+          'sep-2640-resources-nested-completeness',
+          completenessText,
+          missing.length === 0 ? 'SUCCESS' : 'FAILURE',
+          missing.length === 0
+            ? { details: { nestedPairs: pairs.length } }
+            : { errorMessage: joinErrs(missing) }
+        )
+  );
+
+  // === nested-publication-flat ===
+  // A flat listing carries the nested skill as its own top-level entry. An
+  // entry that embeds another entry, alone or in an array, marks nesting.
+  const embedded: string[] = [];
+  entries.forEach((e, i) => {
+    for (const [key, value] of Object.entries(e)) {
+      if (key === 'frontmatter' || key === 'resources') continue;
+      const values = Array.isArray(value) ? value : [value];
+      if (values.some(looksLikeEntry)) {
+        embedded.push(
+          `${entryLabel(e, i)}: field "${key}" embeds a skill entry`
+        );
+      }
+    }
+  });
+  checks.push(
+    skillsCheck(
+      'sep-2640-nested-publication-flat',
+      flatText,
+      embedded.length === 0 ? 'SUCCESS' : 'FAILURE',
+      embedded.length === 0
+        ? { details: { nestedPairs: pairs.length } }
+        : { errorMessage: joinErrs(embedded) }
+    )
+  );
+  return checks;
+}
+
+/** A file name no conformant server serves, for the unserved-file probe. */
+const UNSERVED_FILE = 'mcp-conformance-unserved-9f3a2b.md';
+
+/** Bare code names, which describe the code rather than the cause. */
+const BARE_ERROR_MESSAGES = new Set([
+  '',
+  'error',
+  'invalid params',
+  'internal error',
+  'resource not found'
+]);
+
+/**
+ * `resources/read` of a file the server does not serve, under a listed skill's
+ * root. The page names `-32602`. The 2025-11-25 base spec named `-32002` for an
+ * unknown resource, so that code also passes on that wire.
+ */
+async function errorChecks(
+  conn: Connection,
+  entries: SkillEntry[],
+  specVersion: string
+): Promise<ConformanceCheck[]> {
+  const codesText =
+    'resources/read of a skill file the server does not serve returns -32602 (Invalid params), per the base Resources specification.';
+  const messageText =
+    'Servers SHOULD provide informative error messages to describe the cause of errors.';
+  const root = entries
+    .map((e) =>
+      typeof e.uri === 'string' ? skillRootFromManifestUri(e.uri) : undefined
+    )
+    .find((r): r is string => r !== undefined);
+  if (!root) {
+    const reason = `No listed entry has a uri ending in /${SKILL_MANIFEST_FILENAME}, so there is no skill directory to probe.`;
+    return [
+      skillsCheck('sep-2640-error-standard-codes', codesText, 'SKIPPED', {
+        errorMessage: reason
+      }),
+      skillsCheck(
+        'sep-2640-error-informative-messages',
+        messageText,
+        'SKIPPED',
+        { errorMessage: reason }
+      )
+    ];
+  }
+
+  const probe = `${root}/${UNSERVED_FILE}`;
+  const accepted =
+    specVersion >= '2026-07-28'
+      ? [JSONRPC_INVALID_PARAMS]
+      : [JSONRPC_INVALID_PARAMS, JSONRPC_RESOURCE_NOT_FOUND_2025];
+  let error: JsonRpcError | undefined;
+  let other = '';
+  try {
+    await conn.request('resources/read', { uri: probe });
+    other = `resources/read of ${probe} succeeded, though the skill lists no such file`;
+  } catch (e) {
+    if (e instanceof JsonRpcError) error = e;
+    else
+      other = `resources/read of ${probe} failed without a JSON-RPC error: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  const checks: ConformanceCheck[] = [];
+  const codeOk = error !== undefined && accepted.includes(error.code);
+  checks.push(
+    skillsCheck(
+      'sep-2640-error-standard-codes',
+      codesText,
+      codeOk ? 'SUCCESS' : 'FAILURE',
+      codeOk
+        ? { details: { probedUri: probe, code: error!.code } }
+        : {
+            errorMessage: error
+              ? `resources/read of ${probe} returned ${error.code} (${error.message}); expected ${accepted.join(' or ')} on protocol ${specVersion}.`
+              : other
+          }
+    )
+  );
+
+  if (!error) {
+    checks.push(
+      skillsCheck(
+        'sep-2640-error-informative-messages',
+        messageText,
+        'SKIPPED',
+        {
+          errorMessage: `${other}, so there is no error message to inspect.`
+        }
+      )
+    );
+    return checks;
+  }
+  const bare = BARE_ERROR_MESSAGES.has(error.message.trim().toLowerCase());
+  checks.push(
+    skillsCheck(
+      'sep-2640-error-informative-messages',
+      messageText,
+      bare ? 'WARNING' : 'SUCCESS',
+      bare
+        ? {
+            errorMessage: `the error for ${probe} says only ${JSON.stringify(error.message)}, which names the code rather than the cause.`
+          }
+        : { details: { message: error.message } }
+    )
+  );
   return checks;
 }

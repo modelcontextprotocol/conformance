@@ -47,6 +47,8 @@ export const MAX_TOTAL_SIZE_PER_SKILL = 16 * 1024 * 1024; // 16 MiB
 
 export const JSONRPC_METHOD_NOT_FOUND = -32601;
 export const JSONRPC_INVALID_PARAMS = -32602;
+/** The 2025-11-25 base spec's code for an unknown resource, replaced by -32602 from 2026-07-28. */
+export const JSONRPC_RESOURCE_NOT_FOUND_2025 = -32002;
 
 export const SEP_2640_REF: SpecReference = {
   id: 'SEP-2640',
