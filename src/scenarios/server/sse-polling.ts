@@ -18,6 +18,7 @@ import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { terminateSessionBestEffort } from '../../connection/sdk-client';
+import { untestableCheck } from '../untestable';
 
 function createLoggingFetch(checks: ConformanceCheck[]) {
   return async (url: string, options: RequestInit): Promise<Response> => {
@@ -115,8 +116,9 @@ export class ServerSSEPollingScenario implements ClientScenario {
         checks.push({
           id: 'server-sse-polling-session',
           name: 'ServerSSEPollingSession',
-          description: 'Server provides session ID for SSE polling tests',
-          status: 'WARNING',
+          description:
+            'Server does not use optional session management for SSE polling tests',
+          status: 'INFO',
           timestamp: new Date().toISOString(),
           specReferences: [
             {
@@ -126,7 +128,7 @@ export class ServerSSEPollingScenario implements ClientScenario {
           ],
           details: {
             message:
-              'Server did not provide session ID - SSE polling tests may not work correctly'
+              'Server did not provide an optional session ID; polling checks continue without MCP-Session-Id'
           }
         });
       }
@@ -157,20 +159,22 @@ export class ServerSSEPollingScenario implements ClientScenario {
       if (!postResponse.ok) {
         // Check if tool doesn't exist (method not found or similar)
         if (postResponse.status === 400 || postResponse.status === 404) {
-          checks.push({
-            id: 'server-sse-test-reconnection-tool',
-            name: 'ServerTestReconnectionTool',
-            description:
-              'Server implements test_reconnection tool for SSE polling tests',
-            status: 'WARNING',
-            timestamp: new Date().toISOString(),
-            errorMessage: `Server does not implement test_reconnection tool (HTTP ${postResponse.status}). This tool is recommended for testing SSE polling behavior.`,
-            specReferences: [
+          const check = untestableCheck(
+            'server-sse-test-reconnection-tool',
+            'ServerTestReconnectionTool',
+            'Server implements test_reconnection tool for SSE polling tests',
+            `test_reconnection diagnostic fixture is unavailable (HTTP ${postResponse.status}); SEP-1699 SHOULD-level polling behavior could not be exercised`,
+            [
               {
                 id: 'SEP-1699',
                 url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
               }
-            ]
+            ],
+            'WARNING'
+          );
+          checks.push({
+            ...check,
+            details: { ...check.details, statusCode: postResponse.status }
           });
           return checks;
         }

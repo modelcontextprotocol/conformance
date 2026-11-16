@@ -5,6 +5,7 @@ import {
   listRequirementRevisions,
   loadRequirements,
   notScoredScenarios,
+  requirementsExitCode,
   scenariosToRun,
   scoredScenarios
 } from './requirements';
@@ -131,6 +132,55 @@ describe('filterScenariosByRequirements', () => {
       'server'
     );
     expect(selected).toEqual(scenariosToRun(requirements, 'server'));
+  });
+
+  describe('requirementsExitCode', () => {
+    const requirements = {
+      revision: '2026-07-28',
+      server: ['scored-scenario'],
+      client: [],
+      notScored: [
+        {
+          scenario: 'post-release-scenario',
+          leg: 'server' as const,
+          reason: 'added-after-release' as const
+        }
+      ]
+    };
+    const warningCheck = {
+      id: 'should-check',
+      name: 'ShouldCheck',
+      description: 'A SHOULD-level check',
+      status: 'WARNING' as const,
+      timestamp: new Date().toISOString()
+    };
+
+    it('fails when a scored scenario emits a warning', () => {
+      expect(
+        requirementsExitCode(requirements, 'server', [
+          { scenario: 'scored-scenario', checks: [warningCheck] }
+        ])
+      ).toBe(1);
+    });
+
+    it('does not fail when only a not-scored scenario emits a warning', () => {
+      expect(
+        requirementsExitCode(requirements, 'server', [
+          { scenario: 'post-release-scenario', checks: [warningCheck] }
+        ])
+      ).toBe(0);
+    });
+
+    it('does not fail when a scored scenario emits diagnostic information', () => {
+      expect(
+        requirementsExitCode(requirements, 'server', [
+          {
+            scenario: 'scored-scenario',
+            checks: [{ ...warningCheck, status: 'INFO' }]
+          }
+        ])
+      ).toBe(0);
+    });
   });
 
   it('runs the not-scored entries but keeps them out of the scored set', () => {

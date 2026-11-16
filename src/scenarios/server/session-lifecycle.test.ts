@@ -227,7 +227,7 @@ describe('SessionLifecycleScenario', () => {
     });
   });
 
-  it('reports WARNING when DELETE returns 404 but the session still responds', async () => {
+  it('reports INFO when DELETE returns 404 but the session still responds', async () => {
     fetchMock
       .mockResolvedValueOnce(
         new Response(null, {
@@ -248,17 +248,17 @@ describe('SessionLifecycleScenario', () => {
     expect(checks).toHaveLength(3);
     expect(checks[1]).toMatchObject({
       id: 'server-session-delete-accepted',
-      status: 'WARNING',
+      status: 'INFO',
       details: { statusCode: 404 }
     });
-    expect(checks[1].errorMessage).toContain('still responds');
+    expect(checks[1].details?.message).toContain('still responds');
     expect(checks[2]).toMatchObject({
       id: 'server-session-terminated-returns-404',
       status: 'SKIPPED'
     });
   });
 
-  it('reports WARNING (not FAILURE) on an unexpected DELETE status and skips the 404 check', async () => {
+  it('reports INFO on an inconclusive DELETE status and skips the 404 check', async () => {
     fetchMock
       .mockResolvedValueOnce(
         new Response(null, {
@@ -276,10 +276,10 @@ describe('SessionLifecycleScenario', () => {
     expect(checks).toHaveLength(3);
     expect(checks[1]).toMatchObject({
       id: 'server-session-delete-accepted',
-      status: 'WARNING',
+      status: 'INFO',
       details: { statusCode: 500 }
     });
-    expect(checks[1].errorMessage).toContain('Expected 2xx, 404, or 405');
+    expect(checks[1].details?.message).toContain('Expected 2xx, 404, or 405');
     expect(checks[2]).toMatchObject({
       id: 'server-session-terminated-returns-404',
       status: 'SKIPPED'

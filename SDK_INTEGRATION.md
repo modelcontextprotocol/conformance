@@ -199,6 +199,51 @@ if __name__ == "__main__":
 
 See [`src/conformance/everything-server.ts`](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/src/conformance/everything-server.ts) in the TypeScript SDK for a reference implementation that handles all server scenarios.
 
+### SEP-2350 Request-Time Scope Challenge Fixture
+
+The draft server scenario `sep-2350-server-scope-challenge` tests request-time
+OAuth `insufficient_scope` behavior without prescribing a token format or
+requiring an authorization server. Conformance fixtures use two opaque tokens:
+
+- `mcp-conformance-scope-low` is valid and has only
+  `mcp:conformance:baseline`.
+- `mcp-conformance-scope-full` is valid and has every scope in the table below.
+
+Keep requests without these fixture tokens unchanged so the existing server
+scenarios continue to exercise unauthenticated fixtures.
+
+| Operation                 | Existing fixture           | Scopes required in one challenge                                         |
+| ------------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| `tools/call`              | `test_simple_text`         | `mcp:conformance:tools:call mcp:conformance:tools:test_simple_text`      |
+| Static `resources/read`   | `test://static-text`       | `mcp:conformance:resources:read mcp:conformance:resources:static`        |
+| Template `resources/read` | `test://template/123/data` | `mcp:conformance:resources:read mcp:conformance:resources:template:123`  |
+| `prompts/get`             | `test_simple_prompt`       | `mcp:conformance:prompts:get mcp:conformance:prompts:test_simple_prompt` |
+
+For the low token, each operation returns HTTP 403 with a Bearer
+`WWW-Authenticate` challenge containing `error="insufficient_scope"`,
+`scope` containing both listed scopes, and a quoted, absolute
+`resource_metadata` URL. The URL may be an explicitly advertised metadata
+location, the root well-known location, or the RFC 9728 path-derived location:
+
+```text
+{server origin}/.well-known/oauth-protected-resource{server path}
+```
+
+For example, a server URL of `http://localhost:3000/mcp` may use
+`http://localhost:3000/.well-known/oauth-protected-resource/mcp` or
+`http://localhost:3000/.well-known/oauth-protected-resource`. Path-derived
+locations preserve a meaningful trailing path slash and query component.
+Parameter and scope ordering are not significant, and the server may include
+additional scopes. Retrying the same operation with the full token must return
+its normal successful MCP result. Protected-resource metadata discovery and
+document-content checks remain covered by the authorization discovery
+scenarios.
+
+These static tokens are test inputs only. Production servers should use their
+normal access-token verification, and this fixture does not replace the
+separate conformance work for token validation or authorization-server
+integration.
+
 ---
 
 ## Additional Resources

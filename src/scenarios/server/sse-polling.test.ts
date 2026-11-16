@@ -26,7 +26,10 @@ interface VersionEnforcingServer {
 // Down-negotiates every initialize to DOWN_NEGOTIATED_VERSION so a scenario
 // that hard-codes the latest version cannot pass, records each follow-up's
 // version header, and 400s any version or session mismatch.
-async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
+async function startVersionEnforcingServer(
+  supportsReconnectionTool = true,
+  missingToolStatus: 400 | 404 = 404
+): Promise<VersionEnforcingServer> {
   let negotiated: string | undefined;
   const seen: SeenRequest[] = [];
 
@@ -117,6 +120,14 @@ async function startVersionEnforcingServer(): Promise<VersionEnforcingServer> {
         return;
       }
       if (body.method === 'tools/call') {
+        if (!supportsReconnectionTool) {
+          respond(missingToolStatus, {
+            jsonrpc: '2.0',
+            id: body.id,
+            error: { code: -32601, message: 'Tool not found' }
+          });
+          return;
+        }
         // Spec-shaped priming event (id + empty data), then close without
         // the result, so the scenario must reconnect via GET + Last-Event-ID.
         res.writeHead(200, sseHead);
@@ -180,6 +191,45 @@ describe('server-sse-polling — negotiated protocol version', () => {
     expect(resume?.status).toBe('SUCCESS');
     expect(checks.filter((c) => c.status === 'FAILURE')).toEqual([]);
   });
+
+  test.each([400, 404] as const)(
+    'reports an unavailable fixture tool (HTTP %i) as untestable',
+    async (statusCode) => {
+      const srv = await startVersionEnforcingServer(false, statusCode);
+
+      let checks: ConformanceCheck[];
+      try {
+        checks = await new ServerSSEPollingScenario().run(
+          testContext(srv.url, LATEST_SPEC_VERSION)
+        );
+      } finally {
+        await srv.close();
+      }
+
+      const fixtureCheck = findAll(
+        checks,
+        'server-sse-test-reconnection-tool'
+      )[0];
+      expect(fixtureCheck).toMatchObject({
+        status: 'WARNING',
+        errorMessage: expect.stringContaining(
+          'Not testable: test_reconnection diagnostic fixture is unavailable'
+        ),
+        details: {
+          untestable: true,
+          reason: expect.stringContaining('SHOULD-level'),
+          statusCode
+        },
+        specReferences: [expect.objectContaining({ id: 'SEP-1699' })]
+      });
+      expect(
+        checks.filter(
+          (check) => check.id === 'server-sse-test-reconnection-tool'
+        )
+      ).toHaveLength(1);
+      expect(checks.some((check) => check.status === 'FAILURE')).toBe(false);
+    }
+  );
 
   test('fixture rejects a supported but non-negotiated version', async () => {
     const srv = await startVersionEnforcingServer();
