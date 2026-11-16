@@ -18,6 +18,7 @@ import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { terminateSessionBestEffort } from '../../connection/sdk-client';
+import { untestableCheck } from '../untestable';
 
 function createLoggingFetch(checks: ConformanceCheck[]) {
   return async (url: string, options: RequestInit): Promise<Response> => {
@@ -158,24 +159,22 @@ export class ServerSSEPollingScenario implements ClientScenario {
       if (!postResponse.ok) {
         // Check if tool doesn't exist (method not found or similar)
         if (postResponse.status === 400 || postResponse.status === 404) {
-          checks.push({
-            id: 'server-sse-test-reconnection-tool',
-            name: 'ServerTestReconnectionTool',
-            description:
-              'Server implements test_reconnection tool for SSE polling tests',
-            status: 'INFO',
-            timestamp: new Date().toISOString(),
-            specReferences: [
+          const check = untestableCheck(
+            'server-sse-test-reconnection-tool',
+            'ServerTestReconnectionTool',
+            'Server implements test_reconnection tool for SSE polling tests',
+            `test_reconnection diagnostic fixture is unavailable (HTTP ${postResponse.status}); SEP-1699 SHOULD-level polling behavior could not be exercised`,
+            [
               {
                 id: 'SEP-1699',
                 url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699'
               }
             ],
-            details: {
-              statusCode: postResponse.status,
-              message:
-                'The non-normative test_reconnection fixture tool is unavailable, so polling behavior was not exercised'
-            }
+            'WARNING'
+          );
+          checks.push({
+            ...check,
+            details: { ...check.details, statusCode: postResponse.status }
           });
           return checks;
         }
