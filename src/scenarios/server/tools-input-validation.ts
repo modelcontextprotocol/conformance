@@ -64,6 +64,11 @@ async function callTool(
   }
 }
 
+function hasContent(result: unknown): boolean {
+  const content = (result as { content?: unknown })?.content;
+  return Array.isArray(content) && content.length > 0;
+}
+
 function hasTextContent(result: unknown): boolean {
   const content = (result as { content?: unknown })?.content;
   return (
@@ -223,7 +228,7 @@ tool result with \`isError: true\`, not as a JSON-RPC error.`;
     const notToolError = cases.filter(
       (c) =>
         c.outcome.kind !== 'tool-error' ||
-        !hasTextContent((c.outcome as { result: unknown }).result)
+        !hasContent((c.outcome as { result: unknown }).result)
     );
     checks.push({
       id: 'sep-1303-input-validation-tool-error',
@@ -240,7 +245,7 @@ tool result with \`isError: true\`, not as a JSON-RPC error.`;
                 if (o.kind === 'protocol-error')
                   return `${c.label}: JSON-RPC error ${o.code} instead of an isError result`;
                 if (o.kind === 'tool-error')
-                  return `${c.label}: isError result has no text content`;
+                  return `${c.label}: isError result has no content`;
                 return `${c.label}: ${o.kind}`;
               })
               .join('; ')
