@@ -30,13 +30,67 @@ function isInitializeRequest(body: unknown): boolean {
   return false;
 }
 
+/**
+ * Whether the client's `initialize` request declared the `elicitation`
+ * capability. This scenario only runs at 2025-11-25, where `elicitation` is
+ * a single object capability (the form/url sub-split arrives in the draft
+ * revision), so any declared value other than `null`/`false` counts.
+ * Defaults to `true` when the request shape is unreadable so behaviour is
+ * unchanged for clients that negotiated elicitation normally.
+ */
+function declaresElicitation(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null) {
+    return true;
+  }
+  const capabilities = (body as { params?: { capabilities?: unknown } }).params
+    ?.capabilities;
+  if (typeof capabilities !== 'object' || capabilities === null) {
+    return true;
+  }
+  const elicitation = (capabilities as Record<string, unknown>).elicitation;
+  return (
+    elicitation !== undefined && elicitation !== null && elicitation !== false
+  );
+}
+
+const SEP1034_SPEC_REFERENCES = [
+  {
+    id: 'SEP-1034',
+    url: 'https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1034'
+  }
+];
+
+const ELICITATION_NOT_DECLARED_MESSAGE =
+  'Client did not declare the elicitation capability during initialize; check not applicable';
+
+function skippedElicitationCheck(
+  id: string,
+  name: string,
+  description: string
+): ConformanceCheck {
+  return {
+    id,
+    name,
+    description,
+    status: 'SKIPPED',
+    timestamp: new Date().toISOString(),
+    errorMessage: ELICITATION_NOT_DECLARED_MESSAGE,
+    specReferences: SEP1034_SPEC_REFERENCES
+  };
+}
+
 function createServer(checks: ConformanceCheck[]): {
   app: express.Application;
   cleanup: () => void;
+  elicitationDeclared: () => boolean;
 } {
   // Session management
   const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
   const servers: { [sessionId: string]: Server } = {};
+
+  // Elicitation is an optional client capability; a client that did not
+  // declare it is not applicable for this scenario rather than failing it.
+  let elicitationDeclared = true;
 
   const createMcpServer = () => {
     const server = new Server(
@@ -70,6 +124,51 @@ function createServer(checks: ConformanceCheck[]): {
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (request.params.name === 'test_client_elicitation_defaults') {
+        if (!elicitationDeclared) {
+          // The client negotiated without the optional elicitation
+          // capability, so it must not receive `elicitation/create` and the
+          // checks are not applicable rather than failed.
+          checks.push(
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-general',
+              'ClientElicitationSEP1034General',
+              'Client handles elicitation with defaults'
+            ),
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-string-default',
+              'ClientElicitationSEP1034StringDefault',
+              'Client applies string default value for elicitation'
+            ),
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-integer-default',
+              'ClientElicitationSEP1034IntegerDefault',
+              'Client applies integer default value for elicitation'
+            ),
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-number-default',
+              'ClientElicitationSEP1034NumberDefault',
+              'Client applies number default value for elicitation'
+            ),
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-enum-default',
+              'ClientElicitationSEP1034EnumDefault',
+              'Client applies enum default value for elicitation'
+            ),
+            skippedElicitationCheck(
+              'client-elicitation-sep1034-boolean-default',
+              'ClientElicitationSEP1034BooleanDefault',
+              'Client applies boolean default value for elicitation'
+            )
+          );
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Elicitation capability not declared by client; checks skipped'
+              }
+            ]
+          };
+        }
         try {
           // Request elicitation with all optional fields having defaults
           // Using raw server.request() to verify client applies defaults before sending response
@@ -371,6 +470,7 @@ function createServer(checks: ConformanceCheck[]): {
         // Reuse existing transport for established sessions
         transport = transports[sessionId];
       } else if (!sessionId && isInitializeRequest(req.body)) {
+        elicitationDeclared = declaresElicitation(req.body);
         // Create new transport for initialization requests
         const mcpServer = createMcpServer();
 
@@ -470,7 +570,7 @@ function createServer(checks: ConformanceCheck[]): {
     }
   };
 
-  return { app, cleanup };
+  return { app, cleanup, elicitationDeclared: () => elicitationDeclared };
 }
 
 export class ElicitationClientDefaultsScenario implements Scenario {
@@ -485,12 +585,14 @@ export class ElicitationClientDefaultsScenario implements Scenario {
   private httpServer: any = null;
   private checks: ConformanceCheck[] = [];
   private cleanup: (() => void) | null = null;
+  private elicitationDeclared: () => boolean = () => true;
 
   async start(_ctx: ScenarioContext): Promise<ScenarioUrls> {
     this.checks = [];
-    const { app, cleanup } = createServer(this.checks);
+    const { app, cleanup, elicitationDeclared } = createServer(this.checks);
     this.app = app;
     this.cleanup = cleanup;
+    this.elicitationDeclared = elicitationDeclared;
     this.httpServer = this.app.listen(0);
     const port = this.httpServer.address().port;
     return { serverUrl: `http://localhost:${port}/mcp` };
@@ -516,6 +618,34 @@ export class ElicitationClientDefaultsScenario implements Scenario {
       'client-elicitation-sep1034-enum-default',
       'client-elicitation-sep1034-boolean-default'
     ];
+
+    if (!this.elicitationDeclared()) {
+      // The client never declared the optional elicitation capability: the
+      // general check plus any untriggered defaults are SKIPPED, not failed.
+      if (
+        !this.checks.find((c) => c.id === 'client-elicitation-sep1034-general')
+      ) {
+        this.checks.push(
+          skippedElicitationCheck(
+            'client-elicitation-sep1034-general',
+            'ClientElicitationSEP1034General',
+            'Client handles elicitation with defaults'
+          )
+        );
+      }
+      for (const slug of expectedSlugs) {
+        if (!this.checks.find((c) => c.id === slug)) {
+          this.checks.push(
+            skippedElicitationCheck(
+              slug,
+              slug.replace(/-/g, ''),
+              `Server applies ${slug.split('-')[4]} default for elicitation`
+            )
+          );
+        }
+      }
+      return this.checks;
+    }
 
     // Add failures for any checks that weren't triggered (tool not called)
     for (const slug of expectedSlugs) {
