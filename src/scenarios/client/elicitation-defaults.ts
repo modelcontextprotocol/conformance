@@ -31,26 +31,28 @@ function isInitializeRequest(body: unknown): boolean {
 }
 
 /**
- * Whether the client's `initialize` request declared the `elicitation`
- * capability. This scenario only runs at 2025-11-25, where `elicitation` is
- * a single object capability (the form/url sub-split arrives in the draft
- * revision), so any declared value other than `null`/`false` counts.
- * Defaults to `true` when the request shape is unreadable so behaviour is
+ * Whether the negotiated client capabilities include form-mode elicitation.
+ *
+ * At 2025-11-25 `elicitation` already splits into `form` and `url` modes.
+ * A client declaring `elicitation: {url: {}}` only must not receive this
+ * scenario's `elicitation/create` form request. A bare `elicitation: {}` is
+ * backwards-compatible with form mode and is scored normally. Anything
+ * unreadable or non-object defaults to form-capable so behaviour is
  * unchanged for clients that negotiated elicitation normally.
  */
-function declaresElicitation(body: unknown): boolean {
-  if (typeof body !== 'object' || body === null) {
+function supportsFormElicitation(elicitation: unknown): boolean {
+  if (
+    elicitation === undefined ||
+    elicitation === null ||
+    elicitation === false
+  ) {
+    return false;
+  }
+  if (typeof elicitation !== 'object') {
     return true;
   }
-  const capabilities = (body as { params?: { capabilities?: unknown } }).params
-    ?.capabilities;
-  if (typeof capabilities !== 'object' || capabilities === null) {
-    return true;
-  }
-  const elicitation = (capabilities as Record<string, unknown>).elicitation;
-  return (
-    elicitation !== undefined && elicitation !== null && elicitation !== false
-  );
+  const modes = elicitation as Record<string, unknown>;
+  return !('url' in modes) || 'form' in modes;
 }
 
 const SEP1034_SPEC_REFERENCES = [
@@ -61,7 +63,7 @@ const SEP1034_SPEC_REFERENCES = [
 ];
 
 const ELICITATION_NOT_DECLARED_MESSAGE =
-  'Client did not declare the elicitation capability during initialize; check not applicable';
+  'Client did not declare form-mode elicitation capability during initialize; check not applicable';
 
 function skippedElicitationCheck(
   id: string,
@@ -89,7 +91,9 @@ function createServer(checks: ConformanceCheck[]): {
   const servers: { [sessionId: string]: Server } = {};
 
   // Elicitation is an optional client capability; a client that did not
-  // declare it is not applicable for this scenario rather than failing it.
+  // declare form-mode elicitation is not applicable for this scenario
+  // rather than failing it. Read from the negotiated capabilities on the
+  // SDK server, which the transport settles per session at initialize.
   let elicitationDeclared = true;
 
   const createMcpServer = () => {
@@ -106,6 +110,9 @@ function createServer(checks: ConformanceCheck[]): {
     );
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
+      elicitationDeclared = supportsFormElicitation(
+        server.getClientCapabilities()?.elicitation
+      );
       return {
         tools: [
           {
@@ -124,6 +131,9 @@ function createServer(checks: ConformanceCheck[]): {
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (request.params.name === 'test_client_elicitation_defaults') {
+        elicitationDeclared = supportsFormElicitation(
+          server.getClientCapabilities()?.elicitation
+        );
         if (!elicitationDeclared) {
           // The client negotiated without the optional elicitation
           // capability, so it must not receive `elicitation/create` and the
@@ -470,7 +480,6 @@ function createServer(checks: ConformanceCheck[]): {
         // Reuse existing transport for established sessions
         transport = transports[sessionId];
       } else if (!sessionId && isInitializeRequest(req.body)) {
-        elicitationDeclared = declaresElicitation(req.body);
         // Create new transport for initialization requests
         const mcpServer = createMcpServer();
 
