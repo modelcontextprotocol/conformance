@@ -119,6 +119,11 @@ export interface CreateIdJagInput {
   issuedAt?: number;
   /** Extra claims merged before the reserved claims above are applied. */
   additionalClaims?: Record<string, unknown>;
+  /**
+   * Override the JWT `typ` header. Defaults to {@link ID_JAG_TYP}; negative
+   * tests use this to mint a token that is not typed as an ID-JAG.
+   */
+  typ?: string;
 }
 
 /**
@@ -142,7 +147,8 @@ export async function createIdJag(
     jwtId = crypto.randomUUID(),
     expiresIn = '5m',
     issuedAt,
-    additionalClaims
+    additionalClaims,
+    typ = ID_JAG_TYP
   } = input;
 
   const payload: Record<string, unknown> = { ...(additionalClaims ?? {}) };
@@ -152,7 +158,7 @@ export async function createIdJag(
   if (email !== undefined) payload.email = email;
 
   let builder = new jose.SignJWT(payload)
-    .setProtectedHeader({ alg: ID_JAG_ALG, typ: ID_JAG_TYP, kid })
+    .setProtectedHeader({ alg: ID_JAG_ALG, typ, kid })
     .setIssuer(issuer)
     .setSubject(subject)
     .setAudience(audience)

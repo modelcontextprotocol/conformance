@@ -56,6 +56,19 @@ function toErrorMessage(error: unknown): string {
 // ---------------------------------------------------------------------------
 
 /** Resolves the signing keys (JWK Set) published by a given IdP issuer. */
+/**
+ * ID-JAG validation rules a negative test can switch off on the mock Resource
+ * AS (draft-ietf-oauth-identity-assertion-authz-grant §4.4.1, RFC 7523 §3):
+ *   - `typ`: accept a JWT whose `typ` header is not `oauth-id-jag+jwt`,
+ *   - `aud`: accept an `aud` that does not name this Resource AS,
+ *   - `exp`: accept an ID-JAG whose `exp` has passed,
+ *   - `client_id`: accept an ID-JAG whose `client_id` is not the authenticated client.
+ */
+export type IdJagValidationRule = 'typ' | 'aud' | 'exp' | 'client_id';
+
+/** Clock tolerance that effectively disables `exp` enforcement (~31 years). */
+const INSECURE_EXP_TOLERANCE_SECONDS = 1_000_000_000;
+
 export type ResourceAsKeyResolver = (idpIssuer: string) => Promise<JWK[]>;
 
 export interface ValidateIdJagOptions {
@@ -86,6 +99,11 @@ export interface ValidateIdJagOptions {
   resolveIdpKeys: ResourceAsKeyResolver;
   /** Leeway for `exp`/`iat` in seconds. Defaults to 5. */
   clockToleranceSeconds?: number;
+  /**
+   * INSECURE, negative tests only: ID-JAG validation rules to skip, producing a
+   * deliberately non-conformant Resource AS. See {@link IdJagValidationRule}.
+   */
+  insecureSkipRules?: readonly IdJagValidationRule[];
 }
 
 export interface IdJagValidationSuccess {
@@ -143,7 +161,8 @@ export async function validateIdJagForResourceAs(
       'Assertion is not a well-formed JWT'
     );
   }
-  if (header.typ !== ID_JAG_TYP) {
+  const skip = new Set(options.insecureSkipRules ?? []);
+  if (!skip.has('typ') && header.typ !== ID_JAG_TYP) {
     return validationFailure(
       'invalid_grant',
       `Assertion "typ" header must be "${ID_JAG_TYP}"`
@@ -201,10 +220,12 @@ export async function validateIdJagForResourceAs(
     const jwks = jose.createLocalJWKSet({ keys });
     ({ payload } = await jose.jwtVerify(assertion, jwks, {
       algorithms: [ID_JAG_ALG],
-      typ: ID_JAG_TYP,
+      typ: skip.has('typ') ? undefined : ID_JAG_TYP,
       issuer,
-      audience: options.resourceAsIssuer,
-      clockTolerance: options.clockToleranceSeconds ?? 5
+      audience: skip.has('aud') ? undefined : options.resourceAsIssuer,
+      clockTolerance: skip.has('exp')
+        ? INSECURE_EXP_TOLERANCE_SECONDS
+        : (options.clockToleranceSeconds ?? 5)
     }));
   } catch (error) {
     return validationFailure(
@@ -310,6 +331,11 @@ export interface MockResourceAuthorizationServerOptions {
   metadataTransform?: (
     defaults: ResourceServerMetadata
   ) => Record<string, unknown>;
+  /**
+   * INSECURE, negative tests only: ID-JAG validation rules the token endpoint
+   * skips, producing a deliberately non-conformant Resource AS.
+   */
+  insecureSkipIdJagRules?: IdJagValidationRule[];
 }
 
 export interface AccessTokenRequestParams {
@@ -471,6 +497,7 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
   private readonly metadataTransform?: (
     defaults: ResourceServerMetadata
   ) => Record<string, unknown>;
+  private readonly insecureSkipIdJagRules: readonly IdJagValidationRule[];
   private readonly jwksCache = new Map<string, JWK[]>();
   private httpServer: Server | null = null;
   private baseUrl = '';
@@ -485,7 +512,8 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
     requireResourceClaim: boolean,
     metadataTransform?: (
       defaults: ResourceServerMetadata
-    ) => Record<string, unknown>
+    ) => Record<string, unknown>,
+    insecureSkipIdJagRules: readonly IdJagValidationRule[] = []
   ) {
     this.signingKey = signingKey;
     this.trustedIdpIssuers = trustedIdpIssuers;
@@ -495,6 +523,7 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
     this.trustedMcpServers = new Set(trustedMcpServers);
     this.requireResourceClaim = requireResourceClaim;
     this.metadataTransform = metadataTransform;
+    this.insecureSkipIdJagRules = insecureSkipIdJagRules;
   }
 
   static async create(
@@ -510,7 +539,8 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
       options.clockToleranceSeconds ?? 5,
       [...(options.trustedMcpServers ?? [])],
       options.requireResourceClaim ?? true,
-      options.metadataTransform
+      options.metadataTransform,
+      [...(options.insecureSkipIdJagRules ?? [])]
     );
   }
 
@@ -869,7 +899,8 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
       requireResourceClaim: this.requireResourceClaim,
       registeredScopes: [...this.scopes],
       resolveIdpKeys: this.resolveIdpKeys,
-      clockToleranceSeconds: this.clockToleranceSeconds
+      clockToleranceSeconds: this.clockToleranceSeconds,
+      insecureSkipRules: this.insecureSkipIdJagRules
     });
 
     if (!result.ok) {
@@ -877,6 +908,23 @@ export class MockResourceAuthorizationServer implements ResourceAuthorizationSer
         error: result.error,
         error_description: result.errorDescription
       });
+      return;
+    }
+
+    // draft-ietf-oauth-identity-assertion-authz-grant §4.4.1: the ID-JAG
+    // client_id MUST match the authenticated client, else invalid_grant.
+    if (
+      auth.clientId !== undefined &&
+      !this.insecureSkipIdJagRules.includes('client_id') &&
+      result.clientId !== auth.clientId
+    ) {
+      res
+        .status(400)
+        .set('Cache-Control', 'no-store')
+        .json({
+          error: 'invalid_grant',
+          error_description: `ID-JAG client_id ${JSON.stringify(result.clientId)} does not match the authenticated client "${auth.clientId}"`
+        });
       return;
     }
 

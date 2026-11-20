@@ -3,8 +3,10 @@ import {
   ResourceServerErrorPathScenario,
   ResourceServerInvalidScopeScenario,
   ResourceServerInvalidSignatureScenario,
-  ResourceServerUntrustedIdpScenario
+  ResourceServerUntrustedIdpScenario,
+  ResourceServerIdJagValidationScenario
 } from './resource-authorization-error-path';
+import type { IdJagValidationRule } from '../auth/helpers/mockResourceAuthorizationServer';
 import { createHarness } from './test-harness';
 
 const CHECK_IDS = [
@@ -324,5 +326,108 @@ describe('ResourceServerUntrustedIdpScenario', () => {
     } finally {
       await harness.stop();
     }
+  });
+});
+
+const CHECK_IDS_ID_JAG_VALIDATION = [
+  'resource-as-error-wrong-typ-status',
+  'resource-as-error-wrong-typ-code',
+  'resource-as-error-wrong-audience-status',
+  'resource-as-error-wrong-audience-code',
+  'resource-as-error-expired-status',
+  'resource-as-error-expired-code',
+  'resource-as-error-client-id-mismatch-status',
+  'resource-as-error-client-id-mismatch-code'
+];
+
+/** Which checks a Resource AS that skips one validation rule must fail. */
+const RULE_TO_CHECK_PREFIX: Record<IdJagValidationRule, string> = {
+  typ: 'resource-as-error-wrong-typ',
+  aud: 'resource-as-error-wrong-audience',
+  exp: 'resource-as-error-expired',
+  client_id: 'resource-as-error-client-id-mismatch'
+};
+
+describe('ResourceServerIdJagValidationScenario', () => {
+  it('has a stable name and EMA extension source', () => {
+    const scenario = new ResourceServerIdJagValidationScenario();
+    expect(scenario.name).toBe(
+      'ema/resource-authorization-server/error-path-id-jag-validation'
+    );
+    expect(scenario.source).toEqual({
+      extensionId: 'io.modelcontextprotocol/enterprise-managed-authorization'
+    });
+  });
+
+  it('passes every check against a conformant Resource AS', async () => {
+    const harness = await createHarness({ registerTrustedMcpServer: true });
+    try {
+      const scenario = new ResourceServerIdJagValidationScenario();
+      const checks = await scenario.run(harness.options, harness.details);
+
+      expect(checks.map((c) => c.id)).toEqual(CHECK_IDS_ID_JAG_VALIDATION);
+      for (const check of checks) {
+        expect(
+          check.status,
+          `${check.id} failed: ${check.errorMessage ?? ''}`
+        ).toBe('SUCCESS');
+        expect(check.specReferences?.length).toBeGreaterThan(0);
+      }
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  it.each(Object.keys(RULE_TO_CHECK_PREFIX) as IdJagValidationRule[])(
+    'fails only the %s checks against a Resource AS that skips that rule',
+    async (rule) => {
+      const harness = await createHarness({
+        registerTrustedMcpServer: true,
+        mockOptions: { insecureSkipIdJagRules: [rule] }
+      });
+      try {
+        const scenario = new ResourceServerIdJagValidationScenario();
+        const checks = await scenario.run(harness.options, harness.details);
+
+        expect(checks.map((c) => c.id)).toEqual(CHECK_IDS_ID_JAG_VALIDATION);
+        const prefix = RULE_TO_CHECK_PREFIX[rule];
+        for (const check of checks) {
+          const expected = check.id.startsWith(`${prefix}-`)
+            ? 'FAILURE'
+            : 'SUCCESS';
+          expect(check.status, `${check.id}: ${check.errorMessage ?? ''}`).toBe(
+            expected
+          );
+        }
+        const statusCheck = checks.find((c) => c.id === `${prefix}-status`);
+        expect(statusCheck?.details?.statusCode).toBe(200);
+      } finally {
+        await harness.stop();
+      }
+    }
+  );
+
+  it('skips when a required setting is missing', async () => {
+    const scenario = new ResourceServerIdJagValidationScenario();
+    const checks = await scenario.run(
+      { url: 'https://resource-as.example.com' },
+      {}
+    );
+    expect(checks).toHaveLength(1);
+    expect(checks[0].status).toBe('SKIPPED');
+  });
+
+  it('skips when no trusted IdP AS is supplied via details', async () => {
+    const scenario = new ResourceServerIdJagValidationScenario();
+    const checks = await scenario.run(
+      {
+        url: 'https://resource-as.example.com',
+        clientId: 'mcp-client',
+        clientSecret: 'secret'
+      },
+      {}
+    );
+    expect(checks).toHaveLength(1);
+    expect(checks[0].status).toBe('SKIPPED');
   });
 });

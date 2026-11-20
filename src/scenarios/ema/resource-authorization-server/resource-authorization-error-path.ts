@@ -21,6 +21,11 @@
  * Resource AS does not trust is rejected with an RFC 7521 §4.1.1
  * `invalid_grant` error (HTTP 400).
  *
+ * Scenario 9 ({@link ResourceServerIdJagValidationScenario}): a trusted IdP
+ * signs ID-JAGs that are each wrong in one field the Resource AS MUST validate
+ * (`typ`, `aud`, `exp`, `client_id`); each is rejected with an
+ * `invalid_grant` error (HTTP 400).
+ *
  * These scenarios target a Resource AS named by {@link
  * ResourceAuthorizationServerOptions}: they discover the token endpoint from the
  * issuer's server metadata. The runner plays the MCP Client and hosts the
@@ -627,5 +632,218 @@ export class ResourceServerUntrustedIdpScenario implements ScenarioForResourceAu
     });
 
     return checks;
+  }
+}
+
+/** One tampered-ID-JAG case of {@link ResourceServerIdJagValidationScenario}. */
+interface IdJagValidationCase {
+  /** Check id prefix; the case emits `<prefix>-status` and `<prefix>-code`. */
+  checkIdPrefix: string;
+  /** PascalCase check name prefix. */
+  checkNamePrefix: string;
+  /** What is wrong with the ID-JAG, for check descriptions. */
+  defect: string;
+  specReferences: ConformanceCheck['specReferences'];
+  /** Mint the tampered ID-JAG. */
+  mint: (
+    idp: IdPAuthorizationServer,
+    endpoints: ResourceAsEndpoints,
+    client: ClientContext,
+    trustedMcpServer: string | undefined
+  ) => Promise<string>;
+}
+
+const ID_JAG_VALIDATION_CASES: IdJagValidationCase[] = [
+  {
+    // draft-ietf-oauth-identity-assertion-authz-grant §3.1: typ MUST be
+    // oauth-id-jag+jwt; §4.4.1 requires validating it (RFC 8725 §3.11). This
+    // stops a plain OIDC ID token (typ JWT) from being replayed as an ID-JAG.
+    checkIdPrefix: 'resource-as-error-wrong-typ',
+    checkNamePrefix: 'ResourceAsErrorWrongTyp',
+    defect: 'a JWT typ header other than oauth-id-jag+jwt',
+    specReferences: [
+      SPEC_REFERENCES.ID_JAG_CLAIMS,
+      SPEC_REFERENCES.ID_JAG_PROCESSING_RULES,
+      SPEC_REFERENCES.RFC_8725_EXPLICIT_TYPING
+    ],
+    mint: (idp, endpoints, client, trustedMcpServer) =>
+      idp.issueIdJag({
+        subject: client.idpSub,
+        audience: endpoints.issuer,
+        clientId: client.clientId,
+        resource: trustedMcpServer,
+        typ: 'JWT'
+      })
+  },
+  {
+    // §4.4.1: the Resource AS MUST validate aud names its own issuer and
+    // reject a mismatch with invalid_grant. Stops an ID-JAG minted for a
+    // different Resource AS from being redeemed here.
+    checkIdPrefix: 'resource-as-error-wrong-audience',
+    checkNamePrefix: 'ResourceAsErrorWrongAudience',
+    defect: 'an aud claim naming a different Resource AS',
+    specReferences: [SPEC_REFERENCES.ID_JAG_PROCESSING_RULES],
+    mint: (idp, _endpoints, client, trustedMcpServer) =>
+      idp.issueIdJag({
+        subject: client.idpSub,
+        audience: `https://other-resource-as.example/${randomUUID()}`,
+        clientId: client.clientId,
+        resource: trustedMcpServer
+      })
+  },
+  {
+    // RFC 7523 §3 (applied via §4.4.1 / RFC 7521 §5.2): the AS MUST reject a
+    // JWT whose exp has passed. Stops replay of a leaked, stale ID-JAG.
+    checkIdPrefix: 'resource-as-error-expired',
+    checkNamePrefix: 'ResourceAsErrorExpired',
+    defect: 'an exp claim in the past',
+    specReferences: [
+      SPEC_REFERENCES.RFC_7523_JWT_FORMAT,
+      SPEC_REFERENCES.ID_JAG_PROCESSING_RULES
+    ],
+    mint: (idp, endpoints, client, trustedMcpServer) =>
+      idp.issueIdJag({
+        subject: client.idpSub,
+        audience: endpoints.issuer,
+        clientId: client.clientId,
+        resource: trustedMcpServer,
+        issuedAt: Math.floor(Date.now() / 1000) - 20 * 60,
+        expiresIn: '10 minutes ago'
+      })
+  },
+  {
+    // §4.4.1: the ID-JAG client_id MUST match the authenticated client, else
+    // invalid_grant. Stops one client redeeming an ID-JAG issued to another.
+    checkIdPrefix: 'resource-as-error-client-id-mismatch',
+    checkNamePrefix: 'ResourceAsErrorClientIdMismatch',
+    defect: 'a client_id claim that is not the authenticated client',
+    specReferences: [
+      SPEC_REFERENCES.ID_JAG_CLAIMS,
+      SPEC_REFERENCES.ID_JAG_PROCESSING_RULES
+    ],
+    mint: (idp, endpoints, client, trustedMcpServer) =>
+      idp.issueIdJag({
+        subject: client.idpSub,
+        audience: endpoints.issuer,
+        clientId: `other-client-${randomUUID()}`,
+        resource: trustedMcpServer
+      })
+  }
+];
+
+/**
+ * Scenario 9: a trusted IdP signs ID-JAGs that are each wrong in exactly one
+ * claim or header the Resource AS MUST validate — `typ`, `aud`, `exp`,
+ * `client_id` (draft-ietf-oauth-identity-assertion-authz-grant §3.1, §4.4.1;
+ * RFC 7523 §3). Every one must be rejected with HTTP 400 `invalid_grant`.
+ * One scenario, many checks: a Resource AS that enforces three of the four
+ * rules shows up as passing 6/8 checks.
+ */
+export class ResourceServerIdJagValidationScenario implements ScenarioForResourceAuthorizationServer {
+  name = 'ema/resource-authorization-server/error-path-id-jag-validation';
+  readonly source = EMA_SOURCE;
+  description =
+    'EMA: a Resource AS rejects ID-JAGs with a wrong typ header, a wrong aud, an expired exp, or a client_id that does not match the authenticated client, each with a 400 invalid_grant error (draft-ietf-oauth-identity-assertion-authz-grant §4.4.1, RFC 7523 §3).';
+
+  async run(
+    options: ResourceAuthorizationServerOptions,
+    details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]> {
+    const firstCheckId = `${ID_JAG_VALIDATION_CASES[0].checkIdPrefix}-status`;
+    const firstCheckName = `${ID_JAG_VALIDATION_CASES[0].checkNamePrefix}Status`;
+    try {
+      const client = resolveSignatureClientContext(options);
+      if ('missing' in client) {
+        return [
+          skippedCheck(
+            firstCheckId,
+            firstCheckName,
+            `error-path-id-jag-validation requires the "${client.missing}" setting`
+          )
+        ];
+      }
+      const idp = getIdp(details, TRUSTED_IDP_DETAIL);
+      if (!idp) {
+        return [
+          skippedCheck(
+            firstCheckId,
+            firstCheckName,
+            'error-path-id-jag-validation requires a trusted IdP AS supplied via details'
+          )
+        ];
+      }
+      const endpoints = await discoverResourceAs(options.url);
+      const checks: ConformanceCheck[] = [];
+      for (const testCase of ID_JAG_VALIDATION_CASES) {
+        checks.push(
+          ...(await this.runCase(
+            testCase,
+            idp,
+            endpoints,
+            client,
+            options.trustedMcpServer
+          ))
+        );
+      }
+      return checks;
+    } catch (error) {
+      return [failureCheck(firstCheckId, firstCheckName, error)];
+    }
+  }
+
+  private async runCase(
+    testCase: IdJagValidationCase,
+    idp: IdPAuthorizationServer,
+    endpoints: ResourceAsEndpoints,
+    client: ClientContext,
+    trustedMcpServer: string | undefined
+  ): Promise<ConformanceCheck[]> {
+    const timestamp = () => new Date().toISOString();
+    const idJag = await testCase.mint(idp, endpoints, client, trustedMcpServer);
+
+    const response = await requestAccessTokenWithIdJag(
+      endpoints.tokenEndpoint,
+      {
+        assertion: idJag,
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
+        clientAuthMethod: 'client_secret_post'
+      }
+    );
+
+    const statusOk = response.statusCode === 400;
+    const errorOk = response.body.error === 'invalid_grant';
+    return [
+      {
+        id: `${testCase.checkIdPrefix}-status`,
+        name: `${testCase.checkNamePrefix}Status`,
+        description: `Resource AS responds 400 Bad Request to an ID-JAG with ${testCase.defect}`,
+        status: statusOk ? 'SUCCESS' : 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: statusOk
+          ? undefined
+          : `Expected HTTP 400, got ${response.statusCode} with body ${JSON.stringify(response.body)}`,
+        specReferences: testCase.specReferences,
+        details: { statusCode: response.statusCode }
+      },
+      {
+        id: `${testCase.checkIdPrefix}-code`,
+        name: `${testCase.checkNamePrefix}Code`,
+        description: `Resource AS error response uses error="invalid_grant" for an ID-JAG with ${testCase.defect}`,
+        status: errorOk ? 'SUCCESS' : 'FAILURE',
+        timestamp: timestamp(),
+        errorMessage: errorOk
+          ? undefined
+          : `Expected error "invalid_grant", got ${JSON.stringify(response.body.error)}`,
+        specReferences: [
+          ...(testCase.specReferences ?? []),
+          SPEC_REFERENCES.RFC_7521_INVALID_GRANT
+        ],
+        details: {
+          error: response.body.error,
+          error_description: response.body.error_description
+        }
+      }
+    ];
   }
 }

@@ -13,6 +13,22 @@ export const SpecReferences: { [key: string]: SpecReference } = {
     id: 'draft-ietf-oauth-identity-assertion-authz-grant-04-discovery',
     url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-identity-assertion-authz-grant-04.html#section-7.2'
   },
+  ID_JAG_CLAIMS: {
+    id: 'draft-ietf-oauth-identity-assertion-authz-grant-04-3.1',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-identity-assertion-authz-grant-04.html#section-3.1'
+  },
+  ID_JAG_PROCESSING_RULES: {
+    id: 'draft-ietf-oauth-identity-assertion-authz-grant-04-4.4.1',
+    url: 'https://www.ietf.org/archive/id/draft-ietf-oauth-identity-assertion-authz-grant-04.html#section-4.4.1'
+  },
+  RFC_7523_JWT_FORMAT: {
+    id: 'RFC-7523-3',
+    url: 'https://www.rfc-editor.org/rfc/rfc7523.html#section-3'
+  },
+  RFC_8725_EXPLICIT_TYPING: {
+    id: 'RFC-8725-3.11',
+    url: 'https://www.rfc-editor.org/rfc/rfc8725.html#section-3.11'
+  },
   RFC_7523: {
     id: 'RFC-7523',
     url: 'https://www.rfc-editor.org/rfc/rfc7523.html'

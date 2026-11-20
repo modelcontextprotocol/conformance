@@ -125,7 +125,8 @@ import {
   ResourceServerErrorPathScenario,
   ResourceServerInvalidScopeScenario,
   ResourceServerInvalidSignatureScenario,
-  ResourceServerUntrustedIdpScenario
+  ResourceServerUntrustedIdpScenario,
+  ResourceServerIdJagValidationScenario
 } from './ema/resource-authorization-server/resource-authorization-error-path';
 
 import { HttpStandardHeadersScenario } from './client/http-standard-headers';
@@ -318,7 +319,8 @@ const allScenariosListForResourceAuthorizationServer: ScenarioForResourceAuthori
     new ResourceServerErrorPathScenario(),
     new ResourceServerInvalidScopeScenario(),
     new ResourceServerInvalidSignatureScenario(),
-    new ResourceServerUntrustedIdpScenario()
+    new ResourceServerUntrustedIdpScenario(),
+    new ResourceServerIdJagValidationScenario()
   ];
 
 // Scenarios map for the EMA Resource Authorization Server - built from list
