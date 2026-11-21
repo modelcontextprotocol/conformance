@@ -17,6 +17,12 @@ import {
   runAuthorizationServerConformanceTest
 } from './runner/authorization-server';
 import {
+  printResourceAuthorizationServerResults,
+  printResourceAuthorizationServerSummary,
+  runResourceAuthorizationServerConformanceTest,
+  startIdps
+} from './runner/resource-authorization-server';
+import {
   listScenarios,
   listClientScenarios,
   listActiveClientScenarios,
@@ -33,6 +39,7 @@ import {
   getScenarioSpecVersions,
   listClientScenariosForAuthorizationServer,
   listClientScenariosForAuthorizationServerForSpec,
+  listScenariosForResourceAuthorizationServer,
   resolveSpecVersion
 } from './scenarios';
 import type { SpecVersion } from './scenarios';
@@ -40,9 +47,13 @@ import { ConformanceCheck } from './types';
 import {
   AuthorizationServerOptionsSchema,
   ClientOptionsSchema,
-  ServerOptionsSchema
+  ServerOptionsSchema,
+  ResourceAuthorizationServerOptionsSchema
 } from './schemas';
-import type { AuthorizationServerOptions } from './schemas';
+import type {
+  AuthorizationServerOptions,
+  ResourceAuthorizationServerOptions
+} from './schemas';
 import { withWireRecorder } from './validation/wire-schema';
 import {
   filterScenariosByRequirements,
@@ -917,6 +928,182 @@ program
     }
   });
 
+// Resource Authorization Server command - tests a Resource AS implementation
+// (EMA / ID-JAG, ISSUE-470). The runner also hosts the trusted and untrusted
+// IdP Authorization Server(s) these scenarios need to mint ID-JAGs; the target
+// Resource AS must already be configured (out of band) to trust the printed
+// trusted issuer.
+program
+  .command('resource-authorization-server')
+  .description(
+    'Run conformance tests against a Resource Authorization Server implementation (EMA / ID-JAG)'
+  )
+  .option(
+    '--file <filename>',
+    'Path to JSON settings file (see examples/authorization-server-settings.example.json for the format)'
+  )
+  .option('--url <url>', 'Issuer URL of the resource authorization server')
+  .option('--scenario <scenario>', 'Test scenario to run')
+  .option(
+    '--client-id <id>',
+    'client_id of the MCP Client registered with the resource authorization server'
+  )
+  .option(
+    '--client-secret <secret>',
+    'Client secret for that MCP Client (client_secret_post)'
+  )
+  .option(
+    '--trusted-idp-issuer <url>',
+    'Issuer URL for the runner-hosted trusted IdP AS; a http(s)://localhost:PORT or 127.0.0.1:PORT value binds directly to that port, other URLs must be fronted by a tunnel (defaults to an ephemeral localhost URL)'
+  )
+  .option(
+    '--untrusted-idp-issuer <url>',
+    'Issuer URL for the runner-hosted untrusted IdP AS; a http(s)://localhost:PORT or 127.0.0.1:PORT value binds directly to that port, other URLs must be fronted by a tunnel (defaults to an ephemeral localhost URL)'
+  )
+  .option(
+    '--trusted-mcp-server <url>',
+    'URL of an MCP Server the resource authorization server trusts'
+  )
+  .option(
+    '--untrusted-mcp-server <url>',
+    'URL of an MCP Server the resource authorization server does not trust'
+  )
+  .option(
+    '--scope <scope>',
+    'OAuth scope the resource authorization server recognises'
+  )
+  .option(
+    '--sub <sub>',
+    "User id registered with the resource authorization server (expected in the issued access token's sub claim)"
+  )
+  .option(
+    '--idp-sub <idpSub>',
+    'User id registered with the trusted IdP AS for the same person as --sub (used as the ID-JAG sub claim)'
+  )
+  .option('-o, --output-dir <path>', 'Save results to this directory')
+  .option('--verbose', 'Show verbose output (JSON instead of pretty print)')
+  .action(async (options) => {
+    let stopIdps: (() => Promise<void>) | undefined;
+    try {
+      let fileOptions: ResourceAuthorizationServerOptions | undefined;
+      if (options.file) {
+        try {
+          const raw = JSON.parse(await fs.readFile(options.file, 'utf-8'));
+          // The file must be a complete, valid config on its own; CLI flags
+          // are optional overrides. .strict() rejects unknown keys so typos
+          // surface instead of being silently ignored.
+          fileOptions =
+            ResourceAuthorizationServerOptionsSchema.strict().parse(raw);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            const details = error.issues
+              .map((e) => `  ${e.path.join('.') || '(root)'}: ${e.message}`)
+              .join('\n');
+            console.error(
+              `Invalid settings file '${options.file}':\n${details}`
+            );
+          } else {
+            console.error(
+              `Failed to read settings file '${options.file}': ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+          }
+          process.exit(1);
+        }
+      }
+      if (!fileOptions && !options.url) {
+        console.error('error: must provide --url or --file');
+        process.exit(1);
+      }
+      // CLI flags override file values; undefined CLI values must not clobber file values
+      const merged = {
+        ...fileOptions,
+        ...Object.fromEntries(
+          Object.entries(options).filter(([, v]) => v !== undefined)
+        )
+      };
+      const validated = ResourceAuthorizationServerOptionsSchema.parse(merged);
+      const verbose = options.verbose ?? false;
+      const outputDir = options.outputDir;
+
+      const idps = await startIdps(validated);
+      stopIdps = idps.stop;
+
+      // If a single scenario is specified, run just that one
+      if (validated.scenario) {
+        const result = await runResourceAuthorizationServerConformanceTest(
+          validated,
+          validated.scenario,
+          idps.details,
+          outputDir
+        );
+
+        const { failed } = printResourceAuthorizationServerResults(
+          result.checks,
+          result.scenarioDescription,
+          verbose
+        );
+
+        await stopIdps();
+        process.exit(failed > 0 ? 1 : 0);
+      }
+
+      const scenarios = listScenariosForResourceAuthorizationServer();
+      console.log(
+        `Running test (${scenarios.length} scenarios) against ${validated.url}\n`
+      );
+
+      const allResults: { scenario: string; checks: ConformanceCheck[] }[] = [];
+      for (const scenarioName of scenarios) {
+        console.log(`\n=== Running scenario: ${scenarioName} ===`);
+        try {
+          const result = await runResourceAuthorizationServerConformanceTest(
+            validated,
+            scenarioName,
+            idps.details,
+            outputDir
+          );
+          allResults.push({ scenario: scenarioName, checks: result.checks });
+        } catch (error) {
+          console.error(`Failed to run scenario ${scenarioName}:`, error);
+          allResults.push({
+            scenario: scenarioName,
+            checks: [
+              {
+                id: scenarioName,
+                name: scenarioName,
+                description: 'Failed to run scenario',
+                status: 'FAILURE',
+                timestamp: new Date().toISOString(),
+                errorMessage:
+                  error instanceof Error ? error.message : String(error)
+              }
+            ]
+          });
+        }
+      }
+      await stopIdps();
+      const { totalFailed } =
+        printResourceAuthorizationServerSummary(allResults);
+      process.exit(totalFailed > 0 ? 1 : 0);
+    } catch (error) {
+      await stopIdps?.();
+      if (error instanceof ZodError) {
+        console.error('Validation error:');
+        error.issues.forEach((err) => {
+          console.error(`  ${err.path.join('.')}: ${err.message}`);
+        });
+        console.error('\nAvailable resource authorization server scenarios:');
+        listScenariosForResourceAuthorizationServer().forEach((s) =>
+          console.error(`  - ${s}`)
+        );
+        process.exit(1);
+      }
+      console.error('Resource authorization server test error:', error);
+      process.exit(1);
+    }
+  });
+
 // Tier check command
 program.addCommand(createTierCheckCommand());
 
@@ -939,6 +1126,10 @@ program
   .option('--server', 'List server scenarios')
   .option('--authorization', 'List authorization server scenarios')
   .option(
+    '--resource-authorization-server',
+    'List resource authorization server scenarios'
+  )
+  .option(
     '--spec-version <version>',
     'Filter scenarios by spec version (cumulative for date versions)'
   )
@@ -950,6 +1141,11 @@ program
     const specVersionFilter = options.specVersion
       ? resolveSpecVersion(options.specVersion)
       : undefined;
+    const noCategoryFlag =
+      !options.client &&
+      !options.server &&
+      !options.authorization &&
+      !options.resourceAuthorizationServer;
 
     if (options.requirements !== undefined) {
       for (const rev of String(options.requirements).split(',')) {
@@ -958,10 +1154,7 @@ program
       return;
     }
 
-    if (
-      options.server ||
-      (!options.client && !options.server && !options.authorization)
-    ) {
+    if (options.server || noCategoryFlag) {
       console.log('Server scenarios (test against a server):');
       let serverScenarios = listClientScenarios();
       if (specVersionFilter) {
@@ -977,11 +1170,8 @@ program
       });
     }
 
-    if (
-      options.client ||
-      (!options.client && !options.server && !options.authorization)
-    ) {
-      if (options.server || (!options.client && !options.server)) {
+    if (options.client || noCategoryFlag) {
+      if (options.server || noCategoryFlag) {
         console.log('');
       }
       console.log('Client scenarios (test against a client):');
@@ -999,11 +1189,8 @@ program
       });
     }
 
-    if (
-      options.authorization ||
-      (!options.authorization && !options.server && !options.client)
-    ) {
-      if (!(options.authorization && !options.server && !options.client)) {
+    if (options.authorization || noCategoryFlag) {
+      if (options.server || options.client || noCategoryFlag) {
         console.log('');
       }
       console.log(
@@ -1019,6 +1206,26 @@ program
         );
       }
       authorizationServerScenarios.forEach((s) => {
+        const v = getScenarioSpecVersions(s);
+        console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
+      });
+    }
+
+    if (options.resourceAuthorizationServer || noCategoryFlag) {
+      if (
+        options.server ||
+        options.client ||
+        options.authorization ||
+        noCategoryFlag
+      ) {
+        console.log('');
+      }
+      console.log(
+        'Resource authorization server scenarios (test against a Resource AS, EMA / ID-JAG):'
+      );
+      // Spec-version filtering does not apply: these scenarios are all
+      // extension-sourced (`source.extensionId`), never a dated spec version.
+      listScenariosForResourceAuthorizationServer().forEach((s) => {
         const v = getScenarioSpecVersions(s);
         console.log(`  - ${s}${v ? ` [${v}]` : ''}`);
       });

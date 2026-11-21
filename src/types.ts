@@ -1,6 +1,9 @@
 import type { RunContext } from './connection';
 import type { ScenarioContext } from './mock-server';
-import type { AuthorizationServerOptions } from './schemas';
+import type {
+  AuthorizationServerOptions,
+  ResourceAuthorizationServerOptions
+} from './schemas';
 
 export type CheckStatus =
   | 'SUCCESS'
@@ -156,6 +159,16 @@ export interface ClientScenarioForAuthorizationServer {
   source: ScenarioSource;
   run(
     options: AuthorizationServerOptions,
+    details: Record<string, unknown>
+  ): Promise<ConformanceCheck[]>;
+}
+
+export interface ScenarioForResourceAuthorizationServer {
+  name: string;
+  description: string;
+  source: ScenarioSource;
+  run(
+    options: ResourceAuthorizationServerOptions,
     details: Record<string, unknown>
   ): Promise<ConformanceCheck[]>;
 }
