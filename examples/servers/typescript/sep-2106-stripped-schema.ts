@@ -15,8 +15,38 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ListToolsRequestSchema,
+  type ListToolsResult
+} from '@modelcontextprotocol/sdk/types.js';
 import express from 'express';
+import {
+  inspectDraftRequest,
+  sendDraftDiscovery,
+  sendDraftMethodNotFound,
+  sendDraftResult
+} from './helpers/draft-protocol.js';
+
+const TOOL_CATALOG: ListToolsResult['tools'] = [
+  {
+    name: 'json_schema_2020_12_tool',
+    description: 'Tool whose JSON Schema 2020-12 keywords have been stripped',
+    // Stripped: only type + plain properties survive.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        address: {
+          type: 'object',
+          properties: {
+            street: { type: 'string' },
+            city: { type: 'string' }
+          }
+        }
+      }
+    }
+  }
+];
 
 function createServer() {
   const server = new Server(
@@ -25,27 +55,7 @@ function createServer() {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'json_schema_2020_12_tool',
-        description:
-          'Tool whose JSON Schema 2020-12 keywords have been stripped',
-        // Stripped: only type + plain properties survive.
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            address: {
-              type: 'object',
-              properties: {
-                street: { type: 'string' },
-                city: { type: 'string' }
-              }
-            }
-          }
-        }
-      }
-    ]
+    tools: TOOL_CATALOG
   }));
 
   return server;
@@ -56,6 +66,22 @@ app.use(express.json());
 
 app.post('/mcp', async (req, res) => {
   try {
+    const draft = inspectDraftRequest(req, res);
+    if (draft.kind === 'rejected') return;
+    if (draft.kind === 'draft') {
+      if (draft.method === 'server/discover') {
+        return sendDraftDiscovery(
+          res,
+          draft.id,
+          { name: 'sep-2106-stripped-schema', version: '1.0.0' },
+          { tools: {} }
+        );
+      }
+      if (draft.method === 'tools/list') {
+        return sendDraftResult(res, draft.id, { tools: TOOL_CATALOG });
+      }
+      return sendDraftMethodNotFound(res, draft.id);
+    }
     const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined

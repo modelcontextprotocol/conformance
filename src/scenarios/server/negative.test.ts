@@ -118,6 +118,30 @@ describe('Server scenario negative tests', () => {
       await stopServer(serverProcess);
     });
 
+    it('speaks draft discover and tools/list without adding DNS protection', async () => {
+      const conn = await testContext(
+        `http://localhost:${PORT}/mcp`,
+        DRAFT_PROTOCOL_VERSION
+      ).connect();
+      try {
+        const discovery = await conn.discover();
+        expect(discovery.supportedVersions).toContain(DRAFT_PROTOCOL_VERSION);
+        const result = await conn.request<{ tools: Array<{ name: string }> }>(
+          'tools/list'
+        );
+        expect(result.tools.map((tool) => tool.name)).toContain('echo');
+      } finally {
+        await conn.close();
+      }
+      const checks = await new DNSRebindingProtectionScenario().run(
+        testContext(`http://localhost:${PORT}/mcp`, DRAFT_PROTOCOL_VERSION)
+      );
+      expect(
+        checks.find((check) => check.id === 'localhost-host-rebinding-rejected')
+          ?.status
+      ).toBe('FAILURE');
+    }, 10000);
+
     it('emits FAILURE against a server without rebinding protection', async () => {
       const scenario = new DNSRebindingProtectionScenario();
       const checks = await scenario.run(
@@ -396,6 +420,24 @@ describe('Server scenario negative tests', () => {
       await stopServer(serverProcess);
     });
 
+    it('speaks draft discover and preserves the intentionally stripped schema', async () => {
+      const conn = await testContext(
+        `http://localhost:${PORT}/mcp`,
+        DRAFT_PROTOCOL_VERSION
+      ).connect();
+      try {
+        const discovery = await conn.discover();
+        expect(discovery.supportedVersions).toContain(DRAFT_PROTOCOL_VERSION);
+        const result = await conn.request<{
+          tools: Array<{ name: string; inputSchema: Record<string, unknown> }>;
+        }>('tools/list');
+        expect(result.tools[0]?.name).toBe('json_schema_2020_12_tool');
+        expect(result.tools[0]?.inputSchema).not.toHaveProperty('$schema');
+      } finally {
+        await conn.close();
+      }
+    }, 10000);
+
     it('flags SEP-2106 keyword-preservation checks against a server that strips the 2020-12 vocabulary', async () => {
       const scenario = new JsonSchema2020_12Scenario();
       const checks = await scenario.run(
@@ -482,6 +524,23 @@ describe('Server scenario negative tests', () => {
     afterAll(async () => {
       await stopServer(serverProcess);
     });
+
+    it('speaks draft discover and still advertises invalid tool names', async () => {
+      const conn = await testContext(
+        `http://localhost:${PORT}/mcp`,
+        DRAFT_PROTOCOL_VERSION
+      ).connect();
+      try {
+        const discovery = await conn.discover();
+        expect(discovery.supportedVersions).toContain(DRAFT_PROTOCOL_VERSION);
+        const result = await conn.request<{ tools: Array<{ name: string }> }>(
+          'tools/list'
+        );
+        expect(result.tools.map((tool) => tool.name)).toContain('bad tool name');
+      } finally {
+        await conn.close();
+      }
+    }, 10000);
 
     it('emits WARNING for tools-name-format against a server advertising invalid tool names', async () => {
       const scenario = new ToolsListScenario();

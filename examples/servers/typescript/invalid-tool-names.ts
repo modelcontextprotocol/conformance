@@ -8,8 +8,30 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ListToolsRequestSchema,
+  type ListToolsResult
+} from '@modelcontextprotocol/sdk/types.js';
 import express from 'express';
+import {
+  inspectDraftRequest,
+  sendDraftDiscovery,
+  sendDraftMethodNotFound,
+  sendDraftResult
+} from './helpers/draft-protocol.js';
+
+const TOOL_CATALOG: ListToolsResult['tools'] = [
+  {
+    name: 'bad tool name',
+    description: 'Deliberately invalid tool name for conformance testing',
+    inputSchema: { type: 'object' }
+  },
+  {
+    name: 'valid_tool',
+    description: 'A conformant tool name',
+    inputSchema: { type: 'object' }
+  }
+];
 
 function createServer() {
   const server = new Server(
@@ -18,18 +40,7 @@ function createServer() {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: 'bad tool name',
-        description: 'Deliberately invalid tool name for conformance testing',
-        inputSchema: { type: 'object' }
-      },
-      {
-        name: 'valid_tool',
-        description: 'A conformant tool name',
-        inputSchema: { type: 'object' }
-      }
-    ]
+    tools: TOOL_CATALOG
   }));
 
   return server;
@@ -40,6 +51,22 @@ app.use(express.json());
 
 app.post('/mcp', async (req, res) => {
   try {
+    const draft = inspectDraftRequest(req, res);
+    if (draft.kind === 'rejected') return;
+    if (draft.kind === 'draft') {
+      if (draft.method === 'server/discover') {
+        return sendDraftDiscovery(
+          res,
+          draft.id,
+          { name: 'invalid-tool-names', version: '1.0.0' },
+          { tools: {} }
+        );
+      }
+      if (draft.method === 'tools/list') {
+        return sendDraftResult(res, draft.id, { tools: TOOL_CATALOG });
+      }
+      return sendDraftMethodNotFound(res, draft.id);
+    }
     const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined
