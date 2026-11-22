@@ -108,6 +108,7 @@ import {
   HttpHeaderValidationScenario,
   HttpCustomHeaderServerValidationScenario
 } from './server/http-standard-headers';
+import { TokenAudienceValidationScenario } from './server/auth/token-audience-validation';
 
 import {
   authScenariosList,
@@ -166,7 +167,13 @@ const pendingClientScenariosList: ClientScenario[] = [
   // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
-  new SkillsManifestScenario()
+  new SkillsManifestScenario(),
+
+  // Server-side OAuth token audience validation (issue #78). Pending because
+  // the everything-server runs without authentication enabled; targeted runs
+  // point at an auth-enabled server configured to trust the mock AS via
+  // `npm start -- server --scenario auth/token-audience-validation --url <server>`.
+  new TokenAudienceValidationScenario()
 ];
 
 // All client scenarios
@@ -233,6 +240,7 @@ const allClientScenariosList: ClientScenario[] = [
 
   // Security scenarios
   new DNSRebindingProtectionScenario(),
+  new TokenAudienceValidationScenario(),
 
   // Caching scenarios (SEP-2549)
   new CachingScenario(),
