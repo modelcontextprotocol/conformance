@@ -37,6 +37,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
 import { randomUUID, createHmac } from 'crypto';
+import { inspectDraftRequest, sendDraftDiscovery } from './helpers/draft-protocol.js';
 
 // Server state
 const resourceSubscriptions = new Set<string>();
@@ -1225,16 +1226,6 @@ app.use(
   })
 );
 
-// Protocol revisions that use the initialize/session lifecycle. The
-// per-request `_meta` and header/body validation requirements apply to
-// 2026-07-28 and later, not to traffic from these revisions.
-const LEGACY_SESSION_PROTOCOL_VERSIONS = [
-  '2024-11-05',
-  '2025-03-26',
-  '2025-06-18',
-  '2025-11-25'
-];
-
 // Stateless (draft) operations whose results MUST carry the SEP-2549 caching
 // hints (`ttlMs`, `cacheScope`).
 const STATELESS_CACHEABLE_METHODS: ReadonlySet<string> = new Set([
@@ -1276,79 +1267,15 @@ function sendStatelessJson(
 // Handle POST requests - stateful mode
 app.post('/mcp', async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  const reqVersion = req.headers['mcp-protocol-version'] as string | undefined;
   const body = req.body || {};
   const method = body.method;
   const id = body.id ?? null;
   const params = body.params || {};
   const meta = params._meta;
-  const metaVersion = meta?.['io.modelcontextprotocol/protocolVersion'];
 
-  // A request that carries no `_meta` and names a legacy session-era revision
-  // in the header is legacy traffic; it is served by the session path below
-  // instead of being rejected for missing per-request metadata.
-  const isLegacySessionEraRequest =
-    meta === undefined &&
-    reqVersion !== undefined &&
-    LEGACY_SESSION_PROTOCOL_VERSIONS.includes(reqVersion);
-
-  if (!sessionId && (reqVersion || meta) && !isLegacySessionEraRequest) {
-    // Missing Transport Header Validation Check
-    if (!reqVersion) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: { code: -32020, message: 'Missing MCP-Protocol-Version header' }
-      });
-    }
-
-    // Per-Request Metadata Integrity Checks (Fields verification).
-    // A request missing any required `_meta` field is malformed: -32602 and,
-    // on HTTP, status 400 Bad Request. `clientInfo` is a SHOULD since spec
-    // PR #3002 and is never required.
-    if (
-      !meta ||
-      !meta['io.modelcontextprotocol/protocolVersion'] ||
-      !meta['io.modelcontextprotocol/clientCapabilities']
-    ) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32602,
-          message: 'Invalid params: missing _meta or required fields'
-        }
-      });
-    }
-
-    // Header Mismatch Verification (-32020, HTTP 400)
-    if (reqVersion !== metaVersion) {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32020,
-          message: 'Mismatched MCP-Protocol-Version header'
-        }
-      });
-    }
-
-    // Protocol Version Negotiation Matrix (-32022, HTTP 400)
-    if (metaVersion !== '2026-07-28') {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32022,
-          message: 'UnsupportedProtocolVersionError',
-          data: {
-            supported: ['2026-07-28'],
-            requested: String(metaVersion)
-          }
-        }
-      });
-    }
-
+  const draftRequest = inspectDraftRequest(req, res);
+  if (draftRequest.kind === 'rejected') return;
+  if (draftRequest.kind === 'draft') {
     // Subscriptions Listening Endpoint Stream Handler (SSE/Chunked Line)
     if (method === 'subscriptions/listen') {
       res.writeHead(200, {
@@ -1398,27 +1325,18 @@ app.post('/mcp', async (req, res) => {
     }
 
     if (method === 'server/discover') {
-      return sendStatelessJson(res, method, {
-        jsonrpc: '2.0',
+      return sendDraftDiscovery(
+        res,
         id,
-        result: {
-          supportedVersions: ['2026-07-28'],
-          capabilities: {
-            tools: { listChanged: true }, // Explicitly announce dynamic capabilities matching Section 7 expectations
-            prompts: { listChanged: true },
-            // resources/list, resources/templates/list and resources/read are
-            // served on this path, so the capability must be declared too.
-            resources: {}
-          },
-          // Spec PR #3002: server identity lives in the result `_meta`.
-          _meta: {
-            'io.modelcontextprotocol/serverInfo': {
-              name: 'everything-stateless-server',
-              version: '1.0.0'
-            }
-          }
+        { name: 'everything-stateless-server', version: '1.0.0' },
+        {
+          tools: { listChanged: true },
+          prompts: { listChanged: true },
+          // resources/list, resources/templates/list and resources/read are
+          // served on this path, so the capability must be declared too.
+          resources: {}
         }
-      });
+      );
     }
 
     if (method === 'tools/list') {

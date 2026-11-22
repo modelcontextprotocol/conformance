@@ -12,6 +12,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
+import {
+  inspectDraftRequest,
+  sendDraftDiscovery,
+  sendDraftMethodNotFound,
+  sendDraftResult
+} from './helpers/draft-protocol.js';
 
 // Create a fresh MCP server per request to avoid "Already connected" errors
 // after the v1.26.0 security fix (GHSA-345p-7cg4-v4c7)
@@ -43,6 +49,33 @@ app.use(express.json());
 
 app.post('/mcp', async (req, res) => {
   try {
+    const draft = inspectDraftRequest(req, res);
+    if (draft.kind === 'rejected') return;
+    if (draft.kind === 'draft') {
+      if (draft.method === 'server/discover') {
+        return sendDraftDiscovery(
+          res,
+          draft.id,
+          { name: 'no-dns-rebinding-protection-server', version: '1.0.0' },
+          { tools: {} }
+        );
+      }
+      if (draft.method === 'tools/list') {
+        return sendDraftResult(res, draft.id, {
+          tools: [
+            {
+              name: 'echo',
+              description: 'Echo the input back',
+              inputSchema: {
+                type: 'object',
+                properties: { message: { type: 'string' } }
+              }
+            }
+          ]
+        });
+      }
+      return sendDraftMethodNotFound(res, draft.id);
+    }
     const server = createMcpServer();
     // Stateless: no session ID
     const transport = new StreamableHTTPServerTransport({
