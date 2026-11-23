@@ -17,6 +17,7 @@ export type PaginationDefect =
   | 'empty-page'
   | 'past-end'
   | 'inert'
+  | 'refresh-before-call'
   | 'rediscover';
 
 export async function runClient(
@@ -77,6 +78,10 @@ export async function runClient(
         defect === 'trim-cursor' ? result.nextCursor.trim() : result.nextCursor;
     }
     if (tools.some((tool) => tool.name === 'add_numbers')) {
+      if (defect === 'refresh-before-call') {
+        const first = await list();
+        await list(first.nextCursor);
+      }
       const params = { name: 'add_numbers', arguments: { a: 2, b: 3 } };
       if (stateless) await request('tools/call', params);
       else await client.callTool(params);

@@ -112,13 +112,16 @@ describe.each([LATEST_SPEC_VERSION, DRAFT_PROTOCOL_VERSION] as const)(
       ]);
     });
 
-    test('allows a new discovery after the requested traversal and tool call', async () => {
-      await runClientAgainstScenario(
-        new InlineClientRunner((url) => runClient(url, 'rediscover')),
-        'client-pagination',
-        { specVersion }
-      );
-    });
+    test.each(['refresh-before-call', 'rediscover'] as const)(
+      'allows a fresh listing (%s)',
+      async (control) => {
+        await runClientAgainstScenario(
+          new InlineClientRunner((url) => runClient(url, control)),
+          'client-pagination',
+          { specVersion }
+        );
+      }
+    );
   }
 );
 

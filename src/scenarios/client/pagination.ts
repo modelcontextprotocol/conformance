@@ -125,7 +125,7 @@ export class PaginationScenario implements Scenario {
       .filter(
         (r, i) =>
           i > empty &&
-          (called < 0 || i < called) &&
+          (terminal < 0 || i < terminal) &&
           r.method === 'tools/list' &&
           r.params?.cursor !== undefined &&
           r.params.cursor !== '' &&
@@ -134,11 +134,11 @@ export class PaginationScenario implements Scenario {
       .map((r) => r.params?.cursor);
     const opaquePreserved = terminalReached && unknownCursors.length === 0;
     const taskCompleted = terminalReached && called > terminal;
-    // A new discovery AFTER the requested tool call is legitimate. Only grade
-    // requests within this single enumeration, not all future tools/list calls.
-    const ranPastEnd = requests
+    // A cursorless list starts a new enumeration, even before the tool call.
+    const nextList = requests
       .slice(terminal + 1, called >= 0 ? called : undefined)
-      .some((r) => r.method === 'tools/list');
+      .find((r) => r.method === 'tools/list');
+    const ranPastEnd = nextList?.params?.cursor !== undefined;
     return [
       first >= 0
         ? {
