@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
@@ -21,6 +21,42 @@ export interface ClientExecutionResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+}
+
+// Clients run in their own process group (see executeClient), so they no
+// longer receive Ctrl+C with the runner. Track them and stop them on exit.
+const liveClients = new Set<() => void>();
+let exitHandlersInstalled = false;
+
+function trackClient(kill: () => void): () => void {
+  if (!exitHandlersInstalled) {
+    exitHandlersInstalled = true;
+    const killAll = () => liveClients.forEach((k) => k());
+    process.on('exit', killAll);
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      process.on(signal, () => {
+        killAll();
+        process.exit(signal === 'SIGINT' ? 130 : 143);
+      });
+    }
+  }
+  liveClients.add(kill);
+  return () => liveClients.delete(kill);
+}
+
+function killProcessTree(child: ChildProcess, useProcessGroup: boolean): void {
+  if (child.pid === undefined) return;
+  try {
+    if (useProcessGroup) {
+      process.kill(-child.pid, 'SIGKILL');
+    } else {
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore'
+      }).on('error', () => child.kill());
+    }
+  } catch {
+    child.kill('SIGKILL');
+  }
 }
 
 async function executeClient(
@@ -56,15 +92,30 @@ async function executeClient(
   }
 
   return new Promise((resolve) => {
+    // Run the client in its own process group so a timeout can stop the whole
+    // tree. With `shell: true` the child is `sh -c "<command>"`, and `kill()`
+    // only reaches that shell; the client it started would keep the output
+    // pipes open and `close` would never fire.
+    const useProcessGroup = process.platform !== 'win32';
     const childProcess = spawn(executable, args, {
       shell: true,
       stdio: 'pipe',
-      env
+      env,
+      detached: useProcessGroup
     });
+
+    const kill = () => killProcessTree(childProcess, useProcessGroup);
+    const untrack = trackClient(kill);
 
     const timeoutHandle = setTimeout(() => {
       timedOut = true;
-      childProcess.kill();
+      kill();
+      // A descendant that left the process group can keep the pipes open;
+      // drop them so `close` still fires.
+      setTimeout(() => {
+        childProcess.stdout?.destroy();
+        childProcess.stderr?.destroy();
+      }, 2000).unref();
     }, timeout);
 
     if (childProcess.stdout) {
@@ -81,6 +132,7 @@ async function executeClient(
 
     childProcess.on('close', (code) => {
       clearTimeout(timeoutHandle);
+      untrack();
       resolve({
         exitCode: code || 0,
         stdout,
@@ -91,6 +143,7 @@ async function executeClient(
 
     childProcess.on('error', (error) => {
       clearTimeout(timeoutHandle);
+      untrack();
       resolve({
         exitCode: -1,
         stdout,
