@@ -16,7 +16,8 @@ function mockSubscription(first: string | null = ack, extra?: string) {
   const encode = (method: string) =>
     `data: ${JSON.stringify({ jsonrpc: '2.0', method, params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 1 } } })}\n\n`;
   const push = (method: string) => {
-    if (!closed) streamController.enqueue(new TextEncoder().encode(encode(method)));
+    if (!closed)
+      streamController.enqueue(new TextEncoder().encode(encode(method)));
   };
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
     signal = init.signal!;
@@ -25,21 +26,29 @@ function mockSubscription(first: string | null = ack, extra?: string) {
         streamController = controller;
         if (first) {
           controller.enqueue(
-            new TextEncoder().encode(encode(first) + (extra ? encode(extra) : ''))
+            new TextEncoder().encode(
+              encode(first) + (extra ? encode(extra) : '')
+            )
           );
         }
-        signal.addEventListener('abort', () => {
-          if (!closed) {
-            closed = true;
-            controller.error(signal.reason);
-          }
-        }, { once: true });
+        signal.addEventListener(
+          'abort',
+          () => {
+            if (!closed) {
+              closed = true;
+              controller.error(signal.reason);
+            }
+          },
+          { once: true }
+        );
       },
       cancel() {
         closed = true;
       }
     });
-    return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+    return new Response(body, {
+      headers: { 'content-type': 'text/event-stream' }
+    });
   });
   return {
     push,
@@ -49,12 +58,17 @@ function mockSubscription(first: string | null = ack, extra?: string) {
         streamController.close();
       }
     },
-    get closed() { return closed; },
-    get signal() { return signal; }
+    get closed() {
+      return closed;
+    },
+    get signal() {
+      return signal;
+    }
   };
 }
 
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -73,7 +87,9 @@ describe('SEP-2575 bounded subscription observation', () => {
     await vi.advanceTimersByTimeAsync(2000);
     const result = await pending;
     expect(result.mutationError).toBeUndefined();
-    expect(result.mutationFrames.map((frame) => frame.method)).toEqual([changed]);
+    expect(result.mutationFrames.map((frame) => frame.method)).toEqual([
+      changed
+    ]);
     expect(stream.signal.aborted).toBe(true);
     expect(stream.closed).toBe(true);
   });
@@ -96,13 +112,24 @@ describe('SEP-2575 bounded subscription observation', () => {
     vi.useFakeTimers();
     const stream = mockSubscription();
     let triggerAborted = false;
-    const pending = observeStream(url, request, 2, 1500, (signal) =>
-      new Promise<void>((_resolve, reject) => {
-        signal.addEventListener('abort', () => {
-          triggerAborted = true;
-          reject(signal.reason);
-        }, { once: true });
-      }), 1000);
+    const pending = observeStream(
+      url,
+      request,
+      2,
+      1500,
+      (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              triggerAborted = true;
+              reject(signal.reason);
+            },
+            { once: true }
+          );
+        }),
+      1000
+    );
     await vi.advanceTimersByTimeAsync(1000);
     const result = await pending;
     expect(result.mutationError).toBe('Diagnostic mutation timed out');

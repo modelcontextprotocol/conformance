@@ -34,7 +34,9 @@ export async function observeStream(
   const result = () => ({
     frames,
     mutationFrames:
-      mutationFrameOffset === undefined ? [] : frames.slice(mutationFrameOffset),
+      mutationFrameOffset === undefined
+        ? []
+        : frames.slice(mutationFrameOffset),
     mutationError,
     observationComplete
   });
