@@ -13,6 +13,7 @@ import {
   type RunContext
 } from '../../connection';
 import { notTestable } from '../untestable';
+import { observeStream } from './stateless-stream';
 
 const SPEC_REF = [
   {
@@ -125,7 +126,8 @@ export class ServerStatelessScenario implements ClientScenario {
       method: string,
       params?: any,
       headersOverrides?: Record<string, string>,
-      id: string | number | null = 1
+      id: string | number | null = 1,
+      signal?: AbortSignal
     ) => {
       // The cross-cutting SEP-2243 headers (Mcp-Method, Mcp-Name, Accept,
       // MCP-Protocol-Version) are not what this scenario exercises, so they
@@ -143,7 +145,12 @@ export class ServerStatelessScenario implements ClientScenario {
         ...(params !== undefined ? { params } : {})
       });
 
-      const res = await fetch(serverUrl, { method: 'POST', headers, body });
+      const res = await fetch(serverUrl, {
+        method: 'POST',
+        headers,
+        body,
+        signal
+      });
       let data: any = null;
       // Servers may answer single requests over text/event-stream; pick the
       // JSON-RPC message matching this request id instead of failing to parse
@@ -166,120 +173,46 @@ export class ServerStatelessScenario implements ClientScenario {
       return { res, data };
     };
 
-    // Helper to read multi-frame streaming endpoints (like subscriptions/listen).
-    // `onFirstFrame` runs once after the first frame arrives (i.e. after the
-    // server has acknowledged the subscription) so callers can trigger
-    // side effects on a separate connection while this stream is still open.
+    // A failed diagnostic RPC cannot establish that a real mutation occurred.
+    const requireMutationSuccess = (
+      trigger: Awaited<ReturnType<typeof sendRpc>>
+    ) => {
+      const result = trigger.data?.result;
+      if (
+        trigger.res.status !== 200 ||
+        trigger.data?.id !== 1 ||
+        trigger.data?.error !== undefined ||
+        !result ||
+        typeof result !== 'object' ||
+        result.isError === true ||
+        (result.resultType !== undefined && result.resultType !== 'complete')
+      ) {
+        throw new Error('Diagnostic mutation did not complete successfully');
+      }
+    };
+
+    // Separate the bounded subscription-open, mutation and observation phases.
     const listenToStream = async (
       method: string,
       params?: any,
       maxFrames = 3,
       timeoutMs = 1000,
-      onFirstFrame?: () => Promise<void>
-    ): Promise<any[]> => {
+      onAcknowledged?: (signal: AbortSignal) => Promise<void>
+    ) => {
       const headers = buildStandardHeaders(method, params, { specVersion });
-
       const body = JSON.stringify({
         jsonrpc: '2.0',
         id: Date.now(),
         method,
         ...(params !== undefined ? { params } : {})
       });
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, timeoutMs);
-
-      try {
-        const res = await fetch(serverUrl, {
-          method: 'POST',
-          headers,
-          body,
-          signal: controller.signal
-        });
-
-        if (!res.body) {
-          clearTimeout(timeoutId);
-          return [];
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        const frames: any[] = [];
-        let buffer = '';
-        let firstFrameCallbackFired = false;
-        const maybeFireFirstFrameCallback = async () => {
-          if (firstFrameCallbackFired || frames.length === 0 || !onFirstFrame)
-            return;
-          firstFrameCallbackFired = true;
-          try {
-            await onFirstFrame();
-          } catch {
-            // The trigger failed; the caller inspects its own captured result.
-          }
-        };
-
-        try {
-          while (frames.length < maxFrames) {
-            let value: Uint8Array | undefined;
-            let done = false;
-            try {
-              ({ value, done } = await reader.read());
-            } catch {
-              // The stream was aborted (timeout) or dropped. A compliant
-              // server holds a subscriptions/listen stream open indefinitely,
-              // so hitting the timeout is the normal way these reads end —
-              // return whatever frames arrived before it fired.
-              break;
-            }
-
-            if (value) {
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split(/\r?\n/);
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const cleanLine = line.trim();
-                if (!cleanLine) continue;
-
-                const jsonText = cleanLine.startsWith('data:')
-                  ? cleanLine.replace(/^data:\s*/, '')
-                  : cleanLine;
-                try {
-                  frames.push(JSON.parse(jsonText));
-                } catch {
-                  // Keep segment buffering
-                }
-              }
-              await maybeFireFirstFrameCallback();
-            }
-
-            if (done) {
-              const finalLine = buffer.trim();
-              if (finalLine) {
-                const jsonText = finalLine.startsWith('data:')
-                  ? finalLine.replace(/^data:\s*/, '')
-                  : finalLine;
-                try {
-                  frames.push(JSON.parse(jsonText));
-                } catch {
-                  // Trailing formatting mismatch
-                }
-              }
-              break;
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
-
-        clearTimeout(timeoutId);
-        return frames;
-      } catch {
-        clearTimeout(timeoutId);
-        return [];
-      }
+      return observeStream(
+        serverUrl,
+        { method: 'POST', headers, body },
+        maxFrames,
+        timeoutMs,
+        onAcknowledged
+      );
     };
 
     const validMeta = {
@@ -884,7 +817,7 @@ export class ServerStatelessScenario implements ClientScenario {
       'HttpServerNoIndependentRequestsOnStream',
       'Request stream contains only IncompleteResult, never independent JSON-RPC requests',
       async () => {
-        const frames = await listenToStream(
+        const { frames } = await listenToStream(
           'tools/call',
           {
             name: 'test_streaming_elicitation',
@@ -944,7 +877,7 @@ export class ServerStatelessScenario implements ClientScenario {
       'ServerNoLogWithoutLogLevel',
       "No notifications/message for requests that didn't set _meta.../logLevel",
       async () => {
-        const frames = await listenToStream(
+        const { frames } = await listenToStream(
           'tools/call',
           { name: 'test_logging_tool', arguments: {}, _meta: validMeta },
           3,
@@ -1034,19 +967,27 @@ export class ServerStatelessScenario implements ClientScenario {
     // post-acknowledgment notification for the subscription-id check.
     let streamFrames: any[] = [];
     try {
-      streamFrames = await listenToStream(
+      ({ frames: streamFrames } = await listenToStream(
         'subscriptions/listen',
         subscriptionParams,
         2,
         800,
-        async () => {
-          await sendRpc('tools/call', {
-            name: 'test_trigger_tool_change',
-            arguments: {},
-            _meta: validMeta
-          });
+        async (signal) => {
+          requireMutationSuccess(
+            await sendRpc(
+              'tools/call',
+              {
+                name: 'test_trigger_tool_change',
+                arguments: {},
+                _meta: validMeta
+              },
+              undefined,
+              1,
+              signal
+            )
+          );
         }
-      );
+      ));
     } catch {
       // Stream pipeline tracking failed
     }
@@ -1141,17 +1082,29 @@ export class ServerStatelessScenario implements ClientScenario {
         // on a separate connection once the subscription is acknowledged. A
         // compliant server must not deliver the resulting tools notification
         // to this stream.
-        const narrowFrames = await listenToStream(
+        const {
+          frames: narrowFrames,
+          mutationError,
+          observationComplete
+        } = await listenToStream(
           'subscriptions/listen',
           narrowParams,
           3,
           1500,
-          async () => {
-            await sendRpc('tools/call', {
-              name: 'test_trigger_tool_change',
-              arguments: {},
-              _meta: validMeta
-            });
+          async (signal) => {
+            requireMutationSuccess(
+              await sendRpc(
+                'tools/call',
+                {
+                  name: 'test_trigger_tool_change',
+                  arguments: {},
+                  _meta: validMeta
+                },
+                undefined,
+                1,
+                signal
+              )
+            );
           }
         );
 
@@ -1173,6 +1126,14 @@ export class ServerStatelessScenario implements ClientScenario {
             error:
               'Server leaked a tools/list-changed notification over a stream explicitly filtered to prompts only',
             details: { leakedToolFrame }
+          };
+        }
+        if (mutationError || !observationComplete) {
+          return {
+            error: notTestable(
+              mutationError ?? 'Subscription ended before observation completed'
+            ),
+            details: { untestable: true }
           };
         }
         return { details: { narrowFramesCount: narrowFrames.length } };
@@ -1206,17 +1167,24 @@ export class ServerStatelessScenario implements ClientScenario {
         // connection once it is acknowledged. A compliant server only
         // notifies streams that are open at the time of the change.
         let trigger: any = null;
-        const frames = await listenToStream(
+        const { frames, mutationFrames, mutationError } = await listenToStream(
           'subscriptions/listen',
           promptsParams,
           2,
           1500,
-          async () => {
-            trigger = await sendRpc('tools/call', {
-              name: 'test_trigger_prompt_change',
-              arguments: {},
-              _meta: validMeta
-            });
+          async (signal) => {
+            trigger = await sendRpc(
+              'tools/call',
+              {
+                name: 'test_trigger_prompt_change',
+                arguments: {},
+                _meta: validMeta
+              },
+              undefined,
+              1,
+              signal
+            );
+            requireMutationSuccess(trigger);
           }
         );
         if (trigger?.data?.error?.code === -32601) {
@@ -1238,7 +1206,14 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        const changeFrame = frames.find(
+        if (mutationError) {
+          return {
+            warning: true,
+            error: notTestable(mutationError),
+            details: { untestable: true }
+          };
+        }
+        const changeFrame = mutationFrames.find(
           (f) => f.method === 'notifications/prompts/list_changed'
         );
         if (!changeFrame) {
@@ -1276,17 +1251,24 @@ export class ServerStatelessScenario implements ClientScenario {
         // connection once it is acknowledged. A compliant server only
         // notifies streams that are open at the time of the change.
         let trigger: any = null;
-        const frames = await listenToStream(
+        const { frames, mutationFrames, mutationError } = await listenToStream(
           'subscriptions/listen',
           toolsParams,
           2,
           1500,
-          async () => {
-            trigger = await sendRpc('tools/call', {
-              name: 'test_trigger_tool_change',
-              arguments: {},
-              _meta: validMeta
-            });
+          async (signal) => {
+            trigger = await sendRpc(
+              'tools/call',
+              {
+                name: 'test_trigger_tool_change',
+                arguments: {},
+                _meta: validMeta
+              },
+              undefined,
+              1,
+              signal
+            );
+            requireMutationSuccess(trigger);
           }
         );
         if (trigger?.data?.error?.code === -32601) {
@@ -1308,7 +1290,14 @@ export class ServerStatelessScenario implements ClientScenario {
           };
         }
 
-        const changeFrame = frames.find(
+        if (mutationError) {
+          return {
+            warning: true,
+            error: notTestable(mutationError),
+            details: { untestable: true }
+          };
+        }
+        const changeFrame = mutationFrames.find(
           (f) => f.method === 'notifications/tools/list_changed'
         );
         if (!changeFrame) {
