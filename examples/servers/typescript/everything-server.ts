@@ -36,7 +36,7 @@ import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-sc
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import cors from 'cors';
-import { randomUUID, createHmac } from 'crypto';
+import { randomUUID, createHmac, createHash } from 'crypto';
 
 // Server state
 const resourceSubscriptions = new Set<string>();
@@ -1215,6 +1215,55 @@ function notifyListenStreams(
     );
   }
 }
+
+// SEP-2127 Server Card at the reserved location, <streamable-http-url>/server-card.
+// Registered before the global CORS middleware: the card has its own CORS rules
+// (ext-server-card discovery.md § CORS Requirements), and its values mirror what
+// server/discover reports, so the card does not contradict the live server.
+const SERVER_CARD_MEDIA_TYPE = 'application/mcp-server-card+json';
+function serverCardBody(req: {
+  protocol: string;
+  get(name: string): string | undefined;
+}): string {
+  const origin = `${req.protocol}://${req.get('host')}`;
+  return JSON.stringify({
+    $schema:
+      'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
+    name: 'io.modelcontextprotocol/everything-server',
+    version: '1.0.0',
+    description: 'MCP conformance everything-server',
+    remotes: [
+      {
+        type: 'streamable-http',
+        url: `${origin}/mcp`,
+        supportedProtocolVersions: ['2026-07-28']
+      }
+    ]
+  });
+}
+app.options('/mcp/server-card', (_req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET',
+    'Access-Control-Allow-Headers': 'Content-Type, If-None-Match'
+  });
+  res.sendStatus(204);
+});
+app.get('/mcp/server-card', (req, res) => {
+  const body = serverCardBody(req);
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 32)}"`;
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'ETag',
+    'Cache-Control': 'public, max-age=3600',
+    ETag: etag
+  });
+  if (req.get('if-none-match') === etag) {
+    res.status(304).end();
+    return;
+  }
+  res.type(SERVER_CARD_MEDIA_TYPE).send(body);
+});
 
 // Configure CORS to expose Mcp-Session-Id header for browser-based clients
 app.use(

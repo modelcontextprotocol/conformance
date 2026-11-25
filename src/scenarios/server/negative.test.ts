@@ -6,6 +6,7 @@ import path from 'path';
 import { DNSRebindingProtectionScenario } from './dns-rebinding';
 import { ResourcesNotFoundErrorScenario } from './resources';
 import { CachingScenario } from './caching';
+import { ServerCardScenario } from './server-card';
 import { ToolsListScenario } from './tools';
 import {
   JsonSchema2020_12Scenario,
@@ -518,5 +519,113 @@ describe('Server scenario negative tests', () => {
         'SKIPPED'
       );
     });
+  });
+
+  describe('sep-2127-server-card', () => {
+    let serverProcess: ChildProcess | null = null;
+    const PORT = 3010;
+    const base = `http://localhost:${PORT}`;
+    const statusOf = (checks: { id: string; status: string }[], id: string) =>
+      checks.find((c) => c.id === id)?.status;
+    const run = (url: string) =>
+      new ServerCardScenario().run(testContext(url, DRAFT_PROTOCOL_VERSION));
+
+    beforeAll(async () => {
+      serverProcess = await startServer(
+        path.join(
+          process.cwd(),
+          'examples/servers/typescript/sep-2127-server-card-fixture.ts'
+        ),
+        PORT
+      );
+    }, 35000);
+
+    afterAll(async () => {
+      await stopServer(serverProcess);
+    });
+
+    it('passes every check against a correct card that agrees with server/discover', async () => {
+      const checks = await run(`${base}/good/mcp`);
+      expect(checks.length).toBe(17);
+      for (const c of checks)
+        expect([c.id, c.status]).toEqual([c.id, 'SUCCESS']);
+      expect(takeWireViolations().violations).toEqual([]);
+    }, 15000);
+
+    it('passes every check with a trailing slash on the server URL', async () => {
+      const checks = await run(`${base}/good/mcp/`);
+      expect(checks.length).toBe(17);
+      for (const c of checks)
+        expect([c.id, c.status]).toEqual([c.id, 'SUCCESS']);
+      takeWireViolations();
+    }, 15000);
+
+    it('fails an HTML page at the card location instead of skipping it', async () => {
+      const checks = await run(`${base}/html/mcp`);
+      expect(statusOf(checks, 'sep-2127-card-schema-valid')).toBe('FAILURE');
+      expect(statusOf(checks, 'sep-2127-card-media-type')).toBe('WARNING');
+      for (const id of [
+        'sep-2127-cors-allow-origin',
+        'sep-2127-cors-expose-headers',
+        'sep-2127-cors-preflight',
+        'sep-2127-cors-allow-methods',
+        'sep-2127-cors-allow-headers'
+      ]) {
+        expect(statusOf(checks, id)).toBe('FAILURE');
+      }
+      expect(statusOf(checks, 'sep-2127-cache-control')).toBe('WARNING');
+      expect(checks.some((c) => c.status === 'SKIPPED')).toBe(false);
+      takeWireViolations();
+    }, 15000);
+
+    it('warns on every field where the card contradicts server/discover', async () => {
+      const checks = await run(`${base}/contradict/mcp`);
+      for (const id of [
+        'sep-2127-card-schema-valid',
+        'sep-2127-cors-allow-origin',
+        'sep-2127-cors-preflight',
+        'sep-2127-cors-allow-methods',
+        'sep-2127-cors-allow-headers',
+        'sep-2127-if-none-match'
+      ]) {
+        expect(statusOf(checks, id)).toBe('SUCCESS');
+      }
+      for (const id of [
+        'sep-2127-consistent-transport',
+        'sep-2127-consistent-protocol-version',
+        'sep-2127-consistent-version',
+        'sep-2127-consistent-name',
+        'sep-2127-consistent-title',
+        'sep-2127-consistent-description'
+      ]) {
+        expect(statusOf(checks, id)).toBe('WARNING');
+      }
+      // The fixture's server/discover is wire-valid: only the card is wrong.
+      expect(takeWireViolations().violations).toEqual([]);
+    }, 15000);
+
+    it('skips every check when no card is hosted (404 or 401)', async () => {
+      for (const p of ['none', 'auth']) {
+        const checks = await run(`${base}/${p}/mcp`);
+        expect(checks.length).toBe(17);
+        expect(checks.every((c) => c.status === 'SKIPPED')).toBe(true);
+      }
+    }, 15000);
+
+    it('fails, rather than throws, when nothing answers', async () => {
+      // A port the OS just handed out and we closed: nothing listens on it.
+      // `localhost` makes undici try ::1 and 127.0.0.1, whose AggregateError
+      // has an empty message; the check must still name the cause.
+      const probe = createServer();
+      await new Promise<void>((r) => probe.listen(0, r));
+      const freePort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((r) => probe.close(() => r()));
+
+      const checks = await run(`http://localhost:${freePort}/mcp`);
+      expect(checks.length).toBe(17);
+      const schema = checks.find((c) => c.id === 'sep-2127-card-schema-valid');
+      expect(schema?.status).toBe('FAILURE');
+      expect(schema?.errorMessage).toMatch(/failed: \S/);
+    }, 15000);
   });
 });
