@@ -441,11 +441,16 @@ browser login + callback for login-gated servers.`;
   ): 'none' | 'client_secret_post' | 'client_secret_basic' | null {
     const authMethods: string[] =
       metadata.token_endpoint_auth_methods_supported ?? ['client_secret_basic'];
-    if (!options.clientSecret || authMethods.includes('none')) return 'none';
-    if (authMethods.includes('client_secret_post')) return 'client_secret_post';
-    if (authMethods.includes('client_secret_basic')) {
-      return 'client_secret_basic';
+    // When a secret is configured, prefer a confidential-client method over
+    // `none` so servers supporting both are exercised on the confidential path.
+    if (options.clientSecret) {
+      if (authMethods.includes('client_secret_post'))
+        return 'client_secret_post';
+      if (authMethods.includes('client_secret_basic')) {
+        return 'client_secret_basic';
+      }
     }
+    if (!options.clientSecret || authMethods.includes('none')) return 'none';
     return null;
   }
 

@@ -410,6 +410,112 @@ describe('AuthorizationCodeGrantScenario', () => {
     expect(withoutResource[0].status).toBe('SUCCESS');
   });
 
+  it('authenticates with client_secret_post when the AS also offers none and a secret is configured', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    const mixedMetadata = {
+      ...METADATA,
+      token_endpoint_auth_methods_supported: ['none', 'client_secret_post']
+    };
+    const details = {
+      'authorization-server-metadata-endpoint': { body: mixedMetadata }
+    };
+
+    mockTokenResponse({
+      access_token: 'access-token',
+      token_type: 'Bearer'
+    });
+
+    const checks = await scenario.run(OPTIONS, details);
+
+    expect(checks[0].status).toBe('SUCCESS');
+    const tokenCall = mockedRequest.mock.calls[0];
+    const params = new URLSearchParams((tokenCall[1] as any).body);
+    expect(params.get('client_id')).toBe('client');
+    expect(params.get('client_secret')).toBe('secret');
+    expect((tokenCall[1] as any).headers.authorization).toBeUndefined();
+  });
+
+  it('authenticates with client_secret_basic when the AS also offers none and a secret is configured', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    const mixedMetadata = {
+      ...METADATA,
+      token_endpoint_auth_methods_supported: ['none', 'client_secret_basic']
+    };
+    const details = {
+      'authorization-server-metadata-endpoint': { body: mixedMetadata }
+    };
+
+    mockTokenResponse({
+      access_token: 'access-token',
+      token_type: 'Bearer'
+    });
+
+    const checks = await scenario.run(OPTIONS, details);
+
+    expect(checks[0].status).toBe('SUCCESS');
+    const tokenCall = mockedRequest.mock.calls[0];
+    const params = new URLSearchParams((tokenCall[1] as any).body);
+    expect(params.get('client_secret')).toBeNull();
+    const expected = Buffer.from(
+      `${encodeURIComponent('client')}:${encodeURIComponent('secret')}`
+    ).toString('base64');
+    expect((tokenCall[1] as any).headers.authorization).toBe(
+      `Basic ${expected}`
+    );
+  });
+
+  it('still uses none when no client secret is configured even if the AS offers secret methods', async () => {
+    const scenario = new AuthorizationCodeGrantScenario();
+
+    mockCallbackServer(
+      scenario,
+      (state) => `http://127.0.0.1:3000/callback?code=abc&state=${state}`
+    );
+
+    const mixedMetadata = {
+      ...METADATA,
+      token_endpoint_auth_methods_supported: [
+        'none',
+        'client_secret_post',
+        'client_secret_basic'
+      ]
+    };
+    const details = {
+      'authorization-server-metadata-endpoint': { body: mixedMetadata }
+    };
+
+    mockTokenResponse({
+      access_token: 'access-token',
+      token_type: 'Bearer'
+    });
+
+    const publicOptions = {
+      url: OPTIONS.url,
+      clientId: OPTIONS.clientId,
+      port: OPTIONS.port
+    };
+    const checks = await scenario.run(publicOptions, details);
+
+    expect(checks[0].status).toBe('SUCCESS');
+    const tokenCall = mockedRequest.mock.calls[0];
+    const params = new URLSearchParams((tokenCall[1] as any).body);
+    expect(params.get('client_id')).toBe('client');
+    expect(params.get('client_secret')).toBeNull();
+    expect((tokenCall[1] as any).headers.authorization).toBeUndefined();
+  });
+
   it('returns SKIPPED when client_secret_post and client_secret_basic are missing', async () => {
     const scenario = new AuthorizationCodeGrantScenario();
 

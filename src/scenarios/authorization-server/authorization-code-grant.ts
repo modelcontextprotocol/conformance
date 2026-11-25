@@ -231,14 +231,18 @@ export class AuthorizationCodeGrantScenario implements ClientScenarioForAuthoriz
     const authMethods: string[] =
       metadata.token_endpoint_auth_methods_supported ?? ['client_secret_basic'];
 
+    // When a secret is configured, prefer a confidential-client method over
+    // `none` so servers supporting both are exercised on the confidential path.
+    if (options.clientSecret) {
+      if (authMethods.includes('client_secret_post')) {
+        return 'client_secret_post';
+      }
+      if (authMethods.includes('client_secret_basic')) {
+        return 'client_secret_basic';
+      }
+    }
     if (!options.clientSecret || authMethods.includes('none')) {
       return 'none';
-    }
-    if (authMethods.includes('client_secret_post')) {
-      return 'client_secret_post';
-    }
-    if (authMethods.includes('client_secret_basic')) {
-      return 'client_secret_basic';
     }
     // client_secret_jwt / private_key_jwt / tls_client_auth are not yet
     // implemented; skip rather than fail.
