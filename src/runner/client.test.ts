@@ -65,3 +65,16 @@ describe('runConformanceTest spec-version applicability', () => {
     expect(result.clientOutput?.stdout).toContain(LATEST_SPEC_VERSION);
   }, 30000);
 });
+
+describe('runConformanceTest client timeout', () => {
+  test('stops a hung client started through a shell command list', async () => {
+    // The trailing `; true` stops the shell from exec-ing node directly, so
+    // the client is a grandchild of the spawned shell, as with `cd dir && ...`
+    // or `npx tsx client.ts`.
+    const hungClient = 'node -e "setInterval(() => {}, 1000)"; true';
+    const started = Date.now();
+    const result = await runConformanceTest(hungClient, 'initialize', 1000);
+    expect(result.clientOutput?.timedOut).toBe(true);
+    expect(Date.now() - started).toBeLessThan(10000);
+  }, 20000);
+});
