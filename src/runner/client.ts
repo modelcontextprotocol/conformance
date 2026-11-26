@@ -33,10 +33,11 @@ function trackClient(kill: () => void): () => void {
     exitHandlersInstalled = true;
     const killAll = () => liveClients.forEach((k) => k());
     process.on('exit', killAll);
-    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    const exitCodes = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const;
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
       process.on(signal, () => {
         killAll();
-        process.exit(signal === 'SIGINT' ? 130 : 143);
+        process.exit(exitCodes[signal]);
       });
     }
   }
