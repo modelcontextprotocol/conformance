@@ -63,6 +63,7 @@ import {
 import { SkillsDirectoryReadScenario } from './server/skills/directory';
 import { SkillsEnumerationScenario } from './server/skills/enumeration';
 import { SkillsManifestScenario } from './server/skills/manifest';
+import { ServerCardScenario } from './server/server-card';
 
 import {
   PromptsListScenario,
@@ -166,7 +167,12 @@ const pendingClientScenariosList: ClientScenario[] = [
   // `npm start -- server --scenario sep-2640-skills-* --url <fixture>`.
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
-  new SkillsManifestScenario()
+  new SkillsManifestScenario(),
+
+  // SEP-2127 Server Card extension. Pending so a default run does not grade an
+  // optional extension; targeted runs use
+  // `npm start -- server --scenario sep-2127-server-card --url <server>`.
+  new ServerCardScenario()
 ];
 
 // All client scenarios
@@ -223,6 +229,10 @@ const allClientScenariosList: ClientScenario[] = [
   new SkillsDirectoryReadScenario(),
   new SkillsEnumerationScenario(),
   new SkillsManifestScenario(),
+
+  // Server Card extension (SEP-2127). Hosting a card is optional (MAY): the
+  // checks SKIP unless <url>/server-card answers 2xx.
+  new ServerCardScenario(),
 
   // Prompts scenarios
   new PromptsListScenario(),

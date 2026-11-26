@@ -1,0 +1,121 @@
+# spec_source: modelcontextprotocol/ext-server-card@28db12c9 docs/discovery.md, schema.json, README.md
+# extracted: 2026-11-25
+#
+# SEP-2127 is an Extensions Track SEP. It charters the Server Card extension
+#   and keeps the normative wire format in ext-server-card, not inline. The SEP
+#   pins snapshot 526201bb for its review and says implementers "should follow
+#   the current, versioned extension specification rather than this historical
+#   snapshot". These rows quote 28db12c9, the current main, whose v1 schema adds
+#   Remote.extensionsInfo (ext-server-card#55). Every sentence quoted below
+#   also appears, word for word, at 526201bb, except the last three not-tested
+#   client rows: two added by #55 (extensionsInfo), one reworded since.
+#
+# Quotes are verbatim. Where several checks rest on one sentence (CORS,
+#   consistency), each row quotes the whole sentence and a comment names the
+#   part that check observes.
+#
+# Scope: the card a server hosts at its reserved location. Hosting is a MAY, so
+#   only a 2xx there is graded; any other status skips every check. AI Catalog discovery
+#   (/.well-known/ai-catalog.json) is out of scope: it belongs to the AI Catalog
+#   specification, not to this extension.
+sep: 2127
+spec_url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md
+requirements:
+  # === The card ===
+  # The sentence introduces a code block holding the URL template
+  # https://static.modelcontextprotocol.io/schemas/v1/<name>.schema.json
+  # (server-card for a Server Card). Observed by validating the card against the
+  # vendored v1 schema (schema.json `$defs/ServerCard`), which requires `$schema`,
+  # `name`, `version` and `description`; the schema is the requirement.
+  - check: sep-2127-card-schema-valid
+    text: 'The `$schema` field on every document MUST be a URL of the form:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/README.md#schema-url-conventions
+  # schema.json, `ServerCard.version` description.
+  - check: sep-2127-version-semver
+    text: 'Version string for this server. SHOULD follow semantic versioning'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/schema.json
+  - check: sep-2127-card-media-type
+    text: 'MCP Servers SHOULD respect the `application/mcp-server-card+json` media type wherever they choose to host it.'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#hosted-server-card-location
+
+  # === CORS Requirements ===
+  # Access-Control-Allow-Origin: * on the GET response.
+  - check: sep-2127-cors-allow-origin
+    text: 'Hosted Server Card endpoints MUST include appropriate CORS headers to allow browser-based clients:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#cors-requirements
+  # Access-Control-Expose-Headers: ETag on the GET response.
+  - check: sep-2127-cors-expose-headers
+    text: 'Hosted Server Card endpoints MUST include appropriate CORS headers to allow browser-based clients:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#cors-requirements
+  # A preflight (OPTIONS) for the card succeeds; the header lines below only work if it does.
+  - check: sep-2127-cors-preflight
+    text: 'Hosted Server Card endpoints MUST include appropriate CORS headers to allow browser-based clients:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#cors-requirements
+  # Access-Control-Allow-Methods: GET on the preflight response.
+  - check: sep-2127-cors-allow-methods
+    text: 'Hosted Server Card endpoints MUST include appropriate CORS headers to allow browser-based clients:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#cors-requirements
+  # Access-Control-Allow-Headers: Content-Type, If-None-Match on the preflight response.
+  - check: sep-2127-cors-allow-headers
+    text: 'Hosted Server Card endpoints MUST include appropriate CORS headers to allow browser-based clients:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#cors-requirements
+
+  # === Caching ===
+  # A Cache-Control header is present. The `public, max-age=3600` the spec shows in a code block under this SHOULD is not graded.
+  - check: sep-2127-cache-control
+    text: 'Server Card hosts SHOULD include caching headers to reduce unnecessary requests:'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#caching
+  - check: sep-2127-etag
+    text: 'Hosts SHOULD also return an `ETag` response header.'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#caching
+  - check: sep-2127-if-none-match
+    text: 'Hosts SHOULD honor `If-None-Match` and return `304 Not Modified` when the selected representation has not changed.'
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#caching
+
+  # === Consistency with Runtime Behavior ===
+  # The transport of the remotes[] entry for the tested endpoint.
+  - check: sep-2127-consistent-transport
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+  # supportedProtocolVersions of that remote vs server/discover supportedVersions.
+  - check: sep-2127-consistent-protocol-version
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+  # serverInfo.version.
+  - check: sep-2127-consistent-version
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+  # serverInfo.name, compared only when it is reverse-DNS: a short name cannot contradict the card name.
+  - check: sep-2127-consistent-name
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+  # title.
+  - check: sep-2127-consistent-title
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+  # description.
+  - check: sep-2127-consistent-description
+    text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    url: https://github.com/modelcontextprotocol/ext-server-card/blob/28db12c9b4a379489d46e49bf1bd4a991f05c9b7/docs/discovery.md#consistency-with-runtime-behavior
+
+  # === Not tested ===
+  - text: 'MCP Servers MAY host their Server Card at `GET <streamable-http-url>/server-card`, which we reserve for this purpose, though any unreserved URI (on any domain) is valid.'
+    excluded: 'Optional (MAY). Not a check of its own: only a 2xx at that location is graded as a hosted card, and any other status skips every check.'
+  - text: 'After a client identifies a Server Card URL from an AI Catalog, it SHOULD request that URL expressing the `application/mcp-server-card+json` media type.'
+    excluded: 'A client requirement. This scenario tests servers; the harness sends that Accept header itself.'
+  - text: 'Hosted Server Cards MUST be served over HTTPS (TLS 1.2 or later) in production. HTTP MAY be used for local development only.'
+    excluded: 'Conformance runs against local HTTP servers, where HTTP is allowed; production deployment is not observable from the harness.'
+  - text: 'MCP Servers SHOULD implement rate limiting on their Server Card endpoint to prevent abuse.'
+    excluded: 'No crisp threshold to test against; probing for it would mean flooding the server under test.'
+  - text: 'AI Catalogs and Server Cards used for public discovery are publicly accessible by design. They MUST NOT include sensitive information such as:'
+    excluded: 'Whether a value is sensitive is a judgement about the deployment, not observable on the wire.'
+  - text: "A Server Card SHOULD accurately reflect the server's runtime behavior: the values a client observes once connected — the `serverInfo` (`name`, `version`) and `supportedVersions` from [`server/discover`](https://modelcontextprotocol.io/specification/draft/server/discover), the transport served at each `remotes[]` endpoint, and descriptive fields (`title`, `description`, `icons`) — SHOULD NOT contradict the equivalent values declared in the Server Card."
+    excluded: 'The `icons` part only. Icon arrays can differ in order, size and theme without contradicting each other, so there is no crisp comparison; the other fields are checked above.'
+  - text: 'MCP Clients SHOULD respect `Cache-Control` headers, use returned `ETag` validators as described in [Caching](#caching), and avoid unnecessary polling.'
+    excluded: 'A client requirement; this scenario tests servers.'
+  - text: "A remote's `extensionsInfo` map carries server-level information defined by each extension; it is not a declaration of extension support. Clients MUST NOT infer from the presence or absence of an entry whether the server supports that extension"
+    excluded: 'A client requirement; this scenario tests servers.'
+  - text: 'Clients MUST NOT rely on such information from a Server Card hosted on another origin or embedded inline in a catalog entry.'
+    excluded: 'A client requirement; this scenario tests servers.'
+  - text: 'Clients MUST NOT treat Server Card contents as authoritative for security or access-control decisions for which the live connection is the source of truth.'
+    excluded: 'A client requirement; this scenario tests servers.'

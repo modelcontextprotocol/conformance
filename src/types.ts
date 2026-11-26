@@ -103,7 +103,9 @@ export const EXTENSION_IDS = [
   'io.modelcontextprotocol/auth/dpop',
   'io.modelcontextprotocol/auth/wif',
   'io.modelcontextprotocol/tasks',
-  'io.modelcontextprotocol/skills'
+  'io.modelcontextprotocol/skills',
+  // SEP-2127 Server Cards (Extension Identifier in the SEP header).
+  'io.modelcontextprotocol/server-card'
 ] as const;
 export type ExtensionId = (typeof EXTENSION_IDS)[number];
 
